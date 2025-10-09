@@ -1,0 +1,5 @@
+{
+  "name": "BMS Validator",
+  "description": "An application to analyze Battery Management System (BMS) screenshots using AI. Users can upload an image of their BMS dashboard to get a comprehensive analysis, ensuring optimal performance and battery health.",
+  "requestFramePermissions": []
+}
