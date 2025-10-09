@@ -63,6 +63,7 @@ const listAllBlobs = async (store, log) => {
     let allBlobs = []; let cursor = undefined;
     do {
         const { blobs, cursor: nextCursor } = await withRetry(() => store.list({ cursor, limit: 1000 }), log);
+        log('info', 'Fetched a page of blobs', { count: blobs.length, nextCursor: nextCursor || 'end' });
         allBlobs.push(...blobs);
         cursor = nextCursor;
     } while (cursor);
@@ -123,7 +124,7 @@ exports.handler = async function(event, context) {
                         isBlocked: isIpInRanges(ip, blockedRanges, log),
                     };
                 } catch (e) {
-                    log('error', `Failed to process rate limit blob.`, { key: blob.key, errorMessage: e.message });
+                    log('error', `Failed to process rate limit blob.`, { key: blob.key, errorMessage: e.message, stack: e.stack });
                     return null;
                 }
             });

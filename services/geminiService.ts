@@ -53,26 +53,16 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
             }),
         });
         
+        log('info', 'Analyze API response', { status: response.status });
         if (!response.ok) {
-            let errorMsg = `Server responded with status ${response.status}`;
-            try {
-                // Try to parse error response as JSON, but handle failures gracefully.
-                const result = await response.json();
-                errorMsg = result.error || errorMsg;
-            } catch (e) {
-                // If the response is not JSON, use the raw text, but avoid showing HTML.
-                const text = await response.text();
-                if (text && !text.trim().startsWith('<')) {
-                    errorMsg = text;
-                }
+            let errorBody;
+            try { 
+                errorBody = await response.json(); 
+            } catch { 
+                errorBody = await response.text(); 
             }
-            log('error', 'Analysis job submission failed.', { status: response.status, error: errorMsg });
-            return files.map(file => ({
-                fileName: file.name,
-                jobId: '',
-                status: 'failed',
-                error: errorMsg,
-            }));
+            const errorMessage = (typeof errorBody === 'object' && errorBody?.error) ? errorBody.error : `Server responded with status ${response.status}: ${errorBody}`;
+            throw new Error(errorMessage);
         }
         
         const result = await response.json();
@@ -82,12 +72,6 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
 
     } catch (error) {
         log('error', 'Error in analyzeBmsScreenshots.', { error: error instanceof Error ? error.message : 'An unknown client-side error occurred.' });
-        const errorMsg = error instanceof Error ? error.message : 'An unknown client-side error occurred.';
-        return files.map(file => ({
-            fileName: file.name,
-            jobId: '',
-            status: 'failed',
-            error: errorMsg,
-        }));
+        throw error; // Re-throw the caught error
     }
 };

@@ -114,7 +114,9 @@ const checkRateLimit = async (request, log) => {
     const key = ipToKey(ip);
 
     for (let i = 0; i < 5; i++) { // Retry for contention
+        log('info', 'Fetching rate limit metadata.', { key });
         const metadata = await withRetry(() => store.getWithMetadata(key, { type: "json" }), log).catch(err => (err.status === 404 ? null : Promise.reject(err)));
+        log('info', 'Rate limit metadata fetched.', { key, hasData: !!metadata });
         const timestamps = metadata?.data || [];
         const recentTimestamps = timestamps.filter(ts => ts > windowStart);
         if (recentTimestamps.length >= UNVERIFIED_IP_LIMIT) {
@@ -141,6 +143,7 @@ const checkSecurity = async (request, log) => {
     try {
         if (ip) {
             const blockedRanges = await getBlockedRanges(log);
+            log('info', 'Blocked ranges loaded.', { count: blockedRanges.length });
             if (isIpInRanges(ip, blockedRanges, log)) {
                 throw new HttpError(403, 'Your IP address has been blocked.');
             }
