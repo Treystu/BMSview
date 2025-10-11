@@ -1,27 +1,7 @@
 const { getConfiguredStore } = require("./utils/blobs.js");
+const { createLogger } = require("./utils/logger.js");
 
 const JOBS_STORE_NAME = "bms-jobs";
-
-const createLogger = (context) => (level, message, extra = {}) => {
-    try {
-        console.log(JSON.stringify({
-            level: level.toUpperCase(),
-            functionName: context?.functionName || 'get-job-status',
-            awsRequestId: context?.awsRequestId,
-            message,
-            ...extra
-        }));
-    } catch (e) {
-        console.log(JSON.stringify({
-            level: 'ERROR',
-            functionName: context?.functionName || 'get-job-status',
-            awsRequestId: context?.awsRequestId,
-            message: 'Failed to serialize log message.',
-            originalMessage: message,
-            serializationError: e.message,
-        }));
-    }
-};
 
 const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
     for (let i = 0; i <= maxRetries; i++) {
@@ -47,7 +27,7 @@ const respond = (statusCode, body) => ({
 });
 
 exports.handler = async function(event, context) {
-    const log = createLogger(context);
+    const log = createLogger('get-job-status', context);
     
     if (event.httpMethod !== 'GET') {
         return respond(405, { error: 'Method Not Allowed' });

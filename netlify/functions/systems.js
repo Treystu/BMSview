@@ -1,30 +1,10 @@
 const { v4: uuidv4 } = require("uuid");
 const { getConfiguredStore } = require("./utils/blobs.js");
+const { createLogger } = require("./utils/logger.js");
 
 const STORE_NAME = "bms-systems";
 const HISTORY_STORE_NAME = "bms-history";
 const CACHE_KEY = "_all_systems_cache";
-
-const createLogger = (context) => (level, message, extra = {}) => {
-    try {
-        console.log(JSON.stringify({
-            level: level.toUpperCase(),
-            functionName: context?.functionName || 'systems',
-            awsRequestId: context?.awsRequestId,
-            message,
-            ...extra
-        }));
-    } catch (e) {
-        console.log(JSON.stringify({
-            level: 'ERROR',
-            functionName: context?.functionName || 'systems',
-            awsRequestId: context?.awsRequestId,
-            message: 'Failed to serialize log message.',
-            originalMessage: message,
-            serializationError: e.message,
-        }));
-    }
-};
 
 const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
     for (let i = 0; i <= maxRetries; i++) {
@@ -105,7 +85,7 @@ const rebuildSystemsCache = async (store, log) => {
 };
 
 exports.handler = async function(event, context) {
-    const log = createLogger(context);
+    const log = createLogger('systems', context);
     const store = getConfiguredStore(STORE_NAME, log);
 
     try {

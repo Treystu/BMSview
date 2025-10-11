@@ -9,19 +9,14 @@ interface BulkUploadProps {
   showRateLimitWarning: boolean;
 }
 
-const PENDING_STATUSES = [
-    'analyzing...', 'analyzing (api throttled)...', 'pending...', 'queued',
-    'pre-analyzing...', 'starting analysis...', 'submitting...', 'saving...',
-    'ready for analysis', 'processing'
-];
+const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
 
 // Helper to determine if a status string represents a final, non-successful state.
 const getIsActualError = (error: string | null | undefined): boolean => {
     if (!error) return false;
-    const lowerError = error.toLowerCase();
-    const isPending = PENDING_STATUSES.some(status => status === lowerError);
-    const isCompleted = lowerError === 'completed';
-    return !isPending && !isCompleted;
+    const isCompleted = error.toLowerCase() === 'completed';
+    const isPending = PENDING_STATUS_REGEX.test(error);
+    return !isCompleted && !isPending;
 };
 
 // A more robust rendering function for the status of each upload.
@@ -81,7 +76,7 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onAnalyze, results, isLoading, 
   const processedFiles = results.filter(isProcessed).length;
   const successCount = results.filter(r => (r.error?.toLowerCase() === 'completed' || (r.data && !r.error)) && !r.isDuplicate).length;
   const duplicateCount = results.filter(r => r.isDuplicate).length;
-  const errorCount = results.filter(r => getIsActualError(r.error)).length;
+  const errorCount = results.filter(r => !r.isDuplicate && getIsActualError(r.error)).length;
   const progress = totalFiles > 0 ? (processedFiles / totalFiles) * 100 : 0;
 
   return (

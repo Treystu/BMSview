@@ -180,13 +180,12 @@ const ActionableInsights: React.FC<{ analysis: AnalysisData }> = ({ analysis }) 
 const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSystems, onLinkRecord, onReprocess, onRegisterNewSystem }) => {
   const { fileName, data, error, weather, isDuplicate, isBatchDuplicate, file, saveError, recordId } = result;
   
-  const PENDING_STATUSES = [
-    'Analyzing...', 'Analyzing (API throttled)...', 'Pending...', 'Queued', 
-    'Pre-analyzing...', 'Starting analysis...', 'Submitting...', 'Saving...', 
-    'Ready for Analysis', 'processing', 'queued'
-  ];
-  const isPending = PENDING_STATUSES.some(status => status.toLowerCase() === error?.toLowerCase());
-  const isActualError = error && !isPending;
+  // Use a regex to catch all in-progress statuses, including new granular ones.
+  const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
+
+  const isCompleted = error?.toLowerCase() === 'completed';
+  const isPending = !!error && PENDING_STATUS_REGEX.test(error);
+  const isActualError = error && !isCompleted && !isPending;
 
   const nonCriticalAlerts = data?.alerts?.filter(a => !a.startsWith('CRITICAL:')) || [];
 

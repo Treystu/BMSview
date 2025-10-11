@@ -1,26 +1,7 @@
-const createLogger = (context) => (level, message, extra = {}) => {
-    try {
-        console.log(JSON.stringify({
-            level: level.toUpperCase(),
-            functionName: context?.functionName || 'get-ip',
-            awsRequestId: context?.awsRequestId,
-            message,
-            ...extra
-        }));
-    } catch (e) {
-        console.log(JSON.stringify({
-            level: 'ERROR',
-            functionName: context?.functionName || 'get-ip',
-            awsRequestId: context?.awsRequestId,
-            message: 'Failed to serialize log message.',
-            originalMessage: message,
-            serializationError: e.message,
-        }));
-    }
-};
+const { createLogger } = require("./utils/logger.js");
 
 exports.handler = async function(event, context) {
-  const log = createLogger(context);
+  const log = createLogger('get-ip', context);
   const ip = event.headers['x-nf-client-connection-ip'];
   log('info', 'Function invoked.', { clientIp: ip });
   

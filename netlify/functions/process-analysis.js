@@ -1,34 +1,13 @@
 const { GoogleGenAI, Type } = require("@google/genai");
 const { v4: uuidv4 } = require("uuid");
 const { getConfiguredStore } = require("./utils/blobs.js");
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const { createLogger } = require("./utils/logger.js");
 
 const JOBS_STORE_NAME = "bms-jobs";
 const HISTORY_STORE_NAME = "bms-history";
 const SYSTEMS_STORE_NAME = "bms-systems";
 const HISTORY_CACHE_KEY = "_all_history_cache";
-
-const createLogger = (context) => (level, message, extra = {}) => {
-    try {
-        console.log(JSON.stringify({
-            level: level.toUpperCase(),
-            functionName: context?.functionName || 'process-analysis',
-            awsRequestId: context?.awsRequestId,
-            message,
-            ...extra
-        }));
-    } catch (e) {
-        console.log(JSON.stringify({
-            level: 'ERROR',
-            functionName: context?.functionName || 'process-analysis',
-            awsRequestId: context?.awsRequestId,
-            message: 'Failed to serialize log message.',
-            originalMessage: message,
-            serializationError: e.message,
-        }));
-    }
-};
+const GEMINI_API_TIMEOUT_MS = 45000; // Increased from 28 seconds
 
 const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
     for (let i = 0; i <= maxRetries; i++) {
@@ -48,7 +27,7 @@ const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
 };
 
 const updateHistoryCache = async (store, log, newRecord) => {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 5; i++) { // retry loop for contention
         let cache, metadata;
         try {
             const result = await withRetry(() => store.getWithMetadata(HISTORY_CACHE_KEY, { type: 'json' }), log);
@@ -127,25 +106,96 @@ const getImageExtractionPrompt = () => `You are a meticulous data extraction AI.
     -   If a full date and time are visible (e.g., "2023-01-01 12:04:00"), extract as "YYYY-MM-DDTHH:MM:SS".
     -   If only time is visible (e.g., "12:04:00"), extract only the time string "12:04:00". Do NOT add a date.
     -   If no timestamp is visible, \`timestampFromImage\` MUST be \`null\`.
-5.  **Final Review**: Ensure your final output is a single, valid JSON object matching the schema. Do not add any text before or after the JSON.`;
+5.  **Final Review**: Your entire output must be ONLY the raw JSON object, without any surrounding text, explanations, or markdown formatting like \`\`\`json.`;
 
 
-const extractBmsData = async (image, mimeType, log) => {
+const cleanAndParseJson = (text, log) => {
+    if (!text) {
+        throw new Error("The AI model returned an empty response.");
+    }
+    
+    log('info', 'Raw AI response received.', { length: text.length, text: text.substring(0, 200) + '...' });
+    
+    // Find the start and end of the outermost JSON object
+    const jsonStart = text.indexOf('{');
+    const jsonEnd = text.lastIndexOf('}');
+    
+    if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) {
+        throw new Error(`AI response did not contain a valid JSON object. Response: ${text}`);
+    }
+    
+    const jsonString = text.substring(jsonStart, jsonEnd + 1);
+    
+    try {
+        return JSON.parse(jsonString);
+    } catch (e) {
+        log('error', 'Failed to parse cleaned JSON string.', { error: e.message, cleanedJsonString: jsonString });
+        throw new Error(`Failed to parse JSON from AI response. See logs for details.`);
+    }
+};
+
+const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsStore) => {
     const extractionPrompt = getImageExtractionPrompt();
     const responseSchema = getResponseSchema();
     const parts = [{ text: extractionPrompt }, { inlineData: { data: image, mimeType } }];
 
-    log('info', `Sending request to Gemini API.`, { stage: 'gemini_call_start' });
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: { parts },
-        config: { responseMimeType: "application/json", responseSchema },
-    });
-    log('info', `Received response from Gemini API.`, { stage: 'gemini_call_end' });
+    const maxRetries = 4;
+    let lastError = null;
 
-    const jsonText = response.text?.trim();
-    if (!jsonText) throw new Error(`The AI model returned an empty response.`);
-    return JSON.parse(jsonText);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            log('info', `Sending request to Gemini API.`, { stage: 'gemini_call_start', attempt, timeout: GEMINI_API_TIMEOUT_MS });
+            
+            const apiCall = ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: { parts },
+                config: { responseMimeType: "application/json", responseSchema },
+            });
+
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error(`Gemini API call timed out after ${GEMINI_API_TIMEOUT_MS}ms`)), GEMINI_API_TIMEOUT_MS)
+            );
+
+            const response = await Promise.race([apiCall, timeoutPromise]);
+            
+            log('info', `Received response from Gemini API.`, { stage: 'gemini_call_end', attempt });
+
+            const rawText = response.text;
+            return cleanAndParseJson(rawText, log);
+
+        } catch (error) {
+            lastError = error;
+            const isRateLimitError = error.message && error.message.includes('429');
+            const remainingTime = context.getRemainingTimeInMillis();
+
+            if (isRateLimitError && attempt < maxRetries) {
+                const retryAfterMatch = error.message.match(/Please retry in (\d+\.?\d*)/);
+                let delay = (retryAfterMatch && parseFloat(retryAfterMatch[1]) * 1000) || (Math.pow(2, attempt) * 1000 + Math.random() * 1000);
+                
+                const statusMessage = `API throttled, retrying in ${Math.round(delay/1000)}s...`;
+                try {
+                    const currentJob = await withRetry(() => jobsStore.get(jobId, { type: "json" }), log);
+                    if(currentJob) {
+                        await withRetry(() => jobsStore.setJSON(jobId, { ...currentJob, status: statusMessage }), log);
+                    }
+                } catch(e) {
+                    log('warn', 'Failed to update job status for rate limit.', {error: e.message});
+                }
+
+                const bufferTime = 5000; // 5 seconds buffer before timeout.
+                if (delay > remainingTime - bufferTime) {
+                    log('warn', `Retry delay (${delay.toFixed(0)}ms) is too long for remaining execution time (${remainingTime}ms). Job will fail to prevent timeout.`);
+                    throw new Error(`Rate limit backoff time (${(delay/1000).toFixed(1)}s) exceeds remaining function execution time. Aborting to prevent timeout.`);
+                }
+
+                log('warn', `Gemini API rate limit hit. Retrying in ${delay.toFixed(0)}ms...`, { attempt, maxRetries, error: error.message });
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                throw error;
+            }
+        }
+    }
+    throw new Error(`Failed to get a successful response from Gemini API after ${maxRetries} attempts. Last error: ${lastError.message}`);
 };
 
 const mapExtractedToAnalysisData = (extracted, log) => {
@@ -225,11 +275,15 @@ const parseTimestamp = (timestampFromImage, fileName, log) => {
 };
 
 exports.handler = async function(event, context) {
-    const log = createLogger(context);
+    const log = createLogger('process-analysis', context);
     log('info', 'Function invoked.', { stage: 'invocation' });
 
     let jobId;
+    let jobsStore; // Will be initialized inside the try block
+
     try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        
         const body = JSON.parse(event.body);
         jobId = body.jobId;
 
@@ -241,24 +295,36 @@ exports.handler = async function(event, context) {
         const logContext = { jobId };
         log('info', 'Background analysis job started.', logContext);
         
-        const jobsStore = getConfiguredStore(JOBS_STORE_NAME, log);
+        jobsStore = getConfiguredStore(JOBS_STORE_NAME, log);
         const historyStore = getConfiguredStore(HISTORY_STORE_NAME, log);
         const systemsStore = getConfiguredStore(SYSTEMS_STORE_NAME, log);
 
-        const job = await withRetry(() => jobsStore.get(jobId, { type: "json" }), log);
+        let job = await withRetry(() => jobsStore.get(jobId, { type: "json" }), log);
         if (!job) throw new Error(`Job with ID ${jobId} not found.`);
         log('info', 'Fetched job from blob store.', { ...logContext, fileName: job.fileName });
 
-        await withRetry(() => jobsStore.setJSON(jobId, { ...job, status: 'processing' }), log);
+        job.status = 'Processing...';
+        await withRetry(() => jobsStore.setJSON(jobId, job), log);
         log('info', 'Job status updated to processing.', logContext);
 
         const { image, mimeType, systems, fileName } = job;
-        const extractedData = await extractBmsData(image, mimeType, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
+        
+        job.status = 'Extracting data...';
+        await withRetry(() => jobsStore.setJSON(jobId, job), log);
+        
+        const extractedData = await extractBmsData(ai, image, mimeType, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }), context, jobId, jobsStore);
         log('info', 'AI data extraction complete.', logContext);
+
+        // After this, image is not needed. Make subsequent writes smaller.
+        delete job.image;
+        delete job.mimeType;
 
         const analysis = mapExtractedToAnalysisData(extractedData, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
         if (!analysis) throw new Error("Failed to process extracted data into a valid analysis object.");
         log('info', 'Successfully mapped extracted data.', { ...logContext, analysisKeys: Object.keys(analysis) });
+        
+        job.status = 'Matching system...';
+        await withRetry(() => jobsStore.setJSON(jobId, job), log);
         
         const allSystems = systems || await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' }), log).catch(() => []);
         const matchingSystem = analysis.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysis.dlNumber)) : null;
@@ -269,12 +335,17 @@ exports.handler = async function(event, context) {
 
         let weather = null;
         if (matchingSystem?.latitude && matchingSystem?.longitude) {
+            job.status = 'Fetching weather...';
+            await withRetry(() => jobsStore.setJSON(jobId, job), log);
             log('info', 'Fetching weather for matching system.', { ...logContext, systemId: matchingSystem.id });
             weather = await fetchWeatherData(matchingSystem.latitude, matchingSystem.longitude, timestamp, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
             log('info', 'Weather fetch attempt complete.', { ...logContext, hasWeather: !!weather });
         } else {
              log('info', 'Skipping weather fetch: system has no location data.', logContext);
         }
+
+        job.status = 'Saving result...';
+        await withRetry(() => jobsStore.setJSON(jobId, job), log);
 
         const record = {
             id: uuidv4(),
@@ -293,22 +364,45 @@ exports.handler = async function(event, context) {
         await updateHistoryCache(historyStore, log, record);
         log('info', 'History cache updated.', { ...logContext, recordId: record.id });
         
-        await withRetry(() => jobsStore.setJSON(jobId, { ...job, status: 'completed', recordId: record.id, image: undefined, mimeType: undefined, systems: undefined }), log);
+        job.status = 'completed';
+        job.recordId = record.id;
+        delete job.systems;
+        await withRetry(() => jobsStore.setJSON(jobId, job), log);
         log('info', 'Job completed successfully.', { ...logContext, recordId: record.id });
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ message: `Successfully processed job ${jobId}` }),
+        };
 
     } catch (error) {
         const logContext = { jobId };
         log('error', 'Background analysis job failed.', { ...logContext, errorMessage: error.message, stack: error.stack });
         
-        if (jobId) {
+        if (jobId && jobsStore) {
             try {
-                const jobsStore = getConfiguredStore(JOBS_STORE_NAME, log);
                 const job = await withRetry(() => jobsStore.get(jobId, { type: "json" }), log).catch(() => ({}));
-                await withRetry(() => jobsStore.setJSON(jobId, { ...job, status: 'failed', error: error.message, image: undefined, mimeType: undefined, systems: undefined }), log);
+                
+                let friendlyError = error.message;
+                if (error.message && error.message.includes('exceeds remaining function execution time')) {
+                    friendlyError = 'Analysis timed out due to high API load. Please try again later.';
+                } else if (error.message && error.message.includes('429')) {
+                    friendlyError = 'API rate limit reached. Please wait and try again.';
+                }
+
+                const { image, ...jobWithoutImage } = job;
+                await withRetry(() => jobsStore.setJSON(jobId, { ...jobWithoutImage, status: 'failed', error: friendlyError }), log);
                 log('info', 'Job status updated to failed in blob store.', logContext);
             } catch (updateError) {
                 log('error', 'CRITICAL: Could not update job status to failed after a processing error.', { ...logContext, updateError: updateError.message });
             }
+        } else {
+            log('error', 'Could not update job status because jobId or jobsStore was not available.', { hasJobId: !!jobId, hasStore: !!jobsStore });
         }
+
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: `Failed to process job ${jobId}: ${error.message}` }),
+        };
     }
 };

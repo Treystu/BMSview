@@ -3,27 +3,6 @@ const { getConfiguredStore } = require("./utils/blobs.js");
 const RATE_LIMIT_WINDOW_SECONDS = 60; // 1 minute
 const UNVERIFIED_IP_LIMIT = 100;
 
-const createLogger = (context) => (level, message, extra = {}) => {
-    try {
-        console.log(JSON.stringify({
-            level: level.toUpperCase(),
-            functionName: context?.functionName || 'security',
-            awsRequestId: context?.awsRequestId,
-            message,
-            ...extra
-        }));
-    } catch (e) {
-        console.log(JSON.stringify({
-            level: 'ERROR',
-            functionName: context?.functionName || 'security',
-            awsRequestId: context?.awsRequestId,
-            message: 'Failed to serialize log message.',
-            originalMessage: message,
-            serializationError: e.message,
-        }));
-    }
-};
-
 const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
     for (let i = 0; i <= maxRetries; i++) {
         try {

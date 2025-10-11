@@ -1,23 +1,4 @@
-const createLogger = (context) => (level, message, extra = {}) => {
-    try {
-        console.log(JSON.stringify({
-            level: level.toUpperCase(),
-            functionName: context?.functionName || 'weather',
-            awsRequestId: context?.awsRequestId,
-            message,
-            ...extra
-        }));
-    } catch (e) {
-        console.log(JSON.stringify({
-            level: 'ERROR',
-            functionName: context?.functionName || 'weather',
-            awsRequestId: context?.awsRequestId,
-            message: 'Failed to serialize log message.',
-            originalMessage: message,
-            serializationError: e.message,
-        }));
-    }
-};
+const { createLogger } = require("./utils/logger.js");
 
 const fetchWithRetry = async (url, log, retries = 3, initialDelay = 500) => {
     for (let i = 0; i < retries; i++) {
@@ -36,7 +17,7 @@ const fetchWithRetry = async (url, log, retries = 3, initialDelay = 500) => {
 };
 
 exports.handler = async function(event, context) {
-  const log = createLogger(context);
+  const log = createLogger('weather', context);
   const clientIp = event.headers['x-nf-client-connection-ip'];
   
   log('info', 'Function invoked.', { httpMethod: event.httpMethod, clientIp });

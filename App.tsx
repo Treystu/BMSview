@@ -138,7 +138,7 @@ function App() {
   };
 
   const handleAnalyze = async (files: File[]) => {
-    log('info', `Starting analysis for ${files.length} files.`);
+    log('info', 'Main analyze trigger', { fileCount: files.length });
     const existingFilenameMap = new Map(analysisHistory.filter(r => r.fileName).map(r => [getBasename(r.fileName!), r]));
     const initialResults: DisplayableAnalysisResult[] = [];
     const batchBasenames = new Set<string>();
@@ -168,6 +168,7 @@ function App() {
     }
 
     try {
+        log('info', 'App handleAnalyze trigger', { fileCount: filesToAnalyze.length, state: 'main', timestamp: new Date().toISOString() });
         const jobCreationResults = await analyzeBmsScreenshots(filesToAnalyze, registeredSystems);
         dispatch({ type: 'START_ANALYSIS_JOBS', payload: jobCreationResults });
     } catch (err) {

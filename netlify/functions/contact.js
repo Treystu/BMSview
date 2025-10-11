@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { createLogger } = require("./utils/logger.js");
 
 // NOTE: You must configure these environment variables in your Netlify project settings.
 // EMAIL_HOST: 'smtp.example.com'
@@ -7,29 +8,8 @@ const nodemailer = require('nodemailer');
 // EMAIL_PASS: 'your-email-password'
 // CONTACT_EMAIL_RECIPIENT: 'recipient-email@example.com'
 
-const createLogger = (context) => (level, message, extra = {}) => {
-    try {
-        console.log(JSON.stringify({
-            level: level.toUpperCase(),
-            functionName: context?.functionName || 'contact',
-            awsRequestId: context?.awsRequestId,
-            message,
-            ...extra
-        }));
-    } catch (e) {
-        console.log(JSON.stringify({
-            level: 'ERROR',
-            functionName: context?.functionName || 'contact',
-            awsRequestId: context?.awsRequestId,
-            message: 'Failed to serialize log message.',
-            originalMessage: message,
-            serializationError: e.message,
-        }));
-    }
-};
-
 exports.handler = async function(event, context) {
-  const log = createLogger(context);
+  const log = createLogger('contact', context);
   const clientIp = event.headers['x-nf-client-connection-ip'];
   
   log('info', 'Function invoked.', { httpMethod: event.httpMethod, clientIp });

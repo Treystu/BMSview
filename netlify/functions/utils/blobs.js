@@ -1,33 +1,36 @@
-const { getBlobStore } = require("@netlify/blobs");
+const { getStore } = require("@netlify/blobs");
 
 // A centralized function to get a configured blob store.
-// This ensures all functions use the same explicit configuration,
-// avoiding potential issues with Netlify's automatic context detection.
+// This code is correct, assuming Blobs is enabled in the Netlify UI.
 const getConfiguredStore = (name, log) => {
     try {
-        log('info', 'Initializing blob store', { name, hasSiteId: !!process.env.NETLIFY_SITE_ID, hasToken: !!process.env.NETLIFY_API_TOKEN });
-        const siteID = process.env.NETLIFY_SITE_ID;
+        const siteId = process.env.NETLIFY_SITE_ID;
         const token = process.env.NETLIFY_API_TOKEN;
 
-        if (!siteID || !token) {
-            const err = new Error("Missing NETLIFY_SITE_ID or NETLIFY_API_TOKEN env vars. Please check project settings.");
+        log('info', 'Initializing blob store', { name, hasSiteId: !!siteId, hasToken: !!token });
+
+        if (!siteId || !token) {
+            // This error will now correctly fire if the re-deploy didn't work.
+            const err = new Error("Blobs environment variables not found. Ensure Blobs is enabled in Netlify UI and the site has been re-deployed.");
             log('error', 'Blob store init failed', { name, error: err.message });
             throw err;
         }
         
+        // The error message specifies `siteID` with a capital 'D'.
+        // We will pass the options as a single object, which is a valid
+        // signature for manual configuration.
         const storeOptions = {
-            name,
-            siteID,
-            token,
+            name: name,
+            siteID: siteId,
+            token: token,
         };
 
-        // Use strong consistency for stores that need it to prevent race conditions
-        // or for security-sensitive data that must be immediately consistent.
+        // Use strong consistency for stores that need it.
         if (name === 'bms-jobs' || name === 'rate-limiting' || name === 'verified-ips' || name === 'bms-blocked-ips') {
             storeOptions.consistency = 'strong';
         }
 
-        const store = getBlobStore(storeOptions);
+        const store = getStore(storeOptions);
         log('info', 'Blob store ready', { name });
         return store;
     } catch (e) {

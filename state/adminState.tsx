@@ -110,7 +110,9 @@ export type AdminAction =
   | { type: 'SET_VISIBLE_HISTORY_COLUMNS'; payload: HistoryColumnKey[] }
   | { type: 'SET_HISTORY_SORT'; payload: { key: HistorySortKey } }
   | { type: 'SET_SYSTEMS_PAGE'; payload: number }
-  | { type: 'SET_HISTORY_PAGE'; payload: number };
+  | { type: 'SET_HISTORY_PAGE'; payload: number }
+  | { type: 'UPDATE_BULK_JOB_STATUS'; payload: { jobId: string; status: string } }
+  | { type: 'UPDATE_BULK_JOB_COMPLETED'; payload: { jobId: string; record: AnalysisRecord } };
 
 // 3. Reducer
 export const adminReducer = (state: AdminState, action: AdminAction): AdminState => {
@@ -154,6 +156,21 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
             bulkUploadResults: state.bulkUploadResults.map(r => 
                 r.fileName === action.payload.fileName ? { ...r, ...action.payload } : r
             ) 
+        };
+    case 'UPDATE_BULK_JOB_STATUS':
+        return {
+            ...state,
+            bulkUploadResults: state.bulkUploadResults.map(r => 
+                r.jobId === action.payload.jobId ? { ...r, error: action.payload.status } : r
+            ),
+        };
+    case 'UPDATE_BULK_JOB_COMPLETED':
+        const { jobId, record } = action.payload;
+        return {
+            ...state,
+            bulkUploadResults: state.bulkUploadResults.map(r =>
+                r.jobId === jobId ? { ...r, data: record.analysis, error: 'completed', recordId: record.id, weather: record.weather } : r
+            ),
         };
     case 'SET_THROTTLE_MESSAGE':
         return { ...state, throttleMessage: action.payload };

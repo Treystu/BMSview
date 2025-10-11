@@ -15,6 +15,13 @@ import HistoryTable from './admin/HistoryTable';
 import DataManagement from './admin/DataManagement';
 import { ALL_HISTORY_COLUMNS, getNestedValue } from './admin/columnDefinitions';
 
+type JobCreationResponse = {
+    fileName: string;
+    jobId: string;
+    status: string;
+    error?: string;
+};
+
 interface NetlifyUser {
   email: string;
   user_metadata: {
@@ -106,17 +113,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     log('info', 'Bulk job completed, fetching record.', { jobId: status.jobId, recordId: status.recordId });
                     const record = await getAnalysisRecordById(status.recordId);
                     if (record) {
-                        dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: status.fileName, data: record.analysis, error: 'completed', recordId: record.id } });
+                        dispatch({ type: 'UPDATE_BULK_JOB_COMPLETED', payload: { jobId: status.jobId, record } });
                         needsHistoryRefresh = true;
                     } else {
                         log('warn', 'Bulk job completed but record could not be fetched.', { jobId: status.jobId, recordId: status.recordId });
+                        dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.jobId, status: 'Completed (record fetch failed)' } });
                     }
                 } else if (status.status === 'failed' || status.status === 'not_found') {
                     log('warn', `Bulk job ${status.status}.`, { jobId: status.jobId, error: status.error });
-                    dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: status.fileName, error: status.error || 'Failed' } });
+                    dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.jobId, status: status.error || 'Failed' } });
                 } else {
                     log('info', 'Bulk job status updated.', { jobId: status.jobId, status: status.status });
-                    dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: status.fileName, error: status.status } });
+                    dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.jobId, status: status.status } });
                 }
             }
             if (needsHistoryRefresh) {
@@ -193,7 +201,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
 
     const handleBulkAnalyze = async (files: File[]) => {
-        log('info', 'Starting bulk analysis process.', { fileCount: files.length });
+        log('info', 'Admin bulk trigger started.', { initialFileCount: files.length });
         setShowRateLimitWarning(false);
         dispatch({ type: 'ACTION_START', payload: 'isBulkLoading' });
         dispatch({ type: 'SET_ERROR', payload: null });
@@ -222,28 +230,51 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             }
         }
         dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults });
-        log('info', 'Bulk analysis pre-processing complete.', { toAnalyze: filesToAnalyze.length, duplicates: initialResults.length - filesToAnalyze.length });
+        log('info', 'Admin bulk trigger: pre-processing complete.', { toAnalyze: filesToAnalyze.length, duplicates: initialResults.length - filesToAnalyze.length });
 
         if (filesToAnalyze.length === 0) {
             dispatch({ type: 'ACTION_END', payload: 'isBulkLoading' });
             return;
         }
         
+        log('info', 'AdminDashboard bulk trigger', { toAnalyzeCount: filesToAnalyze.length, state: 'admin', timestamp: new Date().toISOString() });
         try {
-            const jobCreationResults = await analyzeBmsScreenshots(filesToAnalyze, registeredSystemsRef.current);
-            jobCreationResults.forEach(job => {
-                 if (job.error) {
-                    log('warn', 'Job creation failed for a file.', { fileName: job.fileName, error: job.error });
-                    dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, error: job.error } });
-                    if (job.error.includes('429') || job.error.toLowerCase().includes('rate limit')) {
-                        log('warn', 'Rate limit warning triggered.');
-                        setShowRateLimitWarning(true);
-                    }
-                } else {
-                    dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, jobId: job.jobId, error: job.status } });
+            if (filesToAnalyze.length > 10) {
+                const allJobCreationResults: JobCreationResponse[] = [];
+                const batchSize = 10;
+                for (let i = 0; i < filesToAnalyze.length; i += batchSize) {
+                    const batch = filesToAnalyze.slice(i, i + batchSize);
+                    log('info', 'Admin batch', { batchNum: i/batchSize + 1, batchSize: batch.length }); 
+                    const batchResults = await analyzeBmsScreenshots(batch, registeredSystemsRef.current);
+                    allJobCreationResults.push(...batchResults);
                 }
-            });
-            
+                allJobCreationResults.forEach(job => {
+                    if (job.error) {
+                       log('warn', 'Job creation failed for a file.', { fileName: job.fileName, error: job.error });
+                       dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, error: job.error } });
+                       if (job.error.includes('429') || job.error.toLowerCase().includes('rate limit')) {
+                           log('warn', 'Rate limit warning triggered.');
+                           setShowRateLimitWarning(true);
+                       }
+                   } else {
+                       dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, jobId: job.jobId, error: job.status } });
+                   }
+                });
+            } else {
+                const jobCreationResults = await analyzeBmsScreenshots(filesToAnalyze, registeredSystemsRef.current);
+                jobCreationResults.forEach(job => {
+                     if (job.error) {
+                        log('warn', 'Job creation failed for a file.', { fileName: job.fileName, error: job.error });
+                        dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, error: job.error } });
+                        if (job.error.includes('429') || job.error.toLowerCase().includes('rate limit')) {
+                            log('warn', 'Rate limit warning triggered.');
+                            setShowRateLimitWarning(true);
+                        }
+                    } else {
+                        dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, jobId: job.jobId, error: job.status } });
+                    }
+                });
+            }
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'A critical error occurred.';
             log('error', 'Critical error during bulk analyze job creation.', { error: errorMessage });
@@ -641,7 +672,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             dispatch={dispatch}
                             onMergeSystems={handleMergeSystems}
                             onScanForDuplicates={handleScanForDuplicates}
-                            // Fix: Pass the correct handler function `handleConfirmDeletion`.
                             onConfirmDeletion={handleConfirmDeletion}
                             onDeleteUnlinked={handleDeleteUnlinked}
                             onClearAllData={handleClearAllData}

@@ -1,31 +1,10 @@
 const { v4: uuidv4 } = require("uuid");
 const { getConfiguredStore } = require("./utils/blobs.js");
+const { createLogger } = require("./utils/logger.js");
 
 const STORE_NAME = "bms-history";
 const SYSTEMS_STORE_NAME = "bms-systems";
 const CACHE_KEY = "_all_history_cache";
-
-
-const createLogger = (context) => (level, message, extra = {}) => {
-    try {
-        console.log(JSON.stringify({
-            level: level.toUpperCase(),
-            functionName: context?.functionName || 'history',
-            awsRequestId: context?.awsRequestId,
-            message,
-            ...extra
-        }));
-    } catch (e) {
-        console.log(JSON.stringify({
-            level: 'ERROR',
-            functionName: context?.functionName || 'history',
-            awsRequestId: context?.awsRequestId,
-            message: 'Failed to serialize log message.',
-            originalMessage: message,
-            serializationError: e.message,
-        }));
-    }
-};
 
 const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
     for (let i = 0; i <= maxRetries; i++) {
@@ -144,7 +123,7 @@ const fetchHistoricalWeather = async (lat, lon, timestamp, log) => {
 };
 
 exports.handler = async function(event, context) {
-    const log = createLogger(context);
+    const log = createLogger('history', context);
     const store = getConfiguredStore(STORE_NAME, log);
 
     try {

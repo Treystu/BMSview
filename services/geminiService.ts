@@ -42,7 +42,15 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
         if (files.length === 0) return [];
 
         const imagePayloads = await Promise.all(files.map(fileWithMetadataToBase64));
-        log('info', 'Submitting analysis job request.', { fileCount: imagePayloads.length });
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            log('warn', 'Analysis request timed out after 30 seconds.');
+            controller.abort();
+        }, 30000); // 30-second timeout
+
+        log('info', 'Analyze call start: submitting analysis job request to backend.', { fileCount: imagePayloads.length });
+        log('info', 'GeminiService analyze start', { fileCount: files.length, isAdminBulk: files.length > 1, timestamp: new Date().toISOString() });
 
         const response = await fetch('/.netlify/functions/analyze', {
             method: 'POST',
@@ -51,9 +59,12 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
                 images: imagePayloads,
                 systems: registeredSystems,
             }),
+            signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
         
-        log('info', 'Analyze API response', { status: response.status });
+        log('info', 'Analyze API response received.', { status: response.status });
         if (!response.ok) {
             let errorBody;
             try { 
@@ -67,11 +78,18 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
         
         const result = await response.json();
         
-        log('info', 'Analysis job submission successful.', { jobsCreated: result.length });
+        log('info', 'Analysis job submission successful.', { resultsCount: result.length, jobsCreated: result.length });
+        log('info', 'GeminiService analyze success', { resultsLength: result.length, timestamp: new Date().toISOString() });
         return result;
 
     } catch (error) {
-        log('error', 'Error in analyzeBmsScreenshots.', { error: error instanceof Error ? error.message : 'An unknown client-side error occurred.' });
-        throw error; // Re-throw the caught error
+        const errorMessage = error instanceof Error ? error.message : 'An unknown client-side error occurred.';
+        if (error instanceof Error && error.name === 'AbortError') {
+             log('error', 'Error in analyzeBmsScreenshots: request was aborted due to timeout.', { error: errorMessage });
+        } else {
+             log('error', 'Error in analyzeBmsScreenshots.', { error: errorMessage });
+        }
+        log('error', 'GeminiService final catch', { fullError: error.message, timestamp: new Date().toISOString() });
+        throw error;
     }
 };

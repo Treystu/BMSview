@@ -1,25 +1,5 @@
 const { getConfiguredStore } = require("./utils/blobs.js");
-
-const createLogger = (context) => (level, message, extra = {}) => {
-    try {
-        console.log(JSON.stringify({
-            level: level.toUpperCase(),
-            functionName: context?.functionName || 'ip-admin',
-            awsRequestId: context?.awsRequestId,
-            message,
-            ...extra
-        }));
-    } catch (e) {
-        console.log(JSON.stringify({
-            level: 'ERROR',
-            functionName: context?.functionName || 'ip-admin',
-            awsRequestId: context?.awsRequestId,
-            message: 'Failed to serialize log message.',
-            originalMessage: message,
-            serializationError: e.message,
-        }));
-    }
-};
+const { createLogger } = require("./utils/logger.js");
 
 const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
     for (let i = 0; i <= maxRetries; i++) {
@@ -79,7 +59,7 @@ const respond = (statusCode, body) => ({
 });
 
 exports.handler = async function(event, context) {
-    const log = createLogger(context);
+    const log = createLogger('ip-admin', context);
     try {
         if (event.httpMethod === 'GET') {
             log('info', 'Fetching all IP admin data.');
