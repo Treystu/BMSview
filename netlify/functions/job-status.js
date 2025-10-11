@@ -19,6 +19,7 @@ exports.handler = async (event, context) => {
     try {
         const store = getConfiguredStore(STORE_NAME, log);
         log.info('Fetching status for batch', { batchId });
+        
         const batchData = await store.get(batchId, { type: 'json' });
 
         if (!batchData) {
