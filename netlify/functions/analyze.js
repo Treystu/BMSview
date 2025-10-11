@@ -63,7 +63,7 @@ const extractText = (fullText, startMarker, endMarker) => {
 const parseOcrData = (ocrText, systems) => {
     let jsonData = {};
     try {
-        const jsonString = extractText(ocrText, '```json', '```');
+        const jsonString = extractText(ocrText, '```json', '```') || ocrText;
         jsonData = JSON.parse(jsonString);
     } catch (e) {
         throw new Error("Failed to parse JSON from AI response.");
@@ -77,7 +77,7 @@ const parseOcrData = (ocrText, systems) => {
     };
 };
 
-// NEW utility function to update the main batch job with progress from a worker
+// Utility function to update the main batch job with progress from a worker
 const updateBatchJob = async (store, batchId, job, log) => {
     if (!batchId) return;
 
@@ -141,7 +141,6 @@ exports.handler = async (event, context) => {
 
             const { imageData, fileName, systems } = jobData;
             
-            // This is your existing OCR/AI logic
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
@@ -162,7 +161,8 @@ exports.handler = async (event, context) => {
             });
 
             if (!response.ok) {
-                throw new Error(`OpenAI API request failed: ${response.status} ${response.statusText}`);
+                const errorBody = await response.text();
+                throw new Error(`OpenAI API request failed: ${response.status} ${response.statusText} - ${errorBody}`);
             }
 
             const data = await response.json();
@@ -252,7 +252,6 @@ exports.handler = async (event, context) => {
                      await jobsStore.setJSON(job.jobId, failedJobData);
                      await updateBatchJob(jobsStore, batchId, failedJobData, log);
                 }
-                // Delay to help prevent overwhelming the API on large batches
                 await new Promise(resolve => setTimeout(resolve, 300));
             }
         })();
