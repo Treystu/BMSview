@@ -272,6 +272,15 @@ export const autoAssociateRecords = async (): Promise<{ associatedCount: number 
     });
 };
 
+export const fixPowerSigns = async (): Promise<{ success: boolean; updatedCount: number }> => {
+    return apiFetch<{ success: boolean; updatedCount: number }>('history', {
+        method: 'POST',
+        body: JSON.stringify({
+            action: 'fix-power-signs',
+        }),
+    });
+};
+
 export const cleanupCompletedJobs = async (cursor?: string): Promise<{ success: boolean; cleanedCount: number, nextCursor: string | null }> => {
     return apiFetch<{ success: boolean; cleanedCount: number, nextCursor: string | null }>('jobs-cleanup', {
         method: 'POST',

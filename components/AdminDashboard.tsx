@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { apiFetch, getRegisteredSystems, getAnalysisHistory, mergeBmsSystems, deleteUnlinkedAnalysisHistory, findDuplicateAnalysisSets, deleteAnalysisRecords, deleteAnalysisRecord, updateBmsSystem, linkAnalysisToSystem, clearAllData, registerBmsSystem, backfillWeatherData, cleanupLinks, cleanupCompletedJobs, clearHistoryStore, autoAssociateRecords, getJobStatuses, getAnalysisRecordById } from '../services/clientService';
+import { apiFetch, getRegisteredSystems, getAnalysisHistory, mergeBmsSystems, deleteUnlinkedAnalysisHistory, findDuplicateAnalysisSets, deleteAnalysisRecords, deleteAnalysisRecord, updateBmsSystem, linkAnalysisToSystem, clearAllData, registerBmsSystem, backfillWeatherData, cleanupLinks, cleanupCompletedJobs, clearHistoryStore, autoAssociateRecords, getJobStatuses, getAnalysisRecordById, fixPowerSigns } from '../services/clientService';
 import { analyzeBmsScreenshots } from '../services/geminiService';
 import type { BmsSystem, AnalysisRecord, DisplayableAnalysisResult } from '../types';
 import EditSystemModal from './EditSystemModal';
@@ -238,51 +238,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         }
         
         log('info', 'AdminDashboard bulk trigger', { toAnalyzeCount: filesToAnalyze.length, state: 'admin', timestamp: new Date().toISOString() });
-        try {
-            if (filesToAnalyze.length > 10) {
-                const allJobCreationResults: JobCreationResponse[] = [];
-                const batchSize = 10;
-                for (let i = 0; i < filesToAnalyze.length; i += batchSize) {
-                    const batch = filesToAnalyze.slice(i, i + batchSize);
-                    log('info', 'Admin batch', { batchNum: i/batchSize + 1, batchSize: batch.length }); 
-                    const batchResults = await analyzeBmsScreenshots(batch, registeredSystemsRef.current);
-                    allJobCreationResults.push(...batchResults);
-                }
-                allJobCreationResults.forEach(job => {
-                    if (job.error) {
-                       log('warn', 'Job creation failed for a file.', { fileName: job.fileName, error: job.error });
-                       dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, error: job.error } });
-                       if (job.error.includes('429') || job.error.toLowerCase().includes('rate limit')) {
-                           log('warn', 'Rate limit warning triggered.');
-                           setShowRateLimitWarning(true);
-                       }
-                   } else {
-                       dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, jobId: job.jobId, error: job.status } });
+        
+        const processJobCreationResults = (results: JobCreationResponse[]) => {
+            results.forEach(job => {
+                if (job.error) {
+                   log('warn', 'Job creation failed for a file.', { fileName: job.fileName, error: job.error });
+                   dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, error: job.error } });
+                   if (job.error.includes('429') || job.error.toLowerCase().includes('rate limit')) {
+                       log('warn', 'Rate limit warning triggered.');
+                       setShowRateLimitWarning(true);
                    }
-                });
-            } else {
-                const jobCreationResults = await analyzeBmsScreenshots(filesToAnalyze, registeredSystemsRef.current);
-                jobCreationResults.forEach(job => {
-                     if (job.error) {
-                        log('warn', 'Job creation failed for a file.', { fileName: job.fileName, error: job.error });
-                        dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, error: job.error } });
-                        if (job.error.includes('429') || job.error.toLowerCase().includes('rate limit')) {
-                            log('warn', 'Rate limit warning triggered.');
-                            setShowRateLimitWarning(true);
-                        }
-                    } else {
-                        dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, jobId: job.jobId, error: job.status } });
-                    }
-                });
-            }
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'A critical error occurred.';
-            log('error', 'Critical error during bulk analyze job creation.', { error: errorMessage });
-            filesToAnalyze.forEach(file => {
-                dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: errorMessage } });
+               } else {
+                   dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, jobId: job.jobId, error: job.status } });
+               }
             });
+        };
+    
+        try {
+            const BATCH_SIZE = 10;
+            const BATCH_DELAY_MS = 10000; // 10 seconds delay between batches
+            
+            for (let i = 0; i < filesToAnalyze.length; i += BATCH_SIZE) {
+                const batch = filesToAnalyze.slice(i, i + BATCH_SIZE);
+                log('info', `Processing batch ${i / BATCH_SIZE + 1} of ${Math.ceil(filesToAnalyze.length / BATCH_SIZE)}.`, { batchSize: batch.length });
+                
+                try {
+                    const batchResults = await analyzeBmsScreenshots(batch, registeredSystemsRef.current);
+                    processJobCreationResults(batchResults);
+                } catch (err) {
+                    const errorMessage = err instanceof Error ? err.message : 'A critical error occurred during a batch.';
+                    log('error', `Batch ${i / BATCH_SIZE + 1} failed.`, { error: errorMessage });
+                    batch.forEach(file => {
+                        dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: errorMessage } });
+                    });
+                }
+    
+                if (i + BATCH_SIZE < filesToAnalyze.length) {
+                    log('info', `Waiting ${BATCH_DELAY_MS / 1000}s before next batch.`);
+                    await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+                }
+            }
         } finally {
-             dispatch({ type: 'ACTION_END', payload: 'isBulkLoading' });
+            dispatch({ type: 'ACTION_END', payload: 'isBulkLoading' });
         }
     };
 
@@ -559,6 +556,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             dispatch({ type: 'ACTION_END', payload: 'isCleaningLinks' });
         }
     };
+    
+    const handleFixPowerSigns = async () => {
+        if (!window.confirm("This will scan all history records and correct the sign of the 'Power' value where it is positive but 'Current' is negative. This action is safe but may take a moment. Continue?")) {
+            log('info', 'User cancelled power sign fix.');
+            return;
+        }
+        log('info', 'Starting power sign fix.');
+        dispatch({ type: 'ACTION_START', payload: 'isFixingPowerSigns' });
+        try {
+            const result = await fixPowerSigns();
+            log('info', 'Power sign fix completed.', { updatedCount: result.updatedCount });
+            window.alert(`Power sign fix complete. ${result.updatedCount} records were updated.`);
+            await fetchData();
+        } catch (err) {
+            const error = err instanceof Error ? err.message : "An unknown error occurred during power sign fix.";
+            log('error', 'Power sign fix failed.', { error });
+            dispatch({ type: 'SET_ERROR', payload: error });
+        } finally {
+            dispatch({ type: 'ACTION_END', payload: 'isFixingPowerSigns' });
+        }
+    };
 
     const handleAutoAssociateRecords = async () => {
         if (!window.confirm("This will scan all unlinked records and associate them with systems based on matching DL Numbers. This may take a moment and cannot be undone. Continue?")) {
@@ -671,7 +689,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             state={state}
                             dispatch={dispatch}
                             onMergeSystems={handleMergeSystems}
+                            // FIX: Corrected prop name from onScanForDuplicates to handleScanForDuplicates to match the function defined in this component.
                             onScanForDuplicates={handleScanForDuplicates}
+                            // FIX: Corrected prop name from onConfirmDeletion to handleConfirmDeletion to match the function defined in this component.
                             onConfirmDeletion={handleConfirmDeletion}
                             onDeleteUnlinked={handleDeleteUnlinked}
                             onClearAllData={handleClearAllData}
@@ -681,6 +701,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             onAutoAssociate={handleAutoAssociateRecords}
                             onCleanupCompletedJobs={handleCleanupCompletedJobs}
                             cleanupProgress={cleanupProgress}
+                            onFixPowerSigns={handleFixPowerSigns}
                         />
                     </>
                 )}

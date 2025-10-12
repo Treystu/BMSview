@@ -150,6 +150,37 @@ exports.handler = async function(event, context) {
             const body = JSON.parse(event.body);
             const { action } = body;
 
+            if (action === 'fix-power-signs') {
+                log('info', 'Starting retroactive power sign fix for history records.');
+                const allHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' }), log).catch(() => rebuildHistoryCache(store, log));
+                
+                let updatedCount = 0;
+                const updatedRecordMap = new Map();
+                for (const record of allHistory) {
+                    if (record?.analysis?.current != null && record.analysis.power != null && record.analysis.current < 0 && record.analysis.power > 0) {
+                        const updatedRecord = { 
+                            ...record, 
+                            analysis: { 
+                                ...record.analysis, 
+                                power: -Math.abs(record.analysis.power)
+                            } 
+                        };
+                        await withRetry(() => store.setJSON(record.id, updatedRecord), log);
+                        updatedRecordMap.set(record.id, updatedRecord);
+                        updatedCount++;
+                    }
+                }
+                
+                if (updatedCount > 0) {
+                    log('info', `Power sign fix complete. Updated ${updatedCount} records.`);
+                    await updateCache(store, log, cache => cache.map(r => updatedRecordMap.get(r.id) || r));
+                } else {
+                    log('info', 'Power sign fix complete. No records needed updating.');
+                }
+                
+                return respond(200, { success: true, updatedCount });
+            }
+
             if (action === 'deleteBatch') {
                 const { recordIds } = body;
                 log('info', 'Deleting batch of history records.', { count: recordIds.length, recordIds });

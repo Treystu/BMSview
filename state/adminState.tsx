@@ -36,6 +36,7 @@ export interface AdminState {
     isCleaningJobs: boolean;
     isAutoAssociating: boolean;
     isClearingHistory: boolean;
+    isFixingPowerSigns: boolean;
   };
   isConfirmingClearAll: boolean;
   clearAllConfirmationText: string;
@@ -76,6 +77,7 @@ export const initialState: AdminState = {
     isCleaningJobs: false,
     isAutoAssociating: false,
     isClearingHistory: false,
+    isFixingPowerSigns: false,
   },
   isConfirmingClearAll: false,
   clearAllConfirmationText: '',

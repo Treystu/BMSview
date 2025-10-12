@@ -16,12 +16,10 @@ const getConfiguredStore = (name, log) => {
             throw err;
         }
         
-        // The error message specifies `siteID` with a capital 'D'.
-        // We will pass the options as a single object, which is a valid
-        // signature for manual configuration.
+        // The Netlify Blobs API requires the site ID property to be `siteId` (with a lowercase 'd').
         const storeOptions = {
             name: name,
-            siteID: siteId,
+            siteId: siteId,
             token: token,
         };
 

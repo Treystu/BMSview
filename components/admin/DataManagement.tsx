@@ -16,6 +16,7 @@ interface DataManagementProps {
     onAutoAssociate: () => void;
     onCleanupCompletedJobs: () => void;
     cleanupProgress: string | null;
+    onFixPowerSigns: () => void;
 }
 
 const DataManagement: React.FC<DataManagementProps> = ({
@@ -31,7 +32,8 @@ const DataManagement: React.FC<DataManagementProps> = ({
     onCleanupLinks,
     onAutoAssociate,
     onCleanupCompletedJobs,
-    cleanupProgress
+    cleanupProgress,
+    onFixPowerSigns
 }) => {
     const { 
         systems, error, selectedSystemIds, primarySystemId, 
@@ -133,6 +135,13 @@ const DataManagement: React.FC<DataManagementProps> = ({
                                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-blue-900 disabled:cursor-not-allowed transition-colors"
                             >
                                 {actionStatus.isAutoAssociating ? 'Associating...' : 'Auto-associate Unlinked DLs'}
+                            </button>
+                             <button 
+                                onClick={onFixPowerSigns} 
+                                disabled={actionStatus.isFixingPowerSigns} 
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-blue-900 disabled:cursor-not-allowed transition-colors"
+                            >
+                                {actionStatus.isFixingPowerSigns ? 'Fixing...' : 'Fix Power Signs'}
                             </button>
                             <button 
                                 onClick={onCleanupCompletedJobs} 
