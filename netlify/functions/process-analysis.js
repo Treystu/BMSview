@@ -67,9 +67,10 @@ const updateHistoryCache = async (store, log, newRecord) => {
 
         try {
             await withRetry(() => store.setJSON(HISTORY_CACHE_KEY, updatedCache, { etag: metadata?.etag }), log);
+            log('info', `History cache updated.`, { recordId: newRecord.id });
             return;
         } catch (e) {
-            if (e.status === 412) {
+            if (e.status === 412) { // Etag mismatch
                 const delay = 50 * Math.pow(2, i);
                 log('warn', `History cache update conflict, retrying in ${delay}ms...`, { attempt: i + 1 });
                 await new Promise(res => setTimeout(res, delay));
@@ -323,22 +324,22 @@ exports.handler = async function(event, context) {
         if (!job) throw new Error(`Job with ID ${jobId} not found.`);
         log('info', 'Fetched job from blob store.', { ...logContext, fileName: job.fileName });
 
-        await updateJobStatus(jobId, 'Processing...', log, jobsStore);
+        await updateJobStatus(jobId, 'Processing', log, jobsStore);
 
         const { image, mimeType, systems, fileName } = job;
         
-        await updateJobStatus(jobId, 'Extracting data...', log, jobsStore);
+        await updateJobStatus(jobId, 'Extracting data', log, jobsStore);
         
         const extractedData = await extractBmsData(ai, image, mimeType, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }), context, jobId, jobsStore);
         log('info', 'AI data extraction complete.', logContext);
 
-        await updateJobStatus(jobId, 'Mapping data...', log, jobsStore);
+        await updateJobStatus(jobId, 'Mapping data', log, jobsStore);
 
         const analysis = mapExtractedToAnalysisData(extractedData, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
         if (!analysis) throw new Error("Failed to process extracted data into a valid analysis object.");
         log('info', 'Successfully mapped extracted data.', { ...logContext, analysisKeys: Object.keys(analysis) });
         
-        await updateJobStatus(jobId, 'Matching system...', log, jobsStore);
+        await updateJobStatus(jobId, 'Matching system', log, jobsStore);
         
         const allSystems = systems || await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' }), log).catch(() => []);
         const matchingSystem = analysis.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysis.dlNumber)) : null;
@@ -349,7 +350,7 @@ exports.handler = async function(event, context) {
 
         let weather = null;
         if (matchingSystem?.latitude && matchingSystem?.longitude) {
-            await updateJobStatus(jobId, 'Fetching weather...', log, jobsStore);
+            await updateJobStatus(jobId, 'Fetching weather', log, jobsStore);
             log('info', 'Fetching weather for matching system.', { ...logContext, systemId: matchingSystem.id });
             weather = await fetchWeatherData(matchingSystem.latitude, matchingSystem.longitude, timestamp, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
             log('info', 'Weather fetch attempt complete.', { ...logContext, hasWeather: !!weather });
@@ -357,7 +358,7 @@ exports.handler = async function(event, context) {
              log('info', 'Skipping weather fetch: system has no location data.', logContext);
         }
 
-        await updateJobStatus(jobId, 'Saving result...', log, jobsStore);
+        await updateJobStatus(jobId, 'Saving result', log, jobsStore);
 
         const record = {
             id: uuidv4(),
@@ -374,7 +375,6 @@ exports.handler = async function(event, context) {
         log('info', 'Successfully saved analysis record.', { ...logContext, recordId: record.id });
         
         await updateHistoryCache(historyStore, log, record);
-        log('info', 'History cache updated.', { ...logContext, recordId: record.id });
         
         await updateJobStatus(jobId, 'completed', log, jobsStore, { recordId: record.id });
         log('info', 'Job completed successfully.', { ...logContext, recordId: record.id });

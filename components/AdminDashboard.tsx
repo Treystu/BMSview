@@ -689,10 +689,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             state={state}
                             dispatch={dispatch}
                             onMergeSystems={handleMergeSystems}
-                            // FIX: Corrected prop name from onScanForDuplicates to handleScanForDuplicates to match the function defined in this component.
+                            // FIX: Pass correct handler function for scanning duplicates
                             onScanForDuplicates={handleScanForDuplicates}
-                            // FIX: Corrected prop name from onConfirmDeletion to handleConfirmDeletion to match the function defined in this component.
+                            // FIX: Pass correct handler function for confirming deletion
                             onConfirmDeletion={handleConfirmDeletion}
+                            // FIX: Pass correct handler function for deleting unlinked records
                             onDeleteUnlinked={handleDeleteUnlinked}
                             onClearAllData={handleClearAllData}
                             onClearHistory={handleClearHistory}
