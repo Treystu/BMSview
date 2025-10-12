@@ -15,7 +15,7 @@ const getConfiguredStore = (name, log) => {
         }
         
         const storeOptions = {
-            siteID: siteId, // Use the casing specified by the v8 error message.
+            siteId: siteId, // Use the casing required by @netlify/blobs v7.
             token: token,
         };
 
