@@ -15,7 +15,8 @@ const getConfiguredStore = (name, log) => {
         }
         
         const storeOptions = {
-            siteID: siteId,
+            siteID: siteId, // As requested by the error message
+            siteId: siteId, // As a fallback for any potential library inconsistencies
             token: token,
         };
 

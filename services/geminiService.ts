@@ -52,13 +52,16 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
         log('info', 'Analyze call start: submitting analysis job request to backend.', { fileCount: imagePayloads.length });
         log('info', 'GeminiService analyze start', { fileCount: files.length, isAdminBulk: files.length > 1, timestamp: new Date().toISOString() });
 
+        const dataToSend = {
+            images: imagePayloads,
+            systems: registeredSystems,
+        };
+        console.log('Sending to analyze:', JSON.stringify(dataToSend));
+
         const response = await fetch('/.netlify/functions/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                images: imagePayloads,
-                systems: registeredSystems,
-            }),
+            body: JSON.stringify(dataToSend),
             signal: controller.signal,
         });
 

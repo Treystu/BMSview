@@ -12,6 +12,7 @@ const respond = (statusCode, body) => ({
 });
 
 exports.handler = async (event, context) => {
+    console.log('Received event:', event.body);
     const log = createLogger('analyze', context);
     
     try {
