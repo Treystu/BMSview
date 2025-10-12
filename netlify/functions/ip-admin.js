@@ -41,12 +41,14 @@ const isIpInRanges = (ip, ranges, log) => {
 
 const listAllBlobs = async (store, log) => {
     let allBlobs = []; let cursor = undefined;
+    log('debug', `Starting to list all blobs from store: ${store.name}`);
     do {
         const { blobs, cursor: nextCursor } = await withRetry(() => store.list({ cursor, limit: 1000 }), log);
-        log('info', 'Fetched a page of blobs', { count: blobs.length, nextCursor: nextCursor || 'end' });
+        log('debug', 'Fetched a page of blobs', { store: store.name, count: blobs.length, nextCursor: nextCursor || 'end' });
         allBlobs.push(...blobs);
         cursor = nextCursor;
     } while (cursor);
+    log('debug', `Finished listing all blobs from store: ${store.name}`, { totalCount: allBlobs.length });
     return allBlobs;
 };
 
@@ -60,35 +62,33 @@ const respond = (statusCode, body) => ({
 
 exports.handler = async function(event, context) {
     const log = createLogger('ip-admin', context);
+    const clientIp = event.headers['x-nf-client-connection-ip'];
+    const { httpMethod } = event;
+    const logContext = { clientIp, httpMethod };
+    log('debug', 'Function invoked.', logContext);
+
     try {
-        if (event.httpMethod === 'GET') {
-            log('info', 'Fetching all IP admin data.');
+        if (httpMethod === 'GET') {
+            log('info', 'Fetching all IP admin data.', logContext);
             const rateStore = getConfiguredStore("rate-limiting", log);
             const verifiedStore = getConfiguredStore("verified-ips", log);
             const blockedStore = getConfiguredStore("bms-blocked-ips", log);
 
             const [rateLimitBlobs, rawRangesData, rawBlockedData] = await Promise.all([
-                listAllBlobs(rateStore, log).then(blobs => {
-                    log('info', `Found ${blobs.length} rate limit blobs.`);
-                    return blobs;
-                }),
-                withRetry(() => verifiedStore.get("ranges", { type: "json" }), log).catch(() => []).then(ranges => {
-                    log('info', `Found ${Array.isArray(ranges) ? ranges.length : 0} verified ranges.`);
-                    return ranges;
-                }),
-                withRetry(() => blockedStore.get("ranges", { type: "json" }), log).catch(() => []).then(ranges => {
-                    log('info', `Found ${Array.isArray(ranges) ? ranges.length : 0} blocked ranges.`);
-                    return ranges;
-                })
+                listAllBlobs(rateStore, log),
+                withRetry(() => verifiedStore.get("ranges", { type: "json" }), log).catch(() => []),
+                withRetry(() => blockedStore.get("ranges", { type: "json" }), log).catch(() => [])
             ]);
 
             const verifiedRanges = Array.isArray(rawRangesData) ? rawRangesData : [];
             const blockedRanges = Array.isArray(rawBlockedData) ? rawBlockedData : [];
+            log('debug', 'Loaded IP ranges.', { ...logContext, verifiedCount: verifiedRanges.length, blockedCount: blockedRanges.length });
 
             const now = Date.now();
             const activityWindowStart = now - 24 * 60 * 60 * 1000;
             const rateLimitWindowStart = now - 60 * 1000;
 
+            log('debug', `Processing ${rateLimitBlobs.length} rate limit blobs.`, logContext);
             const trackedIpsPromises = (rateLimitBlobs || []).map(async (blob) => {
                 try {
                     const ip = keyToIp(blob.key);
@@ -104,7 +104,7 @@ exports.handler = async function(event, context) {
                         isBlocked: isIpInRanges(ip, blockedRanges, log),
                     };
                 } catch (e) {
-                    log('error', `Failed to process rate limit blob.`, { key: blob.key, errorMessage: e.message, stack: e.stack });
+                    log('error', `Failed to process rate limit blob.`, { ...logContext, key: blob.key, errorMessage: e.message, stack: e.stack });
                     return null;
                 }
             });
@@ -113,14 +113,17 @@ exports.handler = async function(event, context) {
                 .filter(Boolean)
                 .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
             
+            log('info', 'Successfully fetched all IP admin data.', { ...logContext, trackedIpCount: trackedIps.length });
             return respond(200, { trackedIps, verifiedRanges, blockedRanges });
         }
 
-        if (event.httpMethod === 'POST') {
+        if (httpMethod === 'POST') {
             const { action, range, key } = JSON.parse(event.body);
-            log('info', 'IP admin POST request received.', { action, hasRange: !!range, hasKey: !!key });
+            const postLogContext = { ...logContext, action, range, key };
+            log('info', 'IP admin POST request received.', postLogContext);
 
             if (action === 'delete-ip' && key) {
+                log('warn', 'Deleting IP record from rate-limiting store.', postLogContext);
                 const rateStore = getConfiguredStore("rate-limiting", log);
                 await withRetry(() => rateStore.delete(key), log);
                 return respond(200, { success: true });
@@ -129,29 +132,38 @@ exports.handler = async function(event, context) {
             let store, storeKey = "ranges", responseKey;
             if (['add', 'remove'].includes(action)) { store = getConfiguredStore("verified-ips", log); responseKey = 'verifiedRanges'; }
             else if (['block', 'unblock'].includes(action)) { store = getConfiguredStore("bms-blocked-ips", log); responseKey = 'blockedRanges'; }
-            else { return respond(400, { error: 'Invalid request body.' }); }
+            else { 
+                log('error', 'Invalid action in request body.', postLogContext);
+                return respond(400, { error: 'Invalid request body.' });
+            }
             
             const { data, metadata } = await withRetry(() => store.getWithMetadata(storeKey, { type: "json" }), log)
                 .catch(err => (err.status === 404 ? { data: [], metadata: null } : Promise.reject(err)));
-                
+            
             let ranges = Array.isArray(data) ? data : [];
+            log('debug', 'Current ranges loaded.', { ...postLogContext, store: store.name, count: ranges.length, etag: metadata?.etag });
 
             if ((action === 'add' || action === 'block') && range) {
-                if (!ranges.includes(range)) ranges.push(range);
+                if (!ranges.includes(range)) {
+                    log('debug', 'Adding range.', postLogContext);
+                    ranges.push(range);
+                }
             } else if ((action === 'remove' || action === 'unblock') && range) {
+                log('debug', 'Removing range.', postLogContext);
                 ranges = ranges.filter(r => r !== range);
             }
             
             await withRetry(() => store.setJSON(storeKey, ranges, { etag: metadata?.etag }), log);
-            log('info', 'Updated ranges with etag check', { etag: metadata?.etag });
+            log('info', 'Successfully updated ranges.', { ...postLogContext, store: store.name, newCount: ranges.length });
 
             return respond(200, { [responseKey]: ranges });
         }
         
+        log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
         return respond(405, { error: 'Method Not Allowed' });
 
     } catch (error) {
-        log('error', 'Critical unhandled error in ip-admin handler.', { errorMessage: error.message, stack: error.stack });
+        log('error', 'Critical unhandled error in ip-admin handler.', { ...logContext, errorMessage: error.message, stack: error.stack });
         return respond(500, { error: "An internal server error occurred in ip-admin." });
     }
 };

@@ -36,7 +36,9 @@ const isIpInCidr = (ip, cidr, log) => {
   try {
     const [range, bitsStr = 32] = cidr.split('/'); const bits = parseInt(bitsStr, 10);
     const mask = -1 << (32 - bits);
-    return (ipToInt(ip) & mask) === (ipToInt(range) & mask);
+    const result = (ipToInt(ip) & mask) === (ipToInt(range) & mask);
+    log('debug', 'CIDR check result.', { ip, cidr, result });
+    return result;
   } catch (e) {
     log('error', `Error in isIpInCidr.`, { ip, cidr, errorMessage: e.message });
     return false;
@@ -46,7 +48,7 @@ const isIpInCidr = (ip, cidr, log) => {
 const getIpRanges = async (storeName, cache, log) => {
     const now = Date.now();
     if (now - cache.lastFetched < cache.ttl) {
-        log('info', 'IP ranges cache hit.', { storeName });
+        log('debug', 'IP ranges cache hit.', { storeName });
         return cache.ranges;
     }
     try {
@@ -56,9 +58,10 @@ const getIpRanges = async (storeName, cache, log) => {
         const ranges = Array.isArray(data) ? data : [];
         cache.ranges = ranges;
         cache.lastFetched = now;
+        log('debug', 'IP ranges fetched and cached.', { storeName, count: ranges.length });
         return ranges;
     } catch (error) {
-        log('error', `Could not fetch ${storeName} ranges.`, { errorMessage: error.message });
+        log('error', `Could not fetch ${storeName} ranges. Returning empty array.`, { errorMessage: error.message });
         cache.ranges = [];
         cache.lastFetched = now;
         return [];
@@ -80,39 +83,49 @@ const ipToKey = (ip) => Buffer.from(ip).toString('base64url');
 const checkRateLimit = async (request, log) => {
     const ip = request.headers['x-nf-client-connection-ip'];
     if (!ip) return;
+    const logContext = { clientIp: ip };
 
+    log('debug', 'Checking rate limit.', logContext);
     const verifiedRanges = await getVerifiedRanges(log);
     if (isIpInRanges(ip, verifiedRanges, log)) {
-        log('info', 'IP is verified, bypassing rate limit.', { ip });
+        log('info', 'IP is verified, bypassing rate limit.', logContext);
         return;
     }
 
+    log('debug', 'IP is not verified, proceeding with rate limit check.', logContext);
     const store = getConfiguredStore("rate-limiting", log);
     const now = Date.now();
     const windowStart = now - RATE_LIMIT_WINDOW_SECONDS * 1000;
     const key = ipToKey(ip);
 
     for (let i = 0; i < 5; i++) { // Retry for contention
-        log('info', 'Fetching rate limit metadata.', { key });
+        log('debug', `Fetching rate limit metadata (attempt ${i + 1}).`, { ...logContext, key });
         const metadata = await withRetry(() => store.getWithMetadata(key, { type: "json" }), log).catch(err => (err.status === 404 ? null : Promise.reject(err)));
-        log('info', 'Rate limit metadata fetched.', { key, hasData: !!metadata });
         const timestamps = metadata?.data || [];
         const recentTimestamps = timestamps.filter(ts => ts > windowStart);
+        log('debug', 'Rate limit data fetched.', { ...logContext, key, totalTimestamps: timestamps.length, recentCount: recentTimestamps.length, limit: UNVERIFIED_IP_LIMIT });
+        
         if (recentTimestamps.length >= UNVERIFIED_IP_LIMIT) {
+            log('warn', 'Rate limit exceeded for unverified IP.', logContext);
             throw new HttpError(429, `Too Many Requests: Rate limit exceeded.`);
         }
+        
         const newTimestamps = [...recentTimestamps, now];
         try {
             await withRetry(() => store.setJSON(key, newTimestamps, { onlyIfMatch: metadata?.etag, onlyIfNew: !metadata }), log);
+            log('debug', 'Rate limit timestamp recorded successfully.', { ...logContext, newCount: newTimestamps.length });
             return;
         } catch (error) {
             if (error.status === 412 || (error.message && error.message.includes('key already exists'))) {
-                 await new Promise(resolve => setTimeout(resolve, 50 * Math.pow(2, i)));
+                 const delay = 50 * Math.pow(2, i);
+                 log('warn', `Rate limit store contention. Retrying in ${delay}ms...`, { ...logContext, attempt: i + 1 });
+                 await new Promise(resolve => setTimeout(resolve, delay));
             } else {
                 throw error;
             }
         }
     }
+    log('error', 'Failed to update rate limit store after multiple retries.', logContext);
     throw new HttpError(503, "Service busy. Please try again shortly.");
 };
 
@@ -122,15 +135,18 @@ const checkSecurity = async (request, log) => {
     try {
         if (ip) {
             const blockedRanges = await getBlockedRanges(log);
-            log('info', 'Blocked ranges loaded.', { count: blockedRanges.length });
+            log('debug', 'Blocked ranges loaded.', { clientIp: ip, count: blockedRanges.length });
             if (isIpInRanges(ip, blockedRanges, log)) {
+                log('warn', 'Request from blocked IP was rejected.', { clientIp: ip });
                 throw new HttpError(403, 'Your IP address has been blocked.');
             }
         }
         await checkRateLimit(request, log);
+        log('info', 'Security check completed.', { clientIp: ip });
     } catch (error) {
         if (error instanceof HttpError) throw error;
-        log('warn', `A non-fatal error occurred during the security check.`, { errorMessage: error.message });
+        log('error', `A critical error occurred during the security check.`, { clientIp: ip, errorMessage: error.message, stack: error.stack });
+        // Fail open for non-HttpErrors to avoid blocking legitimate traffic due to intermittent issues.
     }
 };
 

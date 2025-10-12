@@ -7,7 +7,7 @@ const JOBS_STORE_NAME = "bms-jobs";
 const HISTORY_STORE_NAME = "bms-history";
 const SYSTEMS_STORE_NAME = "bms-systems";
 const HISTORY_CACHE_KEY = "_all_history_cache";
-const GEMINI_API_TIMEOUT_MS = 45000; // Increased from 28 seconds
+const GEMINI_API_TIMEOUT_MS = 45000;
 
 const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
     for (let i = 0; i <= maxRetries; i++) {
@@ -27,34 +27,36 @@ const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
 };
 
 const updateJobStatus = async (jobId, status, log, jobsStore, extra = {}) => {
-    const logContext = { jobId, newStatus: status };
+    const logContext = { jobId, newStatus: status, ...extra };
     try {
+        log('debug', 'Attempting to update job status.', logContext);
         const job = await withRetry(() => jobsStore.get(jobId, { type: "json" }), log);
         if (!job) {
             log('warn', 'Tried to update status for a job that does not exist.', logContext);
             return;
         }
-        // Don't store large image data in subsequent updates
         const { image, images, ...jobWithoutImages } = job;
         const updatedJob = { ...jobWithoutImages, status, ...extra };
         await withRetry(() => jobsStore.setJSON(jobId, updatedJob), log);
-        log('info', 'Job status updated.', logContext);
+        log('info', 'Job status updated successfully.', logContext);
     } catch (e) {
         log('error', 'Failed to update job status in blob store.', { ...logContext, error: e.message });
-        // Don't re-throw; logging the failure is sufficient as it's a non-critical update.
     }
 };
 
 const updateHistoryCache = async (store, log, newRecord) => {
+    const logContext = { recordId: newRecord.id };
+    log('debug', 'Attempting to update history cache.', logContext);
     for (let i = 0; i < 5; i++) { // retry loop for contention
         let cache, metadata;
         try {
             const result = await withRetry(() => store.getWithMetadata(HISTORY_CACHE_KEY, { type: 'json' }), log);
             cache = result.data || [];
             metadata = result.metadata;
+            log('debug', 'History cache fetched.', { ...logContext, etag: metadata?.etag, currentSize: cache.length });
         } catch (e) {
             if (e.status === 404) {
-                log('info', 'History cache not found, will create a new one.');
+                log('info', 'History cache not found, will create a new one.', logContext);
                 cache = [];
                 metadata = null;
             } else { throw e; }
@@ -67,17 +69,17 @@ const updateHistoryCache = async (store, log, newRecord) => {
 
         try {
             await withRetry(() => store.setJSON(HISTORY_CACHE_KEY, updatedCache, { etag: metadata?.etag }), log);
-            log('info', `History cache updated.`, { recordId: newRecord.id });
+            log('info', `History cache updated successfully.`, { ...logContext, newSize: updatedCache.length });
             return;
         } catch (e) {
             if (e.status === 412) { // Etag mismatch
                 const delay = 50 * Math.pow(2, i);
-                log('warn', `History cache update conflict, retrying in ${delay}ms...`, { attempt: i + 1 });
+                log('warn', `History cache update conflict, retrying in ${delay}ms...`, { ...logContext, attempt: i + 1 });
                 await new Promise(res => setTimeout(res, delay));
             } else { throw e; }
         }
     }
-    log('error', 'Failed to update history cache after multiple retries.');
+    log('error', 'Failed to update history cache after multiple retries.', logContext);
 };
 
 const getResponseSchema = () => ({
@@ -117,7 +119,7 @@ const getImageExtractionPrompt = () => `You are a meticulous data extraction AI.
     -   \`overallVoltage\`: Extract 'voltage'.
     -   \`current\`: Extract 'current', preserving negative sign.
     -   \`power\`: Extract Power. If in 'kW', multiply by 1000 for Watts. **IMPORTANT: If the 'current' value is negative, the 'power' value must also be negative.**
-    -   \`status\`: 'Chg MOS', 'Dischg MOS', 'Balance' lights: green is \`true\`, grey/off is \`false\`.
+    -   \`chargeMosOn\`, \`dischargeMosOn\`, \`balanceOn\`: For each, determine if the corresponding indicator ('Chg MOS', 'Dischg MOS', 'Balance') is on (green, lit) which is \`true\`, or off (grey, unlit) which is \`false\`.
     -   \`temperatures\`: Extract all 'Temp', 'T1', 'T2' values into this array.
     -   \`mosTemperature\`: Extract 'MOS Temp'.
     -   \`cellVoltages\`: ONLY if a numbered list of individual cell voltages exists, populate this array. Otherwise, it MUST be \`[]\`.
@@ -128,26 +130,28 @@ const getImageExtractionPrompt = () => `You are a meticulous data extraction AI.
     -   If no timestamp is visible, \`timestampFromImage\` MUST be \`null\`.
 5.  **Final Review**: Your entire output must be ONLY the raw JSON object, without any surrounding text, explanations, or markdown formatting like \`\`\`json.`;
 
-
 const cleanAndParseJson = (text, log) => {
     if (!text) {
+        log('error', 'The AI model returned an empty response.');
         throw new Error("The AI model returned an empty response.");
     }
     
-    log('info', 'Raw AI response received.', { length: text.length, text: text.substring(0, 200) + '...' });
+    log('debug', 'Raw AI response received.', { length: text.length, responseText: text });
     
-    // Find the start and end of the outermost JSON object
     const jsonStart = text.indexOf('{');
     const jsonEnd = text.lastIndexOf('}');
     
     if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) {
+        log('error', 'AI response did not contain a valid JSON object.', { responseText: text });
         throw new Error(`AI response did not contain a valid JSON object. Response: ${text}`);
     }
     
     const jsonString = text.substring(jsonStart, jsonEnd + 1);
     
     try {
-        return JSON.parse(jsonString);
+        const parsed = JSON.parse(jsonString);
+        log('debug', 'Successfully parsed JSON from AI response.', { parsedData: parsed });
+        return parsed;
     } catch (e) {
         log('error', 'Failed to parse cleaned JSON string.', { error: e.message, cleanedJsonString: jsonString });
         throw new Error(`Failed to parse JSON from AI response. See logs for details.`);
@@ -155,6 +159,7 @@ const cleanAndParseJson = (text, log) => {
 };
 
 const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsStore) => {
+    log('debug', 'Preparing for Gemini API call.');
     const extractionPrompt = getImageExtractionPrompt();
     const responseSchema = getResponseSchema();
     const parts = [{ text: extractionPrompt }, { inlineData: { data: image, mimeType } }];
@@ -163,8 +168,9 @@ const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsStor
     let lastError = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const attemptLogContext = { attempt, maxRetries, timeout: GEMINI_API_TIMEOUT_MS };
         try {
-            log('info', `Sending request to Gemini API.`, { stage: 'gemini_call_start', attempt, timeout: GEMINI_API_TIMEOUT_MS });
+            log('info', `Sending request to Gemini API.`, attemptLogContext);
             
             const apiCall = ai.models.generateContent({
                 model: 'gemini-2.5-flash',
@@ -178,8 +184,7 @@ const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsStor
 
             const response = await Promise.race([apiCall, timeoutPromise]);
             
-            log('info', `Received response from Gemini API.`, { stage: 'gemini_call_end', attempt });
-
+            log('info', `Received response from Gemini API.`, attemptLogContext);
             const rawText = response.text;
             return cleanAndParseJson(rawText, log);
 
@@ -187,35 +192,36 @@ const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsStor
             lastError = error;
             const isRateLimitError = error.message && error.message.includes('429');
             const remainingTime = context.getRemainingTimeInMillis();
+            log('warn', 'Gemini API call failed.', { ...attemptLogContext, error: error.message, isRateLimitError, remainingTime });
 
             if (isRateLimitError && attempt < maxRetries) {
                 const retryAfterMatch = error.message.match(/Please retry in (\d+\.?\d*)/);
                 let delay = (retryAfterMatch && parseFloat(retryAfterMatch[1]) * 1000) || (Math.pow(2, attempt) * 1000 + Math.random() * 1000);
                 
-                const statusMessage = `Retrying (API throttled)...`;
-                await updateJobStatus(jobId, statusMessage, log, jobsStore);
-
-                const bufferTime = 5000; // 5 seconds buffer before timeout.
+                await updateJobStatus(jobId, `Retrying (API throttled)...`, log, jobsStore);
+                const bufferTime = 5000;
                 if (delay > remainingTime - bufferTime) {
-                    log('warn', `Retry delay (${delay.toFixed(0)}ms) is too long for remaining execution time (${remainingTime}ms). Job will fail to prevent timeout.`);
-                    throw new Error(`Rate limit backoff time (${(delay/1000).toFixed(1)}s) exceeds remaining function execution time. Aborting to prevent timeout.`);
+                    log('error', `Retry delay is too long for remaining execution time. Job will fail to prevent timeout.`, { delay, remainingTime });
+                    throw new Error(`Rate limit backoff time (${(delay/1000).toFixed(1)}s) exceeds remaining function execution time. Aborting.`);
                 }
 
-                log('warn', `Gemini API rate limit hit. Retrying in ${delay.toFixed(0)}ms...`, { attempt, maxRetries, error: error.message });
+                log('warn', `Gemini API rate limit hit. Retrying in ${delay.toFixed(0)}ms...`, { ...attemptLogContext, delay });
                 await new Promise(resolve => setTimeout(resolve, delay));
             } else {
                 throw error;
             }
         }
     }
+    log('error', `Failed to get a successful response from Gemini API after all retries.`, { lastError: lastError.message });
     throw new Error(`Failed to get a successful response from Gemini API after ${maxRetries} attempts. Last error: ${lastError.message}`);
 };
 
 const mapExtractedToAnalysisData = (extracted, log) => {
     if (!extracted || typeof extracted !== 'object') {
-        log('warn', 'Extracted data is invalid, cannot map to AnalysisData.', { extractedData: extracted });
+        log('error', 'Extracted data is invalid, cannot map to AnalysisData.', { extractedData: extracted });
         return null;
     }
+    log('debug', 'Mapping extracted data to analysis schema.', { extractedKeys: Object.keys(extracted) });
     const analysis = {
         ...extracted,
         temperature: extracted.temperatures?.[0] || null,
@@ -227,23 +233,23 @@ const mapExtractedToAnalysisData = (extracted, log) => {
     if (analysis.current != null) {
         analysis.status = analysis.current > 0.5 ? 'Charging' : (analysis.current < -0.5 ? 'Discharging' : 'Standby');
     }
-    // Failsafe: if current is negative, power must also be negative.
     if (analysis.current != null && analysis.power != null && analysis.current < 0 && analysis.power > 0) {
-        log('warn', 'Correcting positive power sign for negative current.', { 
-            originalPower: analysis.power, 
-            current: analysis.current 
-        });
+        log('warn', 'Correcting positive power sign for negative current.', { originalPower: analysis.power, current: analysis.current });
         analysis.power = -analysis.power;
     }
+    log('debug', 'Data mapping complete.', { finalKeys: Object.keys(analysis) });
     return analysis;
 };
 
 const fetchWeatherData = async (lat, lon, timestamp, log) => {
     const apiKey = process.env.WEATHER_API_KEY;
-    if (!lat || !lon || !apiKey) return null;
-
+    if (!lat || !lon || !apiKey) {
+        log('warn', 'Skipping weather fetch: missing lat, lon, or API key.', { hasLat: !!lat, hasLon: !!lon, hasApiKey: !!apiKey });
+        return null;
+    }
+    const logContext = { lat, lon, timestamp };
     try {
-        log('info', 'Fetching weather data.', { lat, lon, timestamp });
+        log('debug', 'Fetching weather data from OpenWeather.', logContext);
         const unixTimestamp = Math.floor(new Date(timestamp).getTime() / 1000);
         const [mainResponse, uviResponse] = await Promise.all([
             fetch(`https://api.openweathermap.org/data/3.0/onecall/timemachine?lat=${lat}&lon=${lon}&dt=${unixTimestamp}&units=metric&appid=${apiKey}`),
@@ -262,19 +268,20 @@ const fetchWeatherData = async (lat, lon, timestamp, log) => {
             if (uviResponse.ok && uviData && Array.isArray(uviData) && uviData.length > 0) {
                 result.uvi = uviData[0].value;
             }
-            log('info', 'Successfully fetched weather data.');
+            log('info', 'Successfully fetched weather data.', { ...logContext, result });
             return result;
         }
-        log('warn', 'Failed to fetch weather data.', { mainStatus: mainResponse.status, uviStatus: uviResponse.status, mainBody: mainData, uviBody: uviData });
+        log('warn', 'Failed to fetch weather data.', { ...logContext, mainStatus: mainResponse.status, uviStatus: uviResponse.status });
     } catch (e) {
-        log('error', 'Error fetching weather.', { errorMessage: e.message });
+        log('error', 'Error fetching weather.', { ...logContext, errorMessage: e.message });
     }
     return null;
 };
 
 const parseTimestamp = (timestampFromImage, fileName, log) => {
+    log('debug', 'Parsing timestamp.', { timestampFromImage, fileName });
     if (timestampFromImage && /\d{4}[-/]\d{2}[-/]\d{2}/.test(timestampFromImage)) {
-        log('info', 'Using full timestamp from image.', { timestampFromImage });
+        log('debug', 'Using full timestamp from image.', { timestampFromImage });
         return new Date(timestampFromImage);
     }
     const fromFilename = (fileName || '').match(/(\d{4})[-_]?(\d{2})[-_]?(\d{2})[T _-]?(\d{2})[:.-]?(\d{2})[:.-]?(\d{2})/);
@@ -282,9 +289,9 @@ const parseTimestamp = (timestampFromImage, fileName, log) => {
         const [, y, m, d, h, min, s] = fromFilename;
         const date = new Date(`${y}-${m}-${d}T${h}:${min}:${s}Z`);
         if (!isNaN(date.getTime())) {
-            log('info', 'Parsed date from filename.', { dateFromFilename: date.toISOString() });
+            log('debug', 'Parsed date from filename.', { dateFromFilename: date.toISOString() });
             if (timestampFromImage && /^\d{1,2}:\d{2}(:\d{2})?$/.test(timestampFromImage.trim())) {
-                log('info', 'Applying time from image to filename date.', { timeFromImage: timestampFromImage });
+                log('debug', 'Applying time from image to filename date.', { timeFromImage: timestampFromImage });
                 const [timeH, timeM, timeS] = timestampFromImage.split(':').map(Number);
                 date.setUTCHours(timeH || 0, timeM || 0, timeS || 0, 0);
             }
@@ -297,7 +304,7 @@ const parseTimestamp = (timestampFromImage, fileName, log) => {
 
 exports.handler = async function(event, context) {
     const log = createLogger('process-analysis', context);
-    log('info', 'Function invoked.', { stage: 'invocation' });
+    log('debug', 'Function invoked.', { stage: 'invocation' });
 
     let jobId;
     let jobsStore; 
@@ -309,7 +316,7 @@ exports.handler = async function(event, context) {
         jobId = body.jobId;
 
         if (!jobId) {
-            log('error', 'Job ID is missing from invocation payload.');
+            log('error', 'Job ID is missing from invocation payload.', { body: event.body });
             return { statusCode: 400, body: 'Job ID is required.' };
         }
 
@@ -322,25 +329,20 @@ exports.handler = async function(event, context) {
 
         const job = await withRetry(() => jobsStore.get(jobId, { type: "json" }), log);
         if (!job) throw new Error(`Job with ID ${jobId} not found.`);
-        log('info', 'Fetched job from blob store.', { ...logContext, fileName: job.fileName });
+        log('debug', 'Fetched job from blob store.', { ...logContext, fileName: job.fileName });
 
         await updateJobStatus(jobId, 'Processing', log, jobsStore);
-
         const { image, mimeType, systems, fileName } = job;
         
         await updateJobStatus(jobId, 'Extracting data', log, jobsStore);
-        
         const extractedData = await extractBmsData(ai, image, mimeType, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }), context, jobId, jobsStore);
         log('info', 'AI data extraction complete.', logContext);
 
         await updateJobStatus(jobId, 'Mapping data', log, jobsStore);
-
         const analysis = mapExtractedToAnalysisData(extractedData, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
         if (!analysis) throw new Error("Failed to process extracted data into a valid analysis object.");
-        log('info', 'Successfully mapped extracted data.', { ...logContext, analysisKeys: Object.keys(analysis) });
         
         await updateJobStatus(jobId, 'Matching system', log, jobsStore);
-        
         const allSystems = systems || await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' }), log).catch(() => []);
         const matchingSystem = analysis.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysis.dlNumber)) : null;
         log('info', `System matching result: ${matchingSystem ? matchingSystem.name : 'None'}.`, { ...logContext, dlNumber: analysis.dlNumber, systemId: matchingSystem?.id });
@@ -351,15 +353,12 @@ exports.handler = async function(event, context) {
         let weather = null;
         if (matchingSystem?.latitude && matchingSystem?.longitude) {
             await updateJobStatus(jobId, 'Fetching weather', log, jobsStore);
-            log('info', 'Fetching weather for matching system.', { ...logContext, systemId: matchingSystem.id });
             weather = await fetchWeatherData(matchingSystem.latitude, matchingSystem.longitude, timestamp, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
-            log('info', 'Weather fetch attempt complete.', { ...logContext, hasWeather: !!weather });
         } else {
-             log('info', 'Skipping weather fetch: system has no location data.', logContext);
+             log('debug', 'Skipping weather fetch: system has no location data.', logContext);
         }
 
         await updateJobStatus(jobId, 'Saving result', log, jobsStore);
-
         const record = {
             id: uuidv4(),
             timestamp,
@@ -398,7 +397,6 @@ exports.handler = async function(event, context) {
                 }
                 
                 await updateJobStatus(jobId, 'failed', log, jobsStore, { error: friendlyError });
-                log('info', 'Job status updated to failed in blob store.', logContext);
             } catch (updateError) {
                 log('error', 'CRITICAL: Could not update job status to failed after a processing error.', { ...logContext, updateError: updateError.message });
             }

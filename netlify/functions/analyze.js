@@ -12,29 +12,48 @@ const respond = (statusCode, body) => ({
 });
 
 exports.handler = async (event, context) => {
-    console.log('Received event:', event.body);
     const log = createLogger('analyze', context);
+    const clientIp = event.headers['x-nf-client-connection-ip'];
+    const { httpMethod } = event;
+    const logContext = { clientIp, httpMethod };
+
+    log('debug', 'Function invoked.', { ...logContext, headers: event.headers });
     
     try {
-        if (event.httpMethod !== 'POST') {
+        if (httpMethod !== 'POST') {
+            log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
             return respond(405, { error: 'Method Not Allowed' });
         }
 
+        log('debug', 'Starting security check.', logContext);
         await checkSecurity(event, log);
+        log('debug', 'Security check passed.', logContext);
         
-        const body = JSON.parse(event.body);
+        let body;
+        try {
+            body = JSON.parse(event.body);
+            log('debug', 'Request body parsed successfully.', { ...logContext, imageCount: body?.images?.length, hasSystems: !!body?.systems });
+        } catch (e) {
+            log('error', 'Failed to parse request body as JSON.', { ...logContext, body: event.body, error: e.message });
+            throw new HttpError(400, "Invalid JSON in request body.");
+        }
+
         const { images, systems } = body;
 
         if (!Array.isArray(images) || images.length === 0) {
+            log('warn', 'Validation failed: No images provided for analysis.', logContext);
             return respond(400, { error: "No images provided for analysis." });
         }
+        log('debug', `Processing ${images.length} images.`, logContext);
 
         const jobsStore = getConfiguredStore(JOBS_STORE_NAME, log);
         const jobCreationResponses = [];
 
-        for (const image of images) {
+        for (const [index, image] of images.entries()) {
             const newJobId = uuidv4();
-            // Important: We only store what's necessary for the background job
+            const jobLogContext = { ...logContext, jobId: newJobId, fileName: image.fileName, imageIndex: index };
+            log('debug', 'Creating job for image.', jobLogContext);
+            
             const jobData = {
                 id: newJobId,
                 fileName: image.fileName,
@@ -46,20 +65,19 @@ exports.handler = async (event, context) => {
             };
             
             try {
-                // First, save the job data. If this fails, we won't try to invoke.
+                log('debug', 'Storing job data in blob store.', jobLogContext);
                 await jobsStore.setJSON(newJobId, jobData);
+                log('debug', 'Job data stored successfully.', jobLogContext);
 
+                const invokeUrl = `${process.env.URL}/.netlify/functions/process-analysis`;
+                log('debug', 'Invoking background processing function.', { ...jobLogContext, url: invokeUrl });
                 // Asynchronously invoke the background function.
-                // The client won't wait for this, allowing for a quick response.
-                fetch(`${process.env.URL}/.netlify/functions/process-analysis`, {
+                fetch(invokeUrl, {
                     method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ jobId: newJobId }),
                 }).catch(e => {
-                    log('error', "Fire-and-forget invocation failed for process-analysis.", { jobId: newJobId, error: e.message });
-                    // The job is in the store, but might not be processed. A retry mechanism could handle this.
+                    log('error', "Fire-and-forget invocation failed for process-analysis.", { ...jobLogContext, error: e.message });
                 });
 
                 jobCreationResponses.push({
@@ -68,7 +86,7 @@ exports.handler = async (event, context) => {
                     status: 'queued',
                 });
             } catch (storeError) {
-                 log('error', 'Failed to create and store job, it will not be processed.', { fileName: image.fileName, error: storeError.message });
+                 log('error', 'Failed to create and store job, it will not be processed.', { ...jobLogContext, error: storeError.message });
                  jobCreationResponses.push({
                     fileName: image.fileName,
                     jobId: null,
@@ -78,11 +96,12 @@ exports.handler = async (event, context) => {
             }
         }
         
-        log('info', `Queued ${jobCreationResponses.filter(j => j.status === 'queued').length} analysis jobs.`);
+        const queuedCount = jobCreationResponses.filter(j => j.status === 'queued').length;
+        log('info', `Queued ${queuedCount} analysis jobs.`, { ...logContext, totalProcessed: images.length });
         return respond(200, jobCreationResponses);
 
     } catch (error) {
-        log('error', "Critical error in analyze dispatcher.", { errorMessage: error.message, stack: error.stack });
+        log('error', "Critical error in analyze dispatcher.", { ...logContext, errorMessage: error.message, stack: error.stack });
         if (error instanceof HttpError) {
             return respond(error.statusCode, { error: error.message });
         }

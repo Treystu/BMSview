@@ -25,32 +25,47 @@ const respond = (statusCode, body) => ({
 });
 
 const clearStore = async (store, log) => {
-    log('info', `Starting to clear store: ${store.name}`);
+    const storeName = store.name;
+    const logContext = { storeName };
+    log('warn', `Starting to clear store.`, logContext);
     let deletedCount = 0;
+    let pageCount = 0;
     let cursor = undefined;
     do {
+        pageCount++;
+        log('debug', `Fetching page ${pageCount} of blobs to delete.`, { ...logContext, cursor: cursor || 'start' });
         const { blobs, cursor: nextCursor } = await withRetry(() => store.list({ cursor, limit: 1000 }), log);
         if (blobs && blobs.length > 0) {
+            log('debug', `Found ${blobs.length} blobs on page ${pageCount}. Deleting them now.`, logContext);
             for (const blob of blobs) {
                 await withRetry(() => store.delete(blob.key), log);
             }
             deletedCount += blobs.length;
+            log('debug', `Deleted page ${pageCount}. Total deleted so far: ${deletedCount}.`, logContext);
+        } else {
+            log('debug', `No blobs found on page ${pageCount}.`, logContext);
         }
         cursor = nextCursor;
     } while (cursor);
-    log('info', `Finished clearing store.`, { store: store.name, totalDeleted: deletedCount });
+    log('warn', `Finished clearing store.`, { ...logContext, totalDeleted: deletedCount, totalPages: pageCount });
     return deletedCount;
 };
 
 exports.handler = async function(event, context) {
-    const log = createLogger('data', context);
+    const log = createLogger('data-management', context);
+    const clientIp = event.headers['x-nf-client-connection-ip'];
+    const { httpMethod, queryStringParameters } = event;
+    const logContext = { clientIp, httpMethod };
+
+    log('debug', 'Function invoked.', { ...logContext, queryStringParameters });
     
-    if (event.httpMethod !== 'DELETE') {
+    if (httpMethod !== 'DELETE') {
+        log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
         return respond(405, { error: 'Method Not Allowed' });
     }
     
     try {
-        const { store: storeToClearName } = event.queryStringParameters || {};
+        const { store: storeToClearName } = queryStringParameters || {};
         const allStores = [
             "bms-systems", "bms-history", "bms-jobs", 
             "rate-limiting", "verified-ips", "bms-blocked-ips"
@@ -58,7 +73,7 @@ exports.handler = async function(event, context) {
 
         if (storeToClearName) {
             if (allStores.includes(storeToClearName)) {
-                log('warn', `Clearing single store: ${storeToClearName}.`);
+                log('warn', `Received request to clear single store.`, { ...logContext, storeToClear: storeToClearName });
                 const store = getConfiguredStore(storeToClearName, log);
                 const deletedCount = await clearStore(store, log);
                 return respond(200, {
@@ -66,24 +81,23 @@ exports.handler = async function(event, context) {
                     details: { [storeToClearName]: deletedCount },
                 });
             } else {
+                log('error', `Invalid store name provided for deletion.`, { ...logContext, invalidStoreName: storeToClearName });
                 return respond(400, { error: `Invalid store name provided: ${storeToClearName}` });
             }
         }
 
-        log('warn', 'Clearing all application data from all stores.');
+        log('warn', 'Received request to clear ALL application data from all stores. This is a destructive operation.', logContext);
         const deletionResults = {};
         for (const storeName of allStores) {
-            log('info', `Now clearing store: ${storeName}`);
             const store = getConfiguredStore(storeName, log);
             deletionResults[storeName] = await clearStore(store, log);
-            log('info', `Finished clearing store: ${storeName}`);
         }
 
-        log('info', `Successfully cleared all data.`, { results: deletionResults });
+        log('warn', `Successfully cleared all data across all stores.`, { ...logContext, results: deletionResults });
         return respond(200, { message: "All data cleared successfully.", details: deletionResults });
 
     } catch (error) {
-        log('error', 'Error clearing data.', { errorMessage: error.message, stack: error.stack });
+        log('error', 'Critical error during data clearing operation.', { ...logContext, errorMessage: error.message, stack: error.stack });
         return respond(500, { error: "An internal server error occurred while clearing data." });
     }
 };

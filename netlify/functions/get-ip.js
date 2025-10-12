@@ -3,10 +3,12 @@ const { createLogger } = require("./utils/logger.js");
 exports.handler = async function(event, context) {
   const log = createLogger('get-ip', context);
   const ip = event.headers['x-nf-client-connection-ip'];
-  log('info', 'Function invoked.', { clientIp: ip });
+  const logContext = { clientIp: ip };
+  
+  log('debug', 'Function invoked.', { ...logContext, headers: event.headers });
   
   if (!ip) {
-      log('error', 'Could not determine client IP address.');
+      log('error', 'Could not determine client IP address from headers.', logContext);
       return {
           statusCode: 500,
           body: JSON.stringify({ error: 'Could not determine client IP address.' }),
@@ -14,6 +16,7 @@ exports.handler = async function(event, context) {
       };
   }
 
+  log('info', 'Successfully determined client IP address.', logContext);
   return {
     statusCode: 200,
     body: JSON.stringify({ ip }),
