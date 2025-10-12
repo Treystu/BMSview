@@ -15,8 +15,7 @@ const getConfiguredStore = (name, log) => {
         }
         
         const storeOptions = {
-            siteID: siteId, // As requested by the error message
-            siteId: siteId, // As a fallback for any potential library inconsistencies
+            siteID: siteId, // Use the casing specified by the v8 error message.
             token: token,
         };
 
