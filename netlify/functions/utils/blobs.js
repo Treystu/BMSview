@@ -15,7 +15,7 @@ const getConfiguredStore = (name, log) => {
         }
         
         const storeOptions = {
-            siteId: siteId,
+            siteID: siteId,
             token: token,
         };
 
