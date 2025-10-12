@@ -1,77 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin - BMS View</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="css/styles.css">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BMS Validator - Admin</title>
+    <script type="text/javascript" src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^18.3.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^18.3.1/",
+    "buffer": "https://aistudiocdn.com/buffer@^6.0.3",
+    "react/": "https://aistudiocdn.com/react@^18.3.1/",
+    "jszip": "https://aistudiocdn.com/jszip@^3.10.1",
+    "vite": "https://aistudiocdn.com/vite@^7.1.7",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.0.4"
+  }
+}
+</script>
 </head>
-<body class="bg-gray-100">
-
-    <div id="loading-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
-        <i class="fas fa-spinner fa-spin text-white text-4xl"></i>
-    </div>
-    
-    <div id="app" class="container mx-auto p-4">
-        <header class="bg-white shadow p-4 rounded-lg mb-6 flex justify-between items-center">
-            <h1 class="text-3xl font-bold text-gray-800">Admin Panel</h1>
-            <nav>
-                <a href="index.html" class="text-blue-500 hover:text-blue-700">Back to Dashboard</a>
-            </nav>
-        </header>
-
-        <div id="error-container" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4 hidden" role="alert">
-            <strong class="font-bold">Error:</strong>
-            <span class="block sm:inline" id="error-message"></span>
-        </div>
-
-        <div class="mb-8 p-6 border rounded-lg shadow-sm bg-white">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Systems Management</h2>
-            <div class="mb-4 flex flex-wrap items-center gap-2">
-                <input id="new-system-name" type="text" placeholder="New system name" class="border p-2 rounded w-full md:w-1/3 flex-grow">
-                <button id="add-system-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold px-4 py-2 rounded transition-colors">Add System</button>
-            </div>
-            <div>
-                <h3 class="font-bold text-lg text-gray-600 mb-2">Existing Systems:</h3>
-                <ul id="systems-list" class="space-y-2">
-                    </ul>
-            </div>
-        </div>
-
-        <div class="p-6 border rounded-lg shadow-sm bg-white">
-            <h2 class="text-2xl font-semibold mb-2 text-gray-700">Bulk Image Analysis</h2>
-            <p class="text-sm text-gray-600 mb-4">Select multiple screenshots to analyze them in bulk. The results will be added to the history.</p>
-            <input type="file" multiple id="bulk-file-input" accept="image/*" class="mb-4 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-            
-            <div id="selected-files-container" class="mb-4 hidden">
-                <h3 class="font-semibold">Selected Files:</h3>
-                <ul id="selected-files-list" class="list-disc list-inside max-h-48 overflow-y-auto bg-gray-50 p-3 rounded border"></ul>
-            </div>
-
-            <button id="bulk-analyze-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold px-4 py-2 rounded w-full md:w-auto disabled:bg-gray-400 transition-colors">
-                Analyze Files
-            </button>
-            
-            <div id="batch-progress-container" class="mt-6 hidden">
-                <h3 class="text-lg font-semibold text-gray-800">Processing Batch...</h3>
-                <div class="mt-2">
-                    <p class="text-sm text-gray-600">Status: <span id="batch-status" class="font-medium text-blue-600">Initializing...</span></p>
-                    <p id="batch-progress-text" class="text-sm font-medium mt-1">0 / 0 files processed</p>
-                    <div class="w-full bg-gray-200 rounded-full h-4 mt-2 overflow-hidden border">
-                        <div id="batch-progress-bar" class="bg-green-500 h-4 rounded-full transition-all duration-500" style="width: 0%"></div>
-                    </div>
-                    <div class="flex justify-between text-sm mt-1">
-                        <span id="batch-completed-count" class="text-green-600">Successful: 0</span>
-                        <span id="batch-failed-count" class="text-red-600">Failed: 0</span>
-                    </div>
-                </div>
-            </div>
-
-        </div>
-    </div>
-
-    <script src="js/admin.js"></script>
-</body>
+  <body class="bg-neutral-dark">
+    <div id="root"></div>
+    <script type="module" src="/admin.tsx"></script>
+  </body>
 </html>
