@@ -13,16 +13,23 @@ const GEMINI_API_TIMEOUT_MS = 45000;
 const updateJobStatus = async (jobId, status, log, jobsStore, withRetry, extra = {}) => {
     const logContext = { jobId, newStatus: status, ...extra };
     try {
-        log('debug', 'Attempting to update job status.', logContext);
+        log('debug', 'Attempting to update job status, stage timestamp, and heartbeat.', logContext);
         const job = await withRetry(() => jobsStore.get(jobId, { type: "json" }));
         if (!job) {
             log('warn', 'Tried to update status for a job that does not exist.', logContext);
             return;
         }
+        // Always strip large image data to prevent re-saving it on simple status updates.
         const { image, images, ...jobWithoutImages } = job;
-        const updatedJob = { ...jobWithoutImages, status, ...extra };
+        const updatedJob = {
+            ...jobWithoutImages,
+            status,
+            statusEnteredAt: new Date().toISOString(),
+            lastHeartbeat: new Date().toISOString(),
+            ...extra
+        };
         await withRetry(() => jobsStore.setJSON(jobId, updatedJob));
-        log('info', 'Job status updated successfully.', logContext);
+        log('info', 'Job status, stage timestamp, and heartbeat updated successfully.', logContext);
     } catch (e) {
         log('error', 'Failed to update job status in blob store.', { ...logContext, error: e.message });
     }
@@ -316,23 +323,37 @@ exports.handler = async function(event, context) {
         if (!job) throw new Error(`Job with ID ${jobId} not found.`);
         log('debug', 'Fetched job from blob store.', { ...logContext, fileName: job.fileName });
 
-        await updateJobStatus(jobId, 'Processing', log, jobsStore, withRetry);
-        const { image, mimeType, systems, fileName } = job;
+        // Checkpoint logic
+        let extractedData = job.extractedData || null;
         
-        await updateJobStatus(jobId, 'Extracting data', log, jobsStore, withRetry);
-        const extractedData = await extractBmsData(ai, image, mimeType, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }), context, jobId, jobsStore, withRetry);
-        log('info', 'AI data extraction complete.', logContext);
+        if (!extractedData) {
+            log('info', 'No checkpoint found. Starting data extraction.', logContext);
+            await updateJobStatus(jobId, 'Extracting data', log, jobsStore, withRetry);
+            
+            const { image, mimeType } = job;
+            if (!image) {
+                throw new Error("Job is missing image data for extraction.");
+            }
+            extractedData = await extractBmsData(ai, image, mimeType, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }), context, jobId, jobsStore, withRetry);
+            log('info', 'AI data extraction complete.', logContext);
 
+            // Save the checkpoint and update status/heartbeat
+            await updateJobStatus(jobId, 'Extraction complete (checkpoint)', log, jobsStore, withRetry, { extractedData });
+            log('info', 'Saved extraction checkpoint to job.', logContext);
+        } else {
+            log('info', 'Resuming from checkpoint. Skipping data extraction.', logContext);
+        }
+        
         await updateJobStatus(jobId, 'Mapping data', log, jobsStore, withRetry);
         const analysis = mapExtractedToAnalysisData(extractedData, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
         if (!analysis) throw new Error("Failed to process extracted data into a valid analysis object.");
         
         await updateJobStatus(jobId, 'Matching system', log, jobsStore, withRetry);
-        const allSystems = systems || await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' })).catch(() => []);
+        const allSystems = job.systems || await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' })).catch(() => []);
         const matchingSystem = analysis.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysis.dlNumber)) : null;
         log('info', `System matching result: ${matchingSystem ? matchingSystem.name : 'None'}.`, { ...logContext, dlNumber: analysis.dlNumber, systemId: matchingSystem?.id });
         
-        const timestamp = parseTimestamp(analysis.timestampFromImage, fileName, (level, msg, extra) => log(level, msg, { ...logContext, ...extra })).toISOString();
+        const timestamp = parseTimestamp(analysis.timestampFromImage, job.fileName, (level, msg, extra) => log(level, msg, { ...logContext, ...extra })).toISOString();
         log('info', 'Determined final timestamp for record.', { ...logContext, timestamp });
 
         let weather = null;
@@ -352,7 +373,7 @@ exports.handler = async function(event, context) {
             analysis,
             weather,
             dlNumber: analysis.dlNumber,
-            fileName: fileName,
+            fileName: job.fileName,
         };
         
         await withRetry(() => historyStore.setJSON(record.id, record));

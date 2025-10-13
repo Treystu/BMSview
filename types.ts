@@ -104,4 +104,5 @@ export interface DisplayableAnalysisResult {
   recordId?: string;
   jobId?: string;
   forcedSystemId?: string;
+  submittedAt?: number;
 }

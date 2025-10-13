@@ -8,7 +8,6 @@ import { analyzeBmsScreenshots } from './services/geminiService';
 import { registerBmsSystem, getRegisteredSystems, getAnalysisHistory, linkAnalysisToSystem, associateDlToSystem, getJobStatuses, getAnalysisRecordById } from './services/clientService';
 import type { BmsSystem, DisplayableAnalysisResult } from './types';
 import { useAppState } from './state/appState';
-import { getBasename } from './utils';
 
 // Centralized client-side logger for consistency and verbosity
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
@@ -19,6 +18,9 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
         context
     }));
 };
+
+const POLLING_INTERVAL_MS = 5000;
+const CLIENT_JOB_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 
 function App() {
   const { state, dispatch } = useAppState();
@@ -32,10 +34,10 @@ function App() {
     isRegisterModalOpen,
     registrationContext,
     registeredSystems,
-    analysisHistory,
   } = state;
   
-  const pollingIntervalRef = useRef<number | null>(null);
+  const pollingTimeoutRef = useRef<number | null>(null);
+  const isPollingRef = useRef(false);
 
   const fetchAppData = useCallback(async () => {
     log('info', 'Fetching initial application data (systems and history).');
@@ -58,18 +60,34 @@ function App() {
   }, [fetchAppData]);
   
   const pollJobStatuses = useCallback(async () => {
+      if (isPollingRef.current) {
+          log('info', 'Polling is already in progress. Skipping this cycle.');
+          return;
+      }
+
       const pendingJobs = state.analysisResults.filter(r => r.jobId && !['completed', 'failed'].includes(r.error?.toLowerCase() ?? ''));
-      if (pendingJobs.length === 0) {
-          if (pollingIntervalRef.current) {
-              log('info', 'No pending jobs. Stopping status poller.');
-              clearInterval(pollingIntervalRef.current);
-              pollingIntervalRef.current = null;
+      const jobsToPoll = [];
+      const now = Date.now();
+
+      for (const job of pendingJobs) {
+          if (job.submittedAt && (now - job.submittedAt > CLIENT_JOB_TIMEOUT_MS)) {
+              log('warn', 'Job timed out on client-side.', { jobId: job.jobId, fileName: job.fileName });
+              dispatch({ type: 'JOB_TIMED_OUT', payload: { jobId: job.jobId! } });
+          } else {
+              jobsToPoll.push(job);
           }
+      }
+
+      if (jobsToPoll.length === 0) {
+          log('info', 'No active jobs to poll.');
+          if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
           return;
       }
       
-      const jobIds = pendingJobs.map(j => j.jobId!);
+      isPollingRef.current = true;
+      const jobIds = jobsToPoll.map(j => j.jobId!);
       log('info', 'Polling job statuses.', { jobCount: jobIds.length, jobIds });
+      
       try {
           const statuses = await getJobStatuses(jobIds);
           let needsHistoryRefresh = false;
@@ -85,7 +103,7 @@ function App() {
                   } else {
                      log('warn', 'Job completed but could not fetch the final record.', { jobId: status.jobId, recordId: status.recordId });
                   }
-              } else if (status.status === 'failed' || status.status === 'not_found') {
+              } else if (status.status.startsWith('failed') || status.status === 'not_found') {
                   log('warn', `Job ${status.status}.`, { jobId: status.jobId, error: status.error });
                   dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.jobId, status: status.error || 'Failed' } });
               } else {
@@ -94,30 +112,31 @@ function App() {
               }
           }
           if (needsHistoryRefresh) {
-              log('info', 'A job completed, refreshing all app data.');
-              fetchAppData(); // Full refresh to keep history consistent
+              log('info', 'A job completed. The history list will update on the next full refresh.');
           }
       } catch (err) {
           log('warn', 'Failed to poll job statuses.', { error: err instanceof Error ? err.message : 'Unknown error' });
+      } finally {
+          isPollingRef.current = false;
+          // Schedule the next poll
+          pollingTimeoutRef.current = window.setTimeout(pollJobStatuses, POLLING_INTERVAL_MS);
       }
-  }, [state.analysisResults, dispatch, fetchAppData]);
+  }, [state.analysisResults, dispatch]);
 
   useEffect(() => {
-    const pendingJobs = analysisResults.filter(r => r.jobId && !['completed', 'failed'].includes(r.error?.toLowerCase() ?? ''));
-    if (pendingJobs.length > 0 && !pollingIntervalRef.current) {
+    const pendingJobs = analysisResults.some(r => r.jobId && !['completed', 'failed'].includes(r.error?.toLowerCase() ?? ''));
+    
+    if (pendingJobs && !pollingTimeoutRef.current && !isPollingRef.current) {
         log('info', 'Pending jobs found. Starting status poller.');
-        pollingIntervalRef.current = window.setInterval(pollJobStatuses, 5000);
-    } else if (pendingJobs.length === 0 && pollingIntervalRef.current) {
-        log('info', 'No more pending jobs. Clearing poller interval.');
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
+        // Initial call starts the recursive polling chain
+        pollingTimeoutRef.current = window.setTimeout(pollJobStatuses, POLLING_INTERVAL_MS);
     }
-
+    
     return () => {
-        if (pollingIntervalRef.current) {
-            log('info', 'Component unmounting. Clearing poller interval.');
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
+        if (pollingTimeoutRef.current) {
+            log('info', 'Component unmounting or dependencies changed. Clearing poller timeout.');
+            clearTimeout(pollingTimeoutRef.current);
+            pollingTimeoutRef.current = null;
         }
     };
 }, [analysisResults, pollJobStatuses]);
@@ -139,40 +158,29 @@ function App() {
 
   const handleAnalyze = async (files: File[]) => {
     log('info', 'Main analyze trigger', { fileCount: files.length });
-    const existingFilenameMap = new Map(analysisHistory.filter(r => r.fileName).map(r => [getBasename(r.fileName!), r]));
-    const initialResults: DisplayableAnalysisResult[] = [];
-    const batchBasenames = new Set<string>();
-    const filesToAnalyze: File[] = [];
-
-    for (const file of files) {
-        const basename = getBasename(file.name);
-        if (batchBasenames.has(basename)) {
-            log('info', 'Skipping file: duplicate in current batch.', { fileName: file.name });
-            initialResults.push({ fileName: file.name, data: null, error: null, isDuplicate: true, isBatchDuplicate: true, file });
-        } else if (existingFilenameMap.has(basename)) {
-            log('info', 'Skipping file: duplicate in history.', { fileName: file.name });
-            const originalRecord = existingFilenameMap.get(basename)!;
-            initialResults.push({ fileName: file.name, data: originalRecord.analysis, error: null, isDuplicate: true, file, recordId: originalRecord.id, weather: originalRecord.weather });
-        } else {
-            batchBasenames.add(basename);
-            filesToAnalyze.push(file);
-            initialResults.push({ fileName: file.name, data: null, error: 'Queued', file });
-        }
-    }
     
-    log('info', 'Preparing analysis with initial results.', { results: initialResults.map(r => ({fileName: r.fileName, isDuplicate: r.isDuplicate})) });
+    // The client no longer checks for duplicates. It just prepares all files for submission.
+    const initialResults: DisplayableAnalysisResult[] = files.map(f => ({ 
+        fileName: f.name, 
+        data: null, 
+        error: 'Submitting', 
+        file: f,
+        submittedAt: Date.now()
+    }));
+    
     dispatch({ type: 'PREPARE_ANALYSIS', payload: initialResults });
+
     setTimeout(() => document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
 
-    if (filesToAnalyze.length === 0) {
+    if (files.length === 0) {
       log('info', 'No new files to analyze.');
-      dispatch({ type: 'ANALYSIS_COMPLETE' }); // Reset loading state
+      dispatch({ type: 'ANALYSIS_COMPLETE' });
       return;
     }
 
     try {
-        log('info', 'App handleAnalyze trigger', { fileCount: filesToAnalyze.length, state: 'main', timestamp: new Date().toISOString() });
-        const jobCreationResults = await analyzeBmsScreenshots(filesToAnalyze, registeredSystems);
+        log('info', 'App handleAnalyze trigger', { fileCount: files.length, state: 'main', timestamp: new Date().toISOString() });
+        const jobCreationResults = await analyzeBmsScreenshots(files, registeredSystems);
         dispatch({ type: 'START_ANALYSIS_JOBS', payload: jobCreationResults });
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during analysis.';

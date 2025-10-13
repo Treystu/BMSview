@@ -128,13 +128,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 }
             }
             if (needsHistoryRefresh) {
-                log('info', 'Bulk job(s) completed, refreshing main data.');
-                fetchData();
+                log('info', 'Bulk job(s) completed. The history table will update on the next full refresh.');
+                // We no longer call fetchData() here to prevent UI "flopping".
+                // The UI state is updated via UPDATE_BULK_JOB_COMPLETED, which is sufficient for user feedback.
             }
         } catch (err) {
             log('warn', 'Failed to poll bulk job statuses.', { error: err instanceof Error ? err.message : 'Unknown error' });
         }
-    }, [state.bulkUploadResults, dispatch, fetchData]);
+    }, [state.bulkUploadResults, dispatch]);
 
     useEffect(() => {
         const pendingJobs = bulkUploadResults.filter(r => r.jobId && !['completed', 'failed'].includes(r.error?.toLowerCase() ?? ''));

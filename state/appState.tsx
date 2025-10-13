@@ -3,9 +3,10 @@ import type { BmsSystem, DisplayableAnalysisResult, AnalysisRecord } from '../ty
 
 type JobCreationResponse = {
     fileName: string;
-    jobId: string;
+    jobId?: string;
     status: string;
     error?: string;
+    duplicateRecordId?: string;
 };
 
 // 1. State Shape
@@ -53,7 +54,8 @@ export type AppAction =
   | { type: 'REGISTER_SYSTEM_ERROR'; payload: string | null }
   | { type: 'UPDATE_RESULTS_AFTER_LINK' }
   | { type: 'REPROCESS_START'; payload: { fileName: string } }
-  | { type: 'ASSIGN_SYSTEM_TO_ANALYSIS'; payload: { fileName: string; systemId: string } };
+  | { type: 'ASSIGN_SYSTEM_TO_ANALYSIS'; payload: { fileName: string; systemId: string } }
+  | { type: 'JOB_TIMED_OUT'; payload: { jobId: string } };
 
 // 3. Reducer
 const appReducer = (state: AppState, action: AppAction): AppState => {
@@ -64,21 +66,43 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       const newResults = action.payload.filter(p => !existingFileNames.has(p.fileName));
       return { ...state, isLoading: true, error: null, analysisResults: [...state.analysisResults, ...newResults] };
 
-    case 'START_ANALYSIS_JOBS':
+    case 'START_ANALYSIS_JOBS': {
         const jobsMap = new Map<string, JobCreationResponse>();
         action.payload.forEach(job => jobsMap.set(job.fileName, job));
+        const historyMap = new Map(state.analysisHistory.map(r => [r.id, r]));
 
         return {
             ...state,
-            isLoading: false,
+            isLoading: false, // Stop global loading, individual items show progress.
             analysisResults: state.analysisResults.map(r => {
                 const job = jobsMap.get(r.fileName);
-                if (job) {
-                    return { ...r, jobId: job.jobId, error: job.status };
+                if (!job) return r; // Not part of this job submission batch
+
+                if (job.status === 'duplicate_history' && job.duplicateRecordId) {
+                    const originalRecord = historyMap.get(job.duplicateRecordId);
+                    return { 
+                        ...r, 
+                        isDuplicate: true,
+                        isBatchDuplicate: false,
+                        data: originalRecord?.analysis || null,
+                        weather: originalRecord?.weather,
+                        recordId: originalRecord?.id,
+                        error: null, // Clear 'submitting' status
+                    };
                 }
-                return r;
+                 if (job.status === 'duplicate_batch') {
+                    return {
+                        ...r,
+                        isDuplicate: true,
+                        isBatchDuplicate: true,
+                        error: null,
+                    };
+                }
+                
+                return { ...r, jobId: job.jobId, error: job.status };
             })
         };
+    }
     
     case 'UPDATE_JOB_STATUS':
       return {
@@ -102,6 +126,14 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
           } : r
         ),
       };
+      
+    case 'JOB_TIMED_OUT':
+        return {
+            ...state,
+            analysisResults: state.analysisResults.map(r =>
+                r.jobId === action.payload.jobId ? { ...r, error: 'failed_client_timeout', jobId: undefined } : r
+            ),
+        };
 
     case 'ANALYSIS_COMPLETE':
       return { ...state, isLoading: false };
@@ -151,7 +183,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         isLoading: true,
         analysisResults: state.analysisResults.map(r =>
           r.fileName === action.payload.fileName
-            ? { ...r, data: null, error: 'Queued', isDuplicate: false, saveError: null, recordId: undefined, jobId: undefined, forcedSystemId: undefined }
+            ? { ...r, data: null, error: 'Submitting', isDuplicate: false, saveError: null, recordId: undefined, jobId: undefined, forcedSystemId: undefined, submittedAt: Date.now() }
             : r
         )
       };

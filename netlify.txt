@@ -6,6 +6,9 @@
 [functions]
   "process-analysis" = { background = true }
 
+[functions.job-shepherd]
+  schedule = "*/1 * * * *"
+
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
 

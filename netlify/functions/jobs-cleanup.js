@@ -40,7 +40,7 @@ exports.handler = async function(event, context) {
                 try {
                     const job = await withRetry(() => jobsStore.get(blob.key, { type: "json" }));
                     
-                    if (job && (job.status === 'completed' || job.status === 'failed') && (job.image || job.images)) {
+                    if (job && (job.status === 'completed' || job.status.startsWith('failed')) && (job.image || job.images)) {
                         log('debug', 'Found completed/failed job with image data. Cleaning.', jobLogContext);
                         const { image, images, ...jobWithoutImages } = job;
                         await withRetry(() => jobsStore.setJSON(blob.key, jobWithoutImages));

@@ -176,11 +176,18 @@ const ActionableInsights: React.FC<{ analysis: AnalysisData }> = ({ analysis }) 
   );
 };
 
+const formatError = (error: string): string => {
+    if (error.startsWith('failed_')) {
+        const reason = error.replace('failed_', '').replace(/_/g, ' ');
+        // Capitalize first letter
+        return `Failed: ${reason.charAt(0).toUpperCase() + reason.slice(1)}`;
+    }
+    return error;
+};
 
 const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSystems, onLinkRecord, onReprocess, onRegisterNewSystem }) => {
   const { fileName, data, error, weather, isDuplicate, isBatchDuplicate, file, saveError, recordId } = result;
   
-  // Use a regex to catch all in-progress statuses, including new granular ones.
   const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
 
   const isCompleted = error?.toLowerCase() === 'completed';
@@ -196,7 +203,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
     }
   };
 
-  // Display a unified loading/pending state
   if (isPending) {
     return (
       <div className="bg-neutral-light p-8 rounded-xl shadow-lg max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-center">
@@ -263,7 +269,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
       {isActualError && !isDuplicate && (
         <div className="p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg">
           <h4 className="text-lg font-semibold text-red-800 mb-2">Analysis Failed</h4>
-          <p className="text-red-700">{error}</p>
+          <p className="text-red-700">{formatError(error)}</p>
         </div>
       )}
 
@@ -292,19 +298,15 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
               />
           )}
 
-          {/* Actionable Insights Section */}
           <ActionableInsights analysis={data} />
 
-          {/* AI Summary Section */}
           <div className="mb-8 p-4 bg-blue-50 border-l-4 border-secondary rounded-r-lg">
             <h4 className="text-xl font-semibold text-neutral-dark mb-2">AI General Summary</h4>
             <p className="text-neutral">{data.summary || "No summary available."}</p>
           </div>
 
-          {/* Weather Section */}
           {weather && <WeatherSection weather={weather} />}
 
-          {/* Core Vitals Section */}
           <div className="mb-8">
             <h4 className="text-xl font-semibold text-neutral-dark mb-4">Core Vitals</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -315,8 +317,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
             </div>
           </div>
           
-           {/* Capacity & Cycles Section */}
-          <div className="mb-8">
+           <div className="mb-8">
             <h4 className="text-xl font-semibold text-neutral-dark mb-4">Capacity & Cycles</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {(() => {
@@ -344,8 +345,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
             </div>
           </div>
           
-           {/* System Status Section */}
-          <div className="mb-8">
+           <div className="mb-8">
             <h4 className="text-xl font-semibold text-neutral-dark mb-4">System Status</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {data.status && <MetricCard title="Status" value={data.status} unit="" />}
@@ -355,8 +355,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
             </div>
           </div>
           
-           {/* Temperatures Section */}
-          {(data.temperature != null || data.mosTemperature != null || (data.temperatures && data.temperatures.length > 1)) && (
+           {(data.temperature != null || data.mosTemperature != null || (data.temperatures && data.temperatures.length > 1)) && (
             <div className="mb-8">
               <h4 className="text-xl font-semibold text-neutral-dark mb-4">Temperatures</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -373,7 +372,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
             </div>
           )}
           
-          {/* Cell Health Section */}
           {(data.highestCellVoltage != null || data.lowestCellVoltage != null || data.cellVoltageDifference != null || data.averageCellVoltage != null) && (
             <div className="mb-8">
               <h4 className="text-xl font-semibold text-neutral-dark mb-4">Cell Health</h4>
@@ -394,8 +392,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
             </div>
           )}
 
-           {/* Device Details Section */}
-          {(data.serialNumber || data.softwareVersion || data.hardwareVersion || data.snCode) && (
+           {(data.serialNumber || data.softwareVersion || data.hardwareVersion || data.snCode) && (
             <div className="mb-8">
               <h4 className="text-xl font-semibold text-neutral-dark mb-4">Device Details</h4>
               <div className="p-4 bg-white rounded-lg shadow-md text-sm text-neutral-dark space-y-2">
@@ -407,7 +404,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
             </div>
           )}
           
-          {/* Alerts */}
           {nonCriticalAlerts.length > 0 && (
             <div className="mb-8">
               <h4 className="text-xl font-semibold text-neutral-dark mb-2">Alerts & Warnings</h4>
@@ -419,7 +415,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
             </div>
           )}
 
-          {/* Cell Voltages */}
           {data.cellVoltages && data.cellVoltages.length > 0 && (
             <div>
               <h4 className="text-xl font-semibold text-neutral-dark mb-4">Cell Voltage Breakdown</h4>
