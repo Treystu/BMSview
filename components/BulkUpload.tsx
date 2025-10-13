@@ -13,14 +13,14 @@ interface BulkUploadProps {
 
 const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
 
-// Helper to determine if a status string represents a final, non-successful state.
-const getIsActualError = (error: string | null | undefined): boolean => {
-    if (!error) return false;
-    const lowerError = error.toLowerCase();
-    const isCompleted = lowerError === 'completed';
-    const isPending = PENDING_STATUS_REGEX.test(lowerError);
-    // It's an actual error if it's not completed, not a known pending state, and not 'skipped'.
-    return !isCompleted && !isPending && !lowerError.includes('skipped');
+// Helper to determine if a result represents a final, failed state.
+const getIsActualError = (result: DisplayableAnalysisResult): boolean => {
+    const status = result.error;
+    // Not an error if it's a duplicate, has no status, is completed, or is in a pending state.
+    if (result.isDuplicate || !status || status.toLowerCase() === 'completed' || PENDING_STATUS_REGEX.test(status.toLowerCase())) {
+        return false;
+    }
+    return true;
 };
 
 // A more robust rendering function for the status of each upload.
@@ -28,17 +28,17 @@ const renderStatus = (result: DisplayableAnalysisResult) => {
     const status = result.error || 'Queued';
     const lowerStatus = status.toLowerCase();
 
-    if (lowerStatus === 'completed') {
-        return <span className="font-semibold text-green-400">Success</span>;
-    }
     if (result.isDuplicate || lowerStatus.includes('skipped')) {
         return <span title="Duplicate file name in batch or history" className="font-semibold text-yellow-400 cursor-help">Skipped</span>;
+    }
+    if (lowerStatus === 'completed') {
+        return <span className="font-semibold text-green-400">Success</span>;
     }
     if (result.saveError) {
         return <span title={result.saveError} className="font-semibold text-yellow-400 cursor-help">Save Error</span>;
     }
-    if (getIsActualError(result.error)) {
-         return <span title={result.error || 'Failed'} className="font-semibold text-red-400 cursor-help">Error</span>;
+    if (getIsActualError(result)) {
+         return <span title={result.error || 'Failed'} className="font-semibold text-red-400 cursor-help">Failed</span>;
     }
     
     // Any other status is considered in-progress.
@@ -68,22 +68,17 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onAnalyze, results, isLoading, 
     }
   };
 
-  // Calculate progress and summary with the new robust logic.
+  // --- NEW, MORE ACCURATE SUMMARY LOGIC ---
   const totalFiles = results.length;
-  const queuedCount = results.filter(r => r.error === 'Queued').length;
+  const successCount = results.filter(r => r.error?.toLowerCase() === 'completed').length;
+  const skippedCount = results.filter(r => r.isDuplicate).length;
+  const failedCount = results.filter(getIsActualError).length;
+  
+  const terminalCount = successCount + skippedCount + failedCount;
+  const pendingCount = totalFiles - terminalCount;
+  
+  const progress = totalFiles > 0 ? (terminalCount / totalFiles) * 100 : 0;
 
-  const isProcessed = (result: DisplayableAnalysisResult): boolean => {
-    if (result.isDuplicate) return true;
-    const status = result.error?.toLowerCase();
-    if (status === 'completed') return true;
-    return getIsActualError(status);
-  };
-
-  const processedFiles = results.filter(isProcessed).length;
-  const successCount = results.filter(r => r.error?.toLowerCase() === 'completed' && !r.isDuplicate).length;
-  const duplicateCount = results.filter(r => r.isDuplicate).length;
-  const errorCount = results.filter(r => !r.isDuplicate && getIsActualError(r.error)).length;
-  const progress = totalFiles > 0 ? (processedFiles / totalFiles) * 100 : 0;
 
   return (
     <div className="bg-gray-800 p-6 rounded-lg shadow-inner">
@@ -161,12 +156,12 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onAnalyze, results, isLoading, 
                   <div className="bg-secondary h-2.5 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
               </div>
               <div className="text-xs text-gray-400 flex justify-between mt-2">
-                  <span>Processed: {processedFiles} / {totalFiles}</span>
+                  <span>Processed: {terminalCount} / {totalFiles}</span>
                   <div className="flex flex-wrap gap-x-3 gap-y-1 justify-end">
-                      <span className="text-blue-400 font-medium">Queued: {queuedCount}</span>
+                      <span className="text-blue-400 font-medium">Pending: {pendingCount}</span>
                       <span className="text-green-400 font-medium">Success: {successCount}</span>
-                      <span className="text-yellow-400 font-medium">Skipped: {duplicateCount}</span>
-                      <span className="text-red-400 font-medium">Failed: {errorCount}</span>
+                      <span className="text-yellow-400 font-medium">Skipped: {skippedCount}</span>
+                      <span className="text-red-400 font-medium">Failed: {failedCount}</span>
                   </div>
               </div>
 

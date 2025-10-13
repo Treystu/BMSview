@@ -76,8 +76,7 @@ const processQueue = async (jobsStore, log, withRetry) => {
         const jobLogContext = { jobId: job.id, fileName: job.fileName };
         try {
             log('debug', 'Locking job by moving it to Processing status.', jobLogContext);
-            const { image, images, ...jobWithoutImages } = job;
-            const updatedJob = { ...jobWithoutImages, status: 'Processing', statusEnteredAt: new Date().toISOString(), lastHeartbeat: new Date().toISOString() };
+            const updatedJob = { ...job, status: 'Processing', statusEnteredAt: new Date().toISOString(), lastHeartbeat: new Date().toISOString() };
             
             // Set the new prefixed key first
             await withRetry(() => jobsStore.setJSON(job.id, updatedJob, { key: `Processing/${job.id}` }));

@@ -19,16 +19,26 @@ const updateJobStatus = async (jobId, status, log, jobsStore, withRetry, extra =
             log('warn', 'Tried to update status for a job that does not exist.', logContext);
             return;
         }
-        // Always strip large image data to prevent re-saving it on simple status updates.
-        const { image, images, ...jobWithoutImages } = job;
-        const updatedJob = {
-            ...jobWithoutImages,
+
+        const isTerminal = status === 'completed' || status.startsWith('failed');
+        // Checkpoint status also means image can be removed.
+        const isCheckpoint = status === 'Extraction complete (checkpoint)';
+
+        let jobToSave = {
+            ...job,
+            ...extra,
             status,
             statusEnteredAt: new Date().toISOString(),
             lastHeartbeat: new Date().toISOString(),
-            ...extra
         };
-        await withRetry(() => jobsStore.setJSON(jobId, updatedJob));
+
+        if (isTerminal || isCheckpoint) {
+            delete jobToSave.image;
+            delete jobToSave.images;
+        }
+        
+        await withRetry(() => jobsStore.setJSON(jobId, jobToSave));
+        
         log('info', 'Job status, stage timestamp, and heartbeat updated successfully.', logContext);
     } catch (e) {
         log('error', 'Failed to update job status in blob store.', { ...logContext, error: e.message });
