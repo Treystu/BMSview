@@ -1,24 +1,8 @@
 const { getConfiguredStore } = require("./utils/blobs.js");
 const { createLogger } = require("./utils/logger.js");
+const { createRetryWrapper } = require("./utils/retry.js");
 
 const JOBS_STORE_NAME = "bms-jobs";
-
-const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
-    for (let i = 0; i <= maxRetries; i++) {
-        try {
-            return await fn();
-        } catch (error) {
-            const isRetryable = (error instanceof TypeError) || (error.message && error.message.includes('401 status code'));
-            if (isRetryable && i < maxRetries) {
-                const delay = initialDelay * Math.pow(2, i) + Math.random() * initialDelay;
-                log('warn', `A retryable blob store operation failed. Retrying...`, { attempt: i + 1, error: error.message });
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                throw error;
-            }
-        }
-    }
-};
 
 const respond = (statusCode, body) => ({
     statusCode,
@@ -28,6 +12,7 @@ const respond = (statusCode, body) => ({
 
 exports.handler = async function(event, context) {
     const log = createLogger('get-job-status', context);
+    const withRetry = createRetryWrapper(log);
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod, queryStringParameters } = event;
     const logContext = { clientIp, httpMethod };
@@ -57,7 +42,7 @@ exports.handler = async function(event, context) {
         const jobsStore = getConfiguredStore(JOBS_STORE_NAME, log);
 
         const jobPromises = jobIds.map(jobId => 
-            withRetry(() => jobsStore.get(jobId, { type: "json" }), log)
+            withRetry(() => jobsStore.get(jobId, { type: "json" }))
             .then(job => {
                 const jobLogContext = { ...logContext, jobId };
                 if (job) {

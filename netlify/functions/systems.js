@@ -1,34 +1,18 @@
 const { v4: uuidv4 } = require("uuid");
 const { getConfiguredStore } = require("./utils/blobs.js");
 const { createLogger } = require("./utils/logger.js");
+const { createRetryWrapper } = require("./utils/retry.js");
 
 const STORE_NAME = "bms-systems";
 const HISTORY_STORE_NAME = "bms-history";
 const CACHE_KEY = "_all_systems_cache";
 
-const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
-    for (let i = 0; i <= maxRetries; i++) {
-        try {
-            return await fn();
-        } catch (error) {
-            const isRetryable = (error instanceof TypeError) || (error.message && error.message.includes('401 status code'));
-            if (isRetryable && i < maxRetries) {
-                const delay = initialDelay * Math.pow(2, i) + Math.random() * initialDelay;
-                log('warn', `A retryable blob store operation failed. Retrying...`, { attempt: i + 1, error: error.message });
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                throw error;
-            }
-        }
-    }
-};
-
-const updateCache = async (store, log, updateFn) => {
+const updateCache = async (store, log, withRetry, updateFn) => {
     log('debug', 'Attempting to update systems cache.');
     for (let i = 0; i < 5; i++) { // retry loop for contention
         let cache, metadata;
         try {
-            const result = await withRetry(() => store.getWithMetadata(CACHE_KEY, { type: 'json' }), log);
+            const result = await withRetry(() => store.getWithMetadata(CACHE_KEY, { type: 'json' }));
             cache = result.data || [];
             metadata = result.metadata;
             log('debug', 'Systems cache fetched.', { etag: metadata?.etag, currentSize: cache.length });
@@ -45,7 +29,7 @@ const updateCache = async (store, log, updateFn) => {
         const updatedCache = updateFn(cache);
 
         try {
-            await withRetry(() => store.setJSON(CACHE_KEY, updatedCache, { etag: metadata?.etag }), log);
+            await withRetry(() => store.setJSON(CACHE_KEY, updatedCache, { etag: metadata?.etag }));
             log('info', 'Systems cache updated successfully.', { etag: metadata?.etag, updatedSize: updatedCache.length });
             return;
         } catch (e) {
@@ -65,7 +49,7 @@ const respond = (statusCode, body) => ({
     headers: { 'Content-Type': 'application/json' },
 });
 
-const rebuildSystemsCache = async (store, log) => {
+const rebuildSystemsCache = async (store, log, withRetry) => {
     log('info', 'Rebuilding systems cache.', { cacheKey: CACHE_KEY });
     let allSystems = [];
     let cursor = undefined;
@@ -75,7 +59,7 @@ const rebuildSystemsCache = async (store, log) => {
         log('debug', 'Processing page of system blobs for cache rebuild.', { count: blobsToFetch.length, cursor: nextCursor || 'end' });
         for (const blob of blobsToFetch) {
             try {
-                const system = await withRetry(() => store.get(blob.key, { type: "json" }), log);
+                const system = await withRetry(() => store.get(blob.key, { type: "json" }));
                 if (system) allSystems.push(system);
             } catch (error) {
                 log('error', `Failed to get/parse system blob during cache rebuild.`, { key: blob.key, errorMessage: error.message });
@@ -83,13 +67,14 @@ const rebuildSystemsCache = async (store, log) => {
         }
         cursor = nextCursor;
     } while (cursor);
-    await withRetry(() => store.setJSON(CACHE_KEY, allSystems), log);
+    await withRetry(() => store.setJSON(CACHE_KEY, allSystems));
     log('info', 'Systems cache rebuild complete.', { totalItems: allSystems.length });
     return allSystems;
 };
 
 exports.handler = async function(event, context) {
     const log = createLogger('systems', context);
+    const withRetry = createRetryWrapper(log);
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod, queryStringParameters, body } = event;
     const logContext = { clientIp, httpMethod };
@@ -102,12 +87,12 @@ exports.handler = async function(event, context) {
             const { systemId } = queryStringParameters || {};
             if (systemId) {
                 log('debug', 'Fetching single system by ID.', { ...logContext, systemId });
-                const system = await withRetry(() => store.get(systemId, { type: "json" }), log);
+                const system = await withRetry(() => store.get(systemId, { type: "json" }));
                 return system ? respond(200, system) : respond(404, { error: "System not found." });
             }
             log('debug', 'Fetching all systems, attempting cache read.', logContext);
             try {
-                const cachedSystems = await withRetry(() => store.get(CACHE_KEY, { type: 'json' }), log);
+                const cachedSystems = await withRetry(() => store.get(CACHE_KEY, { type: 'json' }));
                 if (cachedSystems && cachedSystems.length > 0) {
                     log('info', 'Systems cache hit.', { ...logContext, itemCount: cachedSystems.length });
                     return respond(200, cachedSystems);
@@ -115,7 +100,7 @@ exports.handler = async function(event, context) {
             } catch (error) {
                 if (error.status !== 404) log('warn', 'Error reading cache, will rebuild.', { ...logContext, error: error.message });
             }
-            const systems = await rebuildSystemsCache(store, log);
+            const systems = await rebuildSystemsCache(store, log, withRetry);
             return respond(200, systems);
         }
 
@@ -131,7 +116,7 @@ exports.handler = async function(event, context) {
                 const systemsToFetch = [...new Set(idsToMerge)];
                 const fetchedSystems = [];
                 for (const id of systemsToFetch) {
-                    fetchedSystems.push(await withRetry(() => store.get(id, { type: "json" }), log).catch(() => null));
+                    fetchedSystems.push(await withRetry(() => store.get(id, { type: "json" })).catch(() => null));
                 }
 
                 const systemsMap = new Map(fetchedSystems.filter(Boolean).map(s => [s.id, s]));
@@ -151,9 +136,9 @@ exports.handler = async function(event, context) {
                     const { blobs, cursor: nextCursor } = await historyStore.list({ cursor, limit: 1000 });
                     for (const blob of blobs) {
                         try {
-                            const record = await withRetry(() => historyStore.get(blob.key, { type: 'json' }), log);
+                            const record = await withRetry(() => historyStore.get(blob.key, { type: 'json' }));
                             if (record && idsToDelete.includes(record.systemId || '')) {
-                                await withRetry(() => historyStore.setJSON(record.id, { ...record, systemId: primarySystem.id, systemName: primarySystem.name }), log);
+                                await withRetry(() => historyStore.setJSON(record.id, { ...record, systemId: primarySystem.id, systemName: primarySystem.name }));
                                 historyUpdateCount++;
                             }
                         } catch (e) { log('warn', `Failed to process history record during merge.`, { ...postLogContext, key: blob.key, error: e.message }); }
@@ -162,15 +147,15 @@ exports.handler = async function(event, context) {
                 } while (cursor);
                 log('info', `Updated ${historyUpdateCount} history records during merge.`, postLogContext);
 
-                await withRetry(() => store.setJSON(primarySystem.id, primarySystem), log);
+                await withRetry(() => store.setJSON(primarySystem.id, primarySystem));
                 log('info', 'Updated primary system in store.', { ...postLogContext, systemId: primarySystem.id });
 
                 for (const id of idsToDelete) {
-                    await withRetry(() => store.delete(id), log);
+                    await withRetry(() => store.delete(id));
                     log('info', 'Deleted merged system.', { ...postLogContext, deletedSystemId: id });
                 }
                 
-                await updateCache(store, log, cache => {
+                await updateCache(store, log, withRetry, cache => {
                     const cacheAfterDeletes = cache.filter(s => !idsToDelete.includes(s.id));
                     const index = cacheAfterDeletes.findIndex(s => s.id === primarySystem.id);
                     if (index > -1) cacheAfterDeletes[index] = primarySystem;
@@ -178,15 +163,15 @@ exports.handler = async function(event, context) {
                     return cacheAfterDeletes;
                 });
                 
-                await withRetry(() => historyStore.delete("_all_history_cache"), log).catch(err => log('warn', 'Failed to invalidate history cache on merge.', { ...postLogContext, error: err.message }));
+                await withRetry(() => historyStore.delete("_all_history_cache")).catch(err => log('warn', 'Failed to invalidate history cache on merge.', { ...postLogContext, error: err.message }));
                 log('warn', 'System merge operation completed successfully.', postLogContext);
                 return respond(200, { success: true });
             }
 
             const newSystem = { ...parsedBody, id: uuidv4(), associatedDLs: parsedBody.associatedDLs || [] };
             log('info', 'Creating new system.', { ...logContext, systemId: newSystem.id, systemName: newSystem.name });
-            await withRetry(() => store.setJSON(newSystem.id, newSystem), log);
-            await updateCache(store, log, cache => [...cache, newSystem]);
+            await withRetry(() => store.setJSON(newSystem.id, newSystem));
+            await updateCache(store, log, withRetry, cache => [...cache, newSystem]);
             return respond(201, newSystem);
         }
 
@@ -196,14 +181,14 @@ exports.handler = async function(event, context) {
             if (!systemId) return respond(400, { error: 'System ID is required for update.' });
             log('info', 'Updating system.', putLogContext);
             
-            const originalSystem = await withRetry(() => store.get(systemId, { type: "json" }), log);
+            const originalSystem = await withRetry(() => store.get(systemId, { type: "json" }));
             if (!originalSystem) return respond(404, { error: "System not found." });
 
             const updatedSystem = { ...originalSystem, ...JSON.parse(body), id: systemId };
-            await withRetry(() => store.setJSON(systemId, updatedSystem), log);
+            await withRetry(() => store.setJSON(systemId, updatedSystem));
             log('debug', 'System updated in store.', putLogContext);
             
-            await updateCache(store, log, cache => {
+            await updateCache(store, log, withRetry, cache => {
                 const index = cache.findIndex(s => s.id === systemId);
                 if (index > -1) cache[index] = updatedSystem;
                 else cache.push(updatedSystem);

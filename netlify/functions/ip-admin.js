@@ -1,22 +1,6 @@
 const { getConfiguredStore } = require("./utils/blobs.js");
 const { createLogger } = require("./utils/logger.js");
-
-const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
-    for (let i = 0; i <= maxRetries; i++) {
-        try {
-            return await fn();
-        } catch (error) {
-            const isRetryable = (error instanceof TypeError) || (error.message && error.message.includes('401 status code'));
-            if (isRetryable && i < maxRetries) {
-                const delay = initialDelay * Math.pow(2, i) + Math.random() * initialDelay;
-                log('warn', `A retryable blob store operation failed. Retrying...`, { attempt: i + 1, error: error.message });
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                throw error;
-            }
-        }
-    }
-};
+const { createRetryWrapper } = require("./utils/retry.js");
 
 const ipToInt = (ip) => ip.split('.').reduce((int, octet) => (int << 8) + parseInt(octet, 10), 0) >>> 0;
 
@@ -39,11 +23,11 @@ const isIpInRanges = (ip, ranges, log) => {
   return false;
 };
 
-const listAllBlobs = async (store, log) => {
+const listAllBlobs = async (store, log, withRetry) => {
     let allBlobs = []; let cursor = undefined;
     log('debug', `Starting to list all blobs from store: ${store.name}`);
     do {
-        const { blobs, cursor: nextCursor } = await withRetry(() => store.list({ cursor, limit: 1000 }), log);
+        const { blobs, cursor: nextCursor } = await withRetry(() => store.list({ cursor, limit: 1000 }));
         log('debug', 'Fetched a page of blobs', { store: store.name, count: blobs.length, nextCursor: nextCursor || 'end' });
         allBlobs.push(...blobs);
         cursor = nextCursor;
@@ -62,6 +46,7 @@ const respond = (statusCode, body) => ({
 
 exports.handler = async function(event, context) {
     const log = createLogger('ip-admin', context);
+    const withRetry = createRetryWrapper(log);
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod } = event;
     const logContext = { clientIp, httpMethod };
@@ -75,9 +60,9 @@ exports.handler = async function(event, context) {
             const blockedStore = getConfiguredStore("bms-blocked-ips", log);
 
             const [rateLimitBlobs, rawRangesData, rawBlockedData] = await Promise.all([
-                listAllBlobs(rateStore, log),
-                withRetry(() => verifiedStore.get("ranges", { type: "json" }), log).catch(() => []),
-                withRetry(() => blockedStore.get("ranges", { type: "json" }), log).catch(() => [])
+                listAllBlobs(rateStore, log, withRetry),
+                withRetry(() => verifiedStore.get("ranges", { type: "json" })).catch(() => []),
+                withRetry(() => blockedStore.get("ranges", { type: "json" })).catch(() => [])
             ]);
 
             const verifiedRanges = Array.isArray(rawRangesData) ? rawRangesData : [];
@@ -92,7 +77,7 @@ exports.handler = async function(event, context) {
             const trackedIpsPromises = (rateLimitBlobs || []).map(async (blob) => {
                 try {
                     const ip = keyToIp(blob.key);
-                    const timestamps = await withRetry(() => rateStore.get(blob.key, { type: "json" }), log) || [];
+                    const timestamps = await withRetry(() => rateStore.get(blob.key, { type: "json" })) || [];
                     const recentTimestamps = timestamps.filter(ts => ts > activityWindowStart);
                     if (recentTimestamps.length === 0) return null;
 
@@ -125,7 +110,7 @@ exports.handler = async function(event, context) {
             if (action === 'delete-ip' && key) {
                 log('warn', 'Deleting IP record from rate-limiting store.', postLogContext);
                 const rateStore = getConfiguredStore("rate-limiting", log);
-                await withRetry(() => rateStore.delete(key), log);
+                await withRetry(() => rateStore.delete(key));
                 return respond(200, { success: true });
             }
 
@@ -137,7 +122,7 @@ exports.handler = async function(event, context) {
                 return respond(400, { error: 'Invalid request body.' });
             }
             
-            const { data, metadata } = await withRetry(() => store.getWithMetadata(storeKey, { type: "json" }), log)
+            const { data, metadata } = await withRetry(() => store.getWithMetadata(storeKey, { type: "json" }))
                 .catch(err => (err.status === 404 ? { data: [], metadata: null } : Promise.reject(err)));
             
             let ranges = Array.isArray(data) ? data : [];
@@ -153,7 +138,7 @@ exports.handler = async function(event, context) {
                 ranges = ranges.filter(r => r !== range);
             }
             
-            await withRetry(() => store.setJSON(storeKey, ranges, { etag: metadata?.etag }), log);
+            await withRetry(() => store.setJSON(storeKey, ranges, { etag: metadata?.etag }));
             log('info', 'Successfully updated ranges.', { ...postLogContext, store: store.name, newCount: ranges.length });
 
             return respond(200, { [responseKey]: ranges });

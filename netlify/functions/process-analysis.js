@@ -2,6 +2,7 @@ const { GoogleGenAI, Type } = require("@google/genai");
 const { v4: uuidv4 } = require("uuid");
 const { getConfiguredStore } = require("./utils/blobs.js");
 const { createLogger } = require("./utils/logger.js");
+const { createRetryWrapper } = require("./utils/retry.js");
 
 const JOBS_STORE_NAME = "bms-jobs";
 const HISTORY_STORE_NAME = "bms-history";
@@ -9,48 +10,31 @@ const SYSTEMS_STORE_NAME = "bms-systems";
 const HISTORY_CACHE_KEY = "_all_history_cache";
 const GEMINI_API_TIMEOUT_MS = 45000;
 
-const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
-    for (let i = 0; i <= maxRetries; i++) {
-        try {
-            return await fn();
-        } catch (error) {
-            const isRetryable = (error instanceof TypeError) || (error.message && (error.message.includes('401 status code') || error.message.includes('502 status code')));
-            if (isRetryable && i < maxRetries) {
-                const delay = initialDelay * Math.pow(2, i) + Math.random() * initialDelay;
-                log('warn', `A retryable blob store operation failed. Retrying...`, { attempt: i + 1, error: error.message });
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                throw error;
-            }
-        }
-    }
-};
-
-const updateJobStatus = async (jobId, status, log, jobsStore, extra = {}) => {
+const updateJobStatus = async (jobId, status, log, jobsStore, withRetry, extra = {}) => {
     const logContext = { jobId, newStatus: status, ...extra };
     try {
         log('debug', 'Attempting to update job status.', logContext);
-        const job = await withRetry(() => jobsStore.get(jobId, { type: "json" }), log);
+        const job = await withRetry(() => jobsStore.get(jobId, { type: "json" }));
         if (!job) {
             log('warn', 'Tried to update status for a job that does not exist.', logContext);
             return;
         }
         const { image, images, ...jobWithoutImages } = job;
         const updatedJob = { ...jobWithoutImages, status, ...extra };
-        await withRetry(() => jobsStore.setJSON(jobId, updatedJob), log);
+        await withRetry(() => jobsStore.setJSON(jobId, updatedJob));
         log('info', 'Job status updated successfully.', logContext);
     } catch (e) {
         log('error', 'Failed to update job status in blob store.', { ...logContext, error: e.message });
     }
 };
 
-const updateHistoryCache = async (store, log, newRecord) => {
+const updateHistoryCache = async (store, log, withRetry, newRecord) => {
     const logContext = { recordId: newRecord.id };
     log('debug', 'Attempting to update history cache.', logContext);
     for (let i = 0; i < 5; i++) { // retry loop for contention
         let cache, metadata;
         try {
-            const result = await withRetry(() => store.getWithMetadata(HISTORY_CACHE_KEY, { type: 'json' }), log);
+            const result = await withRetry(() => store.getWithMetadata(HISTORY_CACHE_KEY, { type: 'json' }));
             cache = result.data || [];
             metadata = result.metadata;
             log('debug', 'History cache fetched.', { ...logContext, etag: metadata?.etag, currentSize: cache.length });
@@ -68,7 +52,7 @@ const updateHistoryCache = async (store, log, newRecord) => {
         updatedCache.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
         try {
-            await withRetry(() => store.setJSON(HISTORY_CACHE_KEY, updatedCache, { etag: metadata?.etag }), log);
+            await withRetry(() => store.setJSON(HISTORY_CACHE_KEY, updatedCache, { etag: metadata?.etag }));
             log('info', `History cache updated successfully.`, { ...logContext, newSize: updatedCache.length });
             return;
         } catch (e) {
@@ -158,7 +142,7 @@ const cleanAndParseJson = (text, log) => {
     }
 };
 
-const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsStore) => {
+const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsStore, withRetry) => {
     log('debug', 'Preparing for Gemini API call.');
     const extractionPrompt = getImageExtractionPrompt();
     const responseSchema = getResponseSchema();
@@ -198,7 +182,7 @@ const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsStor
                 const retryAfterMatch = error.message.match(/Please retry in (\d+\.?\d*)/);
                 let delay = (retryAfterMatch && parseFloat(retryAfterMatch[1]) * 1000) || (Math.pow(2, attempt) * 1000 + Math.random() * 1000);
                 
-                await updateJobStatus(jobId, `Retrying (API throttled)...`, log, jobsStore);
+                await updateJobStatus(jobId, `Retrying (API throttled)...`, log, jobsStore, withRetry);
                 const bufferTime = 5000;
                 if (delay > remainingTime - bufferTime) {
                     log('error', `Retry delay is too long for remaining execution time. Job will fail to prevent timeout.`, { delay, remainingTime });
@@ -271,7 +255,7 @@ const fetchWeatherData = async (lat, lon, timestamp, log) => {
             log('info', 'Successfully fetched weather data.', { ...logContext, result });
             return result;
         }
-        log('warn', 'Failed to fetch weather data.', { ...logContext, mainStatus: mainResponse.status, uviStatus: uviResponse.status });
+        log('warn', 'Failed to fetch weather data from OpenWeather.', { ...logContext, mainStatus: mainResponse.status, uviStatus: uviResponse.status });
     } catch (e) {
         log('error', 'Error fetching weather.', { ...logContext, errorMessage: e.message });
     }
@@ -304,6 +288,7 @@ const parseTimestamp = (timestampFromImage, fileName, log) => {
 
 exports.handler = async function(event, context) {
     const log = createLogger('process-analysis', context);
+    const withRetry = createRetryWrapper(log);
     log('debug', 'Function invoked.', { stage: 'invocation' });
 
     let jobId;
@@ -327,23 +312,23 @@ exports.handler = async function(event, context) {
         const historyStore = getConfiguredStore(HISTORY_STORE_NAME, log);
         const systemsStore = getConfiguredStore(SYSTEMS_STORE_NAME, log);
 
-        const job = await withRetry(() => jobsStore.get(jobId, { type: "json" }), log);
+        const job = await withRetry(() => jobsStore.get(jobId, { type: "json" }));
         if (!job) throw new Error(`Job with ID ${jobId} not found.`);
         log('debug', 'Fetched job from blob store.', { ...logContext, fileName: job.fileName });
 
-        await updateJobStatus(jobId, 'Processing', log, jobsStore);
+        await updateJobStatus(jobId, 'Processing', log, jobsStore, withRetry);
         const { image, mimeType, systems, fileName } = job;
         
-        await updateJobStatus(jobId, 'Extracting data', log, jobsStore);
-        const extractedData = await extractBmsData(ai, image, mimeType, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }), context, jobId, jobsStore);
+        await updateJobStatus(jobId, 'Extracting data', log, jobsStore, withRetry);
+        const extractedData = await extractBmsData(ai, image, mimeType, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }), context, jobId, jobsStore, withRetry);
         log('info', 'AI data extraction complete.', logContext);
 
-        await updateJobStatus(jobId, 'Mapping data', log, jobsStore);
+        await updateJobStatus(jobId, 'Mapping data', log, jobsStore, withRetry);
         const analysis = mapExtractedToAnalysisData(extractedData, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
         if (!analysis) throw new Error("Failed to process extracted data into a valid analysis object.");
         
-        await updateJobStatus(jobId, 'Matching system', log, jobsStore);
-        const allSystems = systems || await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' }), log).catch(() => []);
+        await updateJobStatus(jobId, 'Matching system', log, jobsStore, withRetry);
+        const allSystems = systems || await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' })).catch(() => []);
         const matchingSystem = analysis.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysis.dlNumber)) : null;
         log('info', `System matching result: ${matchingSystem ? matchingSystem.name : 'None'}.`, { ...logContext, dlNumber: analysis.dlNumber, systemId: matchingSystem?.id });
         
@@ -352,13 +337,13 @@ exports.handler = async function(event, context) {
 
         let weather = null;
         if (matchingSystem?.latitude && matchingSystem?.longitude) {
-            await updateJobStatus(jobId, 'Fetching weather', log, jobsStore);
+            await updateJobStatus(jobId, 'Fetching weather', log, jobsStore, withRetry);
             weather = await fetchWeatherData(matchingSystem.latitude, matchingSystem.longitude, timestamp, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
         } else {
              log('debug', 'Skipping weather fetch: system has no location data.', logContext);
         }
 
-        await updateJobStatus(jobId, 'Saving result', log, jobsStore);
+        await updateJobStatus(jobId, 'Saving result', log, jobsStore, withRetry);
         const record = {
             id: uuidv4(),
             timestamp,
@@ -370,12 +355,12 @@ exports.handler = async function(event, context) {
             fileName: fileName,
         };
         
-        await withRetry(() => historyStore.setJSON(record.id, record), log);
+        await withRetry(() => historyStore.setJSON(record.id, record));
         log('info', 'Successfully saved analysis record.', { ...logContext, recordId: record.id });
         
-        await updateHistoryCache(historyStore, log, record);
+        await updateHistoryCache(historyStore, log, withRetry, record);
         
-        await updateJobStatus(jobId, 'completed', log, jobsStore, { recordId: record.id });
+        await updateJobStatus(jobId, 'completed', log, jobsStore, withRetry, { recordId: record.id });
         log('info', 'Job completed successfully.', { ...logContext, recordId: record.id });
 
         return {
@@ -396,7 +381,7 @@ exports.handler = async function(event, context) {
                     friendlyError = 'API rate limit reached. Please wait and try again.';
                 }
                 
-                await updateJobStatus(jobId, 'failed', log, jobsStore, { error: friendlyError });
+                await updateJobStatus(jobId, 'failed', log, jobsStore, createRetryWrapper(log), { error: friendlyError });
             } catch (updateError) {
                 log('error', 'CRITICAL: Could not update job status to failed after a processing error.', { ...logContext, updateError: updateError.message });
             }

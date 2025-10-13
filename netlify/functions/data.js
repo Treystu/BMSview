@@ -1,22 +1,6 @@
 const { getConfiguredStore } = require("./utils/blobs.js");
 const { createLogger } = require("./utils/logger.js");
-
-const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
-    for (let i = 0; i <= maxRetries; i++) {
-        try {
-            return await fn();
-        } catch (error) {
-            const isRetryable = (error instanceof TypeError) || (error.message && error.message.includes('401 status code'));
-            if (isRetryable && i < maxRetries) {
-                const delay = initialDelay * Math.pow(2, i) + Math.random() * initialDelay;
-                log('warn', `A retryable blob store operation failed. Retrying...`, { attempt: i + 1, error: error.message });
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                throw error;
-            }
-        }
-    }
-};
+const { createRetryWrapper } = require("./utils/retry.js");
 
 const respond = (statusCode, body) => ({
     statusCode,
@@ -24,7 +8,7 @@ const respond = (statusCode, body) => ({
     headers: { 'Content-Type': 'application/json' },
 });
 
-const clearStore = async (store, log) => {
+const clearStore = async (store, log, withRetry) => {
     const storeName = store.name;
     const logContext = { storeName };
     log('warn', `Starting to clear store.`, logContext);
@@ -34,11 +18,11 @@ const clearStore = async (store, log) => {
     do {
         pageCount++;
         log('debug', `Fetching page ${pageCount} of blobs to delete.`, { ...logContext, cursor: cursor || 'start' });
-        const { blobs, cursor: nextCursor } = await withRetry(() => store.list({ cursor, limit: 1000 }), log);
+        const { blobs, cursor: nextCursor } = await withRetry(() => store.list({ cursor, limit: 1000 }));
         if (blobs && blobs.length > 0) {
             log('debug', `Found ${blobs.length} blobs on page ${pageCount}. Deleting them now.`, logContext);
             for (const blob of blobs) {
-                await withRetry(() => store.delete(blob.key), log);
+                await withRetry(() => store.delete(blob.key));
             }
             deletedCount += blobs.length;
             log('debug', `Deleted page ${pageCount}. Total deleted so far: ${deletedCount}.`, logContext);
@@ -53,6 +37,7 @@ const clearStore = async (store, log) => {
 
 exports.handler = async function(event, context) {
     const log = createLogger('data-management', context);
+    const withRetry = createRetryWrapper(log);
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod, queryStringParameters } = event;
     const logContext = { clientIp, httpMethod };
@@ -75,7 +60,7 @@ exports.handler = async function(event, context) {
             if (allStores.includes(storeToClearName)) {
                 log('warn', `Received request to clear single store.`, { ...logContext, storeToClear: storeToClearName });
                 const store = getConfiguredStore(storeToClearName, log);
-                const deletedCount = await clearStore(store, log);
+                const deletedCount = await clearStore(store, log, withRetry);
                 return respond(200, {
                     message: `Store '${storeToClearName}' cleared successfully.`,
                     details: { [storeToClearName]: deletedCount },
@@ -90,7 +75,7 @@ exports.handler = async function(event, context) {
         const deletionResults = {};
         for (const storeName of allStores) {
             const store = getConfiguredStore(storeName, log);
-            deletionResults[storeName] = await clearStore(store, log);
+            deletionResults[storeName] = await clearStore(store, log, withRetry);
         }
 
         log('warn', `Successfully cleared all data across all stores.`, { ...logContext, results: deletionResults });

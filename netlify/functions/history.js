@@ -1,33 +1,17 @@
 const { v4: uuidv4 } = require("uuid");
 const { getConfiguredStore } = require("./utils/blobs.js");
 const { createLogger } = require("./utils/logger.js");
+const { createRetryWrapper } = require("./utils/retry.js");
 
 const STORE_NAME = "bms-history";
 const SYSTEMS_STORE_NAME = "bms-systems";
 const CACHE_KEY = "_all_history_cache";
 
-const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
-    for (let i = 0; i <= maxRetries; i++) {
-        try {
-            return await fn();
-        } catch (error) {
-            const isRetryable = (error instanceof TypeError) || (error.message && error.message.includes('401 status code'));
-            if (isRetryable && i < maxRetries) {
-                const delay = initialDelay * Math.pow(2, i) + Math.random() * initialDelay;
-                log('warn', `A retryable blob store operation failed. Retrying...`, { attempt: i + 1, error: error.message });
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                throw error;
-            }
-        }
-    }
-};
-
-const updateCache = async (store, log, updateFn) => {
+const updateCache = async (store, log, withRetry, updateFn) => {
     for (let i = 0; i < 5; i++) { // retry loop for contention
         let cache, metadata;
         try {
-            const result = await withRetry(() => store.getWithMetadata(CACHE_KEY, { type: 'json' }), log);
+            const result = await withRetry(() => store.getWithMetadata(CACHE_KEY, { type: 'json' }));
             cache = result.data || [];
             metadata = result.metadata;
         } catch (e) {
@@ -44,7 +28,7 @@ const updateCache = async (store, log, updateFn) => {
         updatedCache.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
         try {
-            await withRetry(() => store.setJSON(CACHE_KEY, updatedCache, { etag: metadata?.etag }), log);
+            await withRetry(() => store.setJSON(CACHE_KEY, updatedCache, { etag: metadata?.etag }));
             log('debug', 'Cache updated successfully.', { etag: metadata?.etag, updatedSize: updatedCache.length });
             return; // Success
         } catch (e) {
@@ -58,7 +42,7 @@ const updateCache = async (store, log, updateFn) => {
     log('error', 'Failed to update cache after multiple retries.');
 };
 
-const rebuildHistoryCache = async (store, log) => {
+const rebuildHistoryCache = async (store, log, withRetry) => {
     log('info', 'Rebuilding history cache.', { cacheKey: CACHE_KEY });
     let allHistory = [];
     let cursor = undefined;
@@ -68,7 +52,7 @@ const rebuildHistoryCache = async (store, log) => {
         log('debug', 'Processing page of history blobs for cache rebuild.', { count: blobsToFetch.length, cursor: nextCursor || 'end' });
         for (const blob of blobsToFetch) {
             try {
-                const record = await withRetry(() => store.get(blob.key, { type: "json" }), log);
+                const record = await withRetry(() => store.get(blob.key, { type: "json" }));
                 if (record) allHistory.push(record);
             } catch (error) {
                 log('error', `Failed to get/parse blob during cache rebuild.`, { key: blob.key, errorMessage: error.message });
@@ -77,7 +61,7 @@ const rebuildHistoryCache = async (store, log) => {
         cursor = nextCursor;
     } while (cursor);
     allHistory.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    await withRetry(() => store.setJSON(CACHE_KEY, allHistory), log);
+    await withRetry(() => store.setJSON(CACHE_KEY, allHistory));
     log('info', 'History cache rebuild complete.', { totalItems: allHistory.length });
     return allHistory;
 };
@@ -90,8 +74,8 @@ const respond = (statusCode, body) => ({
 
 const fetchHistoricalWeather = async (lat, lon, timestamp, log) => {
     const apiKey = process.env.WEATHER_API_KEY;
-    if (!apiKey) {
-        log('warn', "Weather API key not configured.");
+    if (!lat || !lon || !apiKey) {
+        log('warn', 'Skipping weather fetch: missing lat, lon, or API key.', { hasLat: !!lat, hasLon: !!lon, hasApiKey: !!apiKey });
         return null;
     }
     const logContext = { lat, lon, timestamp };
@@ -115,18 +99,19 @@ const fetchHistoricalWeather = async (lat, lon, timestamp, log) => {
             if (uviResponse.ok && uviData && Array.isArray(uviData) && uviData.length > 0) {
                 result.uvi = uviData[0].value;
             }
-            log('debug', 'Successfully fetched historical weather data.', { ...logContext, result });
+            log('info', 'Successfully fetched weather data.', { ...logContext, result });
             return result;
         }
-        log('warn', 'Failed to fetch historical weather data from OpenWeather.', { ...logContext, mainStatus: mainResponse.status, uviStatus: uviResponse.status });
+        log('warn', 'Failed to fetch weather data from OpenWeather.', { ...logContext, mainStatus: mainResponse.status, uviStatus: uviResponse.status });
     } catch (e) {
-        log('error', 'Exception during historical weather fetch.', { ...logContext, errorMessage: e.message });
+        log('error', 'Error fetching weather.', { ...logContext, errorMessage: e.message });
     }
     return null;
 };
 
 exports.handler = async function(event, context) {
     const log = createLogger('history', context);
+    const withRetry = createRetryWrapper(log);
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod, queryStringParameters, body } = event;
     const logContext = { clientIp, httpMethod };
@@ -139,12 +124,12 @@ exports.handler = async function(event, context) {
             const { id } = queryStringParameters || {};
             if (id) {
                 log('debug', 'Fetching single history record by ID.', { ...logContext, id });
-                const record = await withRetry(() => store.get(id, { type: "json" }), log);
+                const record = await withRetry(() => store.get(id, { type: "json" }));
                 return record ? respond(200, record) : respond(404, { error: "Record not found." });
             }
             log('debug', 'Fetching all history records, attempting cache read.', logContext);
             try {
-                const cachedHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' }), log);
+                const cachedHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' }));
                 if (cachedHistory) {
                     log('info', 'History cache hit.', { ...logContext, itemCount: cachedHistory.length });
                     return respond(200, cachedHistory);
@@ -152,7 +137,7 @@ exports.handler = async function(event, context) {
             } catch (error) {
                  if (error.status !== 404) log('warn', 'Error reading history cache, will rebuild.', { ...logContext, error: error.message });
             }
-            const history = await rebuildHistoryCache(store, log);
+            const history = await rebuildHistoryCache(store, log, withRetry);
             return respond(200, history);
         }
 
@@ -164,20 +149,20 @@ exports.handler = async function(event, context) {
 
             if (action === 'fix-power-signs') {
                 log('info', 'Starting retroactive power sign fix for history records.', postLogContext);
-                const allHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' }), log).catch(() => rebuildHistoryCache(store, log));
+                const allHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' })).catch(() => rebuildHistoryCache(store, log, withRetry));
                 let updatedCount = 0;
                 const updatedRecordMap = new Map();
                 for (const record of allHistory) {
                     if (record?.analysis?.current != null && record.analysis.power != null && record.analysis.current < 0 && record.analysis.power > 0) {
                         const updatedRecord = { ...record, analysis: { ...record.analysis, power: -Math.abs(record.analysis.power) } };
-                        await withRetry(() => store.setJSON(record.id, updatedRecord), log);
+                        await withRetry(() => store.setJSON(record.id, updatedRecord));
                         updatedRecordMap.set(record.id, updatedRecord);
                         updatedCount++;
                     }
                 }
                 if (updatedCount > 0) {
                     log('info', `Power sign fix complete. Updated ${updatedCount} records.`, postLogContext);
-                    await updateCache(store, log, cache => cache.map(r => updatedRecordMap.get(r.id) || r));
+                    await updateCache(store, log, withRetry, cache => cache.map(r => updatedRecordMap.get(r.id) || r));
                 } else {
                     log('info', 'Power sign fix complete. No records needed updating.', postLogContext);
                 }
@@ -188,18 +173,18 @@ exports.handler = async function(event, context) {
                 const { recordIds } = parsedBody;
                 log('warn', 'Deleting batch of history records.', { ...postLogContext, count: recordIds.length, recordIds });
                 const idsToDeleteSet = new Set(recordIds);
-                for (const id of recordIds) await withRetry(() => store.delete(id), log);
-                await updateCache(store, log, cache => cache.filter(r => !idsToDeleteSet.has(r.id)));
+                for (const id of recordIds) await withRetry(() => store.delete(id));
+                await updateCache(store, log, withRetry, cache => cache.filter(r => !idsToDeleteSet.has(r.id)));
                 return respond(200, { success: true, deletedCount: recordIds.length });
             }
 
             if (action === 'auto-associate') {
                 log('info', 'Starting auto-association of unlinked records.', postLogContext);
                 const systemsStore = getConfiguredStore(SYSTEMS_STORE_NAME, log);
-                const systems = await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' }), log).catch(() => []);
+                const systems = await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' })).catch(() => []);
                 const dlToSystemMap = new Map();
                 systems.forEach(s => s.associatedDLs?.forEach(dl => dl && dlToSystemMap.set(dl, { id: s.id, name: s.name })));
-                const allHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' }), log).catch(() => rebuildHistoryCache(store, log));
+                const allHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' })).catch(() => rebuildHistoryCache(store, log, withRetry));
                 const recordsToUpdate = allHistory.filter(r => !r.systemId && r.dlNumber && dlToSystemMap.has(r.dlNumber));
                 let associatedCount = 0;
                 const updatedRecordMap = new Map();
@@ -207,14 +192,14 @@ exports.handler = async function(event, context) {
                     const systemInfo = dlToSystemMap.get(record.dlNumber);
                     if (systemInfo) {
                         const updatedRecord = { ...record, systemId: systemInfo.id, systemName: systemInfo.name };
-                        await withRetry(() => store.setJSON(record.id, updatedRecord), log);
+                        await withRetry(() => store.setJSON(record.id, updatedRecord));
                         updatedRecordMap.set(record.id, updatedRecord);
                         associatedCount++;
                     }
                 }
                 if (associatedCount > 0) {
                     log('info', 'Auto-association complete.', { ...postLogContext, associatedCount });
-                    await updateCache(store, log, cache => cache.map(r => updatedRecordMap.get(r.id) || r));
+                    await updateCache(store, log, withRetry, cache => cache.map(r => updatedRecordMap.get(r.id) || r));
                 } else {
                     log('info', 'Auto-association complete. No records were updated.', postLogContext);
                 }
@@ -223,9 +208,9 @@ exports.handler = async function(event, context) {
             
             if (action === 'backfill-weather') {
                 log('info', 'Starting weather backfill for history records.', postLogContext);
-                const allHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' }), log).catch(() => rebuildHistoryCache(store, log));
+                const allHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' })).catch(() => rebuildHistoryCache(store, log, withRetry));
                 const systemsStore = getConfiguredStore(SYSTEMS_STORE_NAME, log);
-                const systems = await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' }), log).catch(() => []);
+                const systems = await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' })).catch(() => []);
                 const systemsWithLocation = new Map(systems.filter(s => s.latitude && s.longitude).map(s => [s.id, s]));
                 const recordsToUpdate = allHistory.filter(r => !r.weather && r.systemId && systemsWithLocation.has(r.systemId));
                 let updatedCount = 0;
@@ -236,7 +221,7 @@ exports.handler = async function(event, context) {
                         const weather = await fetchHistoricalWeather(system.latitude, system.longitude, record.timestamp, log);
                         if (weather) {
                             const updatedRecord = { ...record, weather };
-                            await withRetry(() => store.setJSON(record.id, updatedRecord), log);
+                            await withRetry(() => store.setJSON(record.id, updatedRecord));
                             updatedRecordMap.set(record.id, updatedRecord);
                             updatedCount++;
                         }
@@ -244,7 +229,7 @@ exports.handler = async function(event, context) {
                 }
                 if (updatedCount > 0) {
                     log('info', `Weather backfill complete. Updated ${updatedCount} records.`, postLogContext);
-                    await updateCache(store, log, cache => cache.map(r => updatedRecordMap.get(r.id) || r));
+                    await updateCache(store, log, withRetry, cache => cache.map(r => updatedRecordMap.get(r.id) || r));
                 } else {
                     log('info', 'Weather backfill complete. No records needed updating.', postLogContext);
                 }
@@ -254,9 +239,9 @@ exports.handler = async function(event, context) {
             if (action === 'cleanup-links') {
                 log('info', 'Starting history link cleanup.', postLogContext);
                 const systemsStore = getConfiguredStore(SYSTEMS_STORE_NAME, log);
-                const systems = await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' }), log).catch(() => []);
+                const systems = await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' })).catch(() => []);
                 const systemsMap = new Map(systems.map(s => [s.id, s.name]));
-                const allHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' }), log).catch(() => rebuildHistoryCache(store, log));
+                const allHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' })).catch(() => rebuildHistoryCache(store, log, withRetry));
                 let updatedCount = 0;
                 const updatedRecordMap = new Map();
                 for (const record of allHistory) {
@@ -268,14 +253,14 @@ exports.handler = async function(event, context) {
                         updatedRecord.systemName = systemsMap.get(record.systemId); needsUpdate = true;
                     }
                     if (needsUpdate) {
-                       await withRetry(() => store.setJSON(record.id, updatedRecord), log);
+                       await withRetry(() => store.setJSON(record.id, updatedRecord));
                        updatedRecordMap.set(record.id, updatedRecord);
                        updatedCount++;
                     }
                 }
                 if (updatedCount > 0) {
                     log('info', `Link cleanup complete. Updated ${updatedCount} records.`, postLogContext);
-                    await updateCache(store, log, cache => cache.map(r => updatedRecordMap.get(r.id) || r));
+                    await updateCache(store, log, withRetry, cache => cache.map(r => updatedRecordMap.get(r.id) || r));
                 } else {
                     log('info', 'Link cleanup complete. No records needed updating.', postLogContext);
                 }
@@ -284,8 +269,8 @@ exports.handler = async function(event, context) {
             
             const newRecord = { ...parsedBody, id: uuidv4() };
             log('info', 'Creating new history record.', { ...logContext, recordId: newRecord.id, fileName: newRecord.fileName });
-            await withRetry(() => store.setJSON(newRecord.id, newRecord), log);
-            await updateCache(store, log, cache => [...cache, newRecord]);
+            await withRetry(() => store.setJSON(newRecord.id, newRecord));
+            await updateCache(store, log, withRetry, cache => [...cache, newRecord]);
             return respond(201, newRecord);
         }
         
@@ -296,10 +281,10 @@ exports.handler = async function(event, context) {
             log('info', 'Linking record to system.', putLogContext);
 
             const systemsStore = getConfiguredStore(SYSTEMS_STORE_NAME, log);
-            const system = await withRetry(() => systemsStore.get(systemId, { type: "json" }), log);
+            const system = await withRetry(() => systemsStore.get(systemId, { type: "json" }));
             if (!system) return respond(404, { error: "Target system not found." });
 
-            const recordToUpdate = await withRetry(() => store.get(recordId, { type: "json" }), log);
+            const recordToUpdate = await withRetry(() => store.get(recordId, { type: "json" }));
             if (!recordToUpdate) return respond(404, { error: "Analysis record not found." });
 
             const updatedRecord = { ...recordToUpdate, systemId, systemName: system.name };
@@ -307,17 +292,17 @@ exports.handler = async function(event, context) {
                 log('debug', 'Record is missing weather data. Fetching weather.', putLogContext);
                 updatedRecord.weather = await fetchHistoricalWeather(system.latitude, system.longitude, updatedRecord.timestamp, log);
             }
-            await withRetry(() => store.setJSON(recordId, updatedRecord), log);
+            await withRetry(() => store.setJSON(recordId, updatedRecord));
             log('debug', 'Record updated in store.', putLogContext);
 
             const recordDlNumber = dlNumber || recordToUpdate.dlNumber;
             if (recordDlNumber && !system.associatedDLs?.includes(recordDlNumber)) {
                 log('debug', 'Associating DL number with system.', { ...putLogContext, dlToAssociate: recordDlNumber });
                 system.associatedDLs = [...(system.associatedDLs || []), recordDlNumber];
-                await withRetry(() => systemsStore.setJSON(system.id, system), log);
+                await withRetry(() => systemsStore.setJSON(system.id, system));
             }
             
-            await updateCache(store, log, cache => {
+            await updateCache(store, log, withRetry, cache => {
                 const index = cache.findIndex(r => r.id === recordId);
                 if (index > -1) cache[index] = updatedRecord;
                 else cache.push(updatedRecord);
@@ -332,18 +317,18 @@ exports.handler = async function(event, context) {
             const deleteLogContext = { ...logContext, id, unlinked };
             if (unlinked === 'true') {
                 log('warn', 'Deleting all unlinked history records.', deleteLogContext);
-                const allHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' }), log).catch(() => rebuildHistoryCache(store, log));
+                const allHistory = await withRetry(() => store.get(CACHE_KEY, { type: 'json' })).catch(() => rebuildHistoryCache(store, log, withRetry));
                 const unlinkedRecords = allHistory.filter(record => !record.systemId);
                 log('debug', `Found ${unlinkedRecords.length} unlinked records to delete.`, deleteLogContext);
-                for (const record of unlinkedRecords) await withRetry(() => store.delete(record.id), log);
+                for (const record of unlinkedRecords) await withRetry(() => store.delete(record.id));
                 if (unlinkedRecords.length > 0) {
-                    await updateCache(store, log, cache => cache.filter(r => r.systemId));
+                    await updateCache(store, log, withRetry, cache => cache.filter(r => r.systemId));
                 }
                 return respond(200, { success: true, deletedCount: unlinkedRecords.length });
             } else if (id) {
                 log('warn', 'Deleting single history record.', deleteLogContext);
-                await withRetry(() => store.delete(id), log);
-                await updateCache(store, log, cache => cache.filter(r => r.id !== id));
+                await withRetry(() => store.delete(id));
+                await updateCache(store, log, withRetry, cache => cache.filter(r => r.id !== id));
                 return respond(200, { success: true });
             }
             return respond(400, { error: "Missing or invalid query parameters for DELETE." });

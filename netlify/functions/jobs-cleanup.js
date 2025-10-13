@@ -1,24 +1,8 @@
 const { getConfiguredStore } = require("./utils/blobs.js");
 const { createLogger } = require("./utils/logger.js");
+const { createRetryWrapper } = require("./utils/retry.js");
 
 const JOBS_STORE_NAME = "bms-jobs";
-
-const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
-    for (let i = 0; i <= maxRetries; i++) {
-        try {
-            return await fn();
-        } catch (error) {
-            const isRetryable = (error instanceof TypeError) || (error.message && error.message.includes('401 status code'));
-            if (isRetryable && i < maxRetries) {
-                const delay = initialDelay * Math.pow(2, i) + Math.random() * initialDelay;
-                log('warn', `A retryable blob store operation failed. Retrying...`, { attempt: i + 1, error: error.message });
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                throw error;
-            }
-        }
-    }
-};
 
 const respond = (statusCode, body) => ({
     statusCode,
@@ -28,6 +12,7 @@ const respond = (statusCode, body) => ({
 
 exports.handler = async function(event, context) {
     const log = createLogger('jobs-cleanup', context);
+    const withRetry = createRetryWrapper(log);
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod } = event;
     const logContext = { clientIp, httpMethod };
@@ -46,19 +31,19 @@ exports.handler = async function(event, context) {
         const jobsStore = getConfiguredStore(JOBS_STORE_NAME, log);
         
         let cleanedCount = 0;
-        const { blobs, cursor: nextCursor } = await withRetry(() => jobsStore.list({ cursor: startCursor, limit: 200 }), log);
+        const { blobs, cursor: nextCursor } = await withRetry(() => jobsStore.list({ cursor: startCursor, limit: 200 }));
         log('debug', `Processing page with ${blobs.length} blobs.`, { ...batchLogContext, nextCursor: nextCursor || 'end' });
 
         if (blobs && blobs.length > 0) {
             for (const blob of blobs) {
                 const jobLogContext = { ...batchLogContext, key: blob.key };
                 try {
-                    const job = await withRetry(() => jobsStore.get(blob.key, { type: "json" }), log);
+                    const job = await withRetry(() => jobsStore.get(blob.key, { type: "json" }));
                     
                     if (job && (job.status === 'completed' || job.status === 'failed') && (job.image || job.images)) {
                         log('debug', 'Found completed/failed job with image data. Cleaning.', jobLogContext);
                         const { image, images, ...jobWithoutImages } = job;
-                        await withRetry(() => jobsStore.setJSON(blob.key, jobWithoutImages), log);
+                        await withRetry(() => jobsStore.setJSON(blob.key, jobWithoutImages));
                         cleanedCount++;
                         log('debug', 'Job data cleaned successfully.', jobLogContext);
                     } else {

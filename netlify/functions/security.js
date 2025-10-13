@@ -1,24 +1,8 @@
 const { getConfiguredStore } = require("./utils/blobs.js");
+const { createRetryWrapper } = require("./utils/retry.js");
 
 const RATE_LIMIT_WINDOW_SECONDS = 60; // 1 minute
 const UNVERIFIED_IP_LIMIT = 100;
-
-const withRetry = async (fn, log, maxRetries = 3, initialDelay = 250) => {
-    for (let i = 0; i <= maxRetries; i++) {
-        try {
-            return await fn();
-        } catch (error) {
-            const isRetryable = (error instanceof TypeError) || (error.message && error.message.includes('401 status code'));
-            if (isRetryable && i < maxRetries) {
-                const delay = initialDelay * Math.pow(2, i) + Math.random() * initialDelay;
-                log('warn', `A retryable blob store operation failed. Retrying...`, { attempt: i + 1, error: error.message });
-                await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                throw error;
-            }
-        }
-    }
-};
 
 class HttpError extends Error {
     constructor(statusCode, message) {
@@ -45,7 +29,7 @@ const isIpInCidr = (ip, cidr, log) => {
   }
 };
 
-const getIpRanges = async (storeName, cache, log) => {
+const getIpRanges = async (storeName, cache, log, withRetry) => {
     const now = Date.now();
     if (now - cache.lastFetched < cache.ttl) {
         log('debug', 'IP ranges cache hit.', { storeName });
@@ -54,22 +38,24 @@ const getIpRanges = async (storeName, cache, log) => {
     try {
         log('info', 'IP ranges cache miss. Fetching from store.', { storeName });
         const store = getConfiguredStore(storeName, log);
-        const data = await withRetry(() => store.get("ranges", { type: "json" }), log);
+        const data = await withRetry(() => store.get("ranges", { type: "json" }));
         const ranges = Array.isArray(data) ? data : [];
         cache.ranges = ranges;
         cache.lastFetched = now;
         log('debug', 'IP ranges fetched and cached.', { storeName, count: ranges.length });
         return ranges;
     } catch (error) {
-        log('error', `Could not fetch ${storeName} ranges. Returning empty array.`, { errorMessage: error.message });
+        if (error.status !== 404) { // Don't log error for a non-existent ranges file
+            log('error', `Could not fetch ${storeName} ranges. Returning empty array.`, { errorMessage: error.message });
+        }
         cache.ranges = [];
         cache.lastFetched = now;
         return [];
     }
 };
 
-const getVerifiedRanges = (log) => getIpRanges("verified-ips", verifiedIpCache, log);
-const getBlockedRanges = (log) => getIpRanges("bms-blocked-ips", blockedIpCache, log);
+const getVerifiedRanges = (log, withRetry) => getIpRanges("verified-ips", verifiedIpCache, log, withRetry);
+const getBlockedRanges = (log, withRetry) => getIpRanges("bms-blocked-ips", blockedIpCache, log, withRetry);
 
 const isIpInRanges = (ip, ranges, log) => {
   for (const range of ranges) {
@@ -80,13 +66,13 @@ const isIpInRanges = (ip, ranges, log) => {
 
 const ipToKey = (ip) => Buffer.from(ip).toString('base64url');
 
-const checkRateLimit = async (request, log) => {
+const checkRateLimit = async (request, log, withRetry) => {
     const ip = request.headers['x-nf-client-connection-ip'];
     if (!ip) return;
     const logContext = { clientIp: ip };
 
     log('debug', 'Checking rate limit.', logContext);
-    const verifiedRanges = await getVerifiedRanges(log);
+    const verifiedRanges = await getVerifiedRanges(log, withRetry);
     if (isIpInRanges(ip, verifiedRanges, log)) {
         log('info', 'IP is verified, bypassing rate limit.', logContext);
         return;
@@ -100,7 +86,7 @@ const checkRateLimit = async (request, log) => {
 
     for (let i = 0; i < 5; i++) { // Retry for contention
         log('debug', `Fetching rate limit metadata (attempt ${i + 1}).`, { ...logContext, key });
-        const metadata = await withRetry(() => store.getWithMetadata(key, { type: "json" }), log).catch(err => (err.status === 404 ? null : Promise.reject(err)));
+        const metadata = await withRetry(() => store.getWithMetadata(key, { type: "json" })).catch(err => (err.status === 404 ? null : Promise.reject(err)));
         const timestamps = metadata?.data || [];
         const recentTimestamps = timestamps.filter(ts => ts > windowStart);
         log('debug', 'Rate limit data fetched.', { ...logContext, key, totalTimestamps: timestamps.length, recentCount: recentTimestamps.length, limit: UNVERIFIED_IP_LIMIT });
@@ -112,7 +98,7 @@ const checkRateLimit = async (request, log) => {
         
         const newTimestamps = [...recentTimestamps, now];
         try {
-            await withRetry(() => store.setJSON(key, newTimestamps, { onlyIfMatch: metadata?.etag, onlyIfNew: !metadata }), log);
+            await withRetry(() => store.setJSON(key, newTimestamps, { onlyIfMatch: metadata?.etag, onlyIfNew: !metadata }));
             log('debug', 'Rate limit timestamp recorded successfully.', { ...logContext, newCount: newTimestamps.length });
             return;
         } catch (error) {
@@ -130,18 +116,19 @@ const checkRateLimit = async (request, log) => {
 };
 
 const checkSecurity = async (request, log) => {
+    const withRetry = createRetryWrapper(log);
     const ip = request.headers['x-nf-client-connection-ip'];
     log('info', 'Executing security check.', { clientIp: ip });
     try {
         if (ip) {
-            const blockedRanges = await getBlockedRanges(log);
+            const blockedRanges = await getBlockedRanges(log, withRetry);
             log('debug', 'Blocked ranges loaded.', { clientIp: ip, count: blockedRanges.length });
             if (isIpInRanges(ip, blockedRanges, log)) {
                 log('warn', 'Request from blocked IP was rejected.', { clientIp: ip });
                 throw new HttpError(403, 'Your IP address has been blocked.');
             }
         }
-        await checkRateLimit(request, log);
+        await checkRateLimit(request, log, withRetry);
         log('info', 'Security check completed.', { clientIp: ip });
     } catch (error) {
         if (error instanceof HttpError) throw error;
