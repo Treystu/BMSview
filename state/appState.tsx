@@ -59,7 +59,9 @@ export type AppAction =
 const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
     case 'PREPARE_ANALYSIS':
-      const newResults = action.payload.filter(p => !state.analysisResults.some(e => e.fileName === p.fileName));
+      // Filter out any files that are already present in the results by filename to prevent duplicates from re-uploads.
+      const existingFileNames = new Set(state.analysisResults.map(r => r.fileName));
+      const newResults = action.payload.filter(p => !existingFileNames.has(p.fileName));
       return { ...state, isLoading: true, error: null, analysisResults: [...state.analysisResults, ...newResults] };
 
     case 'START_ANALYSIS_JOBS':

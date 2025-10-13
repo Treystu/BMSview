@@ -156,14 +156,17 @@ function App() {
         } else {
             batchBasenames.add(basename);
             filesToAnalyze.push(file);
+            initialResults.push({ fileName: file.name, data: null, error: 'Queued', file });
         }
     }
     
+    log('info', 'Preparing analysis with initial results.', { results: initialResults.map(r => ({fileName: r.fileName, isDuplicate: r.isDuplicate})) });
     dispatch({ type: 'PREPARE_ANALYSIS', payload: initialResults });
     setTimeout(() => document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
 
     if (filesToAnalyze.length === 0) {
       log('info', 'No new files to analyze.');
+      dispatch({ type: 'ANALYSIS_COMPLETE' }); // Reset loading state
       return;
     }
 

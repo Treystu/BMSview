@@ -643,6 +643,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         results={bulkUploadResults}
                         isLoading={actionStatus.isBulkLoading}
                         showRateLimitWarning={showRateLimitWarning}
+                        dispatch={dispatch}
                     />
                 </section>
                 

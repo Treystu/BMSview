@@ -151,7 +151,12 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
     case 'CLEAR_DATA_SUCCESS':
       return { ...state, isConfirmingClearAll: false, clearAllConfirmationText: '' };
     case 'SET_BULK_UPLOAD_RESULTS':
-      return { ...state, bulkUploadResults: action.payload };
+      if (action.payload.length === 0) {
+        return { ...state, bulkUploadResults: [] };
+      }
+      const existingFileNames = new Set(state.bulkUploadResults.map(r => r.fileName));
+      const newResults = action.payload.filter(p => !existingFileNames.has(p.fileName));
+      return { ...state, bulkUploadResults: [...state.bulkUploadResults, ...newResults] };
     case 'UPDATE_BULK_UPLOAD_RESULT':
         return { 
             ...state, 

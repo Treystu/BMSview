@@ -1,12 +1,14 @@
 import React from 'react';
 import type { DisplayableAnalysisResult } from '../types';
 import { useFileUpload } from '../hooks/useFileUpload';
+import { AdminAction } from '../state/adminState';
 
 interface BulkUploadProps {
   onAnalyze: (files: File[]) => void;
   results: DisplayableAnalysisResult[];
   isLoading: boolean;
   showRateLimitWarning: boolean;
+  dispatch: React.Dispatch<AdminAction>;
 }
 
 const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
@@ -42,7 +44,7 @@ const renderStatus = (result: DisplayableAnalysisResult) => {
 };
 
 
-const BulkUpload: React.FC<BulkUploadProps> = ({ onAnalyze, results, isLoading, showRateLimitWarning }) => {
+const BulkUpload: React.FC<BulkUploadProps> = ({ onAnalyze, results, isLoading, showRateLimitWarning, dispatch }) => {
   const {
     files,
     isProcessing,
@@ -146,7 +148,11 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onAnalyze, results, isLoading, 
 
       {results.length > 0 && (
           <div className="mt-6">
-              <h4 className="font-semibold text-white mb-2">Ingestion Progress</h4>
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="font-semibold text-white">Ingestion Progress</h4>
+                <button onClick={() => dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: [] })} className="text-sm text-gray-400 hover:text-white hover:underline">Clear Results</button>
+              </div>
+
               <div className="w-full bg-gray-700 rounded-full h-2.5">
                   <div className="bg-secondary h-2.5 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
               </div>
