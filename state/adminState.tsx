@@ -151,12 +151,8 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
     case 'CLEAR_DATA_SUCCESS':
       return { ...state, isConfirmingClearAll: false, clearAllConfirmationText: '' };
     case 'SET_BULK_UPLOAD_RESULTS':
-      if (action.payload.length === 0) {
-        return { ...state, bulkUploadResults: [] };
-      }
-      const existingFileNames = new Set(state.bulkUploadResults.map(r => r.fileName));
-      const newResults = action.payload.filter(p => !existingFileNames.has(p.fileName));
-      return { ...state, bulkUploadResults: [...state.bulkUploadResults, ...newResults] };
+        // This action now replaces the results, ensuring each bulk upload is a fresh start.
+        return { ...state, bulkUploadResults: action.payload };
     case 'UPDATE_BULK_UPLOAD_RESULT':
         return { 
             ...state, 
@@ -176,7 +172,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         return {
             ...state,
             bulkUploadResults: state.bulkUploadResults.map(r =>
-                r.jobId === jobId ? { ...r, data: record.analysis, error: 'completed', recordId: record.id, weather: record.weather } : r
+                r.jobId === jobId ? { ...r, data: record.analysis, error: 'completed', recordId: record.id, weather: record.weather, submittedAt: r.submittedAt } : r
             ),
         };
     case 'SET_THROTTLE_MESSAGE':

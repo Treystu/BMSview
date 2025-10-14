@@ -17,7 +17,7 @@ const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|su
 const getIsActualError = (result: DisplayableAnalysisResult): boolean => {
     const status = result.error;
     // Not an error if it's a duplicate, has no status, is completed, or is in a pending state.
-    if (result.isDuplicate || !status || status.toLowerCase() === 'completed' || PENDING_STATUS_REGEX.test(status.toLowerCase())) {
+    if (result.isDuplicate || !status || status.toLowerCase() === 'completed' || status.toLowerCase().includes('skipped') || PENDING_STATUS_REGEX.test(status.toLowerCase())) {
         return false;
     }
     return true;
@@ -68,14 +68,13 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onAnalyze, results, isLoading, 
     }
   };
 
-  // --- NEW, MORE ACCURATE SUMMARY LOGIC ---
   const totalFiles = results.length;
   const successCount = results.filter(r => r.error?.toLowerCase() === 'completed').length;
-  const skippedCount = results.filter(r => r.isDuplicate).length;
+  const skippedCount = results.filter(r => r.isDuplicate || r.error?.toLowerCase().includes('skipped')).length;
   const failedCount = results.filter(getIsActualError).length;
   
   const terminalCount = successCount + skippedCount + failedCount;
-  const pendingCount = totalFiles - terminalCount;
+  const pendingCount = totalFiles > 0 ? totalFiles - terminalCount : 0;
   
   const progress = totalFiles > 0 ? (terminalCount / totalFiles) * 100 : 0;
 

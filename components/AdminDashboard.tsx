@@ -17,7 +17,7 @@ import { ALL_HISTORY_COLUMNS, getNestedValue } from './admin/columnDefinitions';
 
 type JobCreationResponse = {
     fileName: string;
-    jobId: string;
+    jobId?: string;
     status: string;
     error?: string;
 };
@@ -119,7 +119,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         log('warn', 'Bulk job completed but record could not be fetched.', { jobId: status.jobId, recordId: status.recordId });
                         dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.jobId, status: 'Completed (record fetch failed)' } });
                     }
-                } else if (status.status === 'failed' || status.status === 'not_found') {
+                } else if (status.status === 'failed' || status.status === 'not_found' || status.status.startsWith('failed_')) {
                     log('warn', `Bulk job ${status.status}.`, { jobId: status.jobId, error: status.error });
                     dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.jobId, status: status.error || 'Failed' } });
                 } else {
@@ -208,41 +208,56 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'SET_ERROR', payload: null });
         dispatch({ type: 'SET_THROTTLE_MESSAGE', payload: null });
     
-        const allHistory = await apiFetch<AnalysisRecord[]>('history?all=true');
-        const existingFilenameMap = new Map<string, AnalysisRecord>(
-            allHistory.filter(r => r.fileName).map(r => [getBasename(r.fileName!), r])
-        );
-    
-        const initialResults: DisplayableAnalysisResult[] = [];
-        const batchBasenames = new Set<string>();
-        const filesToAnalyze: File[] = [];
-    
-        for (const file of files) {
-            const basename = getBasename(file.name);
-            const isBatchDuplicate = batchBasenames.has(basename);
-            const isHistoryDuplicate = existingFilenameMap.has(basename);
+        if (files.length === 0) {
+            log('info', 'Admin bulk trigger: no files to analyze.');
+            dispatch({ type: 'ACTION_END', payload: 'isBulkLoading' });
+            return;
+        }
 
-            if (isHistoryDuplicate || isBatchDuplicate) {
-                initialResults.push({ fileName: file.name, data: null, error: 'Skipped: Duplicate.', file: file, isDuplicate: true });
+        // --- Efficient Duplicate Pre-Check ---
+        const existingHistoryBasenames = new Set(state.history.map(record => getBasename(record.fileName)));
+        const filesToAnalyze: File[] = [];
+        const duplicateResults: DisplayableAnalysisResult[] = [];
+
+        files.forEach(file => {
+            const basename = getBasename(file.name);
+            if (existingHistoryBasenames.has(basename)) {
+                duplicateResults.push({
+                    fileName: file.name,
+                    data: null,
+                    error: 'Skipped: Duplicate',
+                    isDuplicate: true,
+                    file: file,
+                });
             } else {
-                initialResults.push({ fileName: file.name, data: null, error: 'Queued', file: file });
-                batchBasenames.add(basename);
                 filesToAnalyze.push(file);
             }
-        }
-        dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults });
-        log('info', 'Admin bulk trigger: pre-processing complete.', { toAnalyze: filesToAnalyze.length, duplicates: initialResults.length - filesToAnalyze.length });
+        });
+
+        const queuedResults: DisplayableAnalysisResult[] = filesToAnalyze.map(file => ({
+            fileName: file.name,
+            data: null,
+            error: 'Queued',
+            file: file,
+            submittedAt: Date.now()
+        }));
+        
+        // Set initial state for all files at once, replacing any previous results.
+        dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: [...duplicateResults, ...queuedResults] });
 
         if (filesToAnalyze.length === 0) {
+            log('info', 'All files were duplicates based on client-side history check. No jobs created.');
             dispatch({ type: 'ACTION_END', payload: 'isBulkLoading' });
             return;
         }
         
-        log('info', 'AdminDashboard bulk trigger', { toAnalyzeCount: filesToAnalyze.length, state: 'admin', timestamp: new Date().toISOString() });
+        log('info', 'AdminDashboard bulk trigger', { toAnalyzeCount: filesToAnalyze.length, duplicatesSkipped: duplicateResults.length, state: 'admin', timestamp: new Date().toISOString() });
         
         const processJobCreationResults = (results: JobCreationResponse[]) => {
             results.forEach(job => {
-                if (job.error) {
+                if (job.status.startsWith('duplicate')) {
+                    dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, error: 'Skipped: Duplicate', isDuplicate: true } });
+                } else if (job.status === 'failed' && job.error) {
                    log('warn', 'Job creation failed for a file.', { fileName: job.fileName, error: job.error });
                    dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: job.fileName, error: job.error } });
                    if (job.error.includes('429') || job.error.toLowerCase().includes('rate limit')) {
@@ -257,7 +272,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     
         try {
             const BATCH_SIZE = 10;
-            const BATCH_DELAY_MS = 10000; // 10 seconds delay between batches
+            const BATCH_DELAY_MS = 10000;
             
             for (let i = 0; i < filesToAnalyze.length; i += BATCH_SIZE) {
                 const batch = filesToAnalyze.slice(i, i + BATCH_SIZE);
