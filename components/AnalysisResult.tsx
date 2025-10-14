@@ -1,9 +1,19 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import type { DisplayableAnalysisResult, BmsSystem, WeatherData, AnalysisData } from '../types';
 import ThermometerIcon from './icons/ThermometerIcon';
 import CloudIcon from './icons/CloudIcon';
 import SunIcon from './icons/SunIcon';
 import BoltIcon from './icons/BoltIcon';
+
+const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
+    console.log(JSON.stringify({
+        level: level.toUpperCase(),
+        timestamp: new Date().toISOString(),
+        component: 'AnalysisResult',
+        message,
+        context
+    }));
+};
 
 interface AnalysisResultProps {
   result: DisplayableAnalysisResult;
@@ -61,8 +71,21 @@ const AdoptionSection: React.FC<{
 
   const handleAdoptClick = () => {
     if (selectedSystemId) {
+      log('info', 'Adoption "Adopt" button clicked.', { dlNumber, selectedSystemId });
       onAdopt(selectedSystemId);
     }
+  };
+  
+  const handleRegisterClick = () => {
+    log('info', 'Adoption "Register New System" button clicked.', { dlNumber });
+    onRegisterNew();
+  };
+
+  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newSystemId = e.target.value;
+    // FIX: Changed log level from 'debug' to 'info' to match function signature.
+    log('info', 'User changed system selection for adoption.', { dlNumber, newSystemId });
+    setSelectedSystemId(newSystemId);
   };
   
   return (
@@ -72,7 +95,7 @@ const AdoptionSection: React.FC<{
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
         <select
           value={selectedSystemId}
-          onChange={(e) => setSelectedSystemId(e.target.value)}
+          onChange={handleSelectChange}
           disabled={disabled}
           className="block w-full sm:w-auto px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-secondary focus:border-secondary sm:text-sm disabled:bg-gray-200"
         >
@@ -89,7 +112,7 @@ const AdoptionSection: React.FC<{
           Adopt
         </button>
         <span className="text-sm text-gray-500 mx-2 hidden sm:inline">or</span>
-        <button onClick={onRegisterNew} disabled={disabled} className="text-secondary hover:underline text-sm font-semibold disabled:text-gray-500 disabled:no-underline">
+        <button onClick={handleRegisterClick} disabled={disabled} className="text-secondary hover:underline text-sm font-semibold disabled:text-gray-500 disabled:no-underline">
           Register New System
         </button>
       </div>
@@ -187,6 +210,11 @@ const formatError = (error: string): string => {
 
 const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSystems, onLinkRecord, onReprocess, onRegisterNewSystem }) => {
   const { fileName, data, error, weather, isDuplicate, isBatchDuplicate, file, saveError, recordId } = result;
+
+  useEffect(() => {
+    const statusContext = { fileName, error, hasData: !!data, isDuplicate, recordId };
+    log('info', 'AnalysisResult component rendered/updated.', statusContext);
+  }, [result]); // Log whenever the result prop changes
   
   const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
 
@@ -199,6 +227,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
 
   const handleReprocessClick = () => {
     if (file) {
+      log('info', 'Reprocess button clicked.', { fileName });
       onReprocess(file);
     }
   };

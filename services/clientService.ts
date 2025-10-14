@@ -69,6 +69,7 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
 export const registerBmsSystem = async (
   systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>
 ): Promise<BmsSystem> => {
+    log('info', 'Registering new BMS system.', { name: systemData.name });
     return apiFetch<BmsSystem>('systems', {
         method: 'POST',
         body: JSON.stringify(systemData),
@@ -76,14 +77,17 @@ export const registerBmsSystem = async (
 };
 
 export const getRegisteredSystems = async (): Promise<BmsSystem[]> => {
+    log('info', 'Fetching all registered BMS systems.');
     return apiFetch<BmsSystem[]>(`systems`);
 };
 
 export const getSystemById = async (systemId: string): Promise<BmsSystem> => {
+    log('info', 'Fetching system by ID.', { systemId });
     return apiFetch<BmsSystem>(`systems?systemId=${systemId}`);
 };
 
 export const associateDlToSystem = async (dlNumber: string, systemId: string): Promise<void> => {
+    log('info', 'Associating DL number to system.', { dlNumber, systemId });
     const systemToUpdate = await getSystemById(systemId);
 
     if (!systemToUpdate) {
@@ -95,9 +99,14 @@ export const associateDlToSystem = async (dlNumber: string, systemId: string): P
     }
 
     if (!systemToUpdate.associatedDLs.includes(dlNumber)) {
+        // FIX: Changed log level from 'debug' to 'info' to match function signature.
+        log('info', 'DL number not found in system, adding it.', { dlNumber, systemId });
         systemToUpdate.associatedDLs.push(dlNumber);
         const { id, ...dataToUpdate } = systemToUpdate;
         await updateBmsSystem(id, dataToUpdate);
+    } else {
+        // FIX: Changed log level from 'debug' to 'info' to match function signature.
+        log('info', 'DL number already associated with system, no update needed.', { dlNumber, systemId });
     }
 };
 
@@ -105,6 +114,7 @@ export const updateBmsSystem = async (
   systemId: string,
   updatedData: Omit<BmsSystem, 'id'>
 ): Promise<BmsSystem> => {
+    log('info', 'Updating BMS system.', { systemId, systemName: updatedData.name });
     return apiFetch<BmsSystem>(`systems?systemId=${systemId}`, {
         method: 'PUT',
         body: JSON.stringify(updatedData),
@@ -117,11 +127,8 @@ export const saveAnalysisResult = async (
   systemId?: string,
   weatherData?: WeatherData
 ): Promise<AnalysisRecord> => {
-    // The logic to find systemName and generate the final timestamp is now handled efficiently on the backend.
-    
+    log('info', 'Saving analysis result to history.', { fileName, systemId, dlNumber: analysisData.dlNumber });
     const recordToSave = {
-      // The `timestamp` field is now omitted. The backend will generate it based on
-      // the `timestampFromImage` and the upload time.
       systemId,
       analysis: analysisData,
       weather: weatherData,
@@ -136,14 +143,17 @@ export const saveAnalysisResult = async (
 };
 
 export const getAnalysisHistory = async (): Promise<AnalysisRecord[]> => {
+    log('info', 'Fetching analysis history.');
     return apiFetch<AnalysisRecord[]>(`history`);
 };
 
 export const getAnalysisRecordById = async (recordId: string): Promise<AnalysisRecord> => {
+    log('info', 'Fetching single analysis record by ID.', { recordId });
     return apiFetch<AnalysisRecord>(`history?id=${recordId}`);
 };
 
 export const mergeBmsSystems = async (primarySystemId: string, idsToMerge: string[]): Promise<void> => {
+    log('info', 'Merging BMS systems.', { primarySystemId, idsToMerge });
     await apiFetch('systems', {
         method: 'POST',
         body: JSON.stringify({
@@ -155,11 +165,11 @@ export const mergeBmsSystems = async (primarySystemId: string, idsToMerge: strin
 };
 
 export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> => {
+    log('info', 'Finding duplicate analysis sets.');
     const allHistory = await apiFetch<AnalysisRecord[]>('history?all=true');
     const recordsByKey = new Map<string, AnalysisRecord[]>();
 
     for (const record of allHistory) {
-        // Ensure record has analysis data before processing
         if (!record.analysis) continue;
         const key = generateAnalysisKey(record.analysis);
         if (!recordsByKey.has(key)) {
@@ -169,13 +179,11 @@ export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> =
     }
 
     const finalSets: AnalysisRecord[][] = [];
-    // Set a 5-minute window. Records with identical metrics within this window are duplicates.
     const TIME_WINDOW_MS = 5 * 60 * 1000; 
 
     for (const group of recordsByKey.values()) {
         if (group.length < 2) continue;
 
-        // Sort records by timestamp to cluster them chronologically
         const sortedGroup = group.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
         
         let i = 0;
@@ -184,27 +192,25 @@ export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> =
             const startTime = new Date(sortedGroup[i].timestamp).getTime();
             let j = i + 1;
             
-            // Expand the cluster as long as subsequent records are within the time window
             while (j < sortedGroup.length && (new Date(sortedGroup[j].timestamp).getTime() - startTime <= TIME_WINDOW_MS)) {
                 currentSet.push(sortedGroup[j]);
                 j++;
             }
 
-            // If the cluster has more than one record, it's a duplicate set
             if (currentSet.length > 1) {
                 finalSets.push(currentSet);
             }
             
-            // Move to the next record outside the processed cluster
             i = j;
         }
     }
-    
+    log('info', 'Duplicate scan complete on client.', { foundSets: finalSets.length });
     return finalSets;
 };
 
 export const deleteAnalysisRecords = async (recordIds: string[]): Promise<void> => {
     if (recordIds.length === 0) return;
+    log('info', 'Deleting batch of analysis records.', { count: recordIds.length });
     await apiFetch('history', {
         method: 'POST',
         body: JSON.stringify({
@@ -215,18 +221,21 @@ export const deleteAnalysisRecords = async (recordIds: string[]): Promise<void> 
 };
 
 export const deleteUnlinkedAnalysisHistory = async (): Promise<void> => {
+    log('info', 'Deleting all unlinked analysis history.');
     await apiFetch('history?unlinked=true', {
         method: 'DELETE',
     });
 };
 
 export const deleteAnalysisRecord = async (recordId: string): Promise<void> => {
+    log('info', 'Deleting single analysis record.', { recordId });
     await apiFetch(`history?id=${recordId}`, {
         method: 'DELETE',
     });
 };
 
 export const linkAnalysisToSystem = async (recordId: string, systemId: string, dlNumber?: string | null): Promise<void> => {
+    log('info', 'Linking analysis record to system.', { recordId, systemId, dlNumber });
     await apiFetch('history', {
         method: 'PUT',
         body: JSON.stringify({ recordId, systemId, dlNumber }),
@@ -234,18 +243,21 @@ export const linkAnalysisToSystem = async (recordId: string, systemId: string, d
 };
 
 export const clearAllData = async (): Promise<void> => {
+    log('warn', 'Sending request to clear ALL application data.');
     await apiFetch<void>('data', {
         method: 'DELETE',
     });
 };
 
 export const clearHistoryStore = async (): Promise<{ message: string; details: any }> => {
+    log('warn', 'Sending request to clear ONLY the history store.');
     return apiFetch<{ message: string; details: any }>('data?store=bms-history', {
         method: 'DELETE',
     });
 };
 
 export const backfillWeatherData = async (): Promise<{ success: boolean; updatedCount: number }> => {
+    log('info', 'Sending request to backfill weather data.');
     return apiFetch<{ success: boolean; updatedCount: number }>('history', {
         method: 'POST',
         body: JSON.stringify({
@@ -255,6 +267,7 @@ export const backfillWeatherData = async (): Promise<{ success: boolean; updated
 };
 
 export const cleanupLinks = async (): Promise<{ success: boolean; updatedCount: number }> => {
+    log('info', 'Sending request to clean up system links.');
     return apiFetch<{ success: boolean; updatedCount: number }>('history', {
         method: 'POST',
         body: JSON.stringify({
@@ -264,6 +277,7 @@ export const cleanupLinks = async (): Promise<{ success: boolean; updatedCount: 
 };
 
 export const autoAssociateRecords = async (): Promise<{ associatedCount: number }> => {
+    log('info', 'Sending request to auto-associate unlinked records.');
     return apiFetch<{ associatedCount: number }>('history', {
         method: 'POST',
         body: JSON.stringify({
@@ -273,6 +287,7 @@ export const autoAssociateRecords = async (): Promise<{ associatedCount: number 
 };
 
 export const fixPowerSigns = async (): Promise<{ success: boolean; updatedCount: number }> => {
+    log('info', 'Sending request to fix power signs.');
     return apiFetch<{ success: boolean; updatedCount: number }>('history', {
         method: 'POST',
         body: JSON.stringify({
@@ -282,6 +297,7 @@ export const fixPowerSigns = async (): Promise<{ success: boolean; updatedCount:
 };
 
 export const cleanupCompletedJobs = async (cursor?: string): Promise<{ success: boolean; cleanedCount: number, nextCursor: string | null }> => {
+    log('info', 'Sending request to clean up completed jobs.', { cursor: cursor || 'start' });
     return apiFetch<{ success: boolean; cleanedCount: number, nextCursor: string | null }>('jobs-cleanup', {
         method: 'POST',
         body: JSON.stringify({ cursor }),
@@ -290,6 +306,7 @@ export const cleanupCompletedJobs = async (cursor?: string): Promise<{ success: 
 
 export const getJobStatuses = async (jobIds: string[]): Promise<any[]> => {
     if (jobIds.length === 0) return [];
+    log('info', 'Fetching job statuses.', { count: jobIds.length });
     return apiFetch<any[]>(`get-job-status?ids=${jobIds.join(',')}`);
 };
 
@@ -310,14 +327,17 @@ interface IpData {
 }
 
 export const getCurrentIp = async (): Promise<{ ip: string }> => {
+    log('info', 'Fetching current user IP.');
     return apiFetch<{ ip: string }>('get-ip');
 };
 
 export const getIpData = async (): Promise<IpData> => {
+    log('info', 'Fetching IP management data.');
     return apiFetch<IpData>('ip-admin');
 };
 
 export const addVerifiedRange = async (range: string): Promise<{ verifiedRanges: string[] }> => {
+    log('info', 'Adding verified IP range.', { range });
     return apiFetch<{ verifiedRanges: string[] }>('ip-admin', {
         method: 'POST',
         body: JSON.stringify({ action: 'add', range }),
@@ -325,6 +345,7 @@ export const addVerifiedRange = async (range: string): Promise<{ verifiedRanges:
 };
 
 export const removeVerifiedRange = async (range: string): Promise<{ verifiedRanges: string[] }> => {
+    log('info', 'Removing verified IP range.', { range });
     return apiFetch<{ verifiedRanges: string[] }>('ip-admin', {
         method: 'POST',
         body: JSON.stringify({ action: 'remove', range }),
@@ -332,6 +353,7 @@ export const removeVerifiedRange = async (range: string): Promise<{ verifiedRang
 };
 
 export const addBlockedRange = async (range: string): Promise<{ blockedRanges: string[] }> => {
+    log('warn', 'Adding BLOCKED IP range.', { range });
     return apiFetch<{ blockedRanges: string[] }>('ip-admin', {
         method: 'POST',
         body: JSON.stringify({ action: 'block', range }),
@@ -339,6 +361,7 @@ export const addBlockedRange = async (range: string): Promise<{ blockedRanges: s
 };
 
 export const removeBlockedRange = async (range: string): Promise<{ blockedRanges: string[] }> => {
+    log('info', 'Removing blocked IP range (unblocking).', { range });
     return apiFetch<{ blockedRanges: string[] }>('ip-admin', {
         method: 'POST',
         body: JSON.stringify({ action: 'unblock', range }),
@@ -347,6 +370,7 @@ export const removeBlockedRange = async (range: string): Promise<{ blockedRanges
 
 
 export const deleteIpRecord = async (key: string): Promise<void> => {
+    log('info', 'Deleting IP activity record.', { key });
     await apiFetch<void>('ip-admin', {
         method: 'POST',
         body: JSON.stringify({ action: 'delete-ip', key }),

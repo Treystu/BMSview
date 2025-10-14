@@ -60,7 +60,7 @@ const processQueue = async (jobsStore, log, withRetry) => {
     for (const blob of blobs) {
          try {
             const job = await withRetry(() => jobsStore.get(blob.key, { type: 'json' }));
-            if (job && job.status === 'Queued') jobsToProcess.push(job);
+            if (job && job.status === 'Queued') jobsToProcess.push({job, key: blob.key});
         } catch (e) {
             log('warn', 'Failed to get/parse job blob during queue scan, skipping.', { key: blob.key, error: e.message });
         }
@@ -72,16 +72,16 @@ const processQueue = async (jobsStore, log, withRetry) => {
     }
 
     log('info', `Phase 1: Found ${jobsToProcess.length} queued jobs. Starting invocation.`);
-    const processingPromises = jobsToProcess.map(async (job) => {
+    const processingPromises = jobsToProcess.map(async ({job, key}) => {
         const jobLogContext = { jobId: job.id, fileName: job.fileName };
         try {
             log('debug', 'Locking job by moving it to Processing status.', jobLogContext);
             const updatedJob = { ...job, status: 'Processing', statusEnteredAt: new Date().toISOString(), lastHeartbeat: new Date().toISOString() };
             
-            // Set the new prefixed key first
-            await withRetry(() => jobsStore.setJSON(job.id, updatedJob, { key: `Processing/${job.id}` }));
-            // Then delete the old prefixed key
-            await withRetry(() => jobsStore.delete(job.id, { key: `Queued/${job.id}` }));
+            // Set the new key first to ensure atomicity
+            await withRetry(() => jobsStore.setJSON(`Processing/${job.id}`, updatedJob));
+            // Then delete the old key
+            await withRetry(() => jobsStore.delete(key));
             
             log('info', 'Job locked. Invoking background processor.', jobLogContext);
             const invokeUrl = `${process.env.URL}/.netlify/functions/process-analysis`;
@@ -142,13 +142,13 @@ const auditJobs = async (jobsStore, shepherdState, log, withRetry) => {
                 if (job.retryCount < MAX_RETRIES) {
                     log('info', 'Re-queueing zombie job for retry.', jobLogContext);
                     const requeuedJob = { ...job, status: 'Queued', retryCount: job.retryCount + 1 };
-                    await withRetry(() => jobsStore.setJSON(job.id, requeuedJob, { key: `Queued/${job.id}` }));
-                    await withRetry(() => jobsStore.delete(job.id, { key: `Processing/${job.id}`}));
+                    await withRetry(() => jobsStore.setJSON(`Queued/${job.id}`, requeuedJob));
+                    await withRetry(() => jobsStore.delete(blob.key));
                 } else {
                     log('error', 'Job has exhausted all retries. Marking as failed.', jobLogContext);
                     const failedJob = { ...job, status: 'failed_timeout', error: `Job failed after ${MAX_RETRIES} retries. Last known reason: ${reason}.` };
-                    await withRetry(() => jobsStore.setJSON(job.id, failedJob, { key: `failed_timeout/${job.id}` }));
-                    await withRetry(() => jobsStore.delete(job.id, { key: `Processing/${job.id}` }));
+                    await withRetry(() => jobsStore.setJSON(`failed_timeout/${job.id}`, failedJob));
+                    await withRetry(() => jobsStore.delete(blob.key));
                 }
             }
         } catch(e) {

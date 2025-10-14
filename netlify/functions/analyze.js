@@ -116,7 +116,7 @@ exports.handler = async (event, context) => {
             try {
                 log('debug', 'Storing job data in blob store.', jobLogContext);
                 // Store under a "Queued/" prefix for efficient querying by the shepherd
-                await jobsStore.setJSON(newJobId, jobData, { key: `Queued/${newJobId}` });
+                await jobsStore.setJSON(`Queued/${newJobId}`, jobData);
                 log('debug', 'Job data stored successfully.', jobLogContext);
 
                 jobCreationResponses.push({

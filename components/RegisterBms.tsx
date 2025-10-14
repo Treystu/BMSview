@@ -13,6 +13,16 @@ interface RegisterBmsProps {
     onClose: () => void;
 }
 
+const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
+    console.log(JSON.stringify({
+        level: level.toUpperCase(),
+        timestamp: new Date().toISOString(),
+        component: 'RegisterBms',
+        message,
+        context
+    }));
+};
+
 const RegisterBms: React.FC<RegisterBmsProps> = ({ onRegister, isRegistering, error, successMessage, isOpen, onClose }) => {
     const [name, setName] = useState('');
     const [chemistry, setChemistry] = useState('');
@@ -25,6 +35,9 @@ const RegisterBms: React.FC<RegisterBmsProps> = ({ onRegister, isRegistering, er
     const [locationError, setLocationError] = useState<string | null>(null);
 
     useEffect(() => {
+        if (isOpen) {
+            log('info', 'Registration modal opened.');
+        }
         // Reset form state when the modal is closed to ensure it's fresh next time.
         if (!isOpen) {
             setName('');
@@ -39,19 +52,34 @@ const RegisterBms: React.FC<RegisterBmsProps> = ({ onRegister, isRegistering, er
         }
     }, [isOpen]);
 
+    // Log state changes from props
+    useEffect(() => {
+        if (error) {
+            log('error', 'Registration error received from parent.', { error });
+        }
+        if (successMessage) {
+            log('info', 'Registration success message received from parent.', { successMessage });
+        }
+    }, [error, successMessage]);
+
+
     const handleGetCurrentLocation = () => {
         if (!navigator.geolocation) {
+            log('warn', 'Geolocation is not supported by this browser.');
             setLocationError("Geolocation is not supported by your browser.");
             return;
         }
 
+        log('info', 'Attempting to get current location.');
         setLocationError(null);
         navigator.geolocation.getCurrentPosition(
             (position) => {
+                log('info', 'Successfully retrieved current location.', { lat: position.coords.latitude, lon: position.coords.longitude });
                 setLatitude(position.coords.latitude.toFixed(6));
                 setLongitude(position.coords.longitude.toFixed(6));
             },
             () => {
+                log('error', 'Failed to retrieve current location.');
                 setLocationError("Unable to retrieve your location. Please check browser permissions.");
             }
         );
@@ -59,7 +87,7 @@ const RegisterBms: React.FC<RegisterBmsProps> = ({ onRegister, isRegistering, er
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onRegister({
+        const systemData = {
             name,
             chemistry,
             voltage: voltage ? parseFloat(voltage) : null,
@@ -68,7 +96,9 @@ const RegisterBms: React.FC<RegisterBmsProps> = ({ onRegister, isRegistering, er
             longitude: longitude ? parseFloat(longitude) : null,
             maxAmpsSolarCharging: maxAmpsSolarCharging ? parseFloat(maxAmpsSolarCharging) : null,
             maxAmpsGeneratorCharging: maxAmpsGeneratorCharging ? parseFloat(maxAmpsGeneratorCharging) : null,
-        });
+        };
+        log('info', 'Submitting new system registration.', { name: systemData.name, hasLocation: !!systemData.latitude });
+        onRegister(systemData);
     };
 
     if (!isOpen) {

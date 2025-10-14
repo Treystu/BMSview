@@ -1,6 +1,16 @@
 import { useState, useCallback, useEffect } from 'react';
 import JSZip from 'jszip';
 
+const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
+    console.log(JSON.stringify({
+        level: level.toUpperCase(),
+        timestamp: new Date().toISOString(),
+        hook: 'useFileUpload',
+        message,
+        context
+    }));
+};
+
 const getMimeTypeFromFileName = (fileName: string): string => {
     const extension = fileName.split('.').pop()?.toLowerCase();
     switch (extension) {
@@ -42,6 +52,8 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
     const handleZipFile = useCallback(async (zipFile: File) => {
         setIsProcessing(true);
         setFileError(null);
+        const zipContext = { fileName: zipFile.name, size: zipFile.size };
+        log('info', 'Starting to process ZIP file.', zipContext);
         try {
             const zip = await JSZip.loadAsync(zipFile);
             const imagePromises: Promise<File>[] = [];
@@ -55,9 +67,11 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                 }
             });
             const extractedFiles = await Promise.all(imagePromises);
+            log('info', 'Successfully extracted files from ZIP.', { ...zipContext, extractedCount: extractedFiles.length });
             setFiles(prevFiles => [...prevFiles, ...extractedFiles]);
         } catch (e) {
-            console.error("Error unzipping file:", e);
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            log('error', 'Error unzipping file.', { ...zipContext, error: errorMessage });
             setFileError("Failed to unzip the file. It may be corrupt.");
         } finally {
             setIsProcessing(false);
@@ -65,6 +79,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
     }, []);
 
     const processFileList = useCallback((fileList: FileList) => {
+        log('info', 'Processing new file list.', { count: fileList.length });
         setFileError(null);
         const fileArray = Array.from(fileList);
 
@@ -87,9 +102,13 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
         }
 
         if (oversizedFiles.length > 0) {
-            setFileError(`The following files are too large (max ${maxFileSizeMb}MB): ${oversizedFiles.join(', ')}. Please resize them and try again.`);
+            const errorMsg = `The following files are too large (max ${maxFileSizeMb}MB): ${oversizedFiles.join(', ')}. Please resize them and try again.`;
+            log('warn', 'Oversized files detected.', { oversizedCount: oversizedFiles.length, fileNames: oversizedFiles, maxSizeMb: maxFileSizeMb });
+            setFileError(errorMsg);
         }
         
+        // FIX: Changed log level from 'debug' to 'info' to match function signature.
+        log('info', 'File list processed.', { validImageCount: validImageFiles.length, oversizedCount: oversizedFiles.length, zipCount: zipFiles.length });
         zipFiles.forEach(handleZipFile);
     }, [handleZipFile, maxFileSizeBytes, maxFileSizeMb]);
 
@@ -108,6 +127,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
     }, [processFileList]);
 
     const clearFiles = () => {
+        log('info', 'Clearing all selected files.');
         setFiles([]);
         setPreviews([]);
         setFileError(null);

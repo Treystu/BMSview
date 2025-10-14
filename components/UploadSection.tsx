@@ -10,6 +10,16 @@ interface UploadSectionProps {
   hasResults: boolean;
 }
 
+const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
+    console.log(JSON.stringify({
+        level: level.toUpperCase(),
+        timestamp: new Date().toISOString(),
+        component: 'UploadSection',
+        message,
+        context
+    }));
+};
+
 const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, error, hasResults }) => {
   const {
     files,
@@ -25,9 +35,20 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
     event.preventDefault();
     event.stopPropagation();
   };
+  
+  const internalHandleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    log('info', 'User dropped files onto dropzone.', { count: event.dataTransfer.files.length });
+    handleDrop(event);
+  };
+
+  const internalHandleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+      log('info', 'User selected files via file input.', { count: event.target.files?.length || 0 });
+      handleFileChange(event);
+  };
 
   const handleAnalyzeClick = () => {
     if (files.length > 0) {
+      log('info', 'Analyze button clicked.', { fileCount: files.length });
       onAnalyze(files);
       clearFiles();
     }
@@ -48,7 +69,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
         )}
         <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-lg">
           <div 
-            onDrop={handleDrop}
+            onDrop={internalHandleDrop}
             onDragOver={handleDragOver}
             className="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:border-secondary transition-colors"
           >
@@ -57,7 +78,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
               id="file-upload"
               className="hidden"
               accept="image/*,.zip"
-              onChange={handleFileChange}
+              onChange={internalHandleFileChange}
               multiple
             />
             <label htmlFor="file-upload" className="cursor-pointer">

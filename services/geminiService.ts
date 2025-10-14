@@ -37,7 +37,9 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
 };
 
 export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: BmsSystem[]): Promise<JobCreationResponse[]> => {
-    log('info', 'analyzeBmsScreenshots called.', { fileCount: files.length, hasSystems: !!registeredSystems });
+    const analysisContext = { fileCount: files.length, hasSystems: !!registeredSystems };
+    log('info', 'Starting analysis job submission.', analysisContext);
+    
     try {
         if (files.length === 0) return [];
 
@@ -45,18 +47,17 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
         
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
-            log('warn', 'Analysis request timed out after 30 seconds.');
+            log('warn', 'Analysis request timed out on client after 30 seconds.');
             controller.abort();
-        }, 30000); // 30-second timeout
-
-        log('info', 'Analyze call start: submitting analysis job request to backend.', { fileCount: imagePayloads.length });
-        log('info', 'GeminiService analyze start', { fileCount: files.length, isAdminBulk: files.length > 1, timestamp: new Date().toISOString() });
+        }, 30000);
 
         const dataToSend = {
             images: imagePayloads,
             systems: registeredSystems,
         };
-        console.log('Sending to analyze:', JSON.stringify(dataToSend));
+        
+        // FIX: Changed log level from 'debug' to 'info' to match function signature.
+        log('info', 'Submitting analysis request to /.netlify/functions/analyze.', { ...analysisContext, payloadSize: JSON.stringify(dataToSend).length });
 
         const response = await fetch('/.netlify/functions/analyze', {
             method: 'POST',
@@ -67,6 +68,7 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
 
         clearTimeout(timeoutId);
         
+        // FIX: Changed log level from 'debug' to 'info' to match function signature.
         log('info', 'Analyze API response received.', { status: response.status });
         if (!response.ok) {
             let errorBody;
@@ -79,20 +81,24 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
             throw new Error(errorMessage);
         }
         
-        const result = await response.json();
+        const result: JobCreationResponse[] = await response.json();
         
-        log('info', 'Analysis job submission successful.', { resultsCount: result.length, jobsCreated: result.length });
-        log('info', 'GeminiService analyze success', { resultsLength: result.length, timestamp: new Date().toISOString() });
+        const jobIds = result.map(j => j.jobId).filter(Boolean);
+        const duplicateCount = result.filter(j => j.status?.includes('duplicate')).length;
+        
+        log('info', 'Analysis job submission successful.', { 
+            resultsCount: result.length, 
+            jobsCreated: jobIds.length, 
+            duplicatesFound: duplicateCount, 
+            jobIds 
+        });
+        
         return result;
 
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'An unknown client-side error occurred.';
-        if (error instanceof Error && error.name === 'AbortError') {
-             log('error', 'Error in analyzeBmsScreenshots: request was aborted due to timeout.', { error: errorMessage });
-        } else {
-             log('error', 'Error in analyzeBmsScreenshots.', { error: errorMessage });
-        }
-        log('error', 'GeminiService final catch', { fullError: error.message, timestamp: new Date().toISOString() });
-        throw error;
+        const isAbort = error instanceof Error && error.name === 'AbortError';
+        const errorMessage = isAbort ? 'Request was aborted due to timeout.' : (error instanceof Error ? error.message : 'An unknown client-side error occurred.');
+        log('error', 'Analysis job submission failed.', { ...analysisContext, error: errorMessage, isTimeout: isAbort });
+        throw new Error(errorMessage);
     }
 };

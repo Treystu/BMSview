@@ -143,7 +143,7 @@ function App() {
 
   const handleLinkRecordToSystem = async (recordId: string, systemId: string, dlNumber?: string | null) => {
     if (!recordId || !systemId) return;
-    log('info', 'Attempting to link record to system.', { recordId, systemId, dlNumber });
+    log('info', 'Attempting to link record to system from UI.', { recordId, systemId, dlNumber });
     try {
         await linkAnalysisToSystem(recordId, systemId, dlNumber);
         log('info', 'Link successful. Refreshing app data.');
@@ -157,7 +157,7 @@ function App() {
   };
 
   const handleAnalyze = async (files: File[]) => {
-    log('info', 'Main analyze trigger', { fileCount: files.length });
+    log('info', 'Analysis process initiated from UI.', { fileCount: files.length });
     
     // The client no longer checks for duplicates. It just prepares all files for submission.
     const initialResults: DisplayableAnalysisResult[] = files.map(f => ({ 
@@ -173,14 +173,14 @@ function App() {
     setTimeout(() => document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
 
     if (files.length === 0) {
-      log('info', 'No new files to analyze.');
+      log('info', 'No new files to analyze, aborting.', { initialFileCount: files.length });
       dispatch({ type: 'ANALYSIS_COMPLETE' });
       return;
     }
 
     try {
-        log('info', 'App handleAnalyze trigger', { fileCount: files.length, state: 'main', timestamp: new Date().toISOString() });
         const jobCreationResults = await analyzeBmsScreenshots(files, registeredSystems);
+        log('info', 'Received job creation results from service.', { results: jobCreationResults });
         dispatch({ type: 'START_ANALYSIS_JOBS', payload: jobCreationResults });
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during analysis.';
@@ -190,7 +190,7 @@ function App() {
   };
   
   const handleReprocess = async (fileToReprocess: File) => {
-    log('info', 'Reprocessing file.', { fileName: fileToReprocess.name });
+    log('info', 'Reprocess initiated from UI.', { fileName: fileToReprocess.name });
     dispatch({ type: 'REPROCESS_START', payload: { fileName: fileToReprocess.name }});
     await handleAnalyze([fileToReprocess]);
   };

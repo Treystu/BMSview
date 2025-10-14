@@ -3,6 +3,40 @@ const { createLogger } = require("./utils/logger.js");
 const { createRetryWrapper } = require("./utils/retry.js");
 
 const JOBS_STORE_NAME = "bms-jobs";
+const JOB_PREFIXES = ['Queued/', 'Processing/', 'failed_timeout/'];
+
+const findJob = async (jobId, store, log, withRetry) => {
+    // A job's key changes as it moves through states. To find a job by its static ID,
+    // we must check under all possible prefixes it might have.
+    for (const prefix of JOB_PREFIXES) {
+        const key = `${prefix}${jobId}`;
+        try {
+            const job = await withRetry(() => store.get(key, { type: "json" }));
+            if (job) {
+                return job;
+            }
+        } catch (error) {
+            if (error.status !== 404) {
+                log('warn', `Error checking for job under prefix`, { jobId, prefix, error: error.message });
+            }
+        }
+    }
+    // A job might also exist without a prefix if it's in a state not managed by prefixes.
+    // This provides backward compatibility and robustness.
+    try {
+        const job = await withRetry(() => store.get(jobId, { type: "json" }));
+        if (job) {
+             return job;
+        }
+    } catch(error) {
+        if (error.status !== 404) {
+            log('warn', `Error checking for job without prefix`, { jobId, error: error.message });
+        }
+    }
+    
+    return null;
+};
+
 
 const respond = (statusCode, body) => ({
     statusCode,
@@ -42,7 +76,7 @@ exports.handler = async function(event, context) {
         const jobsStore = getConfiguredStore(JOBS_STORE_NAME, log);
 
         const jobPromises = jobIds.map(jobId => 
-            withRetry(() => jobsStore.get(jobId, { type: "json" }))
+            findJob(jobId, jobsStore, log, withRetry)
             .then(job => {
                 const jobLogContext = { ...logContext, jobId };
                 if (job) {
@@ -51,17 +85,17 @@ exports.handler = async function(event, context) {
                     log('debug', 'Found job and extracted status.', { ...jobLogContext, status: jobStatus.status });
                     return jobStatus;
                 }
-                log('warn', 'Job not found in store.', jobLogContext);
-                return { jobId, status: 'not_found', error: 'Job not found in store.' };
+                log('warn', 'Job not found in store under any prefix.', jobLogContext);
+                return { id: jobId, status: 'not_found', error: 'Job not found in store.' };
             })
             .catch(error => {
                 log('error', `Failed to fetch job status for ID: ${jobId}`, { ...logContext, jobId, errorMessage: error.message });
-                return { jobId, status: 'failed', error: 'Failed to retrieve job status.' };
+                return { id: jobId, status: 'failed', error: 'Failed to retrieve job status.' };
             })
         );
         
         const results = await Promise.all(jobPromises);
-        log('info', 'Successfully fetched all job statuses.', { ...requestLogContext, results: results.map(r => ({ jobId: r.jobId, status: r.status })) });
+        log('info', 'Successfully fetched all job statuses.', { ...requestLogContext, results: results.map(r => ({ jobId: r.id, status: r.status })) });
         return respond(200, results);
 
     } catch (error) {

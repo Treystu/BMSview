@@ -10,13 +10,33 @@ const SYSTEMS_STORE_NAME = "bms-systems";
 const HISTORY_CACHE_KEY = "_all_history_cache";
 const GEMINI_API_TIMEOUT_MS = 45000;
 
-const updateJobStatus = async (jobId, status, log, jobsStore, withRetry, extra = {}) => {
+const JOB_PREFIXES = ['Queued/', 'Processing/']; // Prefixes for active, processable jobs
+
+const findJobAndKey = async (jobId, store, log, withRetry) => {
+    for (const prefix of JOB_PREFIXES) {
+        const key = `${prefix}${jobId}`;
+        try {
+            const job = await withRetry(() => store.get(key, { type: "json" }));
+            if (job) {
+                return { job, key };
+            }
+        } catch (error) {
+            if (error.status !== 404) {
+                log('warn', `Error checking for job under prefix`, { jobId, prefix, error: error.message });
+            }
+        }
+    }
+    return { job: null, key: null };
+};
+
+const updateJobStatus = async (jobKey, status, log, jobsStore, withRetry, extra = {}) => {
+    const jobId = jobKey.split('/').pop();
     const logContext = { jobId, newStatus: status, ...extra };
     try {
         log('debug', 'Attempting to update job status, stage timestamp, and heartbeat.', logContext);
-        const job = await withRetry(() => jobsStore.get(jobId, { type: "json" }));
+        const job = await withRetry(() => jobsStore.get(jobKey, { type: "json" }));
         if (!job) {
-            log('warn', 'Tried to update status for a job that does not exist.', logContext);
+            log('warn', 'Tried to update status for a job that does not exist.', { ...logContext, jobKey });
             return;
         }
 
@@ -37,11 +57,11 @@ const updateJobStatus = async (jobId, status, log, jobsStore, withRetry, extra =
             delete jobToSave.images;
         }
         
-        await withRetry(() => jobsStore.setJSON(jobId, jobToSave));
+        await withRetry(() => jobsStore.setJSON(jobKey, jobToSave));
         
         log('info', 'Job status, stage timestamp, and heartbeat updated successfully.', logContext);
     } catch (e) {
-        log('error', 'Failed to update job status in blob store.', { ...logContext, error: e.message });
+        log('error', 'Failed to update job status in blob store.', { ...logContext, jobKey, error: e.message });
     }
 };
 
@@ -159,7 +179,7 @@ const cleanAndParseJson = (text, log) => {
     }
 };
 
-const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsStore, withRetry) => {
+const extractBmsData = async (ai, image, mimeType, log, context, jobKey, jobsStore, withRetry) => {
     log('debug', 'Preparing for Gemini API call.');
     const extractionPrompt = getImageExtractionPrompt();
     const responseSchema = getResponseSchema();
@@ -199,7 +219,7 @@ const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsStor
                 const retryAfterMatch = error.message.match(/Please retry in (\d+\.?\d*)/);
                 let delay = (retryAfterMatch && parseFloat(retryAfterMatch[1]) * 1000) || (Math.pow(2, attempt) * 1000 + Math.random() * 1000);
                 
-                await updateJobStatus(jobId, `Retrying (API throttled)...`, log, jobsStore, withRetry);
+                await updateJobStatus(jobKey, `Retrying (API throttled)...`, log, jobsStore, withRetry);
                 const bufferTime = 5000;
                 if (delay > remainingTime - bufferTime) {
                     log('error', `Retry delay is too long for remaining execution time. Job will fail to prevent timeout.`, { delay, remainingTime });
@@ -309,6 +329,7 @@ exports.handler = async function(event, context) {
     log('debug', 'Function invoked.', { stage: 'invocation' });
 
     let jobId;
+    let jobKey;
     let jobsStore; 
 
     try {
@@ -329,36 +350,38 @@ exports.handler = async function(event, context) {
         const historyStore = getConfiguredStore(HISTORY_STORE_NAME, log);
         const systemsStore = getConfiguredStore(SYSTEMS_STORE_NAME, log);
 
-        const job = await withRetry(() => jobsStore.get(jobId, { type: "json" }));
-        if (!job) throw new Error(`Job with ID ${jobId} not found.`);
-        log('debug', 'Fetched job from blob store.', { ...logContext, fileName: job.fileName });
+        const { job, key } = await findJobAndKey(jobId, jobsStore, log, withRetry);
+        jobKey = key;
+
+        if (!job) throw new Error(`Job with ID ${jobId} not found under active prefixes.`);
+        log('debug', 'Fetched job from blob store.', { ...logContext, fileName: job.fileName, jobKey });
 
         // Checkpoint logic
         let extractedData = job.extractedData || null;
         
         if (!extractedData) {
             log('info', 'No checkpoint found. Starting data extraction.', logContext);
-            await updateJobStatus(jobId, 'Extracting data', log, jobsStore, withRetry);
+            await updateJobStatus(jobKey, 'Extracting data', log, jobsStore, withRetry);
             
             const { image, mimeType } = job;
             if (!image) {
                 throw new Error("Job is missing image data for extraction.");
             }
-            extractedData = await extractBmsData(ai, image, mimeType, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }), context, jobId, jobsStore, withRetry);
+            extractedData = await extractBmsData(ai, image, mimeType, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }), context, jobKey, jobsStore, withRetry);
             log('info', 'AI data extraction complete.', logContext);
 
             // Save the checkpoint and update status/heartbeat
-            await updateJobStatus(jobId, 'Extraction complete (checkpoint)', log, jobsStore, withRetry, { extractedData });
+            await updateJobStatus(jobKey, 'Extraction complete (checkpoint)', log, jobsStore, withRetry, { extractedData });
             log('info', 'Saved extraction checkpoint to job.', logContext);
         } else {
             log('info', 'Resuming from checkpoint. Skipping data extraction.', logContext);
         }
         
-        await updateJobStatus(jobId, 'Mapping data', log, jobsStore, withRetry);
+        await updateJobStatus(jobKey, 'Mapping data', log, jobsStore, withRetry);
         const analysis = mapExtractedToAnalysisData(extractedData, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
         if (!analysis) throw new Error("Failed to process extracted data into a valid analysis object.");
         
-        await updateJobStatus(jobId, 'Matching system', log, jobsStore, withRetry);
+        await updateJobStatus(jobKey, 'Matching system', log, jobsStore, withRetry);
         const allSystems = job.systems || await withRetry(() => systemsStore.get("_all_systems_cache", { type: 'json' })).catch(() => []);
         const matchingSystem = analysis.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysis.dlNumber)) : null;
         log('info', `System matching result: ${matchingSystem ? matchingSystem.name : 'None'}.`, { ...logContext, dlNumber: analysis.dlNumber, systemId: matchingSystem?.id });
@@ -368,13 +391,13 @@ exports.handler = async function(event, context) {
 
         let weather = null;
         if (matchingSystem?.latitude && matchingSystem?.longitude) {
-            await updateJobStatus(jobId, 'Fetching weather', log, jobsStore, withRetry);
+            await updateJobStatus(jobKey, 'Fetching weather', log, jobsStore, withRetry);
             weather = await fetchWeatherData(matchingSystem.latitude, matchingSystem.longitude, timestamp, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
         } else {
              log('debug', 'Skipping weather fetch: system has no location data.', logContext);
         }
 
-        await updateJobStatus(jobId, 'Saving result', log, jobsStore, withRetry);
+        await updateJobStatus(jobKey, 'Saving result', log, jobsStore, withRetry);
         const record = {
             id: uuidv4(),
             timestamp,
@@ -391,7 +414,7 @@ exports.handler = async function(event, context) {
         
         await updateHistoryCache(historyStore, log, withRetry, record);
         
-        await updateJobStatus(jobId, 'completed', log, jobsStore, withRetry, { recordId: record.id });
+        await updateJobStatus(jobKey, 'completed', log, jobsStore, withRetry, { recordId: record.id });
         log('info', 'Job completed successfully.', { ...logContext, recordId: record.id });
 
         return {
@@ -403,7 +426,7 @@ exports.handler = async function(event, context) {
         const logContext = { jobId };
         log('error', 'Background analysis job failed.', { ...logContext, errorMessage: error.message, stack: error.stack });
         
-        if (jobId && jobsStore) {
+        if (jobKey && jobsStore) {
             try {
                 let friendlyError = error.message;
                 if (error.message && error.message.includes('exceeds remaining function execution time')) {
@@ -412,12 +435,12 @@ exports.handler = async function(event, context) {
                     friendlyError = 'API rate limit reached. Please wait and try again.';
                 }
                 
-                await updateJobStatus(jobId, 'failed', log, jobsStore, createRetryWrapper(log), { error: friendlyError });
+                await updateJobStatus(jobKey, 'failed', log, jobsStore, createRetryWrapper(log), { error: friendlyError });
             } catch (updateError) {
                 log('error', 'CRITICAL: Could not update job status to failed after a processing error.', { ...logContext, updateError: updateError.message });
             }
         } else {
-            log('error', 'Could not update job status because jobId or jobsStore was not available.', { hasJobId: !!jobId, hasStore: !!jobsStore });
+            log('error', 'Could not update job status because jobKey or jobsStore was not available.', { hasJobKey: !!jobKey, hasStore: !!jobsStore });
         }
 
         return {
