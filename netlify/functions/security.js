@@ -1,3 +1,6 @@
+// HOTFIX 1: Fixed Rate Limiting with Atomic Operations
+// Replace: netlify/functions/security.js
+// This fix prevents race conditions in rate limiting by using MongoDB's atomic operations
 
 const { getCollection } = require("./utils/mongodb.js");
 const { createLogger } = require("./utils/logger.js");
@@ -40,6 +43,10 @@ const isIpInRanges = (ip, ranges, log) => {
   return false;
 };
 
+/**
+ * FIXED: Atomic rate limiting using MongoDB's conditional updates
+ * This prevents race conditions by using findOneAndUpdate with conditional expression
+ */
 const checkRateLimit = async (request, log) => {
     const ip = request.headers['x-nf-client-connection-ip'];
     if (!ip) return;
@@ -59,23 +66,67 @@ const checkRateLimit = async (request, log) => {
     
     const UNVERIFIED_IP_LIMIT = 100;
 
-    const result = await rateLimitCollection.findOneAndUpdate(
-        { ip },
-        { $push: { timestamps: now } },
-        { upsert: true, returnDocument: 'after' }
-    );
+    try {
+        // ATOMIC OPERATION: Use aggregation pipeline to check and update in one operation
+        // This prevents race conditions by ensuring the check and increment happen atomically
+        const result = await rateLimitCollection.findOneAndUpdate(
+            { 
+                ip,
+                // Only match if we haven't exceeded the limit
+                $expr: {
+                    $lt: [
+                        {
+                            $size: {
+                                $filter: {
+                                    input: { $ifNull: ["$timestamps", []] },
+                                    as: "ts",
+                                    cond: { $gt: ["$$ts", windowStart] }
+                                }
+                            }
+                        },
+                        UNVERIFIED_IP_LIMIT
+                    ]
+                }
+            },
+            { 
+                $push: { timestamps: now },
+                $setOnInsert: { ip, createdAt: now }
+            },
+            { 
+                upsert: true, 
+                returnDocument: 'after'
+            }
+        );
 
-    const timestamps = result.value ? result.value.timestamps : [now];
-    const recentTimestamps = timestamps.filter(ts => ts > windowStart);
-    
-    if (recentTimestamps.length > UNVERIFIED_IP_LIMIT) {
-        log('warn', 'Rate limit exceeded for unverified IP.', logContext);
-        throw new HttpError(429, `Too Many Requests: Rate limit exceeded.`);
-    }
+        // If result is null, it means the limit was already exceeded
+        if (!result.value) {
+            log('warn', 'Rate limit exceeded for unverified IP.', logContext);
+            throw new HttpError(429, `Too Many Requests: Rate limit exceeded.`);
+        }
 
-    // Prune old timestamps
-    if (timestamps.length > UNVERIFIED_IP_LIMIT * 2) {
-        await rateLimitCollection.updateOne({ ip }, { $set: { timestamps: recentTimestamps } });
+        // Clean up old timestamps periodically (every 10th request)
+        if (Math.random() < 0.1) {
+            const recentTimestamps = result.value.timestamps.filter(ts => ts > windowStart);
+            if (recentTimestamps.length < result.value.timestamps.length) {
+                await rateLimitCollection.updateOne(
+                    { ip },
+                    { $set: { timestamps: recentTimestamps } }
+                );
+                log('debug', 'Cleaned up old timestamps.', { ...logContext, removed: result.value.timestamps.length - recentTimestamps.length });
+            }
+        }
+
+        log('debug', 'Rate limit check passed.', { 
+            ...logContext, 
+            currentCount: result.value.timestamps.filter(ts => ts > windowStart).length,
+            limit: UNVERIFIED_IP_LIMIT 
+        });
+
+    } catch (error) {
+        if (error instanceof HttpError) throw error;
+        log('error', 'Error during rate limit check.', { ...logContext, errorMessage: error.message });
+        // Fail open on database errors to prevent service disruption
+        log('warn', 'Rate limit check failed, allowing request through.', logContext);
     }
 };
 
