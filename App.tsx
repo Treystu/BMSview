@@ -97,22 +97,22 @@ function App() {
 
           for (const status of statuses) {
               if (status.status === 'completed' && status.recordId) {
-                  log('info', 'Job completed, fetching full record.', { jobId: status.jobId, recordId: status.recordId });
+                  log('info', 'Job completed, fetching full record.', { jobId: status.id, recordId: status.recordId });
                   const record = await getAnalysisRecordById(status.recordId);
                   if (record) {
-                      dispatch({ type: 'UPDATE_JOB_COMPLETED', payload: { jobId: status.jobId, record } });
+                      dispatch({ type: 'UPDATE_JOB_COMPLETED', payload: { jobId: status.id, record } });
                       needsHistoryRefresh = true;
                   } else {
-                     log('warn', 'Job completed but could not fetch the final record.', { jobId: status.jobId, recordId: status.recordId });
+                     log('warn', 'Job completed but could not fetch the final record.', { jobId: status.id, recordId: status.recordId });
                      // Mark as failed if record can't be fetched, to unblock the UI
-                     dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.jobId, status: 'failed_record_fetch' } });
+                     dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.id, status: 'failed_record_fetch' } });
                   }
               } else if (status.status.startsWith('failed') || status.status === 'not_found') {
-                  log('warn', `Job ${status.status}.`, { jobId: status.jobId, error: status.error });
-                  dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.jobId, status: status.error || 'Failed' } });
+                  log('warn', `Job ${status.status}.`, { jobId: status.id, error: status.error });
+                  dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.id, status: status.error || 'Failed' } });
               } else {
-                  log('info', 'Job status updated.', { jobId: status.jobId, status: status.status });
-                  dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.jobId, status: status.status } });
+                  log('info', 'Job status updated.', { jobId: status.id, status: status.status });
+                  dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.id, status: status.status } });
               }
           }
           if (needsHistoryRefresh) {
@@ -126,7 +126,7 @@ function App() {
           const stillPendingJobs = jobsToPoll.filter(job => {
                 // FIX: `statuses` was defined in the `try` block and not accessible here.
                 // Moved its declaration to the outer scope of `pollJobStatuses`.
-                const updatedStatus = statuses.find(s => s.jobId === job.jobId);
+                const updatedStatus = statuses.find(s => s.id === job.jobId);
                 // A job is no longer pending if its status is completed, failed, or not found.
                 return !(updatedStatus && (updatedStatus.status === 'completed' || updatedStatus.status.startsWith('failed') || updatedStatus.status === 'not_found'));
           });
@@ -174,18 +174,21 @@ function App() {
     }
   };
 
-  const handleAnalyze = async (files: File[]) => {
-    log('info', 'Analysis process initiated from UI.', { fileCount: files.length });
+  const handleAnalyze = async (files: File[], options?: { forceFileName?: string }) => {
+    log('info', 'Analysis process initiated from UI.', { fileCount: files.length, forceFileName: options?.forceFileName });
     
     // The client no longer checks for duplicates. It just prepares all files for submission.
     const initialResults: DisplayableAnalysisResult[] = files.map(f => ({ 
         fileName: f.name, 
         data: null, 
-        error: 'Submitting', 
+        error: 'Submitted', 
         file: f,
         submittedAt: Date.now()
     }));
     
+    // For new uploads, PREPARE_ANALYSIS adds the skeleton UI.
+    // For reprocess, it does nothing since the item is already there, which is fine.
+    // REPROCESS_START has already updated the item's state to 'Submitting'.
     dispatch({ type: 'PREPARE_ANALYSIS', payload: initialResults });
 
     setTimeout(() => document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -197,7 +200,8 @@ function App() {
     }
 
     try {
-        const jobCreationResults = await analyzeBmsScreenshots(files, registeredSystems);
+        const forceReprocessFileNames = options?.forceFileName ? [options.forceFileName] : [];
+        const jobCreationResults = await analyzeBmsScreenshots(files, registeredSystems, forceReprocessFileNames);
         log('info', 'Received job creation results from service.', { results: jobCreationResults });
         dispatch({ type: 'START_ANALYSIS_JOBS', payload: jobCreationResults });
     } catch (err) {
@@ -210,7 +214,7 @@ function App() {
   const handleReprocess = async (fileToReprocess: File) => {
     log('info', 'Reprocess initiated from UI.', { fileName: fileToReprocess.name });
     dispatch({ type: 'REPROCESS_START', payload: { fileName: fileToReprocess.name }});
-    await handleAnalyze([fileToReprocess]);
+    await handleAnalyze([fileToReprocess], { forceFileName: fileToReprocess.name });
   };
 
   const handleRegisterSystem = async (systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>) => {
@@ -247,7 +251,7 @@ function App() {
       <Header />
       <main className="flex-grow">
         <UploadSection 
-          onAnalyze={handleAnalyze} 
+          onAnalyze={(files) => handleAnalyze(files)} 
           isLoading={isLoading} 
           error={error}
           hasResults={analysisResults.length > 0}

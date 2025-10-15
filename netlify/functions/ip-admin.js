@@ -1,6 +1,6 @@
-const { getConfiguredStore } = require("./utils/blobs.js");
+
+const { getCollection } = require("./utils/mongodb.js");
 const { createLogger } = require("./utils/logger.js");
-const { createRetryWrapper } = require("./utils/retry.js");
 
 const ipToInt = (ip) => ip.split('.').reduce((int, octet) => (int << 8) + parseInt(octet, 10), 0) >>> 0;
 
@@ -23,21 +23,6 @@ const isIpInRanges = (ip, ranges, log) => {
   return false;
 };
 
-const listAllBlobs = async (store, log, withRetry) => {
-    let allBlobs = []; let cursor = undefined;
-    log('debug', `Starting to list all blobs from store: ${store.name}`);
-    do {
-        const { blobs, cursor: nextCursor } = await withRetry(() => store.list({ cursor, limit: 1000 }));
-        log('debug', 'Fetched a page of blobs', { store: store.name, count: blobs.length, nextCursor: nextCursor || 'end' });
-        allBlobs.push(...blobs);
-        cursor = nextCursor;
-    } while (cursor);
-    log('debug', `Finished listing all blobs from store: ${store.name}`, { totalCount: allBlobs.length });
-    return allBlobs;
-};
-
-const keyToIp = (key) => Buffer.from(key, 'base64url').toString('utf8');
-
 const respond = (statusCode, body) => ({
     statusCode,
     body: JSON.stringify(body),
@@ -46,105 +31,69 @@ const respond = (statusCode, body) => ({
 
 exports.handler = async function(event, context) {
     const log = createLogger('ip-admin', context);
-    const withRetry = createRetryWrapper(log);
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod } = event;
     const logContext = { clientIp, httpMethod };
-    log('debug', 'Function invoked.', logContext);
+    log('debug', 'Function invoked.', { ...logContext, headers: event.headers });
 
     try {
+        const securityCollection = await getCollection("security");
+        const rateLimitsCollection = await getCollection("rate_limits");
+        const ipConfigDocId = 'ip_config';
+
         if (httpMethod === 'GET') {
             log('info', 'Fetching all IP admin data.', logContext);
-            const rateStore = getConfiguredStore("rate-limiting", log);
-            const verifiedStore = getConfiguredStore("verified-ips", log);
-            const blockedStore = getConfiguredStore("bms-blocked-ips", log);
+            const ipConfig = await securityCollection.findOne({ _id: ipConfigDocId }) || { verified: [], blocked: [] };
+            
+            const activityWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            const recentActivity = await rateLimitsCollection.find({ timestamps: { $gte: activityWindowStart } }).toArray();
 
-            const [rateLimitBlobs, rawRangesData, rawBlockedData] = await Promise.all([
-                listAllBlobs(rateStore, log, withRetry),
-                withRetry(() => verifiedStore.get("ranges", { type: "json" })).catch(() => []),
-                withRetry(() => blockedStore.get("ranges", { type: "json" })).catch(() => [])
-            ]);
+            const trackedIps = recentActivity.map(record => ({
+                ip: record.ip,
+                key: record.ip, // Use IP as key for simplicity in UI
+                count: record.timestamps.filter(ts => ts > new Date(Date.now() - 60 * 1000)).length,
+                lastSeen: new Date(Math.max(...record.timestamps)).toISOString(),
+                isVerified: isIpInRanges(record.ip, ipConfig.verified, log),
+                isBlocked: isIpInRanges(record.ip, ipConfig.blocked, log),
+            })).sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
 
-            const verifiedRanges = Array.isArray(rawRangesData) ? rawRangesData : [];
-            const blockedRanges = Array.isArray(rawBlockedData) ? rawBlockedData : [];
-            log('debug', 'Loaded IP ranges.', { ...logContext, verifiedCount: verifiedRanges.length, blockedCount: blockedRanges.length });
-
-            const now = Date.now();
-            const activityWindowStart = now - 24 * 60 * 60 * 1000;
-            const rateLimitWindowStart = now - 60 * 1000;
-
-            log('debug', `Processing ${rateLimitBlobs.length} rate limit blobs.`, logContext);
-            const trackedIpsPromises = (rateLimitBlobs || []).map(async (blob) => {
-                try {
-                    const ip = keyToIp(blob.key);
-                    const timestamps = await withRetry(() => rateStore.get(blob.key, { type: "json" })) || [];
-                    const recentTimestamps = timestamps.filter(ts => ts > activityWindowStart);
-                    if (recentTimestamps.length === 0) return null;
-
-                    return {
-                        ip, key: blob.key,
-                        count: timestamps.filter(ts => ts > rateLimitWindowStart).length,
-                        lastSeen: new Date(Math.max(...recentTimestamps)).toISOString(),
-                        isVerified: isIpInRanges(ip, verifiedRanges, log),
-                        isBlocked: isIpInRanges(ip, blockedRanges, log),
-                    };
-                } catch (e) {
-                    log('error', `Failed to process rate limit blob.`, { ...logContext, key: blob.key, errorMessage: e.message, stack: e.stack });
-                    return null;
-                }
+            return respond(200, { 
+                trackedIps, 
+                verifiedRanges: ipConfig.verified, 
+                blockedRanges: ipConfig.blocked 
             });
-            
-            const trackedIps = (await Promise.all(trackedIpsPromises))
-                .filter(Boolean)
-                .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
-            
-            log('info', 'Successfully fetched all IP admin data.', { ...logContext, trackedIpCount: trackedIps.length });
-            return respond(200, { trackedIps, verifiedRanges, blockedRanges });
         }
 
         if (httpMethod === 'POST') {
-            const { action, range, key } = JSON.parse(event.body);
+            const parsedBody = JSON.parse(event.body);
+            log('debug', 'Parsed POST body.', { ...logContext, body: parsedBody });
+            const { action, range, key } = parsedBody;
             const postLogContext = { ...logContext, action, range, key };
             log('info', 'IP admin POST request received.', postLogContext);
 
             if (action === 'delete-ip' && key) {
-                log('warn', 'Deleting IP record from rate-limiting store.', postLogContext);
-                const rateStore = getConfiguredStore("rate-limiting", log);
-                await withRetry(() => rateStore.delete(key));
+                await rateLimitsCollection.deleteOne({ ip: key });
                 return respond(200, { success: true });
             }
 
-            let store, storeKey = "ranges", responseKey;
-            if (['add', 'remove'].includes(action)) { store = getConfiguredStore("verified-ips", log); responseKey = 'verifiedRanges'; }
-            else if (['block', 'unblock'].includes(action)) { store = getConfiguredStore("bms-blocked-ips", log); responseKey = 'blockedRanges'; }
-            else { 
-                log('error', 'Invalid action in request body.', postLogContext);
-                return respond(400, { error: 'Invalid request body.' });
-            }
+            let updateOperation;
+            let responseKey;
+            if (action === 'add' && range) { updateOperation = { $addToSet: { verified: range } }; responseKey = 'verifiedRanges'; }
+            else if (action === 'remove' && range) { updateOperation = { $pull: { verified: range } }; responseKey = 'verifiedRanges'; }
+            else if (action === 'block' && range) { updateOperation = { $addToSet: { blocked: range } }; responseKey = 'blockedRanges'; }
+            else if (action === 'unblock' && range) { updateOperation = { $pull: { blocked: range } }; responseKey = 'blockedRanges'; }
+            else { return respond(400, { error: 'Invalid request body.' }); }
             
-            const { data, metadata } = await withRetry(() => store.getWithMetadata(storeKey, { type: "json" }))
-                .catch(err => (err.status === 404 ? { data: [], metadata: null } : Promise.reject(err)));
-            
-            let ranges = Array.isArray(data) ? data : [];
-            log('debug', 'Current ranges loaded.', { ...postLogContext, store: store.name, count: ranges.length, etag: metadata?.etag });
+            const result = await securityCollection.findOneAndUpdate(
+                { _id: ipConfigDocId },
+                updateOperation,
+                { upsert: true, returnDocument: 'after' }
+            );
 
-            if ((action === 'add' || action === 'block') && range) {
-                if (!ranges.includes(range)) {
-                    log('debug', 'Adding range.', postLogContext);
-                    ranges.push(range);
-                }
-            } else if ((action === 'remove' || action === 'unblock') && range) {
-                log('debug', 'Removing range.', postLogContext);
-                ranges = ranges.filter(r => r !== range);
-            }
-            
-            await withRetry(() => store.setJSON(storeKey, ranges, { etag: metadata?.etag }));
-            log('info', 'Successfully updated ranges.', { ...postLogContext, store: store.name, newCount: ranges.length });
-
-            return respond(200, { [responseKey]: ranges });
+            const updatedRanges = result.value ? (result.value[responseKey.slice(0, -1)] || []) : [range];
+            return respond(200, { [responseKey]: updatedRanges });
         }
         
-        log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
         return respond(405, { error: 'Method Not Allowed' });
 
     } catch (error) {

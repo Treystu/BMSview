@@ -183,7 +183,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         isLoading: true,
         analysisResults: state.analysisResults.map(r =>
           r.fileName === action.payload.fileName
-            ? { ...r, data: null, error: 'Submitting', isDuplicate: false, saveError: null, recordId: undefined, jobId: undefined, forcedSystemId: undefined, submittedAt: Date.now() }
+            ? { ...r, data: null, error: 'Submitted', isDuplicate: false, saveError: null, recordId: undefined, jobId: undefined, forcedSystemId: undefined, submittedAt: Date.now() }
             : r
         )
       };

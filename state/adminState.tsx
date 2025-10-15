@@ -172,7 +172,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         return {
             ...state,
             bulkUploadResults: state.bulkUploadResults.map(r =>
-                r.jobId === jobId ? { ...r, data: record.analysis, error: 'completed', recordId: record.id, weather: record.weather, submittedAt: r.submittedAt } : r
+                r.jobId === jobId ? { ...r, data: record.analysis, error: null, recordId: record.id, weather: record.weather, submittedAt: r.submittedAt } : r
             ),
         };
     case 'SET_THROTTLE_MESSAGE':

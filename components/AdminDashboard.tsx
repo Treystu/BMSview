@@ -91,7 +91,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     }, [fetchData]);
 
     const pollJobStatuses = useCallback(async () => {
-        const pendingJobs = state.bulkUploadResults.filter(r => r.jobId && !['completed', 'failed'].includes(r.error?.toLowerCase() ?? ''));
+        const pendingJobs = state.bulkUploadResults.filter(r => r.jobId && !r.data && !getIsActualError(r));
         if (pendingJobs.length === 0) {
             if (pollingIntervalRef.current) {
                 log('info', 'No pending bulk jobs. Stopping poller.');
@@ -110,21 +110,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
             for (const status of statuses) {
                  if (status.status === 'completed' && status.recordId) {
-                    log('info', 'Bulk job completed, fetching record.', { jobId: status.jobId, recordId: status.recordId });
+                    log('info', 'Bulk job completed, fetching record.', { jobId: status.id, recordId: status.recordId });
                     const record = await getAnalysisRecordById(status.recordId);
                     if (record) {
-                        dispatch({ type: 'UPDATE_BULK_JOB_COMPLETED', payload: { jobId: status.jobId, record } });
+                        dispatch({ type: 'UPDATE_BULK_JOB_COMPLETED', payload: { jobId: status.id, record } });
                         needsHistoryRefresh = true;
                     } else {
-                        log('warn', 'Bulk job completed but record could not be fetched.', { jobId: status.jobId, recordId: status.recordId });
-                        dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.jobId, status: 'Completed (record fetch failed)' } });
+                        log('warn', 'Bulk job completed but record could not be fetched.', { jobId: status.id, recordId: status.recordId });
+                        dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.id, status: 'Completed (record fetch failed)' } });
                     }
                 } else if (status.status === 'failed' || status.status === 'not_found' || status.status.startsWith('failed_')) {
-                    log('warn', `Bulk job ${status.status}.`, { jobId: status.jobId, error: status.error });
-                    dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.jobId, status: status.error || 'Failed' } });
+                    log('warn', `Bulk job ${status.status}.`, { jobId: status.id, error: status.error });
+                    dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.id, status: status.error || 'Failed' } });
                 } else {
-                    log('info', 'Bulk job status updated.', { jobId: status.jobId, status: status.status });
-                    dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.jobId, status: status.status } });
+                    log('info', 'Bulk job status updated.', { jobId: status.id, status: status.status });
+                    dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.id, status: status.status } });
                 }
             }
             if (needsHistoryRefresh) {
@@ -137,8 +137,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         }
     }, [state.bulkUploadResults, dispatch]);
 
+    // Internal helper for pollJobStatuses
+    const getIsActualError = (result: DisplayableAnalysisResult): boolean => {
+      const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
+      const status = result.error;
+      if (result.isDuplicate || !status || status.toLowerCase().includes('skipped') || PENDING_STATUS_REGEX.test(status.toLowerCase())) {
+          return false;
+      }
+      return true;
+    };
+
+
     useEffect(() => {
-        const pendingJobs = bulkUploadResults.filter(r => r.jobId && !['completed', 'failed'].includes(r.error?.toLowerCase() ?? ''));
+        const pendingJobs = bulkUploadResults.filter(r => r.jobId && !r.data && !getIsActualError(r));
         if (pendingJobs.length > 0 && !pollingIntervalRef.current) {
             log('info', 'Pending bulk jobs detected, starting poller.');
             pollingIntervalRef.current = window.setInterval(pollJobStatuses, 5000);

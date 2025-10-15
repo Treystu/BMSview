@@ -2,6 +2,7 @@ import React from 'react';
 import type { DisplayableAnalysisResult } from '../types';
 import { useFileUpload } from '../hooks/useFileUpload';
 import { AdminAction } from '../state/adminState';
+import { formatError } from '../utils';
 
 interface BulkUploadProps {
   onAnalyze: (files: File[]) => void;
@@ -16,10 +17,11 @@ const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|su
 // Helper to determine if a result represents a final, failed state.
 const getIsActualError = (result: DisplayableAnalysisResult): boolean => {
     const status = result.error;
-    // Not an error if it's a duplicate, has no status, is completed, or is in a pending state.
-    if (result.isDuplicate || !status || status.toLowerCase() === 'completed' || status.toLowerCase().includes('skipped') || PENDING_STATUS_REGEX.test(status.toLowerCase())) {
+    // Not an error if it's a duplicate, has no status, is skipped, or is in a pending state.
+    if (result.isDuplicate || !status || status.toLowerCase().includes('skipped') || PENDING_STATUS_REGEX.test(status.toLowerCase())) {
         return false;
     }
+    // Any other non-empty error string is an error.
     return true;
 };
 
@@ -31,14 +33,15 @@ const renderStatus = (result: DisplayableAnalysisResult) => {
     if (result.isDuplicate || lowerStatus.includes('skipped')) {
         return <span title="Duplicate file name in batch or history" className="font-semibold text-yellow-400 cursor-help">Skipped</span>;
     }
-    if (lowerStatus === 'completed') {
+    // The presence of data and absence of an error string now signifies success
+    if (result.data && !result.error) {
         return <span className="font-semibold text-green-400">Success</span>;
     }
     if (result.saveError) {
         return <span title={result.saveError} className="font-semibold text-yellow-400 cursor-help">Save Error</span>;
     }
     if (getIsActualError(result)) {
-         return <span title={result.error || 'Failed'} className="font-semibold text-red-400 cursor-help">Failed</span>;
+         return <span title={formatError(result.error || 'Failed')} className="font-semibold text-red-400 cursor-help">Failed</span>;
     }
     
     // Any other status is considered in-progress.
@@ -69,13 +72,27 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onAnalyze, results, isLoading, 
   };
 
   const totalFiles = results.length;
-  const successCount = results.filter(r => r.error?.toLowerCase() === 'completed').length;
-  const skippedCount = results.filter(r => r.isDuplicate || r.error?.toLowerCase().includes('skipped')).length;
-  const failedCount = results.filter(getIsActualError).length;
+  let successCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
+  let pendingCount = 0;
+
+  // Use a single loop to ensure each result is categorized exactly once.
+  for (const r of results) {
+    const status = r.error?.toLowerCase();
+
+    if (r.isDuplicate || status?.includes('skipped')) {
+        skippedCount++;
+    } else if (r.data && !r.error) {
+        successCount++;
+    } else if (getIsActualError(r)) {
+        failedCount++;
+    } else {
+        pendingCount++;
+    }
+  }
   
   const terminalCount = successCount + skippedCount + failedCount;
-  const pendingCount = totalFiles > 0 ? totalFiles - terminalCount : 0;
-  
   const progress = totalFiles > 0 ? (terminalCount / totalFiles) * 100 : 0;
 
 

@@ -16,6 +16,8 @@ exports.handler = async function(event, context) {
   try {
     let body;
     try {
+        const bodyLength = event.body ? event.body.length : 0;
+        log('debug', 'Attempting to parse request body.', { ...logContext, bodyLength });
         body = JSON.parse(event.body);
         log('debug', 'Request body parsed successfully.', logContext);
     } catch (e) {
@@ -33,6 +35,16 @@ exports.handler = async function(event, context) {
     }
     
     const { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, CONTACT_EMAIL_RECIPIENT } = process.env;
+    
+    log('debug', 'Nodemailer environment variables loaded.', {
+      ...submissionContext,
+      hasHost: !!EMAIL_HOST,
+      hasPort: !!EMAIL_PORT,
+      hasUser: !!EMAIL_USER,
+      hasPass: !!EMAIL_PASS,
+      hasRecipient: !!CONTACT_EMAIL_RECIPIENT,
+    });
+
     const transportConfig = {
       host: EMAIL_HOST,
       port: EMAIL_PORT,

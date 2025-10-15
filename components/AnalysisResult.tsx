@@ -1,9 +1,12 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { DisplayableAnalysisResult, BmsSystem, WeatherData, AnalysisData } from '../types';
 import ThermometerIcon from './icons/ThermometerIcon';
 import CloudIcon from './icons/CloudIcon';
 import SunIcon from './icons/SunIcon';
 import BoltIcon from './icons/BoltIcon';
+import { streamInsights } from '../services/clientService';
+import SpinnerIcon from './icons/SpinnerIcon';
+import { formatError } from '../utils';
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({
@@ -23,15 +26,110 @@ interface AnalysisResultProps {
   onRegisterNewSystem: (dlNumber: string) => void;
 }
 
-const MetricCard: React.FC<{ title: string; value: string | number | null; unit: string; }> = ({ title, value, unit }) => (
-    <div className="bg-white p-4 rounded-lg shadow-md text-center">
+const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: string, systemName?: string }> = ({ analysisData, systemId, systemName }) => {
+    const [insights, setInsights] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [customPrompt, setCustomPrompt] = useState('');
+    const [error, setError] = useState<string | null>(null);
+
+    const handleGenerateInsights = async (prompt?: string) => {
+        setIsLoading(true);
+        setError(null);
+        setInsights('');
+        
+        try {
+            await streamInsights(
+                { analysisData, systemId, customPrompt: prompt },
+                (chunk) => { setInsights(prev => prev + chunk); },
+                () => { setIsLoading(false); },
+                (err) => {
+                    setError(err.message);
+                    setIsLoading(false);
+                }
+            );
+        } catch (e) {
+            const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+            setError(errorMessage);
+            setIsLoading(false);
+            log('error', 'Deeper insights stream initiation failed.', { error: errorMessage });
+        }
+    };
+
+    return (
+        <div className="mb-8">
+            <h4 className="text-xl font-semibold text-neutral-dark mb-4">Deeper AI Insights</h4>
+            {insights && (
+                <div className="mb-4 p-4 bg-blue-50 border-l-4 border-secondary rounded-r-lg prose max-w-none">
+                     {/* Using a <pre> tag to render markdown-like text with simple formatting */}
+                    <pre className="text-neutral whitespace-pre-wrap font-sans bg-transparent p-0 m-0">{insights}</pre>
+                </div>
+            )}
+            {isLoading && (
+                <div className="flex items-center justify-center p-8 bg-gray-100 rounded-lg">
+                    <SpinnerIcon className="h-6 w-6 text-secondary" />
+                    <span className="ml-3 text-neutral-dark font-medium">AI is analyzing, this may take a moment...</span>
+                </div>
+            )}
+            {error && (
+                <div className="mb-4 p-4 bg-red-100 border-l-4 border-red-500 rounded-r-lg">
+                    <h5 className="font-bold text-red-800">Error Generating Insights</h5>
+                    <p className="text-red-700 mt-1">{error}</p>
+                </div>
+            )}
+            {!isLoading && (
+                <div className="p-4 bg-gray-100 rounded-lg space-y-4">
+                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                         <button
+                            onClick={() => handleGenerateInsights()}
+                            className="w-full sm:w-auto bg-secondary hover:bg-primary text-white font-bold py-2 px-4 rounded-lg shadow-md transition-colors"
+                        >
+                            Generate Standard Insights
+                        </button>
+                        <p className="text-sm text-gray-600 text-center sm:text-left">Get a summary, runtime estimates, and generator recommendations.</p>
+                    </div>
+                    <div className="border-t border-gray-300 pt-4 space-y-2">
+                        <label htmlFor="custom-prompt" className="block text-sm font-medium text-gray-700">
+                            Or ask a custom question about your system
+                            {systemName && <span className="text-xs text-gray-500"> (context from '{systemName}' will be used)</span>}
+                        </label>
+                        <textarea
+                            id="custom-prompt"
+                            rows={3}
+                            value={customPrompt}
+                            onChange={e => setCustomPrompt(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary"
+                            placeholder="e.g., I want to run an extra 5A load all night. Will I have enough power until sunrise?"
+                        />
+                         <button
+                            onClick={() => handleGenerateInsights(customPrompt)}
+                            disabled={!customPrompt.trim()}
+                            className="w-full sm:w-auto bg-primary hover:bg-secondary text-white font-bold py-2 px-4 rounded-lg shadow-md disabled:bg-gray-400 transition-colors"
+                        >
+                            Submit Custom Query
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const MetricCard: React.FC<{
+  title: string;
+  value: string | number | null;
+  unit: string;
+  cardClassName?: string;
+  valueClassName?: string;
+}> = ({ title, value, unit, cardClassName = 'bg-white', valueClassName = 'text-secondary' }) => (
+    <div className={`p-4 rounded-lg shadow-md text-center transition-colors duration-300 ${cardClassName}`}>
         <h4 className="text-sm font-medium text-gray-500">{title}</h4>
-        <p className="text-2xl font-bold text-secondary">
+        <p className={`text-2xl font-bold transition-colors duration-300 ${valueClassName}`}>
             {value !== null && value !== undefined ? value : 'N/A'}
             <span className="text-lg text-neutral-dark ml-1">{unit}</span>
         </p>
     </div>
 );
+
 
 const WeatherCard: React.FC<{ icon: React.ReactNode; title: string; value: string | number | null; unit: string; }> = ({ icon, title, value, unit }) => (
     <div className="flex items-center space-x-3 bg-white p-3 rounded-lg shadow-sm">
@@ -122,12 +220,21 @@ const AdoptionSection: React.FC<{
 };
 
 const ActionableInsights: React.FC<{ analysis: AnalysisData }> = ({ analysis }) => {
-  const { generatorRecommendation: gen, runtimeEstimateMiddleHours: runtime } = analysis;
-  const criticalAlerts = analysis.alerts?.filter(a => a.startsWith('CRITICAL:')) || [];
+  const criticalAlerts = analysis.alerts?.filter(a => a.toUpperCase().startsWith('CRITICAL:')) || [];
+  const warningAlerts = analysis.alerts?.filter(a => a.toUpperCase().startsWith('WARNING:')) || [];
+  
+  const infoAlerts = analysis.alerts?.filter(a => 
+      !a.toUpperCase().startsWith('CRITICAL:') && 
+      !a.toUpperCase().startsWith('WARNING:')
+  ) || [];
+
+  if (criticalAlerts.length === 0 && warningAlerts.length === 0 && infoAlerts.length === 0) {
+    return null;
+  }
 
   return (
     <div className="mb-8">
-      <h4 className="text-xl font-semibold text-neutral-dark mb-4">Actionable Insights</h4>
+      <h4 className="text-xl font-semibold text-neutral-dark mb-4">Immediate Alerts</h4>
       
       {criticalAlerts.length > 0 && (
           <div className="mb-4 p-4 bg-red-100 border-l-4 border-red-500 rounded-r-lg">
@@ -136,77 +243,66 @@ const ActionableInsights: React.FC<{ analysis: AnalysisData }> = ({ analysis }) 
               <h5 className="text-lg font-bold text-red-800">Immediate Action Required</h5>
             </div>
             <ul className="mt-2 list-disc list-inside space-y-1 text-red-700">
-                {criticalAlerts.map(alert => (
-                    <li key={alert}>{alert.replace('CRITICAL: ', '')}</li>
+                {criticalAlerts.map((alert, index) => (
+                    <li key={index}>{alert.replace(/^CRITICAL: /i, '')}</li>
                 ))}
             </ul>
           </div>
       )}
-
-      {gen && (
-        <div className={`mb-4 p-4 border-l-4 rounded-r-lg ${gen.run ? 'bg-yellow-100 border-yellow-500' : 'bg-green-100 border-green-500'}`}>
-          <div className="flex items-center">
-             <BoltIcon className={`h-6 w-6 mr-3 ${gen.run ? 'text-yellow-600' : 'text-green-600'}`} />
-            <h5 className="text-lg font-bold text-neutral-dark">Generator Recommendation</h5>
-          </div>
-          <p className={`mt-2 ${gen.run ? 'text-yellow-800' : 'text-green-800'}`}>
-            {gen.reason}
-            {gen.run && gen.durationHours != null && <strong>{` Recommended runtime: ${gen.durationHours.toFixed(1)} hours.`}</strong>}
-          </p>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {runtime != null && (
-             <div className="bg-white p-4 rounded-lg shadow-md">
-                <h5 className="font-semibold text-neutral-dark text-center mb-2">Estimated Runtime</h5>
-                <p className="text-3xl font-bold text-center text-primary mb-2">{runtime.toFixed(1)} hrs</p>
-                <div className="text-xs text-center text-gray-500 flex justify-between px-2">
-                    <span>{analysis.runtimeEstimateConservativeHours?.toFixed(1) ?? 'N/A'}h<br/>Cons.</span>
-                    <span>{analysis.runtimeEstimateAggressiveHours?.toFixed(1) ?? 'N/A'}h<br/>Aggr.</span>
-                </div>
-             </div>
-        )}
-        {(analysis.predictedSolarChargeAmphours != null || analysis.daylightHoursRemaining != null) && (
-            <div className="bg-white p-4 rounded-lg shadow-md">
-                <h5 className="font-semibold text-neutral-dark text-center mb-2">Solar Forecast</h5>
-                <p className="text-3xl font-bold text-center text-primary mb-2">
-                    {analysis.predictedSolarChargeAmphours?.toFixed(1) ?? 'N/A'}
-                    <span className="text-lg ml-1">Ah</span>
-                </p>
-                <p className="text-xs text-center text-gray-500">
-                    Est. charge over next {analysis.daylightHoursRemaining?.toFixed(1) ?? 'N/A'} daylight hours
-                </p>
+      
+      {warningAlerts.length > 0 && (
+          <div className="mb-4 p-4 bg-yellow-100 border-l-4 border-yellow-500 rounded-r-lg">
+            <div className="flex items-center">
+              <svg className="h-6 w-6 text-yellow-600 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <h5 className="text-lg font-bold text-yellow-800">Warnings &amp; Recommendations</h5>
             </div>
-        )}
-        {(analysis.averageCurrentDaylight != null || analysis.averageCurrentNight != null) && (
-             <div className="bg-white p-4 rounded-lg shadow-md">
-                <h5 className="font-semibold text-neutral-dark text-center mb-2">Avg. Current</h5>
-                <div className="flex justify-around items-center h-full">
-                    <div className="text-center">
-                        <p className="text-2xl font-bold text-primary">{analysis.averageCurrentDaylight?.toFixed(1) ?? 'N/A'} A</p>
-                        <p className="text-xs text-gray-500">Daylight</p>
-                    </div>
-                     <div className="text-center">
-                        <p className="text-2xl font-bold text-primary">{analysis.averageCurrentNight?.toFixed(1) ?? 'N/A'} A</p>
-                        <p className="text-xs text-gray-500">Night</p>
-                    </div>
-                </div>
-             </div>
-        )}
-      </div>
+            <ul className="mt-2 list-disc list-inside space-y-1 text-yellow-700">
+                {warningAlerts.map((alert, index) => (
+                    <li key={index}>{alert.replace(/^WARNING: /i, '')}</li>
+                ))}
+            </ul>
+          </div>
+      )}
+      
+      {infoAlerts.length > 0 && (
+           <div className="mb-4 p-4 bg-blue-100 border-l-4 border-blue-500 rounded-r-lg">
+            <div className="flex items-center">
+               <svg className="h-6 w-6 text-blue-600 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <h5 className="text-lg font-bold text-blue-800">Information</h5>
+            </div>
+            <ul className="mt-2 list-disc list-inside space-y-1 text-blue-700">
+                {infoAlerts.map((alert, index) => (
+                    <li key={index}>{alert}</li>
+                ))}
+            </ul>
+          </div>
+      )}
     </div>
   );
 };
 
-const formatError = (error: string): string => {
-    if (error.startsWith('failed_')) {
-        const reason = error.replace('failed_', '').replace(/_/g, ' ');
-        // Capitalize first letter
-        return `Failed: ${reason.charAt(0).toUpperCase() + reason.slice(1)}`;
+// Helper function to determine Tailwind classes for health-based color coding
+const getHealthStyles = (type: 'diff' | 'temp' | 'mos', value: number | null | undefined): { card: string; value: string } => {
+    if (value == null) return { card: 'bg-white', value: 'text-secondary' };
+
+    switch (type) {
+        case 'diff': // value is in Volts
+            if (value > 0.1) return { card: 'bg-red-100 border border-red-200', value: 'text-red-600' };
+            if (value > 0.05) return { card: 'bg-yellow-100 border border-yellow-200', value: 'text-yellow-600' };
+            break;
+        case 'temp': // value is in Celsius
+            if (value > 50) return { card: 'bg-red-100 border border-red-200', value: 'text-red-600' };
+            if (value > 40) return { card: 'bg-yellow-100 border border-yellow-200', value: 'text-yellow-600' };
+            if (value < 0) return { card: 'bg-blue-100 border border-blue-200', value: 'text-blue-600' };
+            break;
+        case 'mos': // value is in Celsius
+            if (value > 80) return { card: 'bg-red-100 border border-red-200', value: 'text-red-600' };
+            if (value > 65) return { card: 'bg-yellow-100 border border-yellow-200', value: 'text-yellow-600' };
+            break;
     }
-    return error;
+    return { card: 'bg-white', value: 'text-secondary' };
 };
+
 
 const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSystems, onLinkRecord, onReprocess, onRegisterNewSystem }) => {
   const { fileName, data, error, weather, isDuplicate, isBatchDuplicate, file, saveError, recordId } = result;
@@ -216,13 +312,15 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
     log('info', 'AnalysisResult component rendered/updated.', statusContext);
   }, [result]); // Log whenever the result prop changes
   
-  const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
+  const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|submitted|saving|processing|extracting|matching|fetching|retrying/i;
 
   const isCompleted = error?.toLowerCase() === 'completed';
   const isPending = !!error && PENDING_STATUS_REGEX.test(error);
   const isActualError = error && !isCompleted && !isPending;
 
-  const nonCriticalAlerts = data?.alerts?.filter(a => !a.startsWith('CRITICAL:')) || [];
+  const tempStyles = getHealthStyles('temp', data?.temperature);
+  const mosTempStyles = getHealthStyles('mos', data?.mosTemperature);
+  const diffStyles = getHealthStyles('diff', data?.cellVoltageDifference);
 
 
   const handleReprocessClick = () => {
@@ -329,10 +427,11 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
 
           <ActionableInsights analysis={data} />
 
-          <div className="mb-8 p-4 bg-blue-50 border-l-4 border-secondary rounded-r-lg">
-            <h4 className="text-xl font-semibold text-neutral-dark mb-2">AI General Summary</h4>
-            <p className="text-neutral">{data.summary || "No summary available."}</p>
-          </div>
+          <DeeperInsightsSection 
+            analysisData={data} 
+            systemId={associatedSystem?.id}
+            systemName={associatedSystem?.name}
+          />
 
           {weather && <WeatherSection weather={weather} />}
 
@@ -389,10 +488,10 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
               <h4 className="text-xl font-semibold text-neutral-dark mb-4">Temperatures</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {data.temperature != null && (
-                  <MetricCard title="Battery Temp" value={data.temperature.toFixed(1)} unit="°C" />
+                  <MetricCard title="Battery Temp" value={data.temperature.toFixed(1)} unit="°C" cardClassName={tempStyles.card} valueClassName={tempStyles.value} />
                 )}
                 {data.mosTemperature != null && (
-                  <MetricCard title="MOS Temp" value={data.mosTemperature.toFixed(1)} unit="°C" />
+                  <MetricCard title="MOS Temp" value={data.mosTemperature.toFixed(1)} unit="°C" cardClassName={mosTempStyles.card} valueClassName={mosTempStyles.value} />
                 )}
                 {data.temperatures && data.temperatures.slice(1).map((temp, index) => (
                    <MetricCard key={index} title={`Sensor T${index + 2}`} value={temp.toFixed(1)} unit="°C" />
@@ -412,7 +511,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
                   <MetricCard title="Lowest Cell" value={data.lowestCellVoltage.toFixed(3)} unit="V" />
                 )}
                 {data.cellVoltageDifference != null && (
-                  <MetricCard title="Difference" value={(data.cellVoltageDifference * 1000).toFixed(1)} unit="mV" />
+                  <MetricCard title="Difference" value={(data.cellVoltageDifference * 1000).toFixed(1)} unit="mV" cardClassName={diffStyles.card} valueClassName={diffStyles.value} />
                 )}
                 {data.averageCellVoltage != null && (
                   <MetricCard title="Average Cell" value={data.averageCellVoltage.toFixed(3)} unit="V" />
@@ -433,17 +532,6 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
             </div>
           )}
           
-          {nonCriticalAlerts.length > 0 && (
-            <div className="mb-8">
-              <h4 className="text-xl font-semibold text-neutral-dark mb-2">Alerts & Warnings</h4>
-              <ul className="list-disc list-inside bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-1">
-                {nonCriticalAlerts.map((alert, index) => (
-                  <li key={index} className="text-yellow-800">{alert}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
           {data.cellVoltages && data.cellVoltages.length > 0 && (
             <div>
               <h4 className="text-xl font-semibold text-neutral-dark mb-4">Cell Voltage Breakdown</h4>

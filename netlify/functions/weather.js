@@ -25,7 +25,7 @@ exports.handler = async function(event, context) {
   const { httpMethod, body } = event;
   const logContext = { clientIp, httpMethod };
   
-  log('debug', 'Function invoked.', logContext);
+  log('debug', 'Function invoked.', { ...logContext, headers: event.headers });
 
   if (httpMethod !== 'POST') {
     log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
@@ -39,7 +39,9 @@ exports.handler = async function(event, context) {
   }
   
   try {
-    const { lat, lon, timestamp } = JSON.parse(body);
+    const parsedBody = JSON.parse(body);
+    log('debug', 'Parsed POST body.', { ...logContext, body: parsedBody });
+    const { lat, lon, timestamp } = parsedBody;
     const requestLogContext = { ...logContext, lat, lon, timestamp };
     log('info', 'Processing weather request.', requestLogContext);
 
@@ -51,9 +53,14 @@ exports.handler = async function(event, context) {
     if (timestamp) {
         log('debug', 'Fetching historical weather data.', requestLogContext);
         const unixTimestamp = Math.floor(new Date(timestamp).getTime() / 1000);
+        const timemachineUrl = `https://api.openweathermap.org/data/3.0/onecall/timemachine?lat=${lat}&lon=${lon}&dt=${unixTimestamp}&units=metric&appid=${apiKey}`;
+        const uviUrl = `https://api.openweathermap.org/data/2.5/uvi/history?lat=${lat}&lon=${lon}&start=${unixTimestamp}&end=${unixTimestamp}&appid=${apiKey}`;
+        
+        log('debug', 'Fetching from OpenWeather APIs.', { ...requestLogContext, timemachineUrl, uviUrl });
+
         const [mainResponse, uviResponse] = await Promise.all([
-            fetchWithRetry(`https://api.openweathermap.org/data/3.0/onecall/timemachine?lat=${lat}&lon=${lon}&dt=${unixTimestamp}&units=metric&appid=${apiKey}`, log),
-            fetchWithRetry(`https://api.openweathermap.org/data/2.5/uvi/history?lat=${lat}&lon=${lon}&start=${unixTimestamp}&end=${unixTimestamp}&appid=${apiKey}`, log)
+            fetchWithRetry(timemachineUrl, log),
+            fetchWithRetry(uviUrl, log)
         ]);
 
         const mainData = await mainResponse.json();
@@ -72,6 +79,7 @@ exports.handler = async function(event, context) {
 
         if (uviResponse.ok && uviData && Array.isArray(uviData) && uviData.length > 0) {
             result.uvi = uviData[0].value;
+            log('debug', 'Successfully fetched historical UVI data.', { ...requestLogContext, uviValue: result.uvi });
         } else {
             log('warn', 'Could not fetch historical UVI data.', { ...requestLogContext, uviApiResponse: uviData });
         }
@@ -80,7 +88,10 @@ exports.handler = async function(event, context) {
 
     } else {
         log('debug', 'Fetching current weather data.', requestLogContext);
-        const weatherResponse = await fetchWithRetry(`https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&units=metric&exclude=minutely,hourly,daily,alerts&appid=${apiKey}`, log);
+        const onecallUrl = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&units=metric&exclude=minutely,hourly,daily,alerts&appid=${apiKey}`;
+        log('debug', 'Fetching from OneCall API.', { ...requestLogContext, url: onecallUrl });
+        
+        const weatherResponse = await fetchWithRetry(onecallUrl, log);
         const weatherData = await weatherResponse.json();
         if (!weatherResponse.ok) throw new Error(weatherData.message || 'Failed to fetch from OpenWeather API.');
         

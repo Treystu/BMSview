@@ -1,8 +1,7 @@
-const { getConfiguredStore } = require("./utils/blobs.js");
+const { getCollection } = require("./utils/mongodb.js");
 const { createLogger } = require("./utils/logger.js");
-const { createRetryWrapper } = require("./utils/retry.js");
 
-const JOBS_STORE_NAME = "bms-jobs";
+const BATCH_SIZE = 200;
 
 const respond = (statusCode, body) => ({
     statusCode,
@@ -12,11 +11,10 @@ const respond = (statusCode, body) => ({
 
 exports.handler = async function(event, context) {
     const log = createLogger('jobs-cleanup', context);
-    const withRetry = createRetryWrapper(log);
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod } = event;
     const logContext = { clientIp, httpMethod };
-    log('debug', 'Function invoked.', logContext);
+    log('debug', 'Function invoked.', { ...logContext, headers: event.headers });
 
     if (httpMethod !== 'POST') {
         log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
@@ -24,42 +22,30 @@ exports.handler = async function(event, context) {
     }
     
     try {
-        const { cursor: startCursor } = JSON.parse(event.body || '{}');
-        const batchLogContext = { ...logContext, startCursor: startCursor || 'start' };
-        log('info', `Starting cleanup batch.`, batchLogContext);
+        log('info', `Starting jobs cleanup task.`, logContext);
 
-        const jobsStore = getConfiguredStore(JOBS_STORE_NAME, log);
+        const jobsCollection = await getCollection("jobs");
         
-        let cleanedCount = 0;
-        const { blobs, cursor: nextCursor } = await withRetry(() => jobsStore.list({ cursor: startCursor, limit: 200 }));
-        log('debug', `Processing page with ${blobs.length} blobs.`, { ...batchLogContext, nextCursor: nextCursor || 'end' });
-
-        if (blobs && blobs.length > 0) {
-            for (const blob of blobs) {
-                const jobLogContext = { ...batchLogContext, key: blob.key };
-                try {
-                    const job = await withRetry(() => jobsStore.get(blob.key, { type: "json" }));
-                    
-                    if (job && (job.status === 'completed' || job.status.startsWith('failed')) && (job.image || job.images)) {
-                        log('debug', 'Found completed/failed job with image data. Cleaning.', jobLogContext);
-                        const { image, images, ...jobWithoutImages } = job;
-                        await withRetry(() => jobsStore.setJSON(blob.key, jobWithoutImages));
-                        cleanedCount++;
-                        log('debug', 'Job data cleaned successfully.', jobLogContext);
-                    } else {
-                        log('debug', 'Skipping job: not cleanable or no image data found.', { ...jobLogContext, status: job?.status, hasImage: !!job?.image });
-                    }
-                } catch (e) {
-                    log('warn', `Failed to process job blob during cleanup; it will be skipped.`, { ...jobLogContext, error: e.message, stack: e.stack });
-                }
+        const result = await jobsCollection.updateMany(
+            {
+                status: { $in: ['completed', 'failed'] },
+                $or: [
+                    { image: { $exists: true, $ne: null } },
+                    { images: { $exists: true, $ne: null } },
+                ]
+            },
+            {
+                $unset: { image: "", images: "" }
             }
-        }
+        );
+        
+        const cleanedCount = result.modifiedCount;
     
-        log('info', 'Finished cleanup batch.', { ...batchLogContext, cleanedCount, hasNextPage: !!nextCursor });
-        return respond(200, { success: true, cleanedCount, nextCursor: nextCursor || null });
+        log('info', 'Finished jobs cleanup task.', { ...logContext, cleanedCount });
+        return respond(200, { success: true, cleanedCount, nextCursor: null }); // nextCursor is kept for API compatibility but is no longer needed.
 
     } catch (error) {
-        log('error', 'Critical error during job cleanup batch.', { ...logContext, errorMessage: error.message, stack: error.stack });
+        log('error', 'Critical error during job cleanup.', { ...logContext, errorMessage: error.message, stack: error.stack });
         return respond(500, { error: "An internal server error occurred." });
     }
 };

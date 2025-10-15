@@ -1,18 +1,10 @@
-const { getConfiguredStore } = require('./utils/blobs');
+
+const { getCollection } = require('./utils/mongodb.js');
 const { createLogger } = require("./utils/logger.js");
 const { v4: uuidv4 } = require("uuid");
 const { checkSecurity, HttpError } = require('./security.js');
-const { createRetryWrapper } = require("./utils/retry.js");
 
-const JOBS_STORE_NAME = "bms-jobs";
-const HISTORY_STORE_NAME = "bms-history";
-const HISTORY_CACHE_KEY = "_all_history_cache";
-
-// Helper to get the base name of a file path
-const getBasename = (path) => {
-  if (!path) return '';
-  return path.split(/[/\\]/).pop() || '';
-};
+const getBasename = (path) => path ? path.split(/[/\\]/).pop() || '' : '';
 
 const respond = (statusCode, body) => ({
     statusCode,
@@ -22,7 +14,6 @@ const respond = (statusCode, body) => ({
 
 exports.handler = async (event, context) => {
     const log = createLogger('analyze', context);
-    const withRetry = createRetryWrapper(log);
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod } = event;
     const logContext = { clientIp, httpMethod };
@@ -31,65 +22,42 @@ exports.handler = async (event, context) => {
     
     try {
         if (httpMethod !== 'POST') {
-            log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
             return respond(405, { error: 'Method Not Allowed' });
         }
 
-        log('debug', 'Starting security check.', logContext);
         await checkSecurity(event, log);
-        log('debug', 'Security check passed.', logContext);
         
-        let body;
-        try {
-            body = JSON.parse(event.body);
-            log('debug', 'Request body parsed successfully.', { ...logContext, imageCount: body?.images?.length, hasSystems: !!body?.systems });
-        } catch (e) {
-            log('error', 'Failed to parse request body as JSON.', { ...logContext, body: event.body, error: e.message });
-            throw new HttpError(400, "Invalid JSON in request body.");
-        }
-
+        const body = JSON.parse(event.body);
+        log('debug', 'Request body parsed.', { ...logContext, imageCount: body.images?.length, hasSystems: !!body.systems });
         const { images, systems } = body;
 
         if (!Array.isArray(images) || images.length === 0) {
-            log('warn', 'Validation failed: No images provided for analysis.', logContext);
             return respond(400, { error: "No images provided for analysis." });
         }
-        log('debug', `Processing ${images.length} images. Starting duplicate check.`, logContext);
         
-        // --- Authoritative Duplicate Check ---
-        const historyStore = getConfiguredStore(HISTORY_STORE_NAME, log);
-        const allHistory = await withRetry(() => historyStore.get(HISTORY_CACHE_KEY, { type: 'json' })).catch(() => []);
-        const existingRecordMap = new Map();
-        if (Array.isArray(allHistory)) {
-            for (const record of allHistory) {
-                if (record.fileName) {
-                    existingRecordMap.set(getBasename(record.fileName), record);
-                }
-            }
-        }
-        log('debug', `History cache loaded for duplicate check. Found ${existingRecordMap.size} unique filenames.`, logContext);
-
-        const jobsStore = getConfiguredStore(JOBS_STORE_NAME, log);
+        const historyCollection = await getCollection("history");
+        const jobsCollection = await getCollection("jobs");
         const jobCreationResponses = [];
         const batchBasenames = new Set();
+        const basenamesToCheck = images.map(img => getBasename(img.fileName));
+        
+        const existingRecords = await historyCollection.find({ fileName: { $in: basenamesToCheck } }).toArray();
+        const existingRecordMap = new Map(existingRecords.map(r => [r.fileName, r]));
+
+        const jobsToInsert = [];
 
         for (const [index, image] of images.entries()) {
             const basename = getBasename(image.fileName);
             const imageLogContext = { ...logContext, fileName: image.fileName, basename, imageIndex: index };
-
+            
             if (batchBasenames.has(basename)) {
-                 log('info', 'Found duplicate within this batch, skipping job creation.', imageLogContext);
-                 jobCreationResponses.push({
-                    fileName: image.fileName,
-                    status: 'duplicate_batch',
-                 });
+                 jobCreationResponses.push({ fileName: image.fileName, status: 'duplicate_batch' });
                  continue;
             }
             batchBasenames.add(basename);
 
             const existingRecord = existingRecordMap.get(basename);
-            if (existingRecord) {
-                log('info', 'Found duplicate in history, skipping job creation.', { ...imageLogContext, existingRecordId: existingRecord.id });
+            if (existingRecord && !image.force) {
                 jobCreationResponses.push({
                     fileName: image.fileName,
                     status: 'duplicate_history',
@@ -99,48 +67,34 @@ exports.handler = async (event, context) => {
             }
 
             const newJobId = uuidv4();
-            const jobLogContext = { ...imageLogContext, jobId: newJobId };
-            log('debug', 'Creating job for new image.', jobLogContext);
-            
-            const jobData = {
+            jobsToInsert.push({
+                _id: newJobId, // Use native MongoDB _id for jobs
                 id: newJobId,
                 fileName: image.fileName,
                 status: "Queued",
-                image: image.image, // base64 string
+                image: image.image,
                 mimeType: image.mimeType,
-                systems, // All systems info
-                createdAt: new Date().toISOString(),
+                systems,
+                createdAt: new Date(),
                 retryCount: 0,
-            };
-            
-            try {
-                log('debug', 'Storing job data in blob store.', jobLogContext);
-                // Store under a "Queued/" prefix for efficient querying by the shepherd
-                await jobsStore.setJSON(`Queued/${newJobId}`, jobData);
-                log('debug', 'Job data stored successfully.', jobLogContext);
-
-                jobCreationResponses.push({
-                    fileName: image.fileName,
-                    jobId: newJobId,
-                    status: 'Queued',
-                });
-            } catch (storeError) {
-                 log('error', 'Failed to create and store job, it will not be processed.', { ...jobLogContext, error: storeError.message });
-                 jobCreationResponses.push({
-                    fileName: image.fileName,
-                    jobId: null,
-                    status: 'failed',
-                    error: 'Failed to create job in store.'
-                 });
-            }
+            });
+            jobCreationResponses.push({
+                fileName: image.fileName,
+                jobId: newJobId,
+                status: 'Submitted',
+            });
+        }
+        
+        if (jobsToInsert.length > 0) {
+            await jobsCollection.insertMany(jobsToInsert);
+            log('info', `Successfully created ${jobsToInsert.length} new analysis jobs.`);
         }
         
         const responseCounts = jobCreationResponses.reduce((acc, j) => {
-            if (j.status === 'Queued') acc.queued++;
+            if (j.status === 'Submitted') acc.queued++;
             else if (j.status.startsWith('duplicate')) acc.duplicates++;
-            else if (j.status === 'failed') acc.failed++;
             return acc;
-        }, { queued: 0, duplicates: 0, failed: 0 });
+        }, { queued: 0, duplicates: 0 });
         
         log('info', `Analysis submission processing complete.`, { ...logContext, ...responseCounts, totalProcessed: images.length });
         return respond(200, jobCreationResponses);

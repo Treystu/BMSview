@@ -1,6 +1,7 @@
-const { getConfiguredStore } = require("./utils/blobs.js");
+
+
+const { getCollection } = require("./utils/mongodb.js");
 const { createLogger } = require("./utils/logger.js");
-const { createRetryWrapper } = require("./utils/retry.js");
 
 const respond = (statusCode, body) => ({
     statusCode,
@@ -8,77 +9,66 @@ const respond = (statusCode, body) => ({
     headers: { 'Content-Type': 'application/json' },
 });
 
-const clearStore = async (store, log, withRetry) => {
-    const storeName = store.name;
-    const logContext = { storeName };
-    log('warn', `Starting to clear store.`, logContext);
-    let deletedCount = 0;
-    let pageCount = 0;
-    let cursor = undefined;
-    do {
-        pageCount++;
-        log('debug', `Fetching page ${pageCount} of blobs to delete.`, { ...logContext, cursor: cursor || 'start' });
-        const { blobs, cursor: nextCursor } = await withRetry(() => store.list({ cursor, limit: 1000 }));
-        if (blobs && blobs.length > 0) {
-            log('debug', `Found ${blobs.length} blobs on page ${pageCount}. Deleting them now.`, logContext);
-            for (const blob of blobs) {
-                await withRetry(() => store.delete(blob.key));
-            }
-            deletedCount += blobs.length;
-            log('debug', `Deleted page ${pageCount}. Total deleted so far: ${deletedCount}.`, logContext);
-        } else {
-            log('debug', `No blobs found on page ${pageCount}.`, logContext);
-        }
-        cursor = nextCursor;
-    } while (cursor);
-    log('warn', `Finished clearing store.`, { ...logContext, totalDeleted: deletedCount, totalPages: pageCount });
-    return deletedCount;
+const clearCollection = async (collectionName, log) => {
+    const logContext = { collectionName };
+    log('warn', `Starting to clear collection.`, logContext);
+    try {
+        const collection = await getCollection(collectionName);
+        const { deletedCount } = await collection.deleteMany({});
+        log('warn', `Finished clearing collection.`, { ...logContext, deletedCount });
+        return deletedCount;
+    } catch (error) {
+        log('error', `Failed to clear collection ${collectionName}`, { ...logContext, errorMessage: error.message });
+        return 0;
+    }
 };
 
 exports.handler = async function(event, context) {
     const log = createLogger('data-management', context);
-    const withRetry = createRetryWrapper(log);
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod, queryStringParameters } = event;
     const logContext = { clientIp, httpMethod };
 
-    log('debug', 'Function invoked.', { ...logContext, queryStringParameters });
+    log('debug', 'Function invoked.', { ...logContext, queryStringParameters, headers: event.headers });
     
     if (httpMethod !== 'DELETE') {
-        log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
         return respond(405, { error: 'Method Not Allowed' });
     }
     
     try {
-        const { store: storeToClearName } = queryStringParameters || {};
-        const allStores = [
-            "bms-systems", "bms-history", "bms-jobs", 
-            "rate-limiting", "verified-ips", "bms-blocked-ips"
-        ];
+        const { store: collectionToClearName } = queryStringParameters || {};
+        // Map old blob store names to new MongoDB collection names
+        const collectionMap = {
+            "bms-systems": "systems",
+            "bms-history": "history",
+            "bms-jobs": "jobs",
+            "rate-limiting": "rate_limits",
+            "verified-ips": "security", // Both verified and blocked are in 'security'
+            "bms-blocked-ips": "security",
+        };
+        const allCollections = [...new Set(Object.values(collectionMap))];
 
-        if (storeToClearName) {
-            if (allStores.includes(storeToClearName)) {
-                log('warn', `Received request to clear single store.`, { ...logContext, storeToClear: storeToClearName });
-                const store = getConfiguredStore(storeToClearName, log);
-                const deletedCount = await clearStore(store, log, withRetry);
+        if (collectionToClearName) {
+            const mongoCollection = collectionMap[collectionToClearName];
+            if (mongoCollection) {
+                log('warn', `Received request to clear single collection.`, { ...logContext, collectionToClear: mongoCollection });
+                const deletedCount = await clearCollection(mongoCollection, log);
                 return respond(200, {
-                    message: `Store '${storeToClearName}' cleared successfully.`,
-                    details: { [storeToClearName]: deletedCount },
+                    message: `Collection '${mongoCollection}' cleared successfully.`,
+                    details: { [mongoCollection]: deletedCount },
                 });
             } else {
-                log('error', `Invalid store name provided for deletion.`, { ...logContext, invalidStoreName: storeToClearName });
-                return respond(400, { error: `Invalid store name provided: ${storeToClearName}` });
+                return respond(400, { error: `Invalid store name provided: ${collectionToClearName}` });
             }
         }
 
-        log('warn', 'Received request to clear ALL application data from all stores. This is a destructive operation.', logContext);
+        log('warn', 'Received request to clear ALL application data from all collections.', logContext);
         const deletionResults = {};
-        for (const storeName of allStores) {
-            const store = getConfiguredStore(storeName, log);
-            deletionResults[storeName] = await clearStore(store, log, withRetry);
+        for (const collectionName of allCollections) {
+            deletionResults[collectionName] = await clearCollection(collectionName, log);
         }
 
-        log('warn', `Successfully cleared all data across all stores.`, { ...logContext, results: deletionResults });
+        log('warn', `Successfully cleared all data across all collections.`, { ...logContext, results: deletionResults });
         return respond(200, { message: "All data cleared successfully.", details: deletionResults });
 
     } catch (error) {

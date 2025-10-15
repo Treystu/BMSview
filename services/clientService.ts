@@ -65,6 +65,54 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
     }
 };
 
+export const streamInsights = async (
+  payload: {
+    analysisData: AnalysisData;
+    systemId?: string;
+    customPrompt?: string;
+  },
+  onChunk: (chunk: string) => void,
+  onComplete: () => void,
+  onError: (error: Error) => void
+) => {
+    log('info', 'Streaming insights from server.', { systemId: payload.systemId, hasCustomPrompt: !!payload.customPrompt });
+    try {
+        const response = await fetch('/.netlify/functions/generate-insights', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `Server responded with status: ${response.status}` }));
+            throw new Error(errorData.error || 'An unexpected error occurred.');
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+            throw new Error('Could not get readable stream from response.');
+        }
+
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                log('info', 'Insight stream completed.');
+                onComplete();
+                break;
+            }
+            onChunk(decoder.decode(value));
+        }
+    } catch (err) {
+        const error = err instanceof Error ? err : new Error('An unknown error occurred during streaming.');
+        log('error', 'Error streaming insights.', { error: error.message });
+        onError(error);
+    }
+};
+
 
 export const registerBmsSystem = async (
   systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>
@@ -151,6 +199,64 @@ export const getAnalysisRecordById = async (recordId: string): Promise<AnalysisR
     log('info', 'Fetching single analysis record by ID.', { recordId });
     return apiFetch<AnalysisRecord>(`history?id=${recordId}`);
 };
+
+// --- New Analytics Service ---
+interface UnidirectionalMetric {
+    avg: number;
+    points: number;
+}
+interface BidirectionalMetric {
+    avgCharge: number;
+    avgDischarge: number;
+    chargePoints: number;
+    dischargePoints: number;
+}
+
+export interface HourlyAverages {
+    hour: number;
+    metrics: {
+        current?: BidirectionalMetric;
+        power?: BidirectionalMetric;
+        stateOfCharge?: UnidirectionalMetric;
+        temperature?: UnidirectionalMetric;
+        mosTemperature?: UnidirectionalMetric;
+        cellVoltageDifference?: UnidirectionalMetric;
+        overallVoltage?: UnidirectionalMetric;
+    };
+}
+
+export interface PerformanceBaseline {
+    sunnyDayChargingAmpsByHour: {
+        hour: number;
+        avgCurrent: number;
+        dataPoints: number;
+    }[];
+}
+
+export interface AlertCount {
+    alert: string;
+    count: number;
+}
+
+export interface AlertAnalysis {
+    alertCounts: AlertCount[];
+    totalAlerts: number;
+}
+
+export interface SystemAnalytics {
+    hourlyAverages: HourlyAverages[];
+    performanceBaseline: PerformanceBaseline;
+    alertAnalysis: AlertAnalysis;
+}
+
+export const getSystemAnalytics = async (systemId: string): Promise<SystemAnalytics> => {
+    if (!systemId) {
+        throw new Error("A system ID must be provided to fetch analytics.");
+    }
+    log('info', 'Fetching system analytics.', { systemId });
+    return apiFetch<SystemAnalytics>(`system-analytics?systemId=${systemId}`);
+};
+
 
 export const mergeBmsSystems = async (primarySystemId: string, idsToMerge: string[]): Promise<void> => {
     log('info', 'Merging BMS systems.', { primarySystemId, idsToMerge });

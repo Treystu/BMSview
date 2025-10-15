@@ -36,14 +36,19 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
     }));
 };
 
-export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: BmsSystem[]): Promise<JobCreationResponse[]> => {
-    const analysisContext = { fileCount: files.length, hasSystems: !!registeredSystems };
+export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: BmsSystem[], forceReprocessFileNames: string[] = []): Promise<JobCreationResponse[]> => {
+    const analysisContext = { fileCount: files.length, hasSystems: !!registeredSystems, forceCount: forceReprocessFileNames.length };
     log('info', 'Starting analysis job submission.', analysisContext);
     
     try {
         if (files.length === 0) return [];
 
-        const imagePayloads = await Promise.all(files.map(fileWithMetadataToBase64));
+        const imagePayloads = await Promise.all(files.map(file => 
+            fileWithMetadataToBase64(file).then(payload => ({
+                ...payload,
+                force: forceReprocessFileNames.includes(payload.fileName),
+            }))
+        ));
         
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {

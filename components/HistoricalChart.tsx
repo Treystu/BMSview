@@ -1,8 +1,12 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import type { BmsSystem, AnalysisRecord, AnalysisData, WeatherData } from '../types';
+import { getSystemAnalytics, SystemAnalytics } from '../services/clientService';
+import SpinnerIcon from './icons/SpinnerIcon';
+import AlertAnalysis from './admin/AlertAnalysis';
 
-type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp';
+type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp' | 'soh' | 'mosTemperature';
 type Axis = 'left' | 'right';
+type ChartView = 'timeline' | 'hourly';
 
 const METRICS: Record<MetricKey, { 
     label: string; 
@@ -10,7 +14,7 @@ const METRICS: Record<MetricKey, {
     color: string; 
     multiplier?: number; 
     source: 'analysis' | 'weather'; 
-    group: 'Battery' | 'Weather';
+    group: 'Battery' | 'Weather' | 'Health';
     anomaly?: (value: number) => { type: 'critical' | 'warning', message: string } | null;
 }> = {
   stateOfCharge: { label: 'SOC', unit: '%', color: '#34d399', source: 'analysis', group: 'Battery', anomaly: (val) => val < 20 ? { type: 'warning', message: `Warning: SOC is low (${val.toFixed(1)}%)` } : null },
@@ -18,11 +22,16 @@ const METRICS: Record<MetricKey, {
   current: { label: 'Current', unit: 'A', color: '#60a5fa', source: 'analysis', group: 'Battery' },
   power: { label: 'Power', unit: 'W', color: '#c084fc', source: 'analysis', group: 'Battery' },
   temperature: { label: 'Batt Temp', unit: '°C', color: '#f87171', source: 'analysis', group: 'Battery', anomaly: (val) => val > 45 ? { type: 'critical', message: `CRITICAL: Battery temp is high (${val.toFixed(1)}°C)` } : null },
+  mosTemperature: { label: 'MOS Temp', unit: '°C', color: '#fca5a5', source: 'analysis', group: 'Battery', anomaly: (val) => val > 80 ? { type: 'critical', message: `CRITICAL: MOS temp is high (${val.toFixed(1)}°C)` } : null },
   cellVoltageDifference: { label: 'Cell Diff', unit: 'mV', color: '#a3a3a3', multiplier: 1000, source: 'analysis', group: 'Battery', anomaly: (val) => val > 0.1 ? { type: 'critical', message: `CRITICAL: Cell difference is high (${(val * 1000).toFixed(0)}mV)` } : null },
   clouds: { label: 'Clouds', unit: '%', color: '#94a3b8', source: 'weather', group: 'Weather' },
   uvi: { label: 'UV Index', unit: '', color: '#fde047', source: 'weather', group: 'Weather' },
   temp: { label: 'Air Temp', unit: '°C', color: '#a78bfa', source: 'weather', group: 'Weather' },
+  soh: { label: 'SOH', unit: '%', color: '#ec4899', source: 'analysis', group: 'Health', anomaly: (val) => val < 80 ? { type: 'critical', message: `CRITICAL: State of Health is low (${val.toFixed(1)}%)` } : null },
 };
+
+const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage'];
+
 
 const METRIC_GROUPS = Object.entries(METRICS).reduce((acc, [key, metric]) => {
     if (!acc[metric.group]) acc[metric.group] = [];
@@ -95,7 +104,14 @@ const ChartControls: React.FC<{
     onGenerate: () => void;
     onResetView: () => void;
     hasChartData: boolean;
-}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onGenerate, onResetView, hasChartData }) => {
+    zoomPercentage: number;
+    setZoomPercentage: (zoom: number) => void;
+    chartView: ChartView;
+    setChartView: (view: ChartView) => void;
+    hourlyMetric: MetricKey;
+    setHourlyMetric: (metric: MetricKey) => void;
+    isGenerating: boolean;
+}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onGenerate, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, isGenerating }) => {
     const [isMetricConfigOpen, setIsMetricConfigOpen] = useState(false);
     const metricConfigRef = useRef<HTMLDivElement>(null);
 
@@ -120,7 +136,7 @@ const ChartControls: React.FC<{
     
     return (
         <div className="flex flex-col gap-4 mb-6 p-4 bg-gray-900/50 rounded-lg">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
                 {/* System Select */}
                 <div className="lg:col-span-1">
                     <label htmlFor="system-select-chart" className="block text-sm font-medium text-gray-300 mb-1">System</label>
@@ -130,23 +146,71 @@ const ChartControls: React.FC<{
                         {systems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                 </div>
-                {/* Date Pickers */}
-                <div className="lg:col-span-2 grid grid-cols-2 gap-4">
-                    <div>
-                        <label htmlFor="start-date" className="block text-sm font-medium text-gray-300 mb-1">Start Time</label>
-                        <input type="datetime-local" id="start-date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                            className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-white focus:ring-secondary focus:border-secondary"/>
-                    </div>
-                    <div>
-                        <label htmlFor="end-date" className="block text-sm font-medium text-gray-300 mb-1">End Time</label>
-                        <input type="datetime-local" id="end-date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                            className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-white focus:ring-secondary focus:border-secondary"/>
-                    </div>
+                 {/* View Select */}
+                <div className="lg:col-span-1">
+                    <label htmlFor="view-select-chart" className="block text-sm font-medium text-gray-300 mb-1">Chart View</label>
+                    <select id="view-select-chart" value={chartView} onChange={(e) => setChartView(e.target.value as ChartView)}
+                        className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-white focus:ring-secondary focus:border-secondary">
+                        <option value="timeline">Timeline</option>
+                        <option value="hourly">Hourly Averages</option>
+                    </select>
                 </div>
-                {/* Action Buttons */}
-                <div className="flex items-end space-x-2">
+                 {/* Hourly Metric Select */}
+                {chartView === 'hourly' && (
+                    <div className="lg:col-span-1">
+                        <label htmlFor="hourly-metric-select" className="block text-sm font-medium text-gray-300 mb-1">Metric</label>
+                        <select id="hourly-metric-select" value={hourlyMetric} onChange={(e) => setHourlyMetric(e.target.value as MetricKey)}
+                            className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-white focus:ring-secondary focus:border-secondary">
+                            {HOURLY_METRICS.map(key => (
+                                <option key={key} value={key}>{METRICS[key].label}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+                {/* Date Pickers */}
+                <div className="lg:col-span-1">
+                    <label htmlFor="start-date" className="block text-sm font-medium text-gray-300 mb-1">Start Time</label>
+                    <input type="datetime-local" id="start-date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                        className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-white focus:ring-secondary focus:border-secondary"/>
+                </div>
+                <div className="lg:col-span-1">
+                    <label htmlFor="end-date" className="block text-sm font-medium text-gray-300 mb-1">End Time</label>
+                    <input type="datetime-local" id="end-date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                        className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-white focus:ring-secondary focus:border-secondary"/>
+                </div>
+                 {/* Zoom Control */}
+                 {chartView === 'timeline' && (
+                     <div className="lg:col-span-1">
+                        <label htmlFor="zoom-percentage" className="block text-sm font-medium text-gray-300 mb-1">Zoom (%)</label>
+                        <div className="flex items-center">
+                            <button type="button" onClick={() => setZoomPercentage(zoomPercentage / 1.2)} className="px-3 py-2 bg-gray-600 hover:bg-gray-500 rounded-l-md transition-colors">-</button>
+                            <input 
+                                type="number" 
+                                id="zoom-percentage" 
+                                value={zoomPercentage.toFixed(1)} 
+                                onChange={e => {
+                                    const val = parseFloat(e.target.value);
+                                    if (!isNaN(val) && val >= 0.1) {
+                                        setZoomPercentage(val);
+                                    }
+                                }}
+                                onBlur={e => {
+                                    if (e.target.value === '' || parseFloat(e.target.value) < 0.1) setZoomPercentage(100);
+                                }}
+                                min="0.1"
+                                step="10"
+                                className="w-full text-center bg-gray-700 border-y border-gray-600 p-2 text-white focus:ring-secondary focus:border-secondary [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <button type="button" onClick={() => setZoomPercentage(zoomPercentage * 1.2)} className="px-3 py-2 bg-gray-600 hover:bg-gray-500 rounded-r-md transition-colors">+</button>
+                        </div>
+                    </div>
+                )}
+            </div>
+            <div className="flex justify-end items-center gap-4 mt-4">
+                 {hasChartData && <button onClick={onResetView} className="text-sm text-secondary hover:underline">Reset View</button>}
+                 {chartView === 'timeline' && (
                     <div className="relative" ref={metricConfigRef}>
-                        <button onClick={() => setIsMetricConfigOpen(o => !o)} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md transition-colors">Configure Metrics</button>
+                        <button onClick={() => setIsMetricConfigOpen(o => !o)} className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md transition-colors">Configure Metrics</button>
                         {isMetricConfigOpen && (
                              <div className="absolute top-full right-0 mt-2 w-96 rounded-md shadow-lg bg-gray-800 ring-1 ring-black ring-opacity-5 z-20 p-4 max-h-96 overflow-y-auto">
                                 <div className="space-y-3">
@@ -180,11 +244,10 @@ const ChartControls: React.FC<{
                             </div>
                         )}
                     </div>
-                </div>
-            </div>
-            <div className="flex justify-end items-center gap-4">
-                 {hasChartData && <button onClick={onResetView} className="text-sm text-secondary hover:underline">Reset View</button>}
-                 <button onClick={onGenerate} className="bg-secondary hover:bg-primary text-white font-bold py-2 px-6 rounded-md transition-colors">Generate Chart</button>
+                 )}
+                 <button onClick={onGenerate} disabled={isGenerating || !selectedSystemId} className="bg-secondary hover:bg-primary text-white font-bold py-2 px-6 rounded-md transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed">
+                    {isGenerating ? <><SpinnerIcon className="inline w-4 h-4 mr-2"/> Generating...</> : 'Generate Chart'}
+                 </button>
             </div>
         </div>
     );
@@ -274,21 +337,14 @@ const SvgChart: React.FC<{
     
     const activeMetrics = useMemo(() => Object.entries(metricConfig).map(([key, config]) => ({ key: key as MetricKey, axis: config!.axis })), [metricConfig]);
 
-    const { xTicks, brushPaths } = useMemo(() => {
+    const { xTicks } = useMemo(() => {
         const xTicks = Array.from({length:10}, (_,i) => i*chartWidth/9).map(px => {
             const time = xScale.invert(px * (viewBox.width/chartWidth) + viewBox.x);
             const date = new Date(time);
-            return { x: px, label: date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) , dateLabel: date.toLocaleDateString([], {month:'short', day:'numeric'})};
+            return { x: px, label: date.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', timeZone: 'UTC', hour12: false}) , dateLabel: date.toLocaleDateString('en-US', {month:'short', day:'numeric', timeZone: 'UTC'})};
         });
-
-        const { scale: brushYLeft } = { scale: (v:number) => BRUSH_HEIGHT - ((v - 0) / (100 - 0)) * BRUSH_HEIGHT };
-        const brushPaths = Object.keys(metricConfig).map(key => {
-            const pathData = dataLODs['60'].filter((d:any) => d[key] !== null).map((d:any, i:number) => `${i === 0 ? 'M' : 'L'} ${xScale(d.timestamp).toFixed(2)} ${brushYLeft(50).toFixed(2)}`).join(' ');
-            return { key, d: pathData, color: METRICS[key as MetricKey].color };
-        });
-
-        return { xTicks, brushPaths };
-    }, [viewBox.width, viewBox.x, chartWidth, xScale, metricConfig, dataLODs]);
+        return { xTicks };
+    }, [viewBox.width, viewBox.x, chartWidth, xScale]);
 
     const getSvgCoords = (e: MouseEvent) => {
         if (!svgRef.current) return { x: 0, y: 0 };
@@ -352,23 +408,6 @@ const SvgChart: React.FC<{
         interactionState.isPanning = true;
         interactionState.panStart = svgPoint;
         interactionState.viewBoxStart = { ...viewBox };
-    };
-    
-    const handleWheel = (e: React.WheelEvent) => {
-        e.preventDefault();
-        const svgPoint = getSvgCoords(e.nativeEvent);
-        const zoomFactor = e.deltaY < 0 ? 0.8 : 1.25;
-        setViewBox(prev => {
-            const chartMouseX = svgPoint.x - MARGIN.left;
-            const mouseXAsFrac = (chartMouseX - prev.x) / prev.width;
-            let newWidth = prev.width * zoomFactor;
-            if (newWidth > chartWidth) newWidth = chartWidth;
-            if (newWidth < 10) newWidth = 10;
-            let newX = prev.x - (newWidth - prev.width) * mouseXAsFrac;
-            if (newX < 0) newX = 0;
-            if (newX + newWidth > chartWidth) newX = chartWidth - newWidth;
-            return { ...prev, x: newX, width: newWidth };
-        });
     };
     
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -470,7 +509,7 @@ const SvgChart: React.FC<{
                     <g>{yTicksLeft.map((tick:any, i:number) => <text key={`tl-l-${i}`} x={-8} y={tick.y} textAnchor='end' dy="0.32em" fill="#d1d5db" fontSize="12">{tick.value.toFixed(1)}</text>)}<text transform={`translate(-55, ${chartHeight / 2}) rotate(-90)`} textAnchor="middle" fill="#d1d5db" fontSize="14" fontWeight="bold">{yAxisLabelLeft}</text></g>
                     <g transform={`translate(${chartWidth}, 0)`}>{yTicksRight.map((tick:any, i:number) => <text key={`tl-r-${i}`} x={8} y={tick.y} textAnchor='start' dy="0.32em" fill="#d1d5db" fontSize="12">{tick.value.toFixed(1)}</text>)}<text transform={`translate(55, ${chartHeight / 2}) rotate(-90)`} textAnchor="middle" fill="#d1d5db" fontSize="14" fontWeight="bold">{yAxisLabelRight}</text></g>
                     <g transform={`translate(0, ${chartHeight})`}>{xTicks.map((tick:any, i:number) => <g key={`tx-${i}`} transform={`translate(${tick.x}, 0)`}><text y="20" textAnchor="middle" fill="#d1d5db" fontSize="12">{tick.label}<tspan x={0} dy="1.2em">{tick.dateLabel}</tspan></text></g>)}</g>
-                    <rect width={chartWidth} height={chartHeight} fill="transparent" cursor="grab" onMouseDown={handleMouseDown} onWheel={handleWheel} onMouseMove={handleMouseMove} onMouseLeave={() => setTooltip(null)} />
+                    <rect width={chartWidth} height={chartHeight} fill="transparent" cursor="grab" onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseLeave={() => setTooltip(null)} />
                     {tooltip && <line x1={tooltip.x} y1="0" x2={tooltip.x} y2={chartHeight} stroke="#a3a3a3" strokeWidth="1" strokeDasharray="4 4" pointerEvents="none" />}
                 </g>
 
@@ -486,7 +525,16 @@ const SvgChart: React.FC<{
             
             {tooltip && (
                 <div className="absolute p-3 bg-gray-900 border border-gray-600 rounded-lg shadow-lg text-sm text-white pointer-events-none" style={{ left: tooltip.x + MARGIN.left, top: tooltip.y, transform: `translate(15px, 15px)`}}>
-                    <p className="font-bold mb-2">{new Date(tooltip.point.timestamp).toLocaleString()}</p>
+                    <p className="font-bold mb-2">{new Date(tooltip.point.timestamp).toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false,
+                        timeZone: 'UTC'
+                    })} UTC</p>
                     {tooltip.point.recordCount > 1 && <p className="text-xs text-gray-400 mb-2 italic">Averaged over {tooltip.point.recordCount} records</p>}
                     <table className="min-w-full text-left"><tbody>
                         {Object.keys(METRICS).filter(k => metricConfig[k as MetricKey] && !hiddenMetrics.has(k as MetricKey)).map(key => (
@@ -504,13 +552,153 @@ const SvgChart: React.FC<{
     );
 };
 
+const HourlyAverageChart: React.FC<{
+    analyticsData: SystemAnalytics;
+    metricKey: MetricKey;
+}> = ({ analyticsData, metricKey }) => {
+    const { hourlyAverages, performanceBaseline } = analyticsData;
+    const metricInfo = METRICS[metricKey];
+    const isBidirectional = metricKey === 'current' || metricKey === 'power';
+
+    const chartDimensions = { WIDTH: 1200, HEIGHT: 500, MARGIN: { top: 40, right: 50, bottom: 60, left: 50 } };
+    const { WIDTH, HEIGHT, MARGIN } = chartDimensions;
+    const chartWidth = WIDTH - MARGIN.left - MARGIN.right;
+    const chartHeight = HEIGHT - MARGIN.top - MARGIN.bottom;
+
+    const { yScale, yTicks, yDomainMin, xBandwidth } = useMemo(() => {
+        let allValues = [0]; // Include 0 in the domain
+        hourlyAverages.forEach(d => {
+            const metricData = d.metrics[metricKey];
+            if (metricData) {
+                if ('avg' in metricData) allValues.push(metricData.avg);
+                if ('avgCharge' in metricData) allValues.push(metricData.avgCharge);
+                if ('avgDischarge' in metricData) allValues.push(metricData.avgDischarge);
+            }
+        });
+        if (metricKey === 'current') {
+             allValues.push(...performanceBaseline.sunnyDayChargingAmpsByHour.map(d => d.avgCurrent));
+        }
+
+        const yMin = Math.min(...allValues);
+        const yMax = Math.max(...allValues);
+        
+        let yDomainMin = yMin;
+        let yDomainMax = yMax;
+
+        if (isBidirectional) {
+            const absMax = Math.max(Math.abs(yMin), Math.abs(yMax));
+            yDomainMin = -absMax;
+            yDomainMax = absMax;
+        } else {
+             yDomainMin = Math.min(0, yMin); // Ensure y-axis starts at 0 for unidirectional
+        }
+
+        // Add buffer
+        const buffer = (yDomainMax - yDomainMin) * 0.1 || 1;
+        yDomainMin -= buffer;
+        yDomainMax += buffer;
+        if (yDomainMin > 0 && !isBidirectional) yDomainMin = 0; // Don't let buffer push positive-only axis below 0
+
+        const yScale = (v: number) => chartHeight - ((v - yDomainMin) / (yDomainMax - yDomainMin)) * chartHeight;
+        
+        const numTicks = 11;
+        const yTicks = Array.from({ length: numTicks }, (_, i) => {
+            const value = yDomainMax - (i * (yDomainMax - yDomainMin)) / (numTicks - 1);
+            return { value, y: yScale(value) };
+        });
+        
+        const xBandwidth = chartWidth / 24;
+        return { yScale, yTicks, yDomainMin, xBandwidth };
+    }, [hourlyAverages, performanceBaseline, metricKey, isBidirectional, chartHeight, chartWidth]);
+    
+    const barWidth = xBandwidth * (isBidirectional ? 0.4 : 0.6);
+
+    return (
+        <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="w-full h-auto bg-gray-900 rounded-md">
+            <g transform={`translate(${MARGIN.left}, ${MARGIN.top})`}>
+                {/* Y-Axis and Grid Lines */}
+                {yTicks.map(tick => (
+                    <g key={tick.value}>
+                        <line x1={0} y1={tick.y} x2={chartWidth} y2={tick.y} stroke={Math.abs(tick.value) < 1e-9 ? "#a3a3a3" : "#4b5563"} strokeWidth="1" strokeDasharray={Math.abs(tick.value) < 1e-9 ? undefined : "3 3"} />
+                        <text x={-8} y={tick.y} dy="0.32em" textAnchor="end" fill="#d1d5db" fontSize="12">{tick.value.toFixed(0)}</text>
+                    </g>
+                ))}
+                <text transform={`translate(${-MARGIN.left + 15}, ${chartHeight / 2}) rotate(-90)`} textAnchor="middle" fill="#d1d5db" fontSize="14" fontWeight="bold">
+                    {`${metricInfo.label} (${metricInfo.unit})`}
+                </text>
+                
+                {/* X-Axis */}
+                {hourlyAverages.map(({ hour }) => (
+                     <text key={hour} x={hour * xBandwidth + xBandwidth / 2} y={chartHeight + 20} textAnchor="middle" fill="#d1d5db" fontSize="12">{hour.toString().padStart(2, '0')}</text>
+                ))}
+                <text x={chartWidth / 2} y={chartHeight + 45} textAnchor="middle" fill="#d1d5db" fontSize="14" fontWeight="bold">Hour of Day (UTC)</text>
+
+                {/* Bars */}
+                {hourlyAverages.map(d => {
+                    const metricData = d.metrics[metricKey];
+                    if (!metricData) return null;
+
+                    return (
+                        <g key={d.hour} transform={`translate(${d.hour * xBandwidth}, 0)`}>
+                            {isBidirectional && 'avgCharge' in metricData && metricData.avgCharge > 0 && (
+                                <rect x={xBandwidth/2 - barWidth - 1} y={yScale(metricData.avgCharge)} width={barWidth} height={yScale(0) - yScale(metricData.avgCharge)} fill="#10b981" />
+                            )}
+                            {isBidirectional && 'avgDischarge' in metricData && metricData.avgDischarge < 0 && (
+                                <rect x={xBandwidth/2 + 1} y={yScale(0)} width={barWidth} height={yScale(metricData.avgDischarge) - yScale(0)} fill="#3b82f6" />
+                            )}
+                            {!isBidirectional && 'avg' in metricData && (
+                                <rect x={xBandwidth/2 - barWidth/2} y={yScale(metricData.avg)} width={barWidth} height={yScale(yDomainMin > 0 ? yDomainMin : 0) - yScale(metricData.avg)} fill={metricInfo.color} />
+                            )}
+                        </g>
+                    );
+                })}
+                
+                {/* Baseline for Current */}
+                {metricKey === 'current' && performanceBaseline.sunnyDayChargingAmpsByHour.map(d => (
+                    <line key={`bl-${d.hour}`} x1={(d.hour * xBandwidth) + (xBandwidth/2 - barWidth - 1)} y1={yScale(d.avgCurrent)} x2={(d.hour * xBandwidth) + (xBandwidth/2 - 1)} y2={yScale(d.avgCurrent)} stroke="#facc15" strokeWidth="3" />
+                ))}
+            </g>
+             {/* Legend */}
+            <g transform={`translate(${WIDTH - MARGIN.right - 300}, ${-5})`}>
+                {isBidirectional ? (
+                    <>
+                        <rect x={0} y={0} width={10} height={10} fill="#10b981" />
+                        <text x={15} y={9} fill="#d1d5db" fontSize="12">Avg. Charge</text>
+                        <rect x={100} y={0} width={10} height={10} fill="#3b82f6" />
+                        <text x={115} y={9} fill="#d1d5db" fontSize="12">Avg. Discharge</text>
+                    </>
+                ) : (
+                    <>
+                        <rect x={0} y={0} width={10} height={10} fill={metricInfo.color} />
+                        <text x={15} y={9} fill="#d1d5db" fontSize="12">{`Avg. ${metricInfo.label}`}</text>
+                    </>
+                )}
+                 {metricKey === 'current' && (
+                    <>
+                        <line x1={220} y1={5} x2={230} y2={5} stroke="#facc15" strokeWidth="3" />
+                        <text x={235} y={9} fill="#d1d5db" fontSize="12">Sunny Day Baseline</text>
+                    </>
+                 )}
+            </g>
+        </svg>
+    );
+};
+
+
 const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[] }> = ({ systems, history }) => {
     const [selectedSystemId, setSelectedSystemId] = useState<string>('');
     const [metricConfig, setMetricConfig] = useState<Partial<Record<MetricKey, { axis: Axis }>>>({ stateOfCharge: { axis: 'left' }, current: { axis: 'right' } });
     const [hiddenMetrics] = useState<Set<MetricKey>>(new Set());
     const [startDate, setStartDate] = useState<string>('');
     const [endDate, setEndDate] = useState<string>('');
-    const [chartData, setChartData] = useState<any | null>(null);
+    const [timelineData, setTimelineData] = useState<any | null>(null);
+    const [analyticsData, setAnalyticsData] = useState<SystemAnalytics | null>(null);
+    const [chartView, setChartView] = useState<ChartView>('timeline');
+    const [hourlyMetric, setHourlyMetric] = useState<MetricKey>('power');
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const [zoomPercentage, setZoomPercentage] = useState<number>(100);
 
     const chartDimensions = useMemo(() => ({
         WIDTH: 1200, CHART_HEIGHT: 450, BRUSH_HEIGHT: 80,
@@ -522,56 +710,125 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
     
     const [viewBox, setViewBox] = useState({ x: 0, width: chartDimensions.chartWidth });
 
-    const prepareChartData = useCallback(() => {
-        if (!selectedSystemId) return;
-
-        const systemHistory = history.filter(r => r.systemId === selectedSystemId).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-        const filteredHistory = systemHistory.filter(r => (!startDate || new Date(r.timestamp) >= new Date(startDate)) && (!endDate || new Date(r.timestamp) <= new Date(endDate)));
-
-        if (filteredHistory.length < 2) { setChartData(null); return; }
-        
-        const dataLODs: Record<string, any[]> = {
-            'raw': filteredHistory.map(mapRecordToPoint),
-            '5': aggregateData(filteredHistory, 5),
-            '15': aggregateData(filteredHistory, 15),
-            '60': aggregateData(filteredHistory, 60),
-            '240': aggregateData(filteredHistory, 240),
-            '1440': aggregateData(filteredHistory, 1440),
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement;
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+            if (e.ctrlKey) {
+                if (e.key === '-') { e.preventDefault(); setZoomPercentage(z => Math.max(0.1, z / 1.2)); }
+                if (e.shiftKey && e.key === '+') { e.preventDefault(); setZoomPercentage(z => z * 1.2); }
+            }
         };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
-        const xMin=new Date(filteredHistory[0].timestamp).getTime(), xMax=new Date(filteredHistory[filteredHistory.length-1].timestamp).getTime();
-        const xScale = (time:string|number) => ((new Date(time).getTime() - xMin) / (xMax - xMin || 1)) * chartDimensions.chartWidth;
-        xScale.invert = (px:number) => xMin + (px / chartDimensions.chartWidth) * (xMax - xMin || 1);
-        
-        setChartData({ dataLODs, xScale, xMin, xMax });
+    useEffect(() => {
+        if (!timelineData) return;
+        const viewCenter = viewBox.x + viewBox.width / 2;
+        const newWidth = chartDimensions.chartWidth / (zoomPercentage / 100);
+        let newX = viewCenter - newWidth / 2;
+        if (newWidth >= chartDimensions.chartWidth) { setViewBox({ x: 0, width: chartDimensions.chartWidth }); return; }
+        if (newX < 0) newX = 0;
+        if (newX + newWidth > chartDimensions.chartWidth) newX = chartDimensions.chartWidth - newWidth;
+        setViewBox({ x: newX, width: newWidth });
+    }, [zoomPercentage, timelineData, chartDimensions.chartWidth]); // Removed viewBox from deps to prevent loop
+
+    const prepareChartData = useCallback(async () => {
+        if (!selectedSystemId) return;
+        setIsGenerating(true);
+        setError(null);
+        setTimelineData(null);
+        setAnalyticsData(null);
+
+        try {
+            const analytics = await getSystemAnalytics(selectedSystemId);
+            setAnalyticsData(analytics);
+
+            const system = systems.find(s => s.id === selectedSystemId);
+            const ratedCapacity = system?.capacity;
+
+            const systemHistory = history.filter(r => r.systemId === selectedSystemId).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+            
+            const historyWithSoh = systemHistory.map(r => {
+                let soh = null;
+                if (ratedCapacity && ratedCapacity > 0 && r.analysis?.fullCapacity && r.analysis.fullCapacity > 0) {
+                    soh = (r.analysis.fullCapacity / ratedCapacity) * 100;
+                }
+                return {
+                    ...r,
+                    analysis: { ...r.analysis, soh } as AnalysisData & { soh: number | null },
+                };
+            });
+
+            const filteredHistory = historyWithSoh.filter(r => (!startDate || new Date(r.timestamp) >= new Date(startDate)) && (!endDate || new Date(r.timestamp) <= new Date(endDate)));
+
+            if (filteredHistory.length < 2) {
+                setTimelineData(null);
+            } else {
+                const dataLODs: Record<string, any[]> = {
+                    'raw': filteredHistory.map(mapRecordToPoint), '5': aggregateData(filteredHistory, 5), '15': aggregateData(filteredHistory, 15),
+                    '60': aggregateData(filteredHistory, 60), '240': aggregateData(filteredHistory, 240), '1440': aggregateData(filteredHistory, 1440),
+                };
+                const xMin = new Date(filteredHistory[0].timestamp).getTime(), xMax = new Date(filteredHistory[filteredHistory.length - 1].timestamp).getTime();
+                const xScale = (time: string | number) => ((new Date(time).getTime() - xMin) / (xMax - xMin || 1)) * chartDimensions.chartWidth;
+                xScale.invert = (px: number) => xMin + (px / chartDimensions.chartWidth) * (xMax - xMin || 1);
+                setTimelineData({ dataLODs, xScale, xMin, xMax });
+                setZoomPercentage(100);
+                setViewBox({ x: 0, width: chartDimensions.chartWidth });
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to generate chart data.");
+        } finally {
+            setIsGenerating(false);
+        }
+    }, [selectedSystemId, history, systems, startDate, endDate, chartDimensions]);
+    
+    const handleResetView = () => {
+        setZoomPercentage(100);
         setViewBox({ x: 0, width: chartDimensions.chartWidth });
-
-    }, [selectedSystemId, history, startDate, endDate, chartDimensions]);
+    };
+    
+    const hasChartData = timelineData || analyticsData?.hourlyAverages?.length > 0;
 
     return (
         <div>
             <ChartControls 
-                systems={systems} 
-                selectedSystemId={selectedSystemId} setSelectedSystemId={setSelectedSystemId}
-                startDate={startDate} setStartDate={setStartDate}
-                endDate={endDate} setEndDate={setEndDate}
+                systems={systems} selectedSystemId={selectedSystemId} setSelectedSystemId={setSelectedSystemId}
+                startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate}
                 metricConfig={metricConfig} setMetricConfig={setMetricConfig}
-                onGenerate={prepareChartData}
-                onResetView={() => setViewBox({ x: 0, width: chartDimensions.chartWidth })}
-                hasChartData={!!chartData}
+                onGenerate={prepareChartData} onResetView={handleResetView} hasChartData={!!hasChartData}
+                zoomPercentage={zoomPercentage} setZoomPercentage={setZoomPercentage}
+                chartView={chartView} setChartView={setChartView} 
+                hourlyMetric={hourlyMetric} setHourlyMetric={setHourlyMetric}
+                isGenerating={isGenerating}
             />
-            <div className="mt-4 min-h-[600px]">
-                {chartData ? (
-                    <SvgChart 
-                        chartData={chartData}
-                        metricConfig={metricConfig}
-                        hiddenMetrics={hiddenMetrics}
-                        viewBox={viewBox} 
-                        setViewBox={setViewBox}
-                        chartDimensions={chartDimensions}
-                    />
-                ) : (
-                    <div className="flex items-center justify-center h-full text-gray-400 bg-gray-900/50 rounded-lg p-8">Select a system and generate a chart to view data.</div>
+            <div className="mt-4">
+                {isGenerating && <div className="flex items-center justify-center h-full text-gray-400 min-h-[600px]"><SpinnerIcon className="w-8 h-8 text-secondary"/> <span className="ml-4">Loading Analytics Data...</span></div>}
+                {error && <div className="text-red-400 p-4 bg-red-900/50 rounded-lg text-center">{error}</div>}
+                {!isGenerating && !error && (
+                    <>
+                        {!hasChartData ? (
+                            <div className="flex items-center justify-center h-full text-gray-400 bg-gray-900/50 rounded-lg p-8 min-h-[600px]">Select a system and generate a chart to view data.</div>
+                        ) : (
+                            <div className="grid lg:grid-cols-3 gap-8 items-start">
+                                <div className="lg:col-span-2">
+                                    {chartView === 'timeline' && timelineData && (
+                                        <SvgChart chartData={timelineData} metricConfig={metricConfig} hiddenMetrics={hiddenMetrics}
+                                            viewBox={viewBox} setViewBox={setViewBox} chartDimensions={chartDimensions} />
+                                    )}
+                                    {chartView === 'hourly' && analyticsData && (
+                                        <HourlyAverageChart analyticsData={analyticsData} metricKey={hourlyMetric} />
+                                    )}
+                                </div>
+                                <div className="lg:col-span-1">
+                                    {analyticsData?.alertAnalysis && analyticsData.alertAnalysis.totalAlerts > 0 && (
+                                        <AlertAnalysis data={analyticsData.alertAnalysis} />
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
         </div>
