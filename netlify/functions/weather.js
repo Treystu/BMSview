@@ -25,7 +25,7 @@ exports.handler = async function(event, context) {
   const { httpMethod, body } = event;
   const logContext = { clientIp, httpMethod };
   
-  log('debug', 'Function invoked.', { ...logContext, headers: event.headers });
+  log('info', 'Weather function invoked.', { ...logContext, path: event.path });
 
   if (httpMethod !== 'POST') {
     log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
