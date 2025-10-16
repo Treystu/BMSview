@@ -13,7 +13,7 @@ exports.handler = async function(event, context) {
     const { httpMethod, queryStringParameters } = event;
     const logContext = { clientIp, httpMethod };
     
-    log('debug', 'Function invoked.', { ...logContext, queryStringParameters, headers: event.headers });
+    log('info', 'Get job status function invoked.', { ...logContext, queryStringParameters, path: event.path });
 
     if (httpMethod !== 'GET') {
         log('warn', `Method Not Allowed: ${httpMethod}`, logContext);

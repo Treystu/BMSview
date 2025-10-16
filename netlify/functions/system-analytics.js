@@ -14,7 +14,7 @@ exports.handler = async function(event, context) {
     const { httpMethod, queryStringParameters } = event;
     const logContext = { httpMethod };
 
-    log('debug', 'Function invoked.', { ...logContext, queryStringParameters, headers: event.headers });
+    log('info', 'System analytics function invoked.', { ...logContext, queryStringParameters, path: event.path });
 
     if (httpMethod !== 'GET') {
         return respond(405, { error: 'Method Not Allowed' });

@@ -14,7 +14,7 @@ exports.handler = async function(event, context) {
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod, queryStringParameters, body } = event;
     const logContext = { clientIp, httpMethod };
-    log('debug', 'Function invoked.', { ...logContext, queryStringParameters, headers: event.headers });
+    log('info', 'Systems function invoked.', { ...logContext, queryStringParameters, path: event.path });
     
     try {
         const systemsCollection = await getCollection("systems");
