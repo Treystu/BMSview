@@ -125,16 +125,10 @@ function App() {
           // Schedule the next poll ONLY if there are still jobs to poll for
           const stillPendingJobs = jobsToPoll.filter(job => {
                 // FIX: `statuses` was defined in the `try` block and not accessible here.
-                // Moved its declaration to the outer scope of `pollJobStatuses`.
+            const stillPendingJobs = jobsToPoll.filter(job => {
                 const updatedStatus = statuses.find(s => s.id === job.jobId);
-                // A job is no longer pending if its status is completed, failed, or not found.
                 return !(updatedStatus && (updatedStatus.status === 'completed' || updatedStatus.status.startsWith('failed') || updatedStatus.status === 'not_found'));
-          });
-
-          if (stillPendingJobs.length > 0) {
-              pollingTimeoutRef.current = window.setTimeout(pollJobStatuses, POLLING_INTERVAL_MS);
-          } else {
-              log('info', 'All jobs have reached a terminal state. Stopping poller.');
+            });
               if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
               pollingTimeoutRef.current = null;
           }
