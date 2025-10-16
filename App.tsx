@@ -125,14 +125,26 @@ function App() {
           // Schedule the next poll ONLY if there are still jobs to poll for
           const stillPendingJobs = jobsToPoll.filter(job => {
                 // FIX: `statuses` was defined in the `try` block and not accessible here.
-            const stillPendingJobs = jobsToPoll.filter(job => {
-                const updatedStatus = statuses.find(s => s.id === job.jobId);
-                return !(updatedStatus && (updatedStatus.status === 'completed' || updatedStatus.status.startsWith('failed') || updatedStatus.status === 'not_found'));
-            });
-              if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
+                 const currentJob = state.analysisResults.find(r => r.jobId === job.jobId);
+                 return !(currentJob && (
+                     currentJob.status === 'completed' || 
+                     (currentJob.error && (
+                         currentJob.error.toLowerCase().startsWith('failed') || 
+                         currentJob.error.toLowerCase() === 'not_found'
+                     ))
+                 ));
+             });
+             
+             if (stillPendingJobs.length > 0 && !pollingTimeoutRef.current) {
+                 pollingTimeoutRef.current = window.setTimeout(pollJobStatuses, POLLING_INTERVAL_MS);
+             } else {
+                 if (pollingTimeoutRef.current) {
+                     clearTimeout(pollingTimeoutRef.current);
+                     pollingTimeoutRef.current = null;
+                 }
+             }
               pollingTimeoutRef.current = null;
           }
-      }
   }, [state.analysisResults, dispatch]);
 
   useEffect(() => {

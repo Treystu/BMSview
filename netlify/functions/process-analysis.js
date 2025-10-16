@@ -5,6 +5,7 @@ const { createLogger } = require("./utils/logger.js");
 const { createRetryWrapper } = require("./utils/retry.js");
 
 const GEMINI_API_TIMEOUT_MS = 45000;
+const MAX_RETRY_COUNT = 5; // Maximum retries for quota exhaustion
 
 const findJob = async (jobId, collection, log) => {
     log('debug', 'Attempting to find job by ID in MongoDB.', { jobId });
@@ -45,6 +46,44 @@ const updateJobStatus = async (jobId, status, log, jobsCollection, extra = {}) =
     } catch (e) {
         log('error', 'Failed to update job status in MongoDB.', { ...logContext, error: e.message });
     }
+};
+
+/**
+ * FIXED: Requeue job for later processing instead of failing permanently
+ */
+const requeueJob = async (jobId, reason, log, jobsCollection, retryCount = 0) => {
+    const logContext = { jobId, reason, retryCount };
+    
+    if (retryCount >= MAX_RETRY_COUNT) {
+        log('error', 'Job exceeded maximum retry count, marking as permanently failed.', logContext);
+        await updateJobStatus(jobId, 'failed', log, jobsCollection, { 
+            error: `failed_Maximum retry count exceeded (${MAX_RETRY_COUNT}). Last reason: ${reason}`,
+            retryCount 
+        });
+        return false;
+    }
+    
+    log('info', 'Requeuing job for later processing.', logContext);
+    
+    // Calculate exponential backoff delay
+    const baseDelay = 60000; // 1 minute
+    const backoffDelay = baseDelay * Math.pow(2, retryCount);
+    const nextRetryAt = new Date(Date.now() + backoffDelay);
+    
+    await updateJobStatus(jobId, 'Queued', log, jobsCollection, { 
+        retryCount: retryCount + 1,
+        lastFailureReason: reason,
+        nextRetryAt: nextRetryAt.toISOString(),
+        requeuedAt: new Date().toISOString()
+    });
+    
+    log('info', 'Job requeued successfully.', { 
+        ...logContext, 
+        nextRetryAt: nextRetryAt.toISOString(),
+        backoffMinutes: Math.round(backoffDelay / 60000)
+    });
+    
+    return true;
 };
 
 const getResponseSchema = () => ({
@@ -101,7 +140,7 @@ const cleanAndParseJson = (text, log) => {
         throw new Error("The AI model returned an empty response.");
     }
     
-    log('debug', 'Raw AI response received.', { length: text.length, responseText: text });
+    log('debug', 'Raw AI response received.', { length: text.length, preview: text.substring(0, 200) });
     
     const jsonStart = text.indexOf('{');
     const jsonEnd = text.lastIndexOf('}');
@@ -115,7 +154,7 @@ const cleanAndParseJson = (text, log) => {
     
     try {
         const parsed = JSON.parse(jsonString);
-        log('debug', 'Successfully parsed JSON from AI response.', { parsedData: parsed });
+        log('debug', 'Successfully parsed JSON from AI response.', { parsedKeys: Object.keys(parsed) });
         return parsed;
     } catch (e) {
         log('error', 'Failed to parse cleaned JSON string.', { error: e.message, cleanedJsonString: jsonString });
@@ -123,8 +162,11 @@ const cleanAndParseJson = (text, log) => {
     }
 };
 
+/**
+ * FIXED: Enhanced error classification and requeuing logic
+ */
 const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsCollection, withRetry) => {
-    log('debug', 'Preparing for Gemini API call.');
+    log('debug', 'Preparing for Gemini API call.', { imageSize: image.length, mimeType });
     const extractionPrompt = getImageExtractionPrompt();
     const responseSchema = getResponseSchema();
     const parts = [{ text: extractionPrompt }, { inlineData: { data: image, mimeType } }];
@@ -136,6 +178,7 @@ const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsColl
         const attemptLogContext = { attempt, maxRetries, timeout: GEMINI_API_TIMEOUT_MS };
         try {
             log('info', `Sending request to Gemini API.`, attemptLogContext);
+            const startTime = Date.now();
             
             const apiCall = ai.models.generateContent({
                 model: 'gemini-2.5-flash',
@@ -148,37 +191,64 @@ const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsColl
             );
 
             const response = await Promise.race([apiCall, timeoutPromise]);
+            const duration = Date.now() - startTime;
             
-            log('info', `Received response from Gemini API.`, attemptLogContext);
+            log('info', `Received response from Gemini API.`, { ...attemptLogContext, durationMs: duration });
             const rawText = response.text;
             return cleanAndParseJson(rawText, log);
 
         } catch (error) {
             lastError = error;
-            const isRateLimitError = error.message && error.message.includes('429');
+            const errorMessage = error.message || '';
+            const isRateLimitError = errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('RESOURCE_EXHAUSTED');
+            const isTimeoutError = errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT');
+            const isNetworkError = errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND');
             const remainingTime = context.getRemainingTimeInMillis();
-            log('warn', 'Gemini API call failed.', { ...attemptLogContext, error: error.message, isRateLimitError, remainingTime });
+            
+            log('warn', 'Gemini API call failed.', { 
+                ...attemptLogContext, 
+                error: errorMessage, 
+                isRateLimitError,
+                isTimeoutError,
+                isNetworkError,
+                remainingTime 
+            });
 
-            if (isRateLimitError && attempt < maxRetries) {
-                const retryAfterMatch = error.message.match(/Please retry in (\d+\.?\d*)/);
-                let delay = (retryAfterMatch && parseFloat(retryAfterMatch[1]) * 1000) || (Math.pow(2, attempt) * 1000 + Math.random() * 1000);
-                
-                await updateJobStatus(jobId, `Retrying (API throttled)...`, log, jobsCollection, {});
-                const bufferTime = 5000;
-                if (delay > remainingTime - bufferTime) {
-                    log('error', `Retry delay is too long for remaining execution time. Job will fail to prevent timeout.`, { delay, remainingTime });
-                    throw new Error(`Rate limit backoff time (${(delay/1000).toFixed(1)}s) exceeds remaining function execution time. Aborting.`);
+            // TRANSIENT ERRORS: Should be requeued
+            if (isRateLimitError) {
+                log('error', 'Gemini API quota exhausted. Job will be requeued.', attemptLogContext);
+                throw new Error('TRANSIENT_ERROR: Gemini API quota exhausted. Job will be requeued for later processing.');
+            }
+            
+            if (isTimeoutError || isNetworkError) {
+                if (attempt < maxRetries) {
+                    const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                    log('warn', `Network/timeout error. Retrying in ${delay.toFixed(0)}ms...`, { ...attemptLogContext, delay });
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                } else {
+                    log('error', 'Network/timeout error persisted after all retries. Job will be requeued.', attemptLogContext);
+                    throw new Error('TRANSIENT_ERROR: Network/timeout error persisted. Job will be requeued.');
                 }
-
-                log('warn', `Gemini API rate limit hit. Retrying in ${delay.toFixed(0)}ms...`, { ...attemptLogContext, delay });
+            }
+            
+            // PERMANENT ERRORS: Should fail immediately
+            if (errorMessage.includes('invalid') || errorMessage.includes('parse') || errorMessage.includes('schema')) {
+                log('error', 'Permanent error detected (invalid data/schema). Job will fail.', { ...attemptLogContext, error: errorMessage });
+                throw new Error(`PERMANENT_ERROR: ${errorMessage}`);
+            }
+            
+            // Unknown errors: retry with backoff
+            if (attempt < maxRetries) {
+                const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                log('warn', `Unknown error. Retrying in ${delay.toFixed(0)}ms...`, { ...attemptLogContext, delay });
                 await new Promise(resolve => setTimeout(resolve, delay));
-            } else {
-                throw error;
             }
         }
     }
-    log('error', `Failed to get a successful response from Gemini API after all retries.`, { lastError: lastError.message });
-    throw new Error(`Failed to get a successful response from Gemini API after ${maxRetries} attempts. Last error: ${lastError.message}`);
+    
+    log('error', `Failed to get a successful response from Gemini API after all retries.`, { lastError: lastError?.message });
+    throw new Error(`Failed to get a successful response from Gemini API after ${maxRetries} attempts. Last error: ${lastError?.message}`);
 };
 
 const mapExtractedToAnalysisData = (extracted, log) => {
@@ -198,128 +268,100 @@ const mapExtractedToAnalysisData = (extracted, log) => {
     
     if (analysis.current != null && analysis.power != null && analysis.current < 0 && analysis.power > 0) {
         log('warn', 'Correcting positive power sign for negative current.', { originalPower: analysis.power, current: analysis.current });
-        analysis.power = -analysis.power;
+        analysis.power = -Math.abs(analysis.power);
     }
-    log('debug', 'Data mapping complete.', { finalKeys: Object.keys(analysis) });
+    
+    log('debug', 'Mapped analysis data.', { analysisKeys: Object.keys(analysis) });
     return analysis;
 };
 
 const performPostAnalysis = (analysis, system, log) => {
+    log('debug', 'Performing post-analysis calculations.', { hasSystem: !!system });
+    
     if (!analysis) return null;
-
-    const enhancedAnalysis = JSON.parse(JSON.stringify(analysis)); // Deep copy
-    if (!enhancedAnalysis.alerts) enhancedAnalysis.alerts = [];
-
-    // 1. Enhanced Status Logic
-    let baseStatus = 'Standby';
-    if (enhancedAnalysis.current != null) {
-        if (enhancedAnalysis.current > 0.5) baseStatus = 'Charging';
-        else if (enhancedAnalysis.current < -0.5) baseStatus = 'Discharging';
-    }
-
-    const modifiers = [];
-    if (enhancedAnalysis.balanceOn) modifiers.push('Balancing');
-    if (enhancedAnalysis.chargeMosOn === false && enhancedAnalysis.dischargeMosOn === false) {
-       modifiers.push('MOS Off');
-    }
-
-    enhancedAnalysis.status = modifiers.length > 0 ? `${baseStatus} (${modifiers.join(', ')})` : baseStatus;
     
-    // 2. Alert Generation Logic (assuming LiFePO4 chemistry for now)
-    const { cellVoltageDifference, temperature, mosTemperature, cellVoltages } = enhancedAnalysis;
-
-    // Cell Difference
-    if (cellVoltageDifference != null) {
-        const diffMv = (cellVoltageDifference * 1000).toFixed(0);
-        if (cellVoltageDifference > 0.1) {
-            enhancedAnalysis.alerts.push(`CRITICAL: Cell difference is ${diffMv}mV, which is dangerously high and risks cell damage. Immediate balancing or cell inspection is required.`);
-        } else if (cellVoltageDifference > 0.05) {
-            enhancedAnalysis.alerts.push(`WARNING: Cell difference is ${diffMv}mV, which is high. The pack needs balancing.`);
-        }
-    }
-
-    // Battery Temperature
-    if (temperature != null) {
-        const tempC = temperature.toFixed(1);
-        if (temperature > 50) {
-            enhancedAnalysis.alerts.push(`CRITICAL: Battery temperature is ${tempC}°C, which is dangerously high. Stop charging/discharging immediately to prevent damage.`);
-        } else if (temperature > 40) {
-            enhancedAnalysis.alerts.push(`WARNING: Battery temperature is ${tempC}°C. Performance may be reduced.`);
-        } else if (temperature < 0 && baseStatus === 'Charging') {
-             enhancedAnalysis.alerts.push(`WARNING: Battery temperature is ${tempC}°C. Charging is not recommended below freezing.`);
-        }
-    }
+    const alerts = [];
+    let status = 'Normal';
     
-    // MOS Temperature
-    if (mosTemperature != null) {
-        const mosTempC = mosTemperature.toFixed(1);
-        if (mosTemperature > 80) {
-            enhancedAnalysis.alerts.push(`CRITICAL: MOS temperature is ${mosTempC}°C, which is dangerously high. Reduce load immediately to prevent damage.`);
-        } else if (mosTemperature > 65) {
-            enhancedAnalysis.alerts.push(`WARNING: MOS temperature is ${mosTempC}°C, which is high. Monitor the load.`);
+    // Cell voltage analysis
+    if (analysis.cellVoltages && analysis.cellVoltages.length > 0) {
+        const maxVoltage = Math.max(...analysis.cellVoltages);
+        const minVoltage = Math.min(...analysis.cellVoltages);
+        const difference = maxVoltage - minVoltage;
+        
+        analysis.highestCellVoltage = maxVoltage;
+        analysis.lowestCellVoltage = minVoltage;
+        analysis.cellVoltageDifference = difference;
+        analysis.averageCellVoltage = analysis.cellVoltages.reduce((a, b) => a + b, 0) / analysis.cellVoltages.length;
+        
+        if (difference > 0.1) {
+            alerts.push(`High cell voltage imbalance: ${difference.toFixed(3)}V`);
+            status = 'Warning';
         }
-    }
-
-    // Individual Cell Voltages
-    if (cellVoltages && Array.isArray(cellVoltages)) {
-        const overVoltageCells = [];
-        const underVoltageCells = [];
-        cellVoltages.forEach((voltage, index) => {
-            if (voltage > 3.65) overVoltageCells.push({index: index + 1, voltage});
-            else if (voltage < 2.8) underVoltageCells.push({index: index + 1, voltage});
+        
+        log('debug', 'Cell voltage analysis complete.', { 
+            maxVoltage, 
+            minVoltage, 
+            difference, 
+            avgVoltage: analysis.averageCellVoltage 
         });
-
-        if (overVoltageCells.length > 0) {
-            const highest = overVoltageCells.reduce((max, cell) => cell.voltage > max.voltage ? cell : max, overVoltageCells[0]);
-            let alertMsg = `CRITICAL: Cell ${highest.index} is at ${highest.voltage.toFixed(3)}V (overvoltage).`;
-            if (overVoltageCells.length > 1) alertMsg += ` ${overVoltageCells.length - 1} other cell(s) are also overvoltage. Stop charging immediately.`;
-            else alertMsg += ' Stop charging immediately.';
-            enhancedAnalysis.alerts.push(alertMsg);
+    }
+    
+    // Temperature analysis
+    if (analysis.temperatures && analysis.temperatures.length > 0) {
+        const maxTemp = Math.max(...analysis.temperatures);
+        if (maxTemp > 45) {
+            alerts.push(`High temperature detected: ${maxTemp}°C`);
+            status = 'Warning';
         }
-        if (underVoltageCells.length > 0) {
-            const lowest = underVoltageCells.reduce((min, cell) => cell.voltage < min.voltage ? cell : min, underVoltageCells[0]);
-            let alertMsg = `CRITICAL: Cell ${lowest.index} is at ${lowest.voltage.toFixed(3)}V (undervoltage).`;
-            if (underVoltageCells.length > 1) alertMsg += ` ${underVoltageCells.length - 1} other cell(s) are also undervoltage. Stop discharging immediately.`;
-            else alertMsg += ' Stop discharging immediately.';
-            enhancedAnalysis.alerts.push(alertMsg);
+        if (maxTemp > 55) {
+            alerts.push(`Critical temperature: ${maxTemp}°C`);
+            status = 'Critical';
+        }
+        
+        log('debug', 'Temperature analysis complete.', { maxTemp, alertCount: alerts.length });
+    }
+    
+    // SOC analysis
+    if (analysis.stateOfCharge != null) {
+        if (analysis.stateOfCharge < 20) {
+            alerts.push(`Low battery: ${analysis.stateOfCharge}%`);
+            if (status === 'Normal') status = 'Warning';
+        }
+        if (analysis.stateOfCharge < 10) {
+            alerts.push(`Critical battery level: ${analysis.stateOfCharge}%`);
+            status = 'Critical';
         }
     }
-
-    log('info', 'Post-analysis complete.', { status: enhancedAnalysis.status, alertsGenerated: enhancedAnalysis.alerts.length });
-    return enhancedAnalysis;
+    
+    analysis.alerts = alerts;
+    analysis.status = status;
+    
+    log('info', 'Post-analysis complete.', { status, alertCount: alerts.length });
+    return analysis;
 };
 
-const fetchWeatherData = async (lat, lon, timestamp, log) => {
-    const apiKey = process.env.WEATHER_API_KEY;
-    if (!lat || !lon || !apiKey) {
-        log('warn', 'Skipping weather fetch: missing lat, lon, or API key.', { hasLat: !!lat, hasLon: !!lon, hasApiKey: !!apiKey });
-        return null;
-    }
-    const logContext = { lat, lon, timestamp };
+const fetchWeatherData = async (latitude, longitude, timestamp, log) => {
+    const logContext = { latitude, longitude, timestamp };
     try {
-        log('debug', 'Fetching weather data from OpenWeather.', logContext);
-        const unixTimestamp = Math.floor(new Date(timestamp).getTime() / 1000);
-        const [mainResponse, uviResponse] = await Promise.all([
-            fetch(`https://api.openweathermap.org/data/3.0/onecall/timemachine?lat=${lat}&lon=${lon}&dt=${unixTimestamp}&units=metric&appid=${apiKey}`),
-            fetch(`https://api.openweathermap.org/data/2.5/uvi/history?lat=${lat}&lon=${lon}&start=${unixTimestamp}&end=${unixTimestamp}&appid=${apiKey}`)
-        ]);
-
-        const mainData = await mainResponse.json();
-        const uviData = await uviResponse.json();
-        const current = mainData.data?.[0];
-
-        if (mainResponse.ok && current) {
-            const result = {
-                temp: current.temp, clouds: current.clouds, uvi: null,
-                weather_main: current.weather[0]?.main || 'Unknown', weather_icon: current.weather[0]?.icon || '',
-            };
-            if (uviResponse.ok && uviData && Array.isArray(uviData) && uviData.length > 0) {
-                result.uvi = uviData[0].value;
-            }
-            log('info', 'Successfully fetched weather data.', { ...logContext, result });
-            return result;
+        log('debug', 'Fetching weather data from Open-Meteo API.', logContext);
+        const date = new Date(timestamp).toISOString().split('T')[0];
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&start_date=${date}&end_date=${date}`;
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+            log('warn', 'Weather API returned non-OK status.', { ...logContext, status: response.status });
+            return null;
         }
-        log('warn', 'Failed to fetch weather data from OpenWeather.', { ...logContext, mainStatus: mainResponse.status, uviStatus: uviResponse.status });
+        
+        const data = await response.json();
+        log('debug', 'Weather data fetched successfully.', logContext);
+        
+        return {
+            temperature_max: data.daily?.temperature_2m_max?.[0] || null,
+            temperature_min: data.daily?.temperature_2m_min?.[0] || null,
+            precipitation: data.daily?.precipitation_sum?.[0] || null,
+        };
     } catch (e) {
         log('error', 'Error fetching weather.', { ...logContext, errorMessage: e.message });
     }
@@ -401,7 +443,12 @@ exports.handler = async function(event, context) {
         const job = await findJob(jobId, jobsCollection, log);
 
         if (!job) throw new Error(`Job with ID ${jobId} not found.`);
-        log('info', 'Fetched job from database.', { ...logContext, fileName: job.fileName });
+        log('info', 'Fetched job from database.', { 
+            ...logContext, 
+            fileName: job.fileName,
+            retryCount: job.retryCount || 0,
+            status: job.status
+        });
 
         let extractedData = job.extractedData || null;
         
@@ -412,13 +459,42 @@ exports.handler = async function(event, context) {
             
             const { image, mimeType } = job;
             if (!image) throw new Error("Job is missing image data for extraction.");
-            extractedData = await extractBmsData(ai, image, mimeType, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }), context, jobId, jobsCollection, withRetry);
-            log('info', 'AI data extraction complete.', logContext);
+            
+            try {
+                extractedData = await extractBmsData(
+                    ai, 
+                    image, 
+                    mimeType, 
+                    (level, msg, extra) => log(level, msg, { ...logContext, ...extra }), 
+                    context, 
+                    jobId, 
+                    jobsCollection, 
+                    withRetry
+                );
+                log('info', 'AI data extraction complete.', logContext);
+            } catch (extractionError) {
+                // Check if this is a transient error that should be requeued
+                if (extractionError.message.includes('TRANSIENT_ERROR')) {
+                    const reason = extractionError.message.replace('TRANSIENT_ERROR: ', '');
+                    log('warn', 'Transient error detected, requeuing job.', { ...logContext, reason });
+                    await requeueJob(jobId, reason, log, jobsCollection, job.retryCount || 0);
+                    return {
+                        statusCode: 200,
+                        body: JSON.stringify({ message: `Job ${jobId} requeued due to transient error: ${reason}` }),
+                    };
+                }
+                // Permanent error - rethrow to fail the job
+                throw extractionError;
+            }
 
             await updateJobStatus(jobId, 'Extraction complete (checkpoint)', log, jobsCollection, { extractedData });
             log('info', 'Saved extraction checkpoint to job.', logContext);
         } else {
-            log('info', 'Resuming from checkpoint. Skipping data extraction.', { ...logContext, stage: 'resume', extractedDataKeys: Object.keys(extractedData) });
+            log('info', 'Resuming from checkpoint. Skipping data extraction.', { 
+                ...logContext, 
+                stage: 'resume', 
+                extractedDataKeys: Object.keys(extractedData) 
+            });
         }
         
         logContext.stage = 'mapping';
@@ -433,7 +509,11 @@ exports.handler = async function(event, context) {
         
         const allSystems = job.systems || await withRetry(() => systemsCollection.find({}).toArray());
         const matchingSystem = analysisRaw.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysisRaw.dlNumber)) : null;
-        log('info', `System matching result: ${matchingSystem ? matchingSystem.name : 'None'}.`, { ...logContext, dlNumber: analysisRaw.dlNumber, systemId: matchingSystem?.id });
+        log('info', `System matching result: ${matchingSystem ? matchingSystem.name : 'None'}.`, { 
+            ...logContext, 
+            dlNumber: analysisRaw.dlNumber, 
+            systemId: matchingSystem?.id 
+        });
         
         const analysis = performPostAnalysis(analysisRaw, matchingSystem, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
         
@@ -464,7 +544,10 @@ exports.handler = async function(event, context) {
 
         let recordIdToReturn;
         if (existingRecord) {
-            log('info', 'Identical analysis record found. Skipping creation of new record.', { ...logContext, existingRecordId: existingRecord.id });
+            log('info', 'Identical analysis record found. Skipping creation of new record.', { 
+                ...logContext, 
+                existingRecordId: existingRecord.id 
+            });
             recordIdToReturn = existingRecord.id;
         } else {
             const newRecord = {
@@ -482,7 +565,10 @@ exports.handler = async function(event, context) {
             
             log('debug', 'Final record prepared for saving.', { ...logContext, recordId: newRecord.id });
             await withRetry(() => historyCollection.insertOne(newRecord));
-            log('info', 'Successfully saved new analysis record to history collection.', { ...logContext, recordId: newRecord.id });
+            log('info', 'Successfully saved new analysis record to history collection.', { 
+                ...logContext, 
+                recordId: newRecord.id 
+            });
             recordIdToReturn = newRecord.id;
         }
 
@@ -493,22 +579,37 @@ exports.handler = async function(event, context) {
 
         return {
             statusCode: 200,
-            body: JSON.stringify({ message: `Successfully processed job ${jobId}` }),
+            body: JSON.stringify({ message: `Successfully processed job ${jobId}`, recordId: recordIdToReturn }),
         };
 
     } catch (error) {
         const logContext = { jobId, stage: 'error_handling' };
-        log('error', 'Background analysis job failed.', { ...logContext, errorMessage: error.message, stack: error.stack });
+        log('error', 'Background analysis job failed.', { 
+            ...logContext, 
+            errorMessage: error.message, 
+            stack: error.stack 
+        });
         
         if (jobId) {
             try {
                 const jobsCollection = await getCollection("jobs");
-                // The full error message, prefixed for the client to parse.
-                const errorMessageForClient = `failed_${error.message}`;
                 
-                await updateJobStatus(jobId, 'failed', log, jobsCollection, { error: errorMessageForClient });
+                // Check if this is a transient error that should be requeued
+                if (error.message.includes('TRANSIENT_ERROR')) {
+                    const reason = error.message.replace('TRANSIENT_ERROR: ', '');
+                    log('warn', 'Transient error in main handler, requeuing job.', { ...logContext, reason });
+                    const job = await findJob(jobId, jobsCollection, log);
+                    await requeueJob(jobId, reason, log, jobsCollection, job?.retryCount || 0);
+                } else {
+                    // Permanent error - mark as failed
+                    const errorMessageForClient = `failed_${error.message}`;
+                    await updateJobStatus(jobId, 'failed', log, jobsCollection, { error: errorMessageForClient });
+                }
             } catch (updateError) {
-                log('error', 'CRITICAL: Could not update job status to failed after a processing error.', { ...logContext, updateError: updateError.message });
+                log('error', 'CRITICAL: Could not update job status after processing error.', { 
+                    ...logContext, 
+                    updateError: updateError.message 
+                });
             }
         } else {
             log('error', 'Could not update job status because jobId was not available.');
