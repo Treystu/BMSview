@@ -1,6 +1,6 @@
 
 const { getCollection } = require('./utils/mongodb.js');
-const { createLogger } = require("./utils/logger.js");
+const { createLogger, createTimer } = require("./utils/logger.js");
 const { v4: uuidv4 } = require("uuid");
 const { checkSecurity, HttpError } = require('./security.js');
 
@@ -14,11 +14,12 @@ const respond = (statusCode, body) => ({
 
 exports.handler = async (event, context) => {
     const log = createLogger('analyze', context);
+    const timer = createTimer(log, 'analyze-handler');
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod } = event;
     const logContext = { clientIp, httpMethod };
 
-    log('debug', 'Function invoked.', { ...logContext, headers: event.headers });
+    log('debug', 'Function invoked.', { ...logContext, path: event.path, method: httpMethod });
     
     try {
         if (httpMethod !== 'POST') {
@@ -28,29 +29,61 @@ exports.handler = async (event, context) => {
         await checkSecurity(event, log);
         
         const body = JSON.parse(event.body);
-        log('debug', 'Request body parsed.', { ...logContext, imageCount: body.images?.length, hasSystems: !!body.systems });
         const { images, systems } = body;
+        
+        log('debug', 'Request body parsed.', { 
+            ...logContext, 
+            imageCount: images?.length, 
+            hasSystems: !!systems,
+            systemCount: systems?.length || 0,
+            bodySize: event.body?.length || 0
+        });
 
         if (!Array.isArray(images) || images.length === 0) {
+            log('warn', 'Request rejected: No images provided.', logContext);
             return respond(400, { error: "No images provided for analysis." });
         }
         
+        log('info', 'Starting batch analysis.', { 
+            ...logContext, 
+            imageCount: images.length,
+            systemCount: systems?.length || 0
+        });
+        
+        const dbTimer = createTimer(log, 'database-operations');
         const historyCollection = await getCollection("history");
         const jobsCollection = await getCollection("jobs");
+        log('debug', 'Database collections retrieved.', logContext);
+        
         const jobCreationResponses = [];
         const batchBasenames = new Set();
         const basenamesToCheck = images.map(img => getBasename(img.fileName));
         
+        log('debug', 'Checking for existing records in history.', { 
+            ...logContext, 
+            filenamesToCheck: basenamesToCheck.length 
+        });
+        
         const existingRecords = await historyCollection.find({ fileName: { $in: basenamesToCheck } }).toArray();
         const existingRecordMap = new Map(existingRecords.map(r => [r.fileName, r]));
+        
+        log('debug', 'Existing records check complete.', { 
+            ...logContext, 
+            existingCount: existingRecords.length,
+            newCount: basenamesToCheck.length - existingRecords.length
+        });
+        dbTimer.end();
 
         const jobsToInsert = [];
 
+        log('debug', 'Processing images for job creation.', { ...logContext, totalImages: images.length });
+        
         for (const [index, image] of images.entries()) {
             const basename = getBasename(image.fileName);
             const imageLogContext = { ...logContext, fileName: image.fileName, basename, imageIndex: index };
             
             if (batchBasenames.has(basename)) {
+                 log('debug', 'Duplicate in current batch detected.', imageLogContext);
                  jobCreationResponses.push({ fileName: image.fileName, status: 'duplicate_batch' });
                  continue;
             }
@@ -58,6 +91,11 @@ exports.handler = async (event, context) => {
 
             const existingRecord = existingRecordMap.get(basename);
             if (existingRecord && !image.force) {
+                log('debug', 'Duplicate in history detected.', { 
+                    ...imageLogContext, 
+                    existingRecordId: existingRecord.id,
+                    force: image.force 
+                });
                 jobCreationResponses.push({
                     fileName: image.fileName,
                     status: 'duplicate_history',
@@ -65,6 +103,8 @@ exports.handler = async (event, context) => {
                 });
                 continue;
             }
+            
+            log('debug', 'Creating new job for image.', imageLogContext);
 
             const newJobId = uuidv4();
             jobsToInsert.push({
@@ -86,8 +126,15 @@ exports.handler = async (event, context) => {
         }
         
         if (jobsToInsert.length > 0) {
+            const insertTimer = createTimer(log, 'insert-jobs');
             await jobsCollection.insertMany(jobsToInsert);
-            log('info', `Successfully created ${jobsToInsert.length} new analysis jobs.`);
+            insertTimer.end({ jobCount: jobsToInsert.length });
+            log('info', `Successfully created ${jobsToInsert.length} new analysis jobs.`, { 
+                ...logContext,
+                jobIds: jobsToInsert.map(j => j.id)
+            });
+        } else {
+            log('info', 'No new jobs to create (all duplicates).', logContext);
         }
         
         const responseCounts = jobCreationResponses.reduce((acc, j) => {
@@ -96,7 +143,14 @@ exports.handler = async (event, context) => {
             return acc;
         }, { queued: 0, duplicates: 0 });
         
-        log('info', `Analysis submission processing complete.`, { ...logContext, ...responseCounts, totalProcessed: images.length });
+        const totalDuration = timer.end({ ...responseCounts, totalProcessed: images.length });
+        log('info', `Analysis submission processing complete.`, { 
+            ...logContext, 
+            ...responseCounts, 
+            totalProcessed: images.length,
+            totalDurationMs: totalDuration
+        });
+        
         return respond(200, jobCreationResponses);
 
     } catch (error) {

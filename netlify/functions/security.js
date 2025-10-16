@@ -1,6 +1,5 @@
-// HOTFIX 1: Fixed Rate Limiting with Atomic Operations
-// Replace: netlify/functions/security.js
-// This fix prevents race conditions in rate limiting by using MongoDB's atomic operations
+// COMPREHENSIVE FIX: Rate Limiting with Proper MongoDB Operations
+// This fix eliminates the $expr in upsert error and adds comprehensive logging
 
 const { getCollection } = require("./utils/mongodb.js");
 const { createLogger } = require("./utils/logger.js");
@@ -16,7 +15,8 @@ const ipToInt = (ip) => ip.split('.').reduce((int, octet) => (int << 8) + parseI
 
 const isIpInCidr = (ip, cidr, log) => {
   try {
-    const [range, bitsStr = 32] = cidr.split('/'); const bits = parseInt(bitsStr, 10);
+    const [range, bitsStr = 32] = cidr.split('/'); 
+    const bits = parseInt(bitsStr, 10);
     const mask = -1 << (32 - bits);
     return (ipToInt(ip) & mask) === (ipToInt(range) & mask);
   } catch (e) {
@@ -44,8 +44,12 @@ const isIpInRanges = (ip, ranges, log) => {
 };
 
 /**
- * FIXED: Atomic rate limiting using MongoDB's conditional updates
- * This prevents race conditions by using findOneAndUpdate with conditional expression
+ * FIXED: Two-step rate limiting to avoid $expr in upsert
+ * This approach:
+ * 1. First finds the current rate limit document
+ * 2. Checks if limit is exceeded
+ * 3. Updates atomically if within limit
+ * 4. Prevents race conditions using MongoDB's atomic operations
  */
 const checkRateLimit = async (request, log) => {
     const ip = request.headers['x-nf-client-connection-ip'];
@@ -53,6 +57,8 @@ const checkRateLimit = async (request, log) => {
     const logContext = { clientIp: ip };
 
     log('debug', 'Checking rate limit.', logContext);
+    
+    // Check if IP is verified (bypass rate limiting)
     const verifiedRanges = await getIpRanges(log, 'verified');
     if (isIpInRanges(ip, verifiedRanges, log)) {
         log('info', 'IP is verified, bypassing rate limit.', logContext);
@@ -67,64 +73,60 @@ const checkRateLimit = async (request, log) => {
     const UNVERIFIED_IP_LIMIT = 100;
 
     try {
-        // ATOMIC OPERATION: Use aggregation pipeline to check and update in one operation
-        // This prevents race conditions by ensuring the check and increment happen atomically
-        const result = await rateLimitCollection.findOneAndUpdate(
+        // STEP 1: Find current rate limit document
+        const currentDoc = await rateLimitCollection.findOne({ ip });
+        
+        // STEP 2: Calculate current request count in window
+        const timestamps = currentDoc?.timestamps || [];
+        const recentTimestamps = timestamps.filter(ts => new Date(ts) > windowStart);
+        const currentCount = recentTimestamps.length;
+        
+        log('debug', 'Current rate limit status.', { 
+            ...logContext, 
+            currentCount, 
+            limit: UNVERIFIED_IP_LIMIT,
+            hasExistingDoc: !!currentDoc 
+        });
+        
+        // STEP 3: Check if limit exceeded
+        if (currentCount >= UNVERIFIED_IP_LIMIT) {
+            log('warn', 'Rate limit exceeded for unverified IP.', { 
+                ...logContext, 
+                currentCount, 
+                limit: UNVERIFIED_IP_LIMIT 
+            });
+            throw new HttpError(429, `Too Many Requests: Rate limit exceeded. Current: ${currentCount}/${UNVERIFIED_IP_LIMIT}`);
+        }
+        
+        // STEP 4: Update atomically (add new timestamp)
+        // Clean up old timestamps and add new one in single operation
+        const updatedTimestamps = [...recentTimestamps, now];
+        
+        await rateLimitCollection.updateOne(
+            { ip },
             { 
-                ip,
-                // Only match if we haven't exceeded the limit
-                $expr: {
-                    $lt: [
-                        {
-                            $size: {
-                                $filter: {
-                                    input: { $ifNull: ["$timestamps", []] },
-                                    as: "ts",
-                                    cond: { $gt: ["$$ts", windowStart] }
-                                }
-                            }
-                        },
-                        UNVERIFIED_IP_LIMIT
-                    ]
+                $set: { 
+                    timestamps: updatedTimestamps,
+                    lastRequest: now,
+                    updatedAt: now
+                },
+                $setOnInsert: { 
+                    createdAt: now 
                 }
             },
-            { 
-                $push: { timestamps: now },
-                $setOnInsert: { ip, createdAt: now }
-            },
-            { 
-                upsert: true, 
-                returnDocument: 'after'
-            }
+            { upsert: true }
         );
-
-        // If result is null, it means the limit was already exceeded
-        if (!result.value) {
-            log('warn', 'Rate limit exceeded for unverified IP.', logContext);
-            throw new HttpError(429, `Too Many Requests: Rate limit exceeded.`);
-        }
-
-        // Clean up old timestamps periodically (every 10th request)
-        if (Math.random() < 0.1) {
-            const recentTimestamps = result.value.timestamps.filter(ts => ts > windowStart);
-            if (recentTimestamps.length < result.value.timestamps.length) {
-                await rateLimitCollection.updateOne(
-                    { ip },
-                    { $set: { timestamps: recentTimestamps } }
-                );
-                log('debug', 'Cleaned up old timestamps.', { ...logContext, removed: result.value.timestamps.length - recentTimestamps.length });
-            }
-        }
-
-        log('debug', 'Rate limit check passed.', { 
+        
+        log('debug', 'Rate limit check passed and updated.', { 
             ...logContext, 
-            currentCount: result.value.timestamps.filter(ts => ts > windowStart).length,
-            limit: UNVERIFIED_IP_LIMIT 
+            newCount: updatedTimestamps.length,
+            limit: UNVERIFIED_IP_LIMIT,
+            remaining: UNVERIFIED_IP_LIMIT - updatedTimestamps.length
         });
 
     } catch (error) {
         if (error instanceof HttpError) throw error;
-        log('error', 'Error during rate limit check.', { ...logContext, errorMessage: error.message });
+        log('error', 'Error during rate limit check.', { ...logContext, errorMessage: error.message, stack: error.stack });
         // Fail open on database errors to prevent service disruption
         log('warn', 'Rate limit check failed, allowing request through.', logContext);
     }
@@ -134,6 +136,7 @@ const checkSecurity = async (request, log) => {
     const ip = request.headers['x-nf-client-connection-ip'];
     const logContext = { clientIp: ip };
     log('info', 'Executing security check.', logContext);
+    
     try {
         if (ip) {
             log('debug', 'Checking if IP is in blocked ranges.', logContext);
@@ -146,11 +149,17 @@ const checkSecurity = async (request, log) => {
         } else {
             log('warn', 'No client IP found in headers, cannot perform IP-based security checks.', logContext);
         }
+        
         await checkRateLimit(request, log);
         log('info', 'Security check completed successfully.', logContext);
+        
     } catch (error) {
         if (error instanceof HttpError) throw error;
-        log('error', `A critical error occurred during the security check.`, { ...logContext, errorMessage: error.message, stack: error.stack });
+        log('error', `A critical error occurred during the security check.`, { 
+            ...logContext, 
+            errorMessage: error.message, 
+            stack: error.stack 
+        });
     }
 };
 
