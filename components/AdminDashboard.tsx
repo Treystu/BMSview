@@ -7,7 +7,7 @@ import BulkUpload from './BulkUpload';
 import HistoricalChart from './HistoricalChart';
 import IpManagement from './IpManagement';
 import { useAdminState, HistorySortKey } from '../state/adminState';
-import { getBasename } from '../utils';
+import { getBasename, getIsActualError } from '../utils';
 
 import AdminHeader from './admin/AdminHeader';
 import SystemsTable from './admin/SystemsTable';
@@ -136,17 +136,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             log('warn', 'Failed to poll bulk job statuses.', { error: err instanceof Error ? err.message : 'Unknown error' });
         }
     }, [state.bulkUploadResults, dispatch]);
-
-    // Internal helper for pollJobStatuses
-    const getIsActualError = (result: DisplayableAnalysisResult): boolean => {
-      const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
-      const status = result.error;
-      if (result.isDuplicate || !status || status.toLowerCase().includes('skipped') || PENDING_STATUS_REGEX.test(status.toLowerCase())) {
-          return false;
-      }
-      return true;
-    };
-
 
     useEffect(() => {
         const pendingJobs = bulkUploadResults.filter(r => r.jobId && !r.data && !getIsActualError(r));
@@ -717,11 +706,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             state={state}
                             dispatch={dispatch}
                             onMergeSystems={handleMergeSystems}
-                            // FIX: Pass correct handler function for scanning duplicates
                             onScanForDuplicates={handleScanForDuplicates}
-                            // FIX: Pass correct handler function for confirming deletion
                             onConfirmDeletion={handleConfirmDeletion}
-                            // FIX: Pass correct handler function for deleting unlinked records
                             onDeleteUnlinked={handleDeleteUnlinked}
                             onClearAllData={handleClearAllData}
                             onClearHistory={handleClearHistory}
