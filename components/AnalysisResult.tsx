@@ -6,7 +6,7 @@ import SunIcon from './icons/SunIcon';
 import BoltIcon from './icons/BoltIcon';
 import { streamInsights } from '../services/clientService';
 import SpinnerIcon from './icons/SpinnerIcon';
-import { formatError } from '../utils';
+import { formatError, getIsActualError } from '../utils';
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({
@@ -181,7 +181,6 @@ const AdoptionSection: React.FC<{
 
   const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newSystemId = e.target.value;
-    // FIX: Changed log level from 'debug' to 'info' to match function signature.
     log('info', 'User changed system selection for adoption.', { dlNumber, newSystemId });
     setSelectedSystemId(newSystemId);
   };
@@ -312,10 +311,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
     log('info', 'AnalysisResult component rendered/updated.', statusContext);
   }, [result]); // Log whenever the result prop changes
   
-  const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|submitted|saving|processing|extracting|matching|fetching|retrying/i;
-
   const isCompleted = error?.toLowerCase() === 'completed';
-  const isPending = !!error && PENDING_STATUS_REGEX.test(error);
+  const isPending = !!error && !getIsActualError(result);
   const isActualError = error && !isCompleted && !isPending;
 
   const tempStyles = getHealthStyles('temp', data?.temperature);
