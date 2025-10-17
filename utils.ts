@@ -18,3 +18,13 @@ export const formatError = (error: string): string => {
     }
     return error;
 };
+
+// Helper to determine if a result represents a final, failed state.
+export const getIsActualError = (result: { error?: string | null; isDuplicate?: boolean }): boolean => {
+    const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
+    const status = result.error;
+    if (result.isDuplicate || !status || status.toLowerCase().includes('skipped') || PENDING_STATUS_REGEX.test(status.toLowerCase())) {
+        return false;
+    }
+    return true;
+};
