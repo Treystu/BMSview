@@ -117,4 +117,35 @@ function createLogger(functionName, context = {}) {
   return logFunction;
 }
 
-module.exports = { createLogger, Logger };
+/**
+ * Create a timer for performance tracking
+ * @param {Function|Object} log - Logger instance or function
+ * @param {string} operationName - Name of the operation being timed
+ * @returns {Object} Timer object with end() method
+ */
+function createTimer(log, operationName) {
+  const startTime = Date.now();
+  
+  return {
+    end: (metadata = {}) => {
+      const duration = Date.now() - startTime;
+      
+      // Support both old-style log function and new Logger instance
+      if (typeof log === 'function') {
+        log('info', `${operationName} completed`, { 
+          duration: `${duration}ms`,
+          ...metadata 
+        });
+      } else if (log && typeof log.info === 'function') {
+        log.info(`${operationName} completed`, { 
+          duration: `${duration}ms`,
+          ...metadata 
+        });
+      }
+      
+      return duration;
+    }
+  };
+}
+
+module.exports = { createLogger, createTimer, Logger };
