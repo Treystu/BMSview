@@ -20,11 +20,14 @@ export const formatError = (error: string): string => {
 };
 
 // Helper to determine if a result represents a final, failed state.
-export const getIsActualError = (result: { error?: string | null; isDuplicate?: boolean }): boolean => {
-    const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
+export const getIsActualError = (result: { error?: string | null; isDuplicate?: boolean, data?: any | null }): boolean => {
+    const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|submitted|saving|processing|extracting|matching|fetching|retrying|completed/i;
     const status = result.error;
-    if (result.isDuplicate || !status || status.toLowerCase().includes('skipped') || PENDING_STATUS_REGEX.test(status.toLowerCase())) {
+
+    // It's not an error if there's data, it's a duplicate, there's no status, it's skipped, or it's a pending/success status.
+    if (result.data || result.isDuplicate || !status || status.toLowerCase().includes('skipped') || PENDING_STATUS_REGEX.test(status.toLowerCase())) {
         return false;
     }
+    // Any other non-empty error string is an error.
     return true;
 };
