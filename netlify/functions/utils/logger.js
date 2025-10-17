@@ -1,123 +1,96 @@
 /**
- * Enhanced Logger with LOG_LEVEL Support
- * 
- * Supports environment variable LOG_LEVEL with values:
- * - ERROR: Only errors
- * - WARN: Errors + warnings
- * - INFO: Errors + warnings + info (default)
- * - DEBUG: All operations + detailed context
- * - TRACE: Everything including data dumps
+ * Shared Logger Utility
+ * Provides structured logging with context and severity levels
  */
 
 const LOG_LEVELS = {
-    ERROR: 0,
-    WARN: 1,
-    INFO: 2,
-    DEBUG: 3,
-    TRACE: 4
+  DEBUG: 0,
+  INFO: 1,
+  WARN: 2,
+  ERROR: 3,
+  CRITICAL: 4
 };
 
-const getLogLevel = () => {
-    const envLevel = (process.env.LOG_LEVEL || 'INFO').toUpperCase();
-    return LOG_LEVELS[envLevel] !== undefined ? LOG_LEVELS[envLevel] : LOG_LEVELS.INFO;
-};
+class Logger {
+  constructor(functionName, context = {}) {
+    this.functionName = functionName;
+    this.context = context;
+    this.requestId = context.requestId || context.awsRequestId || 'unknown';
+    this.startTime = Date.now();
+  }
 
-const shouldLog = (messageLevel) => {
-    const currentLevel = getLogLevel();
-    const messageLevelValue = LOG_LEVELS[messageLevel.toUpperCase()] || LOG_LEVELS.INFO;
-    return messageLevelValue <= currentLevel;
-};
-
-const createLogger = (functionName, context) => {
-    const awsRequestId = context?.awsRequestId || 'unknown';
-    const startTime = Date.now();
+  _formatMessage(level, message, data = {}) {
+    const timestamp = new Date().toISOString();
+    const elapsed = Date.now() - this.startTime;
     
-    return (level, message, extra = {}) => {
-        // Check if we should log this level
-        if (!shouldLog(level)) {
-            return;
-        }
-        
-        const timestamp = new Date().toISOString();
-        const elapsed = Date.now() - startTime;
-        
-        const logEntry = {
-            timestamp,
-            level: level.toUpperCase(),
-            functionName,
-            awsRequestId,
-            elapsedMs: elapsed,
-            message,
-            ...extra
-        };
-        
-        // Add performance context for DEBUG and TRACE levels
-        if (shouldLog('DEBUG') && context) {
-            logEntry.remainingTimeMs = context.getRemainingTimeInMillis?.();
-            logEntry.memoryLimitMB = context.memoryLimitInMB;
-        }
-        
-        console.log(JSON.stringify(logEntry));
-    };
-};
+    return JSON.stringify({
+      timestamp,
+      level,
+      function: this.functionName,
+      requestId: this.requestId,
+      elapsed: `${elapsed}ms`,
+      message,
+      ...data,
+      context: this.context
+    });
+  }
 
-/**
- * Performance timing utility
- */
-const createTimer = (log, operation) => {
-    const startTime = Date.now();
-    
-    return {
-        end: (extra = {}) => {
-            const duration = Date.now() - startTime;
-            log('debug', `Operation completed: ${operation}`, { 
-                operation, 
-                durationMs: duration,
-                ...extra 
-            });
-            return duration;
-        }
-    };
-};
-
-/**
- * Sanitize sensitive data from logs
- */
-const sanitize = (data) => {
-    if (!data || typeof data !== 'object') return data;
-    
-    const sanitized = { ...data };
-    const sensitiveKeys = ['password', 'apikey', 'api_key', 'token', 'secret', 'authorization', 'cookie'];
-    
-    for (const key of Object.keys(sanitized)) {
-        const lowerKey = key.toLowerCase();
-        if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-            sanitized[key] = '[REDACTED]';
-        } else if (typeof sanitized[key] === 'object' && sanitized[key] !== null) {
-            sanitized[key] = sanitize(sanitized[key]);
-        }
+  debug(message, data) {
+    if (process.env.LOG_LEVEL === 'DEBUG') {
+      console.log(this._formatMessage('DEBUG', message, data));
     }
-    
-    return sanitized;
-};
+  }
+
+  info(message, data) {
+    console.log(this._formatMessage('INFO', message, data));
+  }
+
+  warn(message, data) {
+    console.warn(this._formatMessage('WARN', message, data));
+  }
+
+  error(message, data) {
+    console.error(this._formatMessage('ERROR', message, data));
+  }
+
+  critical(message, data) {
+    console.error(this._formatMessage('CRITICAL', message, data));
+  }
+
+  // Log function entry
+  entry(data = {}) {
+    this.info('Function invoked', data);
+  }
+
+  // Log function exit
+  exit(statusCode, data = {}) {
+    this.info('Function completed', { statusCode, ...data });
+  }
+
+  // Log database operations
+  dbOperation(operation, collection, data = {}) {
+    this.debug(`DB ${operation}`, { collection, ...data });
+  }
+
+  // Log API calls
+  apiCall(service, endpoint, data = {}) {
+    this.debug(`API call to ${service}`, { endpoint, ...data });
+  }
+
+  // Log performance metrics
+  metric(name, value, unit = 'ms') {
+    this.info('Performance metric', { metric: name, value, unit });
+  }
+}
 
 /**
- * Log with automatic sanitization
+ * Create a logger instance for a function
+ * @param {string} functionName - Name of the function
+ * @param {object} context - Netlify function context
+ * @returns {Logger} Logger instance
  */
-const createSafeLogger = (functionName, context) => {
-    const baseLog = createLogger(functionName, context);
-    
-    return (level, message, extra = {}) => {
-        const sanitizedExtra = sanitize(extra);
-        baseLog(level, message, sanitizedExtra);
-    };
-};
+function createLogger(functionName, context = {}) {
+  return new Logger(functionName, context);
+}
 
-module.exports = { 
-    createLogger, 
-    createSafeLogger,
-    createTimer,
-    sanitize,
-    LOG_LEVELS,
-    getLogLevel
-};
+module.exports = { createLogger, Logger };
