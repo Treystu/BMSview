@@ -46,7 +46,7 @@ exports.handler = async function(event, context) {
         
         const jobs = await jobsCollection.find({ id: { $in: jobIds } }).toArray();
         clearTimeout(dbTimeout);
-
+        
         const resultsMap = new Map(jobs.map(job => [job.id, job]));
         
         const results = jobIds.map(id => {

@@ -76,7 +76,12 @@ const processQueue = async (jobsCollection, log) => {
             }
 
             const invokeUrl = `${process.env.URL}/.netlify/functions/process-analysis`;
-            log('debug', 'Invoking background processor.', { ...jobLogContext, invokeUrl });
+            log('info', 'Invoking background processor.', { 
+                   ...jobLogContext, 
+                   invokeUrl,
+                   environment: process.env.NODE_ENV || 'unknown',
+                   functionUrl: process.env.URL || 'not-set'
+               });
             
             const response = await fetch(invokeUrl, {
                 method: 'POST',
@@ -96,8 +101,30 @@ const processQueue = async (jobsCollection, log) => {
             log('error', 'Failed to process a queued job.', { 
                 ...jobLogContext, 
                 errorMessage: error.message,
-                stack: error.stack 
+                stack: error.stack,
+                environment: process.env.NODE_ENV || 'unknown'
             });
+            
+            // Attempt to revert the job status back to Queued so it can be retried
+            try {
+                await jobsCollection.updateOne(
+                    { _id: job._id },
+                    { 
+                        $set: { 
+                            status: 'Queued',
+                            lastFailureReason: `Invocation failed: ${error.message}`,
+                            lastHeartbeat: new Date()
+                        },
+                        $inc: { retryCount: 1 }
+                    }
+                );
+                log('warn', 'Reverted job status to Queued for retry.', jobLogContext);
+            } catch (revertError) {
+                log('error', 'Failed to revert job status.', { 
+                    ...jobLogContext, 
+                    revertError: revertError.message 
+                });
+            }
         }
     });
     
