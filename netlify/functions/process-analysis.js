@@ -176,13 +176,13 @@ const extractBmsData = async (ai, image, mimeType, log, context, jobId, jobsColl
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp';
-               const attemptLogContext = { attempt, maxRetries, timeout: GEMINI_API_TIMEOUT_MS, model: modelName };
+        const attemptLogContext = { attempt, maxRetries, timeout: GEMINI_API_TIMEOUT_MS, model: modelName };
         try {
             log('info', `Sending request to Gemini API.`, attemptLogContext);
             const startTime = Date.now();
             
             const apiCall = ai.models.generateContent({
-                model: process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp',
+                model: modelName,
                 contents: { parts },
                 config: { responseMimeType: "application/json", responseSchema },
             });
