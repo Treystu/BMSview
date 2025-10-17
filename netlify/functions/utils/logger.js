@@ -87,10 +87,34 @@ class Logger {
  * Create a logger instance for a function
  * @param {string} functionName - Name of the function
  * @param {object} context - Netlify function context
- * @returns {Logger} Logger instance
+ * @returns {Logger|Function} Logger instance or backward-compatible function
  */
 function createLogger(functionName, context = {}) {
-  return new Logger(functionName, context);
+  const logger = new Logger(functionName, context);
+  
+  // Create a backward-compatible function that can be called directly
+  // This supports the old API: log('info', 'message', data)
+  const logFunction = function(level, message, data) {
+    if (typeof logger[level] === 'function') {
+      logger[level](message, data);
+    } else {
+      logger.info(message, { level, ...data });
+    }
+  };
+  
+  // Copy all logger methods to the function
+  logFunction.debug = logger.debug.bind(logger);
+  logFunction.info = logger.info.bind(logger);
+  logFunction.warn = logger.warn.bind(logger);
+  logFunction.error = logger.error.bind(logger);
+  logFunction.critical = logger.critical.bind(logger);
+  logFunction.entry = logger.entry.bind(logger);
+  logFunction.exit = logger.exit.bind(logger);
+  logFunction.dbOperation = logger.dbOperation.bind(logger);
+  logFunction.apiCall = logger.apiCall.bind(logger);
+  logFunction.metric = logger.metric.bind(logger);
+  
+  return logFunction;
 }
 
 module.exports = { createLogger, Logger };
