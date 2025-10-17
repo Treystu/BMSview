@@ -107,7 +107,6 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
             setFileError(errorMsg);
         }
         
-        // FIX: Changed log level from 'debug' to 'info' to match function signature.
         log('info', 'File list processed.', { validImageCount: validImageFiles.length, oversizedCount: oversizedFiles.length, zipCount: zipFiles.length });
         zipFiles.forEach(handleZipFile);
     }, [handleZipFile, maxFileSizeBytes, maxFileSizeMb]);
