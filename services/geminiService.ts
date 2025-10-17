@@ -61,7 +61,6 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
             systems: registeredSystems,
         };
         
-        // FIX: Changed log level from 'debug' to 'info' to match function signature.
         log('info', 'Submitting analysis request to /.netlify/functions/analyze.', { ...analysisContext, payloadSize: JSON.stringify(dataToSend).length });
 
         const response = await fetch('/.netlify/functions/analyze', {
@@ -73,7 +72,6 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
 
         clearTimeout(timeoutId);
         
-        // FIX: Changed log level from 'debug' to 'info' to match function signature.
         log('info', 'Analyze API response received.', { status: response.status });
         if (!response.ok) {
             let errorBody;
