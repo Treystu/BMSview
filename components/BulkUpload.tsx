@@ -2,7 +2,7 @@ import React from 'react';
 import type { DisplayableAnalysisResult } from '../types';
 import { useFileUpload } from '../hooks/useFileUpload';
 import { AdminAction } from '../state/adminState';
-import { formatError } from '../utils';
+import { formatError, getIsActualError } from '../utils';
 
 interface BulkUploadProps {
   onAnalyze: (files: File[]) => void;
@@ -11,19 +11,6 @@ interface BulkUploadProps {
   showRateLimitWarning: boolean;
   dispatch: React.Dispatch<AdminAction>;
 }
-
-const PENDING_STATUS_REGEX = /analyzing|pending|queued|pre-analyzing|starting|submitting|saving|processing|extracting|matching|fetching|retrying/i;
-
-// Helper to determine if a result represents a final, failed state.
-const getIsActualError = (result: DisplayableAnalysisResult): boolean => {
-    const status = result.error;
-    // Not an error if it's a duplicate, has no status, is skipped, or is in a pending state.
-    if (result.isDuplicate || !status || status.toLowerCase().includes('skipped') || PENDING_STATUS_REGEX.test(status.toLowerCase())) {
-        return false;
-    }
-    // Any other non-empty error string is an error.
-    return true;
-};
 
 // A more robust rendering function for the status of each upload.
 const renderStatus = (result: DisplayableAnalysisResult) => {
