@@ -147,13 +147,11 @@ export const associateDlToSystem = async (dlNumber: string, systemId: string): P
     }
 
     if (!systemToUpdate.associatedDLs.includes(dlNumber)) {
-        // FIX: Changed log level from 'debug' to 'info' to match function signature.
         log('info', 'DL number not found in system, adding it.', { dlNumber, systemId });
         systemToUpdate.associatedDLs.push(dlNumber);
         const { id, ...dataToUpdate } = systemToUpdate;
         await updateBmsSystem(id, dataToUpdate);
     } else {
-        // FIX: Changed log level from 'debug' to 'info' to match function signature.
         log('info', 'DL number already associated with system, no update needed.', { dlNumber, systemId });
     }
 };
