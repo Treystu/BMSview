@@ -315,6 +315,19 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
   const isPending = !!error && !getIsActualError(result);
   const isActualError = error && !isCompleted && !isPending;
 
+  // Determine the actual status for display
+  const getDisplayStatus = () => {
+    if (data) return 'completed';
+    if (error === 'Submitted') return 'submitted';
+    if (error === 'Queued') return 'queued';
+    if (error === 'Processing') return 'processing';
+    if (error?.startsWith('failed_')) return error.replace('failed_', '');
+    if (getIsActualError(result)) return 'error';
+    return error || 'unknown';
+  };
+
+  const displayStatus = getDisplayStatus();
+
   const tempStyles = getHealthStyles('temp', data?.temperature);
   const mosTempStyles = getHealthStyles('mos', data?.mosTemperature);
   const diffStyles = getHealthStyles('diff', data?.cellVoltageDifference);
@@ -329,14 +342,48 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
 
   if (isPending) {
     return (
-      <div className="bg-neutral-light p-8 rounded-xl shadow-lg max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-center">
-        <h3 className="text-lg font-bold text-neutral-dark mb-2 sm:mb-0 sm:mr-4 truncate">{fileName}</h3>
-        <div className="flex items-center">
-            <svg className="animate-spin h-5 w-5 text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <div className="bg-neutral-light p-8 rounded-xl shadow-lg max-w-4xl mx-auto">
+        <div className="flex justify-between items-start mb-4">
+          <h3 className="text-lg font-bold text-neutral-dark break-all flex-1">{fileName}</h3>
+          <div className="ml-4">
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+              displayStatus === 'queued' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+              displayStatus === 'processing' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+              'bg-gray-100 text-gray-800 border-gray-200'
+            }`}>
+              {displayStatus === 'processing' && (
+                <svg className="animate-spin h-3 w-3 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              )}
+              {displayStatus === 'queued' && <span className="mr-1">⏳</span>}
+              {displayStatus === 'submitted' && <span className="mr-1">📤</span>}
+              {displayStatus === 'processing' && <span className="mr-1">⚡</span>}
+              {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
+            </span>
+          </div>
+        </div>
+        
+        <div className="flex items-center justify-center py-4">
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-2">
+              <svg className="animate-spin h-6 w-6 text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <span className="text-neutral ml-2">{error}</span>
+              </svg>
+            </div>
+            <p className="text-neutral text-sm">
+              {displayStatus === 'queued' && 'Your image is queued for analysis. This usually takes 1-3 minutes.'}
+              {displayStatus === 'processing' && 'Analyzing your BMS screenshot...'}
+              {displayStatus === 'submitted' && 'Submitted for analysis...'}
+            </p>
+            {result.submittedAt && (
+              <p className="text-neutral text-xs mt-1">
+                Submitted {new Date(result.submittedAt).toLocaleTimeString()}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -392,13 +439,57 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
 
       {isActualError && !isDuplicate && (
         <div className="p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg">
-          <h4 className="text-lg font-semibold text-red-800 mb-2">Analysis Failed</h4>
-          <p className="text-red-700">{formatError(error)}</p>
+          <div className="flex items-start">
+            <svg className="h-5 w-5 text-red-500 mr-2 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1">
+              <h4 className="text-lg font-semibold text-red-800 mb-2">Analysis Failed</h4>
+              <p className="text-red-700 mb-3">{formatError(error)}</p>
+              {error?.includes('backend_error') && (
+                <div className="bg-red-100 p-3 rounded-md text-sm text-red-700 mb-3">
+                  <strong>Backend Issue:</strong> We're experiencing connection problems. Please try again in a few minutes.
+                </div>
+              )}
+              {error?.includes('timeout') && (
+                <div className="bg-red-100 p-3 rounded-md text-sm text-red-700 mb-3">
+                  <strong>Timeout:</strong> The analysis is taking longer than expected. You can try uploading a smaller image or wait a few minutes and try again.
+                </div>
+              )}
+              {file && (
+                <button
+                  onClick={handleReprocessClick}
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  Try Again
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
       {data && (
         <>
+          <div className="mb-6 flex justify-between items-center">
+            <div className="flex-1">
+              {dlNumber && (
+                <div className="text-center p-2 bg-gray-100 rounded-md inline-block">
+                  <span className="text-sm font-medium text-gray-600">DL Number: </span>
+                  <span className="font-bold text-neutral-dark tracking-wider">{dlNumber}</span>
+                  {associatedSystemName && (
+                    <p className="text-xs text-green-700">✓ Associated with: <span className="font-semibold">{associatedSystemName}</span></p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-green-100 text-green-800 border-green-200">
+                <span className="mr-1">✅</span>
+                Completed
+              </span>
+            </div>
+          </div>
            {dlNumber && (
             <div className="mb-4 text-center p-2 bg-gray-100 rounded-md">
                 <span className="text-sm font-medium text-gray-600">DL Number: </span>

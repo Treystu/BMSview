@@ -1,4 +1,3 @@
-
 const { getCollection } = require('./utils/mongodb.js');
 const { createLogger, createTimer } = require("./utils/logger.js");
 const { v4: uuidv4 } = require("uuid");
@@ -11,6 +10,21 @@ const respond = (statusCode, body) => ({
     body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json' },
 });
+
+// Function to invoke the background processor
+const invokeProcessor = (jobId, log) => {
+    const invokeUrl = `${process.env.URL}/.netlify/functions/process-analysis`;
+    log('info', 'Invoking background processor.', { jobId, invokeUrl });
+    
+    // Fire-and-forget fetch call to the background function
+    fetch(invokeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-netlify-background': 'true' },
+        body: JSON.stringify({ jobId: jobId }),
+    }).catch(error => {
+        log('error', 'Failed to invoke background processor.', { jobId, errorMessage: error.message });
+    });
+};
 
 exports.handler = async (event, context) => {
     const log = createLogger('analyze', context);
@@ -108,7 +122,7 @@ exports.handler = async (event, context) => {
 
             const newJobId = uuidv4();
             jobsToInsert.push({
-                _id: newJobId, // Use native MongoDB _id for jobs
+                _id: newJobId,
                 id: newJobId,
                 fileName: image.fileName,
                 status: "Queued",
@@ -133,6 +147,11 @@ exports.handler = async (event, context) => {
                 ...logContext,
                 jobIds: jobsToInsert.map(j => j.id)
             });
+
+            // *** THE FIX: Immediately trigger the background processor for each new job ***
+            for (const job of jobsToInsert) {
+                invokeProcessor(job.id, log);
+            }
         } else {
             log('info', 'No new jobs to create (all duplicates).', logContext);
         }

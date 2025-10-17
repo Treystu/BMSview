@@ -9,6 +9,7 @@ import { registerBmsSystem, getRegisteredSystems, getAnalysisHistory, linkAnalys
 import type { BmsSystem, DisplayableAnalysisResult } from './types';
 import { useAppState } from './state/appState';
 import { getIsActualError } from './utils';
+import { useJobPolling } from './hooks/useJobPolling';
 
 // Centralized client-side logger for consistency and verbosity
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
@@ -55,100 +56,71 @@ function App() {
     }
   }, [dispatch]);
 
+  const fetchAppData = useCallback(async () => {
+    log('info', 'Fetching initial application data (systems and history).');
+    try {
+      const [systems, history] = await Promise.all([
+        getRegisteredSystems(),
+        getAnalysisHistory()
+      ]);
+      dispatch({ type: 'FETCH_DATA_SUCCESS', payload: { systems, history } });
+      log('info', 'Successfully fetched application data.', { systemCount: systems.length, historyCount: history.length });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      log('error', "Failed to fetch app data.", { error: errorMessage });
+      dispatch({ type: 'SET_ERROR', payload: "Could not load initial application data. Please refresh the page." });
+    }
+  }, [dispatch]);
+
   useEffect(() => {
     fetchAppData();
   }, [fetchAppData]);
   
-  const pollJobStatuses = useCallback(async () => {
-      const pendingJobs = state.analysisResults.filter(r => r.jobId && !r.data && !getIsActualError(r));
-      const now = Date.now();
+  // Extract pending job IDs for polling
+  const pendingJobIds = analysisResults
+    .filter(r => r.jobId && !r.data && !getIsActualError(r))
+    .map(r => r.jobId!);
 
-      const jobsToPoll = pendingJobs.filter(job => {
-          if (job.submittedAt && (now - job.submittedAt > CLIENT_JOB_TIMEOUT_MS)) {
-              log('warn', 'Job timed out on client-side.', { jobId: job.jobId, fileName: job.fileName });
-              dispatch({ type: 'JOB_TIMED_OUT', payload: { jobId: job.jobId! } });
-              return false;
-          }
-          return true;
-      });
+  // Use the enhanced job polling hook
+  const { isPolling, errorCount, consecutiveErrors, stopPolling } = useJobPolling({
+    jobIds: pendingJobIds,
+    onJobCompleted: useCallback((jobId: string, record: AnalysisRecord) => {
+      log('info', 'Job completed, updating state', { jobId, recordId: record.id });
+      dispatch({ type: 'UPDATE_JOB_COMPLETED', payload: { jobId, record } });
+    }, [dispatch]),
+    onJobStatusUpdate: useCallback((jobId: string, status: string) => {
+      log('info', 'Job status updated', { jobId, status });
+      dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId, status } });
+    }, [dispatch]),
+    onJobFailed: useCallback((jobId: string, error: string) => {
+      log('warn', 'Job failed', { jobId, error });
+      dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId, status: error } });
+    }, [dispatch]),
+    onPollingError: useCallback((error: string) => {
+      log('warn', 'Polling error', { error });
+      // Could dispatch a global error or show user notification
+    }, [])
+  });
 
-      if (jobsToPoll.length === 0) {
-          return;
-      }
-      
-      const jobIds = jobsToPoll.map(j => j.jobId!);
-      log('info', 'Polling job statuses.', { jobCount: jobIds.length, jobIds });
-      
-      try {
-          const statuses = await getJobStatuses(jobIds);
-          let needsHistoryRefresh = false;
-          log('info', 'Received job statuses from server.', { statuses });
-
-          for (const status of statuses) {
-              if (status.status === 'completed' && status.recordId) {
-                  log('info', 'Job completed, fetching full record.', { jobId: status.id, recordId: status.recordId });
-                  const record = await getAnalysisRecordById(status.recordId);
-                  if (record) {
-                      dispatch({ type: 'UPDATE_JOB_COMPLETED', payload: { jobId: status.id, record } });
-                      needsHistoryRefresh = true;
-                  } else {
-                     log('warn', 'Job completed but could not fetch the final record.', { jobId: status.id, recordId: status.recordId });
-                     dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.id, status: 'failed_record_fetch' } });
-                  }
-              } else if (status.status.startsWith('failed') || status.status === 'not_found') {
-                  log('warn', `Job ${status.status}.`, { jobId: status.id, error: status.error });
-                  dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.id, status: status.error || 'Failed' } });
-              } else {
-                  log('info', 'Job status updated.', { jobId: status.id, status: status.status });
-                  dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.id, status: status.status } });
-              }
-          }
-          if (needsHistoryRefresh) {
-              log('info', 'A job completed. The history list will update on the next full refresh.');
-          }
-      } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : 'Unknown polling error';
-          log('warn', 'Failed to poll job statuses.', { error: errorMessage });
-          
-          // Check if this is a network/server error that might indicate backend issues
-          if (errorMessage.includes('500') || errorMessage.includes('504') || errorMessage.includes('timeout')) {
-              log('error', 'Backend service error detected during polling', { error: errorMessage });
-              
-              // Update all pending jobs with a backend error status
-              jobIds.forEach(jobId => {
-                  dispatch({ type: 'UPDATE_JOB_STATUS', payload: { 
-                      jobId, 
-                      status: 'backend_error' 
-                  }});
-              });
-          }
-      }
-  }, [state.analysisResults, dispatch]);
-
+  // Handle job timeout logic
   useEffect(() => {
-    const pendingJobs = analysisResults.some(r => r.jobId && !r.data && !getIsActualError(r));
-    
-    if (pendingJobs) {
-      if (!pollingIntervalRef.current) {
-        log('info', 'Pending jobs found. Starting status poller.');
-        pollingIntervalRef.current = window.setInterval(pollJobStatuses, POLLING_INTERVAL_MS);
-      }
-    } else {
+    if (consecutiveErrors >= 3) {
+      log('warn', 'Multiple polling errors detected, may indicate backend issues', { 
+        consecutiveErrors,
+        pendingJobs: pendingJobIds.length 
+      });
+    }
+  }, [consecutiveErrors, pendingJobIds]);
+
+  // Legacy polling cleanup
+  useEffect(() => {
+    return () => {
       if (pollingIntervalRef.current) {
-        log('info', 'No pending jobs. Stopping poller.');
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
-    }
-    
-    return () => {
-        if (pollingIntervalRef.current) {
-            log('info', 'Component unmounting or dependencies changed. Clearing poller timeout.');
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-        }
     };
-}, [analysisResults, pollJobStatuses]);
+  }, []);
 
   const handleLinkRecordToSystem = async (recordId: string, systemId: string, dlNumber?: string | null) => {
     if (!recordId || !systemId) return;
@@ -233,6 +205,17 @@ function App() {
     dispatch({ type: 'CLOSE_REGISTER_MODAL' });
   };
 
+  // Add user-friendly status display
+  const getStatusDisplay = (result: DisplayableAnalysisResult) => {
+    if (result.data) return 'Completed';
+    if (result.error === 'Submitted') return 'Submitted';
+    if (result.error === 'Queued') return 'Queued';
+    if (result.error === 'Processing') return 'Processing';
+    if (result.error?.startsWith('failed_')) return 'Failed';
+    if (getIsActualError(result)) return 'Error';
+    return result.error || 'Unknown';
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-neutral-light">
       <Header />
@@ -243,19 +226,50 @@ function App() {
           error={error}
           hasResults={analysisResults.length > 0}
         />
+        
         {analysisResults.length > 0 && (
           <section id="results-section" className="py-20 bg-white">
             <div className="container mx-auto px-6 space-y-8">
-              <h2 className="text-3xl font-bold text-center text-neutral-dark">Analysis Results</h2>
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold text-neutral-dark">Analysis Results</h2>
+                {isPolling && (
+                  <div className="mt-4 flex items-center justify-center text-sm text-neutral">
+                    <svg className="animate-spin h-4 w-4 mr-2 text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing jobs... {errorCount > 0 && `(Errors: ${errorCount})`}
+                  </div>
+                )}
+                {consecutiveErrors >= 3 && (
+                  <div className="mt-4 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg">
+                    <p className="text-yellow-800">
+                      <strong>Notice:</strong> Experiencing connection issues. Jobs may take longer to process.
+                    </p>
+                  </div>
+                )}
+              </div>
+              
               {analysisResults.map((result) => (
-                <AnalysisResult 
-                  key={result.fileName} 
-                  result={result}
-                  registeredSystems={registeredSystems}
-                  onLinkRecord={handleLinkRecordToSystem}
-                  onReprocess={handleReprocess}
-                  onRegisterNewSystem={handleInitiateRegistration}
-                />
+                <div key={result.fileName} className="relative">
+                  <div className="absolute top-0 right-0 mt-4 mr-4">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      result.data ? 'bg-green-100 text-green-800' :
+                      result.error === 'Queued' || result.error === 'Processing' ? 'bg-blue-100 text-blue-800' :
+                      result.error === 'Submitted' ? 'bg-gray-100 text-gray-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {getStatusDisplay(result)}
+                    </span>
+                  </div>
+                  <AnalysisResult 
+                    result={result}
+                    registeredSystems={registeredSystems}
+                    onLinkRecord={handleLinkRecordToSystem}
+                    onReprocess={handleReprocess}
+                    onRegisterNewSystem={handleInitiateRegistration}
+                  />
+                </div>
               ))}
             </div>
           </section>
