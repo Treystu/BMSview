@@ -8,6 +8,7 @@ import { analyzeBmsScreenshots } from './services/geminiService';
 import { registerBmsSystem, getRegisteredSystems, getAnalysisHistory, linkAnalysisToSystem, associateDlToSystem, getJobStatuses, getAnalysisRecordById } from './services/clientService';
 import type { BmsSystem, DisplayableAnalysisResult } from './types';
 import { useAppState } from './state/appState';
+import { getIsActualError } from './utils';
 
 // Centralized client-side logger for consistency and verbosity
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
@@ -36,8 +37,7 @@ function App() {
     registeredSystems,
   } = state;
   
-  const pollingTimeoutRef = useRef<number | null>(null);
-  const isPollingRef = useRef(false);
+  const pollingIntervalRef = useRef<number | null>(null);
 
   const fetchAppData = useCallback(async () => {
     log('info', 'Fetching initial application data (systems and history).');
@@ -60,38 +60,27 @@ function App() {
   }, [fetchAppData]);
   
   const pollJobStatuses = useCallback(async () => {
-      if (isPollingRef.current) {
-          log('info', 'Polling is already in progress. Skipping this cycle.');
-          return;
-      }
-
-      const pendingJobs = state.analysisResults.filter(r => r.jobId && !['completed', 'failed'].includes(r.error?.toLowerCase() ?? ''));
-      const jobsToPoll = [];
+      const pendingJobs = state.analysisResults.filter(r => r.jobId && !r.data && !getIsActualError(r));
       const now = Date.now();
 
-      for (const job of pendingJobs) {
+      const jobsToPoll = pendingJobs.filter(job => {
           if (job.submittedAt && (now - job.submittedAt > CLIENT_JOB_TIMEOUT_MS)) {
               log('warn', 'Job timed out on client-side.', { jobId: job.jobId, fileName: job.fileName });
               dispatch({ type: 'JOB_TIMED_OUT', payload: { jobId: job.jobId! } });
-          } else {
-              jobsToPoll.push(job);
+              return false;
           }
-      }
+          return true;
+      });
 
       if (jobsToPoll.length === 0) {
-          log('info', 'No active jobs to poll.');
-          if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
-          pollingTimeoutRef.current = null; // Ensure polling stops
           return;
       }
       
-      isPollingRef.current = true;
       const jobIds = jobsToPoll.map(j => j.jobId!);
       log('info', 'Polling job statuses.', { jobCount: jobIds.length, jobIds });
       
-      let statuses: any[] = [];
       try {
-          statuses = await getJobStatuses(jobIds);
+          const statuses = await getJobStatuses(jobIds);
           let needsHistoryRefresh = false;
           log('info', 'Received job statuses from server.', { statuses });
 
@@ -104,7 +93,6 @@ function App() {
                       needsHistoryRefresh = true;
                   } else {
                      log('warn', 'Job completed but could not fetch the final record.', { jobId: status.id, recordId: status.recordId });
-                     // Mark as failed if record can't be fetched, to unblock the UI
                      dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.id, status: 'failed_record_fetch' } });
                   }
               } else if (status.status.startsWith('failed') || status.status === 'not_found') {
@@ -120,47 +108,30 @@ function App() {
           }
       } catch (err) {
           log('warn', 'Failed to poll job statuses.', { error: err instanceof Error ? err.message : 'Unknown error' });
-      } finally {
-          isPollingRef.current = false;
-          // Schedule the next poll ONLY if there are still jobs to poll for
-          const stillPendingJobs = jobsToPoll.filter(job => {
-                // FIX: `statuses` was defined in the `try` block and not accessible here.
-                 const currentJob = state.analysisResults.find(r => r.jobId === job.jobId);
-                 return !(currentJob && (
-                     currentJob.status === 'completed' || 
-                     (currentJob.error && (
-                         currentJob.error.toLowerCase().startsWith('failed') || 
-                         currentJob.error.toLowerCase() === 'not_found'
-                     ))
-                 ));
-             });
-             
-             if (stillPendingJobs.length > 0 && !pollingTimeoutRef.current) {
-                 pollingTimeoutRef.current = window.setTimeout(pollJobStatuses, POLLING_INTERVAL_MS);
-             } else {
-                 if (pollingTimeoutRef.current) {
-                     clearTimeout(pollingTimeoutRef.current);
-                     pollingTimeoutRef.current = null;
-                 }
-             }
-              pollingTimeoutRef.current = null;
-          }
+      }
   }, [state.analysisResults, dispatch]);
 
   useEffect(() => {
-    const pendingJobs = analysisResults.some(r => r.jobId && !['completed', 'failed'].includes(r.error?.toLowerCase() ?? '') && !r.error?.startsWith('failed_'));
+    const pendingJobs = analysisResults.some(r => r.jobId && !r.data && !getIsActualError(r));
     
-    if (pendingJobs && !pollingTimeoutRef.current && !isPollingRef.current) {
+    if (pendingJobs) {
+      if (!pollingIntervalRef.current) {
         log('info', 'Pending jobs found. Starting status poller.');
-        // Initial call starts the recursive polling chain
-        pollingTimeoutRef.current = window.setTimeout(pollJobStatuses, POLLING_INTERVAL_MS);
+        pollingIntervalRef.current = window.setInterval(pollJobStatuses, POLLING_INTERVAL_MS);
+      }
+    } else {
+      if (pollingIntervalRef.current) {
+        log('info', 'No pending jobs. Stopping poller.');
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
     }
     
     return () => {
-        if (pollingTimeoutRef.current) {
+        if (pollingIntervalRef.current) {
             log('info', 'Component unmounting or dependencies changed. Clearing poller timeout.');
-            clearTimeout(pollingTimeoutRef.current);
-            pollingTimeoutRef.current = null;
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
         }
     };
 }, [analysisResults, pollJobStatuses]);
@@ -183,7 +154,6 @@ function App() {
   const handleAnalyze = async (files: File[], options?: { forceFileName?: string }) => {
     log('info', 'Analysis process initiated from UI.', { fileCount: files.length, forceFileName: options?.forceFileName });
     
-    // The client no longer checks for duplicates. It just prepares all files for submission.
     const initialResults: DisplayableAnalysisResult[] = files.map(f => ({ 
         fileName: f.name, 
         data: null, 
@@ -192,9 +162,6 @@ function App() {
         submittedAt: Date.now()
     }));
     
-    // For new uploads, PREPARE_ANALYSIS adds the skeleton UI.
-    // For reprocess, it does nothing since the item is already there, which is fine.
-    // REPROCESS_START has already updated the item's state to 'Submitting'.
     dispatch({ type: 'PREPARE_ANALYSIS', payload: initialResults });
 
     setTimeout(() => document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
