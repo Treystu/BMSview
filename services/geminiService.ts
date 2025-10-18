@@ -75,10 +75,16 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
         log('info', 'Analyze API response received.', { status: response.status });
         if (!response.ok) {
             let errorBody;
-            try { 
-                errorBody = await response.json(); 
-            } catch { 
-                errorBody = await response.text(); 
+            try {
+                // Read as text first, then try to parse as JSON
+                const errorText = await response.text();
+                try {
+                    errorBody = JSON.parse(errorText);
+                } catch {
+                    errorBody = errorText;
+                }
+            } catch {
+                errorBody = 'Failed to read error response';
             }
             const errorMessage = (typeof errorBody === 'object' && errorBody?.error) ? errorBody.error : `Server responded with status ${response.status}: ${errorBody}`;
             throw new Error(errorMessage);

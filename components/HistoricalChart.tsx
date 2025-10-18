@@ -209,6 +209,37 @@ const ChartControls: React.FC<{
             <div className="flex justify-end items-center gap-4 mt-4">
                  {hasChartData && <button onClick={onResetView} className="text-sm text-secondary hover:underline">Reset View</button>}
                  {chartView === 'timeline' && (
+                       <>
+                           {/* Data Averaging Controls */}
+                           <div className="flex items-center gap-3 border-r border-gray-600 pr-4">
+                               <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
+                                   <input 
+                                       type="checkbox" 
+                                       checked={averagingEnabled} 
+                                       onChange={(e) => {
+                                           setAveragingEnabled(e.target.checked);
+                                           if (!e.target.checked) setManualBucketSize(null);
+                                       }}
+                                       className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-secondary focus:ring-secondary"
+                                   />
+                                   <span>Data Averaging</span>
+                               </label>
+                               {averagingEnabled && (
+                                   <select 
+                                       value={manualBucketSize || 'auto'} 
+                                       onChange={(e) => setManualBucketSize(e.target.value === 'auto' ? null : e.target.value)}
+                                       className="bg-gray-700 border border-gray-600 rounded-md px-2 py-1 text-sm text-white focus:ring-secondary focus:border-secondary"
+                                   >
+                                       <option value="auto">Auto (Zoom-based)</option>
+                                       <option value="raw">No Averaging</option>
+                                       <option value="5">5 Minutes</option>
+                                       <option value="15">15 Minutes</option>
+                                       <option value="60">1 Hour</option>
+                                       <option value="240">4 Hours</option>
+                                       <option value="1440">1 Day</option>
+                                   </select>
+                               )}
+                           </div>
                     <div className="relative" ref={metricConfigRef}>
                         <button onClick={() => setIsMetricConfigOpen(o => !o)} className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md transition-colors">Configure Metrics</button>
                         {isMetricConfigOpen && (
@@ -244,6 +275,7 @@ const ChartControls: React.FC<{
                             </div>
                         )}
                     </div>
+                       </>
                  )}
                  <button onClick={onGenerate} disabled={isGenerating || !selectedSystemId} className="bg-secondary hover:bg-primary text-white font-bold py-2 px-6 rounded-md transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed">
                     {isGenerating ? <><SpinnerIcon className="inline w-4 h-4 mr-2"/> Generating...</> : 'Generate Chart'}
@@ -666,18 +698,15 @@ const HourlyAverageChart: React.FC<{
                         <text x={15} y={9} fill="#d1d5db" fontSize="12">Avg. Charge</text>
                         <rect x={100} y={0} width={10} height={10} fill="#3b82f6" />
                         <text x={115} y={9} fill="#d1d5db" fontSize="12">Avg. Discharge</text>
-                    </>
                 ) : (
                     <>
                         <rect x={0} y={0} width={10} height={10} fill={metricInfo.color} />
                         <text x={15} y={9} fill="#d1d5db" fontSize="12">{`Avg. ${metricInfo.label}`}</text>
-                    </>
                 )}
                  {metricKey === 'current' && (
                     <>
                         <line x1={220} y1={5} x2={230} y2={5} stroke="#facc15" strokeWidth="3" />
                         <text x={235} y={9} fill="#d1d5db" fontSize="12">Sunny Day Baseline</text>
-                    </>
                  )}
             </g>
         </svg>
@@ -828,7 +857,6 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
                                 </div>
                             </div>
                         )}
-                    </>
                 )}
             </div>
         </div>

@@ -12,18 +12,39 @@ const respond = (statusCode, body) => ({
 });
 
 // Function to invoke the background processor
-const invokeProcessor = (jobId, log) => {
+const invokeProcessor = async (jobId, log) => {
     const invokeUrl = `${process.env.URL}/.netlify/functions/process-analysis`;
     log('info', 'Invoking background processor.', { jobId, invokeUrl });
     
-    // Fire-and-forget fetch call to the background function
-    fetch(invokeUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-netlify-background': 'true' },
-        body: JSON.stringify({ jobId: jobId }),
-    }).catch(error => {
-        log('error', 'Failed to invoke background processor.', { jobId, errorMessage: error.message });
-    });
+    try {
+        const response = await fetch(invokeUrl, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json', 
+                'x-netlify-background': 'true' 
+            },
+            body: JSON.stringify({ jobId: jobId }),
+        });
+        
+        if (response.status === 202 || response.status === 200) {
+            log('info', 'Background processor invoked successfully.', { 
+                jobId, 
+                status: response.status 
+            });
+        } else {
+            log('error', 'Background processor invocation returned non-success status.', { 
+                jobId, 
+                status: response.status,
+                statusText: response.statusText
+            });
+        }
+    } catch (error) {
+        log('error', 'Failed to invoke background processor.', { 
+            jobId, 
+            errorMessage: error.message,
+            errorStack: error.stack
+        });
+    }
 };
 
 exports.handler = async (event, context) => {
@@ -149,9 +170,13 @@ exports.handler = async (event, context) => {
             });
 
             // *** THE FIX: Immediately trigger the background processor for each new job ***
-            for (const job of jobsToInsert) {
-                invokeProcessor(job.id, log);
-            }
+            // Invoke processors in parallel but wait for all to complete
+            await Promise.all(jobsToInsert.map(job => invokeProcessor(job.id, log)));
+            
+            log('info', 'All background processors invoked.', {
+                ...logContext,
+                jobCount: jobsToInsert.length
+            });
         } else {
             log('info', 'No new jobs to create (all duplicates).', logContext);
         }
