@@ -698,15 +698,18 @@ const HourlyAverageChart: React.FC<{
                         <text x={15} y={9} fill="#d1d5db" fontSize="12">Avg. Charge</text>
                         <rect x={100} y={0} width={10} height={10} fill="#3b82f6" />
                         <text x={115} y={9} fill="#d1d5db" fontSize="12">Avg. Discharge</text>
+                    </>
                 ) : (
                     <>
                         <rect x={0} y={0} width={10} height={10} fill={metricInfo.color} />
                         <text x={15} y={9} fill="#d1d5db" fontSize="12">{`Avg. ${metricInfo.label}`}</text>
+                    </>
                 )}
                  {metricKey === 'current' && (
                     <>
                         <line x1={220} y1={5} x2={230} y2={5} stroke="#facc15" strokeWidth="3" />
                         <text x={235} y={9} fill="#d1d5db" fontSize="12">Sunny Day Baseline</text>
+                    </>
                  )}
             </g>
         </svg>
@@ -857,6 +860,7 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
                                 </div>
                             </div>
                         )}
+                    </>
                 )}
             </div>
         </div>
