@@ -1,5 +1,10 @@
 import type { BmsSystem, AnalysisData, AnalysisRecord, WeatherData } from '../types';
 
+interface PaginatedResponse<T> {
+    items: T[];
+    totalItems: number;
+}
+
 // This key generation logic is now only used on the client-side for finding duplicates
 // among already-fetched data.
 const generateAnalysisKey = (data: AnalysisData): string => {
@@ -65,6 +70,43 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
     }
 };
 
+export const getRegisteredSystems = async (page = 1, limit = 25): Promise<PaginatedResponse<BmsSystem>> => {
+    log('info', 'Fetching paginated registered BMS systems.', { page, limit });
+    return apiFetch<PaginatedResponse<BmsSystem>>(`systems?page=${page}&limit=${limit}`);
+};
+
+export const getAnalysisHistory = async (page = 1, limit = 25): Promise<PaginatedResponse<AnalysisRecord>> => {
+    log('info', 'Fetching paginated analysis history.', { page, limit });
+    return apiFetch<PaginatedResponse<AnalysisRecord>>(`history?page=${page}&limit=${limit}`);
+};
+
+export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => void, onComplete: () => void): Promise<void> => {
+    log('info', 'Starting to stream all history records.');
+    const limit = 200; // Fetch in chunks of 200
+    let page = 1;
+    let hasMore = true;
+
+    while(hasMore) {
+        try {
+            log('debug', 'Fetching history page for streaming.', { page, limit });
+            const response = await getAnalysisHistory(page, limit);
+            if (response.items.length > 0) {
+                onData(response.items);
+            }
+            if (page * limit >= response.totalItems) {
+                hasMore = false;
+            } else {
+                page++;
+            }
+        } catch (error) {
+            log('error', 'Error while streaming history data. Stopping stream.', { error: error instanceof Error ? error.message : String(error) });
+            hasMore = false; // Stop on error
+        }
+    }
+    log('info', 'Finished streaming all history records.');
+    onComplete();
+};
+
 export const streamInsights = async (
   payload: {
     analysisData: AnalysisData;
@@ -124,11 +166,6 @@ export const registerBmsSystem = async (
     });
 };
 
-export const getRegisteredSystems = async (): Promise<BmsSystem[]> => {
-    log('info', 'Fetching all registered BMS systems.');
-    return apiFetch<BmsSystem[]>(`systems`);
-};
-
 export const getSystemById = async (systemId: string): Promise<BmsSystem> => {
     log('info', 'Fetching system by ID.', { systemId });
     return apiFetch<BmsSystem>(`systems?systemId=${systemId}`);
@@ -186,11 +223,6 @@ export const saveAnalysisResult = async (
         method: 'POST',
         body: JSON.stringify(recordToSave),
     });
-};
-
-export const getAnalysisHistory = async (): Promise<AnalysisRecord[]> => {
-    log('info', 'Fetching analysis history.');
-    return apiFetch<AnalysisRecord[]>(`history`);
 };
 
 export const getAnalysisRecordById = async (recordId: string): Promise<AnalysisRecord> => {
@@ -480,3 +512,4 @@ export const deleteIpRecord = async (key: string): Promise<void> => {
         body: JSON.stringify({ action: 'delete-ip', key }),
     });
 };
+
