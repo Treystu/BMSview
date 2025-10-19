@@ -789,13 +789,16 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
             else if (zoomRatio < 50) autoBucketKey = '15';
             else if (zoomRatio < 100) autoBucketKey = '5';
 
-            setTimelineData((prev: any) => ({
-                ...prev,
-                averagingConfig: {
-                    ...prev.averagingConfig,
-                    autoBucketKey: autoBucketKey
-                }
-            }));
+            setTimelineData((prev: any) => {
+                if (!prev) return null; // Guard against race condition
+                return {
+                    ...prev,
+                    averagingConfig: {
+                        ...prev.averagingConfig,
+                        autoBucketKey: autoBucketKey
+                    }
+                };
+            });
         }
     }, [viewBox.width, chartDimensions.chartWidth, timelineData]);
 
