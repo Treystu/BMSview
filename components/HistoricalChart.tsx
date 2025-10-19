@@ -111,7 +111,11 @@ const ChartControls: React.FC<{
     hourlyMetric: MetricKey;
     setHourlyMetric: (metric: MetricKey) => void;
     isGenerating: boolean;
-}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onGenerate, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, isGenerating }) => {
+    averagingEnabled: boolean;
+    setAveragingEnabled: (enabled: boolean) => void;
+    manualBucketSize: string | null;
+    setManualBucketSize: (size: string | null) => void;
+}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onGenerate, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, isGenerating, averagingEnabled, setAveragingEnabled, manualBucketSize, setManualBucketSize }) => {
     const [isMetricConfigOpen, setIsMetricConfigOpen] = useState(false);
     const metricConfigRef = useRef<HTMLDivElement>(null);
 
@@ -305,22 +309,18 @@ const SvgChart: React.FC<{
     }).current;
     
     const {
-        dataLODs, xScale, xMin, xMax
+        dataLODs, xScale, xMin, xMax, averagingConfig
     } = chartData;
     const {
         WIDTH, CHART_HEIGHT, BRUSH_HEIGHT, MARGIN, chartWidth, chartHeight, totalHeight
     } = chartDimensions;
 
     const dataToRender = useMemo(() => {
-        const zoomRatio = chartWidth / viewBox.width;
-        let bucketKey: string = 'raw';
-        if (zoomRatio < 2) bucketKey = '1440';    // < 2x zoom: 1-day buckets
-        else if (zoomRatio < 5) bucketKey = '240';  // < 5x zoom: 4-hour buckets
-        else if (zoomRatio < 15) bucketKey = '60';   // < 15x zoom: 1-hour buckets
-        else if (zoomRatio < 50) bucketKey = '15';   // < 50x zoom: 15-min buckets
-        else if (zoomRatio < 100) bucketKey = '5';    // < 100x zoom: 5-min buckets
+        if (!averagingConfig.enabled) return dataLODs['raw'];
+        const bucketKey = averagingConfig.manualBucketSize ? String(averagingConfig.manualBucketSize) : averagingConfig.autoBucketKey;
+        if (bucketKey === 'raw') return dataLODs['raw'];
         return dataLODs[bucketKey] || dataLODs['raw'];
-    }, [dataLODs, viewBox.width, chartWidth]);
+    }, [dataLODs, averagingConfig]);
 
     const zoomRatio = chartWidth / viewBox.width;
     const showDataPoints = zoomRatio > 100; // Show points when very zoomed in
@@ -672,15 +672,15 @@ const HourlyAverageChart: React.FC<{
 
                     return (
                         <g key={d.hour} transform={`translate(${d.hour * xBandwidth}, 0)`}>
-                            {isBidirectional && 'avgCharge' in metricData && metricData.avgCharge > 0 && (
+                            {isBidirectional && 'avgCharge' in metricData && metricData.avgCharge > 0 ? (
                                 <rect x={xBandwidth/2 - barWidth - 1} y={yScale(metricData.avgCharge)} width={barWidth} height={yScale(0) - yScale(metricData.avgCharge)} fill="#10b981" />
-                            )}
-                            {isBidirectional && 'avgDischarge' in metricData && metricData.avgDischarge < 0 && (
+                            ) : null}
+                            {isBidirectional && 'avgDischarge' in metricData && metricData.avgDischarge < 0 ? (
                                 <rect x={xBandwidth/2 + 1} y={yScale(0)} width={barWidth} height={yScale(metricData.avgDischarge) - yScale(0)} fill="#3b82f6" />
-                            )}
-                            {!isBidirectional && 'avg' in metricData && (
+                            ) : null}
+                            {!isBidirectional && 'avg' in metricData ? (
                                 <rect x={xBandwidth/2 - barWidth/2} y={yScale(metricData.avg)} width={barWidth} height={yScale(yDomainMin > 0 ? yDomainMin : 0) - yScale(metricData.avg)} fill={metricInfo.color} />
-                            )}
+                            ) : null}
                         </g>
                     );
                 })}
@@ -704,13 +704,13 @@ const HourlyAverageChart: React.FC<{
                         <rect x={0} y={0} width={10} height={10} fill={metricInfo.color} />
                         <text x={15} y={9} fill="#d1d5db" fontSize="12">{`Avg. ${metricInfo.label}`}</text>
                     </>
-                )}
-                 {metricKey === 'current' && (
+                 )}
+                 {metricKey === 'current' ? (
                     <>
                         <line x1={220} y1={5} x2={230} y2={5} stroke="#facc15" strokeWidth="3" />
                         <text x={235} y={9} fill="#d1d5db" fontSize="12">Sunny Day Baseline</text>
                     </>
-                 )}
+                 ) : null}
             </g>
         </svg>
     );
@@ -729,6 +729,8 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
     const [hourlyMetric, setHourlyMetric] = useState<MetricKey>('power');
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [averagingEnabled, setAveragingEnabled] = useState(true);
+    const [manualBucketSize, setManualBucketSize] = useState<string | null>(null);
 
     const [zoomPercentage, setZoomPercentage] = useState<number>(100);
 
@@ -755,16 +757,47 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
+    const stableSetViewBox = useCallback(setViewBox, []);
+
     useEffect(() => {
         if (!timelineData) return;
-        const viewCenter = viewBox.x + viewBox.width / 2;
+        
         const newWidth = chartDimensions.chartWidth / (zoomPercentage / 100);
-        let newX = viewCenter - newWidth / 2;
-        if (newWidth >= chartDimensions.chartWidth) { setViewBox({ x: 0, width: chartDimensions.chartWidth }); return; }
-        if (newX < 0) newX = 0;
-        if (newX + newWidth > chartDimensions.chartWidth) newX = chartDimensions.chartWidth - newWidth;
-        setViewBox({ x: newX, width: newWidth });
-    }, [zoomPercentage, timelineData, chartDimensions.chartWidth]); // Removed viewBox from deps to prevent loop
+        
+        stableSetViewBox(currentViewBox => {
+            const viewCenter = currentViewBox.x + currentViewBox.width / 2;
+            let newX = viewCenter - newWidth / 2;
+
+            if (newWidth >= chartDimensions.chartWidth) {
+                return { x: 0, width: chartDimensions.chartWidth };
+            }
+            if (newX < 0) newX = 0;
+            if (newX + newWidth > chartDimensions.chartWidth) newX = chartDimensions.chartWidth - newWidth;
+            
+            return { x: newX, width: newWidth };
+        });
+    }, [zoomPercentage, timelineData, chartDimensions.chartWidth, stableSetViewBox]);
+
+    // This effect updates the auto-bucket key when the zoom/viewBox changes, without re-running the entire data prep.
+    useEffect(() => {
+        if (timelineData) {
+            const zoomRatio = chartDimensions.chartWidth / viewBox.width;
+            let autoBucketKey = 'raw';
+            if (zoomRatio < 2) autoBucketKey = '1440';
+            else if (zoomRatio < 5) autoBucketKey = '240';
+            else if (zoomRatio < 15) autoBucketKey = '60';
+            else if (zoomRatio < 50) autoBucketKey = '15';
+            else if (zoomRatio < 100) autoBucketKey = '5';
+
+            setTimelineData((prev: any) => ({
+                ...prev,
+                averagingConfig: {
+                    ...prev.averagingConfig,
+                    autoBucketKey: autoBucketKey
+                }
+            }));
+        }
+    }, [viewBox.width, chartDimensions.chartWidth, timelineData]);
 
     const prepareChartData = useCallback(async () => {
         if (!selectedSystemId) return;
@@ -805,7 +838,18 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
                 const xMin = new Date(filteredHistory[0].timestamp).getTime(), xMax = new Date(filteredHistory[filteredHistory.length - 1].timestamp).getTime();
                 const xScale = (time: string | number) => ((new Date(time).getTime() - xMin) / (xMax - xMin || 1)) * chartDimensions.chartWidth;
                 xScale.invert = (px: number) => xMin + (px / chartDimensions.chartWidth) * (xMax - xMin || 1);
-                setTimelineData({ dataLODs, xScale, xMin, xMax });
+                
+                setTimelineData({ 
+                    dataLODs, 
+                    xScale, 
+                    xMin, 
+                    xMax,
+                    averagingConfig: {
+                        enabled: averagingEnabled,
+                        manualBucketSize: manualBucketSize,
+                        autoBucketKey: 'raw', // Initial value, will be updated by useEffect
+                    }
+                });
                 setZoomPercentage(100);
                 setViewBox({ x: 0, width: chartDimensions.chartWidth });
             }
@@ -814,7 +858,7 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
         } finally {
             setIsGenerating(false);
         }
-    }, [selectedSystemId, history, systems, startDate, endDate, chartDimensions]);
+    }, [selectedSystemId, history, systems, startDate, endDate, chartDimensions, averagingEnabled, manualBucketSize]);
     
     const handleResetView = () => {
         setZoomPercentage(100);
@@ -834,6 +878,10 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
                 chartView={chartView} setChartView={setChartView} 
                 hourlyMetric={hourlyMetric} setHourlyMetric={setHourlyMetric}
                 isGenerating={isGenerating}
+                averagingEnabled={averagingEnabled}
+                setAveragingEnabled={setAveragingEnabled}
+                manualBucketSize={manualBucketSize}
+                setManualBucketSize={setManualBucketSize}
             />
             <div className="mt-4">
                 {isGenerating && <div className="flex items-center justify-center h-full text-gray-400 min-h-[600px]"><SpinnerIcon className="w-8 h-8 text-secondary"/> <span className="ml-4">Loading Analytics Data...</span></div>}
@@ -868,3 +916,4 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
 };
 
 export default HistoricalChart;
+
