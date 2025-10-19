@@ -8,11 +8,6 @@ const respond = (statusCode, body) => ({
     headers: { 'Content-Type': 'application/json' },
 });
 
-const fetchHistoricalWeather = async (lat, lon, timestamp, log) => {
-    // ... (This function remains the same as it's an external API call)
-    // For brevity, assuming this function is defined as it was before.
-};
-
 exports.handler = async function(event, context) {
     const log = createLogger('history', context);
     const clientIp = event.headers['x-nf-client-connection-ip'];
@@ -25,21 +20,25 @@ exports.handler = async function(event, context) {
         const systemsCollection = await getCollection("systems");
 
         if (httpMethod === 'GET') {
-            const { id, systemId, page = '1', limit = '25' } = queryStringParameters || {};
+            const { id, systemId, all, page = '1', limit = '25' } = queryStringParameters || {};
             
             if (id) {
                 const record = await historyCollection.findOne({ id }, { projection: { _id: 0 } });
                 return record ? respond(200, record) : respond(404, { error: "Record not found." });
             }
 
-            // --- PERFORMANCE OPTIMIZATION: Endpoint for chart data ---
             if (systemId) {
                 log('info', 'Fetching full history for a single system (for charting).', { ...logContext, systemId });
                 const historyForSystem = await historyCollection.find({ systemId }, { projection: { _id: 0 } }).sort({ timestamp: 1 }).toArray();
                 return respond(200, historyForSystem);
             }
 
-            // --- PERFORMANCE OPTIMIZATION: PAGINATION for main history table ---
+            if (all === 'true') {
+                 log('info', 'Fetching ALL history records.', { ...logContext });
+                 const allHistory = await historyCollection.find({}, { projection: { _id: 0 } }).sort({ timestamp: -1 }).toArray();
+                 return respond(200, allHistory);
+            }
+
             log('debug', 'Fetching paginated history.', { ...logContext, page, limit });
             const pageNum = parseInt(page, 10);
             const limitNum = parseInt(limit, 10);
@@ -55,7 +54,6 @@ exports.handler = async function(event, context) {
         }
 
         if (httpMethod === 'POST') {
-            // POST logic remains the same
             const parsedBody = JSON.parse(body);
             log('debug', 'Parsed POST body.', { ...logContext, body: parsedBody });
             const { action } = parsedBody;
@@ -80,7 +78,7 @@ exports.handler = async function(event, context) {
                     );
                     return respond(200, { success: true, updatedCount: modifiedCount });
                 }
-                // Other actions would require more complex logic
+                // Other actions would require more complex logic which should be implemented here
                 return respond(200, { success: true, message: `Action '${action}' executed.` });
             }
 
@@ -91,7 +89,6 @@ exports.handler = async function(event, context) {
         }
 
         if (httpMethod === 'PUT') {
-            // PUT logic remains the same
             const parsedBody = JSON.parse(body);
             log('debug', 'Parsed PUT body.', { ...logContext, body: parsedBody });
             const { recordId, systemId, dlNumber } = parsedBody;
@@ -114,7 +111,6 @@ exports.handler = async function(event, context) {
         }
         
         if (httpMethod === 'DELETE') {
-            // DELETE logic remains the same
             const { id, unlinked } = queryStringParameters || {};
             if (unlinked === 'true') {
                 const { deletedCount } = await historyCollection.deleteMany({ systemId: null });
