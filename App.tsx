@@ -118,7 +118,7 @@ function App() {
               jobIds.forEach(jobId => {
                   dispatch({ type: 'UPDATE_JOB_STATUS', payload: { 
                       jobId, 
-                      status: 'backend_error' 
+                      status: 'failed_backend_error' 
                   }});
               });
           }
