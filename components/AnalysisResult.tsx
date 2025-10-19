@@ -310,8 +310,8 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
     log('info', 'AnalysisResult component rendered/updated.', statusContext);
   }, [fileName, data, error, isDuplicate, recordId]);
   
-  const isPending = !!error && !getIsActualError(result);
-  const isActualError = error && getIsActualError(result);
+  const isActualError = getIsActualError(result);
+  const isPending = !result.data && !isActualError;
 
   // Determine the actual status for display
   const getDisplayStatus = () => {
@@ -617,3 +617,4 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
 };
 
 export default AnalysisResult;
+
