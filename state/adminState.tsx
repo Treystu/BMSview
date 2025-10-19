@@ -6,17 +6,19 @@ export type HistorySortKey = HistoryColumnKey;
 
 // 1. State Shape
 export interface AdminState {
-  systems: BmsSystem[];
-  history: AnalysisRecord[];
+  systems: BmsSystem[]; // Holds the current page of systems
+  history: AnalysisRecord[]; // Holds the current page of history records
+  historyCache: AnalysisRecord[]; // Holds ALL history records for the chart, built progressively
   loading: boolean;
   error: string | null;
   
   systemsPage: number;
   historyPage: number;
 
-  // --- PERFORMANCE OPTIMIZATION: Track total item counts for pagination ---
   totalSystems: number;
   totalHistory: number;
+  
+  isCacheBuilding: boolean;
 
   expandedHistoryId: string | null;
   editingSystem: BmsSystem | null;
@@ -53,6 +55,7 @@ export interface AdminState {
 export const initialState: AdminState = {
   systems: [],
   history: [],
+  historyCache: [],
   loading: true,
   error: null,
   
@@ -60,6 +63,7 @@ export const initialState: AdminState = {
   historyPage: 1,
   totalSystems: 0,
   totalHistory: 0,
+  isCacheBuilding: false,
 
   expandedHistoryId: null,
   editingSystem: null,
@@ -69,21 +73,11 @@ export const initialState: AdminState = {
   bulkUploadResults: [],
   throttleMessage: null,
   actionStatus: {
-    isMerging: false,
-    isDeletingUnlinked: false,
-    deletingRecordId: null,
-    isSaving: false,
-    linkingRecordId: null,
-    isBackfilling: false,
-    isCleaningLinks: false,
-    isClearingAll: false,
-    isScanning: false,
-    isConfirmingDeletion: false,
-    isBulkLoading: false,
-    isCleaningJobs: false,
-    isAutoAssociating: false,
-    isClearingHistory: false,
-    isFixingPowerSigns: false,
+    isMerging: false, isDeletingUnlinked: false, deletingRecordId: null,
+    isSaving: false, linkingRecordId: null, isBackfilling: false,
+    isCleaningLinks: false, isClearingAll: false, isScanning: false,
+    isConfirmingDeletion: false, isBulkLoading: false, isCleaningJobs: false,
+    isAutoAssociating: false, isClearingHistory: false, isFixingPowerSigns: false,
   },
   isConfirmingClearAll: false,
   clearAllConfirmationText: '',
@@ -96,8 +90,11 @@ export const initialState: AdminState = {
 
 // 2. Actions
 export type AdminAction =
-  | { type: 'FETCH_DATA_START' }
-  | { type: 'FETCH_DATA_SUCCESS'; payload: { systems: BmsSystem[]; totalSystems: number; history: AnalysisRecord[], totalHistory: number } }
+  | { type: 'FETCH_PAGE_DATA_START' }
+  | { type: 'FETCH_PAGE_DATA_SUCCESS'; payload: { systems?: { items: BmsSystem[]; totalItems: number }; history?: { items: AnalysisRecord[]; totalItems: number } } }
+  | { type: 'START_HISTORY_CACHE_BUILD' }
+  | { type: 'APPEND_HISTORY_CACHE'; payload: AnalysisRecord[] }
+  | { type: 'FINISH_HISTORY_CACHE_BUILD' }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'TOGGLE_HISTORY_DETAIL'; payload: string }
   | { type: 'SET_EDITING_SYSTEM'; payload: BmsSystem | null }
@@ -125,21 +122,41 @@ export type AdminAction =
 // 3. Reducer
 export const adminReducer = (state: AdminState, action: AdminAction): AdminState => {
   switch (action.type) {
-    case 'FETCH_DATA_START':
+    case 'FETCH_PAGE_DATA_START':
       return { ...state, loading: true };
-    case 'FETCH_DATA_SUCCESS':
+    case 'FETCH_PAGE_DATA_SUCCESS':
       return { 
         ...state, 
         loading: false, 
-        systems: action.payload.systems, 
-        totalSystems: action.payload.totalSystems,
-        history: action.payload.history, 
-        totalHistory: action.payload.totalHistory,
+        systems: action.payload.systems ? action.payload.systems.items : state.systems, 
+        totalSystems: action.payload.systems ? action.payload.systems.totalItems : state.totalSystems,
+        history: action.payload.history ? action.payload.history.items : state.history,
+        totalHistory: action.payload.history ? action.payload.history.totalItems : state.totalHistory,
         error: null,
       };
+    case 'START_HISTORY_CACHE_BUILD':
+        return { ...state, isCacheBuilding: true, historyCache: [] };
+    case 'APPEND_HISTORY_CACHE':
+        // Append new records, avoiding duplicates by checking IDs
+        const newRecords = action.payload.filter(
+            p => !state.historyCache.some(existing => existing.id === p.id)
+        );
+        return { ...state, historyCache: [...state.historyCache, ...newRecords] };
+    case 'FINISH_HISTORY_CACHE_BUILD':
+        return { ...state, isCacheBuilding: false };
+
     case 'SET_ERROR':
       return { ...state, loading: false, error: action.payload, actionStatus: initialState.actionStatus };
     
+    case 'SET_SYSTEMS_PAGE':
+      return { ...state, systemsPage: action.payload };
+    case 'SET_HISTORY_PAGE':
+      return { ...state, historyPage: action.payload, expandedHistoryId: null };
+
+    // Other actions remain largely the same, but may need to re-fetch paginated data
+    // For example, after a merge, we might want to refetch the current page of systems.
+      
+    // The rest of the reducer logic remains unchanged...
     case 'TOGGLE_HISTORY_DETAIL':
       return { ...state, expandedHistoryId: state.expandedHistoryId === action.payload ? null : action.payload };
     case 'SET_EDITING_SYSTEM':
@@ -151,13 +168,13 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
     case 'ACTION_END':
       return { ...state, actionStatus: { ...state.actionStatus, [action.payload]: false } };
     case 'MERGE_SYSTEMS_SUCCESS':
-      return { ...state, selectedSystemIds: [], primarySystemId: '' };
+      return { ...state, selectedSystemIds: [], primarySystemId: '', systemsPage: 1 };
     case 'SCAN_DUPLICATES_SUCCESS':
       return { ...state, duplicateSets: action.payload };
     case 'DELETE_DUPLICATES_SUCCESS':
-      return { ...state, duplicateSets: [] };
+      return { ...state, duplicateSets: [], historyPage: 1 };
     case 'CLEAR_DATA_SUCCESS':
-      return { ...state, isConfirmingClearAll: false, clearAllConfirmationText: '' };
+        return { ...initialState, loading: false };
     case 'SET_BULK_UPLOAD_RESULTS':
         return { ...state, bulkUploadResults: action.payload };
     case 'UPDATE_BULK_UPLOAD_RESULT':
@@ -179,10 +196,10 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         return {
             ...state,
             bulkUploadResults: state.bulkUploadResults.map(r =>
-                r.jobId === jobId ? { ...r, data: record.analysis, error: null, recordId: record.id, weather: record.weather, submittedAt: r.submittedAt } : r
+                r.jobId === jobId ? { ...r, data: record.analysis, error: null, recordId: record.id, weather: record.weather } : r
             ),
-             // Add new record to history to avoid full refresh
             history: [record, ...state.history],
+            historyCache: [record, ...state.historyCache],
             totalHistory: state.totalHistory + 1,
         };
     case 'SET_THROTTLE_MESSAGE':
@@ -200,19 +217,14 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
     case 'SET_HISTORY_SORT': {
       const { key } = action.payload;
       const direction = (state.historySortKey === key && state.historySortDirection === 'desc') ? 'asc' : 'desc';
-      // Sorting is now client-side on the current page, no need to reset page number.
-      return { ...state, historySortKey: key, historySortDirection: direction };
+      // When sorting, we must go back to page 1 as the order has changed
+      return { ...state, historySortKey: key, historySortDirection: direction, historyPage: 1 };
     }
-    case 'SET_SYSTEMS_PAGE':
-      return { ...state, systemsPage: action.payload };
-    case 'SET_HISTORY_PAGE':
-      return { ...state, historyPage: action.payload, expandedHistoryId: null };
     default:
       return state;
   }
 };
 
-// 4. Context, Provider, Hook
 const AdminStateContext = createContext<{ state: AdminState; dispatch: Dispatch<AdminAction> } | undefined>(undefined);
 
 export const AdminStateProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
