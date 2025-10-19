@@ -1,4 +1,3 @@
-
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.js");
 const { createLogger } = require("./utils/logger.js");
@@ -21,15 +20,26 @@ exports.handler = async function(event, context) {
         const historyCollection = await getCollection("history");
 
         if (httpMethod === 'GET') {
-            const { systemId } = queryStringParameters || {};
+            const { systemId, page = '1', limit = '25' } = queryStringParameters || {};
             if (systemId) {
                 log('debug', 'Fetching single system by ID.', { ...logContext, systemId });
                 const system = await systemsCollection.findOne({ id: systemId }, { projection: { _id: 0 } });
                 return system ? respond(200, system) : respond(404, { error: "System not found." });
             }
-            log('debug', 'Fetching all systems.', logContext);
-            const systems = await systemsCollection.find({}, { projection: { _id: 0 } }).toArray();
-            return respond(200, systems);
+            
+            // --- PERFORMANCE OPTIMIZATION: PAGINATION ---
+            log('debug', 'Fetching paginated systems.', { ...logContext, page, limit });
+            const pageNum = parseInt(page, 10);
+            const limitNum = parseInt(limit, 10);
+            const skip = (pageNum - 1) * limitNum;
+
+            const [systems, totalItems] = await Promise.all([
+                systemsCollection.find({}, { projection: { _id: 0 } }).sort({ name: 1 }).skip(skip).limit(limitNum).toArray(),
+                systemsCollection.countDocuments({})
+            ]);
+            
+            log('info', `Returning page ${pageNum} of systems.`, { ...logContext, returned: systems.length, total: totalItems });
+            return respond(200, { items: systems, totalItems });
         }
 
         if (httpMethod === 'POST') {
