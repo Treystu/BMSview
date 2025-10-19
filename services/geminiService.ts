@@ -51,10 +51,12 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
         ));
         
         const controller = new AbortController();
+        // FIX: Increased timeout from 30 seconds to 2 minutes (120,000 ms)
+        // This gives large uploads more time to complete before the client aborts the request.
         const timeoutId = setTimeout(() => {
-            log('warn', 'Analysis request timed out on client after 30 seconds.');
+            log('warn', 'Analysis request timed out on client after 2 minutes.');
             controller.abort();
-        }, 30000);
+        }, 120000);
 
         const dataToSend = {
             images: imagePayloads,
