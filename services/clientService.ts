@@ -4,7 +4,7 @@ interface PaginatedResponse<T> {
     items: T[];
     totalItems: number;
 }
-
+ 
 // This key generation logic is now only used on the client-side for finding duplicates
 // among already-fetched data.
 const generateAnalysisKey = (data: AnalysisData): string => {
