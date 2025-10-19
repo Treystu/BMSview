@@ -27,7 +27,6 @@ exports.handler = async function(event, context) {
                 return system ? respond(200, system) : respond(404, { error: "System not found." });
             }
             
-            // --- PERFORMANCE OPTIMIZATION: PAGINATION ---
             log('debug', 'Fetching paginated systems.', { ...logContext, page, limit });
             const pageNum = parseInt(page, 10);
             const limitNum = parseInt(limit, 10);
