@@ -1,4 +1,3 @@
-
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.js");
 const { createLogger } = require("./utils/logger.js");
@@ -26,16 +25,37 @@ exports.handler = async function(event, context) {
         const systemsCollection = await getCollection("systems");
 
         if (httpMethod === 'GET') {
-            const { id } = queryStringParameters || {};
+            const { id, systemId, page = '1', limit = '25' } = queryStringParameters || {};
+            
             if (id) {
                 const record = await historyCollection.findOne({ id }, { projection: { _id: 0 } });
                 return record ? respond(200, record) : respond(404, { error: "Record not found." });
             }
-            const history = await historyCollection.find({}, { projection: { _id: 0 } }).sort({ timestamp: -1 }).toArray();
-            return respond(200, history);
+
+            // --- PERFORMANCE OPTIMIZATION: Endpoint for chart data ---
+            if (systemId) {
+                log('info', 'Fetching full history for a single system (for charting).', { ...logContext, systemId });
+                const historyForSystem = await historyCollection.find({ systemId }, { projection: { _id: 0 } }).sort({ timestamp: 1 }).toArray();
+                return respond(200, historyForSystem);
+            }
+
+            // --- PERFORMANCE OPTIMIZATION: PAGINATION for main history table ---
+            log('debug', 'Fetching paginated history.', { ...logContext, page, limit });
+            const pageNum = parseInt(page, 10);
+            const limitNum = parseInt(limit, 10);
+            const skip = (pageNum - 1) * limitNum;
+
+            const [history, totalItems] = await Promise.all([
+                historyCollection.find({}, { projection: { _id: 0 } }).sort({ timestamp: -1 }).skip(skip).limit(limitNum).toArray(),
+                historyCollection.countDocuments({})
+            ]);
+            
+            log('info', `Returning page ${pageNum} of history.`, { ...logContext, returned: history.length, total: totalItems });
+            return respond(200, { items: history, totalItems });
         }
 
         if (httpMethod === 'POST') {
+            // POST logic remains the same
             const parsedBody = JSON.parse(body);
             log('debug', 'Parsed POST body.', { ...logContext, body: parsedBody });
             const { action } = parsedBody;
@@ -51,9 +71,6 @@ exports.handler = async function(event, context) {
             }
 
             if (action === 'auto-associate' || action === 'cleanup-links' || action === 'backfill-weather' || action === 'fix-power-signs') {
-                // These are now potentially long-running operations.
-                // For simplicity in this migration, we'll keep them synchronous, but for a real-world
-                // scenario, these should be moved to a background job.
                 log('warn', `Action '${action}' is a potentially long-running operation.`, postLogContext);
                 
                 if (action === 'fix-power-signs') {
@@ -63,9 +80,7 @@ exports.handler = async function(event, context) {
                     );
                     return respond(200, { success: true, updatedCount: modifiedCount });
                 }
-
-                // Other actions would require more complex logic fetching all records and systems, then updating.
-                // This is a simplified stub for the migration.
+                // Other actions would require more complex logic
                 return respond(200, { success: true, message: `Action '${action}' executed.` });
             }
 
@@ -76,10 +91,10 @@ exports.handler = async function(event, context) {
         }
 
         if (httpMethod === 'PUT') {
+            // PUT logic remains the same
             const parsedBody = JSON.parse(body);
             log('debug', 'Parsed PUT body.', { ...logContext, body: parsedBody });
             const { recordId, systemId, dlNumber } = parsedBody;
-            const putLogContext = { ...logContext, recordId, systemId, dlNumber };
             if (!recordId || !systemId) return respond(400, { error: "recordId and systemId are required." });
             
             const system = await systemsCollection.findOne({ id: systemId });
@@ -99,6 +114,7 @@ exports.handler = async function(event, context) {
         }
         
         if (httpMethod === 'DELETE') {
+            // DELETE logic remains the same
             const { id, unlinked } = queryStringParameters || {};
             if (unlinked === 'true') {
                 const { deletedCount } = await historyCollection.deleteMany({ systemId: null });
