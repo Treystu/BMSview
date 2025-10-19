@@ -14,6 +14,10 @@ export interface AdminState {
   systemsPage: number;
   historyPage: number;
 
+  // --- PERFORMANCE OPTIMIZATION: Track total item counts for pagination ---
+  totalSystems: number;
+  totalHistory: number;
+
   expandedHistoryId: string | null;
   editingSystem: BmsSystem | null;
   selectedSystemIds: string[];
@@ -54,6 +58,8 @@ export const initialState: AdminState = {
   
   systemsPage: 1,
   historyPage: 1,
+  totalSystems: 0,
+  totalHistory: 0,
 
   expandedHistoryId: null,
   editingSystem: null,
@@ -91,7 +97,7 @@ export const initialState: AdminState = {
 // 2. Actions
 export type AdminAction =
   | { type: 'FETCH_DATA_START' }
-  | { type: 'FETCH_DATA_SUCCESS'; payload: { systems: BmsSystem[]; history: AnalysisRecord[] } }
+  | { type: 'FETCH_DATA_SUCCESS'; payload: { systems: BmsSystem[]; totalSystems: number; history: AnalysisRecord[], totalHistory: number } }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'TOGGLE_HISTORY_DETAIL'; payload: string }
   | { type: 'SET_EDITING_SYSTEM'; payload: BmsSystem | null }
@@ -126,7 +132,9 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         ...state, 
         loading: false, 
         systems: action.payload.systems, 
+        totalSystems: action.payload.totalSystems,
         history: action.payload.history, 
+        totalHistory: action.payload.totalHistory,
         error: null,
       };
     case 'SET_ERROR':
@@ -151,7 +159,6 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
     case 'CLEAR_DATA_SUCCESS':
       return { ...state, isConfirmingClearAll: false, clearAllConfirmationText: '' };
     case 'SET_BULK_UPLOAD_RESULTS':
-        // This action now replaces the results, ensuring each bulk upload is a fresh start.
         return { ...state, bulkUploadResults: action.payload };
     case 'UPDATE_BULK_UPLOAD_RESULT':
         return { 
@@ -174,6 +181,9 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
             bulkUploadResults: state.bulkUploadResults.map(r =>
                 r.jobId === jobId ? { ...r, data: record.analysis, error: null, recordId: record.id, weather: record.weather, submittedAt: r.submittedAt } : r
             ),
+             // Add new record to history to avoid full refresh
+            history: [record, ...state.history],
+            totalHistory: state.totalHistory + 1,
         };
     case 'SET_THROTTLE_MESSAGE':
         return { ...state, throttleMessage: action.payload };
@@ -190,7 +200,8 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
     case 'SET_HISTORY_SORT': {
       const { key } = action.payload;
       const direction = (state.historySortKey === key && state.historySortDirection === 'desc') ? 'asc' : 'desc';
-      return { ...state, historySortKey: key, historySortDirection: direction, historyPage: 1 };
+      // Sorting is now client-side on the current page, no need to reset page number.
+      return { ...state, historySortKey: key, historySortDirection: direction };
     }
     case 'SET_SYSTEMS_PAGE':
       return { ...state, systemsPage: action.payload };
