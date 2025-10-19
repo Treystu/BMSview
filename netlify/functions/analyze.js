@@ -37,6 +37,8 @@ const invokeProcessor = async (jobId, log) => {
                 status: response.status,
                 statusText: response.statusText
             });
+            // Throw an error to be caught by Promise.allSettled
+            throw new Error(`Invocation failed with status ${response.status}`);
         }
     } catch (error) {
         log('error', 'Failed to invoke background processor.', { 
@@ -44,6 +46,8 @@ const invokeProcessor = async (jobId, log) => {
             errorMessage: error.message,
             errorStack: error.stack
         });
+        // Re-throw the error to be caught by Promise.allSettled
+        throw error;
     }
 };
 
@@ -169,13 +173,23 @@ exports.handler = async (event, context) => {
                 jobIds: jobsToInsert.map(j => j.id)
             });
 
-            // *** THE FIX: Immediately trigger the background processor for each new job ***
-            // Invoke processors in parallel but wait for all to complete
-            await Promise.all(jobsToInsert.map(job => invokeProcessor(job.id, log)));
+            // *** THE FIX: Reliably trigger background processors and await invocation ***
+            const invocationPromises = jobsToInsert.map(job => invokeProcessor(job.id, log));
+            const invocationResults = await Promise.allSettled(invocationPromises);
             
+            const failedInvocations = invocationResults.filter(r => r.status === 'rejected');
+            if (failedInvocations.length > 0) {
+                log('error', `${failedInvocations.length} background processor invocation(s) failed. These jobs will be picked up by the shepherd.`, {
+                    ...logContext,
+                    failedCount: failedInvocations.length,
+                });
+            }
+
             log('info', 'All background processors invoked.', {
                 ...logContext,
-                jobCount: jobsToInsert.length
+                jobCount: jobsToInsert.length,
+                successful: jobsToInsert.length - failedInvocations.length,
+                failed: failedInvocations.length
             });
         } else {
             log('info', 'No new jobs to create (all duplicates).', logContext);
@@ -205,3 +219,4 @@ exports.handler = async (event, context) => {
         return respond(500, { error: "An internal server error occurred." });
     }
 };
+
