@@ -8,6 +8,7 @@ import HistoricalChart from './HistoricalChart';
 import IpManagement from './IpManagement';
 import { useAdminState, HistorySortKey } from '../state/adminState';
 import { getBasename, getIsActualError } from '../utils';
+import SpinnerIcon from './icons/SpinnerIcon';
 
 import AdminHeader from './admin/AdminHeader';
 import SystemsTable from './admin/SystemsTable';
@@ -276,3 +277,4 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 };
 
 export default AdminDashboard;
+
