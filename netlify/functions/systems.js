@@ -97,6 +97,37 @@ exports.handler = async function(event, context) {
             return respond(200, updatedSystem);
         }
 
+        if (httpMethod === 'DELETE') {
+            const { systemId } = queryStringParameters || {};
+            const deleteLogContext = { ...logContext, systemId };
+            
+            if (!systemId) {
+                return respond(400, { error: 'System ID is required for deletion.' });
+            }
+            
+            log('info', 'Attempting to delete system.', deleteLogContext);
+            
+            // Check if system has linked records
+            const linkedCount = await historyCollection.countDocuments({ systemId });
+            
+            if (linkedCount > 0) {
+                log('warn', 'Cannot delete system with linked records.', { ...deleteLogContext, linkedCount });
+                return respond(400, { 
+                    error: `Cannot delete system with ${linkedCount} linked records. Please unlink or delete the records first.` 
+                });
+            }
+            
+            const result = await systemsCollection.deleteOne({ id: systemId });
+            
+            if (result.deletedCount === 0) {
+                log('warn', 'System not found for deletion.', deleteLogContext);
+                return respond(404, { error: 'System not found.' });
+            }
+            
+            log('info', 'System deleted successfully.', deleteLogContext);
+            return respond(200, { success: true, message: 'System deleted successfully.' });
+        }
+
         log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
         return respond(405, { error: 'Method Not Allowed' });
     } catch (error) {
