@@ -50,7 +50,8 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
     if (files.length > 0) {
       log('info', 'Analyze button clicked.', { fileCount: files.length });
       onAnalyze(files);
-      clearFiles();
+      // Don't clear files immediately - let them stay visible during analysis
+      // Files will be cleared when user uploads new files or manually clicks clear
     }
   };
 

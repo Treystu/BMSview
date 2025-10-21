@@ -54,7 +54,8 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onAnalyze, results, isLoading, 
   const handleAnalyzeClick = () => {
     if (files.length > 0) {
       onAnalyze(files);
-      clearFiles();
+      // Don't clear files immediately - let them stay visible during analysis
+      // Files will be cleared when user uploads new files or manually clicks clear
     }
   };
 
