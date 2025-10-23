@@ -42,6 +42,7 @@ export const initialState: AppState = {
 export type AppAction =
   | { type: 'PREPARE_ANALYSIS'; payload: DisplayableAnalysisResult[] }
   | { type: 'START_ANALYSIS_JOBS'; payload: JobCreationResponse[] }
+  | { type: 'SYNC_ANALYSIS_COMPLETE'; payload: { fileName: string; record: AnalysisRecord } }
   | { type: 'UPDATE_JOB_STATUS'; payload: { jobId: string; status: string } }
   | { type: 'UPDATE_JOB_COMPLETED'; payload: { jobId: string; record: AnalysisRecord } }
   | { type: 'ANALYSIS_COMPLETE' }
@@ -103,6 +104,23 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         };
     }
     
+    case 'SYNC_ANALYSIS_COMPLETE': {
+      const { fileName, record } = action.payload;
+      return {
+        ...state,
+        isLoading: false, // Stop loading, as we have a result.
+        analysisResults: state.analysisResults.map(r => 
+          r.fileName === fileName ? {
+            ...r,
+            data: record.analysis,
+            weather: record.weather,
+            recordId: record.id,
+            error: null, // Clear 'submitting' status
+          } : r
+        ),
+      };
+    }
+
     case 'UPDATE_JOB_STATUS':
       return {
         ...state,

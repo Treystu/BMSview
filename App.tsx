@@ -5,38 +5,24 @@ import UploadSection from './components/UploadSection';
 import AnalysisResult from './components/AnalysisResult';
 import RegisterBms from './components/RegisterBms';
 import { analyzeBmsScreenshots } from './services/geminiService';
-import { registerBmsSystem, getRegisteredSystems, getAnalysisHistory, linkAnalysisToSystem, associateDlToSystem, getJobStatuses, getAnalysisRecordById } from './services/clientService';
-import type { BmsSystem, DisplayableAnalysisResult } from './types';
+import { registerBmsSystem, getRegisteredSystems, getAnalysisHistory, linkAnalysisToSystem, associateDlToSystem } from './services/clientService';
+import type { BmsSystem, DisplayableAnalysisResult, AnalysisRecord } from './types';
 import { useAppState } from './state/appState';
 import { getIsActualError } from './utils';
+import { useJobPolling } from './hooks/useJobPolling';
 
-// Centralized client-side logger for consistency and verbosity
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
-    console.log(JSON.stringify({
-        level: level.toUpperCase(),
-        timestamp: new Date().toISOString(),
-        message,
-        context
-    }));
+    console.log(JSON.stringify({ level: level.toUpperCase(), timestamp: new Date().toISOString(), message, context }));
 };
 
-const POLLING_INTERVAL_MS = 5000;
-const CLIENT_JOB_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
-
-import { useJobPolling } from './hooks/useJobPolling';
+// Type guard to check if the response is a full AnalysisRecord
+const isAnalysisRecord = (response: any): response is AnalysisRecord => {
+    return response && typeof response === 'object' && 'analysisKey' in response && 'fileName' in response;
+};
 
 function App() {
   const { state, dispatch } = useAppState();
-  const {
-    analysisResults,
-    isLoading,
-    error,
-    isRegistering,
-    registrationError,
-    registrationSuccess,
-    isRegisterModalOpen,
-    registrationContext,
-  } = state;
+  const { analysisResults, isLoading, error, isRegistering, registrationError, registrationSuccess, isRegisterModalOpen, registrationContext } = state;
   
   const jobIds = React.useMemo(() => 
     state.analysisResults
@@ -57,86 +43,77 @@ function App() {
     dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId, status: error } });
   }, [dispatch]);
 
-  const handlePollingError = useCallback((error: string) => {
-    log('error', 'Polling error', { error });
-  }, []);
-
   useJobPolling({
     jobIds,
     onJobCompleted: handleJobCompleted,
     onJobStatusUpdate: handleJobStatusUpdate,
     onJobFailed: handleJobFailed,
-    onPollingError: handlePollingError,
     interval: jobIds.length === 1 ? 2000 : 5000,
   });
-  
-  const pollingIntervalRef = useRef<number | null>(null);
 
   const fetchAppData = useCallback(async () => {
-    log('info', 'Fetching initial application data (systems and history).');
+    log('info', 'Fetching initial application data.');
     try {
-      const [systems, history] = await Promise.all([
-        getRegisteredSystems(),
-        getAnalysisHistory()
-      ]);
+      const [systems, history] = await Promise.all([getRegisteredSystems(), getAnalysisHistory()]);
       dispatch({ type: 'FETCH_DATA_SUCCESS', payload: { systems, history } });
-      log('info', 'Successfully fetched application data.', { systemCount: systems.items.length, historyCount: history.items.length });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
-      log('error', "Failed to fetch app data.", { error: errorMessage });
-      dispatch({ type: 'SET_ERROR', payload: "Could not load initial application data. Please refresh the page." });
+      dispatch({ type: 'SET_ERROR', payload: "Could not load initial application data." });
     }
   }, [dispatch]);
 
   useEffect(() => {
     fetchAppData();
   }, [fetchAppData]);
-  
-
-
-
 
   const handleLinkRecordToSystem = async (recordId: string, systemId: string, dlNumber?: string | null) => {
-    if (!recordId || !systemId) return;
-    log('info', 'Attempting to link record to system from UI.', { recordId, systemId, dlNumber });
+    log('info', 'Linking record to system.', { recordId, systemId });
     try {
         await linkAnalysisToSystem(recordId, systemId, dlNumber);
-        log('info', 'Link successful. Refreshing app data.');
         await fetchAppData(); 
         dispatch({ type: 'UPDATE_RESULTS_AFTER_LINK' });
     } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "Unknown error";
-        log('error', "Failed to link record to system", { recordId, systemId, error: errorMessage });
-        dispatch({ type: 'SET_ERROR', payload: "Failed to link the record. Please try again." });
+        dispatch({ type: 'SET_ERROR', payload: "Failed to link the record." });
     }
   };
 
   const handleAnalyze = async (files: File[], options?: { forceFileName?: string }) => {
-    log('info', 'Analysis process initiated from UI.', { fileCount: files.length, forceFileName: options?.forceFileName });
+    log('info', 'Analysis process initiated.', { fileCount: files.length, forceFileName: options?.forceFileName });
     
     const initialResults: DisplayableAnalysisResult[] = files.map(f => ({ 
-        fileName: f.name, 
-        data: null, 
-        error: 'Submitted', 
-        file: f,
-        submittedAt: Date.now()
+        fileName: f.name, data: null, error: 'Submitted', file: f, submittedAt: Date.now()
     }));
     
     dispatch({ type: 'PREPARE_ANALYSIS', payload: initialResults });
-
     setTimeout(() => document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
 
     if (files.length === 0) {
-      log('info', 'No new files to analyze, aborting.', { initialFileCount: files.length });
       dispatch({ type: 'ANALYSIS_COMPLETE' });
       return;
     }
 
     try {
         const forceReprocessFileNames = options?.forceFileName ? [options.forceFileName] : [];
-        const jobCreationResults = await analyzeBmsScreenshots(files, state.registeredSystems, forceReprocessFileNames);
-        log('info', 'Received job creation results from service.', { results: jobCreationResults });
-        dispatch({ type: 'START_ANALYSIS_JOBS', payload: jobCreationResults });
+        const results = await analyzeBmsScreenshots(files, state.registeredSystems, forceReprocessFileNames);
+        log('info', 'Received analysis results from service.', { resultCount: results.length });
+
+        const asyncJobs = [];
+        for (const result of results) {
+            if (isAnalysisRecord(result)) {
+                // Handle synchronous result directly
+                log('info', 'Processing synchronous analysis result.', { fileName: result.fileName });
+                dispatch({ type: 'SYNC_ANALYSIS_COMPLETE', payload: { fileName: result.fileName, record: result } });
+            } else {
+                // Collect async jobs to be processed together
+                asyncJobs.push(result);
+            }
+        }
+
+        if (asyncJobs.length > 0) {
+            log('info', 'Starting asynchronous analysis jobs.', { jobCount: asyncJobs.length });
+            dispatch({ type: 'START_ANALYSIS_JOBS', payload: asyncJobs });
+        }
+
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during analysis.';
         log('error', 'Analysis request failed.', { error: errorMessage });
@@ -145,37 +122,31 @@ function App() {
   };
   
   const handleReprocess = async (fileToReprocess: File) => {
-    log('info', 'Reprocess initiated from UI.', { fileName: fileToReprocess.name });
+    log('info', 'Reprocess initiated.', { fileName: fileToReprocess.name });
     dispatch({ type: 'REPROCESS_START', payload: { fileName: fileToReprocess.name }});
     await handleAnalyze([fileToReprocess], { forceFileName: fileToReprocess.name });
   };
 
   const handleRegisterSystem = async (systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>) => {
-    log('info', 'Registering new system.', { name: systemData.name, context: registrationContext });
     dispatch({ type: 'REGISTER_SYSTEM_START' });
     try {
       const newSystem = await registerBmsSystem(systemData);
       if (registrationContext?.dlNumber) {
-        log('info', 'Associating DL number to new system.', { dlNumber: registrationContext.dlNumber, newSystemId: newSystem.id });
         await associateDlToSystem(registrationContext.dlNumber, newSystem.id);
       }
-      log('info', 'System registration successful.', { newSystem });
       dispatch({ type: 'REGISTER_SYSTEM_SUCCESS', payload: `System "${newSystem.name}" registered!` });
       await fetchAppData();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Unknown registration error";
-      log('error', 'System registration failed.', { error: errorMessage });
       dispatch({ type: 'REGISTER_SYSTEM_ERROR', payload: errorMessage });
     }
   };
 
   const handleInitiateRegistration = (dlNumber: string) => {
-    log('info', 'User initiated new system registration from analysis result.', { dlNumber });
     dispatch({ type: 'OPEN_REGISTER_MODAL', payload: { dlNumber } });
   };
 
   const handleCloseRegisterModal = () => {
-    log('info', 'Closing registration modal.');
     dispatch({ type: 'CLOSE_REGISTER_MODAL' });
   };
 
@@ -184,7 +155,7 @@ function App() {
       <Header />
       <main className="flex-grow">
         <UploadSection 
-          onAnalyze={(files) => handleAnalyze(files)} 
+          onAnalyze={handleAnalyze} 
           isLoading={isLoading} 
           error={error}
           hasResults={analysisResults.length > 0}

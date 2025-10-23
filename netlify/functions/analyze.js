@@ -2,28 +2,7 @@ const { getCollection } = require('./utils/mongodb.js');
 const { createLogger, createTimer } = require("./utils/logger.js");
 const { v4: uuidv4 } = require("uuid");
 const { checkSecurity, HttpError } = require('./security.js');
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-const getBasename = (path) => path ? path.split(/[/\\]/).pop() || '' : '';
-
-
-
-
-
-;
+const { performAnalysisPipeline } = require('./utils/analysis-pipeline.js');
 
 const respond = (statusCode, body) => ({
     statusCode,
@@ -47,17 +26,13 @@ const invokeProcessor = async (jobId, log) => {
         });
         
         if (response.status === 202 || response.status === 200) {
-            log('info', 'Background processor invoked successfully.', { 
-                jobId, 
-                status: response.status 
-            });
+            log('info', 'Background processor invoked successfully.', { jobId, status: response.status });
         } else {
             log('error', 'Background processor invocation returned non-success status.', { 
                 jobId, 
                 status: response.status,
                 statusText: response.statusText
             });
-            // Throw an error to be caught by Promise.allSettled
             throw new Error(`Invocation failed with status ${response.status}`);
         }
     } catch (error) {
@@ -66,21 +41,89 @@ const invokeProcessor = async (jobId, log) => {
             errorMessage: error.message,
             errorStack: error.stack
         });
-        // Re-throw the error to be caught by Promise.allSettled
         throw error;
     }
 };
 
+const handleAsyncAnalysis = async (images, systems, log, context) => {
+    const timer = createTimer(log, 'async-analysis-handler');
+    const logContext = { clientIp: context.clientIp, httpMethod: context.httpMethod };
+
+    const historyCollection = await getCollection("history");
+    const jobsCollection = await getCollection("jobs");
+
+    const jobCreationResponses = [];
+    const jobsToInsert = [];
+    const batchFileNames = new Set();
+
+    const fileNamesToCheck = images.map(img => img.fileName);
+    const existingRecords = await historyCollection.find({ fileName: { $in: fileNamesToCheck } }).toArray();
+    const existingRecordMap = new Map(existingRecords.map(r => [r.fileName, r]));
+
+    for (const image of images) {
+        const imageLogContext = { ...logContext, fileName: image.fileName };
+
+        if (batchFileNames.has(image.fileName)) {
+            jobCreationResponses.push({ fileName: image.fileName, status: 'duplicate_batch' });
+            continue;
+        }
+        batchFileNames.add(image.fileName);
+
+        const existingRecord = existingRecordMap.get(image.fileName);
+        if (existingRecord && !image.force) {
+            jobCreationResponses.push({
+                fileName: image.fileName,
+                status: 'duplicate_history',
+                duplicateRecordId: existingRecord.id,
+            });
+            continue;
+        }
+
+        const newJobId = uuidv4();
+        jobsToInsert.push({
+            _id: newJobId,
+            id: newJobId,
+            fileName: image.fileName,
+            status: "Queued",
+            image: image.image,
+            mimeType: image.mimeType,
+            systems,
+            createdAt: new Date(),
+            retryCount: 0,
+        });
+        jobCreationResponses.push({
+            fileName: image.fileName,
+            jobId: newJobId,
+            status: 'Submitted',
+        });
+    }
+
+    if (jobsToInsert.length > 0) {
+        await jobsCollection.insertMany(jobsToInsert);
+        log('info', `Successfully created ${jobsToInsert.length} new analysis jobs.`, { ...logContext, jobIds: jobsToInsert.map(j => j.id) });
+
+        const invocationPromises = jobsToInsert.map(job => invokeProcessor(job.id, log));
+        await Promise.allSettled(invocationPromises);
+    }
+
+    const responseCounts = jobCreationResponses.reduce((acc, j) => {
+        if (j.status === 'Submitted') acc.queued++;
+        else if (j.status.startsWith('duplicate')) acc.duplicates++;
+        return acc;
+    }, { queued: 0, duplicates: 0 });
+
+    timer.end({ ...responseCounts, totalProcessed: images.length });
+    return respond(200, jobCreationResponses);
+};
+
 exports.handler = async (event, context) => {
     const log = createLogger('analyze', context);
-    log('info', 'analyze.js handler function invoked - v2');
+    log('info', 'analyze.js handler function invoked');
     const timer = createTimer(log, 'analyze-handler');
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod } = event;
     const logContext = { clientIp, httpMethod };
 
-    log('debug', 'Function invoked.', { ...logContext, path: event.path, method: httpMethod });
-    
     try {
         if (httpMethod !== 'POST') {
             return respond(405, { error: 'Method Not Allowed' });
@@ -91,141 +134,28 @@ exports.handler = async (event, context) => {
         const body = JSON.parse(event.body);
         const { images, systems } = body;
         
-        log('debug', 'Request body parsed.', { 
-            ...logContext, 
-            imageCount: images?.length, 
-            hasSystems: !!systems,
-            systemCount: systems?.length || 0,
-            bodySize: event.body?.length || 0
-        });
-
         if (!Array.isArray(images) || images.length === 0) {
-            log('warn', 'Request rejected: No images provided.', logContext);
             return respond(400, { error: "No images provided for analysis." });
         }
-        
-        log('info', 'Starting batch analysis.', { 
-            ...logContext, 
-            imageCount: images.length,
-            systemCount: systems?.length || 0
-        });
-        
-        const dbTimer = createTimer(log, 'database-operations');
-        const historyCollection = await getCollection("history");
-        const jobsCollection = await getCollection("jobs");
-        log('debug', 'Database collections retrieved.', logContext);
-        
-        const jobCreationResponses = [];
-        const batchFileNames = new Set();
-        const jobsToInsert = [];
 
-        const BATCH_SIZE = 100;
-        const imageBatches = [];
-        for (let i = 0; i < images.length; i += BATCH_SIZE) {
-            imageBatches.push(images.slice(i, i + BATCH_SIZE));
-        }
+        const isSync = event.queryStringParameters?.sync === 'true';
 
-        for (const batch of imageBatches) {
-            const fileNamesToCheck = batch.map(img => img.fileName);
-
-            const existingRecords = await historyCollection.find({ fileName: { $in: fileNamesToCheck } }).toArray();
-            const existingRecordMap = new Map(existingRecords.map(r => [r.fileName, r]));
-            log('info', 'Duplicate check data', { fileNamesToCheck, existingRecordMap: Array.from(existingRecordMap.entries()) });
-
-            for (const [index, image] of batch.entries()) {
-                const imageLogContext = { ...logContext, fileName: image.fileName, imageIndex: index };
-
-                if (batchFileNames.has(image.fileName)) {
-                    log('debug', 'Duplicate in current batch detected.', imageLogContext);
-                    jobCreationResponses.push({ fileName: image.fileName, status: 'duplicate_batch' });
-                    continue;
-                }
-                batchFileNames.add(image.fileName);
-
-                const existingRecord = existingRecordMap.get(image.fileName);
-                if (existingRecord && !image.force) {
-                    log('debug', 'Duplicate in history detected.', {
-                        ...imageLogContext,
-                        existingRecordId: existingRecord.id,
-                        force: image.force
-                    });
-                    jobCreationResponses.push({
-                        fileName: image.fileName,
-                        status: 'duplicate_history',
-                        duplicateRecordId: existingRecord.id,
-                    });
-                    continue;
-                }
-
-                log('debug', 'Creating new job for image.', imageLogContext);
-
-                const newJobId = uuidv4();
-                jobsToInsert.push({
-                    _id: newJobId,
-                    id: newJobId,
-                    fileName: image.fileName,
-                    status: "Queued",
-                    image: image.image,
-                    mimeType: image.mimeType,
-                    systems,
-                    createdAt: new Date(),
-                    retryCount: 0,
-                });
-                jobCreationResponses.push({
-                    fileName: image.fileName,
-                    jobId: newJobId,
-                    status: 'Submitted',
-                });
+        if (isSync) {
+            log('info', 'Starting synchronous analysis.', logContext);
+            if (images.length > 1) {
+                return respond(400, { error: "Synchronous analysis only supports one image at a time." });
             }
-        }
-
-        dbTimer.end();        
-        if (jobsToInsert.length > 0) {
-            const insertTimer = createTimer(log, 'insert-jobs');
-            await jobsCollection.insertMany(jobsToInsert);
-            insertTimer.end({ jobCount: jobsToInsert.length });
-            log('info', `Successfully created ${jobsToInsert.length} new analysis jobs.`, { 
-                ...logContext,
-                jobIds: jobsToInsert.map(j => j.id)
-            });
-
-            // *** THE FIX: Reliably trigger background processors and await invocation ***
-            const invocationPromises = jobsToInsert.map(job => invokeProcessor(job.id, log));
-            const invocationResults = await Promise.allSettled(invocationPromises);
-            
-            const failedInvocations = invocationResults.filter(r => r.status === 'rejected');
-            if (failedInvocations.length > 0) {
-                log('error', `${failedInvocations.length} background processor invocation(s) failed. These jobs will be picked up by the shepherd.`, {
-                    ...logContext,
-                    failedCount: failedInvocations.length,
-                });
-            }
-
-            log('info', 'All background processors invoked.', {
-                ...logContext,
-                jobCount: jobsToInsert.length,
-                successful: jobsToInsert.length - failedInvocations.length,
-                failed: failedInvocations.length
-            });
+            const image = images[0];
+            const analysisRecord = await performAnalysisPipeline(image, systems, log, context);
+            log('info', 'Synchronous analysis complete.', { ...logContext, recordId: analysisRecord.id });
+            timer.end();
+            // The pipeline returns the full record, which we send back directly.
+            // The client expects an array, so we wrap it.
+            return respond(200, [analysisRecord]);
         } else {
-            log('info', 'No new jobs to create (all duplicates).', logContext);
+            log('info', 'Starting asynchronous analysis.', { ...logContext, imageCount: images.length });
+            return await handleAsyncAnalysis(images, systems, log, { clientIp, httpMethod });
         }
-        
-        const responseCounts = jobCreationResponses.reduce((acc, j) => {
-            if (j.status === 'Submitted') acc.queued++;
-            else if (j.status.startsWith('duplicate')) acc.duplicates++;
-            return acc;
-        }, { queued: 0, duplicates: 0 });
-        
-        const totalDuration = timer.end({ ...responseCounts, totalProcessed: images.length });
-        log('info', `Analysis submission processing complete.`, { 
-            ...logContext, 
-            ...responseCounts, 
-            totalProcessed: images.length,
-            totalDurationMs: totalDuration
-        });
-        
-        return respond(200, jobCreationResponses);
 
     } catch (error) {
         log('error', "Critical error in analyze dispatcher.", { ...logContext, errorMessage: error.message, stack: error.stack });
