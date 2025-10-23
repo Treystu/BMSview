@@ -46,7 +46,7 @@ exports.handler = async function(event, context) {
         // --- Refactored Hourly Averages Calculation ---
         const metricsToAverage = [
             'current', 'power', 'stateOfCharge', 'temperature', 
-            'mosTemperature', 'cellVoltageDifference', 'overallVoltage'
+            'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds'
         ];
 
         const hourlyStats = Array.from({ length: 24 }, (_, i) => {
@@ -64,10 +64,16 @@ exports.handler = async function(event, context) {
         systemHistory.forEach(record => {
             try {
                 const hour = new Date(record.timestamp).getUTCHours();
-                const { analysis } = record;
+                const { analysis, weather } = record;
 
                 metricsToAverage.forEach(metric => {
-                    const value = analysis[metric];
+                    let value;
+                    if (metric === 'clouds') {
+                        value = weather?.clouds;
+                    } else {
+                        value = analysis[metric];
+                    }
+                    
                     if (value == null) return;
 
                     if (metric === 'current' || metric === 'power') {

@@ -345,32 +345,31 @@ const performPostAnalysis = (analysis, system, log) => {
     return analysis;
 };
 
-const fetchWeatherData = async (latitude, longitude, timestamp, log) => {
-    const logContext = { latitude, longitude, timestamp };
+const callWeatherFunction = async (lat, lon, timestamp, log) => {
+    const weatherUrl = `${process.env.URL}/.netlify/functions/weather`;
+    const logContext = { lat, lon, timestamp, weatherUrl };
+    log('debug', 'Calling weather function.', logContext);
     try {
-        log('debug', 'Fetching weather data from Open-Meteo API.', logContext);
-        const date = new Date(timestamp).toISOString().split('T')[0];
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&start_date=${date}&end_date=${date}`;
-        
-        const response = await fetch(url);
+        const response = await fetch(weatherUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lon, timestamp }),
+        });
         if (!response.ok) {
-            log('warn', 'Weather API returned non-OK status.', { ...logContext, status: response.status });
+            const errorBody = await response.text();
+            log('warn', 'Weather function call failed.', { ...logContext, status: response.status, errorBody });
             return null;
         }
-        
         const data = await response.json();
-        log('debug', 'Weather data fetched successfully.', logContext);
-        
-        return {
-            temperature_max: data.daily?.temperature_2m_max?.[0] || null,
-            temperature_min: data.daily?.temperature_2m_min?.[0] || null,
-            precipitation: data.daily?.precipitation_sum?.[0] || null,
-        };
-    } catch (e) {
-        log('error', 'Error fetching weather.', { ...logContext, errorMessage: e.message });
+        log('debug', 'Weather function call successful.', logContext);
+        return data;
+    } catch (error) {
+        log('error', 'Error calling weather function.', { ...logContext, errorMessage: error.message });
+        return null;
     }
-    return null;
 };
+
+
 
 const parseTimestamp = (timestampFromImage, fileName, log) => {
     log('debug', 'Parsing timestamp.', { timestampFromImage, fileName });
@@ -531,7 +530,7 @@ exports.handler = async function(event, context) {
             logContext.stage = 'weather_fetch';
             log('info', 'Fetching weather data for matched system.', { ...logContext, systemId: matchingSystem.id });
             await updateJobStatus(jobId, 'Fetching weather', log, jobsCollection, {});
-            weather = await fetchWeatherData(matchingSystem.latitude, matchingSystem.longitude, timestamp, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
+            weather = await callWeatherFunction(matchingSystem.latitude, matchingSystem.longitude, timestamp, (level, msg, extra) => log(level, msg, { ...logContext, ...extra }));
         } else {
              log('info', 'Skipping weather fetch: system has no location data.', { ...logContext, stage: 'weather_fetch' });
         }

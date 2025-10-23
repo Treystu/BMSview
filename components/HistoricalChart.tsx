@@ -30,7 +30,7 @@ const METRICS: Record<MetricKey, {
   soh: { label: 'SOH', unit: '%', color: '#ec4899', source: 'analysis', group: 'Health', anomaly: (val) => val < 80 ? { type: 'critical', message: `CRITICAL: State of Health is low (${val.toFixed(1)}%)` } : null },
 };
 
-const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage'];
+const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds'];
 
 
 const METRIC_GROUPS = Object.entries(METRICS).reduce((acc, [key, metric]) => {

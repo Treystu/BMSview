@@ -195,7 +195,7 @@ exports.handler = async function(event, context) {
 
             if (action === 'count-records-needing-weather') {
                 log('info', 'Counting records needing weather backfill.', postLogContext);
-                const count = await historyCollection.countDocuments({ weather: null, systemId: { $ne: null } });
+                const count = await historyCollection.countDocuments({ systemId: { $ne: null }, $or: [{ weather: null }, { 'weather.clouds': { $exists: false } }] });
                 return respond(200, { count });
             }
 
@@ -205,7 +205,7 @@ exports.handler = async function(event, context) {
                 const systemsWithLocation = await systemsCollection.find({ latitude: { $ne: null }, longitude: { $ne: null } }).toArray();
                 const systemLocationMap = new Map(systemsWithLocation.map(s => [s.id, { lat: s.latitude, lon: s.longitude }]));
 
-                const recordsNeedingWeatherCursor = historyCollection.find({ weather: null, systemId: { $ne: null } });
+                const recordsNeedingWeatherCursor = historyCollection.find({ systemId: { $ne: null }, $or: [{ weather: null }, { 'weather.clouds': { $exists: false } }] });
                 let updatedCount = 0;
                 const bulkOps = [];
                 const BATCH_SIZE = 50; // Smaller batch for external API calls

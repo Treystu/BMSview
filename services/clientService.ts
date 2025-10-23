@@ -517,3 +517,11 @@ export const deleteIpRecord = async (key: string): Promise<void> => {
     });
 };
 
+export const getHourlyWeather = async (lat: number, lon: number, date: string): Promise<any[]> => {
+    log('info', 'Fetching hourly weather data.', { lat, lon, date });
+    return apiFetch<any[]>('weather', {
+        method: 'POST',
+        body: JSON.stringify({ lat, lon, timestamp: date, type: 'hourly' }),
+    });
+};
+

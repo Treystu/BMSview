@@ -63,9 +63,10 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
             systems: registeredSystems,
         };
         
-        log('info', 'Submitting analysis request to /.netlify/functions/analyze.', { ...analysisContext, payloadSize: JSON.stringify(dataToSend).length });
+        const endpoint = files.length === 1 ? 'analyze?sync=true' : 'analyze';
+        log('info', `Submitting analysis request to /.netlify/functions/${endpoint}.`, { ...analysisContext, payloadSize: JSON.stringify(dataToSend).length });
 
-        const response = await fetch('/.netlify/functions/analyze', {
+        const response = await fetch(`/.netlify/functions/${endpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(dataToSend),

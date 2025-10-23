@@ -126,28 +126,38 @@ function App() {
 
   useEffect(() => {
     const pendingJobs = analysisResults.some(r => r.jobId && !r.data && !getIsActualError(r));
-    
+
+    const poll = () => {
+      pollJobStatuses().finally(() => {
+        if (pollingIntervalRef.current) { // If polling hasn't been cancelled
+          pollingIntervalRef.current = window.setTimeout(poll, POLLING_INTERVAL_MS);
+        }
+      });
+    };
+
     if (pendingJobs) {
       if (!pollingIntervalRef.current) {
         log('info', 'Pending jobs found. Starting status poller.');
-        pollingIntervalRef.current = window.setInterval(pollJobStatuses, POLLING_INTERVAL_MS);
+        // Use setTimeout to avoid overlapping polls. Start immediately.
+        pollingIntervalRef.current = window.setTimeout(poll, 1);
       }
     } else {
       if (pollingIntervalRef.current) {
         log('info', 'No pending jobs. Stopping poller.');
-        clearInterval(pollingIntervalRef.current);
+        clearTimeout(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
+        dispatch({ type: 'ANALYSIS_COMPLETE' });
       }
     }
-    
+
     return () => {
         if (pollingIntervalRef.current) {
             log('info', 'Component unmounting or dependencies changed. Clearing poller timeout.');
-            clearInterval(pollingIntervalRef.current);
+            clearTimeout(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
         }
     };
-}, [analysisResults, pollJobStatuses]);
+}, [analysisResults, pollJobStatuses, dispatch]);
 
   const handleLinkRecordToSystem = async (recordId: string, systemId: string, dlNumber?: string | null) => {
     if (!recordId || !systemId) return;
@@ -187,9 +197,19 @@ function App() {
 
     try {
         const forceReprocessFileNames = options?.forceFileName ? [options.forceFileName] : [];
-        const jobCreationResults = await analyzeBmsScreenshots(files, state.registeredSystems, forceReprocessFileNames);
-        log('info', 'Received job creation results from service.', { results: jobCreationResults });
-        dispatch({ type: 'START_ANALYSIS_JOBS', payload: jobCreationResults });
+        const results: any = await analyzeBmsScreenshots(files, state.registeredSystems, forceReprocessFileNames);
+        log('info', 'Received job creation results from service.', { results });
+
+        if (Array.isArray(results)) {
+            dispatch({ type: 'START_ANALYSIS_JOBS', payload: results });
+        } else if (results.status === 'completed' && results.record) {
+            dispatch({ type: 'ADD_SYNC_ANALYSIS_RESULT', payload: { record: results.record, fileName: files[0].name } });
+        } else if (results.status === 'duplicate_history' && results.duplicateRecordId) {
+            const record = await getAnalysisRecordById(results.duplicateRecordId);
+            if (record) {
+                dispatch({ type: 'ADD_SYNC_ANALYSIS_RESULT', payload: { record, fileName: files[0].name } });
+            }
+        }
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during analysis.';
         log('error', 'Analysis request failed.', { error: errorMessage });

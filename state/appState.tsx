@@ -55,7 +55,8 @@ export type AppAction =
   | { type: 'UPDATE_RESULTS_AFTER_LINK' }
   | { type: 'REPROCESS_START'; payload: { fileName: string } }
   | { type: 'ASSIGN_SYSTEM_TO_ANALYSIS'; payload: { fileName: string; systemId: string } }
-  | { type: 'JOB_TIMED_OUT'; payload: { jobId: string } };
+  | { type: 'JOB_TIMED_OUT'; payload: { jobId: string } }
+  | { type: 'ADD_SYNC_ANALYSIS_RESULT'; payload: { record: AnalysisRecord, fileName: string } };
 
 // 3. Reducer
 const appReducer = (state: AppState, action: AppAction): AppState => {
@@ -73,7 +74,6 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
 
         return {
             ...state,
-            isLoading: false, // Stop global loading, individual items show progress.
             analysisResults: state.analysisResults.map(r => {
                 const job = jobsMap.get(r.fileName);
                 if (!job) return r; // Not part of this job submission batch
@@ -134,6 +134,21 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
                 r.jobId === action.payload.jobId ? { ...r, error: 'failed_client_timeout', jobId: undefined } : r
             ),
         };
+
+    case 'ADD_SYNC_ANALYSIS_RESULT':
+      return {
+        ...state,
+        isLoading: false,
+        analysisResults: state.analysisResults.map(r => 
+          r.fileName === action.payload.fileName ? {
+            ...r,
+            data: action.payload.record.analysis,
+            weather: action.payload.record.weather,
+            recordId: action.payload.record.id,
+            error: 'completed'
+          } : r
+        ),
+      };
 
     case 'ANALYSIS_COMPLETE':
       return { ...state, isLoading: false };

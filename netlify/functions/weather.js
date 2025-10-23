@@ -42,13 +42,25 @@ exports.handler = async function(event, context) {
   try {
     const parsedBody = JSON.parse(body);
     log('debug', 'Parsed POST body.', { ...logContext, body: parsedBody });
-    const { lat, lon, timestamp } = parsedBody;
-    const requestLogContext = { ...logContext, lat, lon, timestamp };
+    const { lat, lon, timestamp, type } = parsedBody;
+    const requestLogContext = { ...logContext, lat, lon, timestamp, type };
     log('info', 'Processing weather request.', requestLogContext);
 
     if (lat === undefined || lon === undefined) {
       log('warn', 'Missing latitude or longitude in request body.', requestLogContext);
       return { statusCode: 400, body: JSON.stringify({ error: 'Missing latitude or longitude.' }) };
+    }
+
+    if (type === 'hourly' && timestamp) {
+        log('debug', 'Fetching hourly weather data for a day.', requestLogContext);
+        const unixTimestamp = Math.floor(new Date(timestamp).getTime() / 1000);
+        const timemachineUrl = `https://api.openweathermap.org/data/3.0/onecall/timemachine?lat=${lat}&lon=${lon}&dt=${unixTimestamp}&units=metric&appid=${apiKey}`;
+        
+        const mainResponse = await fetchWithRetry(timemachineUrl, log);
+        const mainData = await mainResponse.json();
+        if (!mainResponse.ok) throw new Error(mainData.message || 'Failed to fetch from OpenWeather Timemachine API.');
+
+        return { statusCode: 200, body: JSON.stringify(mainData.hourly || []) };
     }
 
     if (timestamp) {
