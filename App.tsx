@@ -38,9 +38,12 @@ function App() {
     registrationContext,
   } = state;
   
-  const jobIds = state.analysisResults
-    .filter(r => r.jobId && !r.data && !getIsActualError(r))
-    .map(r => r.jobId!);
+  const jobIds = React.useMemo(() => 
+    state.analysisResults
+      .filter(r => r.jobId && !r.data && !getIsActualError(r))
+      .map(r => r.jobId!),
+    [state.analysisResults]
+  );
 
   const handleJobCompleted = useCallback((jobId: string, record: AnalysisRecord) => {
     dispatch({ type: 'UPDATE_JOB_COMPLETED', payload: { jobId, record } });

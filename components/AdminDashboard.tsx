@@ -273,11 +273,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         data: originalRecord?.analysis || null,
                         weather: originalRecord?.weather,
                         recordId: originalRecord?.id,
-                        error: null, // Clear 'submitting' status
+                        error: 'Skipped: Duplicate in history', 
                     };
                 }
                  if (job.status === 'duplicate_batch') {
-                    return { ...initial, isDuplicate: true, isBatchDuplicate: true, error: null };
+                    return { ...initial, isDuplicate: true, isBatchDuplicate: true, error: 'Skipped: Duplicate in batch' };
                 }
                 return { ...initial, jobId: job.jobId, error: job.status };
             });
