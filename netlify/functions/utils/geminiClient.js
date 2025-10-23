@@ -217,15 +217,28 @@ class GeminiClient {
     const model = options.model || 'gemini-1.5-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
+    let parts = [];
+    if (typeof prompt === 'string') {
+      parts.push({ text: prompt });
+    } else if (typeof prompt === 'object' && prompt.text && prompt.image && prompt.mimeType) {
+      parts.push({ text: prompt.text });
+      parts.push({
+        inlineData: {
+          mimeType: prompt.mimeType,
+          data: prompt.image
+        }
+      });
+    } else {
+      throw new Error('Invalid prompt format. Must be a string or a valid image prompt object.');
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        contents: [{
-          parts: [{ text: prompt }]
-        }],
+        contents: [{ parts }],
         generationConfig: {
           temperature: options.temperature || 0.7,
           maxOutputTokens: options.maxOutputTokens || 8192,

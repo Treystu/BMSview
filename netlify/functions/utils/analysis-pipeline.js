@@ -1,4 +1,4 @@
-const { GoogleGenAI } = require("@google/genai");
+const { getGeminiClient } = require("./geminiClient.js");
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./mongodb.js");
 const { createRetryWrapper } = require("./retry.js");
@@ -28,37 +28,36 @@ const callWeatherFunction = async (lat, lon, timestamp, log) => {
     }
 };
 
-const extractBmsData = async (ai, image, mimeType, log, context) => {
+const extractBmsData = async (image, mimeType, log, context) => {
+    const geminiClient = getGeminiClient();
     const extractionPrompt = getImageExtractionPrompt();
-    const responseSchema = getResponseSchema();
-    const parts = [{ text: extractionPrompt }, { inlineData: { data: image, mimeType } }];
     const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
 
+    const prompt = {
+        text: extractionPrompt,
+        image: image,
+        mimeType: mimeType
+    };
+
     try {
-        log('info', 'Sending request to Gemini API.', { model: modelName });
+        log('info', 'Sending request to Gemini API via custom client.', { model: modelName });
         const startTime = Date.now();
-        
-        const model = ai.getGenerativeModel({ 
-            model: modelName,
-            generationConfig: { responseMimeType: "application/json", responseSchema },
-        });
 
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Gemini API call timed out after ${GEMINI_API_TIMEOUT_MS}ms`)), GEMINI_API_TIMEOUT_MS)
-        );
-
-        const result = await Promise.race([model.generateContent({ contents: [{ role: "user", parts }] }), timeoutPromise]);
+        const result = await geminiClient.callAPI(prompt, { model: modelName }, log);
         const duration = Date.now() - startTime;
-        
-        log('info', 'Received response from Gemini API.', { durationMs: duration });
-        
-        const rawText = result.response.text();
+
+        log('info', 'Received response from Gemini API via custom client.', { durationMs: duration });
+
+        const rawText = result.candidates[0]?.content.parts[0]?.text;
+        if (!rawText) {
+            throw new Error("Invalid response structure from Gemini API client.");
+        }
         return cleanAndParseJson(rawText, log);
 
     } catch (error) {
         const errorMessage = error.message || 'Unknown Gemini API error';
         log('error', 'Gemini API call failed.', { error: errorMessage });
-        
+
         if (errorMessage.includes('429') || errorMessage.includes('quota')) {
             throw new Error('TRANSIENT_ERROR: Gemini API quota exhausted.');
         }
@@ -70,7 +69,6 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
     const logContext = { fileName: image.fileName, stage: 'pipeline-start' };
     log('info', 'Starting analysis pipeline.', logContext);
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const withRetry = createRetryWrapper(log);
 
     const historyCollection = await getCollection("history");
@@ -79,7 +77,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
     // 1. Extract Data
     logContext.stage = 'extraction';
     log('info', 'Starting data extraction.', logContext);
-    const extractedData = await extractBmsData(ai, image.image, image.mimeType, log, context);
+    const extractedData = await extractBmsData(image.image, image.mimeType, log, context);
     log('info', 'Data extraction complete.', logContext);
 
     // 2. Map and Post-Process
