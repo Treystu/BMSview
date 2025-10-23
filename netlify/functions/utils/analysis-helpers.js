@@ -32,67 +32,25 @@ const getResponseSchema = () => ({
 
 const getImageExtractionPrompt = () => `You are a meticulous data extraction AI. Analyze the provided BMS screenshot and extract its data into a JSON object, strictly following these rules:
 1.  **JSON Object Output**: Your entire response MUST be a single, valid JSON object.
-2.  **Strict Schema Adherence**: Use the provided schema. If a value isn't visible, use 
-null
- for single fields or 
-[]
- for arrays.
+2.  **Strict Schema Adherence**: Use the provided schema. If a value isn't visible, use \`null\` for single fields or \`[]\` for arrays.
 3.  **Data Extraction**:
-    -   
-`dlNumber`
-: Find 'DL Number'.
-    -   
-`stateOfCharge`
-: Extract 'SOC' percentage.
-    -   
-`overallVoltage`
-: Extract 'voltage'.
-    -   
-`current`
-: Extract 'current', preserving negative sign.
-    -   
-`remainingCapacity`
-: Extract 'Remaining Cap'.
-    -   
-`fullCapacity`
-: Extract 'Full Cap'.
-    -   
-`power`
-: Extract Power. If in 'kW', multiply by 1000 for Watts. **IMPORTANT: If the 'current' value is negative, the 'power' value must also be negative.**
-    -   
-`chargeMosOn`
-, 
-`dischargeMosOn`
-, 
-`balanceOn`
-: For each, determine if the corresponding indicator ('Chg MOS', 'Dischg MOS', 'Balance') is on (green, lit) which is 
-`true`
-, or off (grey, unlit) which is 
-`false`
-.
-    -   
-`temperatures`
-: Extract all 'Temp', 'T1', 'T2' values into this array.
-    -   
-`mosTemperature`
-: Extract 'MOS Temp'.
-    -   
-`cellVoltages`
-: ONLY if a numbered list of individual cell voltages exists, populate this array. Otherwise, it MUST be 
-`[]`
-.
+    -   \`dlNumber\`: Find 'DL Number',
+    -   \`stateOfCharge\`: Extract 'SOC' percentage.
+    -   \`overallVoltage\`: Extract 'voltage'.
+    -   \`current\`: Extract 'current', preserving negative sign.
+    -   \`remainingCapacity\`: Extract 'Remaining Cap'.
+    -   \`fullCapacity\`: Extract 'Full Cap'.
+    -   \`power\`: Extract Power. If in 'kW', multiply by 1000 for Watts. **IMPORTANT: If the 'current' value is negative, the 'power' value must also be negative.**
+    -   \`chargeMosOn\`, \`dischargeMosOn\`, \`balanceOn\`: For each, determine if the corresponding indicator ('Chg MOS', 'Dischg MOS', 'Balance') is on (green, lit) which is \`true\`, or off (grey, unlit) which is \`false\`.
+    -   \`temperatures\`: Extract all 'Temp', 'T1', 'T2' values into this array.
+    -   \`mosTemperature\`: Extract 'MOS Temp'.
+    -   \`cellVoltages\`: ONLY if a numbered list of individual cell voltages exists, populate this array. Otherwise, it MUST be \`[]\`.
 4.  **Timestamp Logic (CRITICAL)**:
     -   Find a timestamp within the image itself.
     -   If a full date and time are visible (e.g., "2023-01-01 12:04:00"), extract as "YYYY-MM-DDTHH:MM:SS".
     -   If only time is visible (e.g., "12:04:00"), extract only the time string "12:04:00". Do NOT add a date.
-    -   If no timestamp is visible, 
-`timestampFromImage`
- MUST be 
-`null`
-.
-5.  **Final Review**: Your entire output must be ONLY the raw JSON object, without any surrounding text, explanations, or markdown formatting like 
-```json
-`;
+    -   If no timestamp is visible, \`timestampFromImage\` MUST be \`null\`.
+5.  **Final Review**: Your entire output must be ONLY the raw JSON object, without any surrounding text, explanations, or markdown formatting like \`\`\`json.`;
 
 const cleanAndParseJson = (text, log) => {
     if (!text) {
