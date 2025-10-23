@@ -193,6 +193,12 @@ exports.handler = async function(event, context) {
                 return respond(200, { success: true, updatedCount });
             }
 
+            if (action === 'count-records-needing-weather') {
+                log('info', 'Counting records needing weather backfill.', postLogContext);
+                const count = await historyCollection.countDocuments({ weather: null, systemId: { $ne: null } });
+                return respond(200, { count });
+            }
+
             // --- Backfill Weather Action ---
              if (action === 'backfill-weather') {
                 log('info', 'Starting backfill-weather task.', postLogContext);
@@ -222,19 +228,29 @@ exports.handler = async function(event, context) {
                             log('warn', 'Failed to fetch weather during backfill.', { recordId: record.id, error: weatherError.message });
                         }
 
-                        if (bulkOps.length >= BATCH_SIZE) {
-                            await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                            bulkOps.length = 0;
-                            log('debug', 'Processed backfill-weather batch.', { ...postLogContext, count: BATCH_SIZE });
-                             // Add a small delay to avoid hitting rate limits too hard
-                            await new Promise(resolve => setTimeout(resolve, 500));
-                        }
-                    }
-                }
-                if (bulkOps.length > 0) {
-                    await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                }
-                log('info', 'Backfill-weather task complete.', { ...postLogContext, updatedCount });
+                                    if (bulkOps.length >= BATCH_SIZE) {
+                                        try {
+                                            log('debug', `Performing bulkWrite with ${bulkOps.length} operations.`);
+                                            const result = await historyCollection.bulkWrite(bulkOps, { ordered: false });
+                                            log('debug', 'Processed backfill-weather batch.', { ...postLogContext, count: BATCH_SIZE, result });
+                                        } catch (e) {
+                                            log('error', 'Error during bulkWrite.', { error: e.message });
+                                        }
+                                        bulkOps.length = 0;
+                                        // Add a small delay to avoid hitting rate limits too hard
+                                        await new Promise(resolve => setTimeout(resolve, 500));
+                                    }
+                                }
+                            }
+                            if (bulkOps.length > 0) {
+                                try {
+                                    log('debug', `Performing final bulkWrite with ${bulkOps.length} operations.`);
+                                    const result = await historyCollection.bulkWrite(bulkOps, { ordered: false });
+                                    log('debug', 'Processed final backfill-weather batch.', { ...postLogContext, result });
+                                } catch (e) {
+                                    log('error', 'Error during final bulkWrite.', { error: e.message });
+                                }
+                            }                log('info', 'Backfill-weather task complete.', { ...postLogContext, updatedCount });
                 return respond(200, { success: true, updatedCount });
             }
 

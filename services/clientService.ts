@@ -402,6 +402,16 @@ export const backfillWeatherData = async (): Promise<{ success: boolean; updated
     });
 };
 
+export const countRecordsNeedingWeather = async (): Promise<{ count: number }> => {
+    log('info', 'Sending request to count records needing weather backfill.');
+    return apiFetch<{ count: number }>('history', {
+        method: 'POST',
+        body: JSON.stringify({
+            action: 'count-records-needing-weather',
+        }),
+    });
+};
+
 export const cleanupLinks = async (): Promise<{ success: boolean; updatedCount: number }> => {
     log('info', 'Sending request to clean up system links.');
     return apiFetch<{ success: boolean; updatedCount: number }>('history', {

@@ -3,7 +3,7 @@ import {
     getRegisteredSystems, getAnalysisHistory, mergeBmsSystems, deleteAnalysisRecord,
     updateBmsSystem, linkAnalysisToSystem, registerBmsSystem, getJobStatuses,
     getAnalysisRecordById, streamAllHistory, findDuplicateAnalysisSets, deleteAnalysisRecords,
-    deleteUnlinkedAnalysisHistory, clearAllData, clearHistoryStore, backfillWeatherData,
+    deleteUnlinkedAnalysisHistory, clearAllData, clearHistoryStore, backfillWeatherData, countRecordsNeedingWeather,
     cleanupLinks, autoAssociateRecords, fixPowerSigns
 } from '../services/clientService';
 import { analyzeBmsScreenshots } from '../services/geminiService';
@@ -452,12 +452,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         { requiresConfirm: true, confirmMessage: 'Are you sure you want to clear ONLY the analysis history store? This is irreversible.' }
     );
 
-    const handleBackfillWeather = () => handleGenericAction(
-        'isBackfilling',
-        backfillWeatherData,
-        'Weather backfill process started.',
-        'history' // Refresh history to potentially show new weather data
-    );
+    const handleBackfillWeather = async () => {
+        try {
+            const { count } = await countRecordsNeedingWeather();
+            if (count > 0) {
+                if (window.confirm(`${count} records need weather data. Start backfill?`)) {
+                    await handleGenericAction(
+                        'isBackfilling',
+                        backfillWeatherData,
+                        'Weather backfill process started.',
+                        'history'
+                    );
+                    alert('Weather backfill complete.');
+                }
+            } else {
+                alert('No records need weather data.');
+            }
+        } catch (err) {
+            const error = err instanceof Error ? err.message : 'Failed to count records needing weather data.';
+            log('error', 'Failed to count records needing weather data.', { error });
+            dispatch({ type: 'SET_ERROR', payload: error });
+        }
+    };
 
     const handleCleanupLinks = () => handleGenericAction(
         'isCleaningLinks',
@@ -486,31 +502,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     // --- Rendering ---
 
     const sortedHistoryForTable = useMemo(() => {
-        // Client-side sorting for the current page
-        return [...history].sort((a, b) => {
+        const sortedCache = [...historyCache].sort((a, b) => {
             const valA = getNestedValue(a, historySortKey);
             const valB = getNestedValue(b, historySortKey);
 
-            // Handle potential null/undefined values for sorting robustness
             if (valA == null && valB == null) return 0;
-            if (valA == null) return 1; // Put nulls/undefined last
+            if (valA == null) return 1;
             if (valB == null) return -1;
 
-            // Handle date strings specifically for correct chronological sort
             if (historySortKey === 'timestamp' && typeof valA === 'string' && typeof valB === 'string') {
                 const dateA = new Date(valA).getTime();
                 const dateB = new Date(valB).getTime();
-                 if (dateA < dateB) return historySortDirection === 'asc' ? -1 : 1;
-                 if (dateA > dateB) return historySortDirection === 'asc' ? 1 : -1;
-                 return 0;
+                if (dateA < dateB) return historySortDirection === 'asc' ? -1 : 1;
+                if (dateA > dateB) return historySortDirection === 'asc' ? 1 : -1;
+                return 0;
             }
 
-            // Standard comparison for other types
             if (valA < valB) return historySortDirection === 'asc' ? -1 : 1;
             if (valA > valB) return historySortDirection === 'asc' ? 1 : -1;
             return 0;
         });
-    }, [history, historySortKey, historySortDirection]);
+
+        const startIndex = (historyPage - 1) * ITEMS_PER_PAGE;
+        const endIndex = startIndex + ITEMS_PER_PAGE;
+        return sortedCache.slice(startIndex, endIndex);
+    }, [historyCache, historySortKey, historySortDirection, historyPage]);
 
     return (
         <div className="bg-neutral-dark min-h-screen text-neutral-light p-4 sm:p-6 md:p-8">
