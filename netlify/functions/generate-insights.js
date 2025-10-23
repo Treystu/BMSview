@@ -78,6 +78,7 @@ async function getWeatherForecast(latitude, longitude, log) {
 }
 
 async function getSystemAnalytics(systemId, log, withRetry) {
+    console.time('getSystemAnalytics');
     log('debug', 'getSystemAnalytics started.', { systemId });
     if (!systemId) {
         log('warn', 'getSystemAnalytics: No systemId provided.');
@@ -151,6 +152,7 @@ async function getSystemAnalytics(systemId, log, withRetry) {
 
     const analytics = { hourlyAverages, performanceBaseline: { sunnyDayChargingAmpsByHour }, alertAnalysis: { alertCounts, totalAlerts } };
     log('debug', 'getSystemAnalytics finished.', { systemId });
+    console.timeEnd('getSystemAnalytics');
     return analytics;
 }
 

@@ -95,6 +95,7 @@ const getResponseSchema = () => ({
         overallVoltage: { "type": Type.NUMBER, "nullable": true },
         current: { "type": Type.NUMBER, "nullable": true },
         remainingCapacity: { "type": Type.NUMBER, "nullable": true },
+        fullCapacity: { "type": Type.NUMBER, "nullable": true },
         power: { "type": Type.NUMBER, "nullable": true, "description": "Power in Watts. If in kW, convert to W." },
         chargeMosOn: { "type": Type.BOOLEAN, "nullable": true },
         dischargeMosOn: { "type": Type.BOOLEAN, "nullable": true },
@@ -122,6 +123,8 @@ const getImageExtractionPrompt = () => `You are a meticulous data extraction AI.
     -   \`stateOfCharge\`: Extract 'SOC' percentage.
     -   \`overallVoltage\`: Extract 'voltage'.
     -   \`current\`: Extract 'current', preserving negative sign.
+    -   \`remainingCapacity\`: Extract 'Remaining Cap'.
+    -   \`fullCapacity\`: Extract 'Full Cap'.
     -   \`power\`: Extract Power. If in 'kW', multiply by 1000 for Watts. **IMPORTANT: If the 'current' value is negative, the 'power' value must also be negative.**
     -   \`chargeMosOn\`, \`dischargeMosOn\`, \`balanceOn\`: For each, determine if the corresponding indicator ('Chg MOS', 'Dischg MOS', 'Balance') is on (green, lit) which is \`true\`, or off (grey, unlit) which is \`false\`.
     -   \`temperatures\`: Extract all 'Temp', 'T1', 'T2' values into this array.

@@ -242,7 +242,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults }); // Clear previous and set new ones
 
         try {
-            const BATCH_SIZE = 100;
+            const BATCH_SIZE = 10;
             const fileBatches = [];
             for (let i = 0; i < files.length; i += BATCH_SIZE) {
                 fileBatches.push(files.slice(i, i + BATCH_SIZE));
