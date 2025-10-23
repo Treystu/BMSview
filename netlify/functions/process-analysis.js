@@ -508,7 +508,7 @@ exports.handler = async function(event, context) {
         log('info', 'Matching analysis record to a registered system.', logContext);
         await updateJobStatus(jobId, 'Matching system', log, jobsCollection, {});
         
-        const allSystems = job.systems || await withRetry(() => systemsCollection.find({}).toArray());
+        const allSystems = (job.systems && job.systems.items) ? job.systems.items : (job.systems || await withRetry(() => systemsCollection.find({}).toArray()));
         const matchingSystem = analysisRaw.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysisRaw.dlNumber)) : null;
         log('info', `System matching result: ${matchingSystem ? matchingSystem.name : 'None'}.`, { 
             ...logContext, 

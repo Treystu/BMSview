@@ -144,8 +144,8 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
     case 'FETCH_DATA_SUCCESS':
       return {
         ...state,
-        registeredSystems: action.payload.systems,
-        analysisHistory: action.payload.history,
+        registeredSystems: action.payload.systems.items,
+        analysisHistory: action.payload.history.items,
         error: null,
       };
       

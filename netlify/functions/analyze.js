@@ -95,15 +95,15 @@ exports.handler = async (event, context) => {
         log('debug', 'Database collections retrieved.', logContext);
         
         const jobCreationResponses = [];
-        const batchBasenames = new Set();
-        const basenamesToCheck = images.map(img => getBasename(img.fileName));
+        const batchFileNames = new Set();
+        const fileNamesToCheck = images.map(img => img.fileName);
         
         log('debug', 'Checking for existing records in history.', { 
             ...logContext, 
-            filenamesToCheck: basenamesToCheck.length 
+            filenamesToCheck: fileNamesToCheck.length 
         });
         
-        const existingRecords = await historyCollection.find({ fileName: { $in: basenamesToCheck } }).toArray();
+        const existingRecords = await historyCollection.find({ fileName: { $in: fileNamesToCheck } }).toArray();
         const existingRecordMap = new Map(existingRecords.map(r => [r.fileName, r]));
         
         log('debug', 'Existing records check complete.', { 
@@ -118,17 +118,16 @@ exports.handler = async (event, context) => {
         log('debug', 'Processing images for job creation.', { ...logContext, totalImages: images.length });
         
         for (const [index, image] of images.entries()) {
-            const basename = getBasename(image.fileName);
-            const imageLogContext = { ...logContext, fileName: image.fileName, basename, imageIndex: index };
+            const imageLogContext = { ...logContext, fileName: image.fileName, imageIndex: index };
             
-            if (batchBasenames.has(basename)) {
+            if (batchFileNames.has(image.fileName)) {
                  log('debug', 'Duplicate in current batch detected.', imageLogContext);
                  jobCreationResponses.push({ fileName: image.fileName, status: 'duplicate_batch' });
                  continue;
             }
-            batchBasenames.add(basename);
+            batchFileNames.add(image.fileName);
 
-            const existingRecord = existingRecordMap.get(basename);
+            const existingRecord = existingRecordMap.get(image.fileName);
             if (existingRecord && !image.force) {
                 log('debug', 'Duplicate in history detected.', { 
                     ...imageLogContext, 

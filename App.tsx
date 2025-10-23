@@ -34,7 +34,6 @@ function App() {
     registrationSuccess,
     isRegisterModalOpen,
     registrationContext,
-    registeredSystems,
   } = state;
   
   const pollingIntervalRef = useRef<number | null>(null);
@@ -47,7 +46,7 @@ function App() {
         getAnalysisHistory()
       ]);
       dispatch({ type: 'FETCH_DATA_SUCCESS', payload: { systems, history } });
-      log('info', 'Successfully fetched application data.', { systemCount: systems.length, historyCount: history.length });
+      log('info', 'Successfully fetched application data.', { systemCount: systems.items.length, historyCount: history.items.length });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
       log('error', "Failed to fetch app data.", { error: errorMessage });
@@ -188,7 +187,7 @@ function App() {
 
     try {
         const forceReprocessFileNames = options?.forceFileName ? [options.forceFileName] : [];
-        const jobCreationResults = await analyzeBmsScreenshots(files, registeredSystems, forceReprocessFileNames);
+        const jobCreationResults = await analyzeBmsScreenshots(files, state.registeredSystems, forceReprocessFileNames);
         log('info', 'Received job creation results from service.', { results: jobCreationResults });
         dispatch({ type: 'START_ANALYSIS_JOBS', payload: jobCreationResults });
     } catch (err) {
@@ -251,7 +250,7 @@ function App() {
                 <AnalysisResult 
                   key={result.fileName} 
                   result={result}
-                  registeredSystems={registeredSystems}
+                  registeredSystems={state.registeredSystems}
                   onLinkRecord={handleLinkRecordToSystem}
                   onReprocess={handleReprocess}
                   onRegisterNewSystem={handleInitiateRegistration}
