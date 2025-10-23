@@ -242,16 +242,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults }); // Clear previous and set new ones
 
         try {
-            // Fetch current systems to pass to the backend for potential duplicate checks/matching
-            const currentSystems = await getRegisteredSystems(1, 1000).then(res => res.items); // Fetch up to 1000 systems
-            const jobCreationResults = await analyzeBmsScreenshots(files, currentSystems);
-            log('info', 'Received bulk job creation results from service.', { results: jobCreationResults });
+            const BATCH_SIZE = 100;
+            const fileBatches = [];
+            for (let i = 0; i < files.length; i += BATCH_SIZE) {
+                fileBatches.push(files.slice(i, i + BATCH_SIZE));
+            }
+
+            const allJobCreationResults = [];
+            for (const batch of fileBatches) {
+                const currentSystems = await getRegisteredSystems(1, 1000).then(res => res.items); // Fetch up to 1000 systems
+                const jobCreationResults = await analyzeBmsScreenshots(batch, currentSystems);
+                allJobCreationResults.push(...jobCreationResults);
+            }
+
+            log('info', 'Received all job creation results from service.', { results: allJobCreationResults });
 
             const historyMap = new Map(historyCache.map(r => [r.id, r])); // Use cache for duplicates
 
             // Update results based on job creation response
             const updatedResults = initialResults.map(initial => {
-                const job = jobCreationResults.find(jcr => jcr.fileName === initial.fileName);
+                const job = allJobCreationResults.find(jcr => jcr.fileName === initial.fileName);
                 if (!job) return { ...initial, error: 'failed_submission' }; // Should not happen ideally
 
                 if (job.status === 'duplicate_history' && job.duplicateRecordId) {

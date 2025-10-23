@@ -149,7 +149,7 @@ const WeatherSection: React.FC<{ weather: WeatherData }> = ({ weather }) => (
     <div className="mb-8">
         <h4 className="text-xl font-semibold text-neutral-dark mb-4">Weather Conditions at Time of Analysis</h4>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <WeatherCard icon={<ThermometerIcon className="h-6 w-6"/>} title="Temperature" value={weather.temp.toFixed(1)} unit="°C" />
+            <WeatherCard icon={<ThermometerIcon className="h-6 w-6"/>} title="Temperature" value={weather.temp != null ? weather.temp.toFixed(1) : null} unit="°C" />
             <WeatherCard icon={<CloudIcon className="h-6 w-6"/>} title="Cloud Cover" value={weather.clouds} unit="%" />
             <WeatherCard icon={<SunIcon className="h-6 w-6"/>} title="UV Index" value={weather.uvi} unit="" />
         </div>
