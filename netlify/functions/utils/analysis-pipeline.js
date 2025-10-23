@@ -38,8 +38,8 @@ const extractBmsData = async (ai, image, mimeType, log, context) => {
         log('info', 'Sending request to Gemini API.', { model: modelName });
         const startTime = Date.now();
         
-        const apiCall = ai.getGenerativeModel({ model: modelName }).generateContent({
-            contents: [{ role: "user", parts }],
+        const model = ai.getGenerativeModel({ 
+            model: modelName,
             generationConfig: { responseMimeType: "application/json", responseSchema },
         });
 
@@ -47,12 +47,11 @@ const extractBmsData = async (ai, image, mimeType, log, context) => {
             setTimeout(() => reject(new Error(`Gemini API call timed out after ${GEMINI_API_TIMEOUT_MS}ms`)), GEMINI_API_TIMEOUT_MS)
         );
 
-        const result = await Promise.race([apiCall, timeoutPromise]);
+        const result = await Promise.race([model.generateContent({ contents: [{ role: "user", parts }] }), timeoutPromise]);
         const duration = Date.now() - startTime;
         
         log('info', 'Received response from Gemini API.', { durationMs: duration });
         
-        // Access the response text correctly from the v1.beta SDK
         const rawText = result.response.text();
         return cleanAndParseJson(rawText, log);
 
