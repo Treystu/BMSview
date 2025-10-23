@@ -67,6 +67,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     } = state;
 
     const [cleanupProgress, setCleanupProgress] = useState<string | null>(null);
+    const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
     const pollingIntervalRef = useRef<number | null>(null);
 
     // --- Data Fetching ---
@@ -77,20 +78,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             const promises = [];
             if (type === 'all' || type === 'systems') {
                 promises.push(getRegisteredSystems(page, ITEMS_PER_PAGE));
-            } else {
-                promises.push(Promise.resolve(null)); // Placeholder if systems aren't fetched
             }
             if (type === 'all' || type === 'history') {
                 promises.push(getAnalysisHistory(page, ITEMS_PER_PAGE));
-            } else {
-                promises.push(Promise.resolve(null)); // Placeholder if history isn't fetched
             }
 
-            const [systemsResponse, historyResponse] = await Promise.all(promises);
+            const responses = await Promise.all(promises);
 
             const payload: any = {};
-            if (systemsResponse) payload.systems = systemsResponse;
-            if (historyResponse) payload.history = historyResponse;
+            if (type === 'all') {
+                payload.systems = responses[0];
+                payload.history = responses[1];
+            } else if (type === 'systems') {
+                payload.systems = responses[0];
+            } else if (type === 'history') {
+                payload.history = responses[0];
+            }
 
             dispatch({ type: 'FETCH_PAGE_DATA_SUCCESS', payload });
 
@@ -275,6 +278,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         } catch (err) {
             const error = err instanceof Error ? err.message : "Failed during bulk analysis submission.";
             log('error', 'Bulk analysis submission failed.', { error });
+            if (error.includes('Too Many Requests')) {
+                setShowRateLimitWarning(true);
+            }
             dispatch({ type: 'SET_ERROR', payload: error });
             // Mark all submitted files as failed
             dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults.map(r => ({ ...r, error: 'failed_submission' })) });
@@ -551,7 +557,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         onAnalyze={handleBulkAnalyze}
                         results={bulkUploadResults}
                         isLoading={actionStatus.isBulkLoading}
-                        showRateLimitWarning={false} // Placeholder, logic can be added if needed
+                        showRateLimitWarning={showRateLimitWarning}
                         dispatch={dispatch}
                     />
                 </section>
