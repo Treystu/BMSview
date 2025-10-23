@@ -251,7 +251,8 @@ exports.handler = async function(event, context) {
                                 } catch (e) {
                                     log('error', 'Error during final bulkWrite.', { error: e.message });
                                 }
-                            }                log('info', 'Backfill-weather task complete.', { ...postLogContext, updatedCount });
+                            }
+                log('info', 'Backfill-weather task complete.', { ...postLogContext, updatedCount });
                 return respond(200, { success: true, updatedCount });
             }
 

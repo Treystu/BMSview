@@ -78,6 +78,11 @@ async function connectToDatabase() {
     connectionPromise = (async () => {
         try {
             const client = new MongoClient(MONGODB_URI, {
+                // Enforce TLSv1.2 and disable invalid certs
+                tlsAllowInvalidCertificates: false,
+                tlsAllowInvalidHostnames: false,
+                tls: true,
+
                 // Connection pool settings
                 maxPoolSize: 10,
                 minPoolSize: 2,
