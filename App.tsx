@@ -23,6 +23,8 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
 const POLLING_INTERVAL_MS = 5000;
 const CLIENT_JOB_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 
+import { useJobPolling } from './hooks/useJobPolling';
+
 function App() {
   const { state, dispatch } = useAppState();
   const {
@@ -35,6 +37,35 @@ function App() {
     isRegisterModalOpen,
     registrationContext,
   } = state;
+  
+  const jobIds = state.analysisResults
+    .filter(r => r.jobId && !r.data && !getIsActualError(r))
+    .map(r => r.jobId!);
+
+  const handleJobCompleted = useCallback((jobId: string, record: AnalysisRecord) => {
+    dispatch({ type: 'UPDATE_JOB_COMPLETED', payload: { jobId, record } });
+  }, [dispatch]);
+
+  const handleJobStatusUpdate = useCallback((jobId: string, status: string) => {
+    dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId, status } });
+  }, [dispatch]);
+
+  const handleJobFailed = useCallback((jobId: string, error: string) => {
+    dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId, status: error } });
+  }, [dispatch]);
+
+  const handlePollingError = useCallback((error: string) => {
+    log('error', 'Polling error', { error });
+  }, []);
+
+  useJobPolling({
+    jobIds,
+    onJobCompleted: handleJobCompleted,
+    onJobStatusUpdate: handleJobStatusUpdate,
+    onJobFailed: handleJobFailed,
+    onPollingError: handlePollingError,
+    interval: jobIds.length === 1 ? 2000 : 5000,
+  });
   
   const pollingIntervalRef = useRef<number | null>(null);
 
@@ -58,106 +89,9 @@ function App() {
     fetchAppData();
   }, [fetchAppData]);
   
-  const pollJobStatuses = useCallback(async () => {
-      const pendingJobs = state.analysisResults.filter(r => r.jobId && !r.data && !getIsActualError(r));
-      const now = Date.now();
 
-      const jobsToPoll = pendingJobs.filter(job => {
-          if (job.submittedAt && (now - job.submittedAt > CLIENT_JOB_TIMEOUT_MS)) {
-              log('warn', 'Job timed out on client-side.', { jobId: job.jobId, fileName: job.fileName });
-              dispatch({ type: 'JOB_TIMED_OUT', payload: { jobId: job.jobId! } });
-              return false;
-          }
-          return true;
-      });
 
-      if (jobsToPoll.length === 0) {
-          return;
-      }
-      
-      const jobIds = jobsToPoll.map(j => j.jobId!);
-      log('info', 'Polling job statuses.', { jobCount: jobIds.length, jobIds });
-      
-      try {
-          const statuses = await getJobStatuses(jobIds);
-          let needsHistoryRefresh = false;
-          log('info', 'Received job statuses from server.', { statuses });
 
-          for (const status of statuses) {
-              if (status.status === 'completed' && status.recordId) {
-                  log('info', 'Job completed, fetching full record.', { jobId: status.id, recordId: status.recordId });
-                  const record = await getAnalysisRecordById(status.recordId);
-                  if (record) {
-                      dispatch({ type: 'UPDATE_JOB_COMPLETED', payload: { jobId: status.id, record } });
-                      needsHistoryRefresh = true;
-                  } else {
-                     log('warn', 'Job completed but could not fetch the final record.', { jobId: status.id, recordId: status.recordId });
-                     dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.id, status: 'failed_record_fetch' } });
-                  }
-              } else if (status.status.startsWith('failed') || status.status === 'not_found') {
-                  log('warn', `Job ${status.status}.`, { jobId: status.id, error: status.error });
-                  dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.id, status: status.error || 'Failed' } });
-              } else {
-                  log('info', 'Job status updated.', { jobId: status.id, status: status.status });
-                  dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId: status.id, status: status.status } });
-              }
-          }
-          if (needsHistoryRefresh) {
-              log('info', 'A job completed. The history list will update on the next full refresh.');
-          }
-      } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : 'Unknown polling error';
-          log('warn', 'Failed to poll job statuses.', { error: errorMessage });
-          
-          // Check if this is a network/server error that might indicate backend issues
-          if (errorMessage.includes('500') || errorMessage.includes('504') || errorMessage.includes('timeout')) {
-              log('error', 'Backend service error detected during polling', { error: errorMessage });
-              
-              // Update all pending jobs with a backend error status
-              jobIds.forEach(jobId => {
-                  dispatch({ type: 'UPDATE_JOB_STATUS', payload: { 
-                      jobId, 
-                      status: 'failed_backend_error' 
-                  }});
-              });
-          }
-      }
-  }, [state.analysisResults, dispatch]);
-
-  useEffect(() => {
-    const pendingJobs = analysisResults.some(r => r.jobId && !r.data && !getIsActualError(r));
-
-    const poll = () => {
-      pollJobStatuses().finally(() => {
-        if (pollingIntervalRef.current) { // If polling hasn't been cancelled
-          pollingIntervalRef.current = window.setTimeout(poll, POLLING_INTERVAL_MS);
-        }
-      });
-    };
-
-    if (pendingJobs) {
-      if (!pollingIntervalRef.current) {
-        log('info', 'Pending jobs found. Starting status poller.');
-        // Use setTimeout to avoid overlapping polls. Start immediately.
-        pollingIntervalRef.current = window.setTimeout(poll, 1);
-      }
-    } else {
-      if (pollingIntervalRef.current) {
-        log('info', 'No pending jobs. Stopping poller.');
-        clearTimeout(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-        dispatch({ type: 'ANALYSIS_COMPLETE' });
-      }
-    }
-
-    return () => {
-        if (pollingIntervalRef.current) {
-            log('info', 'Component unmounting or dependencies changed. Clearing poller timeout.');
-            clearTimeout(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-        }
-    };
-}, [analysisResults, pollJobStatuses, dispatch]);
 
   const handleLinkRecordToSystem = async (recordId: string, systemId: string, dlNumber?: string | null) => {
     if (!recordId || !systemId) return;
@@ -197,19 +131,9 @@ function App() {
 
     try {
         const forceReprocessFileNames = options?.forceFileName ? [options.forceFileName] : [];
-        const results: any = await analyzeBmsScreenshots(files, state.registeredSystems, forceReprocessFileNames);
-        log('info', 'Received job creation results from service.', { results });
-
-        if (Array.isArray(results)) {
-            dispatch({ type: 'START_ANALYSIS_JOBS', payload: results });
-        } else if (results.status === 'completed' && results.record) {
-            dispatch({ type: 'ADD_SYNC_ANALYSIS_RESULT', payload: { record: results.record, fileName: files[0].name } });
-        } else if (results.status === 'duplicate_history' && results.duplicateRecordId) {
-            const record = await getAnalysisRecordById(results.duplicateRecordId);
-            if (record) {
-                dispatch({ type: 'ADD_SYNC_ANALYSIS_RESULT', payload: { record, fileName: files[0].name } });
-            }
-        }
+        const jobCreationResults = await analyzeBmsScreenshots(files, state.registeredSystems, forceReprocessFileNames);
+        log('info', 'Received job creation results from service.', { results: jobCreationResults });
+        dispatch({ type: 'START_ANALYSIS_JOBS', payload: jobCreationResults });
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during analysis.';
         log('error', 'Analysis request failed.', { error: errorMessage });

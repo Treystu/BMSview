@@ -18,6 +18,7 @@ interface UseJobPollingProps {
     onJobStatusUpdate: (jobId: string, status: string) => void;
     onJobFailed: (jobId: string, error: string) => void;
     onPollingError: (error: string) => void;
+    interval?: number;
 }
 
 interface PollingState {
@@ -27,7 +28,7 @@ interface PollingState {
     consecutiveErrors: number;
 }
 
-const POLLING_INTERVAL_MS = 5000;
+const DEFAULT_POLLING_INTERVAL_MS = 5000;
 const MAX_CONSECUTIVE_ERRORS = 5;
 const ERROR_BACKOFF_MULTIPLIER = 2;
 const MAX_POLLING_TIME_MS = 20 * 60 * 1000; // 20 minutes
@@ -37,7 +38,8 @@ export const useJobPolling = ({
     onJobCompleted,
     onJobStatusUpdate,
     onJobFailed,
-    onPollingError
+    onPollingError,
+    interval = DEFAULT_POLLING_INTERVAL_MS
 }: UseJobPollingProps) => {
     const [pollingState, setPollingState] = useState<PollingState>({
         isPolling: false,
@@ -51,10 +53,10 @@ export const useJobPolling = ({
     const startTimeRef = useRef<number>(Date.now());
 
     const calculateBackoffDelay = useCallback((errorCount: number): number => {
-        const baseDelay = POLLING_INTERVAL_MS;
+        const baseDelay = interval;
         const backoffDelay = baseDelay * Math.pow(ERROR_BACKOFF_MULTIPLIER, Math.min(errorCount, 3));
         return Math.min(backoffDelay, 60000); // Cap at 1 minute
-    }, []);
+    }, [interval]);
 
     const pollJobStatuses = useCallback(async () => {
         if (jobIds.length === 0) return;
