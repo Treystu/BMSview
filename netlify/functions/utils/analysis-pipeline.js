@@ -1,4 +1,4 @@
-const { GoogleGenAI } = require("@google/genai");
+const { GoogleGenerativeAI } = require("@google/genai");
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./mongodb.js");
 const { createRetryWrapper } = require("./retry.js");
@@ -71,7 +71,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
     const logContext = { fileName: image.fileName, stage: 'pipeline-start' };
     log('info', 'Starting analysis pipeline.', logContext);
 
-    const ai = new GoogleGenAI(process.env.GEMINI_API_KEY);
+    const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const withRetry = createRetryWrapper(log);
 
     const historyCollection = await getCollection("history");
