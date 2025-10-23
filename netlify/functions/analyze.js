@@ -110,6 +110,7 @@ exports.handler = async (event, context) => {
 
             const existingRecords = await historyCollection.find({ fileName: { $in: fileNamesToCheck } }).toArray();
             const existingRecordMap = new Map(existingRecords.map(r => [r.fileName, r]));
+            log('info', 'Duplicate check data', { fileNamesToCheck, existingRecordMap: Array.from(existingRecordMap.entries()) });
 
             for (const [index, image] of batch.entries()) {
                 const imageLogContext = { ...logContext, fileName: image.fileName, imageIndex: index };
