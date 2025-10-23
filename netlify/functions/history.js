@@ -211,6 +211,7 @@ exports.handler = async function(event, context) {
                 const BATCH_SIZE = 50; // Smaller batch for external API calls
 
                 for await (const record of recordsNeedingWeatherCursor) {
+        log('info', `Processing record: ${record.id}, _id type: ${typeof record._id}`);
                     const location = systemLocationMap.get(record.systemId);
                     if (location && record.timestamp) {
                         try {
