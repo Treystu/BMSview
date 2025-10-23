@@ -43,6 +43,7 @@ export interface AdminState {
     isAutoAssociating: boolean;
     isClearingHistory: boolean;
     isFixingPowerSigns: boolean;
+    isRunningDiagnostics: boolean;
   };
   isConfirmingClearAll: boolean;
   clearAllConfirmationText: string;
@@ -50,6 +51,8 @@ export interface AdminState {
   visibleHistoryColumns: HistoryColumnKey[];
   historySortKey: HistorySortKey;
   historySortDirection: 'asc' | 'desc';
+  isDiagnosticsModalOpen: boolean;
+  diagnosticResults: Record<string, { status: string; message: string }>;
 }
 
 export const initialState: AdminState = {
@@ -78,6 +81,7 @@ export const initialState: AdminState = {
     isCleaningLinks: false, isClearingAll: false, isScanning: false,
     isConfirmingDeletion: false, isBulkLoading: false, isCleaningJobs: false,
     isAutoAssociating: false, isClearingHistory: false, isFixingPowerSigns: false,
+    isRunningDiagnostics: false,
   },
   isConfirmingClearAll: false,
   clearAllConfirmationText: '',
@@ -85,6 +89,8 @@ export const initialState: AdminState = {
   visibleHistoryColumns: DEFAULT_VISIBLE_COLUMNS,
   historySortKey: 'timestamp',
   historySortDirection: 'desc',
+  isDiagnosticsModalOpen: false,
+  diagnosticResults: {},
 };
 
 
@@ -117,7 +123,10 @@ export type AdminAction =
   | { type: 'SET_SYSTEMS_PAGE'; payload: number }
   | { type: 'SET_HISTORY_PAGE'; payload: number }
   | { type: 'UPDATE_BULK_JOB_STATUS'; payload: { jobId: string; status: string } }
-  | { type: 'UPDATE_BULK_JOB_COMPLETED'; payload: { jobId: string; record: AnalysisRecord } };
+  | { type: 'UPDATE_BULK_JOB_COMPLETED'; payload: { jobId: string; record: AnalysisRecord } }
+  | { type: 'OPEN_DIAGNOSTICS_MODAL' }
+  | { type: 'CLOSE_DIAGNOSTICS_MODAL' }
+  | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: Record<string, { status: string; message: string }> };
 
 // 3. Reducer
 export const adminReducer = (state: AdminState, action: AdminAction): AdminState => {
@@ -220,6 +229,12 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       // When sorting, we must go back to page 1 as the order has changed
       return { ...state, historySortKey: key, historySortDirection: direction, historyPage: 1 };
     }
+    case 'OPEN_DIAGNOSTICS_MODAL':
+      return { ...state, isDiagnosticsModalOpen: true, diagnosticResults: {} };
+    case 'CLOSE_DIAGNOSTICS_MODAL':
+      return { ...state, isDiagnosticsModalOpen: false, diagnosticResults: {} };
+    case 'SET_DIAGNOSTIC_RESULTS':
+      return { ...state, diagnosticResults: action.payload };
     default:
       return state;
   }

@@ -7,11 +7,13 @@ import {
     cleanupLinks, autoAssociateRecords, fixPowerSigns
 } from '../services/clientService';
 import { analyzeBmsScreenshots } from '../services/geminiService';
+import { runDiagnostics } from '../services/clientService';
 import type { BmsSystem, AnalysisRecord, DisplayableAnalysisResult } from '../types';
 import EditSystemModal from './EditSystemModal';
 import BulkUpload from './BulkUpload';
 import HistoricalChart from './HistoricalChart';
 import IpManagement from './IpManagement';
+import DiagnosticsModal from './DiagnosticsModal';
 import { useAdminState, HistorySortKey } from '../state/adminState';
 import { getBasename, getIsActualError } from '../utils';
 import SpinnerIcon from './icons/SpinnerIcon';
@@ -506,6 +508,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         'history'
     );
 
+    const handleRunDiagnostics = async () => {
+        dispatch({ type: 'OPEN_DIAGNOSTICS_MODAL' });
+        dispatch({ type: 'ACTION_START', payload: 'isRunningDiagnostics' });
+        try {
+            const results = await runDiagnostics();
+            dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: results });
+        } catch (err) {
+            const error = err instanceof Error ? err.message : 'Failed to run diagnostics.';
+            log('error', 'Diagnostics failed.', { error });
+            dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: { 'error': { status: 'Failure', message: error } } });
+        } finally {
+            dispatch({ type: 'ACTION_END', payload: 'isRunningDiagnostics' });
+        }
+    };
+
 
 
 
@@ -623,6 +640,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             onAutoAssociate={handleAutoAssociate}
                             onFixPowerSigns={handleFixPowerSigns}
                         />
+                        <section id="system-diagnostics-section">
+                            <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">System Diagnostics</h2>
+                            <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
+                                <p className="mb-4">Run a series of tests to check the health of the system, including database connectivity, API functions, and AI model responses.</p>
+                                <button
+                                    onClick={handleRunDiagnostics}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-50"
+                                    disabled={state.actionStatus.isRunningDiagnostics}
+                                >
+                                    {state.actionStatus.isRunningDiagnostics ? (
+                                        <div className="flex items-center">
+                                            <SpinnerIcon className="w-5 h-5 mr-2" />
+                                            <span>Running...</span>
+                                        </div>
+                                    ) : (
+                                        'Run Diagnostics'
+                                    )}
+                                </button>
+                            </div>
+                        </section>
                     </>
                 )}
             </main>
@@ -635,6 +672,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     isSaving={actionStatus.isSaving}
                 />
             )}
+
+            <DiagnosticsModal
+                isOpen={state.isDiagnosticsModalOpen}
+                onClose={() => dispatch({ type: 'CLOSE_DIAGNOSTICS_MODAL' })}
+                results={state.diagnosticResults}
+                isLoading={state.actionStatus.isRunningDiagnostics}
+            />
         </div>
     );
 };

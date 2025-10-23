@@ -525,3 +525,8 @@ export const getHourlyWeather = async (lat: number, lon: number, date: string): 
     });
 };
 
+export const runDiagnostics = async (): Promise<Record<string, { status: string; message: string }>> => {
+    log('info', 'Running system diagnostics.');
+    return apiFetch<Record<string, { status: string; message: string }>>('admin-diagnostics');
+};
+
