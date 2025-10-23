@@ -34,14 +34,24 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
     log('info', 'API fetch started.', logContext);
     
     try {
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers,
+        };
+
+        // Add Netlify Identity token if available
+        if (window.netlifyIdentity?.currentUser) {
+            const token = await window.netlifyIdentity.currentUser()?.jwt();
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+        }
+
         const response = await fetch(`/.netlify/functions/${endpoint}`, {
             ...options,
             // Add cache control for GET requests to prevent stale data.
             cache: isGet ? 'no-store' : undefined,
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers,
-            },
+            headers,
         });
 
         if (!response.ok) {
