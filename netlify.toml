@@ -13,3 +13,10 @@
 
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
+
+[context.production.environment]
+  LOG_LEVEL = "TRACE"
+[context.deploy-preview.environment]
+  LOG_LEVEL = "TRACE"
+[context.branch-deploy.environment]
+  LOG_LEVEL = "TRACE"

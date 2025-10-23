@@ -33,6 +33,7 @@ exports.handler = async function(event, context) {
   }
 
   const apiKey = process.env.WEATHER_API_KEY;
+  log('info', `WEATHER_API_KEY: ${apiKey ? 'loaded' : 'not loaded'}`)
   if (!apiKey) {
     log('error', 'Weather API key (WEATHER_API_KEY) is not configured in environment variables.', logContext);
     return { statusCode: 500, body: JSON.stringify({ error: 'Weather API key is not configured.' }) };

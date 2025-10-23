@@ -14,7 +14,6 @@ interface DataManagementProps {
     onBackfillWeather: () => void;
     onCleanupLinks: () => void;
     onAutoAssociate: () => void;
-    onCleanupCompletedJobs: () => void;
     cleanupProgress: string | null;
     onFixPowerSigns: () => void;
 }
@@ -31,8 +30,6 @@ const DataManagement: React.FC<DataManagementProps> = ({
     onBackfillWeather,
     onCleanupLinks,
     onAutoAssociate,
-    onCleanupCompletedJobs,
-    cleanupProgress,
     onFixPowerSigns
 }) => {
     const { 
@@ -143,13 +140,7 @@ const DataManagement: React.FC<DataManagementProps> = ({
                             >
                                 {actionStatus.isFixingPowerSigns ? 'Fixing...' : 'Fix Power Signs'}
                             </button>
-                            <button 
-                                onClick={onCleanupCompletedJobs} 
-                                disabled={actionStatus.isCleaningJobs} 
-                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-blue-900 disabled:cursor-not-allowed transition-colors"
-                            >
-                                {actionStatus.isCleaningJobs ? (cleanupProgress || 'Cleaning...') : 'Clean Job Blobs'}
-                            </button>
+
                         </div>
                     </div>
                     <div className="bg-gray-800 p-4 rounded-lg shadow-inner">

@@ -53,6 +53,7 @@ const invokeProcessor = async (jobId, log) => {
 
 exports.handler = async (event, context) => {
     const log = createLogger('analyze', context);
+    log('info', 'analyze.js handler function invoked - v2');
     const timer = createTimer(log, 'analyze-handler');
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod } = event;
@@ -96,73 +97,68 @@ exports.handler = async (event, context) => {
         
         const jobCreationResponses = [];
         const batchFileNames = new Set();
-        const fileNamesToCheck = images.map(img => img.fileName);
-        
-        log('debug', 'Checking for existing records in history.', { 
-            ...logContext, 
-            filenamesToCheck: fileNamesToCheck.length 
-        });
-        
-        const existingRecords = await historyCollection.find({ fileName: { $in: fileNamesToCheck } }).toArray();
-        const existingRecordMap = new Map(existingRecords.map(r => [r.fileName, r]));
-        
-        log('debug', 'Existing records check complete.', { 
-            ...logContext, 
-            existingCount: existingRecords.length,
-            newCount: basenamesToCheck.length - existingRecords.length
-        });
-        dbTimer.end();
-
         const jobsToInsert = [];
 
-        log('debug', 'Processing images for job creation.', { ...logContext, totalImages: images.length });
-        
-        for (const [index, image] of images.entries()) {
-            const imageLogContext = { ...logContext, fileName: image.fileName, imageIndex: index };
-            
-            if (batchFileNames.has(image.fileName)) {
-                 log('debug', 'Duplicate in current batch detected.', imageLogContext);
-                 jobCreationResponses.push({ fileName: image.fileName, status: 'duplicate_batch' });
-                 continue;
-            }
-            batchFileNames.add(image.fileName);
+        const BATCH_SIZE = 100;
+        const imageBatches = [];
+        for (let i = 0; i < images.length; i += BATCH_SIZE) {
+            imageBatches.push(images.slice(i, i + BATCH_SIZE));
+        }
 
-            const existingRecord = existingRecordMap.get(image.fileName);
-            if (existingRecord && !image.force) {
-                log('debug', 'Duplicate in history detected.', { 
-                    ...imageLogContext, 
-                    existingRecordId: existingRecord.id,
-                    force: image.force 
+        for (const batch of imageBatches) {
+            const fileNamesToCheck = batch.map(img => img.fileName);
+
+            const existingRecords = await historyCollection.find({ fileName: { $in: fileNamesToCheck } }).toArray();
+            const existingRecordMap = new Map(existingRecords.map(r => [r.fileName, r]));
+
+            for (const [index, image] of batch.entries()) {
+                const imageLogContext = { ...logContext, fileName: image.fileName, imageIndex: index };
+
+                if (batchFileNames.has(image.fileName)) {
+                    log('debug', 'Duplicate in current batch detected.', imageLogContext);
+                    jobCreationResponses.push({ fileName: image.fileName, status: 'duplicate_batch' });
+                    continue;
+                }
+                batchFileNames.add(image.fileName);
+
+                const existingRecord = existingRecordMap.get(image.fileName);
+                if (existingRecord && !image.force) {
+                    log('debug', 'Duplicate in history detected.', {
+                        ...imageLogContext,
+                        existingRecordId: existingRecord.id,
+                        force: image.force
+                    });
+                    jobCreationResponses.push({
+                        fileName: image.fileName,
+                        status: 'duplicate_history',
+                        duplicateRecordId: existingRecord.id,
+                    });
+                    continue;
+                }
+
+                log('debug', 'Creating new job for image.', imageLogContext);
+
+                const newJobId = uuidv4();
+                jobsToInsert.push({
+                    _id: newJobId,
+                    id: newJobId,
+                    fileName: image.fileName,
+                    status: "Queued",
+                    image: image.image,
+                    mimeType: image.mimeType,
+                    systems,
+                    createdAt: new Date(),
+                    retryCount: 0,
                 });
                 jobCreationResponses.push({
                     fileName: image.fileName,
-                    status: 'duplicate_history',
-                    duplicateRecordId: existingRecord.id,
+                    jobId: newJobId,
+                    status: 'Submitted',
                 });
-                continue;
             }
-            
-            log('debug', 'Creating new job for image.', imageLogContext);
-
-            const newJobId = uuidv4();
-            jobsToInsert.push({
-                _id: newJobId,
-                id: newJobId,
-                fileName: image.fileName,
-                status: "Queued",
-                image: image.image,
-                mimeType: image.mimeType,
-                systems,
-                createdAt: new Date(),
-                retryCount: 0,
-            });
-            jobCreationResponses.push({
-                fileName: image.fileName,
-                jobId: newJobId,
-                status: 'Submitted',
-            });
         }
-        
+
+        dbTimer.end();        
         if (jobsToInsert.length > 0) {
             const insertTimer = createTimer(log, 'insert-jobs');
             await jobsCollection.insertMany(jobsToInsert);

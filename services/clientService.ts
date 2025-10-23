@@ -432,13 +432,7 @@ export const fixPowerSigns = async (): Promise<{ success: boolean; updatedCount:
     });
 };
 
-export const cleanupCompletedJobs = async (cursor?: string): Promise<{ success: boolean; cleanedCount: number, nextCursor: string | null }> => {
-    log('info', 'Sending request to clean up completed jobs.', { cursor: cursor || 'start' });
-    return apiFetch<{ success: boolean; cleanedCount: number, nextCursor: string | null }>('jobs-cleanup', {
-        method: 'POST',
-        body: JSON.stringify({ cursor }),
-    });
-};
+
 
 export const getJobStatuses = async (jobIds: string[]): Promise<any[]> => {
     if (jobIds.length === 0) return [];

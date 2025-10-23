@@ -4,7 +4,7 @@ import {
     updateBmsSystem, linkAnalysisToSystem, registerBmsSystem, getJobStatuses,
     getAnalysisRecordById, streamAllHistory, findDuplicateAnalysisSets, deleteAnalysisRecords,
     deleteUnlinkedAnalysisHistory, clearAllData, clearHistoryStore, backfillWeatherData,
-    cleanupLinks, autoAssociateRecords, cleanupCompletedJobs, fixPowerSigns
+    cleanupLinks, autoAssociateRecords, fixPowerSigns
 } from '../services/clientService';
 import { analyzeBmsScreenshots } from '../services/geminiService';
 import type { BmsSystem, AnalysisRecord, DisplayableAnalysisResult } from '../types';
@@ -480,34 +480,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         'history'
     );
 
-    const handleCleanupCompletedJobs = async () => {
-        log('info', 'Starting cleanup of completed job blobs.');
-        dispatch({ type: 'ACTION_START', payload: 'isCleaningJobs' });
-        setCleanupProgress('Starting...');
-        try {
-            let nextCursor: string | null = null;
-            let totalCleaned = 0;
-            do {
-                const result = await cleanupCompletedJobs(nextCursor || undefined);
-                totalCleaned += result.cleanedCount;
-                nextCursor = result.nextCursor;
-                setCleanupProgress(`Cleaned ${totalCleaned} jobs...`);
-                log('debug', 'Job cleanup batch complete.', { cleaned: result.cleanedCount, next: nextCursor });
-            } while (nextCursor);
-            log('info', 'Completed job blob cleanup.', { totalCleaned });
-            setCleanupProgress(null);
-            // No data refresh needed for this action
-        } catch (err) {
-            const error = err instanceof Error ? err.message : 'Failed to clean up job blobs.';
-            log('error', 'Job blob cleanup failed.', { error });
-            dispatch({ type: 'SET_ERROR', payload: error });
-            setCleanupProgress('Error!');
-        } finally {
-            dispatch({ type: 'ACTION_END', payload: 'isCleaningJobs' });
-            // Optionally clear progress message after a delay
-            setTimeout(() => setCleanupProgress(null), 3000);
-        }
-    };
+
 
 
     // --- Rendering ---
@@ -622,8 +595,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             onBackfillWeather={handleBackfillWeather}
                             onCleanupLinks={handleCleanupLinks}
                             onAutoAssociate={handleAutoAssociate}
-                            onCleanupCompletedJobs={handleCleanupCompletedJobs}
-                            cleanupProgress={cleanupProgress}
                             onFixPowerSigns={handleFixPowerSigns}
                         />
                     </>
