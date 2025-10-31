@@ -67,17 +67,22 @@ export const analyzeBmsScreenshot = async (file: File): Promise<AnalysisData> =>
         log('info', 'Analyze API response received.', { status: response.status });
         if (!response.ok) {
             let errorBody;
+            // ***FIX: Declare errorText here to make it available in the outer scope.***
+            let errorText = 'Failed to read error response'; 
             try {
                 // Read as text first, then try to parse as JSON
-                const errorText = await response.text();
+                errorText = await response.text();
                 try {
                     errorBody = JSON.parse(errorText);
                 } catch {
                     errorBody = errorText;
                 }
-            } catch {
-                errorBody = 'Failed to read error response';
+            } catch (e) {
+                // If response.text() fails, errorText will retain its default value
+                errorBody = errorText;
+                log('warn', 'Failed to read response body during error handling.', { e: e instanceof Error ? e.message : 'Unknown error' });
             }
+            // ***FIX: errorText is now correctly scoped and will be included in the message.***
             const errorMessage = (typeof errorBody === 'object' && errorBody?.error) ? errorBody.error : `Server responded with status ${response.status}: ${errorText}`;
             throw new Error(errorMessage);
         }
@@ -101,4 +106,3 @@ export const analyzeBmsScreenshot = async (file: File): Promise<AnalysisData> =>
         throw new Error(errorMessage);
     }
 };
-
