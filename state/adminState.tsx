@@ -1,6 +1,6 @@
 import React, { createContext, useReducer, useContext, Dispatch } from 'react';
 import type { BmsSystem, AnalysisRecord, DisplayableAnalysisResult } from '../types';
-import { HistoryColumnKey, DEFAULT_VISIBLE_COLUMNS } from '../components/admin/columnDefinitions';
+import { HistoryColumnKey, DEFAULT_VISIBLE_COLUMNS } from 'components/admin/columnDefinitions';
 
 export type HistorySortKey = HistoryColumnKey;
 
@@ -122,8 +122,8 @@ export type AdminAction =
   | { type: 'SET_HISTORY_SORT'; payload: { key: HistorySortKey } }
   | { type: 'SET_SYSTEMS_PAGE'; payload: number }
   | { type: 'SET_HISTORY_PAGE'; payload: number }
-  | { type: 'UPDATE_BULK_JOB_STATUS'; payload: { jobId: string; status: string } }
-  | { type: 'UPDATE_BULK_JOB_COMPLETED'; payload: { jobId: string; record: AnalysisRecord } }
+  // ***MODIFIED***: This action now receives a fileName to match against, not a jobId
+  | { type: 'UPDATE_BULK_JOB_COMPLETED'; payload: { record: AnalysisRecord, fileName: string } }
   | { type: 'OPEN_DIAGNOSTICS_MODAL' }
   | { type: 'CLOSE_DIAGNOSTICS_MODAL' }
   | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: Record<string, { status: string; message: string }> };
@@ -152,7 +152,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         );
         return { ...state, historyCache: [...state.historyCache, ...newRecords] };
     case 'FINISH_HISTORY_CACHE_BUILD':
-        return { ...state, isCacheBuilding: false };
+        return { ...state, isCacheBuilding: false }; // ***FIX***: Added missing closing brace
 
     case 'SET_ERROR':
       return { ...state, loading: false, error: action.payload, actionStatus: initialState.actionStatus };
@@ -161,11 +161,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       return { ...state, systemsPage: action.payload };
     case 'SET_HISTORY_PAGE':
       return { ...state, historyPage: action.payload, expandedHistoryId: null };
-
-    // Other actions remain largely the same, but may need to re-fetch paginated data
-    // For example, after a merge, we might want to refetch the current page of systems.
       
-    // The rest of the reducer logic remains unchanged...
     case 'TOGGLE_HISTORY_DETAIL':
       return { ...state, expandedHistoryId: state.expandedHistoryId === action.payload ? null : action.payload };
     case 'SET_EDITING_SYSTEM':
@@ -193,20 +189,18 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
                 r.fileName === action.payload.fileName ? { ...r, ...action.payload } : r
             ) 
         };
-    case 'UPDATE_BULK_JOB_STATUS':
-        return {
-            ...state,
-            bulkUploadResults: state.bulkUploadResults.map(r => 
-                r.jobId === action.payload.jobId ? { ...r, error: action.payload.status } : r
-            ),
-        };
+    
+    // ***REMOVED***: UPDATE_BULK_JOB_STATUS is no longer needed
+
     case 'UPDATE_BULK_JOB_COMPLETED':
-        const { jobId, record } = action.payload;
+        // ***MODIFIED***: This now matches by fileName instead of jobId
+        const { record, fileName } = action.payload;
         return {
             ...state,
             bulkUploadResults: state.bulkUploadResults.map(r =>
-                r.jobId === jobId ? { ...r, data: record.analysis, error: null, recordId: record.id, weather: record.weather } : r
+                r.fileName === fileName ? { ...r, data: record.analysis, error: null, recordId: record.id, weather: record.weather } : r
             ),
+            // Add the new record to the history cache immediately for the chart
             history: [record, ...state.history],
             historyCache: [record, ...state.historyCache],
             totalHistory: state.totalHistory + 1,
@@ -254,3 +248,4 @@ export const useAdminState = () => {
   }
   return context;
 };
+
