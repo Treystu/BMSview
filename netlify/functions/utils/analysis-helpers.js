@@ -1,6 +1,9 @@
+/**
+ * Provides the prompt and schema for the Gemini API call.
+ */
 const { Type } = require("@google/genai");
-const { v4: uuidv4 } = require("uuid");
 
+// This is the JSON schema Gemini will be forced to output.
 const getResponseSchema = () => ({
     type: Type.OBJECT,
     properties: {
@@ -10,19 +13,19 @@ const getResponseSchema = () => ({
         overallVoltage: { "type": Type.NUMBER, "nullable": true },
         current: { "type": Type.NUMBER, "nullable": true },
         remainingCapacity: { "type": Type.NUMBER, "nullable": true },
-        fullCapacity: { "type": Type.NUMBER, "nullable": true },
+        fullCapacity: { "type": Type.NUMBER, "nullable": true, "description": "The 'Full Cap' or 'Design Cap' value." },
         power: { "type": Type.NUMBER, "nullable": true, "description": "Power in Watts. If in kW, convert to W." },
         chargeMosOn: { "type": Type.BOOLEAN, "nullable": true },
         dischargeMosOn: { "type": Type.BOOLEAN, "nullable": true },
         balanceOn: { "type": Type.BOOLEAN, "nullable": true },
         highestCellVoltage: { "type": Type.NUMBER, "nullable": true },
         lowestCellVoltage: { "type": Type.NUMBER, "nullable": true },
-        cellVoltageDifference: { "type": Type.NUMBER, "nullable": true },
+        cellVoltageDifference: { "type": Type.NUMBER, "nullable": true, "description": "The 'voltage difference'. If in mV, convert to V." },
         averageCellVoltage: { "type": Type.NUMBER, "nullable": true },
-        cellVoltages: { "type": Type.ARRAY, "items": { "type": Type.NUMBER } },
+        cellVoltages: { "type": Type.ARRAY, "items": { "type": Type.NUMBER }, "description": "ONLY if a numbered list of individual cells exists. Otherwise, must be []." },
         cycleCount: { "type": Type.NUMBER, "nullable": true },
-        temperatures: { "type": Type.ARRAY, "items": { "type": Type.NUMBER }, "description": "Array of temperatures from all sensors like T1, T2." },
-        mosTemperature: { "type": Type.NUMBER, "nullable": true },
+        temperatures: { "type": Type.ARRAY, "items": { "type": Type.NUMBER }, "description": "Array of temperatures from all sensors like T1, T2. If only 'Temp' exists, use that." },
+        mosTemperature: { "type": Type.NUMBER, "nullable": true, "description": "The 'MOS Temperature'." },
         serialNumber: { "type": Type.STRING, "nullable": true },
         softwareVersion: { "type": Type.STRING, "nullable": true },
         hardwareVersion: { "type": Type.STRING, "nullable": true },
@@ -30,20 +33,22 @@ const getResponseSchema = () => ({
     }
 });
 
+// This is the system prompt sent to Gemini with the image.
 const getImageExtractionPrompt = () => `You are a meticulous data extraction AI. Analyze the provided BMS screenshot and extract its data into a JSON object, strictly following these rules:
 1.  **JSON Object Output**: Your entire response MUST be a single, valid JSON object.
 2.  **Strict Schema Adherence**: Use the provided schema. If a value isn't visible, use \`null\` for single fields or \`[]\` for arrays.
 3.  **Data Extraction**:
-    -   \`dlNumber\`: Find 'DL Number',
+    -   \`dlNumber\`: Find 'DL Number' or similar identifier at the top.
     -   \`stateOfCharge\`: Extract 'SOC' percentage.
     -   \`overallVoltage\`: Extract 'voltage'.
-    -   \`current\`: Extract 'current', preserving negative sign.
-    -   \`remainingCapacity\`: Extract 'Remaining Cap'.
-    -   \`fullCapacity\`: Extract 'Full Cap'.
-    -   \`power\`: Extract Power. If in 'kW', multiply by 1000 for Watts. **IMPORTANT: If the 'current' value is negative, the 'power' value must also be negative.**
-    -   \`chargeMosOn\`, \`dischargeMosOn\`, \`balanceOn\`: For each, determine if the corresponding indicator ('Chg MOS', 'Dischg MOS', 'Balance') is on (green, lit) which is \`true\`, or off (grey, unlit) which is \`false\`.
+    -   \`current\`: Extract 'current'. **CRITICAL: Preserve the negative sign if it exists.** A negative sign indicates discharge.
+    -   \`remainingCapacity\`: Extract 'Remaining Cap' or 'remaining capacity'.
+    -   \`fullCapacity\`: Extract 'Full Cap' or 'full capacity'.
+    -   \`power\`: Extract 'Power'. If in 'kW', multiply by 1000 for Watts. **IMPORTANT: If the 'current' value is negative, the 'power' value MUST also be negative.**
+    -   \`chargeMosOn\`, \`dischargeMosOn\`, \`balanceOn\`: For each, determine if the indicator ('Chg MOS', 'Dischg MOS', 'Balance') is on (green, lit) which is \`true\`, or off (grey, unlit) which is \`false\`.
+    -   \`cellVoltageDifference\`: Extract 'voltage difference'. **If the unit is 'mV', divide by 1000 to convert to 'V'.** The schema requires Volts.
     -   \`temperatures\`: Extract all 'Temp', 'T1', 'T2' values into this array.
-    -   \`mosTemperature\`: Extract 'MOS Temp'.
+    -   \`mosTemperature\`: Extract 'MOS Temperature' or 'MOS'.
     -   \`cellVoltages\`: ONLY if a numbered list of individual cell voltages exists, populate this array. Otherwise, it MUST be \`[]\`.
 4.  **Timestamp Logic (CRITICAL)**:
     -   Find a timestamp within the image itself.
@@ -51,6 +56,8 @@ const getImageExtractionPrompt = () => `You are a meticulous data extraction AI.
     -   If only time is visible (e.g., "12:04:00"), extract only the time string "12:04:00". Do NOT add a date.
     -   If no timestamp is visible, \`timestampFromImage\` MUST be \`null\`.
 5.  **Final Review**: Your entire output must be ONLY the raw JSON object, without any surrounding text, explanations, or markdown formatting like \`\`\`json.`;
+
+// --- Utility Functions (Copied from original) ---
 
 const cleanAndParseJson = (text, log) => {
     if (!text) {
@@ -90,14 +97,21 @@ const mapExtractedToAnalysisData = (extracted, log) => {
         ...extracted,
         temperature: extracted.temperatures?.[0] || null,
         numTempSensors: extracted.temperatures?.length || 0,
-        alerts: [],
-        summary: "No summary provided by this model.",
-        status: null,
+        alerts: [], // Alerts are generated in the next step
+        summary: "No summary provided by this model.", // Summary is generated on-demand by client
+        status: null, // Status is generated in the next step
     };
     
+    // Auto-correct power sign if Gemini misses it
     if (analysis.current != null && analysis.power != null && analysis.current < 0 && analysis.power > 0) {
         log('warn', 'Correcting positive power sign for negative current.', { originalPower: analysis.power, current: analysis.current });
         analysis.power = -Math.abs(analysis.power);
+    }
+
+    // Auto-correct cell difference if Gemini returns mV
+    if (analysis.cellVoltageDifference != null && analysis.cellVoltageDifference > 1) {
+        log('warn', 'Correcting large cell voltage difference (likely mV). Converting to V.', { originalDiff: analysis.cellVoltageDifference });
+        analysis.cellVoltageDifference = analysis.cellVoltageDifference / 1000.0;
     }
     
     log('debug', 'Mapped analysis data.', { analysisKeys: Object.keys(analysis) });
@@ -114,86 +128,103 @@ const performPostAnalysis = (analysis, system, log) => {
     
     // Cell voltage analysis
     if (analysis.cellVoltages && analysis.cellVoltages.length > 0) {
-        const maxVoltage = Math.max(...analysis.cellVoltages);
-        const minVoltage = Math.min(...analysis.cellVoltages);
-        const difference = maxVoltage - minVoltage;
-        
-        analysis.highestCellVoltage = maxVoltage;
-        analysis.lowestCellVoltage = minVoltage;
-        analysis.cellVoltageDifference = difference;
-        analysis.averageCellVoltage = analysis.cellVoltages.reduce((a, b) => a + b, 0) / analysis.cellVoltages.length;
-        
-        if (difference > 0.1) {
-            alerts.push(`High cell voltage imbalance: ${difference.toFixed(3)}V`);
-            status = 'Warning';
+        // If helper fields are null, calculate them from the array
+        if (analysis.highestCellVoltage == null) {
+            analysis.highestCellVoltage = Math.max(...analysis.cellVoltages);
         }
-        
-        log('debug', 'Cell voltage analysis complete.', { 
-            maxVoltage, 
-            minVoltage, 
-            difference, 
-            avgVoltage: analysis.averageCellVoltage 
-        });
+         if (analysis.lowestCellVoltage == null) {
+            analysis.lowestCellVoltage = Math.min(...analysis.cellVoltages);
+        }
+         if (analysis.averageCellVoltage == null) {
+            analysis.averageCellVoltage = analysis.cellVoltages.reduce((a, b) => a + b, 0) / analysis.cellVoltages.length;
+        }
+        if (analysis.cellVoltageDifference == null) {
+            analysis.cellVoltageDifference = analysis.highestCellVoltage - analysis.lowestCellVoltage;
+        }
+    }
+    
+    if (analysis.cellVoltageDifference != null) {
+         if (analysis.cellVoltageDifference > 0.1) { // 100mV
+            alerts.push(`CRITICAL: High cell voltage imbalance: ${(analysis.cellVoltageDifference * 1000).toFixed(1)}mV`);
+            status = 'Critical';
+        } else if (analysis.cellVoltageDifference > 0.05) { // 50mV
+             alerts.push(`WARNING: Cell voltage imbalance detected: ${(analysis.cellVoltageDifference * 1000).toFixed(1)}mV`);
+            if (status === 'Normal') status = 'Warning';
+        }
     }
     
     // Temperature analysis
     if (analysis.temperatures && analysis.temperatures.length > 0) {
-        const maxTemp = Math.max(...analysis.temperatures);
-        if (maxTemp > 45) {
-            alerts.push(`High temperature detected: ${maxTemp}°C`);
-            status = 'Warning';
-        }
+        const maxTemp = Math.max(...analysis.temperatures, (analysis.mosTemperature || -Infinity));
         if (maxTemp > 55) {
-            alerts.push(`Critical temperature: ${maxTemp}°C`);
+            alerts.push(`CRITICAL: High temperature detected: ${maxTemp}°C`);
+            status = 'Critical';
+        } else if (maxTemp > 45) {
+            alerts.push(`WARNING: High temperature detected: ${maxTemp}°C`);
+             if (status === 'Normal') status = 'Warning';
+        }
+        if (analysis.mosTemperature && analysis.mosTemperature > 80) {
+             alerts.push(`CRITICAL: MOS temperature is very high: ${analysis.mosTemperature}°C`);
             status = 'Critical';
         }
-        
-        log('debug', 'Temperature analysis complete.', { maxTemp, alertCount: alerts.length });
     }
     
     // SOC analysis
     if (analysis.stateOfCharge != null) {
-        if (analysis.stateOfCharge < 20) {
-            alerts.push(`Low battery: ${analysis.stateOfCharge}%`);
-            if (status === 'Normal') status = 'Warning';
-        }
-        if (analysis.stateOfCharge < 10) {
-            alerts.push(`Critical battery level: ${analysis.stateOfCharge}%`);
+         if (analysis.stateOfCharge < 10) {
+            alerts.push(`CRITICAL: Battery level is critical: ${analysis.stateOfCharge}%`);
             status = 'Critical';
+        } else if (analysis.stateOfCharge < 20) {
+            alerts.push(`WARNING: Low battery: ${analysis.stateOfCharge}%`);
+            if (status === 'Normal') status = 'Warning';
         }
     }
     
     analysis.alerts = alerts;
     analysis.status = status;
     
-    log('info', 'Post-analysis complete.', { status, alertCount: alerts.length });
+    log('info', 'Post-analysis complete.', { status, alertCount: alerts.empty });
     return analysis;
 };
 
 const parseTimestamp = (timestampFromImage, fileName, log) => {
     log('debug', 'Parsing timestamp.', { timestampFromImage, fileName });
-    if (timestampFromImage && /\d{4}[-/]\d{2}[-/]\d{2}/.test(timestampFromImage)) {
-        log('debug', 'Using full timestamp from image.', { timestampFromImage });
-        return new Date(timestampFromImage);
-    }
-    const fromFilename = (fileName || '').match(/(\d{4})[-_]?(\d{2})[-_]?(\d{2})[T _-]?(\d{2})[:.-]?(\d{2})[:.-]?(\d{2})/);
-    if (fromFilename) {
-        const [, y, m, d, h, min, s] = fromFilename;
-        const date = new Date(`${y}-${m}-${d}T${h}:${min}:${s}Z`);
-        if (!isNaN(date.getTime())) {
-            log('debug', 'Parsed date from filename.', { dateFromFilename: date.toISOString() });
-            if (timestampFromImage && /^\d{1,2}:\d{2}(:\d{2})?$/.test(timestampFromImage.trim())) {
-                log('debug', 'Applying time from image to filename date.', { timeFromImage: timestampFromImage });
-                const [timeH, timeM, timeS] = timestampFromImage.split(':').map(Number);
-                date.setUTCHours(timeH || 0, timeM || 0, timeS || 0, 0);
+    try {
+        // 1. Try to use timestamp from image if it's a full ISO-like string
+        if (timestampFromImage && /\d{4}[-/]\d{2}[-/]\d{2}T\d{2}:\d{2}:\d{2}/.test(timestampFromImage)) {
+            const date = new Date(timestampFromImage);
+            if (!isNaN(date.getTime())) {
+                log('debug', 'Using full timestamp from image.', { timestampFromImage });
+                return date;
             }
-            return date;
         }
+
+        // 2. Try to parse from filename (e.g., Screenshot_20251020-093318.png)
+        const fromFilename = (fileName || '').match(/(\d{4})[-_]?(\d{2})[-_]?(\d{2})[T _-]?(\d{2})[:.-]?(\d{2})[:.-]?(\d{2})/);
+        if (fromFilename) {
+            const [, y, m, d, h, min, s] = fromFilename;
+            const date = new Date(`${y}-${m}-${d}T${h}:${min}:${s}Z`); // Assume UTC from filename
+            if (!isNaN(date.getTime())) {
+                log('debug', 'Parsed date from filename.', { dateFromFilename: date.toISOString() });
+                
+                // 3. If filename gave date, check if image gave a valid *time* to override
+                if (timestampFromImage && /^\d{1,2}:\d{2}(:\d{2})?$/.test(timestampFromImage.trim())) {
+                    log('debug', 'Applying time from image to filename date.', { timeFromImage: timestampFromImage });
+                    const [timeH, timeM, timeS] = timestampFromImage.split(':').map(Number);
+                    date.setUTCHours(timeH || 0, timeM || 0, timeS || 0, 0);
+                }
+                return date;
+            }
+        }
+    } catch (e) {
+        log('warn', 'Error during timestamp parsing.', { error: e.message });
     }
+    
     log('info', 'No valid timestamp found in image or filename, using current time.');
-    return new Date();
+    return new Date(); // Fallback to current time
 };
 
+// This is still useful for *detecting* duplicates, even if we don't save it.
 const generateAnalysisKey = (analysis) => {
     if (!analysis) return null;
     try {
@@ -223,3 +254,4 @@ module.exports = {
     parseTimestamp,
     generateAnalysisKey,
 };
+
