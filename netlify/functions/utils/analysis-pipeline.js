@@ -5,7 +5,8 @@
 const { getGeminiClient } = require("./geminiClient.js");
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.js");
-const { createRetryWrapper } = require("./utils/retry.js");
+// ***FIX: Corrected import path. File is in the same directory.***
+const { createRetryWrapper } = require("./retry.js");
 const { getResponseSchema, getImageExtractionPrompt, cleanAndParseJson, mapExtractedToAnalysisData, performPostAnalysis, parseTimestamp, generateAnalysisKey } = require('./analysis-helpers.js');
 
 const GEMINI_API_TIMEOUT_MS = 45000;
@@ -185,3 +186,4 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
 };
 
 module.exports = { performAnalysisPipeline };
+
