@@ -1,4 +1,6 @@
 const { MongoClient } = require('mongodb');
+const { errorResponse } = require('./utils/errors');
+const { parseJsonBody, validateAnalyzeRequest } = require('./utils/validation');
 
 // MongoDB connection
 const client = new MongoClient(process.env.MONGODB_URI);
@@ -24,25 +26,28 @@ exports.handler = async (event, context) => {
   }
 
   if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'Method not allowed' })
-    };
+    return errorResponse(405, 'method_not_allowed', 'Method not allowed', undefined, headers);
   }
+
+  // Capture request-scoped context for safe use in catch
+  let requestContext = { jobId: undefined };
 
   try {
     await client.connect();
-    
-    const { jobId, fileData, userId } = JSON.parse(event.body);
-    
-    if (!jobId || !fileData || !userId) {
-      return {
-        statusCode: 400,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ error: 'Missing required parameters' })
-      };
+
+    // Safe parse & validate
+    const parsed = parseJsonBody(event);
+    if (!parsed.ok) {
+      return errorResponse(400, 'invalid_request', parsed.error, undefined, headers);
     }
+
+    const validated = validateAnalyzeRequest(parsed.value);
+    if (!validated.ok) {
+      return errorResponse(400, 'missing_parameters', validated.error, validated.details, headers);
+    }
+
+    const { jobId, fileData, userId } = validated.value;
+    requestContext.jobId = jobId;
 
     // Send initial response with SSE headers
     const response = {
@@ -52,12 +57,12 @@ exports.handler = async (event, context) => {
     };
 
     // Function to send progress events
-    const sendEvent = (data) => {
+    const sendEvent = async (data) => {
       const eventData = `data: ${JSON.stringify(data)}\n\n`;
       console.log('Sending event:', eventData);
       // In a real implementation, this would stream to the client
       // For now, we'll store events in the database
-      storeProgressEvent(jobId, data);
+      await storeProgressEvent(jobId, data);
     };
 
     // Start processing
@@ -104,22 +109,15 @@ exports.handler = async (event, context) => {
     console.error('Analysis error:', error);
     
     // Send error event
-    if (event.body && JSON.parse(event.body).jobId) {
-      await storeProgressEvent(JSON.parse(event.body).jobId, {
+    if (requestContext.jobId) {
+      await storeProgressEvent(requestContext.jobId, {
         stage: 'error',
         progress: 0,
         message: `Analysis failed: ${error.message}`
       });
     }
 
-    return {
-      statusCode: 500,
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        error: 'Analysis failed',
-        details: error.message
-      })
-    };
+    return errorResponse(500, 'analysis_failed', 'Analysis failed', { message: error.message }, headers);
   } finally {
     await client.close();
   }
