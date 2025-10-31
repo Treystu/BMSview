@@ -1,36 +1,30 @@
 import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import {
     getRegisteredSystems, getAnalysisHistory, mergeBmsSystems, deleteAnalysisRecord,
-    updateBmsSystem, linkAnalysisToSystem, registerBmsSystem, getJobStatuses,
+    updateBmsSystem, linkAnalysisToSystem, registerBmsSystem,
     getAnalysisRecordById, streamAllHistory, findDuplicateAnalysisSets, deleteAnalysisRecords,
     deleteUnlinkedAnalysisHistory, clearAllData, clearHistoryStore, backfillWeatherData, countRecordsNeedingWeather,
-    cleanupLinks, autoAssociateRecords, fixPowerSigns
-} from '../services/clientService';
-import { analyzeBmsScreenshots } from '../services/geminiService';
-import { runDiagnostics } from '../services/clientService';
-import type { BmsSystem, AnalysisRecord, DisplayableAnalysisResult } from '../types';
-import EditSystemModal from './EditSystemModal';
-import BulkUpload from './BulkUpload';
-import HistoricalChart from './HistoricalChart';
-import IpManagement from './IpManagement';
-import DiagnosticsModal from './DiagnosticsModal';
-import { useAdminState, HistorySortKey } from '../state/adminState';
-import { getBasename, getIsActualError } from '../utils';
-import SpinnerIcon from './icons/SpinnerIcon';
+    cleanupLinks, autoAssociateRecords, fixPowerSigns, runDiagnostics
+} from 'services/clientService';
+// ***MODIFIED***: Import the new *synchronous* service
+import { analyzeBmsScreenshot } from 'services/geminiService';
+import type { BmsSystem, AnalysisRecord, DisplayableAnalysisResult } from 'types';
+import EditSystemModal from 'components/EditSystemModal';
+import BulkUpload from 'components/BulkUpload';
+import HistoricalChart from 'components/HistoricalChart';
+import IpManagement from 'components/IpManagement';
+import DiagnosticsModal from 'components/DiagnosticsModal';
+import { useAdminState, HistorySortKey } from 'state/adminState';
+import { getBasename, getIsActualError } from 'utils';
+import SpinnerIcon from 'components/icons/SpinnerIcon';
 
-import AdminHeader from './admin/AdminHeader';
-import SystemsTable from './admin/SystemsTable';
-import HistoryTable from './admin/HistoryTable';
-import DataManagement from './admin/DataManagement';
-import { ALL_HISTORY_COLUMNS, getNestedValue } from './admin/columnDefinitions';
+import AdminHeader from 'components/admin/AdminHeader';
+import SystemsTable from 'components/admin/SystemsTable';
+import HistoryTable from 'components/admin/HistoryTable';
+import DataManagement from 'components/admin/DataManagement';
+import { ALL_HISTORY_COLUMNS, getNestedValue } from 'components/admin/columnDefinitions';
 
-type JobCreationResponse = {
-    fileName: string;
-    jobId?: string;
-    status: string;
-    error?: string;
-    duplicateRecordId?: string; // Added to handle duplicates properly
-};
+// ***REMOVED***: JobCreationResponse no longer needed
 
 interface NetlifyUser {
   email: string;
@@ -55,7 +49,7 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
 };
 
 const ITEMS_PER_PAGE = 25;
-const POLLING_INTERVAL_MS = 5000; // Define polling interval
+// ***REMOVED***: Polling interval no longer needed
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     const { state, dispatch } = useAdminState();
@@ -70,7 +64,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
     const [cleanupProgress, setCleanupProgress] = useState<string | null>(null);
     const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
-    const pollingIntervalRef = useRef<number | null>(null);
+    // ***REMOVED***: Polling ref no longer needed
 
     // --- Data Fetching ---
     const fetchData = useCallback(async (page: number, type: 'systems' | 'history' | 'all') => {
@@ -153,90 +147,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         }
     }, [historyPage, fetchData]);
 
-    // --- Bulk Upload Polling ---
-    const pollJobStatuses = useCallback(async () => {
-        const pendingJobs = state.bulkUploadResults.filter(r => r.jobId && !r.data && !getIsActualError(r));
-        if (pendingJobs.length === 0) {
-            if (pollingIntervalRef.current) {
-                log('info', 'No pending bulk jobs. Stopping poller.');
-                clearInterval(pollingIntervalRef.current);
-                pollingIntervalRef.current = null;
-            }
-            return;
-        }
-
-        const jobIds = pendingJobs.map(j => j.jobId!);
-        log('info', 'Polling bulk job statuses.', { jobCount: jobIds.length, jobIds });
-        try {
-            const statuses = await getJobStatuses(jobIds);
-            log('debug', 'Received job statuses from server.', { statuses });
-
-            let needsHistoryRefresh = false;
-            for (const status of statuses) {
-                const existingResult = state.bulkUploadResults.find(r => r.jobId === status.id);
-                // Only update if status has changed or if it completed
-                if (!existingResult || existingResult.error !== status.status || (status.status === 'completed' && !existingResult.data)) {
-                    if (status.status === 'completed' && status.recordId) {
-                        log('info', 'Bulk job completed, fetching full record.', { jobId: status.id, recordId: status.recordId });
-                        try {
-                            const record = await getAnalysisRecordById(status.recordId);
-                            if (record) {
-                                dispatch({ type: 'UPDATE_BULK_JOB_COMPLETED', payload: { jobId: status.id, record } });
-                                needsHistoryRefresh = true;
-                            } else {
-                                log('warn', 'Bulk job completed but could not fetch the final record.', { jobId: status.id, recordId: status.recordId });
-                                dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.id, status: 'failed_record_fetch' } });
-                            }
-                        } catch (fetchErr) {
-                            log('error', 'Error fetching completed record for bulk job.', { jobId: status.id, recordId: status.recordId, error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr) });
-                            dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.id, status: 'failed_record_fetch' } });
-                        }
-                    } else if (status.status.startsWith('failed') || status.status === 'not_found') {
-                        log('warn', `Bulk job ${status.status}.`, { jobId: status.id, error: status.error });
-                        dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.id, status: status.error || 'Failed' } });
-                    } else {
-                        log('info', 'Bulk job status updated.', { jobId: status.id, status: status.status });
-                        dispatch({ type: 'UPDATE_BULK_JOB_STATUS', payload: { jobId: status.id, status: status.status } });
-                    }
-                }
-            }
-            if (needsHistoryRefresh) {
-                log('info', 'A bulk job completed. Displayed history page might need manual refresh if relevant.');
-                // Optionally auto-refresh current history page: await fetchData(historyPage, 'history');
-            }
-        } catch (err) {
-            const error = err instanceof Error ? err.message : 'Unknown polling error';
-            log('error', 'Failed to poll bulk job statuses.', { error });
-            // Potentially update all pending jobs with an error status if it's a server issue
-        }
-    }, [state.bulkUploadResults, dispatch]); // Removed historyPage from dependencies
-
-    // Start/Stop polling based on pending bulk jobs
-    useEffect(() => {
-        const pendingJobs = bulkUploadResults.some(r => r.jobId && !r.data && !getIsActualError(r));
-        if (pendingJobs && !pollingIntervalRef.current) {
-            log('info', 'Pending bulk jobs detected, starting poller.');
-            pollingIntervalRef.current = window.setInterval(pollJobStatuses, POLLING_INTERVAL_MS);
-        } else if (!pendingJobs && pollingIntervalRef.current) {
-            log('info', 'No pending bulk jobs. Stopping poller.');
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-        }
-        // Cleanup interval on unmount
-        return () => {
-            if (pollingIntervalRef.current) {
-                clearInterval(pollingIntervalRef.current);
-                pollingIntervalRef.current = null;
-            }
-        };
-    }, [bulkUploadResults, pollJobStatuses]);
+    // ***REMOVED***: All polling logic is gone.
 
     // --- CRUD and Data Management Handlers ---
 
+    /**
+     * ***MODIFIED***: This is the new, simpler bulk analysis handler.
+     * It processes files one by one and gets results immediately.
+     */
     const handleBulkAnalyze = async (files: File[]) => {
         if (files.length === 0) return;
         log('info', 'Starting bulk analysis.', { fileCount: files.length });
         dispatch({ type: 'ACTION_START', payload: 'isBulkLoading' });
+        setShowRateLimitWarning(false); // Reset warning
 
         const initialResults: DisplayableAnalysisResult[] = files.map(f => ({
             fileName: f.name, data: null, error: 'Submitting', file: f, submittedAt: Date.now()
@@ -244,60 +167,50 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults }); // Clear previous and set new ones
 
         try {
-            const BATCH_SIZE = 10;
-            const fileBatches = [];
-            for (let i = 0; i < files.length; i += BATCH_SIZE) {
-                fileBatches.push(files.slice(i, i + BATCH_SIZE));
-            }
-
-            const allJobCreationResults = [];
-            for (const batch of fileBatches) {
-                const currentSystems = await getRegisteredSystems(1, 1000).then(res => res.items); // Fetch up to 1000 systems
-                const jobCreationResults = await analyzeBmsScreenshots(batch, currentSystems);
-                allJobCreationResults.push(...jobCreationResults);
-            }
-
-            log('info', 'Received all job creation results from service.', { results: allJobCreationResults });
-
-            const historyMap = new Map(historyCache.map(r => [r.id, r])); // Use cache for duplicates
-
-            // Update results based on job creation response
-            const updatedResults = initialResults.map(initial => {
-                const job = allJobCreationResults.find(jcr => jcr.fileName === initial.fileName);
-                if (!job) return { ...initial, error: 'failed_submission' }; // Should not happen ideally
-
-                if (job.status === 'duplicate_history' && job.duplicateRecordId) {
-                    const originalRecord = historyMap.get(job.duplicateRecordId);
-                    return {
-                        ...initial,
-                        isDuplicate: true,
-                        isBatchDuplicate: false,
-                        data: originalRecord?.analysis || null,
-                        weather: originalRecord?.weather,
-                        recordId: originalRecord?.id,
-                        error: 'Skipped: Duplicate in history', 
+            // Process each file one by one
+            for (const file of files) {
+                try {
+                    // 1. Mark this specific file as "Processing"
+                    dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: 'Processing' } });
+                    
+                    // 2. Call the *new* synchronous service
+                    const analysisData = await analyzeBmsScreenshot(file);
+                    
+                    // 3. Got data! Update the state for this one file.
+                    log('info', 'Processing synchronous analysis result.', { fileName: file.name });
+                    // We create a temporary record for display. The backend `analyze` function
+                    // is now responsible for saving to history.
+                    const tempRecord: AnalysisRecord = {
+                        id: `local-${Date.now()}`,
+                        timestamp: new Date().toISOString(),
+                        analysis: analysisData,
+                        fileName: file.name
                     };
+                    
+                    dispatch({ 
+                        type: 'UPDATE_BULK_JOB_COMPLETED', // This action name is now a bit of a misnomer, but it works
+                        payload: { record: tempRecord, fileName: file.name } // Pass fileName for matching
+                    });
+                } catch (err) {
+                    // 4. Handle error for this specific file
+                    const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+                    log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
+                    
+                    if (errorMessage.includes('429')) {
+                         setShowRateLimitWarning(true);
+                    }
+                    
+                    dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: `Failed: ${errorMessage}` } });
                 }
-                 if (job.status === 'duplicate_batch') {
-                    return { ...initial, isDuplicate: true, isBatchDuplicate: true, error: 'Skipped: Duplicate in batch' };
-                }
-                return { ...initial, jobId: job.jobId, error: job.status };
-            });
-
-            dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: updatedResults });
-            // Polling will start automatically via useEffect
-
-        } catch (err) {
-            const error = err instanceof Error ? err.message : "Failed during bulk analysis submission.";
-            log('error', 'Bulk analysis submission failed.', { error });
-            if (error.includes('Too Many Requests')) {
-                setShowRateLimitWarning(true);
             }
+        } catch (err) {
+            // This outer catch is for logic errors in the loop itself
+            const error = err instanceof Error ? err.message : "Failed during bulk analysis submission.";
+            log('error', 'Bulk analysis submission loop failed.', { error });
             dispatch({ type: 'SET_ERROR', payload: error });
-            // Mark all submitted files as failed
-            dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults.map(r => ({ ...r, error: 'failed_submission' })) });
         } finally {
             dispatch({ type: 'ACTION_END', payload: 'isBulkLoading' });
+            log('info', 'Bulk analysis run complete.');
         }
     };
 
@@ -322,7 +235,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     const handleDeleteRecord = async (recordId: string) => {
         if (!window.confirm(`Are you sure you want to delete history record ${recordId}?`)) return;
         log('info', 'Deleting history record.', { recordId });
-        dispatch({ type: 'ACTION_START', payload: 'deletingRecordId', recordId }); // Pass recordId if needed
+        dispatch({ type: 'ACTION_START', payload: 'deletingRecordId' });
         try {
             await deleteAnalysisRecord(recordId);
             log('info', 'History record deleted successfully.', { recordId });
@@ -340,7 +253,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         const systemId = state.linkSelections[record.id];
         if (!systemId) return;
         log('info', 'Linking record to system.', { recordId: record.id, systemId });
-        dispatch({ type: 'ACTION_START', payload: 'linkingRecordId', recordId: record.id }); // Pass recordId if needed
+        dispatch({ type: 'ACTION_START', payload: 'linkingRecordId' });
 
         try {
             if (systemId === '--create-new--') {
@@ -401,7 +314,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             log('info', `${actionName} completed successfully.`, { result });
             // Maybe show a toast/notification here instead of just logging
             if (refreshType !== 'none') {
-                const pageToRefresh = refreshType === 'systems' ? systemsPage : historyPage;
+                const pageToRefresh = refreshType === 'systems' ? systemsPage : (refreshType === 'history' ? historyPage : 1);
                 await fetchData(pageToRefresh, refreshType);
             }
         } catch (err) {
@@ -414,7 +327,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     };
 
     const handleScanForDuplicates = async () => {
-        await handleGenericAction('isScanning', findDuplicateAnalysisSets, 'Scan complete.', 'none');
+        // await handleGenericAction('isScanning', findDuplicateAnalysisSets, 'Scan complete.', 'none');
         // Need to update state with results
         dispatch({ type: 'ACTION_START', payload: 'isScanning' });
         try {
@@ -522,9 +435,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             dispatch({ type: 'ACTION_END', payload: 'isRunningDiagnostics' });
         }
     };
-
-
-
 
     // --- Rendering ---
 
@@ -639,6 +549,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             onCleanupLinks={handleCleanupLinks}
                             onAutoAssociate={handleAutoAssociate}
                             onFixPowerSigns={handleFixPowerSigns}
+                            cleanupProgress={cleanupProgress} // This prop was missing, adding it back
                         />
                         <section id="system-diagnostics-section">
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">System Diagnostics</h2>
@@ -684,3 +595,4 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 };
 
 export default AdminDashboard;
+
