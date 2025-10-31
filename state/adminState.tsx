@@ -122,8 +122,9 @@ export type AdminAction =
   | { type: 'SET_HISTORY_SORT'; payload: { key: HistorySortKey } }
   | { type: 'SET_SYSTEMS_PAGE'; payload: number }
   | { type: 'SET_HISTORY_PAGE'; payload: number }
-  // ***MODIFIED***: This action now receives a fileName to match against, not a jobId
   | { type: 'UPDATE_BULK_JOB_COMPLETED'; payload: { record: AnalysisRecord, fileName: string } }
+  // ***FIX: Add new action type for skipping files***
+  | { type: 'UPDATE_BULK_JOB_SKIPPED'; payload: { fileName: string, reason: string } }
   | { type: 'OPEN_DIAGNOSTICS_MODAL' }
   | { type: 'CLOSE_DIAGNOSTICS_MODAL' }
   | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: Record<string, { status: string; message: string }> };
@@ -152,7 +153,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         );
         return { ...state, historyCache: [...state.historyCache, ...newRecords] };
     case 'FINISH_HISTORY_CACHE_BUILD':
-        return { ...state, isCacheBuilding: false }; // ***FIX***: Added missing closing brace
+        return { ...state, isCacheBuilding: false };
 
     case 'SET_ERROR':
       return { ...state, loading: false, error: action.payload, actionStatus: initialState.actionStatus };
@@ -190,10 +191,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
             ) 
         };
     
-    // ***REMOVED***: UPDATE_BULK_JOB_STATUS is no longer needed
-
     case 'UPDATE_BULK_JOB_COMPLETED':
-        // ***MODIFIED***: This now matches by fileName instead of jobId
         const { record, fileName } = action.payload;
         return {
             ...state,
@@ -205,6 +203,18 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
             historyCache: [record, ...state.historyCache],
             totalHistory: state.totalHistory + 1,
         };
+
+    // ***FIX: Handle the new SKIPPED action***
+    case 'UPDATE_BULK_JOB_SKIPPED':
+      return {
+        ...state,
+        bulkUploadResults: state.bulkUploadResults.map(r =>
+          r.fileName === action.payload.fileName
+            ? { ...r, isDuplicate: true, error: action.payload.reason }
+            : r
+        ),
+      };
+
     case 'SET_THROTTLE_MESSAGE':
         return { ...state, throttleMessage: action.payload };
     case 'SET_SELECTED_SYSTEM_IDS':
@@ -248,4 +258,3 @@ export const useAdminState = () => {
   }
   return context;
 };
-
