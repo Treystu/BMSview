@@ -214,7 +214,8 @@ class GeminiClient {
       throw new Error('GEMINI_API_KEY not configured');
     }
 
-    const model = options.model || 'gemini-1.5-flash';
+    // ***UPDATED***: Changed default model to gemini-flash-latest
+    const model = options.model || 'gemini-flash-latest';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     let parts = [];
