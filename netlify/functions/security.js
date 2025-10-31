@@ -163,4 +163,33 @@ const checkSecurity = async (request, log) => {
     }
 };
 
+exports.handler = async function(event, context) {
+    const log = createLogger('security-handler', context);
+    const clientIp = event.headers['x-nf-client-connection-ip'];
+    const logContext = { clientIp, httpMethod: event.httpMethod };
+
+    try {
+        await checkSecurity(event, log);
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ message: 'Security check passed' }),
+            headers: { 'Content-Type': 'application/json' }
+        };
+    } catch (error) {
+        if (error instanceof HttpError) {
+            return {
+                statusCode: error.statusCode,
+                body: JSON.stringify({ error: error.message }),
+                headers: { 'Content-Type': 'application/json' }
+            };
+        }
+        log('error', 'Security handler error', { ...logContext, error: error.message });
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Internal server error' }),
+            headers: { 'Content-Type': 'application/json' }
+        };
+    }
+};
+
 module.exports = { checkSecurity, HttpError };

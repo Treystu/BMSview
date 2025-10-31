@@ -62,7 +62,7 @@ exports.handler = async function(event, context) {
 
         if (!jobId) {
             log('error', 'Job ID is missing from invocation payload.', { body });
-            return { statusCode: 400, body: 'Job ID is required.' };
+            return { statusCode: 400, body: 'Job ID is required.', headers: { 'Content-Type': 'text/plain' } };
         }
 
         const logContext = { jobId };
