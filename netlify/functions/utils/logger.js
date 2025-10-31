@@ -1,3 +1,5 @@
+"use strict";
+
 /**
  * Shared Logger Utility
  * Provides structured logging with context and severity levels
@@ -36,7 +38,12 @@ class Logger {
   }
 
   debug(message, data) {
-    if (process.env.LOG_LEVEL === 'DEBUG') {
+    // Always log debug when LOG_LEVEL is DEBUG or not set (default to INFO, but allow DEBUG)
+    // Also check for truthy LOG_LEVEL values that indicate debug should be enabled
+    const logLevel = (process.env.LOG_LEVEL || '').toUpperCase();
+    if (logLevel === 'DEBUG' || logLevel === '') {
+      // When LOG_LEVEL is not set, still log debug (Netlify Functions default to showing all logs)
+      // User can set LOG_LEVEL=INFO to suppress debug logs
       console.log(this._formatMessage('DEBUG', message, data));
     }
   }

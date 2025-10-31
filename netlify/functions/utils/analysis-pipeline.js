@@ -1,3 +1,40 @@
+"use strict";
+
+// Placeholder analysis pipeline which would:
+// - decode base64 image
+// - run AI extraction
+// - enrich with weather
+// - persist to DB and return a record
+
+async function performAnalysisPipeline(imageInput, userContext, log, context) {
+  const { image, mimeType, fileName } = imageInput;
+  // Minimal validation
+  if (!image || !mimeType || !fileName) {
+    throw new Error("Invalid image input");
+  }
+
+  // Simulate analysis record
+  const now = new Date().toISOString();
+  const analysis = {
+    overallVoltage: 12.6,
+    current: 5.2,
+    stateOfCharge: 83.5,
+    temperature: 26.4,
+    cellVoltages: [3.15, 3.16, 3.15, 3.14],
+    alerts: [],
+    summary: "Synchronous analysis placeholder",
+  };
+
+  return {
+    id: `rec_${Date.now()}`,
+    timestamp: now,
+    fileName,
+    analysis,
+  };
+}
+
+module.exports = { performAnalysisPipeline };
+
 const { getGeminiClient } = require("./geminiClient.js");
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./mongodb.js");

@@ -1,6 +1,8 @@
 "use strict";
 
 const MAX_BODY_BYTES = parseInt(process.env.MAX_FILE_SIZE || "10485760"); // 10MB default
+const MAX_BASE64_IMAGE_BYTES = parseInt(process.env.MAX_IMAGE_SIZE || "6291456"); // 6MB default after base64
+const ALLOWED_IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 /**
  * Safely parse JSON body from a Netlify event.
@@ -56,6 +58,31 @@ function validateAnalyzeRequest(payload) {
 module.exports = {
   parseJsonBody,
   validateAnalyzeRequest,
+  validateImagePayload,
 };
+
+/**
+ * Validate image payload for sync analysis path
+ * @param {{image:string,mimeType:string,fileName:string}} img
+ */
+function validateImagePayload(img) {
+  if (!img || typeof img !== "object") return { ok: false, error: "Missing image payload" };
+  if (!img.image || typeof img.image !== "string") return { ok: false, error: "Missing image data" };
+  if (!img.mimeType || typeof img.mimeType !== "string") return { ok: false, error: "Missing mimeType" };
+  if (!img.fileName || typeof img.fileName !== "string") return { ok: false, error: "Missing fileName" };
+
+  if (!ALLOWED_IMAGE_MIME.has(img.mimeType)) {
+    return { ok: false, error: "Unsupported image mimeType" };
+  }
+  // Rough base64 size check: each 4 chars ~ 3 bytes; account padding
+  const approxBytes = Math.floor((img.image.length * 3) / 4);
+  if (approxBytes > MAX_BASE64_IMAGE_BYTES) {
+    return { ok: false, error: "Image too large" };
+  }
+  if (/\.(exe|js|sh|bat|ps1|cmd)$/i.test(img.fileName)) {
+    return { ok: false, error: "Invalid fileName" };
+  }
+  return { ok: true };
+}
 
 

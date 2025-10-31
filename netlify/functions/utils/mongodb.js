@@ -1,19 +1,23 @@
+"use strict";
+
+const { MongoClient } = require("mongodb");
+const { createLogger } = require("./logger");
+
+// Module-scoped logger for utils/mongodb (no request context available here)
+const log = createLogger("utils/mongodb");
+
 /**
  * OPTIMIZED MongoDB Connection Manager
  * Consolidates connection pooling with aggressive resource management
  * Fixes connection overload issues by reducing pool size and improving reuse
  */
 
-const { MongoClient } = require("mongodb");
-
 const MONGODB_URI = process.env.MONGODB_URI;
-const DB_NAME = process.env.MONGODB_DB_NAME;
+// Support both MONGODB_DB_NAME and MONGODB_DB for backward compatibility
+const DB_NAME = process.env.MONGODB_DB_NAME || process.env.MONGODB_DB || "bmsview";
 
 if (!MONGODB_URI) {
     throw new Error('Please define the MONGODB_URI environment variable');
-}
-if (!DB_NAME) {
-    throw new Error('Please define the MONGODB_DB_NAME environment variable');
 }
 
 /**
@@ -37,7 +41,7 @@ function isClientHealthy(client) {
     try {
         return client && client.topology && client.topology.isConnected();
     } catch (error) {
-        console.error('MongoDB health check failed:', error.message);
+        log.error('MongoDB health check failed', { error: error.message });
         return false;
     }
 }
@@ -61,7 +65,7 @@ async function connectToDatabase() {
                 return { client: cachedClient, db: cachedDb };
             } else {
                 // Connection is unhealthy, reset cache and reconnect
-                console.warn('MongoDB connection unhealthy, reconnecting...');
+                log.warn('MongoDB connection unhealthy, reconnecting...');
                 await closeConnection();
             }
         } else {
@@ -123,18 +127,18 @@ async function connectToDatabase() {
             cachedDb = db;
             lastHealthCheck = Date.now();
             
-            console.log('MongoDB connected successfully with optimized pool settings');
+            log.info('MongoDB connected successfully with optimized pool settings');
             
             // Set up connection monitoring
             client.on('connectionPoolClosed', () => {
-                console.log('MongoDB connection pool closed');
+                log.info('MongoDB connection pool closed');
                 cachedClient = null;
                 cachedDb = null;
                 connectionPromise = null;
             });
             
             client.on('error', (error) => {
-                console.error('MongoDB client error:', error);
+                log.error('MongoDB client error', { error: error.message, stack: error.stack });
                 cachedClient = null;
                 cachedDb = null;
                 connectionPromise = null;
@@ -143,7 +147,7 @@ async function connectToDatabase() {
             return { client, db };
             
         } catch (error) {
-            console.error('Failed to connect to MongoDB:', error);
+            log.error('Failed to connect to MongoDB', { error: error.message, stack: error.stack });
             connectionPromise = null;
             throw error;
         }
@@ -153,18 +157,28 @@ async function connectToDatabase() {
 }
 
 /**
+ * Get database instance (backward compatibility function)
+ * @returns {Promise<import('mongodb').Db>}
+ */
+async function getDb() {
+    const { db } = await connectToDatabase();
+    return db;
+}
+
+/**
  * Helper to get a specific collection from the database with retry logic
+ * Supports both simple usage: getCollection('name') and with retries: getCollection('name', 2)
  * @param {string} collectionName 
  * @param {number} retries 
  * @returns {Promise<import('mongodb').Collection>}
  */
-const getCollection = async (collectionName, retries = 2) => {
+async function getCollection(collectionName, retries = 2) {
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
             const { db } = await connectToDatabase();
             return db.collection(collectionName);
         } catch (error) {
-            console.error(`Failed to get collection ${collectionName} (attempt ${attempt}/${retries}):`, error.message);
+            log.error('Failed to get collection', { collectionName, attempt, retries, error: error.message });
             
             if (attempt === retries) {
                 throw new Error(`Failed to get collection ${collectionName} after ${retries} attempts: ${error.message}`);
@@ -177,7 +191,7 @@ const getCollection = async (collectionName, retries = 2) => {
             await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
         }
     }
-};
+}
 
 /**
  * Gracefully close the MongoDB connection
@@ -187,9 +201,9 @@ async function closeConnection() {
     if (cachedClient) {
         try {
             await cachedClient.close(true); // Force close
-            console.log('MongoDB connection closed');
+            log.info('MongoDB connection closed');
         } catch (error) {
-            console.error('Error closing MongoDB connection:', error);
+            log.error('Error closing MongoDB connection', { error: error.message, stack: error.stack });
         } finally {
             cachedClient = null;
             cachedDb = null;
@@ -199,4 +213,4 @@ async function closeConnection() {
     }
 }
 
-module.exports = { connectToDatabase, getCollection, closeConnection };
+module.exports = { connectToDatabase, getCollection, closeConnection, getDb };
