@@ -29,9 +29,14 @@ const callWeatherFunction = async (lat, lon, timestamp, log) => {
 };
 
 const extractBmsData = async (image, mimeType, log, context) => {
+    // Validate API key is configured
+    if (!process.env.GEMINI_API_KEY) {
+        throw new Error('Configuration Error: GEMINI_API_KEY environment variable is not set.');
+    }
+
     const geminiClient = getGeminiClient();
     const extractionPrompt = getImageExtractionPrompt();
-    const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
+    const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
     const prompt = {
         text: extractionPrompt,
@@ -56,10 +61,23 @@ const extractBmsData = async (image, mimeType, log, context) => {
 
     } catch (error) {
         const errorMessage = error.message || 'Unknown Gemini API error';
-        log('error', 'Gemini API call failed.', { error: errorMessage });
+        const errorDetails = {
+            error: errorMessage,
+            status: error.status,
+            body: error.body,
+            model: modelName
+        };
+        log('error', 'Gemini API call failed.', errorDetails);
 
-        if (errorMessage.includes('429') || errorMessage.includes('quota')) {
+        // Handle specific error cases
+        if (error.status === 404) {
+            throw new Error(`Gemini API Error: Model '${modelName}' not found. Please check the model name is correct.`);
+        }
+        if (errorMessage.includes('429') || errorMessage.includes('quota') || error.status === 429) {
             throw new Error('TRANSIENT_ERROR: Gemini API quota exhausted.');
+        }
+        if (errorMessage.includes('GEMINI_API_KEY not configured')) {
+            throw new Error('Configuration Error: GEMINI_API_KEY environment variable is not set.');
         }
         throw new Error(`Gemini API Error: ${errorMessage}`);
     }
