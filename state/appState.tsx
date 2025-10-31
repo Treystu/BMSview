@@ -1,25 +1,19 @@
 import React, { createContext, useReducer, useContext, Dispatch } from 'react';
 import type { BmsSystem, DisplayableAnalysisResult, AnalysisRecord } from '../types';
 
-type JobCreationResponse = {
-    fileName: string;
-    jobId?: string;
-    status: string;
-    error?: string;
-    duplicateRecordId?: string;
-};
+// ***REMOVED***: JobCreationResponse is no longer needed.
 
 // 1. State Shape
 export interface AppState {
   analysisResults: DisplayableAnalysisResult[];
-  isLoading: boolean;
+  isLoading: boolean; // This now means "is processing *any* file"
   error: string | null;
   isRegistering: boolean;
   registrationError: string | null;
   registrationSuccess: string | null;
   isRegisterModalOpen: boolean;
-  registeredSystems: BmsSystem[];
-  analysisHistory: AnalysisRecord[];
+  registeredSystems: BmsSystem[]; // This should be PaginatedResponse<BmsSystem>
+  analysisHistory: AnalysisRecord[]; // This should be PaginatedResponse<AnalysisRecord>
   registrationContext: {
     dlNumber: string;
   } | null;
@@ -41,10 +35,9 @@ export const initialState: AppState = {
 // 2. Actions
 export type AppAction =
   | { type: 'PREPARE_ANALYSIS'; payload: DisplayableAnalysisResult[] }
-  | { type: 'START_ANALYSIS_JOBS'; payload: JobCreationResponse[] }
+  // ***MODIFIED***: Simplified actions. No more job IDs.
+  | { type: 'UPDATE_ANALYSIS_STATUS'; payload: { fileName: string; status: string } }
   | { type: 'SYNC_ANALYSIS_COMPLETE'; payload: { fileName: string; record: AnalysisRecord } }
-  | { type: 'UPDATE_JOB_STATUS'; payload: { jobId: string; status: string } }
-  | { type: 'UPDATE_JOB_COMPLETED'; payload: { jobId: string; record: AnalysisRecord } }
   | { type: 'ANALYSIS_COMPLETE' }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'FETCH_DATA_SUCCESS'; payload: { systems: BmsSystem[]; history: AnalysisRecord[] } }
@@ -55,8 +48,8 @@ export type AppAction =
   | { type: 'REGISTER_SYSTEM_ERROR'; payload: string | null }
   | { type: 'UPDATE_RESULTS_AFTER_LINK' }
   | { type: 'REPROCESS_START'; payload: { fileName: string } }
-  | { type: 'ASSIGN_SYSTEM_TO_ANALYSIS'; payload: { fileName: string; systemId: string } }
-  | { type: 'JOB_TIMED_OUT'; payload: { jobId: string } };
+  | { type: 'ASSIGN_SYSTEM_TO_ANALYSIS'; payload: { fileName: string; systemId: string } };
+  // ***REMOVED***: All job-polling actions are gone.
 
 // 3. Reducer
 const appReducer = (state: AppState, action: AppAction): AppState => {
@@ -67,90 +60,38 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       const newResults = action.payload.filter(p => !existingFileNames.has(p.fileName));
       return { ...state, isLoading: true, error: null, analysisResults: [...state.analysisResults, ...newResults] };
 
-    case 'START_ANALYSIS_JOBS': {
-        const jobsMap = new Map<string, JobCreationResponse>();
-        action.payload.forEach(job => jobsMap.set(job.fileName, job));
-        const historyMap = new Map(state.analysisHistory.map(r => [r.id, r]));
+    // ***REMOVED***: START_ANALYSIS_JOBS is gone.
 
-        return {
-            ...state,
-            analysisResults: state.analysisResults.map(r => {
-                const job = jobsMap.get(r.fileName);
-                if (!job) return r; // Not part of this job submission batch
-
-                if (job.status === 'duplicate_history' && job.duplicateRecordId) {
-                    const originalRecord = historyMap.get(job.duplicateRecordId);
-                    return { 
-                        ...r, 
-                        isDuplicate: true,
-                        isBatchDuplicate: false,
-                        data: originalRecord?.analysis || null,
-                        weather: originalRecord?.weather,
-                        recordId: originalRecord?.id,
-                        error: null, // Clear 'submitting' status
-                    };
-                }
-                 if (job.status === 'duplicate_batch') {
-                    return {
-                        ...r,
-                        isDuplicate: true,
-                        isBatchDuplicate: true,
-                        error: null,
-                    };
-                }
-                
-                return { ...r, jobId: job.jobId, error: job.status };
-            })
-        };
-    }
+    case 'UPDATE_ANALYSIS_STATUS':
+      return {
+        ...state,
+        analysisResults: state.analysisResults.map(r => 
+          r.fileName === action.payload.fileName ? { ...r, error: action.payload.status } : r
+        ),
+      };
     
     case 'SYNC_ANALYSIS_COMPLETE': {
       const { fileName, record } = action.payload;
       return {
         ...state,
-        isLoading: false, // Stop loading, as we have a result.
         analysisResults: state.analysisResults.map(r => 
           r.fileName === fileName ? {
             ...r,
             data: record.analysis,
             weather: record.weather,
             recordId: record.id,
-            error: null, // Clear 'submitting' status
+            error: null, // Clear 'Submitting' or 'Processing' status
           } : r
         ),
+        // Add to history so it can be linked immediately
+        analysisHistory: {
+          ...state.analysisHistory,
+          items: [record, ...(state.analysisHistory.items || [])]
+        }
       };
     }
-
-    case 'UPDATE_JOB_STATUS':
-      return {
-        ...state,
-        analysisResults: state.analysisResults.map(r => 
-          r.jobId === action.payload.jobId ? { ...r, error: action.payload.status } : r
-        ),
-      };
-
-    case 'UPDATE_JOB_COMPLETED':
-      const { jobId, record } = action.payload;
-      return {
-        ...state,
-        analysisResults: state.analysisResults.map(r => 
-          r.jobId === jobId ? {
-            ...r,
-            data: record.analysis,
-            weather: record.weather,
-            recordId: record.id,
-            error: 'completed'
-          } : r
-        ),
-      };
-      
-    case 'JOB_TIMED_OUT':
-        return {
-            ...state,
-            analysisResults: state.analysisResults.map(r =>
-                r.jobId === action.payload.jobId ? { ...r, error: 'failed_client_timeout', jobId: undefined } : r
-            ),
-        };
+    
+    // ***REMOVED***: UPDATE_JOB_STATUS and UPDATE_JOB_COMPLETED are gone.
 
     case 'ANALYSIS_COMPLETE':
       return { ...state, isLoading: false };
@@ -161,8 +102,8 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
     case 'FETCH_DATA_SUCCESS':
       return {
         ...state,
-        registeredSystems: action.payload.systems.items,
-        analysisHistory: action.payload.history.items,
+        registeredSystems: action.payload.systems,
+        analysisHistory: action.payload.history,
         error: null,
       };
       
@@ -192,6 +133,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       return { ...state, isRegistering: false, registrationError: action.payload };
       
     case 'UPDATE_RESULTS_AFTER_LINK':
+       // This just forces a re-render of components listening to results
       return { ...state, analysisResults: [...state.analysisResults] };
       
     case 'REPROCESS_START':
@@ -240,3 +182,4 @@ export const useAppState = () => {
   }
   return context;
 };
+
