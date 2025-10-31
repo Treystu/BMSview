@@ -247,7 +247,8 @@ ${weatherForecastSummary}
             logWithTiming('debug', 'Generated master prompt for Gemini.', { ...requestContext, promptLength: prompt.length });
 
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const modelName = process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp';
+            // ***UPDATED***: Changed model to gemini-flash-latest
+            const modelName = process.env.GEMINI_MODEL || 'gemini-flash-latest';
             logWithTiming('info', `Making single streaming Gemini call to ${modelName}.`, { ...requestContext, model: modelName });
             
             const geminiStream = await ai.models.generateContentStream({ model: modelName, contents: prompt });
