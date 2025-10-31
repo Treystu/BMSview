@@ -5,23 +5,23 @@ import {
     getAnalysisRecordById, streamAllHistory, findDuplicateAnalysisSets, deleteAnalysisRecords,
     deleteUnlinkedAnalysisHistory, clearAllData, clearHistoryStore, backfillWeatherData, countRecordsNeedingWeather,
     cleanupLinks, autoAssociateRecords, fixPowerSigns, runDiagnostics
-} from 'services/clientService';
-import { analyzeBmsScreenshot } from 'services/geminiService';
-import type { BmsSystem, AnalysisRecord, DisplayableAnalysisResult } from 'types';
-import EditSystemModal from 'components/EditSystemModal';
-import BulkUpload from 'components/BulkUpload';
-import HistoricalChart from 'components/HistoricalChart';
-import IpManagement from 'components/IpManagement';
-import DiagnosticsModal from 'components/DiagnosticsModal';
-import { useAdminState, HistorySortKey } from 'state/adminState';
-import { getBasename, getIsActualError } from 'utils';
-import SpinnerIcon from 'components/icons/SpinnerIcon';
+} from '../services/clientService';
+import { analyzeBmsScreenshot } from '../services/geminiService';
+import type { BmsSystem, AnalysisRecord, DisplayableAnalysisResult } from '../types';
+import EditSystemModal from './EditSystemModal';
+import BulkUpload from './BulkUpload';
+import HistoricalChart from './HistoricalChart';
+import IpManagement from './IpManagement';
+import DiagnosticsModal from './DiagnosticsModal';
+import { useAdminState, HistorySortKey } from '../state/adminState';
+import { getBasename, getIsActualError } from '../utils';
+import SpinnerIcon from './icons/SpinnerIcon';
 
-import AdminHeader from 'components/admin/AdminHeader';
-import SystemsTable from 'components/admin/SystemsTable';
-import HistoryTable from 'components/admin/HistoryTable';
-import DataManagement from 'components/admin/DataManagement';
-import { ALL_HISTORY_COLUMNS, getNestedValue } from 'components/admin/columnDefinitions';
+import AdminHeader from './admin/AdminHeader';
+import SystemsTable from './admin/SystemsTable';
+import HistoryTable from './admin/HistoryTable';
+import DataManagement from './admin/DataManagement';
+import { ALL_HISTORY_COLUMNS, getNestedValue } from './admin/columnDefinitions';
 
 interface NetlifyUser {
   email: string;
@@ -49,6 +49,7 @@ const ITEMS_PER_PAGE = 25;
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     const { state, dispatch } = useAdminState();
+    // ***FIX: Removed the trailing underscore that was causing the syntax error.***
     const {
         systems, history, historyCache, loading,
         editingSystem, bulkUploadResults, actionStatus,
@@ -56,7 +57,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         historySortKey, historySortDirection, duplicateSets,
         primarySystemId, selectedSystemIds, isConfirmingClearAll,
         clearAllConfirmationText
-    }_ = state;
+    } = state;
 
     const [cleanupProgress, setCleanupProgress] = useState<string | null>(null);
     const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
@@ -615,3 +616,4 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 };
 
 export default AdminDashboard;
+
