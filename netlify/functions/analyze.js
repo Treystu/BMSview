@@ -39,18 +39,20 @@ exports.handler = async (event, context) => {
 
   try {
     // Safe parse & validate
-    const parsed = parseJsonBody(event);
+    const parsed = parseJsonBody(event, log);
     if (!parsed.ok) {
       log.warn('Invalid JSON body for analyze request.', { error: parsed.error });
+      log.exit(400);
       return errorResponse(400, 'invalid_request', parsed.error, undefined, headers);
     }
     if (isSync) {
       // Synchronous analyze path: expects { image: { image, mimeType, fileName, force? } }
       const timer = createTimer(log, 'sync-analysis');
       const imagePayload = parsed.value && parsed.value.image;
-      const imageValidation = validateImagePayload(imagePayload);
+      const imageValidation = validateImagePayload(imagePayload, log);
       if (!imageValidation.ok) {
         log.warn('Sync analyze image validation failed.', { reason: imageValidation.error });
+        log.exit(400);
         return errorResponse(400, 'invalid_image', imageValidation.error, undefined, { ...headers, 'Content-Type': 'application/json' });
       }
 
@@ -104,16 +106,19 @@ exports.handler = async (event, context) => {
             context
           ),
           parseInt(process.env.ANALYSIS_TIMEOUT_MS || '60000'),
-          () => log.warn('performAnalysisPipeline timed out')
+          () => log.warn('performAnalysisPipeline timed out'),
+          log
         ), {
           retries: parseInt(process.env.ANALYSIS_RETRIES || '2'),
           baseDelayMs: parseInt(process.env.ANALYSIS_RETRY_BASE_MS || '250'),
           jitterMs: parseInt(process.env.ANALYSIS_RETRY_JITTER_MS || '200'),
-          shouldRetry: (e) => e && e.code !== 'operation_timeout' && e.code !== 'circuit_open'
+          shouldRetry: (e) => e && e.code !== 'operation_timeout' && e.code !== 'circuit_open',
+          log
         })
       , {
         failureThreshold: parseInt(process.env.CB_FAILURES || '5'),
-        openMs: parseInt(process.env.CB_OPEN_MS || '30000')
+        openMs: parseInt(process.env.CB_OPEN_MS || '30000'),
+        log
       });
 
       // Persist new result with contentHash for future dedupe
@@ -148,9 +153,10 @@ exports.handler = async (event, context) => {
     }
 
     // Legacy async/job-based path validation
-    const validated = validateAnalyzeRequest(parsed.value);
+    const validated = validateAnalyzeRequest(parsed.value, log);
     if (!validated.ok) {
       log.warn('Legacy analyze request missing parameters.', { details: validated.details });
+      log.exit(400);
       return errorResponse(400, 'missing_parameters', validated.error, validated.details, { ...headers, 'Content-Type': 'application/json' });
     }
 
@@ -167,7 +173,7 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
-    log.error('Analyze function failed.', { error: error && error.message ? error.message : String(error) });
+    log.error('Analyze function failed.', { error: error && error.message ? error.message : String(error), stack: error.stack });
     
     // Send error event
     // Best-effort legacy progress event logging (ignore failures)
@@ -181,6 +187,7 @@ exports.handler = async (event, context) => {
       }
     } catch (_) {}
 
+    log.exit(500, { error: error.message });
     return errorResponse(500, 'analysis_failed', 'Analysis failed', { message: error.message }, { ...headers, 'Content-Type': 'application/json' });
   } finally {
     // DB connections are managed by utils/mongodb; nothing to close here

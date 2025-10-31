@@ -1,14 +1,14 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { MongoClient } = require('mongodb');
+const { getCollection } = require('./utils/mongodb');
+const { createLogger, createTimer } = require('./utils/logger');
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// MongoDB connection
-const client = new MongoClient(process.env.MONGODB_URI);
-const database = client.db('battery-analysis');
-
 exports.handler = async (event, context) => {
+  const log = createLogger('predictive-maintenance', context);
+  const timer = createTimer(log, 'predictive-maintenance-handler');
+  log.entry({ method: event.httpMethod, path: event.path });
   // Enable CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -17,8 +17,14 @@ exports.handler = async (event, context) => {
     'Content-Type': 'application/json'
   };
 
+  const clientIp = event.headers['x-nf-client-connection-ip'];
+  const logContext = { clientIp, httpMethod: event.httpMethod };
+
   // Handle preflight requests
   if (event.httpMethod === 'OPTIONS') {
+    log.debug('OPTIONS preflight request', logContext);
+    const durationMs = timer.end();
+    log.exit(200);
     return {
       statusCode: 200,
       headers
@@ -26,6 +32,9 @@ exports.handler = async (event, context) => {
   }
 
   if (event.httpMethod !== 'POST') {
+    log.warn('Method not allowed', { ...logContext, allowedMethods: ['POST'] });
+    const durationMs = timer.end();
+    log.exit(405);
     return {
       statusCode: 405,
       headers,
@@ -34,11 +43,16 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    await client.connect();
-    
+    log.debug('Parsing request body', logContext);
     const { systemId, timeHorizon = '30' } = JSON.parse(event.body);
     
+    const requestContext = { ...logContext, systemId, timeHorizon };
+    log.info('Processing predictive maintenance request', requestContext);
+    
     if (!systemId) {
+      log.warn('Missing systemId parameter', requestContext);
+      const durationMs = timer.end();
+      log.exit(400);
       return {
         statusCode: 400,
         headers,
@@ -47,9 +61,13 @@ exports.handler = async (event, context) => {
     }
 
     // Get system data
-    const systemData = await getSystemData(systemId);
+    log.debug('Fetching system data', requestContext);
+    const systemData = await getSystemData(systemId, log);
     
     if (!systemData) {
+      log.warn('System not found', requestContext);
+      const durationMs = timer.end();
+      log.exit(404);
       return {
         statusCode: 404,
         headers,
@@ -57,12 +75,19 @@ exports.handler = async (event, context) => {
       };
     }
 
+    log.debug('System data retrieved', { ...requestContext, dataPoints: systemData.dataPoints });
+
     // Generate predictive maintenance insights
-    const predictions = await generatePredictiveInsights(systemData, parseInt(timeHorizon));
+    log.info('Generating predictive maintenance insights', requestContext);
+    const predictions = await generatePredictiveInsights(systemData, parseInt(timeHorizon), log);
     
     // Store predictions for historical tracking
-    await storePredictions(systemId, predictions);
+    log.debug('Storing predictions', requestContext);
+    await storePredictions(systemId, predictions, log);
 
+    log.info('Predictive maintenance completed successfully', requestContext);
+    const durationMs = timer.end({ success: true });
+    log.exit(200, requestContext);
     return {
       statusCode: 200,
       headers,
@@ -76,7 +101,9 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
-    console.error('Predictive maintenance error:', error);
+    log.error('Predictive maintenance error', { ...logContext, error: error.message, stack: error.stack });
+    const durationMs = timer.end({ success: false });
+    log.exit(500);
     return {
       statusCode: 500,
       headers,
@@ -85,15 +112,15 @@ exports.handler = async (event, context) => {
         details: error.message
       })
     };
-  } finally {
-    await client.close();
   }
 };
 
-async function getSystemData(systemId) {
+async function getSystemData(systemId, log) {
   try {
+    log.debug('Fetching system data from database', { systemId });
     // Get system information
-    const system = await database.collection('systems').findOne({
+    const systemsCollection = await getCollection('systems');
+    const system = await systemsCollection.findOne({
       _id: systemId
     });
 
@@ -102,23 +129,29 @@ async function getSystemData(systemId) {
     }
 
     // Get recent battery measurements
-    const measurements = await database.collection('measurements')
+    const measurementsCollection = await getCollection('measurements');
+    const measurements = await measurementsCollection
       .find({ systemId })
       .sort({ timestamp: -1 })
       .limit(1000)
       .toArray();
+    log.debug('Retrieved measurements', { systemId, count: measurements.length });
 
     // Get maintenance history
-    const maintenanceHistory = await database.collection('maintenance')
+    const maintenanceCollection = await getCollection('maintenance');
+    const maintenanceHistory = await maintenanceCollection
       .find({ systemId })
       .sort({ date: -1 })
       .limit(50)
       .toArray();
+    log.debug('Retrieved maintenance history', { systemId, count: maintenanceHistory.length });
 
     // Get component data
-    const components = await database.collection('components')
+    const componentsCollection = await getCollection('components');
+    const components = await componentsCollection
       .find({ systemId })
       .toArray();
+    log.debug('Retrieved components', { systemId, count: components.length });
 
     return {
       system,
@@ -129,12 +162,13 @@ async function getSystemData(systemId) {
       lastMeasurement: measurements[0]?.timestamp || null
     };
   } catch (error) {
-    console.error('Error getting system data:', error);
+    log.error('Error getting system data', { systemId, error: error.message, stack: error.stack });
     throw error;
   }
 }
 
-async function generatePredictiveInsights(systemData, timeHorizon) {
+async function generatePredictiveInsights(systemData, timeHorizon, log) {
+  log.debug('Generating predictive insights', { timeHorizon, dataPoints: systemData.dataPoints });
   const { system, measurements, maintenanceHistory, components } = systemData;
   
   // Calculate failure risk
@@ -373,8 +407,9 @@ function generateOptimalSchedule(measurements, maintenanceHistory, timeHorizon) 
   };
 }
 
-async function generateAIInsights(systemData, timeHorizon) {
+async function generateAIInsights(systemData, timeHorizon, log) {
   try {
+    log.debug('Calling Gemini API for AI insights', { systemName: systemData.system?.name, timeHorizon });
     const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
     
     const prompt = `
@@ -404,6 +439,7 @@ async function generateAIInsights(systemData, timeHorizon) {
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const insights = response.text();
+    log.debug('Received AI insights from Gemini', { insightsLength: insights.length });
 
     return {
       text: insights,
@@ -411,7 +447,7 @@ async function generateAIInsights(systemData, timeHorizon) {
       confidence: 85 // Placeholder confidence score
     };
   } catch (error) {
-    console.error('Error generating AI insights:', error);
+    log.error('Error generating AI insights', { error: error.message, stack: error.stack });
     return {
       text: 'AI insights unavailable at this time',
       error: error.message,
@@ -598,14 +634,17 @@ function generateRecommendations(failureRisk, componentAnalysis, maintenanceSche
   return recommendations;
 }
 
-async function storePredictions(systemId, predictions) {
+async function storePredictions(systemId, predictions, log) {
   try {
-    await database.collection('predictions').insertOne({
+    log.debug('Storing predictions in database', { systemId });
+    const predictionsCollection = await getCollection('predictions');
+    await predictionsCollection.insertOne({
       systemId,
       predictions,
       createdAt: new Date()
     });
+    log.debug('Predictions stored successfully', { systemId });
   } catch (error) {
-    console.error('Error storing predictions:', error);
+    log.error('Error storing predictions', { systemId, error: error.message, stack: error.stack });
   }
 }
