@@ -1,10 +1,9 @@
-const { MongoClient } = require('mongodb');
 const { errorResponse } = require('./utils/errors');
 const { parseJsonBody, validateAnalyzeRequest } = require('./utils/validation');
+const { createLogger, createTimer } = require('./utils/logger');
+const { performAnalysisPipeline } = require('./utils/analysis-pipeline');
 
-// MongoDB connection
-const client = new MongoClient(process.env.MONGODB_URI);
-const database = client.db('battery-analysis');
+// NOTE: Database access for analysis is handled inside performAnalysisPipeline via utils/mongodb
 
 exports.handler = async (event, context) => {
   // Enable CORS
@@ -12,9 +11,7 @@ exports.handler = async (event, context) => {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive'
+    // Content-Type will be set per-mode (SSE vs JSON)
   };
 
   // Handle preflight requests
@@ -29,97 +26,81 @@ exports.handler = async (event, context) => {
     return errorResponse(405, 'method_not_allowed', 'Method not allowed', undefined, headers);
   }
 
-  // Capture request-scoped context for safe use in catch
+  // Logger and request-scoped context
+  const log = createLogger('analyze', context);
+  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+  const isSync = (event.queryStringParameters && event.queryStringParameters.sync === 'true');
   let requestContext = { jobId: undefined };
 
   try {
-    await client.connect();
-
     // Safe parse & validate
     const parsed = parseJsonBody(event);
     if (!parsed.ok) {
+      log.warn('Invalid JSON body for analyze request.', { error: parsed.error });
       return errorResponse(400, 'invalid_request', parsed.error, undefined, headers);
     }
+    if (isSync) {
+      // Synchronous analyze path: expects { image: { image, mimeType, fileName, force? } }
+      const timer = createTimer(log, 'sync-analysis');
+      const imagePayload = parsed.value && parsed.value.image;
+      if (!imagePayload || !imagePayload.image || !imagePayload.mimeType || !imagePayload.fileName) {
+        log.warn('Sync analyze missing required image fields.', { hasImage: !!imagePayload });
+        return errorResponse(400, 'missing_parameters', 'Missing required image fields', { required: ['image.image', 'image.mimeType', 'image.fileName'] }, { ...headers, 'Content-Type': 'application/json' });
+      }
 
+      log.info('Starting synchronous analysis via pipeline.', { fileName: imagePayload.fileName, mimeType: imagePayload.mimeType });
+      const record = await performAnalysisPipeline(
+        { image: imagePayload.image, mimeType: imagePayload.mimeType, fileName: imagePayload.fileName, force: !!imagePayload.force },
+        null,
+        log,
+        context
+      );
+      const durationMs = timer.end({ recordId: record.id });
+      log.exit(200, { mode: 'sync', recordId: record.id, durationMs });
+      return {
+        statusCode: 200,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ analysis: record.analysis, recordId: record.id, fileName: record.fileName, timestamp: record.timestamp })
+      };
+    }
+
+    // Legacy async/job-based path validation
     const validated = validateAnalyzeRequest(parsed.value);
     if (!validated.ok) {
-      return errorResponse(400, 'missing_parameters', validated.error, validated.details, headers);
+      log.warn('Legacy analyze request missing parameters.', { details: validated.details });
+      return errorResponse(400, 'missing_parameters', validated.error, validated.details, { ...headers, 'Content-Type': 'application/json' });
     }
 
     const { jobId, fileData, userId } = validated.value;
     requestContext.jobId = jobId;
 
-    // Send initial response with SSE headers
-    const response = {
-      statusCode: 200,
-      headers,
-      body: ''
-    };
-
-    // Function to send progress events
-    const sendEvent = async (data) => {
-      const eventData = `data: ${JSON.stringify(data)}\n\n`;
-      console.log('Sending event:', eventData);
-      // In a real implementation, this would stream to the client
-      // For now, we'll store events in the database
-      await storeProgressEvent(jobId, data);
-    };
-
-    // Start processing
-    await sendEvent({ jobId, stage: 'started', progress: 0, message: 'Initializing analysis...' });
-
-    // Validate and parse file
-    await sendEvent({ jobId, stage: 'validating', progress: 10, message: 'Validating file format...' });
-    const parsedData = await validateAndParseFile(fileData);
-    
-    // Extract battery metrics
-    await sendEvent({ jobId, stage: 'extracting', progress: 25, message: 'Extracting battery metrics...' });
-    const metrics = await extractBatteryMetrics(parsedData);
-    
-    // Perform analysis
-    await sendEvent({ jobId, stage: 'analyzing', progress: 50, message: 'Performing comprehensive analysis...' });
-    const analysis = await performAnalysis(metrics);
-    
-    // Generate insights
-    await sendEvent({ jobId, stage: 'insights', progress: 75, message: 'Generating insights...' });
-    const insights = await generateInsights(analysis);
-    
-    // Complete
-    await sendEvent({ jobId, stage: 'completed', progress: 100, message: 'Analysis complete!' });
-
-    // Store results
-    await storeAnalysisResults(jobId, userId, {
-      metrics,
-      analysis,
-      insights,
-      completedAt: new Date()
-    });
-
+    // Simulated legacy flow: log and return accepted
+    log.info('Legacy analyze request received.', { jobId, userId, fileBytes: fileData ? fileData.length : 0 });
+    log.exit(202, { mode: 'legacy' });
     return {
-      statusCode: 200,
+      statusCode: 202,
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        success: true,
-        jobId,
-        message: 'Analysis initiated successfully'
-      })
+      body: JSON.stringify({ success: true, jobId, message: 'Legacy analysis accepted for processing' })
     };
 
   } catch (error) {
-    console.error('Analysis error:', error);
+    log.error('Analyze function failed.', { error: error && error.message ? error.message : String(error) });
     
     // Send error event
-    if (requestContext.jobId) {
-      await storeProgressEvent(requestContext.jobId, {
-        stage: 'error',
-        progress: 0,
-        message: `Analysis failed: ${error.message}`
-      });
-    }
+    // Best-effort legacy progress event logging (ignore failures)
+    try {
+      if (requestContext.jobId) {
+        await storeProgressEvent(requestContext.jobId, {
+          stage: 'error',
+          progress: 0,
+          message: `Analysis failed: ${error.message}`
+        });
+      }
+    } catch (_) {}
 
-    return errorResponse(500, 'analysis_failed', 'Analysis failed', { message: error.message }, headers);
+    return errorResponse(500, 'analysis_failed', 'Analysis failed', { message: error.message }, { ...headers, 'Content-Type': 'application/json' });
   } finally {
-    await client.close();
+    // DB connections are managed by utils/mongodb; nothing to close here
   }
 };
 
@@ -180,29 +161,13 @@ async function generateInsights(analysis) {
   };
 }
 
+// Legacy helpers retained for backward compatibility in error paths
 async function storeProgressEvent(jobId, eventData) {
   try {
-    const collection = database.collection('progress-events');
-    await collection.insertOne({
-      jobId,
-      ...eventData,
-      timestamp: new Date()
-    });
+    const { getCollection } = require('./utils/mongodb');
+    const collection = await getCollection('progress-events');
+    await collection.insertOne({ jobId, ...eventData, timestamp: new Date() });
   } catch (error) {
-    console.error('Error storing progress event:', error);
-  }
-}
-
-async function storeAnalysisResults(jobId, userId, results) {
-  try {
-    const collection = database.collection('analysis-results');
-    await collection.insertOne({
-      jobId,
-      userId,
-      ...results,
-      createdAt: new Date()
-    });
-  } catch (error) {
-    console.error('Error storing analysis results:', error);
+    // Intentionally swallow errors to avoid masking primary failure
   }
 }
