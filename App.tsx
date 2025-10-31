@@ -1,60 +1,51 @@
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import UploadSection from './components/UploadSection';
 import AnalysisResult from './components/AnalysisResult';
 import RegisterBms from './components/RegisterBms';
-import { analyzeBmsScreenshots } from './services/geminiService';
-import { registerBmsSystem, getRegisteredSystems, getAnalysisHistory, linkAnalysisToSystem, associateDlToSystem } from './services/clientService';
+// ***MODIFIED***: Import the new *synchronous* service
+import { analyzeBmsScreenshot } from './services/geminiService';
+import { 
+    registerBmsSystem, 
+    getRegisteredSystems, 
+    getAnalysisHistory, 
+    linkAnalysisToSystem, 
+    associateDlToSystem 
+} from './services/clientService';
 import type { BmsSystem, DisplayableAnalysisResult, AnalysisRecord } from './types';
 import { useAppState } from './state/appState';
-import { getIsActualError } from './utils';
-import { useJobPolling } from './hooks/useJobPolling';
+// ***REMOVED***: No longer need job polling
+// import { getIsActualError } from './utils';
+// import { useJobPolling } from './hooks/useJobPolling';
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({ level: level.toUpperCase(), timestamp: new Date().toISOString(), message, context }));
 };
 
-// Type guard to check if the response is a full AnalysisRecord
-const isAnalysisRecord = (response: any): response is AnalysisRecord => {
-    return response && typeof response === 'object' && 'analysisKey' in response && 'fileName' in response;
-};
-
 function App() {
   const { state, dispatch } = useAppState();
-  const { analysisResults, isLoading, error, isRegistering, registrationError, registrationSuccess, isRegisterModalOpen, registrationContext } = state;
+  const { 
+    analysisResults, 
+    isLoading, 
+    error, 
+    isRegistering, 
+    registrationError, 
+    registrationSuccess, 
+    isRegisterModalOpen, 
+    registrationContext 
+  } = state;
   
-  const jobIds = React.useMemo(() => 
-    state.analysisResults
-      .filter(r => r.jobId && !r.data && !getIsActualError(r))
-      .map(r => r.jobId!),
-    [state.analysisResults]
-  );
-
-  const handleJobCompleted = useCallback((jobId: string, record: AnalysisRecord) => {
-    dispatch({ type: 'UPDATE_JOB_COMPLETED', payload: { jobId, record } });
-  }, [dispatch]);
-
-  const handleJobStatusUpdate = useCallback((jobId: string, status: string) => {
-    dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId, status } });
-  }, [dispatch]);
-
-  const handleJobFailed = useCallback((jobId: string, error: string) => {
-    dispatch({ type: 'UPDATE_JOB_STATUS', payload: { jobId, status: error } });
-  }, [dispatch]);
-
-  useJobPolling({
-    jobIds,
-    onJobCompleted: handleJobCompleted,
-    onJobStatusUpdate: handleJobStatusUpdate,
-    onJobFailed: handleJobFailed,
-    interval: jobIds.length === 1 ? 2000 : 5000,
-  });
+  // ***REMOVED***: All `useJobPolling` and related callbacks are gone.
 
   const fetchAppData = useCallback(async () => {
     log('info', 'Fetching initial application data.');
     try {
-      const [systems, history] = await Promise.all([getRegisteredSystems(), getAnalysisHistory()]);
+      // Fetching systems and history remains the same
+      const [systems, history] = await Promise.all([
+          getRegisteredSystems(1, 1000), // Load all systems for linking
+          getAnalysisHistory(1, 25)   // Load first page of history
+        ]);
       dispatch({ type: 'FETCH_DATA_SUCCESS', payload: { systems, history } });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
@@ -77,11 +68,16 @@ function App() {
     }
   };
 
+  /**
+   * ***MODIFIED***: This is the new, simpler analysis handler.
+   * It processes files one by one and gets results immediately.
+   */
   const handleAnalyze = async (files: File[], options?: { forceFileName?: string }) => {
     log('info', 'Analysis process initiated.', { fileCount: files.length, forceFileName: options?.forceFileName });
     
+    // Prepare the UI by setting all files to a "Submitting" state
     const initialResults: DisplayableAnalysisResult[] = files.map(f => ({ 
-        fileName: f.name, data: null, error: 'Submitted', file: f, submittedAt: Date.now()
+        fileName: f.name, data: null, error: 'Submitting', file: f, submittedAt: Date.now()
     }));
     
     dispatch({ type: 'PREPARE_ANALYSIS', payload: initialResults });
@@ -92,41 +88,52 @@ function App() {
       return;
     }
 
-    try {
-        const forceReprocessFileNames = options?.forceFileName ? [options.forceFileName] : [];
-        const results = await analyzeBmsScreenshots(files, state.registeredSystems, forceReprocessFileNames);
-        log('info', 'Received analysis results from service.', { resultCount: results.length });
+    // Process each file one by one
+    for (const file of files) {
+        try {
+            // 1. Mark this specific file as "Processing"
+            dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
+            
+            // 2. Call the *new* synchronous service
+            const analysisData = await analyzeBmsScreenshot(file);
+            
+            // 3. Got data! Update the state for this one file.
+            log('info', 'Processing synchronous analysis result.', { fileName: file.name });
+            dispatch({ 
+                type: 'SYNC_ANALYSIS_COMPLETE', 
+                payload: { 
+                    fileName: file.name, 
+                    // This creates a minimal record for display.
+                    // The full record saving is now handled by a *different* process
+                    // (or could be added to the 'analyze' function).
+                    record: {
+                      id: `local-${Date.now()}`,
+                      timestamp: new Date().toISOString(),
+                      analysis: analysisData,
+                      fileName: file.name
+                    }
+                } 
+            });
 
-        const asyncJobs = [];
-        for (const result of results) {
-            if (isAnalysisRecord(result)) {
-                // Handle synchronous result directly
-                log('info', 'Processing synchronous analysis result.', { fileName: result.fileName });
-                dispatch({ type: 'SYNC_ANALYSIS_COMPLETE', payload: { fileName: result.fileName, record: result } });
-            } else {
-                // Collect async jobs to be processed together
-                asyncJobs.push(result);
-            }
+        } catch (err) {
+            // 4. Handle error for this specific file
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+            log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
+            dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${errorMessage}` } });
         }
-
-        if (asyncJobs.length > 0) {
-            log('info', 'Starting asynchronous analysis jobs.', { jobCount: asyncJobs.length });
-            dispatch({ type: 'START_ANALYSIS_JOBS', payload: asyncJobs });
-        }
-
-    } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during analysis.';
-        log('error', 'Analysis request failed.', { error: errorMessage });
-        dispatch({ type: 'SET_ERROR', payload: errorMessage });
     }
+    
+    // All files are processed
+    dispatch({ type: 'ANALYSIS_COMPLETE' });
   };
   
   const handleReprocess = async (fileToReprocess: File) => {
     log('info', 'Reprocess initiated.', { fileName: fileToReprocess.name });
-    dispatch({ type: 'REPROCESS_START', payload: { fileName: fileToReprocess.name }});
+    // Reprocessing is now just a normal analysis call
     await handleAnalyze([fileToReprocess], { forceFileName: fileToReprocess.name });
   };
 
+  // --- Registration logic remains unchanged ---
   const handleRegisterSystem = async (systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>) => {
     dispatch({ type: 'REGISTER_SYSTEM_START' });
     try {
@@ -149,6 +156,8 @@ function App() {
   const handleCloseRegisterModal = () => {
     dispatch({ type: 'CLOSE_REGISTER_MODAL' });
   };
+  // --- End of registration logic ---
+
 
   return (
     <div className="flex flex-col min-h-screen bg-neutral-light">
@@ -168,7 +177,7 @@ function App() {
                 <AnalysisResult 
                   key={result.fileName} 
                   result={result}
-                  registeredSystems={state.registeredSystems}
+                  registeredSystems={state.registeredSystems.items || []}
                   onLinkRecord={handleLinkRecordToSystem}
                   onReprocess={handleReprocess}
                   onRegisterNewSystem={handleInitiateRegistration}
@@ -192,3 +201,4 @@ function App() {
 }
 
 export default App;
+
