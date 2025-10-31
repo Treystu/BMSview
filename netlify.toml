@@ -1,22 +1,12 @@
-
-
 [build]
   command = "npm run build"
   publish = "dist"
   functions = "netlify/functions"
 
-[functions]
-  "process-analysis" = { background = true }
-
-[functions.job-shepherd]
-  schedule = "*/1 * * * *"
-
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
 
 [context.production.environment]
-  LOG_LEVEL = "TRACE"
+  LOG_LEVEL = "INFO"
 [context.deploy-preview.environment]
-  LOG_LEVEL = "TRACE"
-[context.branch-deploy.environment]
-  LOG_LEVEL = "TRACE"
+  LOG_LEVEL = "DEBUG"
