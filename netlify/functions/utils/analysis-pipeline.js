@@ -4,7 +4,8 @@
 
 const { getGeminiClient } = require("./geminiClient.js");
 const { v4: uuidv4 } = require("uuid");
-const { getCollection } = require("./utils/mongodb.js");
+// ***FIX: Corrected import path. File is in the same directory.***
+const { getCollection } = require("./mongodb.js");
 // ***FIX: Corrected import path. File is in the same directory.***
 const { createRetryWrapper } = require("./retry.js");
 const { getResponseSchema, getImageExtractionPrompt, cleanAndParseJson, mapExtractedToAnalysisData, performPostAnalysis, parseTimestamp, generateAnalysisKey } = require('./analysis-helpers.js');
