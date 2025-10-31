@@ -1,10 +1,11 @@
-const { MongoClient } = require('mongodb');
-
-// MongoDB connection
-const client = new MongoClient(process.env.MONGODB_URI);
-const database = client.db('battery-analysis');
+const { getCollection } = require('./utils/mongodb');
+const { createLogger, createTimer } = require('./utils/logger');
 
 exports.handler = async (event, context) => {
+  const log = createLogger('upload', context);
+  const timer = createTimer(log, 'upload-handler');
+  log.entry({ method: event.httpMethod, path: event.path });
+  
   // Enable CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -13,8 +14,14 @@ exports.handler = async (event, context) => {
     'Content-Type': 'application/json'
   };
 
+  const clientIp = event.headers['x-nf-client-connection-ip'];
+  const logContext = { clientIp, httpMethod: event.httpMethod };
+
   // Handle preflight requests
   if (event.httpMethod === 'OPTIONS') {
+    log.debug('OPTIONS preflight request', logContext);
+    const durationMs = timer.end();
+    log.exit(200);
     return {
       statusCode: 200,
       headers
@@ -22,6 +29,9 @@ exports.handler = async (event, context) => {
   }
 
   if (event.httpMethod !== 'POST') {
+    log.warn('Method not allowed', { ...logContext, allowedMethods: ['POST'] });
+    const durationMs = timer.end();
+    log.exit(405);
     return {
       statusCode: 405,
       headers,
@@ -30,13 +40,17 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    await client.connect();
-    
+    log.debug('Parsing multipart form data', logContext);
     // Parse multipart form data
-    const formData = await parseMultipartData(event.body, event.headers['content-type']);
+    const formData = await parseMultipartData(event.body, event.headers['content-type'], log);
     const { file, userId } = formData;
     
+    const requestContext = { ...logContext, fileName: file?.name, userId, fileSize: file?.size };
+    
     if (!file || !userId) {
+      log.warn('Missing required fields', requestContext);
+      const durationMs = timer.end();
+      log.exit(400);
       return {
         statusCode: 400,
         headers,
@@ -44,14 +58,19 @@ exports.handler = async (event, context) => {
       };
     }
 
+    log.debug('Checking for duplicate file', requestContext);
     // Check for duplicate file
-    const existing = await database.collection('uploads').findOne({
+    const uploadsCollection = await getCollection('uploads');
+    const existing = await uploadsCollection.findOne({
       filename: file.name,
       userId,
       status: { $in: ['completed', 'processing'] }
     });
 
     if (existing) {
+      log.info('Duplicate file detected', { ...requestContext, existingId: existing._id });
+      const durationMs = timer.end();
+      log.exit(409);
       return {
         statusCode: 409,
         headers,
@@ -63,8 +82,9 @@ exports.handler = async (event, context) => {
       };
     }
 
+    log.info('Creating upload record', requestContext);
     // Insert upload record in processing state
-    const uploadRecord = await database.collection('uploads').insertOne({
+    const uploadRecord = await uploadsCollection.insertOne({
       filename: file.name,
       userId,
       status: 'processing',
@@ -73,11 +93,13 @@ exports.handler = async (event, context) => {
       contentType: file.type
     });
 
+    log.info('Processing file', { ...requestContext, uploadId: uploadRecord.insertedId });
     // Process the file
-    const processingResult = await processFile(file, uploadRecord.insertedId);
+    const processingResult = await processFile(file, uploadRecord.insertedId, log);
 
+    log.debug('Updating upload record with processing results', { ...requestContext, uploadId: uploadRecord.insertedId, success: processingResult.success });
     // Update record with processing results
-    await database.collection('uploads').updateOne(
+    await uploadsCollection.updateOne(
       { _id: uploadRecord.insertedId },
       { 
         $set: { 
@@ -90,6 +112,9 @@ exports.handler = async (event, context) => {
     );
 
     if (processingResult.success) {
+      log.info('File processed successfully', { ...requestContext, uploadId: uploadRecord.insertedId, recordsProcessed: processingResult.recordsProcessed });
+      const durationMs = timer.end({ success: true });
+      log.exit(200, { uploadId: uploadRecord.insertedId });
       return {
         statusCode: 200,
         headers,
@@ -102,6 +127,9 @@ exports.handler = async (event, context) => {
         })
       };
     } else {
+      log.error('File processing failed', { ...requestContext, uploadId: uploadRecord.insertedId, error: processingResult.error });
+      const durationMs = timer.end({ success: false });
+      log.exit(500, { uploadId: uploadRecord.insertedId });
       return {
         statusCode: 500,
         headers,
@@ -114,7 +142,9 @@ exports.handler = async (event, context) => {
     }
 
   } catch (error) {
-    console.error('Upload error:', error);
+    log.error('Upload handler error', { ...logContext, error: error.message, stack: error.stack });
+    const durationMs = timer.end({ success: false });
+    log.exit(500);
     return {
       statusCode: 500,
       headers,
@@ -123,22 +153,23 @@ exports.handler = async (event, context) => {
         details: error.message
       })
     };
-  } finally {
-    await client.close();
   }
 };
 
 // Mock multipart parser - in production, use a proper library
-async function parseMultipartData(body, contentType) {
+async function parseMultipartData(body, contentType, log) {
   // This is a simplified mock - in production, use a library like 'multiparty'
   // For now, we'll assume JSON payload with base64 file data
   
   try {
+    log.debug('Parsing request body as JSON', { contentType, bodyLength: body?.length });
     const data = JSON.parse(body);
     
     // If file is sent as base64, decode it
     if (data.fileBase64) {
+      log.debug('Decoding base64 file data', { filename: data.filename, base64Length: data.fileBase64.length });
       const buffer = Buffer.from(data.fileBase64, 'base64');
+      log.debug('File decoded successfully', { filename: data.filename, decodedSize: buffer.length });
       return {
         file: {
           name: data.filename,
@@ -151,19 +182,24 @@ async function parseMultipartData(body, contentType) {
     }
     
     // Handle other formats as needed
+    log.debug('Returning parsed data (non-base64)', { hasFile: !!data.file, hasUserId: !!data.userId });
     return data;
   } catch (error) {
+    log.error('Failed to parse multipart data', { error: error.message, contentType, bodyPreview: body?.substring(0, 100) });
     throw new Error('Failed to parse multipart data');
   }
 }
 
-async function processFile(file, uploadId) {
+async function processFile(file, uploadId, log) {
+  const fileContext = { fileName: file.name, fileSize: file.size, contentType: file.type, uploadId };
+  log.debug('Starting file processing', fileContext);
+  
   try {
-    console.log(`Processing file: ${file.name}, size: ${file.size} bytes`);
-    
     // Validate file
-    const validation = validateFile(file);
+    log.debug('Validating file', fileContext);
+    const validation = validateFile(file, log);
     if (!validation.valid) {
+      log.warn('File validation failed', { ...fileContext, error: validation.error });
       return {
         success: false,
         error: validation.error
@@ -173,8 +209,11 @@ async function processFile(file, uploadId) {
     // Parse file content based on type
     let parsedData;
     try {
-      parsedData = await parseFileContent(file);
+      log.debug('Parsing file content', { ...fileContext, format: file.name.split('.').pop() });
+      parsedData = await parseFileContent(file, log);
+      log.debug('File parsed successfully', { ...fileContext, measurementsCount: parsedData.measurements?.length });
     } catch (parseError) {
+      log.error('File parsing failed', { ...fileContext, error: parseError.message, stack: parseError.stack });
       return {
         success: false,
         error: `File parsing failed: ${parseError.message}`
@@ -182,13 +221,18 @@ async function processFile(file, uploadId) {
     }
 
     // Extract battery metrics
-    const metrics = await extractBatteryMetrics(parsedData);
+    log.debug('Extracting battery metrics', fileContext);
+    const metrics = await extractBatteryMetrics(parsedData, log);
+    log.debug('Metrics extracted', { ...fileContext, recordCount: metrics.recordCount, batteryType: metrics.batteryType });
     
     // Store measurements in database
-    await storeMeasurements(uploadId, metrics.measurements);
+    log.debug('Storing measurements', { ...fileContext, measurementCount: metrics.measurements.length });
+    await storeMeasurements(uploadId, metrics.measurements, log);
     
     // Store file metadata
-    await database.collection('files').insertOne({
+    log.debug('Storing file metadata', fileContext);
+    const filesCollection = await getCollection('files');
+    await filesCollection.insertOne({
       uploadId,
       filename: file.name,
       fileSize: file.size,
@@ -202,6 +246,7 @@ async function processFile(file, uploadId) {
       uploadedAt: new Date()
     });
 
+    log.info('File processing completed successfully', { ...fileContext, recordsProcessed: metrics.measurements.length });
     return {
       success: true,
       metrics,
@@ -209,7 +254,7 @@ async function processFile(file, uploadId) {
     };
 
   } catch (error) {
-    console.error('File processing error:', error);
+    log.error('File processing error', { ...fileContext, error: error.message, stack: error.stack });
     return {
       success: false,
       error: error.message
@@ -217,9 +262,12 @@ async function processFile(file, uploadId) {
   }
 }
 
-function validateFile(file) {
+function validateFile(file, log) {
+  log.debug('Validating file constraints', { fileName: file.name, fileSize: file.size });
+  
   // Check file size (max 50MB)
   if (file.size > 50 * 1024 * 1024) {
+    log.debug('File size validation failed', { fileName: file.name, fileSize: file.size, maxSize: 50 * 1024 * 1024 });
     return {
       valid: false,
       error: 'File size exceeds 50MB limit'
@@ -231,6 +279,7 @@ function validateFile(file) {
   const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
   
   if (!allowedExtensions.includes(fileExtension)) {
+    log.debug('File extension validation failed', { fileName: file.name, extension: fileExtension, allowed: allowedExtensions });
     return {
       valid: false,
       error: `File type ${fileExtension} is not supported`
@@ -239,35 +288,45 @@ function validateFile(file) {
 
   // Check filename length
   if (file.name.length > 255) {
+    log.debug('Filename length validation failed', { fileName: file.name, length: file.name.length, maxLength: 255 });
     return {
       valid: false,
       error: 'Filename is too long (max 255 characters)'
     };
   }
 
+  log.debug('File validation passed', { fileName: file.name, extension: fileExtension });
   return { valid: true };
 }
 
-async function parseFileContent(file) {
+async function parseFileContent(file, log) {
   const content = file.data.toString('utf8');
   const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
   
+  log.debug('Parsing file content', { fileName: file.name, extension: fileExtension, contentLength: content.length });
+  
   switch (fileExtension) {
     case '.csv':
-      return parseCSV(content);
+      log.debug('Using CSV parser', { fileName: file.name });
+      return parseCSV(content, log);
     case '.json':
-      return parseJSON(content);
+      log.debug('Using JSON parser', { fileName: file.name });
+      return parseJSON(content, log);
     case '.txt':
     case '.log':
-      return parseTextLog(content);
+      log.debug('Using text/log parser', { fileName: file.name });
+      return parseTextLog(content, log);
     case '.xml':
-      return parseXML(content);
+      log.debug('Using XML parser', { fileName: file.name });
+      return parseXML(content, log);
     default:
+      log.error('Unsupported file format', { fileName: file.name, extension: fileExtension });
       throw new Error('Unsupported file format');
   }
 }
 
-function parseCSV(content) {
+function parseCSV(content, log) {
+  log.debug('Parsing CSV content', { contentLength: content.length, lineCount: content.split('\n').length });
   const lines = content.trim().split('\n');
   const headers = lines[0].split(',').map(h => h.trim());
   const measurements = [];
@@ -298,27 +357,34 @@ function parseCSV(content) {
   return { format: 'csv', measurements };
 }
 
-function parseJSON(content) {
+function parseJSON(content, log) {
   try {
+    log.debug('Parsing JSON content', { contentLength: content.length });
     const data = JSON.parse(content);
     
     // Handle different JSON structures
     if (Array.isArray(data)) {
+      log.debug('JSON array detected', { measurementCount: data.length });
       return { format: 'json', measurements: data };
     } else if (data.measurements && Array.isArray(data.measurements)) {
+      log.debug('JSON with measurements array detected', { measurementCount: data.measurements.length, hasMetadata: !!data.metadata });
       return { format: 'json', measurements: data.measurements, metadata: data.metadata };
     } else if (data.data && Array.isArray(data.data)) {
+      log.debug('JSON with data array detected', { measurementCount: data.data.length });
       return { format: 'json', measurements: data.data };
     } else {
       // Single measurement
+      log.debug('Single JSON measurement detected');
       return { format: 'json', measurements: [data] };
     }
   } catch (error) {
+    log.error('JSON parsing failed', { error: error.message, contentPreview: content.substring(0, 200) });
     throw new Error('Invalid JSON format');
   }
 }
 
-function parseTextLog(content) {
+function parseTextLog(content, log) {
+  log.debug('Parsing text/log content', { contentLength: content.length, lineCount: content.split('\n').length });
   const lines = content.trim().split('\n');
   const measurements = [];
   
@@ -347,12 +413,14 @@ function parseTextLog(content) {
   return { format: 'text', measurements };
 }
 
-function parseXML(content) {
+function parseXML(content, log) {
+  log.debug('Parsing XML content', { contentLength: content.length });
   // Mock XML parsing - in production, use a proper XML parser
   const measurements = [];
   
   // Simple XML tag extraction
   const measurementTags = content.match(/<measurement[^>]*>[\s\S]*?<\/measurement>/g) || [];
+  log.debug('Found XML measurement tags', { tagCount: measurementTags.length });
   
   for (const tag of measurementTags) {
     const measurement = {};
@@ -374,10 +442,12 @@ function parseXML(content) {
     measurements.push(measurement);
   }
   
+  log.debug('XML parsing completed', { measurementCount: measurements.length });
   return { format: 'xml', measurements };
 }
 
-async function extractBatteryMetrics(parsedData) {
+async function extractBatteryMetrics(parsedData, log) {
+  log.debug('Extracting battery metrics', { format: parsedData.format, measurementCount: parsedData.measurements?.length });
   const measurements = parsedData.measurements || [];
   
   // Calculate derived metrics
@@ -434,9 +504,13 @@ function inferBatteryType(measurements) {
   return 'unknown';
 }
 
-async function storeMeasurements(uploadId, measurements) {
-  if (measurements.length === 0) return;
+async function storeMeasurements(uploadId, measurements, log) {
+  if (measurements.length === 0) {
+    log.debug('No measurements to store', { uploadId });
+    return;
+  }
   
+  log.debug('Preparing measurements for storage', { uploadId, measurementCount: measurements.length });
   // Add uploadId to each measurement
   const measurementsWithId = measurements.map(m => ({
     ...m,
@@ -446,8 +520,15 @@ async function storeMeasurements(uploadId, measurements) {
   
   // Insert in batches for better performance
   const batchSize = 1000;
+  const batches = Math.ceil(measurementsWithId.length / batchSize);
+  log.debug('Storing measurements in batches', { uploadId, total: measurementsWithId.length, batchSize, batches });
+  
+  const measurementsCollection = await getCollection('measurements');
   for (let i = 0; i < measurementsWithId.length; i += batchSize) {
     const batch = measurementsWithId.slice(i, i + batchSize);
-    await database.collection('measurements').insertMany(batch);
+    await measurementsCollection.insertMany(batch);
+    log.debug('Inserted measurement batch', { uploadId, batchNumber: Math.floor(i / batchSize) + 1, batchSize: batch.length });
   }
+  
+  log.info('All measurements stored successfully', { uploadId, total: measurementsWithId.length });
 }

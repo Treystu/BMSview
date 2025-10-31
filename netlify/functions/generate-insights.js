@@ -1,9 +1,13 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { createLogger, createTimer } = require('./utils/logger');
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 exports.handler = async (event, context) => {
+  const log = createLogger('generate-insights', context);
+  const timer = createTimer(log, 'generate-insights-handler');
+  log.entry({ method: event.httpMethod, path: event.path });
   // Add timeout handling
   const timeoutPromise = new Promise((_, reject) => 
     setTimeout(() => reject(new Error('Function timeout')), 45000)
@@ -11,17 +15,25 @@ exports.handler = async (event, context) => {
 
   const mainProcessingLogic = async (event) => {
     try {
+      log.debug('Parsing request body', { bodyLength: event.body?.length });
       const { batteryData, systemId } = JSON.parse(event.body);
       
+      const requestContext = { systemId, hasBatteryData: !!batteryData };
+      
       if (!batteryData || !systemId) {
+        log.warn('Missing required parameters', requestContext);
+        const durationMs = timer.end();
+        log.exit(400);
         return {
           statusCode: 400,
           body: JSON.stringify({ error: 'Missing required parameters' })
         };
       }
 
+      log.info('Generating insights', requestContext);
       // Initialize Gemini model
       const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      log.debug('Gemini model initialized', { model: 'gemini-pro' });
 
       // Prepare insights prompt
       const prompt = `
@@ -38,13 +50,19 @@ exports.handler = async (event, context) => {
       `;
 
       // Generate insights with streaming
+      log.debug('Calling Gemini API to generate insights', requestContext);
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const insights = response.text();
+      log.debug('Received insights from Gemini', { systemId, insightsLength: insights.length });
 
       // Parse and structure the insights
-      const structuredInsights = parseInsights(insights, batteryData);
+      log.debug('Parsing and structuring insights', requestContext);
+      const structuredInsights = parseInsights(insights, batteryData, log);
 
+      log.info('Insights generated successfully', requestContext);
+      const durationMs = timer.end({ success: true });
+      log.exit(200, requestContext);
       return {
         statusCode: 200,
         body: JSON.stringify({
@@ -55,7 +73,9 @@ exports.handler = async (event, context) => {
       };
 
     } catch (error) {
-      console.error('Error generating insights:', error);
+      log.error('Error generating insights', { systemId, error: error.message, stack: error.stack });
+      const durationMs = timer.end({ success: false });
+      log.exit(500);
       return {
         statusCode: 500,
         body: JSON.stringify({ 
@@ -72,6 +92,9 @@ exports.handler = async (event, context) => {
   } catch (error) {
     // Handle timeout specifically
     if (error.message === 'Function timeout') {
+      log.warn('Function timeout', { timeoutMs: 45000 });
+      const durationMs = timer.end({ success: false, timeout: true });
+      log.exit(504);
       return { 
         statusCode: 504, 
         body: JSON.stringify({ 
@@ -81,6 +104,9 @@ exports.handler = async (event, context) => {
       };
     }
     // Other error handling
+    log.error('Unexpected error in generate-insights handler', { error: error.message, stack: error.stack });
+    const durationMs = timer.end({ success: false });
+    log.exit(500);
     return {
       statusCode: 500,
       body: JSON.stringify({ 
@@ -91,7 +117,8 @@ exports.handler = async (event, context) => {
   }
 };
 
-function parseInsights(rawInsights, batteryData) {
+function parseInsights(rawInsights, batteryData, log) {
+  log.debug('Parsing raw insights', { rawLength: rawInsights.length });
   // Extract structured data from AI response
   const insights = {
     healthStatus: extractHealthStatus(rawInsights),

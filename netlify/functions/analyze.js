@@ -1,7 +1,10 @@
 const { errorResponse } = require('./utils/errors');
-const { parseJsonBody, validateAnalyzeRequest } = require('./utils/validation');
+const { parseJsonBody, validateAnalyzeRequest, validateImagePayload } = require('./utils/validation');
 const { createLogger, createTimer } = require('./utils/logger');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline');
+const { sha256HexFromBase64 } = require('./utils/hash');
+const { getCollection } = require('./utils/mongodb');
+const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry');
 
 // NOTE: Database access for analysis is handled inside performAnalysisPipeline via utils/mongodb
 
@@ -30,44 +33,130 @@ exports.handler = async (event, context) => {
   const log = createLogger('analyze', context);
   log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
   const isSync = (event.queryStringParameters && event.queryStringParameters.sync === 'true');
+  const headersIn = event.headers || {};
+  const idemKey = headersIn['Idempotency-Key'] || headersIn['idempotency-key'] || headersIn['IDEMPOTENCY-KEY'];
   let requestContext = { jobId: undefined };
 
   try {
     // Safe parse & validate
-    const parsed = parseJsonBody(event);
+    const parsed = parseJsonBody(event, log);
     if (!parsed.ok) {
       log.warn('Invalid JSON body for analyze request.', { error: parsed.error });
+      log.exit(400);
       return errorResponse(400, 'invalid_request', parsed.error, undefined, headers);
     }
     if (isSync) {
       // Synchronous analyze path: expects { image: { image, mimeType, fileName, force? } }
       const timer = createTimer(log, 'sync-analysis');
       const imagePayload = parsed.value && parsed.value.image;
-      if (!imagePayload || !imagePayload.image || !imagePayload.mimeType || !imagePayload.fileName) {
-        log.warn('Sync analyze missing required image fields.', { hasImage: !!imagePayload });
-        return errorResponse(400, 'missing_parameters', 'Missing required image fields', { required: ['image.image', 'image.mimeType', 'image.fileName'] }, { ...headers, 'Content-Type': 'application/json' });
+      const imageValidation = validateImagePayload(imagePayload, log);
+      if (!imageValidation.ok) {
+        log.warn('Sync analyze image validation failed.', { reason: imageValidation.error });
+        log.exit(400);
+        return errorResponse(400, 'invalid_image', imageValidation.error, undefined, { ...headers, 'Content-Type': 'application/json' });
+      }
+
+      // Compute content hash for dedupe
+      const contentHash = sha256HexFromBase64(imagePayload.image);
+
+      // Idempotency short-circuit
+      if (idemKey) {
+        const idemCol = await getCollection('idempotent-requests');
+        const existingIdem = await idemCol.findOne({ key: idemKey });
+        if (existingIdem && existingIdem.response) {
+          log.info('Idempotency hit: returning stored response.', { idemKey });
+          const durationMs = timer.end({ idempotent: true });
+          log.exit(200, { mode: 'sync', idempotent: true, durationMs });
+          return {
+            statusCode: 200,
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify(existingIdem.response)
+          };
+        }
+      }
+
+      // Dedupe by content hash
+      const resultsCol = await getCollection('analysis-results');
+      const existing = await resultsCol.findOne({ contentHash });
+      if (existing) {
+        log.info('Dedupe: existing analysis found for content hash.', { contentHash });
+        const responseBody = { analysis: existing.analysis, recordId: existing._id?.toString?.() || existing.id, fileName: existing.fileName, timestamp: existing.timestamp, dedupeHit: true };
+        if (idemKey) {
+          try {
+            const idemCol = await getCollection('idempotent-requests');
+            await idemCol.updateOne({ key: idemKey }, { $set: { key: idemKey, response: responseBody, createdAt: new Date() } }, { upsert: true });
+          } catch (_) {}
+        }
+        const durationMs = timer.end({ recordId: responseBody.recordId, dedupe: true });
+        log.exit(200, { mode: 'sync', dedupe: true, durationMs });
+        return {
+          statusCode: 200,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify(responseBody)
+        };
       }
 
       log.info('Starting synchronous analysis via pipeline.', { fileName: imagePayload.fileName, mimeType: imagePayload.mimeType });
-      const record = await performAnalysisPipeline(
-        { image: imagePayload.image, mimeType: imagePayload.mimeType, fileName: imagePayload.fileName, force: !!imagePayload.force },
-        null,
-        log,
-        context
-      );
+      const record = await circuitBreaker('syncAnalysis', () =>
+        retryAsync(() => withTimeout(
+          performAnalysisPipeline(
+            { image: imagePayload.image, mimeType: imagePayload.mimeType, fileName: imagePayload.fileName, force: !!imagePayload.force },
+            null,
+            log,
+            context
+          ),
+          parseInt(process.env.ANALYSIS_TIMEOUT_MS || '60000'),
+          () => log.warn('performAnalysisPipeline timed out'),
+          log
+        ), {
+          retries: parseInt(process.env.ANALYSIS_RETRIES || '2'),
+          baseDelayMs: parseInt(process.env.ANALYSIS_RETRY_BASE_MS || '250'),
+          jitterMs: parseInt(process.env.ANALYSIS_RETRY_JITTER_MS || '200'),
+          shouldRetry: (e) => e && e.code !== 'operation_timeout' && e.code !== 'circuit_open',
+          log
+        })
+      , {
+        failureThreshold: parseInt(process.env.CB_FAILURES || '5'),
+        openMs: parseInt(process.env.CB_OPEN_MS || '30000'),
+        log
+      });
+
+      // Persist new result with contentHash for future dedupe
+      try {
+        await resultsCol.insertOne({
+          id: record.id,
+          fileName: record.fileName,
+          timestamp: record.timestamp,
+          analysis: record.analysis,
+          contentHash,
+          createdAt: new Date()
+        });
+      } catch (e) {
+        log.warn('Failed to persist analysis-results record.', { error: e && e.message ? e.message : String(e) });
+      }
+
+      const responseBody = { analysis: record.analysis, recordId: record.id, fileName: record.fileName, timestamp: record.timestamp };
+      if (idemKey) {
+        try {
+          const idemCol = await getCollection('idempotent-requests');
+          await idemCol.updateOne({ key: idemKey }, { $set: { key: idemKey, response: responseBody, createdAt: new Date(), contentHash } }, { upsert: true });
+        } catch (_) {}
+      }
+
       const durationMs = timer.end({ recordId: record.id });
       log.exit(200, { mode: 'sync', recordId: record.id, durationMs });
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ analysis: record.analysis, recordId: record.id, fileName: record.fileName, timestamp: record.timestamp })
+        body: JSON.stringify(responseBody)
       };
     }
 
     // Legacy async/job-based path validation
-    const validated = validateAnalyzeRequest(parsed.value);
+    const validated = validateAnalyzeRequest(parsed.value, log);
     if (!validated.ok) {
       log.warn('Legacy analyze request missing parameters.', { details: validated.details });
+      log.exit(400);
       return errorResponse(400, 'missing_parameters', validated.error, validated.details, { ...headers, 'Content-Type': 'application/json' });
     }
 
@@ -84,7 +173,7 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
-    log.error('Analyze function failed.', { error: error && error.message ? error.message : String(error) });
+    log.error('Analyze function failed.', { error: error && error.message ? error.message : String(error), stack: error.stack });
     
     // Send error event
     // Best-effort legacy progress event logging (ignore failures)
@@ -98,6 +187,7 @@ exports.handler = async (event, context) => {
       }
     } catch (_) {}
 
+    log.exit(500, { error: error.message });
     return errorResponse(500, 'analysis_failed', 'Analysis failed', { message: error.message }, { ...headers, 'Content-Type': 'application/json' });
   } finally {
     // DB connections are managed by utils/mongodb; nothing to close here
