@@ -1,6 +1,7 @@
 {
   "name": "bms-validator",
   "version": "1.0.0",
+  "type": "module",
   "private": true,
   "description": "An application to analyze Battery Management System (BMS) screenshots using AI.",
   "scripts": {
