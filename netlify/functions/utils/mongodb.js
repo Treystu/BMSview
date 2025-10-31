@@ -1,6 +1,8 @@
-// HOTFIX 3: Improved MongoDB Connection Pooling
-// Replace: netlify/functions/utils/mongodb.js
-// This fix implements proper connection pooling, health checks, and error handling
+/**
+ * OPTIMIZED MongoDB Connection Manager
+ * Consolidates connection pooling with aggressive resource management
+ * Fixes connection overload issues by reducing pool size and improving reuse
+ */
 
 const { MongoClient } = require("mongodb");
 
@@ -24,17 +26,16 @@ let cachedClient = null;
 let cachedDb = null;
 let connectionPromise = null;
 let lastHealthCheck = null;
-const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+const HEALTH_CHECK_INTERVAL = 60000; // 60 seconds (reduced frequency)
 
 /**
- * Performs a health check on the database connection
- * @param {import('mongodb').Db} db 
- * @returns {Promise<boolean>}
+ * Performs a lightweight health check on the database connection
+ * @param {import('mongodb').MongoClient} client 
+ * @returns {boolean}
  */
-async function healthCheck(db) {
+function isClientHealthy(client) {
     try {
-        await db.admin().ping();
-        return true;
+        return client && client.topology && client.topology.isConnected();
     } catch (error) {
         console.error('MongoDB health check failed:', error.message);
         return false;
@@ -42,7 +43,8 @@ async function healthCheck(db) {
 }
 
 /**
- * Connects to MongoDB with proper connection pooling and error handling
+ * Connects to MongoDB with optimized connection pooling
+ * CRITICAL: Reduced pool size from 10 to 5 to prevent connection overload
  * @returns {Promise<{client: import('mongodb').MongoClient, db: import('mongodb').Db}>}
  */
 async function connectToDatabase() {
@@ -50,9 +52,9 @@ async function connectToDatabase() {
     if (cachedClient && cachedDb) {
         const now = Date.now();
         
-        // Perform periodic health checks
+        // Perform periodic health checks (less frequent to reduce overhead)
         if (!lastHealthCheck || (now - lastHealthCheck) > HEALTH_CHECK_INTERVAL) {
-            const isHealthy = await healthCheck(cachedDb);
+            const isHealthy = isClientHealthy(cachedClient);
             lastHealthCheck = now;
             
             if (isHealthy) {
@@ -60,9 +62,7 @@ async function connectToDatabase() {
             } else {
                 // Connection is unhealthy, reset cache and reconnect
                 console.warn('MongoDB connection unhealthy, reconnecting...');
-                cachedClient = null;
-                cachedDb = null;
-                connectionPromise = null;
+                await closeConnection();
             }
         } else {
             return { client: cachedClient, db: cachedDb };
@@ -74,31 +74,35 @@ async function connectToDatabase() {
         return connectionPromise;
     }
 
-    // Create new connection with proper pooling configuration
+    // Create new connection with OPTIMIZED pooling configuration
     connectionPromise = (async () => {
         try {
             const client = new MongoClient(MONGODB_URI, {
-                // Enforce TLSv1.2 and disable invalid certs
+                // TLS settings
                 tlsAllowInvalidCertificates: false,
                 tlsAllowInvalidHostnames: false,
                 tls: true,
 
-                // Connection pool settings
-                maxPoolSize: 10,
-                minPoolSize: 2,
-                maxIdleTimeMS: 60000, // Close idle connections after 60 seconds
+                // OPTIMIZED: Reduced pool size to prevent connection overload
+                maxPoolSize: 5,        // Reduced from 10 to 5
+                minPoolSize: 1,        // Reduced from 2 to 1
+                maxIdleTimeMS: 30000,  // Reduced from 60s to 30s - close idle connections faster
                 
-                // Timeout settings
+                // Timeout settings - more aggressive
                 serverSelectionTimeoutMS: 5000,
-                socketTimeoutMS: 45000,
+                socketTimeoutMS: 30000,  // Reduced from 45s to 30s
                 connectTimeoutMS: 10000,
                 
                 // Retry settings
                 retryWrites: true,
                 retryReads: true,
                 
-                // Monitoring
-                monitorCommands: process.env.NODE_ENV === 'development',
+                // Write concern for better performance
+                w: 'majority',
+                wtimeoutMS: 5000,
+                
+                // Disable monitoring in production to reduce overhead
+                monitorCommands: false,
             });
 
             // Connect with timeout
@@ -119,13 +123,9 @@ async function connectToDatabase() {
             cachedDb = db;
             lastHealthCheck = Date.now();
             
-            console.log('MongoDB connected successfully');
+            console.log('MongoDB connected successfully with optimized pool settings');
             
             // Set up connection monitoring
-            client.on('connectionPoolCreated', () => {
-                console.log('MongoDB connection pool created');
-            });
-            
             client.on('connectionPoolClosed', () => {
                 console.log('MongoDB connection pool closed');
                 cachedClient = null;
@@ -158,7 +158,7 @@ async function connectToDatabase() {
  * @param {number} retries 
  * @returns {Promise<import('mongodb').Collection>}
  */
-const getCollection = async (collectionName, retries = 3) => {
+const getCollection = async (collectionName, retries = 2) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
             const { db } = await connectToDatabase();
@@ -171,9 +171,7 @@ const getCollection = async (collectionName, retries = 3) => {
             }
             
             // Reset connection on error
-            cachedClient = null;
-            cachedDb = null;
-            connectionPromise = null;
+            await closeConnection();
             
             // Exponential backoff
             await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
@@ -188,7 +186,7 @@ const getCollection = async (collectionName, retries = 3) => {
 async function closeConnection() {
     if (cachedClient) {
         try {
-            await cachedClient.close();
+            await cachedClient.close(true); // Force close
             console.log('MongoDB connection closed');
         } catch (error) {
             console.error('Error closing MongoDB connection:', error);
