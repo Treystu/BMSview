@@ -1,4 +1,4 @@
-import type { BmsSystem } from '../types';
+import type { AnalysisData } from '../types';
 
 const fileWithMetadataToBase64 = (file: File): Promise<{ image: string, mimeType: string, fileName: string }> => {
     return new Promise((resolve, reject) => {
@@ -19,13 +19,6 @@ const fileWithMetadataToBase64 = (file: File): Promise<{ image: string, mimeType
     });
 };
 
-type JobCreationResponse = {
-    fileName: string;
-    jobId: string;
-    status: string;
-    error?: string;
-};
-
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({
         level: level.toUpperCase(),
@@ -36,36 +29,33 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
     }));
 };
 
-export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: BmsSystem[], forceReprocessFileNames: string[] = []): Promise<JobCreationResponse[]> => {
-    const analysisContext = { fileCount: files.length, hasSystems: !!registeredSystems, forceCount: forceReprocessFileNames.length };
-    log('info', 'Starting analysis job submission.', analysisContext);
+/**
+ * ***NEW SYNCHRONOUS FUNCTION***
+ * Analyzes a single BMS screenshot and returns the data directly.
+ * This replaces the old `analyzeBmsScreenshots` job-based function.
+ */
+export const analyzeBmsScreenshot = async (file: File): Promise<AnalysisData> => {
+    const analysisContext = { fileName: file.name, fileSize: file.size };
+    log('info', 'Starting synchronous analysis.', analysisContext);
     
     try {
-        if (files.length === 0) return [];
-
-        const imagePayloads = await Promise.all(files.map(file => 
-            fileWithMetadataToBase64(file).then(payload => ({
-                ...payload,
-                force: forceReprocessFileNames.includes(payload.fileName),
-            }))
-        ));
+        const imagePayload = await fileWithMetadataToBase64(file);
         
         const controller = new AbortController();
-        // FIX: Increased timeout from 30 seconds to 2 minutes (120,000 ms)
-        // This gives large uploads more time to complete before the client aborts the request.
+        // Give it a 60-second timeout.
         const timeoutId = setTimeout(() => {
-            log('warn', 'Analysis request timed out on client after 2 minutes.');
+            log('warn', 'Synchronous analysis request timed out on client after 60 seconds.');
             controller.abort();
-        }, 120000);
+        }, 60000);
 
         const dataToSend = {
-            images: imagePayloads,
-            systems: registeredSystems,
+            image: imagePayload,
+            // We pass sync=true to tell the backend to process immediately
         };
         
-        log('info', 'Submitting analysis request to /.netlify/functions/analyze.', { ...analysisContext, payloadSize: JSON.stringify(dataToSend).length });
+        log('info', 'Submitting analysis request to /.netlify/functions/analyze?sync=true', analysisContext);
 
-        const response = await fetch('/.netlify/functions/analyze', {
+        const response = await fetch('/.netlify/functions/analyze?sync=true', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(dataToSend),
@@ -88,28 +78,27 @@ export const analyzeBmsScreenshots = async (files: File[], registeredSystems?: B
             } catch {
                 errorBody = 'Failed to read error response';
             }
-            const errorMessage = (typeof errorBody === 'object' && errorBody?.error) ? errorBody.error : `Server responded with status ${response.status}: ${errorBody}`;
+            const errorMessage = (typeof errorBody === 'object' && errorBody?.error) ? errorBody.error : `Server responded with status ${response.status}: ${errorText}`;
             throw new Error(errorMessage);
         }
         
-        const result: JobCreationResponse[] = await response.json();
+        // In sync mode, the server returns the full AnalysisRecord directly.
+        // We just want the 'analysis' part.
+        const result: { analysis: AnalysisData } = await response.json();
         
-        const jobIds = result.map(j => j.jobId).filter(Boolean);
-        const duplicateCount = result.filter(j => j.status?.includes('duplicate')).length;
-        
-        log('info', 'Analysis job submission successful.', { 
-            resultsCount: result.length, 
-            jobsCreated: jobIds.length, 
-            duplicatesFound: duplicateCount, 
-            jobIds 
-        });
-        
-        return result;
+        if (!result.analysis) {
+            log('error', 'API response was successful but missing analysis data.', result);
+            throw new Error('API response was successful but missing analysis data.');
+        }
+
+        log('info', 'Synchronous analysis successful.', { fileName: file.name });
+        return result.analysis;
 
     } catch (error) {
         const isAbort = error instanceof Error && error.name === 'AbortError';
         const errorMessage = isAbort ? 'Request was aborted due to timeout.' : (error instanceof Error ? error.message : 'An unknown client-side error occurred.');
-        log('error', 'Analysis job submission failed.', { ...analysisContext, error: errorMessage, isTimeout: isAbort });
+        log('error', 'Synchronous analysis failed.', { ...analysisContext, error: errorMessage, isTimeout: isAbort });
         throw new Error(errorMessage);
     }
 };
+
