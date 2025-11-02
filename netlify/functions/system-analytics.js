@@ -1,6 +1,6 @@
-const { getCollection } = require("./utils/mongodb.js");
-const { createLogger } = require("./utils/logger.js");
-const { createRetryWrapper } = require("./utils/retry.js");
+const { getCollection } = require("./utils/mongodb.cjs");
+const { createLogger } = require("./utils/logger.cjs");
+const { createRetryWrapper } = require("./utils/retry.cjs");
 
 const respond = (statusCode, body) => ({
     statusCode,
