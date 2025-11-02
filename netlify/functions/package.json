@@ -1,5 +1,5 @@
-
 {
+  "type": "commonjs",
   "dependencies": {
     "@google/genai": "^0.11.0",
     "@netlify/functions": "^2.7.0",
