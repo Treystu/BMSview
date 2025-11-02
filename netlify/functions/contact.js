@@ -1,5 +1,5 @@
 const nodemailer = require('nodemailer');
-const { createLogger } = require("./utils/logger.js");
+const { createLogger } = require("./utils/logger.cjs");
 
 exports.handler = async function(event, context) {
   const log = createLogger('contact', context);
