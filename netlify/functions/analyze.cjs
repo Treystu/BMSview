@@ -1,7 +1,6 @@
 /**
  * Lambda function handler for analyzing image data.
- * 
- * Dependencies:
+ * * Dependencies:
  * - utils/errors: { errorResponse } - Error handling utilities
  * - utils/validation: { parseJsonBody, validateAnalyzeRequest, validateImagePayload } - Request validation
  * - utils/logger: { createLogger, createTimer } - Logging and timing utilities
@@ -9,16 +8,14 @@
  * - utils/hash: { sha256HexFromBase64 } - Content hashing utilities
  * - utils/mongodb: { getCollection } - MongoDB connection and collection access
  * - utils/retry: { withTimeout, retryAsync, circuitBreaker } - Retry and circuit breaker patterns
- * 
- * Required Environment Variables:
+ * * Required Environment Variables:
  * - ANALYSIS_TIMEOUT_MS: Analysis pipeline timeout (default: 60000)
  * - ANALYSIS_RETRIES: Number of retry attempts (default: 2)
  * - ANALYSIS_RETRY_BASE_MS: Base delay between retries (default: 250)
  * - ANALYSIS_RETRY_JITTER_MS: Jitter added to retry delay (default: 200)
  * - CB_FAILURES: Circuit breaker failure threshold (default: 5)
  * - CB_OPEN_MS: Circuit breaker open duration (default: 30000)
- * 
- * MongoDB Collections Used:
+ * * MongoDB Collections Used:
  * - idempotent-requests: Stores request/response pairs for idempotency
  * - analysis-results: Stores analysis results and content hashes for deduplication
  * - progress-events: Stores legacy job progress events
@@ -71,7 +68,8 @@ exports.handler = async (event, context) => {
 
     if (isSync) {
       // Synchronous analysis path
-      return await handleSyncAnalysis(parsed.value, idemKey, headers, log, context, timer);
+      // *** FIX: Removed the 'timer' variable which was not defined in this scope. ***
+      return await handleSyncAnalysis(parsed.value, idemKey, headers, log, context);
     }
 
     // Legacy asynchronous analysis path
@@ -103,7 +101,6 @@ exports.handler = async (event, context) => {
  * @param {Object} headers - Response headers
  * @param {Object} log - Logger instance
  * @param {Object} context - Lambda context
- * @param {Function} timer - Timer function
  */
 async function handleSyncAnalysis(requestBody, idemKey, headers, log, context) {
   const timer = createTimer(log, 'sync-analysis');
