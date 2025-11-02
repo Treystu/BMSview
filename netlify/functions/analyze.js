@@ -24,13 +24,13 @@
  * - progress-events: Stores legacy job progress events
  */
 
-const { errorResponse } = require('./utils/errors');
-const { parseJsonBody, validateAnalyzeRequest, validateImagePayload } = require('./utils/validation');
-const { createLogger, createTimer } = require('./utils/logger');
-const { performAnalysisPipeline } = require('./utils/analysis-pipeline');
-const { sha256HexFromBase64 } = require('./utils/hash');
-const { getCollection } = require('./utils/mongodb');
-const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry');
+const { errorResponse } = require('./utils/errors.cjs');
+const { parseJsonBody, validateAnalyzeRequest, validateImagePayload } = require('./utils/validation.cjs');
+const { createLogger, createTimer } = require('./utils/logger.cjs');
+const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
+const { sha256HexFromBase64 } = require('./utils/hash.cjs');
+const { getCollection } = require('./utils/mongodb.cjs');
+const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry.cjs');
 
 exports.handler = async (event, context) => {
   // Enable CORS
