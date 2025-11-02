@@ -1,121 +1,131 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { createLogger, createTimer } = require('./utils/logger.cjs');
-
-// Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// Token estimation helper (1 token ≈ 4 characters)
+const estimateTokens = (str) => Math.ceil(str.length / 4);
+const MAX_TOKENS = 28000; // 28k for safety (Gemini Pro's limit is 32k)
 
 exports.handler = async (event, context) => {
   const log = createLogger('generate-insights', context);
   const timer = createTimer(log, 'generate-insights-handler');
   log.entry({ method: event.httpMethod, path: event.path });
-  // Add timeout handling
-  const timeoutPromise = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error('Function timeout')), 45000)
-  );
-
-  const mainProcessingLogic = async (event) => {
-    try {
-      log.debug('Parsing request body', { bodyLength: event.body?.length });
-      const { analysisData: batteryData, systemId, customPrompt } = JSON.parse(event.body);
-      
-      const requestContext = { systemId, hasBatteryData: !!batteryData };
-      
-      if (!batteryData) {
-        log.warn('Missing required parameters', requestContext);
-        const durationMs = timer.end();
-        log.exit(400);
-        return {
-          statusCode: 400,
-          body: JSON.stringify({ error: 'Missing required parameters' })
-        };
-      }
-
-      log.info('Generating insights', requestContext);
-      const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-      log.debug('Gemini model initialized', { model: 'gemini-pro' });
-
-      const prompt = customPrompt
-        ? `Using the following system data as context:
-           System ID: ${systemId || 'N/A'}
-           Battery Data: ${JSON.stringify(batteryData, null, 2)}
-           Answer this user query: "${customPrompt}"`
-        : `Analyze this battery data and provide comprehensive insights:
-           System ID: ${systemId || 'N/A'}
-           Battery Data: ${JSON.stringify(batteryData, null, 2)}
-           Please provide:
-           1. Health status assessment
-           2. Performance trends
-           3. Maintenance recommendations
-           4. Estimated lifespan
-           5. Efficiency metrics`;
-
-      log.debug('Calling Gemini API to generate insights', requestContext);
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const insights = response.text();
-      log.debug('Received insights from Gemini', { systemId, insightsLength: insights.length });
-
-      log.debug('Parsing and structuring insights', requestContext);
-      const structuredInsights = parseInsights(insights, batteryData, log);
-
-      log.info('Insights generated successfully', requestContext);
-      const durationMs = timer.end({ success: true });
-      log.exit(200, requestContext);
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          success: true,
-          insights: structuredInsights,
-          timestamp: new Date().toISOString()
-        })
-      };
-
-    } catch (error) {
-      log.error('Error generating insights', { systemId: (JSON.parse(event.body) || {}).systemId, error: error.message, stack: error.stack });
-      const durationMs = timer.end({ success: false });
-      log.exit(500);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ 
-          error: 'Failed to generate insights',
-          details: error.message 
-        })
-      };
-    }
-  };
 
   try {
-    const result = await Promise.race([mainProcessingLogic(event), timeoutPromise]);
-    return result;
-  } catch (error) {
-    if (error.message === 'Function timeout') {
-      log.warn('Function timeout', { timeoutMs: 45000 });
-      const durationMs = timer.end({ success: false, timeout: true });
-      log.exit(504);
-      return { 
-        statusCode: 504, 
-        body: JSON.stringify({ 
-          error: 'Processing timeout',
-          message: 'Insights generation took too long. Please try again.' 
+    // 1. Safe input parsing
+    const body = JSON.parse(event.body || '{}');
+    const { analysisData: batteryData, systemId, customPrompt } = body;
+    const requestContext = { systemId, hasBatteryData: !!batteryData };
+
+    // 2. Input validation
+    if (!batteryData?.measurements) {
+      log.warn('Missing/invalid battery data', requestContext);
+      return { statusCode: 400, body: JSON.stringify({ error: 'Invalid battery data format' }) };
+    }
+
+    // 3. Token safety check
+    const dataString = JSON.stringify(batteryData);
+    const dataTokens = estimateTokens(dataString);
+    
+    if (dataTokens > MAX_TOKENS) {
+      log.warn('Battery data exceeds token limit', {
+        systemId,
+        dataTokens,
+        maxTokens: MAX_TOKENS
+      });
+      return {
+        statusCode: 413,
+413,
+        body: JSON.stringify({
+          error: 'Battery data too large',
+          maxTokens: MAX_TOKENS,
+          actualTokens: dataTokens,
+          suggestion: 'Reduce measurement points or summarize data'
         })
       };
     }
-    log.error('Unexpected error in generate-insights handler', { error: error.message, stack: error.stack });
-    const durationMs = timer.end({ success: false });
-    log.exit(500);
+
+    // 4. Generate optimized prompt
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const prompt = buildPrompt(systemId, batteryData, customPrompt);
+    const promptTokens = estimateTokens(prompt);
+    
+    log.debug('Calling Gemini API', {
+      systemId,
+      promptTokens,
+      remainingTokens: MAX_TOKENS - promptTokens
+    });
+
+    // 5. Structured output request
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const insightsText = response.text();
+    
+    // 6. Parse with fallback
+    const structuredInsights = parseInsights(
+      insightsText,
+      batteryData,
+      log
+    );
+
+    log.info('Insights generated', requestContext);
     return {
-      statusCode: 500,
-      body: JSON.stringify({ 
-        error: 'Processing failed',
-        details: error.message 
+      statusCode: 200,
+      body: JSON.stringify({
+        success: true,
+        insights: structuredInsights,
+        tokenUsage: { promptTokens, generatedTokens: estimateTokens(insightsText) },
+        timestamp: new Date().toISOString()
       })
     };
+  } catch (error) {
+    log.error('Processing failed', { error: error.message });
+    return handleError(error, log);
+  } finally {
+    timer.end();
   }
 };
 
+// --- Helper Functions ---
+function buildPrompt(systemId, batteryData, customPrompt) {
+  const baseContext = `SYSTEM ID: ${systemId || 'N/A'}\nBATTERY DATA:\n${JSON.stringify(batteryData)}`;
+  
+  return customPrompt
+    ? `${baseContext}\n\nUSER QUERY: ${sanitizePrompt(customPrompt)}\n\nRESPONSE FORMAT: JSON {
+      healthStatus: string,
+      performanceSummary: string,
+      recommendations: string[],
+      estimatedLifespan: string,
+      efficiencyNotes: string
+    }`
+    : `${baseContext}\n\nANALYZE AND PROVIDE:\n1. Health status\n2. Performance trends\n3. Maintenance recommendations\n4. Estimated lifespan\n5. Efficiency notes\n\nRESPONSE FORMAT: JSON (same keys as above)`;
+}
+
+function sanitizePrompt(prompt) {
+  return prompt.replace(/[{}<>\[\]]/g, '').substring(0, 1000);
+}
+
 function parseInsights(rawInsights, batteryData, log) {
-  log.debug('Parsing raw insights', { rawLength: rawInsights.length });
-  const insights = {
+  try {
+    // Attempt JSON parse first
+    const jsonMatch = rawInsights.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        healthStatus: parsed.healthStatus || extractHealthStatus(rawInsights),
+        performance: analyzePerformance(batteryData),
+        recommendations: parsed.recommendations || extractRecommendations(rawInsights),
+        estimatedLifespan: parsed.estimatedLifespan || extractLifespan(rawInsights),
+        efficiency: calculateEfficiency(batteryData),
+        rawText: rawInsights
+      };
+    }
+  } catch (e) {
+    log.warn('JSON parse failed, using fallback', { error: e.message });
+  }
+  
+  // Fallback to text extraction
+  return {
     healthStatus: extractHealthStatus(rawInsights),
     performance: analyzePerformance(batteryData),
     recommendations: extractRecommendations(rawInsights),
@@ -123,97 +133,78 @@ function parseInsights(rawInsights, batteryData, log) {
     efficiency: calculateEfficiency(batteryData),
     rawText: rawInsights
   };
-
-  return insights;
 }
 
-function extractHealthStatus(text) {
-  const statusPatterns = [
-    /health status[:\s]*(\w+)/i,
-    /condition[:\s]*(\w+)/i,
-    /(\w+)\s+health/i
-  ];
-
-  for (const pattern of statusPatterns) {
-    const match = text.match(pattern);
-    if (match) return match[1];
-  }
-
-  return 'Unknown';
-}
-
+// --- Data Processing Functions (Optimized) ---
 function analyzePerformance(batteryData) {
-  if (!batteryData || !batteryData.measurements) {
-    return { trend: 'Unknown', score: 0 };
-  }
-
   const measurements = batteryData.measurements;
-  const latest = measurements[measurements.length - 1];
-  const earliest = measurements[0];
+  if (!measurements?.length) return { trend: 'Unknown', score: 0 };
 
-  const capacityLoss = earliest.capacity - latest.capacity;
-  const capacityRetention = (latest.capacity / earliest.capacity) * 100;
+  const first = measurements[0];
+  const last = measurements[measurements.length - 1];
+  const capacityRetention = (last.capacity / first.capacity) * 100;
 
   return {
-    trend: capacityRetention > 90 ? 'Excellent' : capacityRetention > 70 ? 'Good' : 'Poor',
+    trend: capacityRetention > 90 ? 'Excellent' : 
+           capacityRetention > 70 ? 'Good' : 'Poor',
     capacityRetention: Math.round(capacityRetention),
-    degradationRate: Math.round(capacityLoss / measurements.length * 100) / 100
+    degradationRate: parseFloat(((first.capacity - last.capacity) / measurements.length).toFixed(2))
   };
 }
 
-function extractRecommendations(text) {
-  const recommendations = [];
-  const lines = text.split('
-');
-  
-  for (const line of lines) {
-    if (line.includes('recommend') || line.includes('suggest') || line.includes('should')) {
-      recommendations.push(line.trim());
+function calculateEfficiency(batteryData) {
+  const measurements = batteryData.measurements || [];
+  let totalChargeEff = 0;
+  let validCycles = 0;
+
+  for (let i = 1; i < measurements.length; i++) {
+    const prev = measurements[i-1];
+    const curr = measurements[i];
+    
+    if (curr.state === 'charging' && 
+        prev.state === 'discharging' &&
+        Math.abs(curr.soc - prev.soc) > 5) { // Minimum 5% SOC change
+      const chargeEff = (curr.energyIn - prev.energyIn) / (curr.soc - prev.soc);
+      totalChargeEff += chargeEff;
+      validCycles++;
     }
   }
 
-  return recommendations.slice(0, 5);
+  const avgChargeEff = validCycles ? parseFloat((totalChargeEff / validCycles).toFixed(2)) : 0;
+  
+  return {
+    chargeEfficiency: avgChargeEff,
+    dischargeEfficiency: avgChargeEff * 0.92, // Typical discharge efficiency
+    cyclesAnalyzed: validCycles
+  };
+}
+
+// --- Text Extraction Functions (More Robust) ---
+function extractHealthStatus(text) {
+  const status = text.match(/(excellent|good|fair|poor|critical|unknown)/i);
+  return status?.[1]?.toLowerCase() || 'unknown';
+}
+
+function extractRecommendations(text) {
+  return text.split('\n')
+    .filter(line => /recommend|suggest|advise|should|consider/i.test(line))
+    .slice(0, 3)
+    .map(line => line.replace(/^[-\d\.\s]+/, '').trim());
 }
 
 function extractLifespan(text) {
-  const lifespanPatterns = [
-    /(\d+)\s+days/i,
-    /(\d+)\s+months/i,
-    /(\d+)\s+years/i
-  ];
-
-  for (const pattern of lifespanPatterns) {
-    const match = text.match(pattern);
-    if (match) return match[0];
-  }
-
-  return 'Unknown';
+  const match = text.match(/(\d+\s*-\s*\d+|\d+)\s*(months|years)/i);
+  return match?.[0] || 'Unknown';
 }
 
-function calculateEfficiency(batteryData) {
-  if (!batteryData || !batteryData.measurements) {
-    return { chargeEfficiency: 0, dischargeEfficiency: 0 };
-  }
-
-  const measurements = batteryData.measurements;
-  let totalChargeEfficiency = 0;
-  let totalDischargeEfficiency = 0;
-  let cycleCount = 0;
-
-  for (let i = 1; i < measurements.length; i++) {
-    const prev = measurements[i - 1];
-    const curr = measurements[i];
-
-    if (curr.state === 'charging' && prev.state === 'discharging') {
-      const chargeEfficiency = (curr.energyIn - prev.energyIn) / (curr.soc - prev.soc);
-      totalChargeEfficiency += chargeEfficiency;
-      cycleCount++;
-    }
-  }
-
+// --- Error Handler ---
+function handleError(error, log) {
+  const status = error.message.includes('timeout') ? 504 : 500;
   return {
-    chargeEfficiency: cycleCount > 0 ? Math.round(totalChargeEfficiency / cycleCount * 100) / 100 : 0,
-    dischargeEfficiency: cycleCount > 0 ? Math.round(totalDischargeEfficiency / cycleCount * 100) / 100 : 0,
-    averageCycleEfficiency: cycleCount > 0 ? Math.round((totalChargeEfficiency + totalDischargeEfficiency) / cycleCount * 100) / 100 : 0
+    statusCode: status,
+    body: JSON.stringify({
+      error: status === 504 ? 'Processing timeout' : 'Insights generation failed',
+      details: error.message.replace(/api key|gemini|google/gi, '***')
+    })
   };
 }
