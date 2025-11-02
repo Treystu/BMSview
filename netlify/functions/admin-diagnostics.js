@@ -1,8 +1,7 @@
-
-const { getCollection } = require('./utils/mongodb');
-const { createLogger } = require('./utils/logger');
+const { getCollection } = require('./utils/mongodb.cjs');
+const { createLogger } = require('./utils/logger.cjs');
 const { v4: uuidv4 } = require('uuid');
-const { performAnalysisPipeline } = require('./utils/analysis-pipeline');
+const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 
 const DIAGNOSTIC_JOB_ID = 'diagnostic-test-job';
 const FAKE_IMAGE_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='; // 1x1 black pixel
