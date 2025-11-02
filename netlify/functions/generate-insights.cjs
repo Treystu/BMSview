@@ -1,5 +1,4 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-// ***FIX: Updated require path to use .cjs***
 const { createLogger, createTimer } = require('./utils/logger.cjs');
 
 // Initialize Gemini AI
@@ -17,12 +16,11 @@ exports.handler = async (event, context) => {
   const mainProcessingLogic = async (event) => {
     try {
       log.debug('Parsing request body', { bodyLength: event.body?.length });
-      // ***FIX: Destructure 'analysisData' from the request and rename it to 'batteryData'***
       const { analysisData: batteryData, systemId, customPrompt } = JSON.parse(event.body);
       
       const requestContext = { systemId, hasBatteryData: !!batteryData };
       
-      if (!batteryData) { // systemId is optional, but batteryData is required
+      if (!batteryData) {
         log.warn('Missing required parameters', requestContext);
         const durationMs = timer.end();
         log.exit(400);
@@ -33,42 +31,30 @@ exports.handler = async (event, context) => {
       }
 
       log.info('Generating insights', requestContext);
-      // Initialize Gemini model
-      // ***FIX: Use the current stable version of Gemini Flash***
       const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
       log.debug('Gemini model initialized', { model: 'gemini-pro' });
 
-      // Prepare insights prompt
-      // ***FIX: Use customPrompt if it exists, otherwise use the standard prompt***
       const prompt = customPrompt
-        ? `
-          Using the following system data as context:
-          System ID: ${systemId || 'N/A'}
-          Battery Data: ${JSON.stringify(batteryData, null, 2)}
+        ? `Using the following system data as context:
+           System ID: ${systemId || 'N/A'}
+           Battery Data: ${JSON.stringify(batteryData, null, 2)}
+           Answer this user query: "${customPrompt}"`
+        : `Analyze this battery data and provide comprehensive insights:
+           System ID: ${systemId || 'N/A'}
+           Battery Data: ${JSON.stringify(batteryData, null, 2)}
+           Please provide:
+           1. Health status assessment
+           2. Performance trends
+           3. Maintenance recommendations
+           4. Estimated lifespan
+           5. Efficiency metrics`;
 
-          Answer this user query: "${customPrompt}"
-        `
-        : `
-          Analyze this battery data and provide comprehensive insights:
-          System ID: ${systemId || 'N/A'}
-          Battery Data: ${JSON.stringify(batteryData, null, 2)}
-        
-          Please provide:
-          1. Health status assessment
-          2. Performance trends
-          3. Maintenance recommendations
-          4. Estimated lifespan
-          5. Efficiency metrics
-        `;
-
-      // Generate insights with streaming
       log.debug('Calling Gemini API to generate insights', requestContext);
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const insights = response.text();
       log.debug('Received insights from Gemini', { systemId, insightsLength: insights.length });
 
-      // Parse and structure the insights
       log.debug('Parsing and structuring insights', requestContext);
       const structuredInsights = parseInsights(insights, batteryData, log);
 
@@ -102,7 +88,6 @@ exports.handler = async (event, context) => {
     const result = await Promise.race([mainProcessingLogic(event), timeoutPromise]);
     return result;
   } catch (error) {
-    // Handle timeout specifically
     if (error.message === 'Function timeout') {
       log.warn('Function timeout', { timeoutMs: 45000 });
       const durationMs = timer.end({ success: false, timeout: true });
@@ -115,7 +100,6 @@ exports.handler = async (event, context) => {
         })
       };
     }
-    // Other error handling
     log.error('Unexpected error in generate-insights handler', { error: error.message, stack: error.stack });
     const durationMs = timer.end({ success: false });
     log.exit(500);
@@ -131,7 +115,6 @@ exports.handler = async (event, context) => {
 
 function parseInsights(rawInsights, batteryData, log) {
   log.debug('Parsing raw insights', { rawLength: rawInsights.length });
-  // Extract structured data from AI response
   const insights = {
     healthStatus: extractHealthStatus(rawInsights),
     performance: analyzePerformance(batteryData),
@@ -189,7 +172,7 @@ function extractRecommendations(text) {
     }
   }
 
-  return recommendations.slice(0, 5); // Limit to top 5 recommendations
+  return recommendations.slice(0, 5);
 }
 
 function extractLifespan(text) {
@@ -212,7 +195,6 @@ function calculateEfficiency(batteryData) {
     return { chargeEfficiency: 0, dischargeEfficiency: 0 };
   }
 
-  // Calculate efficiency based on charge/discharge cycles
   const measurements = batteryData.measurements;
   let totalChargeEfficiency = 0;
   let totalDischargeEfficiency = 0;
