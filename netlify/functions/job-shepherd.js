@@ -1,6 +1,5 @@
-
-const { getCollection } = require("./utils/mongodb.js");
-const { createLogger, createTimer } = require("./utils/logger.js");
+const { getCollection } = require("./utils/mongodb.cjs");
+const { createLogger, createTimer } = require("./utils/logger.cjs");
 
 const PROCESSING_BATCH_SIZE = 2;
 const AUDIT_BATCH_SIZE = 50;
