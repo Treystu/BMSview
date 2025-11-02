@@ -340,10 +340,8 @@ async function validateAndParseFile(fileData) {
   }
   return {
     format: 'csv',
-    rows: fileData.split('
-').length,
-    columns: fileData.split('
-')[0]?.split(',').length || 0,
+    rows: fileData.split('\n').length,
+    columns: fileData.split('\n')[0]?.split(',').length || 0,
     data: fileData
   };
 }
