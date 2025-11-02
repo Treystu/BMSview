@@ -1,4 +1,4 @@
-const { createLogger } = require("./utils/logger.js");
+const { createLogger } = require("./utils/logger.cjs");
 
 const fetchWithRetry = async (url, log, retries = 3, initialDelay = 500) => {
     for (let i = 0; i < retries; i++) {
