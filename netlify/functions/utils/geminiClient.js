@@ -3,7 +3,7 @@
  * Handles API calls with retry logic, backoff, and quota management
  */
 
-const { createLogger } = require('./logger');
+const { createLogger } = require('./logger.cjs');
 
 // Circuit breaker states
 const CIRCUIT_STATES = {
