@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { getCollection } = require('./utils/mongodb');
-const { createLogger, createTimer } = require('./utils/logger');
+const { getCollection } = require('./utils/mongodb.cjs');
+const { createLogger, createTimer } = require('./utils/logger.cjs');
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
