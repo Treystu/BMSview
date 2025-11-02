@@ -36,14 +36,10 @@ class Config {
   get gemini() {
     return {
       apiKey: process.env.GEMINI_API_KEY,
-      // ***UPDATED***: Changed default model to gemini-flash-latest
-      model: process.env.GEMINI_MODEL || 'gemini-flash-latest',
+      // ***UPDATED***: Changed default model to gemini-2.0-flash-exp
+      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp',
       temperature: parseFloat(process.env.GEMINI_TEMPERATURE || '0.7'),
       maxOutputTokens: parseInt(process.env.GEMINI_MAX_TOKENS || '8192'),
-      timeout: parseInt(process.env.GEMINI_TIMEOUT || '60000'),
-      maxRetries: parseInt(process.env.GEMINI_MAX_RETRIES || '3')
-    };
-  }
 
   // Job Processing Configuration
   get jobs() {
