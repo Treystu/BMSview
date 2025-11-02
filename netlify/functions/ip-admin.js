@@ -1,8 +1,8 @@
-
-const { getCollection } = require("./utils/mongodb.js");
-const { createLogger } = require("./utils/logger.js");
+const { getCollection } = require("./utils/mongodb.cjs");
+const { createLogger } = require("./utils/logger.cjs");
 
 const ipToInt = (ip) => ip.split('.').reduce((int, octet) => (int << 8) + parseInt(octet, 10), 0) >>> 0;
+
 
 const isIpInCidr = (ip, cidr, log) => {
   try {
