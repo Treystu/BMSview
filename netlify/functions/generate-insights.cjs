@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-// ... existing code ...
-const { createLogger, createTimer } = require('./utils/logger');
+// ***FIX: Updated require path to use .cjs***
+const { createLogger, createTimer } = require('./utils/logger.cjs');
 
 // Initialize Gemini AI
 // ... existing code ...
@@ -45,11 +45,9 @@ exports.handler = async (event, context) => {
 // ... existing code ...
       log.info('Generating insights', requestContext);
       // Initialize Gemini model
-      // ***FIX: Updated model name to resolve 404 error***
-      // ***UPDATE: Using 'latest' as requested to stay up-to-date.***
-      const modelName = 'gemini-2.5-flash-latest';
-      const model = genAI.getGenerativeModel({ model: modelName });
-      log.debug('Gemini model initialized', { model: modelName });
+      // ***FIX: Use the 'gemini-2.5-flash-latest' model***
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-latest' });
+      log.debug('Gemini model initialized', { model: 'gemini-2.5-flash-latest' });
 
       // Prepare insights prompt
       // ***FIX: Use customPrompt if it exists, otherwise use the standard prompt***
@@ -309,4 +307,3 @@ function calculateEfficiency(batteryData) {
 // ... existing code ...
   };
 }
-
