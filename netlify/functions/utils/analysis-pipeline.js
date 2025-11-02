@@ -2,13 +2,13 @@
 
 // ***FIX: Removed the placeholder 'performAnalysisPipeline' function and the first 'module.exports' which were causing a redeclaration error.***
 
-const { getGeminiClient } = require("./geminiClient.js");
+const { getGeminiClient } = require("./geminiClient.cjs");
 const { v4: uuidv4 } = require("uuid");
 // ***FIX: Corrected import path. File is in the same directory.***
-const { getCollection } = require("./mongodb.js");
+const { getCollection } = require("./mongodb.cjs");
 // ***FIX: Corrected import path. File is in the same directory.***
-const { createRetryWrapper } = require("./retry.js");
-const { getResponseSchema, getImageExtractionPrompt, cleanAndParseJson, mapExtractedToAnalysisData, performPostAnalysis, parseTimestamp, generateAnalysisKey } = require('./analysis-helpers.js');
+const { createRetryWrapper } = require("./retry.cjs");
+const { getResponseSchema, getImageExtractionPrompt, cleanAndParseJson, mapExtractedToAnalysisData, performPostAnalysis, parseTimestamp, generateAnalysisKey } = require('./analysis-helpers.cjs');
 
 const GEMINI_API_TIMEOUT_MS = 45000;
 
