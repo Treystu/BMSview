@@ -3,7 +3,7 @@
  * Centralized configuration management for all functions
  */
 
-const { createLogger } = require('./logger');
+const { createLogger } = require('./logger.cjs');
 
 class Config {
   constructor() {
