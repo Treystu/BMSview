@@ -1,6 +1,6 @@
-const { getCollection } = require("./utils/mongodb.js");
-const { createLogger } = require("./utils/logger.js");
-const { performAnalysisPipeline } = require('./utils/analysis-pipeline.js');
+const { getCollection } = require("./utils/mongodb.cjs");
+const { createLogger } = require("./utils/logger.cjs");
+const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 
 const MAX_RETRY_COUNT = 5;
 
