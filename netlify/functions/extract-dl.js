@@ -1,4 +1,4 @@
-const { createLogger } = require('./utils/logger.js');
+const { createLogger } = require('./utils/logger.cjs');
 
 const respond = (statusCode, body) => ({
     statusCode,
