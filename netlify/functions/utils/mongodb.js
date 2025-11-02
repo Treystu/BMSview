@@ -1,7 +1,7 @@
 "use strict";
 
 const { MongoClient } = require("mongodb");
-const { createLogger } = require("./logger");
+const { createLogger } = require("./logger.cjs");
 
 // Module-scoped logger for utils/mongodb (no request context available here)
 const log = createLogger("utils/mongodb");
