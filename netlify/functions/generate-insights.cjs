@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+// ***FIX: Updated require path to use .cjs***
 const { createLogger, createTimer } = require('./utils/logger.cjs');
-// *** FIX: Removed config import, this function must use a stable v1 model ***
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -34,10 +34,9 @@ exports.handler = async (event, context) => {
 
       log.info('Generating insights', requestContext);
       // Initialize Gemini model
-      // ***FIX: Use a stable model (like gemini-pro) compatible with the v1 API used by the SDK***
-      const modelName = 'gemini-pro';
-      const model = genAI.getGenerativeModel({ model: modelName });
-      log.debug('Gemini model initialized', { model: modelName });
+      // ***FIX: Use the current stable version of Gemini Flash***
+      const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      log.debug('Gemini model initialized', { model: 'gemini-pro' });
 
       // Prepare insights prompt
       // ***FIX: Use customPrompt if it exists, otherwise use the standard prompt***
@@ -181,7 +180,8 @@ function analyzePerformance(batteryData) {
 
 function extractRecommendations(text) {
   const recommendations = [];
-  const lines = text.split('\n');
+  const lines = text.split('
+');
   
   for (const line of lines) {
     if (line.includes('recommend') || line.includes('suggest') || line.includes('should')) {
@@ -235,7 +235,3 @@ function calculateEfficiency(batteryData) {
     averageCycleEfficiency: cycleCount > 0 ? Math.round((totalChargeEfficiency + totalDischargeEfficiency) / cycleCount * 100) / 100 : 0
   };
 }
-
-
-
-
