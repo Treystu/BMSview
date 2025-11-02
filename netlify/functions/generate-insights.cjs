@@ -3,8 +3,9 @@ const { createLogger, createTimer } = require('./utils/logger.cjs');
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Token estimation helper (1 token ≈ 4 characters)
-const estimateTokens = (str) => Math.ceil(str.length / 4);
+const estimateTokens = (str) => Math.ceil((str || '').length / 4);
 const MAX_TOKENS = 28000; // 28k for safety (Gemini Pro's limit is 32k)
+const BASE_PROMPT_TOKENS = 1500; // Estimated tokens for prompt template
 
 exports.handler = async (event, context) => {
   const log = createLogger('generate-insights', context);
@@ -23,31 +24,32 @@ exports.handler = async (event, context) => {
       return { statusCode: 400, body: JSON.stringify({ error: 'Invalid battery data format' }) };
     }
 
-    // 3. Token safety check
+    // 3. Token safety check (optimized)
     const dataString = JSON.stringify(batteryData);
     const dataTokens = estimateTokens(dataString);
+    const estimatedTotalTokens = dataTokens + BASE_PROMPT_TOKENS;
     
-    if (dataTokens > MAX_TOKENS) {
-      log.warn('Battery data exceeds token limit', {
+    if (estimatedTotalTokens > MAX_TOKENS) {
+      log.warn('Input exceeds token limit', {
         systemId,
         dataTokens,
+        baseTokens: BASE_PROMPT_TOKENS,
         maxTokens: MAX_TOKENS
       });
       return {
         statusCode: 413,
-413,
         body: JSON.stringify({
-          error: 'Battery data too large',
+          error: 'Input data too large',
           maxTokens: MAX_TOKENS,
-          actualTokens: dataTokens,
-          suggestion: 'Reduce measurement points or summarize data'
+          estimatedTokens: estimatedTotalTokens,
+          suggestion: `Reduce data points (current: ${batteryData.measurements.length})`
         })
       };
     }
 
     // 4. Generate optimized prompt
     const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-    const prompt = buildPrompt(systemId, batteryData, customPrompt);
+    const prompt = buildPrompt(systemId, dataString, customPrompt);
     const promptTokens = estimateTokens(prompt);
     
     log.debug('Calling Gemini API', {
@@ -74,7 +76,11 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         success: true,
         insights: structuredInsights,
-        tokenUsage: { promptTokens, generatedTokens: estimateTokens(insightsText) },
+        tokenUsage: { 
+          prompt: promptTokens, 
+          generated: estimateTokens(insightsText),
+          total: promptTokens + estimateTokens(insightsText)
+        },
         timestamp: new Date().toISOString()
       })
     };
@@ -87,8 +93,8 @@ exports.handler = async (event, context) => {
 };
 
 // --- Helper Functions ---
-function buildPrompt(systemId, batteryData, customPrompt) {
-  const baseContext = `SYSTEM ID: ${systemId || 'N/A'}\nBATTERY DATA:\n${JSON.stringify(batteryData)}`;
+function buildPrompt(systemId, dataString, customPrompt) {
+  const baseContext = `SYSTEM ID: ${systemId || 'N/A'}\nBATTERY DATA:\n${dataString}`;
   
   return customPrompt
     ? `${baseContext}\n\nUSER QUERY: ${sanitizePrompt(customPrompt)}\n\nRESPONSE FORMAT: JSON {
@@ -102,7 +108,7 @@ function buildPrompt(systemId, batteryData, customPrompt) {
 }
 
 function sanitizePrompt(prompt) {
-  return prompt.replace(/[{}<>\[\]]/g, '').substring(0, 1000);
+  return (prompt || '').replace(/[{}<>\[\]]/g, '').substring(0, 1000);
 }
 
 function parseInsights(rawInsights, batteryData, log) {
@@ -137,8 +143,8 @@ function parseInsights(rawInsights, batteryData, log) {
 
 // --- Data Processing Functions (Optimized) ---
 function analyzePerformance(batteryData) {
-  const measurements = batteryData.measurements;
-  if (!measurements?.length) return { trend: 'Unknown', score: 0 };
+  const measurements = batteryData.measurements || [];
+  if (measurements.length < 2) return { trend: 'Insufficient Data', capacityRetention: 0 };
 
   const first = measurements[0];
   const last = measurements[measurements.length - 1];
@@ -148,7 +154,7 @@ function analyzePerformance(batteryData) {
     trend: capacityRetention > 90 ? 'Excellent' : 
            capacityRetention > 70 ? 'Good' : 'Poor',
     capacityRetention: Math.round(capacityRetention),
-    degradationRate: parseFloat(((first.capacity - last.capacity) / measurements.length).toFixed(2))
+    degradationRate: parseFloat(((first.capacity - last.capacity) / measurements.length).toFixed(4))
   };
 }
 
@@ -163,14 +169,14 @@ function calculateEfficiency(batteryData) {
     
     if (curr.state === 'charging' && 
         prev.state === 'discharging' &&
-        Math.abs(curr.soc - prev.soc) > 5) { // Minimum 5% SOC change
+        Math.abs(curr.soc - prev.soc) > 5) {
       const chargeEff = (curr.energyIn - prev.energyIn) / (curr.soc - prev.soc);
       totalChargeEff += chargeEff;
       validCycles++;
     }
   }
 
-  const avgChargeEff = validCycles ? parseFloat((totalChargeEff / validCycles).toFixed(2)) : 0;
+  const avgChargeEff = validCycles ? parseFloat((totalChargeEff / validCycles).toFixed(4)) : 0;
   
   return {
     chargeEfficiency: avgChargeEff,
@@ -179,21 +185,21 @@ function calculateEfficiency(batteryData) {
   };
 }
 
-// --- Text Extraction Functions (More Robust) ---
+// --- Text Extraction Functions ---
 function extractHealthStatus(text) {
   const status = text.match(/(excellent|good|fair|poor|critical|unknown)/i);
   return status?.[1]?.toLowerCase() || 'unknown';
 }
 
 function extractRecommendations(text) {
-  return text.split('\n')
+  return (text || '').split('\n')
     .filter(line => /recommend|suggest|advise|should|consider/i.test(line))
     .slice(0, 3)
     .map(line => line.replace(/^[-\d\.\s]+/, '').trim());
 }
 
 function extractLifespan(text) {
-  const match = text.match(/(\d+\s*-\s*\d+|\d+)\s*(months|years)/i);
+  const match = (text || '').match(/(\d+\s*-\s*\d+|\d+)\s*(months|years)/i);
   return match?.[0] || 'Unknown';
 }
 
