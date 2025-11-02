@@ -1,7 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { createLogger, createTimer } = require('./utils/logger.cjs');
-// *** FIX: Import config to get model name ***
-const { getConfig } = require("./utils/config.cjs");
+// *** FIX: Removed config import, this function must use a stable v1 model ***
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -35,8 +34,8 @@ exports.handler = async (event, context) => {
 
       log.info('Generating insights', requestContext);
       // Initialize Gemini model
-      // ***FIX: Get model name from config to ensure consistency***
-      const modelName = getConfig().gemini.model;
+      // ***FIX: Use a stable model (like gemini-pro) compatible with the v1 API used by the SDK***
+      const modelName = 'gemini-pro';
       const model = genAI.getGenerativeModel({ model: modelName });
       log.debug('Gemini model initialized', { model: modelName });
 
@@ -236,6 +235,7 @@ function calculateEfficiency(batteryData) {
     averageCycleEfficiency: cycleCount > 0 ? Math.round((totalChargeEfficiency + totalDischargeEfficiency) / cycleCount * 100) / 100 : 0
   };
 }
+
 
 
 
