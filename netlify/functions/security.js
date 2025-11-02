@@ -1,8 +1,8 @@
 // COMPREHENSIVE FIX: Rate Limiting with Proper MongoDB Operations
 // This fix eliminates the $expr in upsert error and adds comprehensive logging
 
-const { getCollection } = require("./utils/mongodb.js");
-const { createLogger } = require("./utils/logger.js");
+const { getCollection } = require("./utils/mongodb.cjs");
+const { createLogger } = require("./utils/logger.cjs");
 
 class HttpError extends Error {
     constructor(statusCode, message) {
