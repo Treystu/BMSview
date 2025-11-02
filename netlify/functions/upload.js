@@ -1,5 +1,5 @@
-const { getCollection } = require('./utils/mongodb');
-const { createLogger, createTimer } = require('./utils/logger');
+const { getCollection } = require('./utils/mongodb.cjs');
+const { createLogger, createTimer } = require('./utils/logger.cjs');
 
 exports.handler = async (event, context) => {
   const log = createLogger('upload', context);
