@@ -1,7 +1,6 @@
 
-
-const { getCollection } = require("./utils/mongodb.js");
-const { createLogger } = require("./utils/logger.js");
+const { getCollection } = require("./utils/mongodb.cjs");
+const { createLogger } = require("./utils/logger.cjs");
 
 const respond = (statusCode, body) => ({
     statusCode,
