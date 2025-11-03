@@ -133,7 +133,7 @@ RESPONSE FORMAT: JSON (same keys as above)`;
 }
 
 function sanitizePrompt(prompt) {
-  return (prompt || '').replace(/[{}<>\[\]]/g, '').substring(0, 1000);
+  return (prompt || '').replace(/[{}<>[\]]/g, '').substring(0, 1000);
 }
 
 function parseInsights(rawInsights, batteryData, log) {
