@@ -18,10 +18,20 @@ exports.handler = async (event, context) => {
     const { analysisData: batteryData, systemId, customPrompt } = body;
     const requestContext = { systemId, hasBatteryData: !!batteryData };
 
-    // 2. Input validation
-    if (!batteryData?.measurements) {
-      log.warn('Missing/invalid battery data', requestContext);
-      return { statusCode: 400, body: JSON.stringify({ error: 'Invalid battery data format' }) };
+    // 2. Enhanced Input validation
+    if (!batteryData) {
+      log.warn('Missing battery data', requestContext);
+      return { statusCode: 400, body: JSON.stringify({ error: 'Battery data is required' }) };
+    }
+
+    if (!Array.isArray(batteryData.measurements)) {
+      log.warn('Invalid measurements format', { ...requestContext, receivedType: typeof batteryData.measurements });
+      return { statusCode: 400, body: JSON.stringify({ error: 'Battery measurements must be an array' }) };
+    }
+
+    if (batteryData.measurements.length === 0) {
+      log.warn('Empty measurements array', requestContext);
+      return { statusCode: 400, body: JSON.stringify({ error: 'Battery measurements array is empty' }) };
     }
 
     // 3. Token safety check (optimized)
@@ -94,17 +104,32 @@ exports.handler = async (event, context) => {
 
 // --- Helper Functions ---
 function buildPrompt(systemId, dataString, customPrompt) {
-  const baseContext = `SYSTEM ID: ${systemId || 'N/A'}\nBATTERY DATA:\n${dataString}`;
+  const baseContext = `SYSTEM ID: ${systemId || 'N/A'}
+BATTERY DATA:
+${dataString}`;
   
   return customPrompt
-    ? `${baseContext}\n\nUSER QUERY: ${sanitizePrompt(customPrompt)}\n\nRESPONSE FORMAT: JSON {
+    ? `${baseContext}
+
+USER QUERY: ${sanitizePrompt(customPrompt)}
+
+RESPONSE FORMAT: JSON {
       healthStatus: string,
       performanceSummary: string,
       recommendations: string[],
       estimatedLifespan: string,
       efficiencyNotes: string
     }`
-    : `${baseContext}\n\nANALYZE AND PROVIDE:\n1. Health status\n2. Performance trends\n3. Maintenance recommendations\n4. Estimated lifespan\n5. Efficiency notes\n\nRESPONSE FORMAT: JSON (same keys as above)`;
+    : `${baseContext}
+
+ANALYZE AND PROVIDE:
+1. Health status
+2. Performance trends
+3. Maintenance recommendations
+4. Estimated lifespan
+5. Efficiency notes
+
+RESPONSE FORMAT: JSON (same keys as above)`;
 }
 
 function sanitizePrompt(prompt) {
@@ -192,7 +217,8 @@ function extractHealthStatus(text) {
 }
 
 function extractRecommendations(text) {
-  return (text || '').split('\n')
+  return (text || '').split('
+')
     .filter(line => /recommend|suggest|advise|should|consider/i.test(line))
     .slice(0, 3)
     .map(line => line.replace(/^[-\d\.\s]+/, '').trim());
