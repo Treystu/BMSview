@@ -280,14 +280,14 @@ class UploadOptimizer {
     // In production, this would go to a monitoring service
     console.log('Upload Metrics:', JSON.stringify(metrics, null, 2));
     
-    // Store in local storage for debugging
+    // Store in telemetry only if enabled (opt-in). Default: no persistent storage in prod.
     try {
-      const existing = JSON.parse(localStorage.getItem('uploadMetrics') || '[]');
-      existing.push(metrics);
-      // Keep only last 100 entries
-      localStorage.setItem('uploadMetrics', JSON.stringify(existing.slice(-100)));
+      const telemetry = require('./telemetry');
+      if (telemetry && typeof telemetry.storeMetric === 'function') {
+        telemetry.storeMetric('uploadMetrics', metrics);
+      }
     } catch (e) {
-      console.warn('Could not store metrics in localStorage:', e);
+      // ignore in environments without telemetry module resolution
     }
   }
 
@@ -303,7 +303,15 @@ class UploadOptimizer {
    */
   getStatistics() {
     try {
-      const metrics = JSON.parse(localStorage.getItem('uploadMetrics') || '[]');
+      let metrics = [];
+      try {
+        const telemetry = require('./telemetry');
+        if (telemetry && typeof telemetry.getMetrics === 'function') {
+          metrics = telemetry.getMetrics('uploadMetrics');
+        }
+      } catch (e) {
+        // ignore
+      }
       
       if (metrics.length === 0) {
         return { message: 'No upload statistics available' };
@@ -334,7 +342,14 @@ class UploadOptimizer {
    * Clear stored metrics
    */
   clearStatistics() {
-    localStorage.removeItem('uploadMetrics');
+    try {
+      const telemetry = require('./telemetry');
+      if (telemetry && typeof telemetry.clearMetrics === 'function') {
+        telemetry.clearMetrics('uploadMetrics');
+        return;
+      }
+    } catch (e) {}
+    try { localStorage.removeItem('uploadMetrics'); } catch (e) {}
   }
 }
 

@@ -4,6 +4,46 @@ interface PaginatedResponse<T> {
     items: T[];
     totalItems: number;
 }
+
+// In-memory short-lived cache and in-flight dedupe map
+const _cache = new Map<string, { data: any; expires: number }>();
+const _inFlight = new Map<string, Promise<any>>();
+
+async function fetchWithCache<T>(endpoint: string, ttl = 5000): Promise<T> {
+    const key = endpoint;
+    const now = Date.now();
+
+    const cached = _cache.get(key);
+    if (cached && cached.expires > now) {
+        return cached.data as T;
+    }
+
+    if (_inFlight.has(key)) {
+        return _inFlight.get(key)! as Promise<T>;
+    }
+
+    const p = (async () => {
+        const data = await apiFetch<any>(endpoint);
+        // Normalize paginated shapes: support totalItems or total
+        if (data && typeof data === 'object' && (data.items || Array.isArray(data))) {
+            const items = data.items || data;
+            const total = typeof data.total === 'number' ? data.total : (typeof data.totalItems === 'number' ? data.totalItems : items.length);
+            const normalized = { items, total };
+            _cache.set(key, { data: normalized, expires: Date.now() + ttl });
+            return normalized as unknown as T;
+        }
+        _cache.set(key, { data, expires: Date.now() + ttl });
+        return data as T;
+    })().finally(() => _inFlight.delete(key));
+
+    _inFlight.set(key, p as Promise<any>);
+    return p as Promise<T>;
+}
+
+// Export internals for testing/diagnostics (non-production API)
+export const __internals = {
+    fetchWithCache,
+};
  
 // This key generation logic is now only used on the client-side for finding duplicates
 // among already-fetched data.
@@ -82,12 +122,15 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
 
 export const getRegisteredSystems = async (page = 1, limit = 25): Promise<PaginatedResponse<BmsSystem>> => {
     log('info', 'Fetching paginated registered BMS systems.', { page, limit });
-    return apiFetch<PaginatedResponse<BmsSystem>>(`systems?page=${page}&limit=${limit}`);
+    const resp = await fetchWithCache<{ items: BmsSystem[]; total: number }>(`systems?page=${page}&limit=${limit}`, 10_000);
+    // Return shape expected by callers in this module (totalItems)
+    return { items: resp.items, totalItems: resp.total };
 };
 
 export const getAnalysisHistory = async (page = 1, limit = 25): Promise<PaginatedResponse<AnalysisRecord>> => {
     log('info', 'Fetching paginated analysis history.', { page, limit });
-    return apiFetch<PaginatedResponse<AnalysisRecord>>(`history?page=${page}&limit=${limit}`);
+    const resp = await fetchWithCache<{ items: AnalysisRecord[]; total: number }>(`history?page=${page}&limit=${limit}`, 5_000);
+    return { items: resp.items, totalItems: resp.total };
 };
 
 export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => void, onComplete: () => void): Promise<void> => {

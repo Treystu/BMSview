@@ -21,6 +21,20 @@
   }
 }
 </script>
+<!-- Remove importmap in non-localhost environments to avoid relying on CDN in production -->
+<script>
+  (function(){
+    try {
+      const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      if (!isDev) {
+        const im = document.querySelector('script[type="importmap"]');
+        if (im) im.remove();
+      }
+    } catch (e) {
+      // noop
+    }
+  })();
+</script>
 </head>
   <body class="bg-neutral-light">
     <div id="root"></div>

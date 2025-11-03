@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
-import AdminDashboard from './components/AdminDashboard';
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
 import './index.css';
 import { Buffer } from 'buffer';
 import { AdminStateProvider } from './state/adminState';
@@ -164,7 +164,11 @@ const AdminApp: React.FC = () => {
     );
   }
 
-  return <AdminDashboard user={user} onLogout={handleLogoutClick} />;
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading admin…</div>}>
+      <AdminDashboard user={user} onLogout={handleLogoutClick} />
+    </Suspense>
+  );
 };
 
 
