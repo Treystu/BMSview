@@ -2,7 +2,8 @@
  * Load testing for upload optimization
  */
 
-const UploadOptimizer = require('../src/utils/uploadOptimizer');
+const _uploadOptimizerModule = require('../src/utils/uploadOptimizer');
+const UploadOptimizer = _uploadOptimizerModule && _uploadOptimizerModule.default ? _uploadOptimizerModule.default : _uploadOptimizerModule;
 
 // Mock upload function
 const createMockUploadFunction = (delay = 100, failureRate = 0) => {
