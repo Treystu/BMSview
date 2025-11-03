@@ -217,8 +217,8 @@ function extractHealthStatus(text) {
 }
 
 function extractRecommendations(text) {
-  return (text || '').split('
-')
+  return (text || '')
+    .split('\n')                                 // Fixed: split on newline character
     .filter(line => /recommend|suggest|advise|should|consider/i.test(line))
     .slice(0, 3)
     .map(line => line.replace(/^[-\d\.\s]+/, '').trim());
