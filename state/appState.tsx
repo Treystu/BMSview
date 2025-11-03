@@ -4,6 +4,13 @@ import type { BmsSystem, DisplayableAnalysisResult, AnalysisRecord } from '../ty
 // ***REMOVED***: JobCreationResponse is no longer needed.
 
 // 1. State Shape
+export type PaginatedResponse<T> = {
+  items: T[];
+  total: number;
+  page?: number;
+  pageSize?: number;
+};
+
 export interface AppState {
   analysisResults: DisplayableAnalysisResult[];
   isLoading: boolean; // This now means "is processing *any* file"
@@ -12,8 +19,9 @@ export interface AppState {
   registrationError: string | null;
   registrationSuccess: string | null;
   isRegisterModalOpen: boolean;
-  registeredSystems: BmsSystem[]; // This should be PaginatedResponse<BmsSystem>
-  analysisHistory: AnalysisRecord[]; // This should be PaginatedResponse<AnalysisRecord>
+  // Can be the new paginated response shape or legacy array while we migrate
+  registeredSystems: PaginatedResponse<BmsSystem> | BmsSystem[];
+  analysisHistory: PaginatedResponse<AnalysisRecord> | AnalysisRecord[];
   registrationContext: {
     dlNumber: string;
   } | null;
@@ -27,8 +35,9 @@ export const initialState: AppState = {
   registrationError: null,
   registrationSuccess: null,
   isRegisterModalOpen: false,
-  registeredSystems: [],
-  analysisHistory: [],
+  // Start with paginated empty shapes to avoid checks elsewhere
+  registeredSystems: { items: [], total: 0 },
+  analysisHistory: { items: [], total: 0 },
   registrationContext: null,
 };
 
@@ -40,7 +49,7 @@ export type AppAction =
   | { type: 'SYNC_ANALYSIS_COMPLETE'; payload: { fileName: string; record: AnalysisRecord } }
   | { type: 'ANALYSIS_COMPLETE' }
   | { type: 'SET_ERROR'; payload: string | null }
-  | { type: 'FETCH_DATA_SUCCESS'; payload: { systems: BmsSystem[]; history: AnalysisRecord[] } }
+  | { type: 'FETCH_DATA_SUCCESS'; payload: { systems: PaginatedResponse<BmsSystem> | BmsSystem[]; history: PaginatedResponse<AnalysisRecord> | AnalysisRecord[] } }
   | { type: 'OPEN_REGISTER_MODAL'; payload: { dlNumber: string } }
   | { type: 'CLOSE_REGISTER_MODAL' }
   | { type: 'REGISTER_SYSTEM_START' }
@@ -72,22 +81,33 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
     
     case 'SYNC_ANALYSIS_COMPLETE': {
       const { fileName, record } = action.payload;
+      // Update analysisResults
+      const updatedResults = state.analysisResults.map(r => 
+        r.fileName === fileName ? {
+          ...r,
+          data: record.analysis,
+          weather: record.weather,
+          recordId: record.id,
+          error: null,
+        } : r
+      );
+
+      // Safely prepend to analysisHistory whether it's an array or paginated object
+      let newHistory: AppState['analysisHistory'];
+      if (Array.isArray(state.analysisHistory)) {
+        newHistory = [record, ...state.analysisHistory];
+      } else {
+        newHistory = {
+          ...state.analysisHistory,
+          items: [record, ...(state.analysisHistory.items || [])],
+          total: (state.analysisHistory.total || 0) + 1,
+        };
+      }
+
       return {
         ...state,
-        analysisResults: state.analysisResults.map(r => 
-          r.fileName === fileName ? {
-            ...r,
-            data: record.analysis,
-            weather: record.weather,
-            recordId: record.id,
-            error: null, // Clear 'Submitting' or 'Processing' status
-          } : r
-        ),
-        // Add to history so it can be linked immediately
-        analysisHistory: {
-          ...state.analysisHistory,
-          items: [record, ...(state.analysisHistory.items || [])]
-        }
+        analysisResults: updatedResults,
+        analysisHistory: newHistory,
       };
     }
     

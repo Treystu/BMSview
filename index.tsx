@@ -4,6 +4,7 @@ import App from './App';
 import './index.css';
 import { Buffer } from 'buffer';
 import { AppStateProvider } from './state/appState';
+import { registerServiceWorker } from './serviceWorker';
 
 // Polyfill Node.js globals for the browser environment.
 // jszip relies on 'Buffer'.
@@ -29,3 +30,8 @@ root.render(
     </AppStateProvider>
   </React.StrictMode>
 );
+
+// Register a simple service worker for caching the app shell on supported hosts.
+try {
+  registerServiceWorker();
+} catch (_) {}

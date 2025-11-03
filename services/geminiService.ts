@@ -39,6 +39,109 @@ export const analyzeBmsScreenshot = async (file: File): Promise<AnalysisData> =>
     log('info', 'Starting synchronous analysis.', analysisContext);
     
     try {
+                // Offload file read + network call to a worker using a blob fallback so it works
+                // regardless of bundler. If worker fails or times out, fall back to direct fetch.
+                if (typeof Worker !== 'undefined') {
+                        try {
+                                const workerScript = `
+                                self.onmessage = async function(e) {
+                                    const { endpoint } = e.data || {};
+                                    const file = e.data.file;
+                                    try {
+                                        // Read file as data URL
+                                        const reader = new FileReader();
+                                        reader.onload = async function() {
+                                            try {
+                                                const dataUrl = reader.result;
+                                                const base64 = typeof dataUrl === 'string' ? dataUrl.split(',')[1] : null;
+                                                if (!base64) throw new Error('Failed to read file in worker');
+                                                const payload = { image: base64 };
+                                                const resp = await fetch(endpoint, {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify(payload)
+                                                });
+                                                const json = await resp.json().catch(() => null);
+                                                self.postMessage({ ok: resp.ok, status: resp.status, json });
+                                            } catch (err) {
+                                                self.postMessage({ error: err.message || String(err) });
+                                            }
+                                        };
+                                        reader.onerror = function(err) {
+                                            self.postMessage({ error: err?.message || 'File read error in worker' });
+                                        };
+                                        reader.readAsDataURL(file);
+                                    } catch (err) {
+                                        self.postMessage({ error: err?.message || String(err) });
+                                    }
+                                };
+                                `;
+
+                                const blob = new Blob([workerScript], { type: 'application/javascript' });
+                                const blobUrl = URL.createObjectURL(blob);
+                                const worker = new Worker(blobUrl);
+
+                                const workerPromise = new Promise<Response>( (resolve, reject) => {
+                                        const timeout = setTimeout(() => {
+                                                worker.terminate();
+                                                URL.revokeObjectURL(blobUrl);
+                                                reject(new Error('Worker timed out after 60 seconds'));
+                                        }, 60000);
+
+                                        worker.onmessage = (msg) => {
+                                                clearTimeout(timeout);
+                                                const data = msg.data || {};
+                                                if (data.error) {
+                                                        worker.terminate();
+                                                        URL.revokeObjectURL(blobUrl);
+                                                        reject(new Error(data.error));
+                                                        return;
+                                                }
+
+                                                // Build a fake Response-like object
+                                                const fakeResp = {
+                                                        ok: !!data.ok,
+                                                        status: data.status || 200,
+                                                        json: async () => data.json,
+                                                } as unknown as Response;
+
+                                                worker.terminate();
+                                                URL.revokeObjectURL(blobUrl);
+                                                resolve(fakeResp);
+                                        };
+
+                                        worker.onerror = (e) => {
+                                                clearTimeout(timeout);
+                                                worker.terminate();
+                                                URL.revokeObjectURL(blobUrl);
+                                                reject(new Error(e?.message || 'Worker error'));
+                                        };
+
+                                        // Post the file and endpoint (file is transferable in browsers)
+                                        try {
+                                            worker.postMessage({ file, endpoint: '/.netlify/functions/analyze?sync=true' });
+                                        } catch (postErr) {
+                                            clearTimeout(timeout);
+                                            worker.terminate();
+                                            URL.revokeObjectURL(blobUrl);
+                                            reject(postErr);
+                                        }
+                                });
+
+                                const response = await workerPromise;
+                                const result: { analysis: AnalysisData } = await response.json();
+                                if (!result || !result.analysis) {
+                                    log('error', 'API response was successful but missing analysis data (worker).', result);
+                                    throw new Error('API response was successful but missing analysis data.');
+                                }
+                                log('info', 'Synchronous analysis successful (worker).', { fileName: file.name });
+                                return result.analysis;
+                        } catch (workerErr) {
+                                log('warn', 'Worker analysis failed; falling back to direct fetch.', { error: workerErr instanceof Error ? workerErr.message : String(workerErr) });
+                                // Fall through to direct fetch
+                        }
+                }
+
         const imagePayload = await fileWithMetadataToBase64(file);
         
         const controller = new AbortController();
@@ -52,7 +155,7 @@ export const analyzeBmsScreenshot = async (file: File): Promise<AnalysisData> =>
             image: imagePayload,
             // We pass sync=true to tell the backend to process immediately
         };
-        
+
         log('info', 'Submitting analysis request to /.netlify/functions/analyze?sync=true', analysisContext);
 
         const response = await fetch('/.netlify/functions/analyze?sync=true', {

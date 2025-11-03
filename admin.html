@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://identity.netlify.com https://*.netlify.app https://aistudiocdn.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://identity.netlify.com https://aistudiocdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://identity.netlify.com https://*.netlify.app https://aistudiocdn.com; frame-src https://identity.netlify.com;">
+  <meta id="csp-meta" http-equiv="Content-Security-Policy" content="default-src 'self' https://identity.netlify.com https://*.netlify.app https://aistudiocdn.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://identity.netlify.com https://aistudiocdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://identity.netlify.com https://*.netlify.app https://aistudiocdn.com; frame-src https://identity.netlify.com;">
     <title>BMS Validator - Admin</title>
     <script type="text/javascript" src="https://identity.netlify.com/v1/netlify-identity-widget.js" async defer></script>
 <script type="importmap">
@@ -19,6 +19,27 @@
     "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.0.4"
   }
 }
+</script>
+<!-- Remove importmap and tighten CSP in non-localhost environments -->
+<script>
+  (function(){
+    try {
+      const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      if (!isDev) {
+        // Remove importmap to avoid external CDN usage
+        const im = document.querySelector('script[type="importmap"]');
+        if (im) im.remove();
+
+        // Tighten CSP: remove unsafe-inline and unsafe-eval for production
+        const csp = document.getElementById('csp-meta');
+        if (csp && csp.getAttribute) {
+          const content = csp.getAttribute('content') || '';
+          const tightened = content.replace(/'unsafe-inline'|"'unsafe-inline'"/g, '').replace(/'unsafe-eval'|"'unsafe-eval'"/g, '');
+          csp.setAttribute('content', tightened);
+        }
+      }
+    } catch (e) {}
+  })();
 </script>
 </head>
   <body class="bg-neutral-dark">
