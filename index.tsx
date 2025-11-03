@@ -4,7 +4,7 @@ import App from './App';
 import './index.css';
 import { Buffer } from 'buffer';
 import { AppStateProvider } from './state/appState';
-import { registerServiceWorker } from './serviceWorker';
+import { registerServiceWorker } from './src/serviceWorker';
 
 // Polyfill Node.js globals for the browser environment.
 // jszip relies on 'Buffer'.
