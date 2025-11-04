@@ -82,30 +82,42 @@ describe('Paginated API response normalization', () => {
 
   test('normalizes inconsistent API response formats', async () => {
     const testCases = [
+      // Test case 1: Empty items array with explicit total
       {
         response: { items: [], total: 5 },
         expected: { items: [], totalItems: 5 }
       },
+      // Test case 2: Plain array response
       {
-        // The API should always return { items, total } format after normalization
         response: [1, 2, 3],
         expected: { items: [1, 2, 3], totalItems: 3 }
       },
+      // Test case 3: Empty array
       {
-        // Edge case: empty array
         response: [],
         expected: { items: [], totalItems: 0 }
       }
     ];
 
     for (const tc of testCases) {
+      // Reset mock and clear cache for each test case
       mockApiFetch.mockReset();
+      clientService.__internals.clearCache();
       mockApiFetch.mockResolvedValueOnce(tc.response);
 
       const promise = clientService.getRegisteredSystems(1, 10);
       jest.runAllTimers();
       const res = await promise;
-      
+
+      // Debug test case on failure
+      if (JSON.stringify(res) !== JSON.stringify(tc.expected)) {
+        console.log('Failed test case:', {
+          response: tc.response,
+          expected: tc.expected,
+          received: res
+        });
+      }
+
       expect(res).toEqual(tc.expected);
       expect(mockApiFetch).toHaveBeenCalledWith('systems?page=1&limit=10');
     }

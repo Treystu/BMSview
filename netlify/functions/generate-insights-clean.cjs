@@ -81,9 +81,62 @@ exports.handler = generateHandler;
 exports.generateHandler = generateHandler;
 
 function buildPrompt(systemId, dataString, customPrompt) {
-  const base = `SYSTEM_ID: ${systemId || 'N/A'}\\nDATA: ${dataString.substring(0, 2000)}`;
-  if (customPrompt) return `${base}\\nUSER_QUERY: ${sanitizePrompt(customPrompt)}\\nRETURN_JSON: true`;
-  return `${base}\\nANALYZE_AND_RETURN_JSON: { healthStatus, performanceSummary, recommendations, estimatedLifespan, efficiencyNotes }`;
+  const base = `SYSTEM_ID: ${systemId || 'N/A'}\nDATA: ${dataString.substring(0, 2000)}`;
+  
+  if (customPrompt) {
+    return `You are an expert battery analyst. Analyze the battery data and answer the user's question.
+Given the following battery data, provide detailed insights and specific numeric estimates.
+Include historical averages, current state analysis, and projections where relevant.
+Focus on practical, quantitative answers with specific numbers and time estimates.
+
+${base}
+
+USER_QUERY: ${sanitizePrompt(customPrompt)}
+
+REQUIRED RESPONSE FORMAT:
+{
+  "answer": "Direct answer to the user's question with specific numbers",
+  "currentState": {
+    "voltage": number,
+    "current": number,
+    "soc": number
+  },
+  "estimates": {
+    "remainingTime": {
+      "atCurrentDraw": string,
+      "atAverageUse": string,
+      "atMaximumUse": string
+    }
+  },
+  "historicalData": {
+    "averageDischargeRate": number,
+    "maximumDischargeRate": number,
+    "typicalDuration": string
+  },
+  "recommendations": [string],
+  "confidence": "high" | "medium" | "low"
+}`;
+  }
+  
+  return `${base}\nANALYZE_AND_RETURN_JSON: { 
+    healthStatus, 
+    performance: {
+      trend,
+      capacityRetention,
+      degradationRate,
+      currentDraw,
+      estimatedRuntime
+    }, 
+    recommendations, 
+    estimatedLifespan,
+    efficiency: {
+      chargeEfficiency,
+      dischargeEfficiency,
+      averageDischargeRate,
+      maximumDischargeRate,
+      cyclesAnalyzed
+    }
+  }`;
 }
 
 function sanitizePrompt(p) { return (p || '').replace(/[{}<>\\[\\]]/g, '').substring(0, 1000); }
@@ -100,22 +153,67 @@ function parseInsights(raw, batteryData) {
     const m = (raw || '').match(/\{[\s\S]*\}/);
     if (m) {
       const parsed = JSON.parse(m[0]);
+      
+      // If it's a response to a specific query
+      if (parsed.answer) {
+        return {
+          healthStatus: extractHealthStatus(raw),
+          performance: {
+            ...analyzePerformance(batteryData),
+            currentState: parsed.currentState,
+            estimatedRuntime: parsed.estimates?.remainingTime
+          },
+          recommendations: parsed.recommendations || [],
+          estimatedLifespan: parsed.estimates?.remainingTime?.atAverageUse || 'Unknown',
+          efficiency: {
+            ...calculateEfficiency(batteryData),
+            ...parsed.historicalData
+          },
+          queryResponse: {
+            answer: parsed.answer,
+            confidence: parsed.confidence || 'medium',
+            estimates: parsed.estimates,
+            historicalData: parsed.historicalData
+          },
+          rawText: raw
+        };
+      }
+      
+      // Standard analysis response
       return {
         healthStatus: parsed.healthStatus || extractHealthStatus(raw),
-        performance: analyzePerformance(batteryData),
+        performance: {
+          ...analyzePerformance(batteryData),
+          ...parsed.performance
+        },
         recommendations: parsed.recommendations || extractRecommendations(raw),
         estimatedLifespan: parsed.estimatedLifespan || extractLifespan(raw),
-        efficiency: calculateEfficiency(batteryData),
+        efficiency: {
+          ...calculateEfficiency(batteryData),
+          ...(parsed.efficiency || {})
+        },
         rawText: raw
       };
     }
   } catch (e) {}
+  
+  // Fallback to basic analysis
+  const performance = analyzePerformance(batteryData);
+  const efficiency = calculateEfficiency(batteryData);
+  
   return {
     healthStatus: extractHealthStatus(raw),
-    performance: analyzePerformance(batteryData),
+    performance: {
+      ...performance,
+      estimatedRuntime: calculateEstimatedRuntime(batteryData)
+    },
     recommendations: extractRecommendations(raw),
     estimatedLifespan: extractLifespan(raw),
-    efficiency: calculateEfficiency(batteryData),
+    efficiency: {
+      ...efficiency,
+      averageDischargeRate: calculateAverageDischargeRate(batteryData),
+      maximumDischargeRate: calculateMaximumDischargeRate(batteryData)
+    },
     rawText: raw
   };
 }
@@ -127,10 +225,22 @@ function analyzePerformance(batteryData) {
   const last = m[m.length - 1];
   const firstCap = Number(first.capacity) || 0;
   const lastCap = Number(last.capacity) || 0;
+  const lastCurrent = Math.abs(Number(last.current) || 0);
+  const lastVoltage = Number(last.voltage) || 0;
+  const lastSoc = Number(last.stateOfCharge) || 0;
+  
   const capacityRetention = firstCap > 0 ? Math.round((lastCap / firstCap) * 100) : 0;
   const degradationRate = parseFloat(((firstCap - lastCap) / Math.max(1, m.length)).toFixed(4));
   const trend = capacityRetention > 90 ? 'Excellent' : capacityRetention > 70 ? 'Good' : 'Poor';
-  return { trend, capacityRetention, degradationRate };
+  
+  return { 
+    trend, 
+    capacityRetention, 
+    degradationRate,
+    currentDraw: lastCurrent,
+    currentVoltage: lastVoltage,
+    currentSoc: lastSoc
+  };
 }
 
 function calculateEfficiency(batteryData) {
@@ -160,4 +270,63 @@ function extractRecommendations(text) {
 function extractLifespan(text) {
   const match = (text || '').match(/(\d+\s*-\s*\d+|\d+)\s*(months|years)/i);
   return match ? match[0] : 'Unknown';
+}
+
+function calculateAverageDischargeRate(batteryData) {
+  const m = batteryData?.measurements || [];
+  const dischargeMeasurements = m.filter(measurement => 
+    measurement.current && measurement.current < 0
+  );
+  
+  if (dischargeMeasurements.length === 0) return 0;
+  
+  const sum = dischargeMeasurements.reduce((acc, curr) => 
+    acc + Math.abs(curr.current || 0), 0
+  );
+  
+  return parseFloat((sum / dischargeMeasurements.length).toFixed(2));
+}
+
+function calculateMaximumDischargeRate(batteryData) {
+  const m = batteryData?.measurements || [];
+  const dischargeMeasurements = m.filter(measurement => 
+    measurement.current && measurement.current < 0
+  );
+  
+  if (dischargeMeasurements.length === 0) return 0;
+  
+  return Math.max(...dischargeMeasurements.map(m => 
+    Math.abs(m.current || 0)
+  ));
+}
+
+function calculateEstimatedRuntime(batteryData) {
+  const m = batteryData?.measurements || [];
+  if (m.length === 0) return null;
+  
+  const latest = m[m.length - 1];
+  const currentDraw = Math.abs(latest.current || 0);
+  const soc = latest.stateOfCharge || 0;
+  const voltage = latest.voltage || 0;
+  
+  if (!currentDraw || !soc || !voltage) return null;
+  
+  // Calculate remaining capacity in Ah (approximate)
+  const totalCapacity = voltage * (latest.capacity || 100) / 100;
+  const remainingCapacity = totalCapacity * (soc / 100);
+  
+  if (currentDraw > 0) {
+    const hoursRemaining = remainingCapacity / currentDraw;
+    const minutesRemaining = Math.round(hoursRemaining * 60);
+    
+    return {
+      atCurrentDraw: minutesRemaining > 60 
+        ? `${Math.floor(minutesRemaining / 60)} hours ${minutesRemaining % 60} minutes`
+        : `${minutesRemaining} minutes`,
+      atAverageUse: null, // Will be populated by Gemini
+      atMaximumUse: null  // Will be populated by Gemini
+    };
+  }
+  
+  return null;
 }

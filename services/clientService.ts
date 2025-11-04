@@ -24,56 +24,9 @@ async function fetchWithCache<T>(endpoint: string, ttl = 5000): Promise<T> {
 
     const p = (async () => {
         const data = await apiFetch<any>(endpoint);
-        let normalized: any = { items: [], totalItems: 0 };
-        
-        // Normalize paginated shapes
-        if (data) {
-            // First check for total/totalItems/total_items field to ensure we preserve this value
-            const totalItems = typeof data.total === 'number' ? data.total : 
-                             typeof data.totalItems === 'number' ? data.totalItems :
-                             typeof data.total_items === 'number' ? data.total_items :
-                             undefined;
-
-            // Case 1: Array response (either empty or populated)
-            if (Array.isArray(data)) {
-                normalized.items = data;
-                normalized.totalItems = totalItems ?? data.length;
-            }
-            // Case 2: Object response with pagination metadata
-            else if (typeof data === 'object') {
-                // Case 2a: Has items/results/data array field
-                if ('items' in data || 'results' in data || 'data' in data) {
-                    const itemsArray = Array.isArray(data.items) ? data.items :
-                                     Array.isArray(data.results) ? data.results :
-                                     Array.isArray(data.data) ? data.data :
-                                     [];
-                    normalized.items = itemsArray;
-                    normalized.totalItems = totalItems ?? itemsArray.length;
-                }
-                // Case 2b: Has total field but no items (e.g. initial state)
-                else if (totalItems !== undefined) {
-                    normalized.items = [];
-                    normalized.totalItems = totalItems;
-                }
-                // Case 2c: Single item object or data field contains single item
-                else {
-                    // Check if data field exists and is an object but not an array
-                    const singleItem = 'data' in data && typeof data.data === 'object' && !Array.isArray(data.data) 
-                        ? data.data 
-                        : data;
-                    normalized.items = [singleItem];
-                    normalized.totalItems = 1;
-                }
-            }
-            // Case 3: Empty/null/undefined response
-            else {
-                normalized.items = [];
-                normalized.totalItems = 0;
-            }
-        }
-        
-        _cache.set(key, { data: normalized, expires: Date.now() + ttl });
-        return normalized as T;
+        // Pass through raw data - let caller handle normalization
+        _cache.set(key, { data, expires: Date.now() + ttl });
+        return data as T;
     })().finally(() => _inFlight.delete(key));
 
     _inFlight.set(key, p as Promise<any>);
@@ -168,23 +121,50 @@ export const getRegisteredSystems = async (page = 1, limit = 25): Promise<Pagina
     log('info', 'Fetching paginated registered BMS systems.', { page, limit });
     const response = await fetchWithCache<any>(`systems?page=${page}&limit=${limit}`, 10_000);
     
-    // Handle different response shapes
-    let items: BmsSystem[];
+    // Case 1: Array response (including empty arrays)
     if (Array.isArray(response)) {
-        items = response;
-    } else if (Array.isArray(response?.items)) {
-        items = response.items;
-    } else if (response) {
-        items = [response];
-    } else {
-        items = [];
+        return {
+            items: [...response], // Create a new array to ensure immutability
+            totalItems: response.length // For array responses, always use array length
+        };
     }
     
-    const total = typeof response?.total === 'number' ? response.total : items.length;
+    // Case 2: Object response
+    if (response && typeof response === 'object') {
+        // Get total items from any source that might provide it
+        const totalItems = typeof response.total === 'number' ? response.total :
+                        typeof response.totalItems === 'number' ? response.totalItems :
+                        undefined;
+        
+        // Case 2a: Has an items array
+        if (Array.isArray(response.items)) {
+            return {
+                items: response.items,
+                totalItems: totalItems ?? response.items.length
+            };
+        }
+        
+        // Case 2b: Has a total field but no items array
+        if (totalItems !== undefined) {
+            return {
+                items: Array.isArray(response.items) ? response.items : [],
+                totalItems
+            };
+        }
+        
+        // Case 2c: Treat it as a single item if it's an object with content
+        if (Object.keys(response).length > 0) {
+            return {
+                items: [response],
+                totalItems: 1
+            };
+        }
+    }
     
-    return { 
-        items,
-        totalItems: total
+    // Case 3: Empty/invalid response
+    return {
+        items: [],
+        totalItems: 0
     };
 };
 
