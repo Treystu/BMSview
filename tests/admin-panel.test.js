@@ -123,8 +123,9 @@ describe('Admin Panel User Acceptance Tests', () => {
 
       mockMongoDB.db().collection().aggregate.mockReturnValue({
         toArray: jest.fn().mockResolvedValue(adoptedSystems)
-      });      const mockAdoptedSystems = jest.fn().mockResolvedValue(adoptedSystems);
-      mockMongoDB.toArray = mockAdoptedSystems;
+      });      mockMongoDB.db().collection().aggregate.mockReturnValue({
+        toArray: jest.fn().mockResolvedValue(adoptedSystems)
+      });
       
       const result = await adminFunction(event);
       expect(result.statusCode).toBe(200);
@@ -147,20 +148,9 @@ describe('Admin Panel User Acceptance Tests', () => {
       };
 
       // Mock successful adoption
-      jest.mock('mongodb', () => ({
-        MongoClient: {
-          prototype: {
-            connect: jest.fn().mockResolvedValue(),
-            db: jest.fn().mockReturnValue({
-              collection: jest.fn().mockReturnValue({
-                findOne: jest.fn().mockResolvedValue(mockDatabase.systems[0]),
-                updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
-                insertOne: jest.fn().mockResolvedValue({ insertedId: 'log-id' })
-              })
-            })
-          }
-        }
-      }));
+      mockMongoDB.db().collection().findOne.mockResolvedValue(mockDatabase.systems[0]);
+      mockMongoDB.db().collection().updateOne.mockResolvedValue({ modifiedCount: 1 });
+      mockMongoDB.db().collection().insertOne.mockResolvedValue({ insertedId: 'log-id' });
 
       const result = await adminFunction(event);
       
@@ -181,18 +171,7 @@ describe('Admin Panel User Acceptance Tests', () => {
       };
 
       // Mock already adopted system
-      jest.mock('mongodb', () => ({
-        MongoClient: {
-          prototype: {
-            connect: jest.fn().mockResolvedValue(),
-            db: jest.fn().mockReturnValue({
-              collection: jest.fn().mockReturnValue({
-                findOne: jest.fn().mockResolvedValue(mockDatabase.systems[2]) // Already adopted
-              })
-            })
-          }
-        }
-      }));
+      mockMongoDB.db().collection().findOne.mockResolvedValue(mockDatabase.systems[2]);
 
       const result = await adminFunction(event);
       
@@ -215,23 +194,14 @@ describe('Admin Panel User Acceptance Tests', () => {
           }
         };
 
-        // Mock filtered responses
+              // Mock filtered responses for current filter
         const filteredSystems = filters[i] === 'all' ? mockDatabase.systems :
-                            filters[i] === 'adopted' ? mockDatabase.systems.filter(s => s.adopted) :
-                            mockDatabase.systems.filter(s => !s.adopted);        jest.mock('mongodb', () => ({
-          MongoClient: {
-            prototype: {
-              connect: jest.fn().mockResolvedValue(),
-              db: jest.fn().mockReturnValue({
-                collection: jest.fn().mockReturnValue({
-                  aggregate: jest.fn().mockReturnValue({
-                    toArray: jest.fn().mockResolvedValue(filteredSystems)
-                  })
-                })
-              })
-            }
-          }
-        }));
+                              filters[i] === 'adopted' ? mockDatabase.systems.filter(s => s.adopted) :
+                              mockDatabase.systems.filter(s => !s.adopted);
+
+        mockMongoDB.db().collection().aggregate.mockReturnValue({
+          toArray: jest.fn().mockResolvedValue(filteredSystems)
+        });
 
         const result = await adminFunction(event);
         
@@ -261,20 +231,9 @@ describe('Admin Panel User Acceptance Tests', () => {
         lastActive: s.adopted ? new Date().toISOString() : null
       }));
 
-      jest.mock('mongodb', () => ({
-        MongoClient: {
-          prototype: {
-            connect: jest.fn().mockResolvedValue(),
-            db: jest.fn().mockReturnValue({
-              collection: jest.fn().mockReturnValue({
-                aggregate: jest.fn().mockReturnValue({
-                  toArray: jest.fn().mockResolvedValue(systemsWithMetadata)
-                })
-              })
-            })
-          }
-        }
-      }));
+      mockMongoDB.db().collection().aggregate.mockReturnValue({
+        toArray: jest.fn().mockResolvedValue(systemsWithMetadata)
+      });
 
       const result = await adminFunction(event);
       
@@ -311,38 +270,29 @@ describe('Admin Panel User Acceptance Tests', () => {
         }
       };
 
-      // Simulate data change between requests
-      const initialSystems = mockDatabase.systems.filter(s => !s.adopted);
-      const refreshedSystems = [
-        ...initialSystems,
-        {
-          _id: 'system-4',
-          name: 'New System Delta',
-          adopted: false,
-          createdAt: new Date(),
-          type: 'lithium-ion',
-          recordCount: 25
+      let localCallCount = { count: 0 }; // Create an object to hold the state
+      const mockGetSystems = () => {
+        localCallCount.count++;
+        if (localCallCount.count === 1) {
+          return mockDatabase.systems.filter(s => !s.adopted);
+        } else {
+          return [
+            ...mockDatabase.systems.filter(s => !s.adopted),
+            {
+              _id: 'system-4',
+              name: 'New System Delta',
+              adopted: false,
+              createdAt: new Date(),
+              type: 'lithium-ion',
+              recordCount: 25
+            }
+          ];
         }
-      ];
+      };
 
-      let callCount = 0;
-      jest.mock('mongodb', () => ({
-        MongoClient: {
-          prototype: {
-            connect: jest.fn().mockResolvedValue(),
-            db: jest.fn().mockReturnValue({
-              collection: jest.fn().mockReturnValue({
-                aggregate: jest.fn().mockImplementation(() => ({
-                  toArray: jest.fn().mockImplementation(() => {
-                    callCount++;
-                    return callCount === 1 ? initialSystems : refreshedSystems;
-                  })
-                }))
-              })
-            })
-          }
-        }
-      }));
+      mockMongoDB.db().collection().aggregate.mockReturnValue({
+        toArray: jest.fn().mockImplementation(() => Promise.resolve(mockGetSystems()))
+      });
 
       // Initial load
       const initialResult = await adminFunction(event);
@@ -362,22 +312,9 @@ describe('Admin Panel User Acceptance Tests', () => {
         }
       };
 
-const mockMongoDB = {
-  connect: jest.fn(),
-  db: jest.fn().mockReturnValue({
-    collection: jest.fn().mockReturnValue({
-      findOne: jest.fn(),
-      updateOne: jest.fn(),
-      aggregate: jest.fn().mockReturnValue({
+      mockMongoDB.db().collection().aggregate.mockReturnValue({
         toArray: jest.fn().mockRejectedValue(new Error('Database connection failed'))
-      })
-    })
-  })
-};
-
-jest.mock('mongodb', () => ({
-  MongoClient: jest.fn(() => mockMongoDB)
-}));      const result = await adminFunction(event);
+      });      const result = await adminFunction(event);
       
       expect(result.statusCode).toBe(500);
       const error = JSON.parse(result.body);
@@ -395,29 +332,24 @@ jest.mock('mongodb', () => ({
         }
       };
 
-      // Simulate status change from inactive to active
-      const systemsWithStatusChange = mockDatabase.systems.map(s => ({
-        ...s,
-        id: s._id,
-        recordCount: s.name === 'Battery System Alpha' ? 10 : s.recordCount,
-        status: s.name === 'Battery System Alpha' ? 'active' : 'active',
-        createdAt: s.createdAt.toISOString()
-      }));
+      // Use mockMongoDB directly to set up the mock for this test
+      mockMongoDB.db().collection().aggregate.mockReturnValue({
+        toArray: jest.fn().mockImplementation(() => {
+          // Create the response data inside the implementation
+          const baseData = mockDatabase.systems.map(s => ({
+            ...s,
+            id: s._id,
+            status: 'active',
+            createdAt: s.createdAt.toISOString()
+          }));
 
-      jest.mock('mongodb', () => ({
-        MongoClient: {
-          prototype: {
-            connect: jest.fn().mockResolvedValue(),
-            db: jest.fn().mockReturnValue({
-              collection: jest.fn().mockReturnValue({
-                aggregate: jest.fn().mockReturnValue({
-                  toArray: jest.fn().mockResolvedValue(systemsWithStatusChange)
-                })
-              })
-            })
-          }
-        }
-      }));
+          // Apply specific changes for Battery System Alpha
+          return Promise.resolve(baseData.map(s => ({
+            ...s,
+            recordCount: s.name === 'Battery System Alpha' ? 10 : s.recordCount
+          })));
+        })
+      });
 
       const result = await adminFunction(event);
       
@@ -438,25 +370,16 @@ jest.mock('mongodb', () => ({
         })
       };
 
-      // Simulate race condition
-      let findOneCallCount = 0;
-      jest.mock('mongodb', () => ({
-        MongoClient: {
-          prototype: {
-            connect: jest.fn().mockResolvedValue(),
-            db: jest.fn().mockReturnValue({
-              collection: jest.fn().mockReturnValue({
-                findOne: jest.fn().mockImplementation(() => {
-                  findOneCallCount++;
-                  // Return unadopted on first call, adopted on second
-                  return findOneCallCount === 1 ? mockDatabase.systems[0] : { ...mockDatabase.systems[0], adopted: true };
-                }),
-                updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 })
-              })
-            })
-          }
-        }
-      }));
+      // Create a counter object to track the number of findOne calls
+      const counter = { count: 0 };
+
+      // Simulate race condition using the counter object
+      mockMongoDB.db().collection().findOne.mockImplementation(() => {
+        counter.count++;
+        return Promise.resolve(counter.count === 1 ? mockDatabase.systems[0] : { ...mockDatabase.systems[0], adopted: true });
+      });
+
+      mockMongoDB.db().collection().updateOne.mockResolvedValue({ modifiedCount: 1 });
 
       // Simulate concurrent requests
       const results = await Promise.all([
@@ -492,20 +415,9 @@ jest.mock('mongodb', () => ({
         createdAt: s.createdAt.toISOString()
       }));
 
-      jest.mock('mongodb', () => ({
-        MongoClient: {
-          prototype: {
-            connect: jest.fn().mockResolvedValue(),
-            db: jest.fn().mockReturnValue({
-              collection: jest.fn().mockReturnValue({
-                aggregate: jest.fn().mockReturnValue({
-                  toArray: jest.fn().mockResolvedValue(formattedSystems)
-                })
-              })
-            })
-          }
-        }
-      }));
+      mockMongoDB.db().collection().aggregate.mockReturnValue({
+        toArray: jest.fn().mockResolvedValue(formattedSystems)
+      });
 
       const result = await adminFunction(event);
       
@@ -540,7 +452,8 @@ jest.mock('mongodb', () => ({
         if (filter === 'adopted') filteredSystems = filteredSystems.filter(s => s.adopted);
         if (filter === 'unadopted') filteredSystems = filteredSystems.filter(s => !s.adopted);
 
-        const formattedSystems = filteredSystems.map(s => ({
+        // Format systems for response
+        const formattedData = filteredSystems.map(s => ({
           ...s,
           id: s._id,
           recordCount: mockDatabase.records.filter(r => r.systemId === s._id).length,
@@ -548,20 +461,10 @@ jest.mock('mongodb', () => ({
           createdAt: s.createdAt.toISOString()
         }));
 
-        jest.mock('mongodb', () => ({
-          MongoClient: {
-            prototype: {
-              connect: jest.fn().mockResolvedValue(),
-              db: jest.fn().mockReturnValue({
-                collection: jest.fn().mockReturnValue({
-                  aggregate: jest.fn().mockReturnValue({
-                    toArray: jest.fn().mockResolvedValue(formattedSystems)
-                  })
-                })
-              })
-            }
-          }
-        }));
+        // Set up mock for this filter iteration
+        mockMongoDB.db().collection().aggregate.mockReturnValue({
+          toArray: jest.fn().mockResolvedValue(formattedData)
+        });
 
         const result = await adminFunction(event);
         const systems = JSON.parse(result.body);
@@ -598,22 +501,11 @@ describe('Admin Panel User Scenarios', () => {
       { _id: 'system-new-2', name: 'Emergency Backup', adopted: false, recordCount: 25 }
     ];
 
-    jest.mock('mongodb', () => ({
-      MongoClient: {
-        prototype: {
-          connect: jest.fn().mockResolvedValue(),
-          db: jest.fn().mockReturnValue({
-            collection: jest.fn().mockReturnValue({
-              findOne: jest.fn().mockResolvedValue(unadoptedSystems[0]),
-              updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
-              aggregate: jest.fn().mockReturnValue({
-                toArray: jest.fn().mockResolvedValue(unadoptedSystems)
-              })
-            })
-          })
-        }
-      }
-    }));
+    mockMongoDB.db().collection().findOne.mockResolvedValue(unadoptedSystems[0]);
+    mockMongoDB.db().collection().updateOne.mockResolvedValue({ modifiedCount: 1 });
+    mockMongoDB.db().collection().aggregate.mockReturnValue({
+      toArray: jest.fn().mockResolvedValue(unadoptedSystems)
+    });
 
     const listResult = await adminFunction(listEvent);
     expect(listResult.statusCode).toBe(200);
@@ -646,20 +538,9 @@ describe('Admin Panel User Scenarios', () => {
       { _id: 'system-new-1', name: 'New Battery System', adopted: true, adoptedBy: 'workflow-admin', recordCount: 50 }
     ];
 
-    jest.mock('mongodb', () => ({
-      MongoClient: {
-        prototype: {
-          connect: jest.fn().mockResolvedValue(),
-          db: jest.fn().mockReturnValue({
-            collection: jest.fn().mockReturnValue({
-              aggregate: jest.fn().mockReturnValue({
-                toArray: jest.fn().mockResolvedValue(adoptedSystems)
-              })
-            })
-          })
-        }
-      }
-    }));
+    mockMongoDB.db().collection().aggregate.mockReturnValue({
+      toArray: jest.fn().mockResolvedValue(adoptedSystems)
+    });
 
     const adoptedResult = await adminFunction(adoptedEvent);
     expect(adoptedResult.statusCode).toBe(200);

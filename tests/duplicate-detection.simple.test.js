@@ -198,19 +198,19 @@ describe('Duplicate Detection Simplified Tests', () => {
 
   test('should validate filename format', async () => {
     const invalidFiles = [
-      createTestFile('file<with>brackets.csv'),
-      createTestFile('.hidden-file.csv'),
-      createTestFile('script.exe'),
-      createTestFile('a'.repeat(300) + '.csv')
+      { file: createTestFile('file<with>brackets.csv'), expectedError: 'invalid characters' },
+      { file: createTestFile('.hidden-file.csv'), expectedError: 'invalid characters' },
+      { file: createTestFile('script.exe'), expectedError: 'not allowed' },
+      { file: createTestFile('a'.repeat(300) + '.csv'), expectedError: 'too long' }
     ];
 
-    const results = await Promise.all(invalidFiles.map(file => 
+    const results = await Promise.all(invalidFiles.map(({ file }) => 
       uploadService.uploadFile(file, testUser.id)
     ));
 
-    results.forEach(result => {
+    results.forEach((result, index) => {
       expect(result.status).toBe('error');
-      expect(result.reason).toContain('invalid');
+      expect(result.reason).toContain(invalidFiles[index].expectedError);
     });
   });
 

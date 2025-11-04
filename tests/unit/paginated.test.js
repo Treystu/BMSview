@@ -34,8 +34,8 @@ describe('Paginated API response normalization', () => {
   });
 
   test('getRegisteredSystems normalizes totalItems from total', async () => {
-    const expected = { items: [{ id: 's1' }], totalItems: 1 };
-    mockApiFetch.mockResolvedValueOnce(expected);
+    const apiResponse = { items: [{ id: 's1' }], total: 1 };
+    mockApiFetch.mockResolvedValueOnce(apiResponse);
 
     const promise = clientService.getRegisteredSystems(1, 10);
     jest.runAllTimers();
@@ -48,8 +48,8 @@ describe('Paginated API response normalization', () => {
   });
 
   test('handles empty result sets', async () => {
-    const expected = { items: [], totalItems: 0 };
-    mockApiFetch.mockResolvedValueOnce(expected);
+    const apiResponse = { items: [], total: 0 };
+    mockApiFetch.mockResolvedValueOnce(apiResponse);
 
     const promise = clientService.getRegisteredSystems(1, 10);
     jest.runAllTimers();
@@ -83,7 +83,7 @@ describe('Paginated API response normalization', () => {
   test('normalizes inconsistent API response formats', async () => {
     const testCases = [
       {
-        response: { items: [], totalItems: 5 },
+        response: { items: [], total: 5 },
         expected: { items: [], totalItems: 5 }
       },
       {

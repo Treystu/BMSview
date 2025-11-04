@@ -80,7 +80,7 @@ function parseInsights(raw, batteryData) {
       return {
         healthStatus: parsed.healthStatus || extractHealthStatus(raw),
         performance: analyzePerformance(batteryData),
-        recommendations: parsed.recommendations || extractRecommendations(raw),
+        recommendations: parsed.recommendations || extractRecommendations(raw, batteryData),
         estimatedLifespan: parsed.estimatedLifespan || extractLifespan(raw),
         efficiency: calculateEfficiency(batteryData),
         rawText: raw
@@ -90,7 +90,7 @@ function parseInsights(raw, batteryData) {
   return {
     healthStatus: extractHealthStatus(raw),
     performance: analyzePerformance(batteryData),
-    recommendations: extractRecommendations(raw),
+    recommendations: extractRecommendations(raw, batteryData),
     estimatedLifespan: extractLifespan(raw),
     efficiency: calculateEfficiency(batteryData),
     rawText: raw
@@ -130,8 +130,21 @@ function extractHealthStatus(text) {
   return found ? found[1] : 'unknown';
 }
 
-function extractRecommendations(text) {
-  return (text || '').split('\n').filter(l => /recommend|suggest|advise|should|consider|replacement|monitor/i.test(l)).slice(0,3).map(l=>l.trim());
+function extractRecommendations(text, batteryData) {
+  let recs = (text || '').split('\n')
+    .filter(l => /recommend|suggest|advise|should|consider|replacement|monitor/i.test(l))
+    .slice(0,3)
+    .map(l=>l.trim());
+    
+  // Get recommendations from battery measurements if available
+  if (batteryData?.measurements?.length > 0) {
+    const lastMeasurement = batteryData.measurements[batteryData.measurements.length - 1];
+    if (lastMeasurement.recommendations && Array.isArray(lastMeasurement.recommendations)) {
+      recs = [...new Set([...recs, ...lastMeasurement.recommendations])];
+    }
+  }
+  
+  return recs;
 }
 
 function extractLifespan(text) {

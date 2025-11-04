@@ -27,26 +27,48 @@ async function fetchWithCache<T>(endpoint: string, ttl = 5000): Promise<T> {
         let normalized: any = { items: [], totalItems: 0 };
         
         // Normalize paginated shapes
-        if (data && typeof data === 'object') {
-            // Case 1: Already has items array and some form of total
-            if ('items' in data) {
-                normalized.items = data.items || [];
-                normalized.totalItems = data.totalItems || data.total || normalized.items.length;
-            }
-            // Case 2: Is an array itself
-            else if (Array.isArray(data)) {
+        if (data) {
+            // First check for total/totalItems/total_items field to ensure we preserve this value
+            const totalItems = typeof data.total === 'number' ? data.total : 
+                             typeof data.totalItems === 'number' ? data.totalItems :
+                             typeof data.total_items === 'number' ? data.total_items :
+                             undefined;
+
+            // Case 1: Array response (either empty or populated)
+            if (Array.isArray(data)) {
                 normalized.items = data;
-                normalized.totalItems = data.length;
+                normalized.totalItems = totalItems ?? data.length;
             }
-            // Case 3: Plain object with total field
-            else if ('total' in data) {
-                normalized.items = data.items || [];
-                normalized.totalItems = data.total;
+            // Case 2: Object response with pagination metadata
+            else if (typeof data === 'object') {
+                // Case 2a: Has items/results/data array field
+                if ('items' in data || 'results' in data || 'data' in data) {
+                    const itemsArray = Array.isArray(data.items) ? data.items :
+                                     Array.isArray(data.results) ? data.results :
+                                     Array.isArray(data.data) ? data.data :
+                                     [];
+                    normalized.items = itemsArray;
+                    normalized.totalItems = totalItems ?? itemsArray.length;
+                }
+                // Case 2b: Has total field but no items (e.g. initial state)
+                else if (totalItems !== undefined) {
+                    normalized.items = [];
+                    normalized.totalItems = totalItems;
+                }
+                // Case 2c: Single item object or data field contains single item
+                else {
+                    // Check if data field exists and is an object but not an array
+                    const singleItem = 'data' in data && typeof data.data === 'object' && !Array.isArray(data.data) 
+                        ? data.data 
+                        : data;
+                    normalized.items = [singleItem];
+                    normalized.totalItems = 1;
+                }
             }
-            // Case 4: Single item object
+            // Case 3: Empty/null/undefined response
             else {
-                normalized.items = [data];
-                normalized.totalItems = 1;
+                normalized.items = [];
+                normalized.totalItems = 0;
             }
         }
         
@@ -144,9 +166,26 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
 
 export const getRegisteredSystems = async (page = 1, limit = 25): Promise<PaginatedResponse<BmsSystem>> => {
     log('info', 'Fetching paginated registered BMS systems.', { page, limit });
-    const resp = await fetchWithCache<{ items: BmsSystem[]; total: number }>(`systems?page=${page}&limit=${limit}`, 10_000);
-    // Return shape expected by callers in this module (totalItems)
-    return { items: resp.items, totalItems: resp.total };
+    const response = await fetchWithCache<any>(`systems?page=${page}&limit=${limit}`, 10_000);
+    
+    // Handle different response shapes
+    let items: BmsSystem[];
+    if (Array.isArray(response)) {
+        items = response;
+    } else if (Array.isArray(response?.items)) {
+        items = response.items;
+    } else if (response) {
+        items = [response];
+    } else {
+        items = [];
+    }
+    
+    const total = typeof response?.total === 'number' ? response.total : items.length;
+    
+    return { 
+        items,
+        totalItems: total
+    };
 };
 
 export const getAnalysisHistory = async (page = 1, limit = 25): Promise<PaginatedResponse<AnalysisRecord>> => {

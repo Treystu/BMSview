@@ -33,17 +33,18 @@ const createBatteryData = (scenario) => {
     case 'degrading':
       for (let i = 0; i < 100; i++) {
         const degradation = i * 0.5;
-        baseData.measurements.push({
-          timestamp: new Date(now.getTime() - (100 - i) * 3600000).toISOString(),
-          voltage: 3.7 - (degradation / 100) + Math.random() * 0.1,
-          current: Math.random() * 2 - 1,
-          temperature: 30 + (degradation / 10) + Math.random() * 5,
-          capacity: (95 - degradation) + Math.random() * 3,
-          soc: 20 + Math.random() * 60,
-          energyIn: 100 + Math.random() * 20,
-          energyOut: (95 - degradation) + Math.random() * 20,
-          state: i % 20 < 10 ? 'charging' : 'discharging'
-        });
+      baseData.measurements.push({
+        timestamp: new Date(now.getTime() - (100 - i) * 3600000).toISOString(),
+        voltage: 3.7 - (degradation / 100) + Math.random() * 0.1,
+        current: Math.random() * 2 - 1,
+        temperature: 30 + (degradation / 10) + Math.random() * 5,
+        capacity: (95 - degradation) + Math.random() * 3,
+        soc: 20 + Math.random() * 60,
+        energyIn: 100 + Math.random() * 20,
+        energyOut: (95 - degradation) + Math.random() * 20,
+        state: i % 20 < 10 ? 'charging' : 'discharging',
+        recommendations: ['Monitor voltage trends', 'Increase inspection frequency', 'Check charging patterns']
+      });
       }
       break;
 
@@ -123,7 +124,9 @@ const mockGeminiResponse = (scenario) => {
         The battery shows signs of degradation. 
         Health status: Fair
         Performance trends: Declining capacity over time
-        Maintenance recommendations: Please monitor closely, increase monitoring frequency and evaluate charging practices
+        Maintenance recommendations: Monitor voltage levels closely, increase monitoring frequency and evaluate charging practices
+        Action items: Monitor cell balance, check charging patterns, inspect connections
+        Required actions: Monitor battery performance daily, increase inspection frequency
         Estimated lifespan: 1-2 years
         Efficiency metrics: 80-85% efficiency, decreasing
       `;

@@ -2,7 +2,7 @@
  Full insights generation integration-style tests (clean handler)
 */
 
-const { generateHandler } = require('../netlify/functions/generate-insights.clean.cjs');
+const { generateHandler } = require('../netlify/functions/generate-insights-clean.cjs');
 
 const createBatteryData = (n = 100) => {
   const base = { systemId: 's1', measurements: [] };

@@ -2,7 +2,7 @@
  * Real-world scenario testing for insights generation
  */
 
-const { generateHandler } = require('../netlify/functions/generate-insights.clean.cjs');
+const { generateHandler } = require('../netlify/functions/generate-insights-clean.cjs');
 
 // Minimal focused tests for the clean insights handler
 describe('generate-insights clean handler', () => {
