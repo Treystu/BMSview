@@ -1,0 +1,4 @@
+const { generateHandler } = require('./generate-insights.cjs');
+
+exports.handler = generateHandler;
+exports.generateHandler = generateHandler;
