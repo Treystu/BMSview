@@ -24,16 +24,34 @@ async function fetchWithCache<T>(endpoint: string, ttl = 5000): Promise<T> {
 
     const p = (async () => {
         const data = await apiFetch<any>(endpoint);
-        // Normalize paginated shapes: support totalItems or total
-        if (data && typeof data === 'object' && (data.items || Array.isArray(data))) {
-            const items = data.items || data;
-            const total = typeof data.total === 'number' ? data.total : (typeof data.totalItems === 'number' ? data.totalItems : items.length);
-            const normalized = { items, total };
-            _cache.set(key, { data: normalized, expires: Date.now() + ttl });
-            return normalized as unknown as T;
+        let normalized: any = { items: [], totalItems: 0 };
+        
+        // Normalize paginated shapes
+        if (data && typeof data === 'object') {
+            // Case 1: Already has items array and some form of total
+            if ('items' in data) {
+                normalized.items = data.items || [];
+                normalized.totalItems = data.totalItems || data.total || normalized.items.length;
+            }
+            // Case 2: Is an array itself
+            else if (Array.isArray(data)) {
+                normalized.items = data;
+                normalized.totalItems = data.length;
+            }
+            // Case 3: Plain object with total field
+            else if ('total' in data) {
+                normalized.items = data.items || [];
+                normalized.totalItems = data.total;
+            }
+            // Case 4: Single item object
+            else {
+                normalized.items = [data];
+                normalized.totalItems = 1;
+            }
         }
-        _cache.set(key, { data, expires: Date.now() + ttl });
-        return data as T;
+        
+        _cache.set(key, { data: normalized, expires: Date.now() + ttl });
+        return normalized as T;
     })().finally(() => _inFlight.delete(key));
 
     _inFlight.set(key, p as Promise<any>);
@@ -43,6 +61,10 @@ async function fetchWithCache<T>(endpoint: string, ttl = 5000): Promise<T> {
 // Export internals for testing/diagnostics (non-production API)
 export const __internals = {
     fetchWithCache,
+    clearCache: () => {
+        _cache.clear();
+        _inFlight.clear();
+    }
 };
  
 // This key generation logic is now only used on the client-side for finding duplicates
@@ -83,7 +105,7 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
         if (window.netlifyIdentity?.currentUser) {
             const token = await window.netlifyIdentity.currentUser()?.jwt();
             if (token) {
-                headers['Authorization'] = `Bearer ${token}`;
+                Object.assign(headers, { 'Authorization': `Bearer ${token}` });
             }
         }
 
@@ -141,7 +163,7 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
 
     while(hasMore) {
         try {
-            log('debug', 'Fetching history page for streaming.', { page, limit });
+            log('info', 'Fetching history page for streaming.', { page, limit });
             const response = await getAnalysisHistory(page, limit);
             if (response.items.length > 0) {
                 onData(response.items);

@@ -3,64 +3,61 @@
  */
 
 // Mock database for testing
-const createMockDatabase = function() {
+const createMockDatabase = () => {
   const data = {
     uploads: []
   };
 
   return {
-    collection: function(name) {
-      return {
-        findOne: function(query) {
-          if (name === 'uploads') {
-            return data.uploads.find(function(upload) {
-              return upload.filename === query.filename && 
-                     upload.userId === query.userId &&
-                     query.status.$in.indexOf(upload.status) !== -1;
-            }) || null;
-          }
-          return null;
-        },
-        insertOne: function(document) {
-          document._id = 'mock-id-' + Date.now();
-          if (name === 'uploads') {
-            data.uploads.push(document);
-          }
-          return { insertedId: document._id };
-        },
-        updateOne: function(query, update) {
-          if (name === 'uploads') {
-            const upload = data.uploads.find(function(u) {
-              return u.filename === query.filename && u.userId === query.userId;
-            });
-            if (upload) {
-              Object.assign(upload, update.$set);
-              return { modifiedCount: 1 };
-            }
-          }
-          return { modifiedCount: 0 };
+    collection: (name) => ({
+      findOne: (query) => {
+        if (name === 'uploads') {
+          return data.uploads.find((upload) => 
+            upload.filename === query.filename && 
+            upload.userId === query.userId &&
+            query.status.$in.includes(upload.status)
+          ) || null;
         }
-      };
-    }
+        return null;
+      },
+      insertOne: (document) => {
+        document._id = `mock-id-${Date.now()}`;
+        if (name === 'uploads') {
+          data.uploads.push(document);
+        }
+        return { insertedId: document._id };
+      },
+      updateOne: (query, update) => {
+        if (name === 'uploads') {
+          const upload = data.uploads.find((u) => 
+            u.filename === query.filename && u.userId === query.userId
+          );
+          if (upload) {
+            Object.assign(upload, update.$set);
+            return { modifiedCount: 1 };
+          }
+        }
+        return { modifiedCount: 0 };
+      }
+    })
   };
 };
 
 // Mock upload service
-const createMockUploadService = function() {
+const createMockUploadService = () => {
   const db = createMockDatabase();
 
   return {
-    checkForDuplicate: function(filename, userId) {
-      return db.collection('uploads').findOne({
-        filename: filename,
-        userId: userId,
+    checkForDuplicate: async (filename, userId) => {
+      const existing = await db.collection('uploads').findOne({
+        filename,
+        userId,
         status: { $in: ['completed', 'processing'] }
-      }).then(function(existing) {
-        return !!existing;
       });
+      return !!existing;
     },
 
-    validateFilename: function(filename) {
+    validateFilename: (filename) => {
       const invalidPatterns = [
         /[<>:"|?*]/,
         /^\./,
@@ -72,15 +69,15 @@ const createMockUploadService = function() {
       const allowedExtensions = ['.csv', '.json', '.txt', '.log', '.xml'];
       const fileExtension = filename.toLowerCase().substring(filename.lastIndexOf('.'));
       
-      if (allowedExtensions.indexOf(fileExtension) === -1) {
+      if (!allowedExtensions.includes(fileExtension)) {
         return {
           valid: false,
-          error: 'File type ' + fileExtension + ' is not allowed'
+          error: `File type ${fileExtension} is not allowed`
         };
       }
 
-      for (let i = 0; i < invalidPatterns.length; i++) {
-        if (invalidPatterns[i].test(filename)) {
+      for (const pattern of invalidPatterns) {
+        if (pattern.test(filename)) {
           return {
             valid: false,
             error: 'Filename contains invalid characters'
@@ -98,91 +95,79 @@ const createMockUploadService = function() {
       return { valid: true };
     },
 
-    uploadFile: function(file, userId) {
-      const self = this;
-      
-      return new Promise(function(resolve, reject) {
-        // Validate filename
-        const filenameValidation = self.validateFilename(file.name);
-        if (!filenameValidation.valid) {
-          resolve({
-            status: 'error',
-            reason: filenameValidation.error
-          });
-          return;
+    uploadFile: async function(file, userId) {
+      // Validate filename
+      const filenameValidation = this.validateFilename(file.name);
+      if (!filenameValidation.valid) {
+        return {
+          status: 'error',
+          reason: filenameValidation.error
+        };
+      }
+
+      try {
+        // Check for duplicates
+        const isDuplicate = await this.checkForDuplicate(file.name, userId);
+        if (isDuplicate) {
+          return {
+            status: 'skipped',
+            reason: 'duplicate'
+          };
         }
 
-        // Check for duplicates
-        self.checkForDuplicate(file.name, userId).then(function(isDuplicate) {
-          if (isDuplicate) {
-            resolve({
-              status: 'skipped',
-              reason: 'duplicate'
-            });
-            return;
-          }
+        // Insert upload record
+        await db.collection('uploads').insertOne({
+          filename: file.name,
+          userId,
+          status: 'completed',
+          createdAt: new Date(),
+          fileSize: file.size
+        });
 
-          // Insert upload record
-          db.collection('uploads').insertOne({
-            filename: file.name,
-            userId: userId,
-            status: 'completed',
-            createdAt: new Date(),
-            fileSize: file.size
-          });
-
-          resolve({
-            status: 'success',
-            fileId: 'file-' + Date.now(),
-            message: 'File uploaded successfully'
-          });
-        }).catch(reject);
-      });
+        return {
+          status: 'success',
+          fileId: `file-${Date.now()}`,
+          message: 'File uploaded successfully'
+        };
+      } catch (error) {
+        throw error;
+      }
     }
   };
 };
 
 // Create test files
-const createTestFile = function(name, size) {
-  name = name || 'test-file.csv';
-  size = size || 1024;
-  
-  return {
-    name: name,
-    size: size,
-    type: 'text/csv'
-  };
-};
+const createTestFile = (name = 'test-file.csv', size = 1024) => ({
+  name,
+  size,
+  type: 'text/csv'
+});
 
-describe('Duplicate Detection Simplified Tests', function() {
+describe('Duplicate Detection Simplified Tests', () => {
   let uploadService;
   let testUser;
 
-  beforeEach(function() {
+  beforeEach(() => {
     uploadService = createMockUploadService();
     testUser = {
-      id: 'test-user-' + Date.now(),
+      id: `test-user-${Date.now()}`,
       name: 'Test User'
     };
   });
 
-  test('should detect duplicate file', function(done) {
+  test('should detect duplicate file', async () => {
     const testFile = createTestFile('battery-data.csv');
     
     // Upload first file
-    uploadService.uploadFile(testFile, testUser.id).then(function(result) {
-      expect(result.status).toBe('success');
-      
-      // Try to upload same file again
-      uploadService.uploadFile(testFile, testUser.id).then(function(duplicateResult) {
-        expect(duplicateResult.status).toBe('skipped');
-        expect(duplicateResult.reason).toBe('duplicate');
-        done();
-      });
-    });
+    const result = await uploadService.uploadFile(testFile, testUser.id);
+    expect(result.status).toBe('success');
+    
+    const duplicateResult = await uploadService.uploadFile(testFile, testUser.id);
+    expect(duplicateResult.status).toBe('skipped');
+    expect(duplicateResult.reason).toBe('duplicate');
   });
 
-  test('should allow upload of same filename by different users', function(done) {
+  test('should allow upload of same filename by different users', async () => {
     const testFile = createTestFile('shared-file.csv');
     const differentUser = {
       id: 'different-user',
@@ -190,34 +175,28 @@ describe('Duplicate Detection Simplified Tests', function() {
     };
 
     // Upload as first user
-    uploadService.uploadFile(testFile, testUser.id).then(function(result) {
-      expect(result.status).toBe('success');
-      
-      // Upload as different user
-      uploadService.uploadFile(testFile, differentUser.id).then(function(secondResult) {
-        expect(secondResult.status).toBe('success');
-        done();
-      });
-    });
+    const result = await uploadService.uploadFile(testFile, testUser.id);
+    expect(result.status).toBe('success');
+    
+    // Upload as different user
+    const secondResult = await uploadService.uploadFile(testFile, differentUser.id);
+    expect(secondResult.status).toBe('success');
   });
 
-  test('should handle case-sensitive filenames correctly', function(done) {
+  test('should handle case-sensitive filenames correctly', async () => {
     const lowerCaseFile = createTestFile('battery-data.csv');
     const upperCaseFile = createTestFile('BATTERY-DATA.CSV');
 
     // Upload lower case version
-    uploadService.uploadFile(lowerCaseFile, testUser.id).then(function(result) {
-      expect(result.status).toBe('success');
-      
-      // Upload upper case version (should be treated as different file)
-      uploadService.uploadFile(upperCaseFile, testUser.id).then(function(secondResult) {
-        expect(secondResult.status).toBe('success');
-        done();
-      });
-    });
+    const result = await uploadService.uploadFile(lowerCaseFile, testUser.id);
+    expect(result.status).toBe('success');
+    
+    // Upload upper case version (should be treated as different file)
+    const secondResult = await uploadService.uploadFile(upperCaseFile, testUser.id);
+    expect(secondResult.status).toBe('success');
   });
 
-  test('should validate filename format', function(done) {
+  test('should validate filename format', async () => {
     const invalidFiles = [
       createTestFile('file<with>brackets.csv'),
       createTestFile('.hidden-file.csv'),
@@ -225,22 +204,17 @@ describe('Duplicate Detection Simplified Tests', function() {
       createTestFile('a'.repeat(300) + '.csv')
     ];
 
-    var completed = 0;
-    var expected = invalidFiles.length;
+    const results = await Promise.all(invalidFiles.map(file => 
+      uploadService.uploadFile(file, testUser.id)
+    ));
 
-    invalidFiles.forEach(function(file) {
-      uploadService.uploadFile(file, testUser.id).then(function(result) {
-        expect(result.status).toBe('error');
-        expect(result.reason).toContain('invalid');
-        completed++;
-        if (completed === expected) {
-          done();
-        }
-      });
+    results.forEach(result => {
+      expect(result.status).toBe('error');
+      expect(result.reason).toContain('invalid');
     });
   });
 
-  test('should allow valid file types', function(done) {
+  test('should allow valid file types', async () => {
     const validFiles = [
       createTestFile('data.csv'),
       createTestFile('config.json'),
@@ -249,57 +223,51 @@ describe('Duplicate Detection Simplified Tests', function() {
       createTestFile('export.xml')
     ];
 
-    var completed = 0;
-    var expected = validFiles.length;
+    const results = await Promise.all(validFiles.map(file => 
+      uploadService.uploadFile(file, testUser.id)
+    ));
 
-    validFiles.forEach(function(file) {
-      uploadService.uploadFile(file, testUser.id).then(function(result) {
-        expect(result.status).toBe('success');
-        completed++;
-        if (completed === expected) {
-          done();
-        }
-      });
+    results.forEach(result => {
+      expect(result.status).toBe('success');
     });
   });
 });
 
 // Performance tests
-describe('Duplicate Detection Performance', function() {
+describe('Duplicate Detection Performance', () => {
   let uploadService;
 
-  beforeEach(function() {
+  beforeEach(() => {
     uploadService = createMockUploadService();
   });
 
-  test('should handle many uploads efficiently', function(done) {
+  test('should handle many uploads efficiently', async () => {
     const testUser = { id: 'perf-user', name: 'Performance User' };
     const startTime = Date.now();
     
     // Upload many unique files
-    var completed = 0;
-    var total = 100;
-    
-    for (let i = 0; i < total; i++) {
+    const total = 100;
+    const uploads = Array.from({ length: total }, (_, i) => 
       uploadService.uploadFile(
-        createTestFile('perf-file-' + i + '.csv'), 
+        createTestFile(`perf-file-${i}.csv`), 
         testUser.id
-      ).then(function(result) {
-        expect(result.status).toBe('success');
-        completed++;
-        if (completed === total) {
-          const duration = Date.now() - startTime;
-          expect(duration).toBeLessThan(1000); // Should complete in under 1 second
-          done();
-        }
-      });
+      )
+    );
+    
+    const results = await Promise.all(uploads);
+    
+    results.forEach(result => {
+      expect(result.status).toBe('success');
     });
+
+    const duration = Date.now() - startTime;
+    expect(duration).toBeLessThan(1000); // Should complete in under 1 second
   });
 });
 
 // Integration tests
-describe('Duplicate Detection Integration', function() {
-  test('should handle filename validation edge cases', function() {
+describe('Duplicate Detection Integration', () => {
+  test('should handle filename validation edge cases', () => {
     const uploadService = createMockUploadService();
     
     // Test empty filename
