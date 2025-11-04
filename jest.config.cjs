@@ -18,13 +18,12 @@ module.exports = {
   testTimeout: 30000,
   verbose: true,
   transform: {
-    '^.+\\.(js|jsx)$': 'babel-jest',
-    '^.+\\.(ts|tsx)$': 'ts-jest'
+    '^.+\\.(js|jsx|ts|tsx|mjs|cjs)$': ['babel-jest', { rootMode: 'upward' }]
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(.*\\.mjs$))'
+    '/node_modules/(?!(@babel/runtime)/)'
   ],
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  moduleFileExtensions: ['js', 'jsx', 'ts', 'tsx', 'json', 'node', 'cjs', 'mjs'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1'
   }

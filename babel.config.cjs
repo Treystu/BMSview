@@ -1,12 +1,18 @@
 module.exports = {
   presets: [
-    ['@babel/preset-env', { 
+    ['@babel/preset-env', {
       targets: { node: 'current' },
-      modules: 'commonjs'
+      modules: 'commonjs',
+      useBuiltIns: 'usage',
+      corejs: 3
     }],
     '@babel/preset-typescript',
-    '@babel/preset-react'
+    ['@babel/preset-react', { runtime: 'automatic' }]
   ],
-  plugins: ['@babel/plugin-transform-modules-commonjs'],
-  sourceType: 'module'
+  plugins: [
+    '@babel/plugin-transform-modules-commonjs',
+    '@babel/plugin-transform-class-properties',
+    '@babel/plugin-transform-object-rest-spread'
+  ],
+  sourceType: 'unambiguous'
 };

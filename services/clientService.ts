@@ -1,4 +1,4 @@
-import type { BmsSystem, AnalysisData, AnalysisRecord, WeatherData } from '../types';
+import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData } from '../types';
 
 interface PaginatedResponse<T> {
     items: T[];
@@ -41,7 +41,7 @@ export const __internals = {
         _inFlight.clear();
     }
 };
- 
+
 // This key generation logic is now only used on the client-side for finding duplicates
 // among already-fetched data.
 const generateAnalysisKey = (data: AnalysisData): string => {
@@ -69,7 +69,7 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
     const isGet = !options.method || options.method.toUpperCase() === 'GET';
     const logContext = { endpoint, method: options.method || 'GET' };
     log('info', 'API fetch started.', logContext);
-    
+
     try {
         const headers = {
             'Content-Type': 'application/json',
@@ -111,7 +111,7 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
     } catch (error) {
         // This will catch network errors or errors from the !response.ok block
         if (!(error instanceof Error && error.message.includes('Server responded with status'))) {
-           log('error', 'API fetch encountered a network or parsing error.', { ...logContext, error: error instanceof Error ? error.message : String(error) });
+            log('error', 'API fetch encountered a network or parsing error.', { ...logContext, error: error instanceof Error ? error.message : String(error) });
         }
         throw error;
     }
@@ -120,7 +120,7 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
 export const getRegisteredSystems = async (page = 1, limit = 25): Promise<PaginatedResponse<BmsSystem>> => {
     log('info', 'Fetching paginated registered BMS systems.', { page, limit });
     const response = await fetchWithCache<any>(`systems?page=${page}&limit=${limit}`, 10_000);
-    
+
     // Case 1: Array response (including empty arrays)
     if (Array.isArray(response)) {
         return {
@@ -128,14 +128,14 @@ export const getRegisteredSystems = async (page = 1, limit = 25): Promise<Pagina
             totalItems: response.length // For array responses, always use array length
         };
     }
-    
+
     // Case 2: Object response
     if (response && typeof response === 'object') {
         // Get total items from any source that might provide it
         const totalItems = typeof response.total === 'number' ? response.total :
-                        typeof response.totalItems === 'number' ? response.totalItems :
-                        undefined;
-        
+            typeof response.totalItems === 'number' ? response.totalItems :
+                undefined;
+
         // Case 2a: Has an items array
         if (Array.isArray(response.items)) {
             return {
@@ -143,7 +143,7 @@ export const getRegisteredSystems = async (page = 1, limit = 25): Promise<Pagina
                 totalItems: totalItems ?? response.items.length
             };
         }
-        
+
         // Case 2b: Has a total field but no items array
         if (totalItems !== undefined) {
             return {
@@ -151,7 +151,7 @@ export const getRegisteredSystems = async (page = 1, limit = 25): Promise<Pagina
                 totalItems
             };
         }
-        
+
         // Case 2c: Treat it as a single item if it's an object with content
         if (Object.keys(response).length > 0) {
             return {
@@ -160,7 +160,7 @@ export const getRegisteredSystems = async (page = 1, limit = 25): Promise<Pagina
             };
         }
     }
-    
+
     // Case 3: Empty/invalid response
     return {
         items: [],
@@ -180,7 +180,7 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
     let page = 1;
     let hasMore = true;
 
-    while(hasMore) {
+    while (hasMore) {
         try {
             log('info', 'Fetching history page for streaming.', { page, limit });
             const response = await getAnalysisHistory(page, limit);
@@ -202,14 +202,14 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
 };
 
 export const streamInsights = async (
-  payload: {
-    analysisData: AnalysisData;
-    systemId?: string;
-    customPrompt?: string;
-  },
-  onChunk: (chunk: string) => void,
-  onComplete: () => void,
-  onError: (error: Error) => void
+    payload: {
+        analysisData: AnalysisData;
+        systemId?: string;
+        customPrompt?: string;
+    },
+    onChunk: (chunk: string) => void,
+    onComplete: () => void,
+    onError: (error: Error) => void
 ) => {
     log('info', 'Streaming insights from server.', { systemId: payload.systemId, hasCustomPrompt: !!payload.customPrompt });
     try {
@@ -226,22 +226,27 @@ export const streamInsights = async (
             throw new Error(errorData.error || 'An unexpected error occurred.');
         }
 
-        const reader = response.body?.getReader();
-        if (!reader) {
-            throw new Error('Could not get readable stream from response.');
+        // Parse the JSON response
+        const data = await response.json();
+
+        if (!data.success || !data.insights) {
+            throw new Error('Invalid response from server');
         }
 
-        const decoder = new TextDecoder();
+        // Use the formatted text if available, otherwise fall back to raw text
+        const displayText = data.insights.formattedText || data.insights.rawText || 'No insights available';
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-                log('info', 'Insight stream completed.');
-                onComplete();
-                break;
-            }
-            onChunk(decoder.decode(value));
+        // Simulate streaming by sending the text in chunks for a nice effect
+        const chunkSize = 50;
+        for (let i = 0; i < displayText.length; i += chunkSize) {
+            const chunk = displayText.substring(i, i + chunkSize);
+            onChunk(chunk);
+            // Small delay for visual effect
+            await new Promise(resolve => setTimeout(resolve, 10));
         }
+
+        log('info', 'Insight stream completed.');
+        onComplete();
     } catch (err) {
         const error = err instanceof Error ? err : new Error('An unknown error occurred during streaming.');
         log('error', 'Error streaming insights.', { error: error.message });
@@ -251,7 +256,7 @@ export const streamInsights = async (
 
 
 export const registerBmsSystem = async (
-  systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>
+    systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>
 ): Promise<BmsSystem> => {
     log('info', 'Registering new BMS system.', { name: systemData.name });
     return apiFetch<BmsSystem>('systems', {
@@ -272,7 +277,7 @@ export const associateDlToSystem = async (dlNumber: string, systemId: string): P
     if (!systemToUpdate) {
         throw new Error("System to associate not found.");
     }
-    
+
     if (!systemToUpdate.associatedDLs) {
         systemToUpdate.associatedDLs = [];
     }
@@ -288,8 +293,8 @@ export const associateDlToSystem = async (dlNumber: string, systemId: string): P
 };
 
 export const updateBmsSystem = async (
-  systemId: string,
-  updatedData: Omit<BmsSystem, 'id'>
+    systemId: string,
+    updatedData: Omit<BmsSystem, 'id'>
 ): Promise<BmsSystem> => {
     log('info', 'Updating BMS system.', { systemId, systemName: updatedData.name });
     return apiFetch<BmsSystem>(`systems?systemId=${systemId}`, {
@@ -299,20 +304,20 @@ export const updateBmsSystem = async (
 };
 
 export const saveAnalysisResult = async (
-  analysisData: AnalysisData,
-  fileName: string,
-  systemId?: string,
-  weatherData?: WeatherData
+    analysisData: AnalysisData,
+    fileName: string,
+    systemId?: string,
+    weatherData?: WeatherData
 ): Promise<AnalysisRecord> => {
     log('info', 'Saving analysis result to history.', { fileName, systemId, dlNumber: analysisData.dlNumber });
     const recordToSave = {
-      systemId,
-      analysis: analysisData,
-      weather: weatherData,
-      dlNumber: analysisData.dlNumber,
-      fileName: fileName,
+        systemId,
+        analysis: analysisData,
+        weather: weatherData,
+        dlNumber: analysisData.dlNumber,
+        fileName: fileName,
     };
-    
+
     return apiFetch<AnalysisRecord>('history', {
         method: 'POST',
         body: JSON.stringify(recordToSave),
@@ -409,19 +414,19 @@ export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> =
     }
 
     const finalSets: AnalysisRecord[][] = [];
-    const TIME_WINDOW_MS = 5 * 60 * 1000; 
+    const TIME_WINDOW_MS = 5 * 60 * 1000;
 
     for (const group of recordsByKey.values()) {
         if (group.length < 2) continue;
 
         const sortedGroup = group.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-        
+
         let i = 0;
         while (i < sortedGroup.length) {
             const currentSet = [sortedGroup[i]];
             const startTime = new Date(sortedGroup[i].timestamp).getTime();
             let j = i + 1;
-            
+
             while (j < sortedGroup.length && (new Date(sortedGroup[j].timestamp).getTime() - startTime <= TIME_WINDOW_MS)) {
                 currentSet.push(sortedGroup[j]);
                 j++;
@@ -430,7 +435,7 @@ export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> =
             if (currentSet.length > 1) {
                 finalSets.push(currentSet);
             }
-            
+
             i = j;
         }
     }
