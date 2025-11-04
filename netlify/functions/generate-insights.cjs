@@ -350,8 +350,18 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
   const log = createLogger ? createLogger('generate-insights', context) : console;
   const timer = createTimer ? createTimer(log, 'generate-insights') : { end: () => {} };
   try {
+    // Parse and validate incoming body
     let body = {};
-    try { body = event && event.body ? JSON.parse(event.body) : {}; } catch (e) { body = {}; }
+    try { 
+      body = event && event.body ? JSON.parse(event.body) : {};
+      // Early validation of body structure
+      if (body && typeof body !== 'object') {
+        throw new Error('Invalid request body format');
+      }
+    } catch (e) { 
+      log.warn('Failed to parse request body', { error: e.message });
+      body = {}; 
+    }
 
     let batteryData = null;
     
@@ -401,6 +411,14 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
 
     // Validate and process the data
     if (!batteryData || !Array.isArray(batteryData.measurements)) {
+      // Log warning about missing or invalid data
+      log.warn('Invalid battery data structure', { 
+        hasBatteryData: !!batteryData,
+        hasMeasurements: batteryData && !!batteryData.measurements,
+        isMeasurementsArray: batteryData && Array.isArray(batteryData.measurements)
+      });
+
+      // Create a basic structure with empty measurements
       batteryData = {
         dlNumber: body.dlNumber || 'unknown',
         measurements: [{
@@ -408,61 +426,151 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
           voltage: 0,
           current: 0,
           temperature: 0,
-          stateOfCharge: 0
+          stateOfCharge: 0,
+          valid: false // Mark as invalid measurement
         }]
       };
     }
 
-    // Ensure we have valid measurements
-    batteryData.measurements = batteryData.measurements.filter(m => (
-      m && typeof m === 'object' && 
-      (typeof m.voltage === 'number' || 
-       typeof m.current === 'number' || 
-       typeof m.temperature === 'number' || 
-       typeof m.stateOfCharge === 'number')
-    ));
+    // Enhanced measurement validation
+    batteryData.measurements = batteryData.measurements.filter(m => {
+      // Basic type check
+      if (!m || typeof m !== 'object') {
+        log.warn('Invalid measurement entry', { measurement: m });
+        return false;
+      }
+
+      // Validate numeric fields
+      const requiredNumericFields = ['voltage', 'current', 'temperature', 'stateOfCharge'];
+      const hasValidNumbers = requiredNumericFields.some(field => {
+        const value = m[field];
+        const isValid = typeof value === 'number' && !isNaN(value);
+        if (!isValid && value !== undefined) {
+          log.warn(`Invalid ${field} value`, { value, measurement: m });
+        }
+        return isValid;
+      });
+
+      // Validate timestamp
+      let hasValidTimestamp = false;
+      try {
+        hasValidTimestamp = m.timestamp && !isNaN(new Date(m.timestamp).getTime());
+      } catch (e) {
+        log.warn('Invalid timestamp', { timestamp: m.timestamp, error: e.message });
+      }
+
+      return hasValidNumbers && hasValidTimestamp;
+    });
 
     if (batteryData.measurements.length === 0) {
-      // Provide minimal insights based on DL number and context
-      const contextualInsights = {
-        success: true,
-        insights: {
-          healthStatus: 'Pending',
-          systemId: batteryData.dlNumber || 'unknown',
-          lastUpdated: new Date().toISOString(),
-          performance: {
-            trend: 'Initializing',
-            message: 'Awaiting first measurement',
-            nextSteps: [
-              'Ensure proper connection to battery',
-              'Verify monitoring equipment is operational',
-              'Check data collection settings'
-            ]
-          },
-          recommendations: [
-            'Configure monitoring schedule',
-            'Verify sensor connections',
-            'Ensure proper data logging setup'
-          ],
-          estimatedLifespan: 'Pending initial data',
-          efficiency: {
-            status: 'Pending',
-            message: 'Collecting initial measurements',
-            setupComplete: false
-          }
-        },
-        diagnostics: {
-          dataReceived: !!body,
-          configurationStatus: 'Pending',
-          connectionStatus: 'Unknown',
-          lastAttempt: new Date().toISOString()
-        },
-        timestamp: new Date().toISOString()
-      };
+      // Log the empty data condition
+      log.warn('No valid measurements found', {
+        systemId: batteryData.dlNumber,
+        originalMeasurementsLength: batteryData.measurements ? batteryData.measurements.length : 0
+      });
+
+      // Format a detailed user-friendly message for empty data
+      const message = `
+Battery Analysis Report
+----------------------
+System: ${batteryData.dlNumber || 'Unknown'}
+Status: Awaiting Data
+Last Updated: ${new Date().toLocaleString()}
+
+⚠️ No valid measurements available
+
+System Status:
+- Connection State: Unknown
+- Last Contact Attempt: ${new Date().toLocaleString()}
+- Data Quality: No Valid Records
+
+Troubleshooting Steps:
+1. Check Physical Connection
+   • Verify battery terminals are properly connected
+   • Ensure monitoring device is powered
+   • Check for loose connections
+
+2. Verify Data Collection
+   • Confirm monitoring settings are correct
+   • Check sampling frequency is appropriate
+   • Verify data transmission is enabled
+
+3. System Configuration
+   • Validate device registration
+   • Check permission settings
+   • Verify monitoring thresholds
+
+Next Actions:
+1. Perform connection test
+2. Verify sensor calibration
+3. Check communication settings
+4. Contact support if issues persist
+
+Setup Status:
+✓ System registered
+□ Connection verified
+□ Data flow established
+□ Baseline readings collected
+
+Technical Support:
+• System ID: ${batteryData.dlNumber || 'Unknown'}
+• Installation Date: ${batteryData.installDate || 'Not recorded'}
+• Last Config Update: ${new Date().toLocaleString()}
+
+Contact support@bmsview.com with your System ID for assistance.
+`;
       
       return { 
         statusCode: 200, 
-        body: JSON.stringify(contextualInsights)
+        body: JSON.stringify({
+          success: true,
+          insights: {
+            healthStatus: 'Unknown',
+            systemId: batteryData.dlNumber || 'unknown',
+            lastUpdated: new Date().toISOString(),
+            systemState: {
+              connectionStatus: 'unknown',
+              lastContactAttempt: new Date().toISOString(),
+              dataQuality: 'no_valid_records',
+              configurationStatus: 'pending_verification'
+            },
+            performance: {
+              trend: 'Unknown',
+              capacityRetention: 0,
+              degradationRate: 0,
+              reliability: {
+                dataCompleteness: 0,
+                measurementQuality: 0,
+                validationStatus: 'pending'
+              }
+            },
+            efficiency: {
+              chargeEfficiency: 0,
+              dischargeEfficiency: 0,
+              cyclesAnalyzed: 0,
+              dataQuality: 'insufficient'
+            },
+            troubleshooting: {
+              requiredActions: [
+                'verify_connection',
+                'check_configuration',
+                'validate_sensors'
+              ],
+              recommendedTests: [
+                'connection_test',
+                'sensor_calibration',
+                'communication_check'
+              ]
+            }
+          },
+          humanReadable: message,
+          timestamp: new Date().toISOString(),
+          metadata: {
+            analysisVersion: '2.0',
+            validationLevel: 'strict',
+            processingTimestamp: new Date().toISOString()
+          }
+        })
       };
     }
 
@@ -610,11 +718,62 @@ Please refine your analysis with this additional context. Use the same response 
     }
   }
 
+  // Format a comprehensive human-readable report
+  const formatBatteryReport = (insights, data) => {
+    const efficiency = insights.efficiency || {};
+    const performance = insights.performance || {};
+    const capacity = insights.capacity || {};
+    const health = insights.systemHealth || {};
+    
+    return `
+Battery Analysis Report
+======================
+System ID: ${data.dlNumber || 'Unknown'}
+Analysis Date: ${new Date().toLocaleString()}
+Status: ${insights.healthStatus || 'Unknown'}
+
+Current State
+------------
+Voltage: ${health.metrics?.voltage?.current?.toFixed(2) || '?'}V
+Current: ${health.metrics?.current?.current?.toFixed(2) || '?'}A
+Temperature: ${health.metrics?.temperature?.current?.toFixed(1) || '?'}°C
+State of Charge: ${health.metrics?.soc?.current?.toFixed(1) || '?'}%
+
+Health Assessment
+---------------
+${health.factors?.map(f => '• ' + f).join('\\n') || 'No health factors available'}
+
+Performance Analysis
+------------------
+• Battery Health: ${capacity.health?.toFixed(1) || '?'}%
+• Charging Efficiency: ${(efficiency.chargeEfficiency * 100)?.toFixed(1) || '?'}%
+• Cycles Analyzed: ${efficiency.cyclesAnalyzed || 0}
+• Degradation Rate: ${insights.degradation?.rate?.toFixed(2) || '?'}%/week
+• Pattern: ${insights.degradation?.pattern || 'Unknown'}
+
+Estimated Runtime
+---------------
+${performance.estimatedRuntime?.atCurrentDraw ? `• At Current Usage: ${performance.estimatedRuntime.atCurrentDraw}` : ''}
+${performance.estimatedRuntime?.atAverageUse ? `• At Average Usage: ${performance.estimatedRuntime.atAverageUse}` : ''}
+${performance.estimatedRuntime?.atMaximumUse ? `• At Maximum Usage: ${performance.estimatedRuntime.atMaximumUse}` : ''}
+
+⚠️ Recommendations
+----------------
+${insights.recommendations?.map(r => '• ' + r).join('\\n') || 'No specific recommendations at this time'}
+
+Analysis based on ${data.measurements?.length || 0} measurements over ${performance.timeRange || 'unknown'} period.
+${insights.confidence === 'high' ? '✓ High confidence analysis' : insights.confidence === 'medium' ? '! Medium confidence analysis' : '⚠ Low confidence analysis'}
+`;
+  };
+
+  const humanReadableReport = formatBatteryReport(structured, batteryData);
+  
   return { 
     statusCode: 200, 
     body: JSON.stringify({ 
       success: true, 
-      insights: structured, 
+      insights: structured,
+      humanReadable: humanReadableReport,
       tokenUsage: { 
         prompt: promptTokens, 
         generated: estimateTokens(insightsText), 
@@ -839,12 +998,13 @@ function fallbackTextSummary(batteryData) {
   const latest = batteryData.measurements[batteryData.measurements.length - 1] || {};
   
   // Determine health status based on available metrics
-  let healthStatus = "Good";
+  let healthStatus = "Excellent";
   const healthFactors = [];
   
   if (latest.voltage) {
     if (latest.voltage < 10) healthStatus = "Critical";
     else if (latest.voltage < 11) healthStatus = "Poor";
+    else if (latest.voltage < 12) healthStatus = "Good";
     healthFactors.push(`Voltage level: ${latest.voltage}V`);
   }
   
@@ -1005,6 +1165,52 @@ function calculateMaximumDischargeRate(batteryData) {
   return Math.max(...dischargeMeasurements.map(m => 
     Math.abs(m.current || 0)
   ));
+}
+
+function formatInsightsForHuman(insights, batteryData) {
+  const sections = [];
+  
+  // Summary Section
+  sections.push(`📊 Battery Analysis Summary
+-----------------------
+Status: ${insights.healthStatus}
+System ID: ${batteryData.dlNumber || 'N/A'}
+Last Updated: ${new Date().toLocaleString()}
+
+🔋 Current State
+----------------
+Voltage: ${insights.performance?.metrics?.voltage?.current || 0}V
+Current: ${insights.performance?.metrics?.current?.current || 0}A
+Temperature: ${insights.performance?.metrics?.temperature?.current || 0}°C
+State of Charge: ${insights.performance?.metrics?.soc?.current || 0}%
+
+💡 Health Assessment
+------------------
+${insights.systemHealth?.factors?.join('\\n') || 'No health factors available'}
+
+⚡ Performance Trends
+------------------
+${insights.performance?.trend || 'Unknown'}
+${insights.capacity?.trend ? '• Capacity Trend: ' + insights.capacity.trend : ''}
+${insights.degradation?.pattern ? '• Degradation Pattern: ' + insights.degradation.pattern : ''}
+
+🔄 Efficiency Metrics
+------------------
+Charging Efficiency: ${(insights.efficiency?.chargeEfficiency * 100 || 0).toFixed(1)}%
+Discharging Efficiency: ${(insights.efficiency?.dischargeEfficiency * 100 || 0).toFixed(1)}%
+Cycles Analyzed: ${insights.efficiency?.cyclesAnalyzed || 0}
+
+⚠️ Recommendations
+----------------
+${insights.recommendations?.length > 0 ? insights.recommendations.map(r => '• ' + r).join('\\n') : 'No recommendations available'}
+
+⏳ Estimated Runtime
+-----------------
+${insights.performance?.estimatedRuntime?.atCurrentDraw || 'Unable to estimate runtime'}
+
+Note: This analysis is based on ${batteryData.measurements?.length || 0} measurements.`);
+
+  return sections.join('\\n\\n');
 }
 
 function parseInsights(raw, batteryData) {

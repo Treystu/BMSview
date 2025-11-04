@@ -34,17 +34,50 @@ const db: DatabaseClient = {
   })
 };
 
-async function checkForDuplicate(filename: string, userId: string): Promise<boolean> {
+async function checkForDuplicate(file: File, userId: string): Promise<{isDuplicate: boolean, existingId?: string}> {
   try {
+    // Calculate content hash
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const contentHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    // Check for duplicates by filename AND content hash
     const existing = await db.collection('uploads').findOne({
-      filename,
+      $or: [
+        {
+          filename: file.name,
+          userId,
+          status: { $in: ['completed', 'processing'] }
+        },
+        {
+          contentHash,
+          userId,
+          status: { $in: ['completed', 'processing'] }
+        }
+      ]
+    });
+
+    if (existing) {
+      return {
+        isDuplicate: true,
+        existingId: existing._id
+      };
+    }
+
+    return { isDuplicate: false };
+  } catch (error) {
+    console.error('Error checking for duplicate:', error);
+    // If hash calculation fails, fall back to filename check
+    const existing = await db.collection('uploads').findOne({
+      filename: file.name,
       userId,
       status: { $in: ['completed', 'processing'] }
     });
-    return !!existing;
-  } catch (error) {
-    console.error('Error checking for duplicate:', error);
-    return false; // Assume no duplicate on error
+    return {
+      isDuplicate: !!existing,
+      existingId: existing?._id
+    };
   }
 }
 
@@ -121,10 +154,13 @@ export async function uploadFile(file: File, userId: string): Promise<UploadResp
     }
 
     // Check for duplicates
-    if (await checkForDuplicate(file.name, userId)) {
+    const duplicateCheck = await checkForDuplicate(file, userId);
+    if (duplicateCheck.isDuplicate) {
       return {
         status: 'skipped',
-        reason: 'duplicate'
+        reason: 'duplicate',
+        message: `Duplicate of existing file (ID: ${duplicateCheck.existingId})`,
+        fileId: duplicateCheck.existingId
       };
     }
 
@@ -158,8 +194,9 @@ export async function uploadFile(file: File, userId: string): Promise<UploadResp
       message: `File ${file.name} uploaded and processed successfully`
     };
 
-  } catch (error) {
-    console.error('Upload error:', error);
+    } catch (err) {
+    console.error('Upload error:', err);
+    const error = err as Error;
     
     // Update record to failed if it exists
     await db.collection('uploads').updateOne(
@@ -167,7 +204,7 @@ export async function uploadFile(file: File, userId: string): Promise<UploadResp
       { 
         $set: { 
           status: 'failed',
-          error: error.message,
+          error: error?.message || 'Unknown error',
           failedAt: new Date()
         }
       }
@@ -175,7 +212,7 @@ export async function uploadFile(file: File, userId: string): Promise<UploadResp
 
     return {
       status: 'error',
-      reason: error.message || 'Unknown upload error'
+      reason: error?.message || 'Unknown upload error'
     };
   }
 }
