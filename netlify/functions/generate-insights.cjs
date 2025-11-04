@@ -9,6 +9,343 @@ const estimateTokens = (str) => Math.ceil(((str || '') + '').length / 4);
 const MAX_TOKENS = 32000;
 const BASE_PROMPT_TOKENS = 1200;
 
+// Response schema for consistent typing and validation
+const INSIGHTS_SCHEMA = {
+  healthStatus: ['Excellent', 'Good', 'Fair', 'Poor', 'Critical', 'Unknown'],
+  confidence: ['high', 'medium', 'low'],
+  metricUnits: {
+    voltage: 'V',
+    current: 'A',
+    power: 'W',
+    temperature: '°C',
+    capacity: 'Ah',
+    energy: 'Wh'
+  }
+};
+
+// Calculates the statistical ranges for battery metrics
+function calculateMetricRanges(measurements) {
+  if (!Array.isArray(measurements) || measurements.length === 0) return null;
+  
+  const stats = {
+    voltage: { min: Infinity, max: -Infinity, avg: 0, count: 0 },
+    current: { min: Infinity, max: -Infinity, avg: 0, count: 0 },
+    temperature: { min: Infinity, max: -Infinity, avg: 0, count: 0 },
+    stateOfCharge: { min: Infinity, max: -Infinity, avg: 0, count: 0 }
+  };
+  
+  measurements.forEach(m => {
+    Object.keys(stats).forEach(key => {
+      const value = Number(m[key]);
+      if (!isNaN(value)) {
+        stats[key].min = Math.min(stats[key].min, value);
+        stats[key].max = Math.max(stats[key].max, value);
+        stats[key].avg += value;
+        stats[key].count++;
+      }
+    });
+  });
+  
+  Object.keys(stats).forEach(key => {
+    if (stats[key].count > 0) {
+      stats[key].avg /= stats[key].count;
+    } else {
+      stats[key] = null;
+    }
+  });
+  
+  return stats;
+}
+
+// Analyzes historical patterns and anomalies
+function analyzeHistoricalPatterns(measurements) {
+  if (!Array.isArray(measurements) || measurements.length < 2) return null;
+  
+  const patterns = {
+    dischargeCycles: [],
+    chargeCycles: [],
+    anomalies: [],
+    timeRanges: {
+      start: new Date(measurements[0].timestamp),
+      end: new Date(measurements[measurements.length - 1].timestamp),
+      durationHours: 0
+    }
+  };
+  
+  patterns.timeRanges.durationHours = (patterns.timeRanges.end - patterns.timeRanges.start) / (1000 * 60 * 60);
+  
+  let currentCycle = null;
+  measurements.forEach((m, i) => {
+    const current = Number(m.current);
+    const timestamp = new Date(m.timestamp);
+    
+    // Detect charge/discharge cycles
+    if (!isNaN(current)) {
+      if (current < 0 && (!currentCycle || currentCycle.type !== 'discharge')) {
+        if (currentCycle) {
+          if (currentCycle.type === 'charge') {
+            patterns.chargeCycles.push(currentCycle);
+          }
+        }
+        currentCycle = { type: 'discharge', start: timestamp, startIndex: i, minCurrent: current };
+      } else if (current > 0 && (!currentCycle || currentCycle.type !== 'charge')) {
+        if (currentCycle) {
+          if (currentCycle.type === 'discharge') {
+            currentCycle.end = timestamp;
+            currentCycle.duration = (timestamp - currentCycle.start) / (1000 * 60 * 60);
+            patterns.dischargeCycles.push(currentCycle);
+          }
+        }
+        currentCycle = { type: 'charge', start: timestamp, startIndex: i, maxCurrent: current };
+      }
+      
+      // Update cycle stats
+      if (currentCycle) {
+        if (currentCycle.type === 'discharge') {
+          currentCycle.minCurrent = Math.min(currentCycle.minCurrent, current);
+        } else {
+          currentCycle.maxCurrent = Math.max(currentCycle.maxCurrent, current);
+        }
+      }
+    }
+    
+    // Detect anomalies
+    if (i > 0) {
+      const prev = measurements[i-1];
+      const socDiff = Math.abs((m.stateOfCharge || 0) - (prev.stateOfCharge || 0));
+      const voltDiff = Math.abs((m.voltage || 0) - (prev.voltage || 0));
+      
+      if (socDiff > 20) { // SoC jump of more than 20%
+        patterns.anomalies.push({
+          type: 'soc_jump',
+          timestamp,
+          from: prev.stateOfCharge,
+          to: m.stateOfCharge,
+          index: i
+        });
+      }
+      
+      if (voltDiff > 2) { // Voltage jump of more than 2V
+        patterns.anomalies.push({
+          type: 'voltage_jump',
+          timestamp,
+          from: prev.voltage,
+          to: m.voltage,
+          index: i
+        });
+      }
+    }
+  });
+  
+  // Add final cycle if exists
+  if (currentCycle) {
+    currentCycle.end = patterns.timeRanges.end;
+    currentCycle.duration = (currentCycle.end - currentCycle.start) / (1000 * 60 * 60);
+    if (currentCycle.type === 'discharge') {
+      patterns.dischargeCycles.push(currentCycle);
+    } else {
+      patterns.chargeCycles.push(currentCycle);
+    }
+  }
+  
+  return patterns;
+}
+
+function analyzeBatteryMetrics(data) {
+  if (!data?.measurements?.length) return null;
+  
+  const m = data.measurements;
+  const latest = m[m.length - 1];
+  const metrics = {};
+  
+  // Current state metrics
+  metrics.voltage = latest.voltage || 0;
+  metrics.current = latest.current || 0;
+  metrics.temperature = latest.temperature || 0;
+  metrics.stateOfCharge = latest.stateOfCharge || 0;
+  
+  // Calculate capacity metrics
+  const capacityStats = calculateCapacityMetrics(m);
+  metrics.capacity = capacityStats;
+  
+  // Calculate degradation patterns
+  const degradation = analyzeDegradation(m);
+  metrics.degradation = degradation;
+  
+  // Add efficiency metrics
+  const efficiency = calculateEfficiency(data);
+  metrics.efficiency = efficiency;
+  
+  return metrics;
+}
+
+function calculateCapacityMetrics(measurements) {
+  if (!Array.isArray(measurements) || measurements.length < 2) {
+    return { nominal: 0, actual: 0, health: 0 };
+  }
+  
+  let maxCapacity = 0;
+  let recentCapacity = 0;
+  let totalCycles = 0;
+  
+  // Track discharge cycles to estimate capacity
+  let cycleStart = null;
+  let cycleEnergy = 0;
+  const capacityReadings = [];
+  
+  measurements.forEach((m, i) => {
+    if (!m.timestamp || !m.stateOfCharge) return;
+    
+    const current = Number(m.current);
+    const voltage = Number(m.voltage);
+    const soc = Number(m.stateOfCharge);
+    
+    if (isNaN(current) || isNaN(voltage) || isNaN(soc)) return;
+    
+    // Detect start of discharge cycle
+    if (current < 0 && soc > 90 && !cycleStart) {
+      cycleStart = { timestamp: m.timestamp, soc };
+      cycleEnergy = 0;
+    }
+    
+    // Accumulate energy during discharge
+    if (cycleStart && current < 0) {
+      if (i > 0) {
+        const prev = measurements[i-1];
+        const hoursDiff = (new Date(m.timestamp) - new Date(prev.timestamp)) / (1000 * 60 * 60);
+        cycleEnergy += Math.abs(current * voltage * hoursDiff);
+      }
+    }
+    
+    // End of discharge cycle
+    if (cycleStart && (soc < 20 || current > 0)) {
+      if (cycleEnergy > 0) {
+        capacityReadings.push(cycleEnergy);
+        if (cycleEnergy > maxCapacity) maxCapacity = cycleEnergy;
+        totalCycles++;
+      }
+      cycleStart = null;
+    }
+  });
+  
+  // Calculate recent capacity from last 3 cycles
+  if (capacityReadings.length >= 3) {
+    const recent = capacityReadings.slice(-3);
+    recentCapacity = recent.reduce((a, b) => a + b, 0) / recent.length;
+  } else if (capacityReadings.length > 0) {
+    recentCapacity = capacityReadings[capacityReadings.length - 1];
+  }
+  
+  // Calculate battery health
+  const health = maxCapacity > 0 ? (recentCapacity / maxCapacity) * 100 : 0;
+  
+  return {
+    nominal: parseFloat(maxCapacity.toFixed(2)),
+    actual: parseFloat(recentCapacity.toFixed(2)),
+    health: parseFloat(health.toFixed(2)),
+    totalCycles,
+    trend: capacityReadings.length >= 5 ? analyzeTrend(capacityReadings.slice(-5)) : 'stable'
+  };
+}
+
+function analyzeDegradation(measurements) {
+  if (!Array.isArray(measurements) || measurements.length < 100) {
+    return { rate: 0, pattern: 'insufficient_data' };
+  }
+  
+  // Group measurements by day
+  const dailyStats = new Map();
+  measurements.forEach(m => {
+    if (!m.timestamp || !m.voltage || !m.current) return;
+    const day = new Date(m.timestamp).toISOString().split('T')[0];
+    if (!dailyStats.has(day)) {
+      dailyStats.set(day, { 
+        maxVoltage: -Infinity,
+        minVoltage: Infinity,
+        avgCurrent: 0,
+        samples: 0
+      });
+    }
+    const stats = dailyStats.get(day);
+    stats.maxVoltage = Math.max(stats.maxVoltage, m.voltage);
+    stats.minVoltage = Math.min(stats.minVoltage, m.voltage);
+    stats.avgCurrent = (stats.avgCurrent * stats.samples + m.current) / (stats.samples + 1);
+    stats.samples++;
+  });
+  
+  // Convert to array and sort by date
+  const dailyData = Array.from(dailyStats.entries())
+    .sort((a, b) => new Date(a[0]) - new Date(b[0]))
+    .map(([date, stats]) => ({
+      date,
+      voltageRange: stats.maxVoltage - stats.minVoltage,
+      avgCurrent: stats.avgCurrent
+    }));
+  
+  // Calculate degradation rate
+  let degradationRate = 0;
+  if (dailyData.length >= 7) {
+    const weeklyRanges = [];
+    for (let i = 0; i < dailyData.length - 6; i += 7) {
+      const weekData = dailyData.slice(i, i + 7);
+      const avgRange = weekData.reduce((sum, day) => sum + day.voltageRange, 0) / weekData.length;
+      weeklyRanges.push(avgRange);
+    }
+    
+    if (weeklyRanges.length >= 2) {
+      const initialRange = weeklyRanges[0];
+      const finalRange = weeklyRanges[weeklyRanges.length - 1];
+      degradationRate = initialRange > 0 ? 
+        ((initialRange - finalRange) / initialRange) * 100 / weeklyRanges.length : 0;
+    }
+  }
+  
+  // Analyze degradation pattern
+  let pattern = 'normal';
+  if (degradationRate > 2) pattern = 'accelerated';
+  else if (degradationRate > 1) pattern = 'moderate';
+  else if (degradationRate < 0.1) pattern = 'minimal';
+  
+  return {
+    rate: parseFloat(degradationRate.toFixed(4)),
+    pattern,
+    weeklyStats: dailyData.length >= 7 ? analyzeDegradationStats(dailyData) : null
+  };
+}
+
+function analyzeTrend(values) {
+  if (values.length < 2) return 'stable';
+  
+  const deltas = [];
+  for (let i = 1; i < values.length; i++) {
+    deltas.push(values[i] - values[i-1]);
+  }
+  
+  const avgDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+  const threshold = Math.abs(values[0] * 0.05); // 5% change threshold
+  
+  if (Math.abs(avgDelta) < threshold) return 'stable';
+  return avgDelta < 0 ? 'declining' : 'improving';
+}
+
+function analyzeDegradationStats(dailyData) {
+  const weeklyStats = [];
+  for (let i = 0; i < dailyData.length - 6; i += 7) {
+    const weekData = dailyData.slice(i, i + 7);
+    const avgRange = weekData.reduce((sum, day) => sum + day.voltageRange, 0) / weekData.length;
+    const avgCurrent = weekData.reduce((sum, day) => sum + Math.abs(day.avgCurrent), 0) / weekData.length;
+    
+    weeklyStats.push({
+      startDate: weekData[0].date,
+      endDate: weekData[weekData.length - 1].date,
+      averageVoltageRange: parseFloat(avgRange.toFixed(4)),
+      averageCurrent: parseFloat(avgCurrent.toFixed(4))
+    });
+  }
+  
+  return weeklyStats;
+}
+
 async function generateHandler(event = {}, context = {}, genAIOverride) {
   const log = createLogger ? createLogger('generate-insights', context) : console;
   const timer = createTimer ? createTimer(log, 'generate-insights') : { end: () => {} };
@@ -69,10 +406,130 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
       insightsText = fallbackTextSummary(batteryData);
     }
     
-    const structured = parseInsights(insightsText, batteryData);
+    // Parse the initial insights
+  let structured = parseInsights(insightsText, batteryData);
+  
+  // Handle any data requests from the AI
+  if (structured.dataRequests && structured.dataRequests.length > 0) {
+    log && log.info && log.info('Processing AI data requests', { count: structured.dataRequests.length });
+    
+    const dataResponses = [];
+    for (const request of structured.dataRequests) {
+      try {
+        let additionalData = null;
+        
+        switch (request.type) {
+          case 'historical':
+            // Filter measurements within requested date range
+            if (request.params.startDate && request.params.endDate) {
+              const start = new Date(request.params.startDate);
+              const end = new Date(request.params.endDate);
+              const filteredMeasurements = batteryData.measurements.filter(m => {
+                const timestamp = new Date(m.timestamp);
+                return timestamp >= start && timestamp <= end;
+              });
+              additionalData = {
+                type: 'historical',
+                measurements: filteredMeasurements,
+                metrics: calculateMetricRanges(filteredMeasurements),
+                patterns: analyzeHistoricalPatterns(filteredMeasurements)
+              };
+            }
+            break;
+            
+          case 'anomaly':
+            // Get context around a specific anomaly
+            if (typeof request.params.anomalyIndex === 'number') {
+              const patterns = analyzeHistoricalPatterns(batteryData.measurements);
+              const anomaly = patterns?.anomalies[request.params.anomalyIndex];
+              if (anomaly) {
+                const contextStart = Math.max(0, anomaly.index - 10);
+                const contextEnd = Math.min(batteryData.measurements.length, anomaly.index + 10);
+                additionalData = {
+                  type: 'anomaly',
+                  anomaly,
+                  context: batteryData.measurements.slice(contextStart, contextEnd),
+                  metrics: calculateMetricRanges(batteryData.measurements.slice(contextStart, contextEnd))
+                };
+              }
+            }
+            break;
+            
+          case 'trend':
+            // Calculate trend for specific metric
+            if (request.params.metric && request.params.timeRange) {
+              const measurements = batteryData.measurements;
+              if (measurements.length >= 2) {
+                const values = measurements.map(m => Number(m[request.params.metric])).filter(v => !isNaN(v));
+                if (values.length >= 2) {
+                  const firstVal = values[0];
+                  const lastVal = values[values.length - 1];
+                  const changeRate = (lastVal - firstVal) / values.length;
+                  additionalData = {
+                    type: 'trend',
+                    metric: request.params.metric,
+                    trend: {
+                      direction: changeRate > 0 ? 'increasing' : changeRate < 0 ? 'decreasing' : 'stable',
+                      rate: changeRate,
+                      startValue: firstVal,
+                      endValue: lastVal,
+                      changePercent: ((lastVal - firstVal) / firstVal) * 100
+                    }
+                  };
+                }
+              }
+            }
+            break;
+        }
+        
+        if (additionalData) {
+          dataResponses.push({
+            request,
+            response: additionalData
+          });
+        }
+      } catch (e) {
+        log && log.warn && log.warn('Failed to process data request', { request, error: e.message });
+      }
+    }
+    
+    // If we got additional data, ask Gemini to refine its analysis
+    if (dataResponses.length > 0 && model && typeof model.generateContent === 'function') {
+      try {
+        const refinementPrompt = `Based on your initial analysis, you requested additional data. Here are the results:
 
-    return { statusCode: 200, body: JSON.stringify({ success: true, insights: structured, tokenUsage: { prompt: promptTokens, generated: estimateTokens(insightsText), total: promptTokens + estimateTokens(insightsText) }, timestamp: new Date().toISOString() }) };
+${JSON.stringify(dataResponses, null, 2)}
+
+Please refine your analysis with this additional context. Use the same response format as before.`;
+
+        const genResult = await model.generateContent(refinementPrompt);
+        const resp = genResult && genResult.response;
+        const refinedText = typeof resp?.text === 'function' ? resp.text() : String(resp || '');
+        
+        // Merge the refined insights with the original
+        const refinedInsights = parseInsights(refinedText, batteryData);
+        structured = deepMerge(structured, refinedInsights);
+      } catch (e) {
+        log && log.warn && log.warn('Failed to refine insights with additional data', { error: e.message });
+      }
+    }
+  }
+
+  return { 
+    statusCode: 200, 
+    body: JSON.stringify({ 
+      success: true, 
+      insights: structured, 
+      tokenUsage: { 
+        prompt: promptTokens, 
+        generated: estimateTokens(insightsText), 
+        total: promptTokens + estimateTokens(insightsText) 
+      }, 
+      timestamp: new Date().toISOString() 
+    }) 
+  };
   } catch (e) {
+    log && log.error && log.error('Failed to generate insights', { error: e.message });
     return { statusCode: 500, body: JSON.stringify({ error: 'Failed to generate insights' }) };
   } finally {
     try { timer && timer.end && timer.end(); } catch (e) {}
@@ -83,75 +540,307 @@ exports.handler = generateHandler;
 exports.generateHandler = generateHandler;
 
 function buildPrompt(systemId, dataString, customPrompt) {
-  const base = `SYSTEM_ID: ${systemId || 'N/A'}\nDATA: ${dataString.substring(0, 2000)}`;
+  // Parse and analyze battery data
+  let batteryData;
+  try {
+    batteryData = JSON.parse(dataString);
+  } catch (e) {
+    batteryData = { measurements: [] };
+  }
   
+  const metrics = analyzeBatteryMetrics(batteryData);
+  const patterns = analyzeHistoricalPatterns(batteryData.measurements);
+  
+  const contextData = {
+    systemId: systemId || 'N/A',
+    measurementCount: batteryData.measurements?.length || 0,
+    timeRange: patterns ? {
+      start: patterns.timeRanges.start.toISOString(),
+      end: patterns.timeRanges.end.toISOString(),
+      durationHours: patterns.timeRanges.durationHours
+    } : null,
+    metrics,
+    patterns: {
+      dischargeCycles: patterns?.dischargeCycles.length || 0,
+      chargeCycles: patterns?.chargeCycles.length || 0,
+      anomalies: patterns?.anomalies.length || 0
+    }
+  };
+  
+  const base = `You are an expert battery management system (BMS) analyst with deep knowledge of battery behavior, characteristics, and failure modes.
+
+SYSTEM CONTEXT:
+${JSON.stringify(contextData, null, 2)}
+
+AVAILABLE FUNCTIONS:
+- requestHistoricalData(startDate, endDate) - Request battery data for a specific time range
+- requestAnomalyContext(anomalyIndex) - Get detailed data around an anomaly
+- compareWithBaseline(metricName) - Compare current values with system baseline
+- calculateTrend(metricName, timeRange) - Calculate trend for a specific metric
+
+ANALYSIS OBJECTIVES:
+1. Evaluate current battery health and performance
+2. Identify patterns and anomalies in usage
+3. Provide specific, quantifiable recommendations
+4. Calculate accurate runtime estimates
+5. Assess efficiency and degradation
+
+DATA:
+${dataString.substring(0, 2000)}`;
+
   if (customPrompt) {
-    return `You are an expert battery analyst. Analyze the battery data and answer the user's question.
-Given the following battery data, provide detailed insights and specific numeric estimates.
-Include historical averages, current state analysis, and projections where relevant.
-Focus on practical, quantitative answers with specific numbers and time estimates.
+    return `${base}
 
-${base}
+USER QUERY: ${sanitizePrompt(customPrompt)}
 
-USER_QUERY: ${sanitizePrompt(customPrompt)}
-
-REQUIRED RESPONSE FORMAT:
+RESPONSE FORMAT:
 {
-  "answer": "Direct answer to the user's question with specific numbers",
+  "answer": {
+    "text": "Detailed answer with specific numbers and time estimates",
+    "confidence": "high" | "medium" | "low",
+    "dataRequests": [
+      {
+        "type": "historical" | "anomaly" | "baseline" | "trend",
+        "params": { startDate, endDate } | { anomalyIndex } | { metric },
+        "reason": "Explanation of why this data is needed"
+      }
+    ]
+  },
   "currentState": {
     "voltage": number,
     "current": number,
-    "soc": number
-  },
-  "estimates": {
-    "remainingTime": {
-      "atCurrentDraw": string,
-      "atAverageUse": string,
-      "atMaximumUse": string
+    "soc": number,
+    "health": {
+      "status": string,
+      "confidence": "high" | "medium" | "low",
+      "factors": [string]
     }
   },
-  "historicalData": {
-    "averageDischargeRate": number,
-    "maximumDischargeRate": number,
-    "typicalDuration": string
+  "projections": {
+    "runtime": {
+      "atCurrentDraw": string,
+      "atAverageUse": string,
+      "atMaximumUse": string,
+      "confidenceFactors": [string]
+    },
+    "maintenance": {
+      "nextServiceDue": string,
+      "anticipatedIssues": [string]
+    }
   },
-  "recommendations": [string],
-  "confidence": "high" | "medium" | "low"
+  "analysis": {
+    "patterns": {
+      "usage": [string],
+      "anomalies": [
+        {
+          "type": string,
+          "severity": "high" | "medium" | "low",
+          "impact": string,
+          "recommendedAction": string
+        }
+      ]
+    },
+    "metrics": {
+      "efficiency": {
+        "charging": number,
+        "discharging": number,
+        "overall": number
+      },
+      "degradation": {
+        "rate": number,
+        "projectedLifespan": string,
+        "factors": [string]
+      }
+    }
+  },
+  "recommendations": [
+    {
+      "priority": "high" | "medium" | "low",
+      "action": string,
+      "reason": string,
+      "impact": string
+    }
+  ]
 }`;
   }
   
-  return `${base}\nANALYZE_AND_RETURN_JSON: { 
-    healthStatus, 
-    performance: {
-      trend,
-      capacityRetention,
-      degradationRate,
-      currentDraw,
-      estimatedRuntime: {
-        atCurrentDraw: string,
-        atAverageUse: string,
-        atMaximumUse: string
-      }
-    }, 
-    recommendations, 
-    estimatedLifespan,
-    efficiency: {
-      chargeEfficiency,
-      dischargeEfficiency,
-      averageDischargeRate,
-      maximumDischargeRate,
-      cyclesAnalyzed
+  return `${base}
+
+REQUIRED ANALYSIS FORMAT:
+{
+  "systemHealth": {
+    "status": string,
+    "confidence": "high" | "medium" | "low",
+    "factors": [string],
+    "metrics": {
+      "voltage": { "current": number, "trend": string },
+      "current": { "current": number, "trend": string },
+      "temperature": { "current": number, "trend": string },
+      "soc": { "current": number, "trend": string }
     }
-  }`;
+  },
+  "performance": {
+    "overall": {
+      "trend": string,
+      "capacityRetention": number,
+      "degradationRate": number,
+      "efficiency": {
+        "charging": number,
+        "discharging": number,
+        "overall": number
+      }
+    },
+    "usage": {
+      "patterns": [string],
+      "recommendations": [string],
+      "anomalies": [
+        {
+          "type": string,
+          "severity": string,
+          "impact": string,
+          "action": string
+        }
+      ]
+    },
+    "runtime": {
+      "current": string,
+      "average": string,
+      "maximum": string,
+      "factors": [string]
+    }
+  },
+  "maintenance": {
+    "status": string,
+    "nextService": string,
+    "urgentIssues": [string],
+    "recommendations": [
+      {
+        "priority": string,
+        "action": string,
+        "reason": string,
+        "impact": string
+      }
+    ]
+  },
+  "dataRequests": [
+    {
+      "type": string,
+      "params": object,
+      "reason": string
+    }
+  ]
+}`;
 }
 
 function sanitizePrompt(p) { return (p || '').replace(/[{}<>\\[\\]]/g, '').substring(0, 1000); }
 
 function fallbackTextSummary(batteryData) {
   const perf = analyzePerformance(batteryData);
-  let rec = [];
-  if (perf.trend === 'Poor') rec.push('Consider replacement'); else rec.push('Routine monitoring');
-  return `Health status: ${perf.trend}\nPerformance trends: capacityRetention ${perf.capacityRetention}%\nRecommendations: ${rec.join('; ')}\nEstimated lifespan: ${perf.trend === 'Excellent' ? '3-5 years' : perf.trend === 'Good' ? '2-4 years' : 'Unknown'}`;
+  const patterns = analyzeHistoricalPatterns(batteryData.measurements);
+  const metrics = calculateMetricRanges(batteryData.measurements);
+  
+  const insights = {
+    systemHealth: {
+      status: perf.trend,
+      confidence: "high",
+      factors: [],
+      metrics: {
+        voltage: { current: perf.currentVoltage, trend: "stable" },
+        current: { current: perf.currentDraw, trend: "stable" },
+        temperature: { current: metrics?.temperature?.avg || 0, trend: "stable" },
+        soc: { current: perf.currentSoc, trend: "stable" }
+      }
+    },
+    performance: {
+      overall: {
+        trend: perf.trend,
+        capacityRetention: perf.capacityRetention,
+        degradationRate: perf.degradationRate,
+        efficiency: {
+          charging: calculateEfficiency(batteryData).chargeEfficiency,
+          discharging: calculateEfficiency(batteryData).dischargeEfficiency,
+          overall: calculateEfficiency(batteryData).chargeEfficiency * 0.92
+        }
+      },
+      usage: {
+        patterns: [],
+        recommendations: [],
+        anomalies: patterns?.anomalies.map(a => ({
+          type: a.type,
+          severity: "medium",
+          impact: "May indicate measurement error or system instability",
+          action: "Monitor for recurrence"
+        })) || []
+      },
+      runtime: perf.estimatedRuntime ? {
+        current: perf.estimatedRuntime.atCurrentDraw,
+        average: perf.estimatedRuntime.atAverageUse,
+        maximum: perf.estimatedRuntime.atMaximumUse,
+        factors: ["Based on current SOC and usage patterns"]
+      } : null
+    },
+    maintenance: {
+      status: perf.trend === 'Poor' ? 'Service Required' : 'Normal Operation',
+      nextService: perf.trend === 'Poor' ? 'As soon as possible' : 'According to schedule',
+      urgentIssues: [],
+      recommendations: []
+    }
+  };
+
+  // Add health factors based on metrics
+  if (perf.capacityRetention < 80) {
+    insights.systemHealth.factors.push("Significant capacity loss detected");
+    insights.maintenance.urgentIssues.push("Battery capacity below 80% of original");
+  }
+  if (patterns?.anomalies.length > 0) {
+    insights.systemHealth.factors.push(`${patterns.anomalies.length} anomalies detected`);
+  }
+  
+  // Add usage patterns
+  if (patterns) {
+    if (patterns.dischargeCycles.length > 0) {
+      insights.performance.usage.patterns.push(
+        `Average discharge cycle: ${(patterns.dischargeCycles.reduce((acc, c) => acc + c.duration, 0) / patterns.dischargeCycles.length).toFixed(1)} hours`
+      );
+    }
+    if (patterns.chargeCycles.length > 0) {
+      insights.performance.usage.patterns.push(
+        `${patterns.chargeCycles.length} charging cycles recorded`
+      );
+    }
+  }
+  
+  // Add recommendations based on analysis
+  function addRecommendation(priority, action, reason, impact) {
+    insights.maintenance.recommendations.push({ priority, action, reason, impact });
+  }
+  
+  if (perf.trend === 'Poor') {
+    addRecommendation(
+      "high",
+      "Consider battery replacement",
+      "Significant degradation detected",
+      "Continued use may lead to system instability"
+    );
+  } else if (perf.trend === 'Good') {
+    addRecommendation(
+      "medium",
+      "Schedule routine maintenance",
+      "Preventive maintenance due",
+      "Maintain optimal performance"
+    );
+  }
+  
+  if (patterns?.anomalies.length > 2) {
+    addRecommendation(
+      "medium",
+      "Investigate system anomalies",
+      `${patterns.anomalies.length} anomalies detected`,
+      "May indicate developing issues"
+    );
+  }
+  
+  return JSON.stringify(insights, null, 2);
 }
 
 function calculateAverageDischargeRate(batteryData) {
@@ -188,6 +877,9 @@ function parseInsights(raw, batteryData) {
     if (m) {
       const parsed = JSON.parse(m[0]);
       
+      // Get comprehensive battery metrics
+      const batteryMetrics = analyzeBatteryMetrics(batteryData);
+      
       // If it's a response to a specific query
       if (parsed.answer) {
         return {
@@ -195,14 +887,17 @@ function parseInsights(raw, batteryData) {
           performance: {
             ...analyzePerformance(batteryData),
             currentState: parsed.currentState,
-            estimatedRuntime: parsed.estimates?.remainingTime
+            estimatedRuntime: parsed.estimates?.remainingTime,
+            metrics: batteryMetrics
           },
           recommendations: parsed.recommendations || [],
           estimatedLifespan: parsed.estimates?.remainingTime?.atAverageUse || 'Unknown',
           efficiency: {
-            ...calculateEfficiency(batteryData),
+            ...batteryMetrics.efficiency,
             ...parsed.historicalData
           },
+          capacity: batteryMetrics.capacity,
+          degradation: batteryMetrics.degradation,
           queryResponse: {
             answer: parsed.answer,
             confidence: parsed.confidence || 'medium',
@@ -220,37 +915,39 @@ function parseInsights(raw, batteryData) {
         performance: {
           ...performance,
           ...(parsed.performance || {}),
-          estimatedRuntime: parsed.performance?.estimatedRuntime || performance.estimatedRuntime
+          estimatedRuntime: parsed.performance?.estimatedRuntime || performance.estimatedRuntime,
+          metrics: batteryMetrics
         },
         recommendations: parsed.recommendations || extractRecommendations(raw, batteryData),
         estimatedLifespan: parsed.estimatedLifespan || extractLifespan(raw),
         efficiency: {
-          ...calculateEfficiency(batteryData),
+          ...batteryMetrics.efficiency,
           averageDischargeRate: calculateAverageDischargeRate(batteryData),
           maximumDischargeRate: calculateMaximumDischargeRate(batteryData),
           ...(parsed.efficiency || {})
         },
+        capacity: batteryMetrics.capacity,
+        degradation: batteryMetrics.degradation,
         rawText: raw
       };
     }
   } catch (e) {}
   
   // Fallback to basic analysis
+  const batteryMetrics = analyzeBatteryMetrics(batteryData);
   const performance = analyzePerformance(batteryData);
-  const efficiency = calculateEfficiency(batteryData);
   
   return {
     healthStatus: extractHealthStatus(raw),
     performance: {
-      ...performance
+      ...performance,
+      metrics: batteryMetrics
     },
     recommendations: extractRecommendations(raw, batteryData),
     estimatedLifespan: extractLifespan(raw),
-    efficiency: {
-      ...efficiency,
-      averageDischargeRate: calculateAverageDischargeRate(batteryData),
-      maximumDischargeRate: calculateMaximumDischargeRate(batteryData)
-    },
+    efficiency: batteryMetrics.efficiency,
+    capacity: batteryMetrics.capacity,
+    degradation: batteryMetrics.degradation,
     rawText: raw
   };
 }
@@ -320,17 +1017,97 @@ function analyzePerformance(batteryData) {
 
 function calculateEfficiency(batteryData) {
   const m = batteryData?.measurements || [];
-  let totalRatio = 0; let count = 0;
-  for (let i = 1; i < m.length; i++) {
-    const prev = m[i-1]; const curr = m[i];
-    if (!prev || !curr) continue;
-    if (typeof prev.energyIn === 'number' && typeof curr.energyOut === 'number' && prev.energyIn > 0) {
-      const ratio = (curr.energyOut || 0) / (prev.energyIn || 1);
-      totalRatio += ratio; count++;
-    }
+  if (!Array.isArray(m) || m.length < 2) {
+    return { chargeEfficiency: 0, dischargeEfficiency: 0, cyclesAnalyzed: 0 };
   }
-  const avg = count ? parseFloat((totalRatio / count).toFixed(4)) : 0;
-  return { chargeEfficiency: avg, dischargeEfficiency: parseFloat((avg * 0.92).toFixed(4)), cyclesAnalyzed: count };
+  
+  // Track both energy and power efficiency
+  const stats = {
+    charging: { energyIn: 0, energyOut: 0, powerIn: 0, powerOut: 0, count: 0 },
+    discharging: { energyIn: 0, energyOut: 0, powerIn: 0, powerOut: 0, count: 0 }
+  };
+  
+  // Calculate instantaneous power and accumulated energy
+  let lastTimestamp = null;
+  for (let i = 0; i < m.length; i++) {
+    const curr = m[i];
+    if (!curr.timestamp) continue;
+    
+    const timestamp = new Date(curr.timestamp);
+    if (lastTimestamp) {
+      const hoursDiff = (timestamp - lastTimestamp) / (1000 * 60 * 60);
+      const current = Number(curr.current);
+      const voltage = Number(curr.voltage);
+      
+      if (!isNaN(current) && !isNaN(voltage)) {
+        const power = Math.abs(current * voltage);
+        const energy = power * hoursDiff;
+        
+        if (current > 0) { // Charging
+          stats.charging.powerIn += power;
+          stats.charging.energyIn += energy;
+          stats.charging.count++;
+        } else if (current < 0) { // Discharging
+          stats.discharging.powerOut += power;
+          stats.discharging.energyOut += energy;
+          stats.discharging.count++;
+        }
+      }
+    }
+    lastTimestamp = timestamp;
+  }
+  
+  // Calculate efficiencies
+  const chargeEff = stats.charging.count && stats.discharging.count ? 
+    (stats.discharging.energyOut / stats.charging.energyIn) : 0;
+  
+  const powerEff = stats.charging.count && stats.discharging.count ?
+    ((stats.discharging.powerOut / stats.discharging.count) / 
+     (stats.charging.powerIn / stats.charging.count)) : 0;
+  
+  return {
+    chargeEfficiency: parseFloat(chargeEff.toFixed(4)),
+    dischargeEfficiency: parseFloat((chargeEff * 0.92).toFixed(4)),
+    powerEfficiency: parseFloat(powerEff.toFixed(4)),
+    cyclesAnalyzed: Math.min(stats.charging.count, stats.discharging.count),
+    details: {
+      charging: {
+        totalEnergyIn: stats.charging.energyIn,
+        averagePower: stats.charging.count ? stats.charging.powerIn / stats.charging.count : 0,
+        cycles: stats.charging.count
+      },
+      discharging: {
+        totalEnergyOut: stats.discharging.energyOut,
+        averagePower: stats.discharging.count ? stats.discharging.powerOut / stats.discharging.count : 0,
+        cycles: stats.discharging.count
+      }
+    }
+  };
+}
+
+// Deep merge utility for combining insights
+function deepMerge(target, source) {
+  if (!source) return target;
+  
+  const output = { ...target };
+  
+  Object.keys(source).forEach(key => {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      if (target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])) {
+        output[key] = deepMerge(target[key], source[key]);
+      } else {
+        output[key] = { ...source[key] };
+      }
+    } else if (Array.isArray(source[key])) {
+      // For arrays, prefer source arrays if they exist and have content
+      output[key] = source[key].length > 0 ? [...source[key]] : (target[key] || []);
+    } else if (source[key] !== undefined) {
+      // For primitives, prefer source values unless they're empty strings or 0
+      output[key] = source[key] || target[key];
+    }
+  });
+  
+  return output;
 }
 
 function extractHealthStatus(text) {
