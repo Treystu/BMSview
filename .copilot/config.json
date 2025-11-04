@@ -1,0 +1,106 @@
+{
+    "general": {
+        "projectType": "battery-monitoring-system",
+        "framework": "react",
+        "language": "typescript"
+    },
+    "dependencies": {
+        "major": {
+            "react": "frontend-framework",
+            "typescript": "language",
+            "@google/generative-ai": "ai-integration",
+            "netlify-cli": "deployment"
+        },
+        "tooling": {
+            "vite": "bundler",
+            "eslint": "linting",
+            "jest": "testing"
+        }
+    },
+    "fileStructure": {
+        "components": "React components directory",
+        "services": "API and data services",
+        "hooks": "React custom hooks",
+        "utils": "Utility functions",
+        "types": "TypeScript type definitions",
+        "netlify/functions": "Serverless functions"
+    },
+    "conventions": {
+        "naming": {
+            "components": "PascalCase",
+            "hooks": "camelCase with 'use' prefix",
+            "services": "camelCase",
+            "types": "PascalCase",
+            "functions": "camelCase"
+        },
+        "files": {
+            "components": ".tsx",
+            "services": ".ts",
+            "types": ".ts",
+            "hooks": ".ts",
+            "tests": ".test.ts"
+        }
+    },
+    "features": {
+        "batteryMonitoring": {
+            "measurements": [
+                "voltage",
+                "current",
+                "temperature",
+                "stateOfCharge"
+            ],
+            "analysis": [
+                "health",
+                "performance",
+                "efficiency",
+                "recommendations"
+            ],
+            "alerts": [
+                "temperature",
+                "voltage",
+                "degradation"
+            ]
+        },
+        "dataVisualization": {
+            "charts": [
+                "historical",
+                "real-time",
+                "comparison"
+            ],
+            "metrics": [
+                "daily",
+                "weekly",
+                "monthly"
+            ]
+        },
+        "administration": {
+            "systemManagement": true,
+            "userManagement": true,
+            "analytics": true
+        }
+    },
+    "copilot": {
+        "contextAwareness": {
+            "fileTypes": {
+                ".tsx": "React component with TypeScript",
+                ".ts": "TypeScript module",
+                ".cjs": "CommonJS module",
+                ".test.ts": "Jest test file"
+            },
+            "patterns": {
+                "hooks": "Functions starting with 'use'",
+                "components": "Files in components/ directory",
+                "types": "Type definitions and interfaces",
+                "tests": "Files ending in .test.ts",
+                "services": "API and data manipulation logic"
+            }
+        },
+        "suggestions": {
+            "preferredStyles": {
+                "typescript": "strict",
+                "react": "functional-components",
+                "testing": "jest-with-rtl"
+            }
+        }
+    }
+}
