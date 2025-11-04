@@ -2,7 +2,7 @@
  * Real-world scenario testing for insights generation
  */
 
-const { generateHandler } = require('../netlify/functions/generate-insights');
+const { generateHandler } = require('../netlify/functions/generate-insights.cjs');
 
 // Mock battery data scenarios
 const createBatteryData = (scenario) => {
