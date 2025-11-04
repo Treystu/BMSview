@@ -1,5 +1,5 @@
 const { createLogger, createTimer } = require('../../utils/logger.cjs');
-const { buildPrompt, fallbackTextSummary, parseInsights } = require('../../utils/battery-analysis.cjs');
+const { buildPrompt, fallbackTextSummary, parseInsights, calculateRuntimeEstimate, generateGeneratorRecommendations } = require('../../utils/battery-analysis.new.cjs');
 
 // Simple token estimate (1 token ~= 4 chars)
 const estimateTokens = (str) => Math.ceil(((str || '') + '').length / 4);
@@ -15,16 +15,16 @@ const BASE_PROMPT_TOKENS = 1200;
  */
 async function generateHandler(event = {}, context = {}, genAIOverride) {
   let log = console;
-  let timer = { end: () => {} };
-  let response = { 
-    statusCode: 500, 
-    body: JSON.stringify({ error: 'Internal server error' }) 
+  let timer = { end: () => { } };
+  let response = {
+    statusCode: 500,
+    body: JSON.stringify({ error: 'Internal server error' })
   };
 
   try {
     // Initialize logging and timing
     log = createLogger ? createLogger('generate-insights', context) : console;
-    timer = createTimer ? createTimer(log, 'generate-insights') : { end: () => {} };
+    timer = createTimer ? createTimer(log, 'generate-insights') : { end: () => { } };
 
     // Parse and validate input
     let body = {};
@@ -37,16 +37,16 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
 
     // Normalize and validate battery data
     let batteryData = normalizeBatteryData(body);
-    
+
     // Process battery data
     const result = await processBatteryData(batteryData, body, genAIOverride, log);
-    
+
     response = result;
 
   } catch (error) {
     log.error('Failed to generate insights', { error: error.message, stack: error.stack });
-    response = { 
-      statusCode: 500, 
+    response = {
+      statusCode: 500,
       body: JSON.stringify({
         error: 'Failed to generate insights',
         message: error.message,
@@ -117,14 +117,57 @@ async function processBatteryData(batteryData, body, genAIOverride, log) {
     insightsText = fallbackTextSummary(batteryData);
   }
 
-  // Parse and structure insights
-  const structured = parseInsights(insightsText, batteryData, log);
+  // Attempt to parse JSON embedded in the LLM response (models often return mixed text)
+  let llmJson = null;
+  try {
+    const first = insightsText.indexOf('{');
+    const last = insightsText.lastIndexOf('}');
+    if (first >= 0 && last > first) {
+      const candidate = insightsText.slice(first, last + 1);
+      llmJson = JSON.parse(candidate);
+    }
+  } catch (e) {
+    log.warn('Could not parse JSON from LLM response, continuing with text parse', { error: e.message });
+    llmJson = null;
+  }
+
+  // Parse free-text insights into structured object (will include defaults)
+  const structured = parseInsights(insightsText, batteryData, log) || {};
+
+  // Deterministic runtime estimate (always compute to ensure availability)
+  const runtimeDet = calculateRuntimeEstimate(batteryData.measurements || [], {
+    capacityAh: batteryData.capacity || batteryData.capacityAh || null,
+    stateOfCharge: batteryData.stateOfCharge || batteryData.soc || null,
+    voltage: batteryData.voltage || null
+  });
+
+  // Average discharge power (W) for generator sizing
+  const discharge = (batteryData.measurements || []).filter(m => typeof m.current === 'number' && m.current < 0 && typeof m.voltage === 'number');
+  let avgPowerW = null;
+  if (discharge.length) {
+    const powers = discharge.map(m => Math.abs(m.current * m.voltage));
+    avgPowerW = powers.reduce((s, v) => s + v, 0) / powers.length;
+  }
+
+  // Choose fields: prefer LLM JSON values (if valid), otherwise fall back to deterministic values
+  const runtimeHours = llmJson && typeof llmJson.runtimeEstimateHours === 'number' ? llmJson.runtimeEstimateHours : runtimeDet.runtimeHours;
+  const runtimeExplanation = llmJson && llmJson.runtimeEstimateExplanation ? llmJson.runtimeEstimateExplanation : runtimeDet.explanation;
+
+  const generatorRecommendations = llmJson && Array.isArray(llmJson.generatorRecommendations) && llmJson.generatorRecommendations.length ? llmJson.generatorRecommendations : generateGeneratorRecommendations(runtimeHours, avgPowerW);
+
+  // Merge results
+  const finalInsights = Object.assign({}, structured, llmJson || {});
+  finalInsights.runtimeEstimateHours = runtimeHours;
+  finalInsights.runtimeEstimateExplanation = runtimeExplanation;
+  finalInsights.generatorRecommendations = generatorRecommendations;
+  finalInsights._debug = { llmReturnedJson: !!llmJson, avgPowerW };
 
   return {
     statusCode: 200,
+    headers: { 'x-insights-mode': model ? 'llm' : 'fallback' },
     body: JSON.stringify({
       success: true,
-      insights: structured,
+      insights: finalInsights,
       tokenUsage: {
         prompt: promptTokens,
         generated: estimateTokens(insightsText),
