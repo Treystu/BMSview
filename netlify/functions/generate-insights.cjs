@@ -354,21 +354,116 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
     try { body = event && event.body ? JSON.parse(event.body) : {}; } catch (e) { body = {}; }
 
     let batteryData = null;
-    if (Array.isArray(body)) batteryData = { measurements: body };
-    else if (Array.isArray(body.measurements)) batteryData = { ...body, measurements: body.measurements };
-    else if (Array.isArray(body.analysisData)) batteryData = { measurements: body.analysisData };
-    else if (Array.isArray(body.analysisData?.measurements)) batteryData = { ...body.analysisData, measurements: body.analysisData.measurements };
-    else if (Array.isArray(body.batteryData?.measurements)) batteryData = { ...body.batteryData, measurements: body.batteryData.measurements };
-    else if (Array.isArray(body.data)) batteryData = { measurements: body.data };
-    else if (body && body.measurements && Array.isArray(body.measurements.items)) batteryData = { measurements: body.measurements.items };
+    
+    // Handle screenshot or image-based data
+    if (body.screenshot || body.imageData || body.dlNumber) {
+      const screenshotData = {
+        timestamp: new Date().toISOString(),
+        dlNumber: body.dlNumber || 'unknown',
+        associatedWith: body.associatedWith || null,
+        measurements: [{
+          timestamp: new Date().toISOString(),
+          voltage: body.voltage || body.batteryVoltage || 0,
+          current: body.current || body.batteryCurrent || 0,
+          temperature: body.temperature || body.batteryTemp || 0,
+          stateOfCharge: body.stateOfCharge || body.soc || 0,
+          capacity: body.capacity || body.batteryCapacity || 0,
+          status: body.status || body.batteryStatus || 'unknown',
+          completed: body.completed || false
+        }]
+      };
 
-    if (body && (body.batteryData === null || body.analysisData === null)) throw new Error('Failed to generate insights');
-    if (!batteryData && body && (body.batteryData || body.analysisData || body.measurements || body.data)) batteryData = { measurements: [] };
-    if (!batteryData) throw new Error('Failed to generate insights');
-    if (!Array.isArray(batteryData.measurements)) batteryData.measurements = [];
+      // Add historical context if available
+      if (body.historicalData || body.previousReadings) {
+        const historical = body.historicalData || body.previousReadings || [];
+        screenshotData.measurements = screenshotData.measurements.concat(
+          historical.map(h => ({
+            timestamp: h.timestamp || new Date(h.date || Date.now()).toISOString(),
+            voltage: h.voltage || 0,
+            current: h.current || 0,
+            temperature: h.temperature || 0,
+            stateOfCharge: h.soc || h.stateOfCharge || 0
+          }))
+        );
+      }
+
+      batteryData = screenshotData;
+    } else {
+      // Handle regular BMS data
+      if (Array.isArray(body)) batteryData = { measurements: body };
+      else if (Array.isArray(body.measurements)) batteryData = { ...body, measurements: body.measurements };
+      else if (Array.isArray(body.analysisData)) batteryData = { measurements: body.analysisData };
+      else if (Array.isArray(body.analysisData?.measurements)) batteryData = { ...body.analysisData, measurements: body.analysisData.measurements };
+      else if (Array.isArray(body.batteryData?.measurements)) batteryData = { ...body.batteryData, measurements: body.batteryData.measurements };
+      else if (Array.isArray(body.data)) batteryData = { measurements: body.data };
+      else if (body && body.measurements && Array.isArray(body.measurements.items)) batteryData = { measurements: body.measurements.items };
+    }
+
+    // Validate and process the data
+    if (!batteryData || !Array.isArray(batteryData.measurements)) {
+      batteryData = {
+        dlNumber: body.dlNumber || 'unknown',
+        measurements: [{
+          timestamp: new Date().toISOString(),
+          voltage: 0,
+          current: 0,
+          temperature: 0,
+          stateOfCharge: 0
+        }]
+      };
+    }
+
+    // Ensure we have valid measurements
+    batteryData.measurements = batteryData.measurements.filter(m => (
+      m && typeof m === 'object' && 
+      (typeof m.voltage === 'number' || 
+       typeof m.current === 'number' || 
+       typeof m.temperature === 'number' || 
+       typeof m.stateOfCharge === 'number')
+    ));
 
     if (batteryData.measurements.length === 0) {
-      return { statusCode: 200, body: JSON.stringify({ success: true, insights: { healthStatus: 'Unknown', performance: { trend: 'Unknown', capacityRetention: 0, degradationRate: 0 }, recommendations: [], estimatedLifespan: 'Unknown', efficiency: { chargeEfficiency: 0, dischargeEfficiency: 0, cyclesAnalyzed: 0 }, rawText: '' }, tokenUsage: { prompt: 0, generated: 0, total: 0 }, timestamp: new Date().toISOString() }) };
+      // Provide minimal insights based on DL number and context
+      const contextualInsights = {
+        success: true,
+        insights: {
+          healthStatus: 'Pending',
+          systemId: batteryData.dlNumber || 'unknown',
+          lastUpdated: new Date().toISOString(),
+          performance: {
+            trend: 'Initializing',
+            message: 'Awaiting first measurement',
+            nextSteps: [
+              'Ensure proper connection to battery',
+              'Verify monitoring equipment is operational',
+              'Check data collection settings'
+            ]
+          },
+          recommendations: [
+            'Configure monitoring schedule',
+            'Verify sensor connections',
+            'Ensure proper data logging setup'
+          ],
+          estimatedLifespan: 'Pending initial data',
+          efficiency: {
+            status: 'Pending',
+            message: 'Collecting initial measurements',
+            setupComplete: false
+          }
+        },
+        diagnostics: {
+          dataReceived: !!body,
+          configurationStatus: 'Pending',
+          connectionStatus: 'Unknown',
+          lastAttempt: new Date().toISOString()
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+      return { 
+        statusCode: 200, 
+        body: JSON.stringify(contextualInsights)
+      };
     }
 
     const dataString = JSON.stringify(batteryData);
@@ -738,17 +833,58 @@ function fallbackTextSummary(batteryData) {
   const perf = analyzePerformance(batteryData);
   const patterns = analyzeHistoricalPatterns(batteryData.measurements);
   const metrics = calculateMetricRanges(batteryData.measurements);
+  const batteryMetrics = analyzeBatteryMetrics(batteryData);
+  
+  // Extract the latest measurement for current status
+  const latest = batteryData.measurements[batteryData.measurements.length - 1] || {};
+  
+  // Determine health status based on available metrics
+  let healthStatus = "Good";
+  const healthFactors = [];
+  
+  if (latest.voltage) {
+    if (latest.voltage < 10) healthStatus = "Critical";
+    else if (latest.voltage < 11) healthStatus = "Poor";
+    healthFactors.push(`Voltage level: ${latest.voltage}V`);
+  }
+  
+  if (latest.stateOfCharge !== undefined) {
+    if (latest.stateOfCharge < 20) healthStatus = "Critical";
+    else if (latest.stateOfCharge < 30) healthStatus = "Poor";
+    healthFactors.push(`State of Charge: ${latest.stateOfCharge}%`);
+  }
+  
+  if (batteryMetrics.capacity && batteryMetrics.capacity.health < 70) {
+    healthStatus = "Poor";
+    healthFactors.push(`Battery health at ${batteryMetrics.capacity.health}%`);
+  }
   
   const insights = {
     systemHealth: {
-      status: perf.trend,
-      confidence: "high",
-      factors: [],
+      status: healthStatus,
+      confidence: "medium",
+      factors: healthFactors,
       metrics: {
-        voltage: { current: perf.currentVoltage, trend: "stable" },
-        current: { current: perf.currentDraw, trend: "stable" },
-        temperature: { current: metrics?.temperature?.avg || 0, trend: "stable" },
-        soc: { current: perf.currentSoc, trend: "stable" }
+        voltage: { 
+          current: latest.voltage || 0, 
+          trend: batteryMetrics.degradation?.pattern || "stable",
+          range: metrics?.voltage || null
+        },
+        current: { 
+          current: latest.current || 0,
+          trend: Math.abs(latest.current || 0) > 10 ? "high_load" : "normal",
+          range: metrics?.current || null
+        },
+        temperature: { 
+          current: latest.temperature || 0,
+          trend: latest.temperature > 40 ? "elevated" : "normal",
+          range: metrics?.temperature || null
+        },
+        soc: { 
+          current: latest.stateOfCharge || 0,
+          trend: latest.stateOfCharge < 30 ? "low" : "normal",
+          range: metrics?.stateOfCharge || null
+        }
       }
     },
     performance: {
