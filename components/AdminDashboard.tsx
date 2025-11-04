@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     autoAssociateRecords,
@@ -625,6 +626,51 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 results={state.diagnosticResults}
                 isLoading={state.actionStatus.isRunningDiagnostics}
             />
+        </div>
+    );
+};
+
+export default AdminDashboard;
+
+const DiagnosticsSection: React.FC = () => {
+    const [diagnosticResults, setDiagnosticResults] = useState<any>(null);
+    const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
+
+    const runDiagnostics = async () => {
+        setIsRunningDiagnostics(true);
+        try {
+            const results = await runDiagnostics();
+            setDiagnosticResults(results);
+        } catch (error) {
+            setDiagnosticResults({ error: 'Failed to run diagnostics' });
+        } finally {
+            setIsRunningDiagnostics(false);
+        }
+    };
+
+    return (
+        <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
+            <p className="mb-4">Run a series of tests to check the health of the system, including database connectivity, API functions, and AI model responses.</p>
+            <button
+                onClick={runDiagnostics}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-50"
+                disabled={isRunningDiagnostics}
+            >
+                {isRunningDiagnostics ? (
+                    <div className="flex items-center">
+                        <SpinnerIcon className="w-5 h-5 mr-2" />
+                        <span>Running...</span>
+                    </div>
+                ) : (
+                    'Run Diagnostics'
+                )}
+            </button>
+            {diagnosticResults && (
+                <div className="mt-4">
+                    <h3 className="text-xl font-semibold mb-2">Diagnostics Results</h3>
+                    <pre className="bg-gray-900 p-4 rounded-lg overflow-auto max-h-64">{JSON.stringify(diagnosticResults, null, 2)}</pre>
+                </div>
+            )}
         </div>
     );
 };

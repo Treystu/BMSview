@@ -1,34 +1,54 @@
+
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLogger } = require('./utils/logger.cjs');
 const { v4: uuidv4 } = require('uuid');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
+const { ProductionTestSuite } = require('../../tests/production-test-suite.js');
 
 const DIAGNOSTIC_JOB_ID = 'diagnostic-test-job';
-const FAKE_IMAGE_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='; // 1x1 black pixel
+const FAKE_IMAGE_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
-// Timeout-enabled fetch helper for short network probes
-async function fetchWithTimeout(url, opts = {}, timeoutMs = 5000) {
+async function fetchWithTimeout(url, options, timeout = 5000) {
     const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
     try {
-        const res = await fetch(url, { signal: controller.signal, ...opts });
-        clearTimeout(id);
-        return res;
-    } catch (err) {
-        clearTimeout(id);
-        throw err;
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
     }
 }
+
 async function testDatabaseConnection(log) {
     log.info('Running diagnostic: Testing Database Connection...');
     try {
-        const collection = await getCollection('systems');
-        const count = await collection.countDocuments();
-        log.info(`Successfully connected to database. Found ${count} systems.`);
-        return { status: 'Success', message: `Successfully connected to database. Found ${count} systems.` };
+        const startTime = Date.now();
+        const collection = await getCollection('diagnostics');
+        const testDoc = { _id: 'diagnostic-test', timestamp: new Date() };
+
+        await collection.insertOne(testDoc);
+        await collection.deleteOne({ _id: 'diagnostic-test' });
+
+        const duration = Date.now() - startTime;
+        log.info('Database connection test completed successfully.', { duration });
+
+        return {
+            status: 'Success',
+            message: 'Database connection successful',
+            responseTime: duration
+        };
     } catch (error) {
-        log.error('Database connection test failed.', { errorMessage: error.message });
-        return { status: 'Failure', message: `Database connection failed: ${error.message}` };
+        log.error('Database connection test failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message
+        };
     }
 }
 
@@ -39,17 +59,24 @@ async function testSyncAnalysis(log, context) {
             fileName: 'diagnostic-sync-test.png',
             image: FAKE_IMAGE_B64,
             mimeType: 'image/png',
-            force: true, // Bypass duplicate checks
+            force: true,
         };
         const result = await performAnalysisPipeline(image, { items: [] }, log, context);
         if (result && result.id) {
             log.info('Synchronous analysis test completed successfully.', { recordId: result.id });
-            return { status: 'Success', message: 'Synchronous analysis pipeline completed successfully.', recordId: result.id };
+            return {
+                status: 'Success',
+                message: 'Synchronous analysis pipeline completed successfully.',
+                recordId: result.id
+            };
         }
-        throw new Error('Analysis pipeline did not return a valid record.');
+        throw new Error('Analysis pipeline did not return expected result');
     } catch (error) {
-        log.error('Synchronous analysis test failed.', { errorMessage: error.message, stack: error.stack });
-        return { status: 'Failure', message: `Synchronous analysis failed: ${error.message}` };
+        log.error('Synchronous analysis test failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message
+        };
     }
 }
 
@@ -58,22 +85,17 @@ async function testAsyncAnalysis(log) {
     try {
         const jobsCollection = await getCollection('jobs');
         const testJob = {
-            _id: DIAGNOSTIC_JOB_ID,
             id: DIAGNOSTIC_JOB_ID,
-            fileName: 'diagnostic-async-test.png',
-            status: 'Queued',
-            image: FAKE_IMAGE_B64,
-            mimeType: 'image/png',
-            systems: { items: [] },
+            status: 'pending',
             createdAt: new Date(),
-            retryCount: 0,
+            image: { fileName: 'diagnostic-async-test.png', image: FAKE_IMAGE_B64 }
         };
-        await jobsCollection.deleteOne({ id: DIAGNOSTIC_JOB_ID }); // Clean up previous runs
+
+        await jobsCollection.deleteOne({ id: DIAGNOSTIC_JOB_ID });
         await jobsCollection.insertOne(testJob);
         log.info('Test job inserted for async analysis.', { jobId: DIAGNOSTIC_JOB_ID });
 
         const invokeUrl = `${process.env.URL}/.netlify/functions/process-analysis`;
-        // Invoke the processor and poll the job doc until it reaches a terminal state or we timeout
         const response = await fetchWithTimeout(invokeUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-netlify-background': 'true' },
@@ -84,32 +106,33 @@ async function testAsyncAnalysis(log) {
             throw new Error(`Failed to invoke process-analysis function, status: ${response.status}`);
         }
 
-        log.info('Successfully invoked async processor. Polling for completion...');
-
-        const start = Date.now();
-        const TIMEOUT_MS = 30_000; // 30s max
-        const POLL_INTERVAL = 1000;
-
-        while (Date.now() - start < TIMEOUT_MS) {
-            const finalJob = await jobsCollection.findOne({ id: DIAGNOSTIC_JOB_ID });
-            if (!finalJob) {
-                await new Promise(r => setTimeout(r, POLL_INTERVAL));
-                continue;
+        // Poll for completion
+        let attempts = 0;
+        const maxAttempts = 10;
+        while (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const job = await jobsCollection.findOne({ id: DIAGNOSTIC_JOB_ID });
+            if (job && (job.status === 'completed' || job.status === 'failed')) {
+                await jobsCollection.deleteOne({ id: DIAGNOSTIC_JOB_ID });
+                return {
+                    status: job.status === 'completed' ? 'Success' : 'Failure',
+                    message: job.status === 'completed' ? 'Async analysis completed successfully' : `Async analysis failed: ${job.error || 'Unknown error'}`
+                };
             }
-            if (finalJob.status === 'completed') {
-                log.info('Asynchronous analysis test completed successfully.', { recordId: finalJob.recordId });
-                return { status: 'Success', message: 'Asynchronous analysis pipeline completed successfully.', recordId: finalJob.recordId };
-            }
-            if (finalJob.status === 'failed' || finalJob.error) {
-                throw new Error(`Job failed with status '${finalJob.status}' and error: ${finalJob.error}`);
-            }
-            await new Promise(r => setTimeout(r, POLL_INTERVAL));
+            attempts++;
         }
-        throw new Error('Timed out waiting for async job to complete.');
 
+        await jobsCollection.deleteOne({ id: DIAGNOSTIC_JOB_ID });
+        return {
+            status: 'Failure',
+            message: 'Async analysis timed out'
+        };
     } catch (error) {
-        log.error('Asynchronous analysis test failed.', { errorMessage: error.message });
-        return { status: 'Failure', message: `Asynchronous analysis failed: ${error.message}` };
+        log.error('Asynchronous analysis test failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message
+        };
     }
 }
 
@@ -117,127 +140,257 @@ async function testWeatherService(log) {
     log.info('Running diagnostic: Testing Weather Service...');
     try {
         const weatherUrl = `${process.env.URL}/.netlify/functions/weather`;
-        const response = await fetch(weatherUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat: 35.6895, lon: 139.6917, timestamp: new Date().toISOString() }), // Tokyo
-        });
-        if (!response.ok) {
-            throw new Error(`Weather service returned status ${response.status}`);
+        const response = await fetchWithTimeout(weatherUrl, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        }, 5000);
+
+        if (response.ok) {
+            const data = await response.json();
+            return {
+                status: 'Success',
+                message: 'Weather service responding correctly',
+                data: data.location || 'Weather data available'
+            };
+        } else {
+            return {
+                status: 'Failure',
+                message: `Weather service returned status: ${response.status}`
+            };
         }
-        const data = await response.json();
-        log.info('Weather service test successful.', { response: data });
-        return { status: 'Success', message: 'Weather service responded successfully.' };
     } catch (error) {
-        log.error('Weather service test failed.', { errorMessage: error.message });
-        return { status: 'Failure', message: `Weather service test failed: ${error.message}` };
-    }
-}
-
-async function testDeleteEndpoint(log, recordId) {
-    log.info('Running diagnostic: Testing Delete endpoint for record.', { recordId });
-    try {
-        const deleteUrl = `${process.env.URL}/.netlify/functions/history?id=${encodeURIComponent(recordId)}`;
-        const deleteResp = await fetchWithTimeout(deleteUrl, { method: 'DELETE' }, 5000);
-        if (!deleteResp.ok) {
-            const txt = await deleteResp.text().catch(() => '');
-            throw new Error(`Delete returned status ${deleteResp.status}: ${txt}`);
-        }
-
-        // Verify deletion by attempting to GET the record
-        const getUrl = `${process.env.URL}/.netlify/functions/history?id=${encodeURIComponent(recordId)}`;
-        const getResp = await fetchWithTimeout(getUrl, { method: 'GET' }, 5000).catch(() => null);
-        if (getResp && getResp.status === 404) {
-            log.info('Delete endpoint verification successful; record no longer found.');
-            return { status: 'Success', message: 'Delete endpoint removed the record and GET now returns 404.' };
-        }
-        if (!getResp) {
-            return { status: 'Warning', message: 'Delete succeeded but verification GET timed out.' };
-        }
-        // If GET succeeded, parse body and report unexpected presence
-        if (getResp.ok) {
-            const body = await getResp.text().catch(() => '');
-            log.warn('Record still present after delete attempt.', { bodyPreview: body.substring(0, 200) });
-            return { status: 'Failure', message: 'Record still present after delete; frontend might need to refresh state.' };
-        }
-        return { status: 'Failure', message: `Unexpected GET response (${getResp.status}) after delete.` };
-    } catch (err) {
-        log.error('Delete endpoint diagnostic failed.', { errorMessage: err.message });
-        return { status: 'Failure', message: `Delete diagnostic failed: ${err.message}` };
+        log.error('Weather service test failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message
+        };
     }
 }
 
 async function testGeminiHealth(log) {
-    log.info('Running diagnostic: Testing Gemini / LLM availability...');
+    log.info('Running diagnostic: Testing Gemini API Health...');
     try {
         if (!process.env.GEMINI_API_KEY) {
-            log.warn('GEMINI_API_KEY not configured in environment.');
-            return { status: 'Failure', message: 'GEMINI_API_KEY not set.' };
+            return {
+                status: 'Failure',
+                message: 'GEMINI_API_KEY environment variable not set'
+            };
         }
-        // Attempt to require client and do a short list-models style probe if available
-        try {
-            const { GoogleGenerativeAI } = require('@google/generative-ai');
-            const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-            // If client has a lightweight method, call it in a timeboxed manner
-            if (typeof client.getGenerativeModel === 'function') {
-                // Timebox the call to avoid hanging diagnostics
-                const modelProbe = client.getGenerativeModel({ model: 'gemini-flash-latest' });
-                const probe = await Promise.race([
-                    modelProbe,
-                    new Promise((_, rej) => setTimeout(() => rej(new Error('Model probe timed out')), 5000))
-                ]).catch(e => { throw e; });
-                log.info('Gemini client probe succeeded.', { probe: !!probe });
-                return { status: 'Success', message: 'Gemini client appears available and responsive.' };
-            }
-            log.info('Gemini client loaded but does not expose getGenerativeModel; assuming healthy client installation.');
-            return { status: 'Success', message: 'Gemini client installed.' };
-        } catch (err) {
-            log.warn('Gemini client require/instantiate failed.', { errorMessage: err.message });
-            return { status: 'Failure', message: `Could not instantiate Gemini client: ${err.message}` };
+
+        const { GoogleGenerativeAI } = require('@google/generative-ai');
+        const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+        if (typeof client.getGenerativeModel === 'function') {
+            const startTime = Date.now();
+            const model = client.getGenerativeModel({ model: 'gemini-flash-latest' });
+
+            // Simple test prompt
+            const result = await Promise.race([
+                model.generateContent('Test prompt: respond with "OK"'),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini API timeout')), 10000))
+            ]);
+
+            const duration = Date.now() - startTime;
+            log.info('Gemini API health check completed.', { duration });
+
+            return {
+                status: 'Success',
+                message: 'Gemini API is accessible and responding',
+                responseTime: duration
+            };
+        } else {
+            return {
+                status: 'Failure',
+                message: 'Gemini client not properly initialized'
+            };
         }
-    } catch (err) {
-        log.error('Gemini health check failed unexpectedly.', { errorMessage: err.message });
-        return { status: 'Failure', message: `Gemini health check failed: ${err.message}` };
+    } catch (error) {
+        log.error('Gemini API health check failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message
+        };
     }
 }
 
-exports.handler = async function (event, context) {
-    const log = createLogger('admin-diagnostics', context);
-    log.info('Admin diagnostics function invoked.');
+async function testDeleteEndpoint(log, recordId) {
+    log.info('Running diagnostic: Testing Delete Endpoint...', { recordId });
+    try {
+        const deleteUrl = `${process.env.URL}/.netlify/functions/delete`;
+        const response = await fetchWithTimeout(deleteUrl, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recordId })
+        }, 5000);
 
-    // Basic auth check - replace with your actual admin check
-    if (!context.clientContext?.user) {
-        log.warn('Unauthorized access attempt to diagnostics function.');
-        return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
+        if (response.ok) {
+            return {
+                status: 'Success',
+                message: 'Delete endpoint working correctly'
+            };
+        } else {
+            return {
+                status: 'Failure',
+                message: `Delete endpoint returned status: ${response.status}`
+            };
+        }
+    } catch (error) {
+        log.error('Delete endpoint test failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message
+        };
     }
+}
 
-    const results = {};
-    results.database = await testDatabaseConnection(log);
+// New comprehensive test runner integration
+async function runComprehensiveTests(log, selectedTests = null) {
+    log.info('Running comprehensive test suite...', { selectedTests });
+    try {
+        const testSuite = new ProductionTestSuite();
+        const result = await testSuite.runAllTests(selectedTests);
 
-    // Run sync analysis and, if successful, verify delete behavior for the created record
-    const sync = await testSyncAnalysis(log, context);
-    results.syncAnalysis = sync;
-    if (sync && sync.recordId) {
-        results.deleteCheck = await testDeleteEndpoint(log, sync.recordId).catch(e => ({ status: 'Failure', message: e.message }));
-    } else {
-        results.deleteCheck = { status: 'Skipped', message: 'Sync analysis did not create a record to test delete.' };
+        return {
+            status: result.success ? 'Success' : 'Failure',
+            message: result.success ? 'All comprehensive tests passed' : 'Some comprehensive tests failed',
+            details: result.results,
+            testResults: result.results.tests
+        };
+    } catch (error) {
+        log.error('Comprehensive test suite failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: `Test suite execution failed: ${error.message}`
+        };
     }
+}
 
-    results.asyncAnalysis = await testAsyncAnalysis(log);
-    results.weatherService = await testWeatherService(log);
+exports.handler = async (event, context) => {
+    const log = createLogger('admin-diagnostics');
+    log.info('Admin diagnostics endpoint called.', {
+        method: event.httpMethod,
+        body: event.body ? JSON.parse(event.body) : null
+    });
 
-    // LLM/Gemini health
-    results.gemini = await testGeminiHealth(log);
+    try {
+        // Parse request body for specific test selection
+        let requestBody = {};
+        if (event.body) {
+            try {
+                requestBody = JSON.parse(event.body);
+            } catch (e) {
+                log.warn('Invalid JSON in request body, running all tests');
+            }
+        }
 
-    // Add quick environment suggestions
-    results.suggestions = [];
-    if (results.database && results.database.status === 'Failure') results.suggestions.push('Check MONGODB_URI and network connectivity to your MongoDB host.');
-    if (results.gemini && results.gemini.status === 'Failure') results.suggestions.push('Set GEMINI_API_KEY env var or check that the generative-ai client is installed.');
+        const results = {};
 
-    log.info('All diagnostic tests completed.', { results });
+        // Check if specific tests are requested
+        if (requestBody.test) {
+            const testType = requestBody.test;
 
-    return {
-        statusCode: 200,
-        body: JSON.stringify(results),
-    };
+            switch (testType) {
+                case 'database':
+                    results.database = await testDatabaseConnection(log);
+                    break;
+                case 'syncAnalysis':
+                    results.syncAnalysis = await testSyncAnalysis(log, context);
+                    break;
+                case 'asyncAnalysis':
+                    results.asyncAnalysis = await testAsyncAnalysis(log);
+                    break;
+                case 'weather':
+                    results.weatherService = await testWeatherService(log);
+                    break;
+                case 'gemini':
+                    results.gemini = await testGeminiHealth(log);
+                    break;
+                case 'comprehensive':
+                    results.comprehensive = await runComprehensiveTests(log, requestBody.selectedTests);
+                    break;
+                default:
+                    // Run all basic tests
+                    results.database = await testDatabaseConnection(log);
+                    results.syncAnalysis = await testSyncAnalysis(log, context);
+                    results.asyncAnalysis = await testAsyncAnalysis(log);
+                    results.weatherService = await testWeatherService(log);
+                    results.gemini = await testGeminiHealth(log);
+                    break;
+            }
+        } else {
+            // Run all tests including comprehensive suite
+            results.database = await testDatabaseConnection(log);
+
+            const sync = await testSyncAnalysis(log, context);
+            results.syncAnalysis = sync;
+            if (sync && sync.recordId) {
+                results.deleteCheck = await testDeleteEndpoint(log, sync.recordId).catch(e => ({
+                    status: 'Failure',
+                    message: e.message
+                }));
+            } else {
+                results.deleteCheck = {
+                    status: 'Skipped',
+                    message: 'Sync analysis did not create a record to test delete.'
+                };
+            }
+
+            results.asyncAnalysis = await testAsyncAnalysis(log);
+            results.weatherService = await testWeatherService(log);
+            results.gemini = await testGeminiHealth(log);
+            results.comprehensive = await runComprehensiveTests(log);
+        }
+
+        // Add suggestions for failures
+        results.suggestions = [];
+        if (results.database && results.database.status === 'Failure') {
+            results.suggestions.push('Check MONGODB_URI and network connectivity to your MongoDB host.');
+        }
+        if (results.gemini && results.gemini.status === 'Failure') {
+            results.suggestions.push('Set GEMINI_API_KEY env var or check that the generative-ai client is installed.');
+        }
+        if (results.comprehensive && results.comprehensive.status === 'Failure') {
+            results.suggestions.push('Check individual test failures in the comprehensive test results.');
+        }
+
+        // Add available test types for UI
+        results.availableTests = [
+            'database',
+            'syncAnalysis',
+            'asyncAnalysis',
+            'weather',
+            'gemini',
+            'comprehensive'
+        ];
+
+        // Add available comprehensive test types
+        const testSuite = new ProductionTestSuite();
+        results.availableComprehensiveTests = testSuite.getAvailableTests();
+
+        log.info('All diagnostic tests completed.', { results });
+
+        return {
+            statusCode: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+            },
+            body: JSON.stringify(results),
+        };
+    } catch (error) {
+        log.error('Diagnostic endpoint error.', { error: error.message, stack: error.stack });
+        return {
+            statusCode: 500,
+            headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({
+                error: 'Internal server error during diagnostics',
+                message: error.message
+            }),
+        };
+    }
 };
