@@ -1,33 +1,44 @@
-import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    getRegisteredSystems, getAnalysisHistory, mergeBmsSystems, deleteAnalysisRecord,
-    updateBmsSystem, linkAnalysisToSystem, registerBmsSystem,
-    getAnalysisRecordById, streamAllHistory, findDuplicateAnalysisSets, deleteAnalysisRecords,
-    deleteUnlinkedAnalysisHistory, clearAllData, clearHistoryStore, backfillWeatherData, countRecordsNeedingWeather,
-    cleanupLinks, autoAssociateRecords, fixPowerSigns, runDiagnostics
+    autoAssociateRecords,
+    backfillWeatherData,
+    cleanupLinks,
+    clearAllData, clearHistoryStore,
+    countRecordsNeedingWeather,
+    deleteAnalysisRecord,
+    deleteAnalysisRecords,
+    deleteUnlinkedAnalysisHistory,
+    findDuplicateAnalysisSets,
+    fixPowerSigns,
+    getAnalysisHistory,
+    getRegisteredSystems,
+    linkAnalysisToSystem,
+    mergeBmsSystems,
+    runDiagnostics,
+    streamAllHistory,
+    updateBmsSystem
 } from '../services/clientService';
 import { analyzeBmsScreenshot } from '../services/geminiService';
-import type { BmsSystem, AnalysisRecord, DisplayableAnalysisResult } from '../types';
-import EditSystemModal from './EditSystemModal';
+import { useAdminState } from '../state/adminState';
+import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
 import BulkUpload from './BulkUpload';
+import DiagnosticsModal from './DiagnosticsModal';
+import EditSystemModal from './EditSystemModal';
 import HistoricalChart from './HistoricalChart';
 import IpManagement from './IpManagement';
-import DiagnosticsModal from './DiagnosticsModal';
-import { useAdminState, HistorySortKey } from '../state/adminState';
-import { getBasename, getIsActualError } from '../utils';
 import SpinnerIcon from './icons/SpinnerIcon';
 
 import AdminHeader from './admin/AdminHeader';
-import SystemsTable from './admin/SystemsTable';
-import HistoryTable from './admin/HistoryTable';
 import DataManagement from './admin/DataManagement';
-import { ALL_HISTORY_COLUMNS, getNestedValue } from './admin/columnDefinitions';
+import HistoryTable from './admin/HistoryTable';
+import SystemsTable from './admin/SystemsTable';
+import { getNestedValue } from './admin/columnDefinitions';
 
 interface NetlifyUser {
-  email: string;
-  user_metadata: {
-    full_name: string;
-  };
+    email: string;
+    user_metadata: {
+        full_name: string;
+    };
 }
 
 interface AdminDashboardProps {
@@ -182,10 +193,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 try {
                     // 1. Mark this specific file as "Processing"
                     dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: 'Processing' } });
-                    
+
                     // 2. Call the *new* synchronous service
                     const analysisData = await analyzeBmsScreenshot(file);
-                    
+
                     // 3. Got data! Update the state for this one file.
                     log('info', 'Processing synchronous analysis result.', { fileName: file.name });
                     // We create a temporary record for display. The backend `analyze` function
@@ -196,8 +207,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         analysis: analysisData,
                         fileName: file.name
                     };
-                    
-                    dispatch({ 
+
+                    dispatch({
                         type: 'UPDATE_BULK_JOB_COMPLETED', // This action name is now a bit of a misnomer, but it works
                         payload: { record: tempRecord, fileName: file.name } // Pass fileName for matching
                     });
@@ -205,11 +216,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     // 4. Handle error for this specific file
                     const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
                     log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
-                    
+
                     if (errorMessage.includes('429')) {
-                         setShowRateLimitWarning(true);
+                        setShowRateLimitWarning(true);
                     }
-                    
+
                     dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: `Failed: ${errorMessage}` } });
                 }
             }
@@ -249,13 +260,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         // For now, I'll assume 'yes'.
         const confirmed = true; // window.confirm(`Are you sure you want to delete history record ${recordId}?`);
         if (!confirmed) return;
-        
+
         log('info', 'Deleting history record.', { recordId });
         dispatch({ type: 'ACTION_START', payload: 'deletingRecordId' });
         try {
             await deleteAnalysisRecord(recordId);
-            log('info', 'History record deleted successfully.', { recordId });
-            await fetchData(historyPage, 'history'); // Refresh current history page
+            // Optimistically remove the record from local state so the UI reflects deletion immediately
+            dispatch({ type: 'REMOVE_HISTORY_RECORD', payload: recordId });
+            log('info', 'History record deleted successfully (optimistic UI update).', { recordId });
+            // Still refresh the page to ensure canonical state is synced
+            await fetchData(historyPage, 'history');
         } catch (err) {
             const error = err instanceof Error ? err.message : "Failed to delete record.";
             log('error', 'Failed to delete history record.', { recordId, error });
@@ -351,10 +365,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             const sets = await findDuplicateAnalysisSets();
             dispatch({ type: 'SCAN_DUPLICATES_SUCCESS', payload: sets });
         } catch (err) {
-             const error = err instanceof Error ? err.message : `Failed to scan for duplicates.`;
-             dispatch({ type: 'SET_ERROR', payload: error });
+            const error = err instanceof Error ? err.message : `Failed to scan for duplicates.`;
+            dispatch({ type: 'SET_ERROR', payload: error });
         } finally {
-             dispatch({ type: 'ACTION_END', payload: 'isScanning' });
+            dispatch({ type: 'ACTION_END', payload: 'isScanning' });
         }
     };
 
@@ -365,9 +379,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             () => deleteAnalysisRecords(idsToDelete),
             'Duplicates deleted.',
             'history',
-             { requiresConfirm: false } // Confirmation is implicit here
+            { requiresConfirm: false } // Confirmation is implicit here
         );
-         dispatch({ type: 'DELETE_DUPLICATES_SUCCESS' }); // Clear sets from state
+        dispatch({ type: 'DELETE_DUPLICATES_SUCCESS' }); // Clear sets from state
     };
 
     const handleDeleteUnlinked = () => handleGenericAction(
@@ -386,7 +400,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         { requiresConfirm: false } // Confirmation handled by input field
     );
 
-     const handleClearHistory = () => handleGenericAction(
+    const handleClearHistory = () => handleGenericAction(
         'isClearingHistory',
         clearHistoryStore,
         'History store cleared.',
@@ -435,7 +449,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         'history'
     );
 
-     const handleFixPowerSigns = () => handleGenericAction(
+    const handleFixPowerSigns = () => handleGenericAction(
         'isFixingPowerSigns',
         fixPowerSigns,
         'Fix power signs process started.',
@@ -499,7 +513,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
 
             <main className="space-y-12">
-                 <section>
+                <section>
                     <BulkUpload
                         onAnalyze={handleBulkAnalyze}
                         results={bulkUploadResults}
@@ -516,18 +530,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     </h2>
                     <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
                         {loading && historyCache.length === 0 ? (
-                             <div className="flex items-center justify-center h-full text-gray-400 min-h-[600px]"><SpinnerIcon className="w-8 h-8 text-secondary"/> <span className="ml-4">Loading Initial Chart Data...</span></div>
+                            <div className="flex items-center justify-center h-full text-gray-400 min-h-[600px]"><SpinnerIcon className="w-8 h-8 text-secondary" /> <span className="ml-4">Loading Initial Chart Data...</span></div>
                         ) : historyCache.length > 0 || !state.isCacheBuilding ? (
-                             <HistoricalChart systems={systems} history={historyCache} />
-                        ): (
-                            <div className="flex items-center justify-center h-full text-gray-400 min-h-[600px]"><SpinnerIcon className="w-8 h-8 text-secondary"/> <span className="ml-4">Loading historical data for chart...</span></div>
+                            <HistoricalChart systems={systems} history={historyCache} />
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-gray-400 min-h-[600px]"><SpinnerIcon className="w-8 h-8 text-secondary" /> <span className="ml-4">Loading historical data for chart...</span></div>
                         )}
                     </div>
                 </section>
 
                 {loading && systems.length === 0 && history.length === 0 ? (
                     <div className="text-center text-lg flex items-center justify-center min-h-[200px]">
-                        <SpinnerIcon className="w-6 h-6 mr-2"/> Loading data...
+                        <SpinnerIcon className="w-6 h-6 mr-2" /> Loading data...
                     </div>
                 ) : (
                     <>
@@ -540,7 +554,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                 itemsPerPage: ITEMS_PER_PAGE,
                             }}
                         />
-                         <HistoryTable
+                        <HistoryTable
                             history={sortedHistoryForTable}
                             systems={systems}
                             state={state}

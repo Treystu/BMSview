@@ -30,7 +30,7 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
           <h2 className="text-xl font-semibold text-secondary">System Diagnostics</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button>
         </div>
-        
+
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <SpinnerIcon className="w-8 h-8 text-secondary" />
@@ -38,17 +38,32 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
           </div>
         ) : (
           <div className="space-y-4">
-            {Object.entries(results).map(([key, result]) => (
-              <div key={key} className="bg-gray-700 p-4 rounded-md">
-                <h3 className="font-semibold text-lg capitalize flex items-center">
-                  <span className={`mr-2 ${getStatusColor(result.status)}`}>
-                    {result.status === 'Success' ? '✔' : '✖'}
-                  </span>
-                  {key.replace(/([A-Z])/g, ' $1')}
-                </h3>
-                <p className="text-gray-300 mt-1 pl-6">{result.message}</p>
-              </div>
-            ))}
+            {Object.entries(results).map(([key, result]) => {
+              // Support suggestions array as a special key
+              if (key === 'suggestions' && Array.isArray(result)) {
+                return (
+                  <div key={key} className="bg-gray-700 p-4 rounded-md">
+                    <h3 className="font-semibold text-lg">Suggestions</h3>
+                    <ul className="list-disc list-inside text-gray-300 mt-2">
+                      {result.map((s, idx) => <li key={idx}>{String(s)}</li>)}
+                    </ul>
+                  </div>
+                );
+              }
+
+              const r = result as any;
+              return (
+                <div key={key} className="bg-gray-700 p-4 rounded-md">
+                  <h3 className="font-semibold text-lg capitalize flex items-center">
+                    <span className={`mr-2 ${getStatusColor(r.status || '')}`}>
+                      {r && r.status === 'Success' ? '✔' : r && r.status === 'Failure' ? '✖' : 'ℹ'}
+                    </span>
+                    {key.replace(/([A-Z])/g, ' $1')}
+                  </h3>
+                  <p className="text-gray-300 mt-1 pl-6">{r && r.message ? String(r.message) : ''}</p>
+                </div>
+              );
+            })}
           </div>
         )}
 

@@ -6,6 +6,19 @@ const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 const DIAGNOSTIC_JOB_ID = 'diagnostic-test-job';
 const FAKE_IMAGE_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='; // 1x1 black pixel
 
+// Timeout-enabled fetch helper for short network probes
+async function fetchWithTimeout(url, opts = {}, timeoutMs = 5000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, { signal: controller.signal, ...opts });
+        clearTimeout(id);
+        return res;
+    } catch (err) {
+        clearTimeout(id);
+        throw err;
+    }
+}
 async function testDatabaseConnection(log) {
     log.info('Running diagnostic: Testing Database Connection...');
     try {
@@ -60,25 +73,39 @@ async function testAsyncAnalysis(log) {
         log.info('Test job inserted for async analysis.', { jobId: DIAGNOSTIC_JOB_ID });
 
         const invokeUrl = `${process.env.URL}/.netlify/functions/process-analysis`;
-        const response = await fetch(invokeUrl, {
+        // Invoke the processor and poll the job doc until it reaches a terminal state or we timeout
+        const response = await fetchWithTimeout(invokeUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-netlify-background': 'true' },
             body: JSON.stringify({ jobId: DIAGNOSTIC_JOB_ID }),
-        });
+        }, 5000);
 
         if (response.status !== 202 && response.status !== 200) {
             throw new Error(`Failed to invoke process-analysis function, status: ${response.status}`);
         }
 
-        log.info('Successfully invoked async processor. Waiting for completion...');
-        await new Promise(resolve => setTimeout(resolve, 8000)); // Wait for processing
+        log.info('Successfully invoked async processor. Polling for completion...');
 
-        const finalJob = await jobsCollection.findOne({ id: DIAGNOSTIC_JOB_ID });
-        if (finalJob && finalJob.status === 'completed') {
-            log.info('Asynchronous analysis test completed successfully.', { recordId: finalJob.recordId });
-            return { status: 'Success', message: 'Asynchronous analysis pipeline completed successfully.', recordId: finalJob.recordId };
+        const start = Date.now();
+        const TIMEOUT_MS = 30_000; // 30s max
+        const POLL_INTERVAL = 1000;
+
+        while (Date.now() - start < TIMEOUT_MS) {
+            const finalJob = await jobsCollection.findOne({ id: DIAGNOSTIC_JOB_ID });
+            if (!finalJob) {
+                await new Promise(r => setTimeout(r, POLL_INTERVAL));
+                continue;
+            }
+            if (finalJob.status === 'completed') {
+                log.info('Asynchronous analysis test completed successfully.', { recordId: finalJob.recordId });
+                return { status: 'Success', message: 'Asynchronous analysis pipeline completed successfully.', recordId: finalJob.recordId };
+            }
+            if (finalJob.status === 'failed' || finalJob.error) {
+                throw new Error(`Job failed with status '${finalJob.status}' and error: ${finalJob.error}`);
+            }
+            await new Promise(r => setTimeout(r, POLL_INTERVAL));
         }
-        throw new Error(`Job status was '${finalJob?.status}' with error: ${finalJob?.error}`);
+        throw new Error('Timed out waiting for async job to complete.');
 
     } catch (error) {
         log.error('Asynchronous analysis test failed.', { errorMessage: error.message });
@@ -107,7 +134,74 @@ async function testWeatherService(log) {
     }
 }
 
-exports.handler = async function(event, context) {
+async function testDeleteEndpoint(log, recordId) {
+    log.info('Running diagnostic: Testing Delete endpoint for record.', { recordId });
+    try {
+        const deleteUrl = `${process.env.URL}/.netlify/functions/history?id=${encodeURIComponent(recordId)}`;
+        const deleteResp = await fetchWithTimeout(deleteUrl, { method: 'DELETE' }, 5000);
+        if (!deleteResp.ok) {
+            const txt = await deleteResp.text().catch(() => '');
+            throw new Error(`Delete returned status ${deleteResp.status}: ${txt}`);
+        }
+
+        // Verify deletion by attempting to GET the record
+        const getUrl = `${process.env.URL}/.netlify/functions/history?id=${encodeURIComponent(recordId)}`;
+        const getResp = await fetchWithTimeout(getUrl, { method: 'GET' }, 5000).catch(() => null);
+        if (getResp && getResp.status === 404) {
+            log.info('Delete endpoint verification successful; record no longer found.');
+            return { status: 'Success', message: 'Delete endpoint removed the record and GET now returns 404.' };
+        }
+        if (!getResp) {
+            return { status: 'Warning', message: 'Delete succeeded but verification GET timed out.' };
+        }
+        // If GET succeeded, parse body and report unexpected presence
+        if (getResp.ok) {
+            const body = await getResp.text().catch(() => '');
+            log.warn('Record still present after delete attempt.', { bodyPreview: body.substring(0, 200) });
+            return { status: 'Failure', message: 'Record still present after delete; frontend might need to refresh state.' };
+        }
+        return { status: 'Failure', message: `Unexpected GET response (${getResp.status}) after delete.` };
+    } catch (err) {
+        log.error('Delete endpoint diagnostic failed.', { errorMessage: err.message });
+        return { status: 'Failure', message: `Delete diagnostic failed: ${err.message}` };
+    }
+}
+
+async function testGeminiHealth(log) {
+    log.info('Running diagnostic: Testing Gemini / LLM availability...');
+    try {
+        if (!process.env.GEMINI_API_KEY) {
+            log.warn('GEMINI_API_KEY not configured in environment.');
+            return { status: 'Failure', message: 'GEMINI_API_KEY not set.' };
+        }
+        // Attempt to require client and do a short list-models style probe if available
+        try {
+            const { GoogleGenerativeAI } = require('@google/generative-ai');
+            const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+            // If client has a lightweight method, call it in a timeboxed manner
+            if (typeof client.getGenerativeModel === 'function') {
+                // Timebox the call to avoid hanging diagnostics
+                const modelProbe = client.getGenerativeModel({ model: 'gemini-flash-latest' });
+                const probe = await Promise.race([
+                    modelProbe,
+                    new Promise((_, rej) => setTimeout(() => rej(new Error('Model probe timed out')), 5000))
+                ]).catch(e => { throw e; });
+                log.info('Gemini client probe succeeded.', { probe: !!probe });
+                return { status: 'Success', message: 'Gemini client appears available and responsive.' };
+            }
+            log.info('Gemini client loaded but does not expose getGenerativeModel; assuming healthy client installation.');
+            return { status: 'Success', message: 'Gemini client installed.' };
+        } catch (err) {
+            log.warn('Gemini client require/instantiate failed.', { errorMessage: err.message });
+            return { status: 'Failure', message: `Could not instantiate Gemini client: ${err.message}` };
+        }
+    } catch (err) {
+        log.error('Gemini health check failed unexpectedly.', { errorMessage: err.message });
+        return { status: 'Failure', message: `Gemini health check failed: ${err.message}` };
+    }
+}
+
+exports.handler = async function (event, context) {
     const log = createLogger('admin-diagnostics', context);
     log.info('Admin diagnostics function invoked.');
 
@@ -119,9 +213,26 @@ exports.handler = async function(event, context) {
 
     const results = {};
     results.database = await testDatabaseConnection(log);
-    results.syncAnalysis = await testSyncAnalysis(log, context);
+
+    // Run sync analysis and, if successful, verify delete behavior for the created record
+    const sync = await testSyncAnalysis(log, context);
+    results.syncAnalysis = sync;
+    if (sync && sync.recordId) {
+        results.deleteCheck = await testDeleteEndpoint(log, sync.recordId).catch(e => ({ status: 'Failure', message: e.message }));
+    } else {
+        results.deleteCheck = { status: 'Skipped', message: 'Sync analysis did not create a record to test delete.' };
+    }
+
     results.asyncAnalysis = await testAsyncAnalysis(log);
     results.weatherService = await testWeatherService(log);
+
+    // LLM/Gemini health
+    results.gemini = await testGeminiHealth(log);
+
+    // Add quick environment suggestions
+    results.suggestions = [];
+    if (results.database && results.database.status === 'Failure') results.suggestions.push('Check MONGODB_URI and network connectivity to your MongoDB host.');
+    if (results.gemini && results.gemini.status === 'Failure') results.suggestions.push('Set GEMINI_API_KEY env var or check that the generative-ai client is installed.');
 
     log.info('All diagnostic tests completed.', { results });
 

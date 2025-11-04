@@ -1,6 +1,6 @@
-import React, { createContext, useReducer, useContext, Dispatch } from 'react';
-import type { BmsSystem, AnalysisRecord, DisplayableAnalysisResult } from '../types';
-import { HistoryColumnKey, DEFAULT_VISIBLE_COLUMNS } from 'components/admin/columnDefinitions';
+import { DEFAULT_VISIBLE_COLUMNS, HistoryColumnKey } from 'components/admin/columnDefinitions';
+import React, { createContext, Dispatch, useContext, useReducer } from 'react';
+import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
 
 export type HistorySortKey = HistoryColumnKey;
 
@@ -11,13 +11,13 @@ export interface AdminState {
   historyCache: AnalysisRecord[]; // Holds ALL history records for the chart, built progressively
   loading: boolean;
   error: string | null;
-  
+
   systemsPage: number;
   historyPage: number;
 
   totalSystems: number;
   totalHistory: number;
-  
+
   isCacheBuilding: boolean;
 
   expandedHistoryId: string | null;
@@ -61,7 +61,7 @@ export const initialState: AdminState = {
   historyCache: [],
   loading: true,
   error: null,
-  
+
   systemsPage: 1,
   historyPage: 1,
   totalSystems: 0,
@@ -127,7 +127,8 @@ export type AdminAction =
   | { type: 'UPDATE_BULK_JOB_SKIPPED'; payload: { fileName: string, reason: string } }
   | { type: 'OPEN_DIAGNOSTICS_MODAL' }
   | { type: 'CLOSE_DIAGNOSTICS_MODAL' }
-  | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: Record<string, { status: string; message: string }> };
+  | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: Record<string, { status: string; message: string }> }
+  | { type: 'REMOVE_HISTORY_RECORD'; payload: string };
 
 // 3. Reducer
 export const adminReducer = (state: AdminState, action: AdminAction): AdminState => {
@@ -135,34 +136,34 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
     case 'FETCH_PAGE_DATA_START':
       return { ...state, loading: true };
     case 'FETCH_PAGE_DATA_SUCCESS':
-      return { 
-        ...state, 
-        loading: false, 
-        systems: action.payload.systems ? action.payload.systems.items : state.systems, 
+      return {
+        ...state,
+        loading: false,
+        systems: action.payload.systems ? action.payload.systems.items : state.systems,
         totalSystems: action.payload.systems ? action.payload.systems.totalItems : state.totalSystems,
         history: action.payload.history ? action.payload.history.items : state.history,
         totalHistory: action.payload.history ? action.payload.history.totalItems : state.totalHistory,
         error: null,
       };
     case 'START_HISTORY_CACHE_BUILD':
-        return { ...state, isCacheBuilding: true, historyCache: [] };
+      return { ...state, isCacheBuilding: true, historyCache: [] };
     case 'APPEND_HISTORY_CACHE':
-        // Append new records, avoiding duplicates by checking IDs
-        const newRecords = action.payload.filter(
-            p => !state.historyCache.some(existing => existing.id === p.id)
-        );
-        return { ...state, historyCache: [...state.historyCache, ...newRecords] };
+      // Append new records, avoiding duplicates by checking IDs
+      const newRecords = action.payload.filter(
+        p => !state.historyCache.some(existing => existing.id === p.id)
+      );
+      return { ...state, historyCache: [...state.historyCache, ...newRecords] };
     case 'FINISH_HISTORY_CACHE_BUILD':
-        return { ...state, isCacheBuilding: false };
+      return { ...state, isCacheBuilding: false };
 
     case 'SET_ERROR':
       return { ...state, loading: false, error: action.payload, actionStatus: initialState.actionStatus };
-    
+
     case 'SET_SYSTEMS_PAGE':
       return { ...state, systemsPage: action.payload };
     case 'SET_HISTORY_PAGE':
       return { ...state, historyPage: action.payload, expandedHistoryId: null };
-      
+
     case 'TOGGLE_HISTORY_DETAIL':
       return { ...state, expandedHistoryId: state.expandedHistoryId === action.payload ? null : action.payload };
     case 'SET_EDITING_SYSTEM':
@@ -180,29 +181,29 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
     case 'DELETE_DUPLICATES_SUCCESS':
       return { ...state, duplicateSets: [], historyPage: 1 };
     case 'CLEAR_DATA_SUCCESS':
-        return { ...initialState, loading: false };
+      return { ...initialState, loading: false };
     case 'SET_BULK_UPLOAD_RESULTS':
-        return { ...state, bulkUploadResults: action.payload };
+      return { ...state, bulkUploadResults: action.payload };
     case 'UPDATE_BULK_UPLOAD_RESULT':
-        return { 
-            ...state, 
-            bulkUploadResults: state.bulkUploadResults.map(r => 
-                r.fileName === action.payload.fileName ? { ...r, ...action.payload } : r
-            ) 
-        };
-    
+      return {
+        ...state,
+        bulkUploadResults: state.bulkUploadResults.map(r =>
+          r.fileName === action.payload.fileName ? { ...r, ...action.payload } : r
+        )
+      };
+
     case 'UPDATE_BULK_JOB_COMPLETED':
-        const { record, fileName } = action.payload;
-        return {
-            ...state,
-            bulkUploadResults: state.bulkUploadResults.map(r =>
-                r.fileName === fileName ? { ...r, data: record.analysis, error: null, recordId: record.id, weather: record.weather } : r
-            ),
-            // Add the new record to the history cache immediately for the chart
-            history: [record, ...state.history],
-            historyCache: [record, ...state.historyCache],
-            totalHistory: state.totalHistory + 1,
-        };
+      const { record, fileName } = action.payload;
+      return {
+        ...state,
+        bulkUploadResults: state.bulkUploadResults.map(r =>
+          r.fileName === fileName ? { ...r, data: record.analysis, error: null, recordId: record.id, weather: record.weather } : r
+        ),
+        // Add the new record to the history cache immediately for the chart
+        history: [record, ...state.history],
+        historyCache: [record, ...state.historyCache],
+        totalHistory: state.totalHistory + 1,
+      };
 
     // ***FIX: Handle the new SKIPPED action***
     case 'UPDATE_BULK_JOB_SKIPPED':
@@ -216,7 +217,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       };
 
     case 'SET_THROTTLE_MESSAGE':
-        return { ...state, throttleMessage: action.payload };
+      return { ...state, throttleMessage: action.payload };
     case 'SET_SELECTED_SYSTEM_IDS':
       return { ...state, selectedSystemIds: action.payload, primarySystemId: action.payload.includes(state.primarySystemId) ? state.primarySystemId : '' };
     case 'SET_PRIMARY_SYSTEM_ID':
@@ -226,7 +227,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
     case 'SET_CLEAR_ALL_CONFIRMATION_TEXT':
       return { ...state, clearAllConfirmationText: action.payload };
     case 'SET_VISIBLE_HISTORY_COLUMNS':
-        return { ...state, visibleHistoryColumns: action.payload };
+      return { ...state, visibleHistoryColumns: action.payload };
     case 'SET_HISTORY_SORT': {
       const { key } = action.payload;
       const direction = (state.historySortKey === key && state.historySortDirection === 'desc') ? 'asc' : 'desc';
@@ -239,6 +240,15 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       return { ...state, isDiagnosticsModalOpen: false, diagnosticResults: {} };
     case 'SET_DIAGNOSTIC_RESULTS':
       return { ...state, diagnosticResults: action.payload };
+    case 'REMOVE_HISTORY_RECORD':
+      // Remove the record from the current page and the cache immediately to allow optimistic UI updates
+      const idToRemove = action.payload;
+      return {
+        ...state,
+        history: state.history.filter(r => r.id !== idToRemove),
+        historyCache: state.historyCache.filter(r => r.id !== idToRemove),
+        totalHistory: Math.max(0, state.totalHistory - (state.history.some(r => r.id === idToRemove) ? 1 : 0)),
+      };
     default:
       return state;
   }
