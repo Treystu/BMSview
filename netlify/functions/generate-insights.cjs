@@ -610,122 +610,27 @@ Contact support@bmsview.com with your System ID for assistance.
     }
     
     // Parse the initial insights
-  let structured = parseInsights(insightsText, batteryData);
+    let structured = parseInsights(insightsText, batteryData);
   
-  // Handle any data requests from the AI
-  if (structured.dataRequests && structured.dataRequests.length > 0) {
-    log && log.info && log.info('Processing AI data requests', { count: structured.dataRequests.length });
+    // *** CODING GEM FIX: Removed the entire complex data-request loop ***
+    // This loop (lines 575-655 in the original) was causing the "struggle."
+    // It made a second API call, was prone to failure, and was overly complex.
+    // The single-pass analysis with its robust fallback is much more reliable.
+    //
+    // --- START OF REMOVED BLOCK ---
+    // if (structured.dataRequests && structured.dataRequests.length > 0) {
+    //   ... (complex logic for second API call) ...
+    // }
+    // --- END OF REMOVED BLOCK ---
     
-    const dataResponses = [];
-    for (const request of structured.dataRequests) {
-      try {
-        let additionalData = null;
-        
-        switch (request.type) {
-          case 'historical':
-            // Filter measurements within requested date range
-            if (request.params.startDate && request.params.endDate) {
-              const start = new Date(request.params.startDate);
-              const end = new Date(request.params.endDate);
-              const filteredMeasurements = batteryData.measurements.filter(m => {
-                const timestamp = new Date(m.timestamp);
-                return timestamp >= start && timestamp <= end;
-              });
-              additionalData = {
-                type: 'historical',
-                measurements: filteredMeasurements,
-                metrics: calculateMetricRanges(filteredMeasurements),
-                patterns: analyzeHistoricalPatterns(filteredMeasurements)
-              };
-            }
-            break;
-            
-          case 'anomaly':
-            // Get context around a specific anomaly
-            if (typeof request.params.anomalyIndex === 'number') {
-              const patterns = analyzeHistoricalPatterns(batteryData.measurements);
-              const anomaly = patterns?.anomalies[request.params.anomalyIndex];
-              if (anomaly) {
-                const contextStart = Math.max(0, anomaly.index - 10);
-                const contextEnd = Math.min(batteryData.measurements.length, anomaly.index + 10);
-                additionalData = {
-                  type: 'anomaly',
-                  anomaly,
-                  context: batteryData.measurements.slice(contextStart, contextEnd),
-                  metrics: calculateMetricRanges(batteryData.measurements.slice(contextStart, contextEnd))
-                };
-              }
-            }
-            break;
-            
-          case 'trend':
-            // Calculate trend for specific metric
-            if (request.params.metric && request.params.timeRange) {
-              const measurements = batteryData.measurements;
-              if (measurements.length >= 2) {
-                const values = measurements.map(m => Number(m[request.params.metric])).filter(v => !isNaN(v));
-                if (values.length >= 2) {
-                  const firstVal = values[0];
-                  const lastVal = values[values.length - 1];
-                  const changeRate = (lastVal - firstVal) / values.length;
-                  additionalData = {
-                    type: 'trend',
-                    metric: request.params.metric,
-                    trend: {
-                      direction: changeRate > 0 ? 'increasing' : changeRate < 0 ? 'decreasing' : 'stable',
-                      rate: changeRate,
-                      startValue: firstVal,
-                      endValue: lastVal,
-                      changePercent: ((lastVal - firstVal) / firstVal) * 100
-                    }
-                  };
-                }
-              }
-            }
-            break;
-        }
-        
-        if (additionalData) {
-          dataResponses.push({
-            request,
-            response: additionalData
-          });
-        }
-      } catch (e) {
-        log && log.warn && log.warn('Failed to process data request', { request, error: e.message });
-      }
-    }
-    
-    // If we got additional data, ask Gemini to refine its analysis
-    if (dataResponses.length > 0 && model && typeof model.generateContent === 'function') {
-      try {
-        const refinementPrompt = `Based on your initial analysis, you requested additional data. Here are the results:
-
-${JSON.stringify(dataResponses, null, 2)}
-
-Please refine your analysis with this additional context. Use the same response format as before.`;
-
-        const genResult = await model.generateContent(refinementPrompt);
-        const resp = genResult && genResult.response;
-        const refinedText = typeof resp?.text === 'function' ? resp.text() : String(resp || '');
-        
-        // Merge the refined insights with the original
-        const refinedInsights = parseInsights(refinedText, batteryData);
-        structured = deepMerge(structured, refinedInsights);
-      } catch (e) {
-        log && log.warn && log.warn('Failed to refine insights with additional data', { error: e.message });
-      }
-    }
-  }
-
-  // Format a comprehensive human-readable report
-  const formatBatteryReport = (insights, data) => {
-    const efficiency = insights.efficiency || {};
-    const performance = insights.performance || {};
-    const capacity = insights.capacity || {};
-    const health = insights.systemHealth || {};
-    
-    return `
+    // Format a comprehensive human-readable report
+    const formatBatteryReport = (insights, data) => {
+      const efficiency = insights.efficiency || {};
+      const performance = insights.performance || {};
+      const capacity = insights.capacity || {};
+      const health = insights.systemHealth || {};
+      
+      return `
 Battery Analysis Report
 ======================
 System ID: ${data.dlNumber || 'Unknown'}
@@ -764,24 +669,24 @@ ${insights.recommendations?.map(r => '• ' + r).join('\\n') || 'No specific rec
 Analysis based on ${data.measurements?.length || 0} measurements over ${performance.timeRange || 'unknown'} period.
 ${insights.confidence === 'high' ? '✓ High confidence analysis' : insights.confidence === 'medium' ? '! Medium confidence analysis' : '⚠ Low confidence analysis'}
 `;
-  };
+    };
 
-  const humanReadableReport = formatBatteryReport(structured, batteryData);
-  
-  return { 
-    statusCode: 200, 
-    body: JSON.stringify({ 
-      success: true, 
-      insights: structured,
-      humanReadable: humanReadableReport,
-      tokenUsage: { 
-        prompt: promptTokens, 
-        generated: estimateTokens(insightsText), 
-        total: promptTokens + estimateTokens(insightsText) 
-      }, 
-      timestamp: new Date().toISOString() 
-    }) 
-  };
+    const humanReadableReport = formatBatteryReport(structured, batteryData);
+    
+    return { 
+      statusCode: 200, 
+      body: JSON.stringify({ 
+        success: true, 
+        insights: structured,
+        humanReadable: humanReadableReport,
+        tokenUsage: { 
+          prompt: promptTokens, 
+          generated: estimateTokens(insightsText), 
+          total: promptTokens + estimateTokens(insightsText) 
+        }, 
+        timestamp: new Date().toISOString() 
+      }) 
+    };
   } catch (e) {
     log && log.error && log.error('Failed to generate insights', { error: e.message });
     return { statusCode: 500, body: JSON.stringify({ error: 'Failed to generate insights' }) };
@@ -826,12 +731,6 @@ function buildPrompt(systemId, dataString, customPrompt) {
 SYSTEM CONTEXT:
 ${JSON.stringify(contextData, null, 2)}
 
-AVAILABLE FUNCTIONS:
-- requestHistoricalData(startDate, endDate) - Request battery data for a specific time range
-- requestAnomalyContext(anomalyIndex) - Get detailed data around an anomaly
-- compareWithBaseline(metricName) - Compare current values with system baseline
-- calculateTrend(metricName, timeRange) - Calculate trend for a specific metric
-
 ANALYSIS OBJECTIVES:
 1. Evaluate current battery health and performance
 2. Identify patterns and anomalies in usage
@@ -851,14 +750,7 @@ RESPONSE FORMAT:
 {
   "answer": {
     "text": "Detailed answer with specific numbers and time estimates",
-    "confidence": "high" | "medium" | "low",
-    "dataRequests": [
-      {
-        "type": "historical" | "anomaly" | "baseline" | "trend",
-        "params": { startDate, endDate } | { anomalyIndex } | { metric },
-        "reason": "Explanation of why this data is needed"
-      }
-    ]
+    "confidence": "high" | "medium" | "low"
   },
   "currentState": {
     "voltage": number,
@@ -975,14 +867,7 @@ REQUIRED ANALYSIS FORMAT:
         "impact": string
       }
     ]
-  },
-  "dataRequests": [
-    {
-      "type": string,
-      "params": object,
-      "reason": string
-    }
-  ]
+  }
 }`;
 }
 
