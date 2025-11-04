@@ -5,9 +5,22 @@ const estimateTokens = (str) => Math.ceil(((str || '') + '').length / 4);
 const MAX_TOKENS = 32000;
 const BASE_PROMPT_TOKENS = 1200;
 
+/**
+ * Handles battery analysis request and generates insights
+ * @param {Object} event - The event object containing request data
+ * @param {Object} context - The context object for logging
+ * @param {Object} genAIOverride - Optional override for AI model
+ * @returns {Promise<Object>} Analysis results
+ */
 async function generateHandler(event = {}, context = {}, genAIOverride) {
-  const log = createLogger ? createLogger('generate-insights', context) : console;
-  const timer = createTimer ? createTimer(log, 'generate-insights') : { end: () => {} };
+  let log = console;
+  let timer = { end: () => {} };
+  let response = { statusCode: 500, body: JSON.stringify({ error: 'Internal server error' }) };
+  
+  try {
+    // Initialize logging and timing
+    log = createLogger ? createLogger('generate-insights', context) : console;
+    timer = createTimer ? createTimer(log, 'generate-insights') : { end: () => {} };
 
   try {
     let body = {};
@@ -117,12 +130,38 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
 
     const structured = parseInsights(insightsText, batteryData, log);
 
-    return { statusCode: 200, body: JSON.stringify({ success: true, insights: structured, tokenUsage: { prompt: promptTokens, generated: estimateTokens(insightsText), total: promptTokens + estimateTokens(insightsText) }, timestamp: new Date().toISOString() }) };
+    response = { 
+      statusCode: 200, 
+      body: JSON.stringify({ 
+        success: true, 
+        insights: structured, 
+        tokenUsage: { 
+          prompt: promptTokens, 
+          generated: estimateTokens(insightsText), 
+          total: promptTokens + estimateTokens(insightsText) 
+        }, 
+        timestamp: new Date().toISOString() 
+      }) 
+    };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'Failed to generate insights' }) };
+    log.error('Failed to generate insights', { error: err.message, stack: err.stack });
+    response = { 
+      statusCode: 500, 
+      body: JSON.stringify({ 
+        error: 'Failed to generate insights',
+        message: err.message,
+        timestamp: new Date().toISOString()
+      }) 
+    };
   } finally {
-    try { timer && timer.end && timer.end(); } catch (e) {}
+    try { 
+      await timer.end(); 
+    } catch (e) {
+      log.warn('Failed to end timer', { error: e.message });
+    }
   }
+  
+  return response;
 }
 
 exports.handler = generateHandler;
