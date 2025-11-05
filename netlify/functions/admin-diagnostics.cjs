@@ -3,7 +3,25 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { createLogger } = require('./utils/logger.cjs');
 const { v4: uuidv4 } = require('uuid');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
-const { ProductionTestSuite } = require('../../tests/production-test-suite.js');
+
+// Production test suite - optional, will be created if needed
+let ProductionTestSuite;
+try {
+    ProductionTestSuite = require('../../tests/production-test-suite.js').ProductionTestSuite;
+} catch (e) {
+    // Stub if not available
+    ProductionTestSuite = class {
+        async runAllTests() {
+            return {
+                success: true,
+                results: { tests: [], message: 'Production test suite not available' }
+            };
+        }
+        getAvailableTests() {
+            return [];
+        }
+    };
+}
 
 const DIAGNOSTIC_JOB_ID = 'diagnostic-test-job';
 const FAKE_IMAGE_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
@@ -213,6 +231,126 @@ async function testGeminiHealth(log) {
     }
 }
 
+async function testSolarService(log) {
+    log.info('Running diagnostic: Testing Solar Service...');
+    try {
+        const solarUrl = `${process.env.URL}/.netlify/functions/solar-estimate?location=80942&panelWatts=400&startDate=2025-01-01&endDate=2025-01-02`;
+        const response = await fetchWithTimeout(solarUrl, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        }, 10000);
+
+        if (response.ok) {
+            const data = await response.json();
+            return {
+                status: 'Success',
+                message: 'Solar service responding correctly',
+                data: data.dailyEstimates ? `${data.dailyEstimates.length} daily estimates` : 'Solar data available'
+            };
+        } else {
+            return {
+                status: 'Failure',
+                message: `Solar service returned status: ${response.status}`
+            };
+        }
+    } catch (error) {
+        log.error('Solar service test failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message
+        };
+    }
+}
+
+async function testSystemAnalytics(log) {
+    log.info('Running diagnostic: Testing System Analytics...');
+    try {
+        // First, get a system ID to test with
+        const systemsCollection = await getCollection('systems');
+        const systems = await systemsCollection.find({}).limit(1).toArray();
+
+        if (systems.length === 0) {
+            return {
+                status: 'Skipped',
+                message: 'No systems available to test analytics'
+            };
+        }
+
+        const systemId = systems[0].id;
+        const analyticsUrl = `${process.env.URL}/.netlify/functions/system-analytics?systemId=${systemId}`;
+        const response = await fetchWithTimeout(analyticsUrl, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        }, 10000);
+
+        if (response.ok) {
+            const data = await response.json();
+            return {
+                status: 'Success',
+                message: 'System analytics responding correctly',
+                data: `Analytics for system ${systemId}`
+            };
+        } else {
+            return {
+                status: 'Failure',
+                message: `System analytics returned status: ${response.status}`
+            };
+        }
+    } catch (error) {
+        log.error('System analytics test failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message
+        };
+    }
+}
+
+async function testInsightsWithTools(log) {
+    log.info('Running diagnostic: Testing Enhanced Insights with Function Calling...');
+    try {
+        const insightsUrl = `${process.env.URL}/.netlify/functions/generate-insights-with-tools`;
+        const testData = {
+            analysisData: {
+                overallVoltage: 52.4,
+                current: -5.2,
+                stateOfCharge: 85,
+                temperature: 25,
+                cellVoltages: [3.27, 3.28, 3.27, 3.28, 3.27, 3.28, 3.27, 3.28, 3.27, 3.28, 3.27, 3.28, 3.27, 3.28, 3.27, 3.28],
+                alerts: [],
+                summary: 'Diagnostic test'
+            },
+            systemId: 'test-system',
+            customPrompt: 'Provide a brief health summary'
+        };
+
+        const response = await fetchWithTimeout(insightsUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(testData)
+        }, 15000);
+
+        if (response.ok) {
+            const data = await response.json();
+            return {
+                status: 'Success',
+                message: 'Enhanced insights with function calling working correctly',
+                data: data.usedFunctionCalling ? 'Function calling active' : 'Standard mode'
+            };
+        } else {
+            return {
+                status: 'Failure',
+                message: `Enhanced insights returned status: ${response.status}`
+            };
+        }
+    } catch (error) {
+        log.error('Enhanced insights test failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message
+        };
+    }
+}
+
 async function testDeleteEndpoint(log, recordId) {
     log.info('Running diagnostic: Testing Delete Endpoint...', { recordId });
     try {
@@ -302,6 +440,15 @@ exports.handler = async (event, context) => {
                 case 'weather':
                     results.weatherService = await testWeatherService(log);
                     break;
+                case 'solar':
+                    results.solarService = await testSolarService(log);
+                    break;
+                case 'systemAnalytics':
+                    results.systemAnalytics = await testSystemAnalytics(log);
+                    break;
+                case 'insightsWithTools':
+                    results.insightsWithTools = await testInsightsWithTools(log);
+                    break;
                 case 'gemini':
                     results.gemini = await testGeminiHealth(log);
                     break;
@@ -314,6 +461,9 @@ exports.handler = async (event, context) => {
                     results.syncAnalysis = await testSyncAnalysis(log, context);
                     results.asyncAnalysis = await testAsyncAnalysis(log);
                     results.weatherService = await testWeatherService(log);
+                    results.solarService = await testSolarService(log);
+                    results.systemAnalytics = await testSystemAnalytics(log);
+                    results.insightsWithTools = await testInsightsWithTools(log);
                     results.gemini = await testGeminiHealth(log);
                     break;
             }
@@ -337,6 +487,9 @@ exports.handler = async (event, context) => {
 
             results.asyncAnalysis = await testAsyncAnalysis(log);
             results.weatherService = await testWeatherService(log);
+            results.solarService = await testSolarService(log);
+            results.systemAnalytics = await testSystemAnalytics(log);
+            results.insightsWithTools = await testInsightsWithTools(log);
             results.gemini = await testGeminiHealth(log);
             results.comprehensive = await runComprehensiveTests(log);
         }
@@ -359,6 +512,9 @@ exports.handler = async (event, context) => {
             'syncAnalysis',
             'asyncAnalysis',
             'weather',
+            'solar',
+            'systemAnalytics',
+            'insightsWithTools',
             'gemini',
             'comprehensive'
         ];

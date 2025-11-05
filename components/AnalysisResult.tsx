@@ -30,6 +30,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   const [isLoading, setIsLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [useEnhancedMode, setUseEnhancedMode] = useState(true);
 
   const handleGenerateInsights = async (prompt?: string) => {
     setIsLoading(true);
@@ -38,7 +39,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
 
     try {
       await streamInsights(
-        { analysisData, systemId, customPrompt: prompt },
+        { analysisData, systemId, customPrompt: prompt, useEnhancedMode },
         (chunk) => { setInsights(prev => prev + chunk); },
         () => { setIsLoading(false); },
         (err) => {
@@ -80,6 +81,18 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       )}
       {!isLoading && (
         <div className="p-5 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg space-y-4 border border-gray-200">
+          <div className="flex items-center gap-2 mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <input
+              type="checkbox"
+              id="enhanced-mode"
+              checked={useEnhancedMode}
+              onChange={(e) => setUseEnhancedMode(e.target.checked)}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <label htmlFor="enhanced-mode" className="text-sm font-medium text-gray-700 cursor-pointer">
+              🚀 Enhanced Mode (AI can query historical data, weather, solar estimates, and analytics)
+            </label>
+          </div>
           <div className="flex flex-col sm:flex-row items-center gap-4">
             <button
               type="button"
@@ -87,9 +100,13 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 flex items-center justify-center gap-2"
             >
               <span>🔍</span>
-              <span>Generate Standard Insights</span>
+              <span>Generate {useEnhancedMode ? 'Enhanced' : 'Standard'} Insights</span>
             </button>
-            <p className="text-sm text-gray-600 text-center sm:text-left">Get comprehensive battery analysis, runtime estimates, and recommendations.</p>
+            <p className="text-sm text-gray-600 text-center sm:text-left">
+              {useEnhancedMode
+                ? 'AI will intelligently query additional data sources for comprehensive analysis.'
+                : 'Get comprehensive battery analysis, runtime estimates, and recommendations.'}
+            </p>
           </div>
           <div className="border-t border-gray-300 pt-4 space-y-2">
             <label htmlFor={`custom-prompt-${analysisData.dlNumber || 'new'}`} className="block text-sm font-medium text-gray-700">

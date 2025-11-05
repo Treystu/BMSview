@@ -206,14 +206,24 @@ export const streamInsights = async (
         analysisData: AnalysisData;
         systemId?: string;
         customPrompt?: string;
+        useEnhancedMode?: boolean;
     },
     onChunk: (chunk: string) => void,
     onComplete: () => void,
     onError: (error: Error) => void
 ) => {
-    log('info', 'Streaming insights from server.', { systemId: payload.systemId, hasCustomPrompt: !!payload.customPrompt });
+    const endpoint = payload.useEnhancedMode
+        ? '/.netlify/functions/generate-insights-with-tools'
+        : '/.netlify/functions/generate-insights';
+
+    log('info', 'Streaming insights from server.', {
+        systemId: payload.systemId,
+        hasCustomPrompt: !!payload.customPrompt,
+        useEnhancedMode: payload.useEnhancedMode
+    });
+
     try {
-        const response = await fetch('/.netlify/functions/generate-insights', {
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
