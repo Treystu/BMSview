@@ -124,8 +124,8 @@ const mapExtractedToAnalysisData = (extracted, log) => {
     
     // Ensure all mandatory fields have values (apply defaults if missing)
     const analysis = {
-        // Mandatory fields with defaults
-        dlNumber: extracted.dlNumber || 'UNKNOWN',
+        // Mandatory fields with defaults - use ?? to only default on null/undefined
+        dlNumber: extracted.dlNumber || 'UNKNOWN', // string, so || is fine
         stateOfCharge: extracted.stateOfCharge ?? 0,
         overallVoltage: extracted.overallVoltage ?? 0,
         current: extracted.current ?? 0,

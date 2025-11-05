@@ -38,7 +38,7 @@ function arrayToCSV(data, headers) {
             
             // Escape quotes and wrap in quotes if needed
             value = String(value);
-            if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+            if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
                 value = '"' + value.replace(/"/g, '""') + '"';
             }
             

@@ -199,15 +199,20 @@ async function executeWithFunctionCalling(model, initialPrompt, systemId, log) {
     const error = err instanceof Error ? err : new Error(String(err));
     log.error('Error during insights generation', { error: error.message, stack: error.stack });
 
-    // Return a more informative error message instead of generic "Analysis completed"
-    const errorMessage = error.message.includes('404') || error.message.includes('not found')
-      ? 'AI model unavailable. Please try standard mode or contact support.'
-      : `Failed to generate insights: ${error.message}`;
+    // Sanitize error message to avoid exposing sensitive information
+    let userMessage = 'Failed to generate insights. Please try again.';
+    if (error.message.includes('404') || error.message.includes('not found')) {
+      userMessage = 'AI model unavailable. Please try standard mode or contact support.';
+    } else if (error.message.includes('timeout') || error.message.includes('timed out')) {
+      userMessage = 'Request timed out. Please try again.';
+    } else if (error.message.includes('quota') || error.message.includes('rate limit')) {
+      userMessage = 'Service temporarily unavailable due to high demand. Please try again later.';
+    }
 
     return {
       insights: {
-        rawText: `❌ Error: ${errorMessage}`,
-        formattedText: `❌ Error: ${errorMessage}\n\nPlease try again or use Standard mode instead.`,
+        rawText: `❌ Error: ${userMessage}`,
+        formattedText: `❌ Error: ${userMessage}\n\nPlease try again or use Standard mode instead.`,
         healthStatus: 'Error',
         performance: { trend: 'Error' }
       },
