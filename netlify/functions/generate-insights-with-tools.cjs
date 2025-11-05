@@ -292,7 +292,9 @@ async function getAIModel(log) {
         }
       });
 
-      log.info(`Successfully initialized ${name}`);
+      // Model initialized - actual verification happens on first use
+      // If unavailable, error will be caught during generateContent call
+      log.info(`Model ${name} initialized, will verify on first use`);
       return model;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
