@@ -750,7 +750,7 @@ function normalizeBatteryData(body) {
 
 /**
  * Get AI model instance with fallback chain
- * Tries: gemini-2.5-flash → gemini-2.0-flash-exp → null (fallback analysis)
+ * Tries: gemini-2.5-flash → gemini-2.0-flash → null (fallback analysis)
  * @param {*} genAIOverride - Optional model override for testing
  * @param {*} log - Logger instance
  * @returns {Promise<*>} Model instance or null
@@ -769,7 +769,7 @@ async function getAIModel(genAIOverride, log) {
 
   const modelsToTry = [
     { name: 'gemini-2.5-flash', description: 'latest stable model' },
-    { name: 'gemini-2.0-flash-exp', description: 'fallback experimental model' }
+    { name: 'gemini-2.0-flash', description: 'fallback stable model' }
   ];
 
   for (const { name, description } of modelsToTry) {
