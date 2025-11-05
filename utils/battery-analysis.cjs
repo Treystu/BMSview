@@ -291,9 +291,21 @@ function generateRecommendations(measurements, maxTemp, performance) {
  * @param {string} systemId System identifier
  * @param {string} batteryData Battery data string
  * @param {string} [customPrompt] Optional custom prompt
+ * @param {Object} [metadata] Optional metadata for single-point analysis
  * @returns {string} Generated prompt
  */
-function buildPrompt(systemId, batteryData, customPrompt) {
+function buildPrompt(systemId, batteryData, customPrompt, metadata) {
+  // Parse batteryData to detect if it's single-point or time-series
+  let isSinglePoint = false;
+  let measurementCount = 0;
+  try {
+    const parsed = JSON.parse(batteryData);
+    measurementCount = parsed.measurements ? parsed.measurements.length : 0;
+    isSinglePoint = measurementCount === 1;
+  } catch (e) {
+    // If we can't parse, assume it's a string representation
+  }
+
   // If custom prompt is provided, use it as the primary instruction
   if (customPrompt) {
     const customBase = `You are an expert battery system analyst.
@@ -309,7 +321,27 @@ Please answer the user's question based on the battery data provided above.`;
     return customBase.trim();
   }
 
-  // Default comprehensive analysis prompt
+  // For single-point data (e.g., from screenshot analysis), use a different prompt
+  if (isSinglePoint) {
+    const base = `You are an expert battery system analyst. Analyze this battery snapshot and provide insights:
+
+systemId: ${systemId || 'unknown'}
+${batteryData}
+
+IMPORTANT: This is a single snapshot in time, not historical data. Focus on:
+1. Current battery health status based on the snapshot
+2. Current performance indicators (voltage, current, temperature, SOC)
+3. Any alerts or issues visible in the data
+4. Immediate recommendations based on current state
+5. What the data tells us about battery condition RIGHT NOW
+
+Do NOT attempt to calculate degradation rates or trends since this is a single measurement.
+Instead, focus on interpreting the current values and what they indicate about battery health.`;
+
+    return base.trim();
+  }
+
+  // Default comprehensive analysis prompt for time-series data
   const base = `Analyze this battery performance data and provide insights:
 systemId: ${systemId || 'unknown'}
 ${batteryData}
