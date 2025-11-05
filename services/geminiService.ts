@@ -47,7 +47,7 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
             try {
                 const workerScript = `
                                 self.onmessage = async function(e) {
-                                    const { endpoint } = e.data || {};
+                                    const { endpoint, fileName, mimeType } = e.data || {};
                                     const file = e.data.file;
                                     try {
                                         // Read file as data URL
@@ -57,7 +57,13 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
                                                 const dataUrl = reader.result;
                                                 const base64 = typeof dataUrl === 'string' ? dataUrl.split(',')[1] : null;
                                                 if (!base64) throw new Error('Failed to read file in worker');
-                                                const payload = { image: base64 };
+                                                const payload = { 
+                                                    image: {
+                                                        image: base64,
+                                                        mimeType: mimeType,
+                                                        fileName: fileName
+                                                    }
+                                                };
                                                 const resp = await fetch(endpoint, {
                                                     method: 'POST',
                                                     headers: { 'Content-Type': 'application/json' },
@@ -119,9 +125,14 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
                         reject(new Error(e?.message || 'Worker error'));
                     };
 
-                    // Post the file and endpoint (file is transferable in browsers)
+                    // Post the file, endpoint, and metadata (file is transferable in browsers)
                     try {
-                        worker.postMessage({ file, endpoint: '/.netlify/functions/analyze?sync=true' });
+                        worker.postMessage({ 
+                            file, 
+                            endpoint: '/.netlify/functions/analyze?sync=true',
+                            fileName: file.name,
+                            mimeType: file.type
+                        });
                     } catch (postErr) {
                         clearTimeout(timeout);
                         worker.terminate();
