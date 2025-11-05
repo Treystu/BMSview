@@ -17,7 +17,7 @@ class CircuitBreaker {
     this.failureThreshold = options.failureThreshold || 5;
     this.resetTimeout = options.resetTimeout || 60000; // 1 minute
     this.halfOpenRequests = options.halfOpenRequests || 3;
-    
+
     this.state = CIRCUIT_STATES.CLOSED;
     this.failureCount = 0;
     this.lastFailureTime = null;
@@ -47,7 +47,7 @@ class CircuitBreaker {
 
   onSuccess(logger) {
     this.failureCount = 0;
-    
+
     if (this.state === CIRCUIT_STATES.HALF_OPEN) {
       this.successCount++;
       if (this.successCount >= this.halfOpenRequests) {
@@ -104,7 +104,7 @@ class RateLimiter {
     const now = Date.now();
     const timePassed = now - this.lastRefill;
     const tokensToAdd = (timePassed / 60000) * this.tokensPerMinute;
-    
+
     this.tokens = Math.min(this.tokensPerMinute, this.tokens + tokensToAdd);
     this.lastRefill = now;
   }
@@ -117,7 +117,7 @@ class GeminiClient {
       resetTimeout: 60000,
       halfOpenRequests: 3
     });
-    
+
     this.rateLimiter = new RateLimiter({
       tokensPerMinute: 60
     });
@@ -148,18 +148,18 @@ class GeminiClient {
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        logger.info('Gemini API request', { 
-          attempt: attempt + 1, 
-          maxRetries: maxRetries + 1 
+        logger.info('Gemini API request', {
+          attempt: attempt + 1,
+          maxRetries: maxRetries + 1
         });
 
         const startTime = Date.now();
         const response = await this._sendRequest(prompt, options);
         const duration = Date.now() - startTime;
 
-        logger.info('Gemini API response', { 
-          duration, 
-          attempt: attempt + 1 
+        logger.info('Gemini API response', {
+          duration,
+          attempt: attempt + 1
         });
 
         return response;
@@ -171,9 +171,9 @@ class GeminiClient {
 
         if (isRateLimit) {
           const retryAfter = this._parseRetryAfter(error);
-          logger.warn('Rate limit hit', { 
-            attempt: attempt + 1, 
-            retryAfter 
+          logger.warn('Rate limit hit', {
+            attempt: attempt + 1,
+            retryAfter
           });
 
           // Set global cooldown
@@ -189,19 +189,19 @@ class GeminiClient {
 
         if (isServerError && !isLastAttempt) {
           const delay = baseDelay * Math.pow(2, attempt);
-          logger.warn('Server error, retrying', { 
-            attempt: attempt + 1, 
-            delay, 
-            error: error.message 
+          logger.warn('Server error, retrying', {
+            attempt: attempt + 1,
+            delay,
+            error: error.message
           });
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
 
-        logger.error('Gemini API error', { 
-          attempt: attempt + 1, 
+        logger.error('Gemini API error', {
+          attempt: attempt + 1,
           error: error.message,
-          stack: error.stack 
+          stack: error.stack
         });
         throw error;
       }
@@ -214,8 +214,8 @@ class GeminiClient {
       throw new Error('GEMINI_API_KEY not configured');
     }
 
-    // ***UPDATED***: Changed default model to gemini-flash-latest
-    const model = options.model || 'gemini-flash-latest';
+    // Use Gemini 2.0 Flash (latest stable model)
+    const model = options.model || 'gemini-2.0-flash-exp';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     let parts = [];

@@ -45,10 +45,10 @@ exports.handler = async (event, context) => {
   try {
     log.debug('Parsing request body', logContext);
     const { systemId, timeHorizon = '30' } = JSON.parse(event.body);
-    
+
     const requestContext = { ...logContext, systemId, timeHorizon };
     log.info('Processing predictive maintenance request', requestContext);
-    
+
     if (!systemId) {
       log.warn('Missing systemId parameter', requestContext);
       const durationMs = timer.end();
@@ -63,7 +63,7 @@ exports.handler = async (event, context) => {
     // Get system data
     log.debug('Fetching system data', requestContext);
     const systemData = await getSystemData(systemId, log);
-    
+
     if (!systemData) {
       log.warn('System not found', requestContext);
       const durationMs = timer.end();
@@ -80,7 +80,7 @@ exports.handler = async (event, context) => {
     // Generate predictive maintenance insights
     log.info('Generating predictive maintenance insights', requestContext);
     const predictions = await generatePredictiveInsights(systemData, parseInt(timeHorizon), log);
-    
+
     // Store predictions for historical tracking
     log.debug('Storing predictions', requestContext);
     await storePredictions(systemId, predictions, log);
@@ -170,17 +170,17 @@ async function getSystemData(systemId, log) {
 async function generatePredictiveInsights(systemData, timeHorizon, log) {
   log.debug('Generating predictive insights', { timeHorizon, dataPoints: systemData.dataPoints });
   const { system, measurements, maintenanceHistory, components } = systemData;
-  
+
   // Calculate failure risk
   const failureRisk = calculateFailureRisk(measurements, maintenanceHistory);
-  
+
   // Identify weak components
   const componentAnalysis = identifyWeakComponents(components, measurements);
-  
+
   // Generate optimal maintenance schedule
   const maintenanceSchedule = generateOptimalSchedule(
-    measurements, 
-    maintenanceHistory, 
+    measurements,
+    maintenanceHistory,
     timeHorizon
   );
 
@@ -222,7 +222,7 @@ function calculateFailureRisk(measurements, maintenanceHistory) {
   if (measurements.length >= 2) {
     const capacityLoss = measurements[0].capacity - measurements[measurements.length - 1].capacity;
     const degradationRate = capacityLoss / measurements.length;
-    
+
     if (degradationRate > 0.5) {
       riskScore += 30;
       riskFactors.push('High capacity degradation rate');
@@ -244,7 +244,7 @@ function calculateFailureRisk(measurements, maintenanceHistory) {
   }
 
   // Check maintenance frequency
-  const daysSinceLastMaintenance = maintenanceHistory.length > 0 
+  const daysSinceLastMaintenance = maintenanceHistory.length > 0
     ? (new Date() - new Date(maintenanceHistory[0].date)) / (1000 * 60 * 60 * 24)
     : 365;
 
@@ -343,7 +343,7 @@ function identifyWeakComponents(components, measurements) {
 function generateOptimalSchedule(measurements, maintenanceHistory, timeHorizon) {
   const urgency = calculateMaintenanceUrgency(measurements, maintenanceHistory);
   const schedule = [];
-  
+
   // Base schedule items
   const baseItems = [
     {
@@ -410,8 +410,8 @@ function generateOptimalSchedule(measurements, maintenanceHistory, timeHorizon) 
 async function generateAIInsights(systemData, timeHorizon, log) {
   try {
     log.debug('Calling Gemini API for AI insights', { systemName: systemData.system?.name, timeHorizon });
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-    
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+
     const prompt = `
       Analyze this battery system data and provide predictive maintenance insights:
       
@@ -460,30 +460,30 @@ async function generateAIInsights(systemData, timeHorizon, log) {
 function countChargeCycles(measurements) {
   let cycles = 0;
   let wasCharging = false;
-  
+
   for (const measurement of measurements) {
     if (measurement.state === 'charging' && !wasCharging) {
       cycles++;
     }
     wasCharging = measurement.state === 'charging';
   }
-  
+
   return cycles;
 }
 
 function calculateVoltageVariation(measurements) {
   if (measurements.length < 2) return 0;
-  
+
   const voltages = measurements.map(m => m.voltage);
   const avg = voltages.reduce((sum, v) => sum + v, 0) / voltages.length;
   const variance = voltages.reduce((sum, v) => sum + Math.pow(v - avg, 2), 0) / voltages.length;
-  
+
   return Math.sqrt(variance) / avg;
 }
 
 function calculateTemperatureVariation(measurements) {
   if (measurements.length < 2) return 0;
-  
+
   const temperatures = measurements.map(m => m.temperature);
   return Math.max(...temperatures) - Math.min(...temperatures);
 }
@@ -530,7 +530,7 @@ function estimateComponentLifespan(component, measurements) {
 
   const cycles = countChargeCycles(measurements);
   const remaining = Math.max(0, baseLifespan[component.type] - cycles);
-  
+
   return {
     estimatedCycles: remaining,
     estimatedDays: Math.round(remaining / 2), // Assuming 2 cycles per day
@@ -540,7 +540,7 @@ function estimateComponentLifespan(component, measurements) {
 
 function calculateMaintenanceUrgency(measurements, maintenanceHistory) {
   const riskScore = calculateFailureRisk(measurements, maintenanceHistory);
-  
+
   if (riskScore.level === 'Critical' || riskScore.level === 'High') {
     return 'Critical';
   } else if (riskScore.level === 'Medium') {
@@ -557,21 +557,21 @@ function calculateTaskCost(task, duration) {
 
 function calculateExpectedDegradation(measurements, timeHorizon) {
   if (measurements.length < 2) return 0;
-  
+
   const first = measurements[measurements.length - 1];
   const last = measurements[0];
   const daysSpan = Math.floor((new Date(last.timestamp) - new Date(first.timestamp)) / (1000 * 60 * 60 * 24));
-  
+
   const dailyDegradation = (first.capacity - last.capacity) / daysSpan;
   return Math.abs(dailyDegradation * timeHorizon);
 }
 
 function generateCapacityForecast(measurements, timeHorizon) {
   if (measurements.length === 0) return [];
-  
+
   const latest = measurements[0];
   const forecast = [];
-  
+
   for (let day = 1; day <= Math.min(timeHorizon, 30); day += 7) {
     const degradation = 0.001 * day; // 0.1% degradation per day
     forecast.push({
@@ -579,19 +579,19 @@ function generateCapacityForecast(measurements, timeHorizon) {
       predictedCapacity: latest.capacity * (1 - degradation)
     });
   }
-  
+
   return forecast;
 }
 
 function calculateEfficiencyTrend(measurements) {
   if (measurements.length < 10) return 'insufficient_data';
-  
+
   const recent = measurements.slice(0, 10);
   const older = measurements.slice(10, 20);
-  
+
   const recentAvg = recent.reduce((sum, m) => sum + (m.efficiency || 0.8), 0) / recent.length;
   const olderAvg = older.reduce((sum, m) => sum + (m.efficiency || 0.8), 0) / older.length;
-  
+
   if (recentAvg > olderAvg + 0.05) return 'improving';
   if (recentAvg < olderAvg - 0.05) return 'declining';
   return 'stable';
@@ -599,7 +599,7 @@ function calculateEfficiencyTrend(measurements) {
 
 function generateRecommendations(failureRisk, componentAnalysis, maintenanceSchedule) {
   const recommendations = [];
-  
+
   if (failureRisk.level === 'Critical' || failureRisk.level === 'High') {
     recommendations.push({
       priority: 'Critical',
@@ -607,7 +607,7 @@ function generateRecommendations(failureRisk, componentAnalysis, maintenanceSche
       reason: 'High failure risk detected'
     });
   }
-  
+
   const highRiskComponents = componentAnalysis.filter(c => c.riskLevel === 'High');
   if (highRiskComponents.length > 0) {
     recommendations.push({
@@ -616,7 +616,7 @@ function generateRecommendations(failureRisk, componentAnalysis, maintenanceSche
       reason: `${highRiskComponents.length} components require immediate attention`
     });
   }
-  
+
   if (maintenanceSchedule.urgency === 'Critical') {
     recommendations.push({
       priority: 'High',
@@ -624,13 +624,13 @@ function generateRecommendations(failureRisk, componentAnalysis, maintenanceSche
       reason: 'System requires frequent monitoring'
     });
   }
-  
+
   recommendations.push({
     priority: 'Medium',
     action: 'Implement performance monitoring dashboard',
     reason: 'Continuous monitoring will help prevent failures'
   });
-  
+
   return recommendations;
 }
 

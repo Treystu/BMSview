@@ -205,7 +205,7 @@ async function testGeminiHealth(log) {
 
         if (typeof client.getGenerativeModel === 'function') {
             const startTime = Date.now();
-            const model = client.getGenerativeModel({ model: 'gemini-flash-latest' });
+            const model = client.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 
             // Simple test prompt
             await Promise.race([

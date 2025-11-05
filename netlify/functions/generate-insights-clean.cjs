@@ -267,7 +267,7 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
       try {
         const { GoogleGenerativeAI } = require('@google/generative-ai');
         const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-        model = client.getGenerativeModel ? client.getGenerativeModel({ model: 'gemini-pro' }) : null;
+        model = client.getGenerativeModel ? client.getGenerativeModel({ model: 'gemini-2.0-flash-exp' }) : null;
       } catch (error) {
         logger.warn('LLM client not available, using fallback', { error: String(error) });
         model = null;
