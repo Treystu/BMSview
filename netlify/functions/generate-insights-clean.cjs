@@ -208,6 +208,21 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
     } else if (Array.isArray(body.analysisData?.measurements) && body.analysisData.measurements.length > 0) {
       batteryData.measurements = body.analysisData.measurements;
       Object.assign(batteryData, body.analysisData);
+    } else if (body.analysisData && (body.analysisData.voltage || body.analysisData.current)) {
+      // Handle analysisData with array values (voltage, current, etc.)
+      const analysisData = body.analysisData;
+      if (Array.isArray(analysisData.voltage)) {
+        const timestamps = analysisData.timestamps || [];
+        batteryData.measurements = analysisData.voltage.map((voltage, i) => ({
+          timestamp: timestamps[i] || new Date(Date.now() - (analysisData.voltage.length - i) * 60000).toISOString(),
+          voltage: voltage,
+          current: analysisData.current?.[i],
+          temperature: analysisData.temperature?.[i],
+          stateOfCharge: analysisData.stateOfCharge?.[i] || analysisData.soc?.[i],
+          capacity: analysisData.capacity?.[i]
+        }));
+      }
+      Object.assign(batteryData, analysisData);
     } else if (Array.isArray(body.measurementsWithItems?.items) && body.measurementsWithItems.items.length > 0) {
       batteryData.measurements = body.measurementsWithItems.items;
     }

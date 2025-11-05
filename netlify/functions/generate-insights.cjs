@@ -527,11 +527,34 @@ function getHealthIcon(status) {
 function normalizeBatteryData(body) {
   let batteryData = {};
 
-  // Handle different input formats
+  // Handle different input formats with priority order
   if (body.batteryData) {
     batteryData = body.batteryData;
   } else if (body.analysisData) {
-    batteryData = body.analysisData;
+    // Convert analysisData to batteryData format
+    const analysisData = body.analysisData;
+    batteryData = {
+      measurements: analysisData.measurements || [],
+      voltage: analysisData.voltage,
+      current: analysisData.current,
+      temperature: analysisData.temperature,
+      stateOfCharge: analysisData.stateOfCharge || analysisData.soc,
+      capacity: analysisData.capacity || analysisData.capacityAh,
+      dlNumber: analysisData.dlNumber
+    };
+
+    // If analysisData has arrays of values (voltage, current, etc.), convert to measurements
+    if (!batteryData.measurements.length && analysisData.voltage && Array.isArray(analysisData.voltage)) {
+      const timestamps = analysisData.timestamps || [];
+      batteryData.measurements = analysisData.voltage.map((voltage, i) => ({
+        timestamp: timestamps[i] || new Date(Date.now() - (analysisData.voltage.length - i) * 60000).toISOString(),
+        voltage: voltage,
+        current: analysisData.current?.[i],
+        temperature: analysisData.temperature?.[i],
+        stateOfCharge: analysisData.stateOfCharge?.[i] || analysisData.soc?.[i],
+        capacity: analysisData.capacity?.[i]
+      }));
+    }
   } else if (body.measurements) {
     batteryData = { measurements: body.measurements };
   } else {
