@@ -266,7 +266,7 @@ const performPostAnalysis = (analysis, system, log) => {
     analysis.alerts = alerts;
     analysis.status = status;
 
-    log('info', 'Post-analysis complete.', { status, alertCount: alerts.empty });
+    log('info', 'Post-analysis complete.', { status, alertCount: alerts.length });
     return analysis;
 };
 

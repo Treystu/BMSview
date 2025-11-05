@@ -87,7 +87,7 @@ const DataManagement: React.FC<DataManagementProps> = ({
                 </p>
             </div>
             
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">{/* existing content */}
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div className="bg-gray-800 p-4 rounded-lg shadow-inner lg:col-span-2">
                     <h3 className="font-semibold text-lg mb-2">Combine Duplicate Systems</h3>
                     <p className="text-sm text-gray-400 mb-4">Select at least two systems to merge. All associated DLs and analysis history will be moved to the selected primary system, and the other selected systems will be deleted.</p>

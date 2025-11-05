@@ -636,14 +636,19 @@ function normalizeBatteryData(body) {
     // Handle single-point AnalysisData (from screenshot analysis)
     else if (analysisData.overallVoltage !== undefined || analysisData.current !== undefined) {
       // Create a single measurement from the analysisData
+      const capacityValue = typeof analysisData.fullCapacity === 'number' 
+        ? analysisData.fullCapacity 
+        : typeof analysisData.remainingCapacity === 'number' 
+        ? analysisData.remainingCapacity 
+        : null;
+      
       const measurement = {
         timestamp: analysisData.timestampFromImage || new Date().toISOString(),
         voltage: typeof analysisData.overallVoltage === 'number' ? analysisData.overallVoltage : null,
         current: typeof analysisData.current === 'number' ? analysisData.current : null,
         temperature: typeof analysisData.temperature === 'number' ? analysisData.temperature : null,
         stateOfCharge: typeof analysisData.stateOfCharge === 'number' ? analysisData.stateOfCharge : null,
-        capacity: typeof analysisData.fullCapacity === 'number' ? analysisData.fullCapacity : 
-                  typeof analysisData.remainingCapacity === 'number' ? analysisData.remainingCapacity : null
+        capacity: capacityValue
       };
 
       batteryData = {
