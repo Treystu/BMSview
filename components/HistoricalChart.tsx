@@ -311,7 +311,8 @@ const SvgChart: React.FC<{
     viewBox: { x: number; width: number };
     setViewBox: React.Dispatch<React.SetStateAction<{ x: number, width: number }>>;
     chartDimensions: any;
-}> = ({ chartData, metricConfig, hiddenMetrics, viewBox, setViewBox, chartDimensions }) => {
+    bandEnabled?: boolean;
+}> = ({ chartData, metricConfig, hiddenMetrics, viewBox, setViewBox, chartDimensions, bandEnabled = false }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [tooltip, setTooltip] = useState<{ x: number; y: number; point: any } | null>(null);
 
@@ -341,7 +342,7 @@ const SvgChart: React.FC<{
     const showDataPoints = zoomRatio > 100; // Show points when very zoomed in
 
     const {
-        paths, anomalies,
+        paths, anomalies, bands,
         yScaleLeft, yTicksLeft, yAxisLabelLeft,
         yScaleRight, yTicksRight, yAxisLabelRight
     } = useMemo(() => {
@@ -371,6 +372,17 @@ const SvgChart: React.FC<{
             return { key, d: pathData, color: METRICS[key].color };
         }).filter(Boolean);
 
+        // Calculate min/max bands for each metric
+        const bands = bandEnabled ? activeMetrics.map(({ key, axis }) => {
+            const yScale = axis === 'left' ? yScaleLeft : yScaleRight;
+            if (!yScale) return null;
+            const values = dataToRender.filter((d: any) => d[key] !== null).map((d: any) => d[key]);
+            if (values.length === 0) return null;
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            return { key, min, max, yScale, color: METRICS[key].color };
+        }).filter(Boolean) : [];
+
         const anomalies = dataToRender.flatMap((d: any) => d.anomalies.map((a: any) => {
             const metricConf = metricConfig[a.key as MetricKey];
             if (!metricConf) return null;
@@ -378,9 +390,9 @@ const SvgChart: React.FC<{
             return { ...a, timestamp: d.timestamp, y: yScale(d[a.key]) };
         })).filter(Boolean);
 
-        return { paths, anomalies, yScaleLeft, yTicksLeft, yAxisLabelLeft, yScaleRight, yTicksRight, yAxisLabelRight };
+        return { paths, anomalies, bands, yScaleLeft, yTicksLeft, yAxisLabelLeft, yScaleRight, yTicksRight, yAxisLabelRight };
 
-    }, [dataToRender, metricConfig, chartHeight, xScale]);
+    }, [dataToRender, metricConfig, chartHeight, xScale, bandEnabled]);
 
     const activeMetrics = useMemo(() => Object.entries(metricConfig).map(([key, config]) => ({ key: key as MetricKey, axis: config!.axis })), [metricConfig]);
 
@@ -517,6 +529,19 @@ const SvgChart: React.FC<{
                     {xTicks.map((tick: any, i: number) => <line key={`gl-x-${i}`} x1={tick.x} y1="0" x2={tick.x} y2={chartHeight} stroke="#4b5563" strokeWidth="0.5" strokeDasharray="3 3" />)}
                     <g clipPath="url(#chart-area)">
                         <g transform={`translate(${-viewBox.x * (chartWidth / viewBox.width)}, 0) scale(${chartWidth / viewBox.width}, 1)`}>
+                            {/* Min/Max Bands */}
+                            {bands.map((band: any) => band && !hiddenMetrics.has(band.key) && (
+                                <rect
+                                    key={`band-${band.key}`}
+                                    x={0}
+                                    y={Math.min(band.yScale(band.min), band.yScale(band.max))}
+                                    width={chartWidth}
+                                    height={Math.abs(band.yScale(band.min) - band.yScale(band.max))}
+                                    fill={band.color}
+                                    fillOpacity="0.1"
+                                    pointerEvents="none"
+                                />
+                            ))}
                             {paths.map((p: any) => p && !hiddenMetrics.has(p.key) && <path key={p.key} d={p.d} fill="none" stroke={p.color} strokeWidth="2.5" vectorEffect="non-scaling-stroke" />)}
 
                             {showDataPoints && activeMetrics.flatMap(({ key, axis }) => {
@@ -777,6 +802,13 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
 
     const stableSetViewBox = useCallback(setViewBox, []);
 
+    // Auto-generate chart when system is selected
+    useEffect(() => {
+        if (selectedSystemId) {
+            prepareChartData();
+        }
+    }, [selectedSystemId]);
+
     useEffect(() => {
         if (!timelineData) return;
 
@@ -918,7 +950,7 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
                                 <div className="lg:col-span-2">
                                     {chartView === 'timeline' && timelineData && (
                                         <SvgChart chartData={timelineData} metricConfig={metricConfig} hiddenMetrics={hiddenMetrics}
-                                            viewBox={viewBox} setViewBox={setViewBox} chartDimensions={chartDimensions} />
+                                            viewBox={viewBox} setViewBox={setViewBox} chartDimensions={chartDimensions} bandEnabled={bandEnabled} />
                                     )}
                                     {chartView === 'hourly' && analyticsData && (
                                         <HourlyAverageChart analyticsData={analyticsData} metricKey={hourlyMetric} />

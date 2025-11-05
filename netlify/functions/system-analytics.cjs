@@ -8,7 +8,7 @@ const respond = (statusCode, body) => ({
     headers: { 'Content-Type': 'application/json' },
 });
 
-exports.handler = async function(event, context) {
+exports.handler = async function (event, context) {
     const log = createLogger('system-analytics', context);
     const withRetry = createRetryWrapper(log);
     const { httpMethod, queryStringParameters } = event;
@@ -25,13 +25,13 @@ exports.handler = async function(event, context) {
         if (!systemId) {
             return respond(400, { error: 'systemId is required.' });
         }
-        
+
         const requestLogContext = { ...logContext, systemId };
         log('info', 'Starting system analytics processing.', requestLogContext);
 
         const historyCollection = await getCollection("history");
         const allHistory = await withRetry(() => historyCollection.find({}).toArray());
-        
+
         const systemHistory = allHistory.filter(record => record.systemId === systemId && record.analysis);
         log('info', `Found ${systemHistory.length} history records for system.`, requestLogContext);
 
@@ -42,10 +42,10 @@ exports.handler = async function(event, context) {
                 alertAnalysis: { alertCounts: [], totalAlerts: 0 },
             });
         }
-        
+
         // --- Refactored Hourly Averages Calculation ---
         const metricsToAverage = [
-            'current', 'power', 'stateOfCharge', 'temperature', 
+            'current', 'power', 'stateOfCharge', 'temperature',
             'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds'
         ];
 
@@ -73,14 +73,14 @@ exports.handler = async function(event, context) {
                     } else {
                         value = analysis[metric];
                     }
-                    
+
                     if (value == null) return;
 
                     if (metric === 'current' || metric === 'power') {
                         if (analysis.current > 0.5) {
                             hourlyStats[hour].values[metric].charge.push(value);
                         } else if (analysis.current < -0.5) {
-                             hourlyStats[hour].values[metric].discharge.push(value);
+                            hourlyStats[hour].values[metric].discharge.push(value);
                         }
                     } else {
                         hourlyStats[hour].values[metric].all.push(value);
@@ -90,7 +90,7 @@ exports.handler = async function(event, context) {
                 log('warn', 'Skipping record due to invalid timestamp.', { recordId: record.id, timestamp: record.timestamp });
             }
         });
-        
+
         const hourlyAverages = hourlyStats.map(stats => {
             const hourData = { hour: stats.hour, metrics: {} };
 
@@ -101,7 +101,7 @@ exports.handler = async function(event, context) {
                     const avgCharge = chargeValues.length > 0 ? chargeValues.reduce((a, b) => a + b, 0) / chargeValues.length : 0;
                     const avgDischarge = dischargeValues.length > 0 ? dischargeValues.reduce((a, b) => a + b, 0) / dischargeValues.length : 0;
                     if (chargeValues.length > 0 || dischargeValues.length > 0) {
-                         hourData.metrics[metric] = {
+                        hourData.metrics[metric] = {
                             avgCharge,
                             avgDischarge,
                             chargePoints: chargeValues.length,
@@ -111,7 +111,7 @@ exports.handler = async function(event, context) {
                 } else {
                     const allValues = stats.values[metric].all;
                     const avg = allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0;
-                     if (allValues.length > 0) {
+                    if (allValues.length > 0) {
                         hourData.metrics[metric] = {
                             avg,
                             points: allValues.length,
@@ -130,7 +130,7 @@ exports.handler = async function(event, context) {
             currents: [],
         }));
 
-        const sunnyDayHistory = systemHistory.filter(r => 
+        const sunnyDayHistory = systemHistory.filter(r =>
             r.weather && r.weather.clouds < 30 && // Sunny is < 30% cloud cover
             r.analysis.current != null && r.analysis.current > 0.5 // Is charging
         );
@@ -139,9 +139,9 @@ exports.handler = async function(event, context) {
             try {
                 const hour = new Date(record.timestamp).getUTCHours();
                 sunnyDayChargingStatsByHour[hour].currents.push(record.analysis.current);
-            } catch(e) { /* ignore invalid date */ }
+            } catch (e) { /* ignore invalid date */ }
         });
-        
+
         const sunnyDayChargingAmpsByHour = sunnyDayChargingStatsByHour
             .map(stats => ({
                 hour: stats.hour,
@@ -149,16 +149,18 @@ exports.handler = async function(event, context) {
                 dataPoints: stats.currents.length,
             }))
             .filter(d => d.dataPoints > 0); // Only return hours with data
-        
+
         log('debug', 'Calculated performance baseline.', { ...requestLogContext, baselineHoursWithData: sunnyDayChargingAmpsByHour.length });
 
-        // --- Recurring Alert Analysis ---
+        // --- Recurring Alert Analysis with Duplicate Detection ---
         const alertCountsMap = new Map();
         let totalAlerts = 0;
 
         systemHistory.forEach(record => {
             if (record.analysis.alerts && Array.isArray(record.analysis.alerts)) {
-                record.analysis.alerts.forEach(alert => {
+                // Deduplicate alerts within each record to avoid counting the same alert multiple times
+                const uniqueAlertsInRecord = new Set(record.analysis.alerts);
+                uniqueAlertsInRecord.forEach(alert => {
                     alertCountsMap.set(alert, (alertCountsMap.get(alert) || 0) + 1);
                     totalAlerts++;
                 });
@@ -168,15 +170,15 @@ exports.handler = async function(event, context) {
         const alertCounts = Array.from(alertCountsMap.entries())
             .map(([alert, count]) => ({ alert, count }))
             .sort((a, b) => b.count - a.count);
-        
-        log('debug', 'Calculated alert analysis.', { ...requestLogContext, uniqueAlerts: alertCounts.length, totalAlerts });
+
+        log('debug', 'Calculated alert analysis with deduplication.', { ...requestLogContext, uniqueAlerts: alertCounts.length, totalAlerts });
 
         const analyticsData = {
             hourlyAverages,
             performanceBaseline: { sunnyDayChargingAmpsByHour },
             alertAnalysis: { alertCounts, totalAlerts },
         };
-        
+
         log('info', 'Successfully generated system analytics.', requestLogContext);
         return respond(200, analyticsData);
 
