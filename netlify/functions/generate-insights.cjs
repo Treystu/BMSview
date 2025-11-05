@@ -404,15 +404,20 @@ async function processBatteryData(batteryData, body = {}, genAIOverride, log) {
   finalInsights._debug = { llmReturnedJson: !!llmJson, avgPowerW };
 
   // Generate a beautifully formatted text summary for display
-  const formattedSummary = generateFormattedSummary(finalInsights, batteryData);
+  const analysisMode = model ? 'ai' : 'statistical';
+  const formattedSummary = generateFormattedSummary(finalInsights, batteryData, analysisMode);
   finalInsights.formattedText = formattedSummary;
 
   return {
     statusCode: 200,
-    headers: { 'x-insights-mode': model ? 'llm' : 'fallback' },
+    headers: { 
+      'x-insights-mode': model ? 'llm' : 'fallback',
+      'x-analysis-mode': analysisMode
+    },
     body: JSON.stringify({
       success: true,
       insights: finalInsights,
+      analysisMode, // Include mode in response for frontend
       tokenUsage: {
         prompt: promptTokens,
         generated: estimateTokens(insightsText),
@@ -427,15 +432,24 @@ async function processBatteryData(batteryData, body = {}, genAIOverride, log) {
  * Generate a beautifully formatted summary for display
  * @param {any} insights The insights object
  * @param {any} batteryData The battery data
+ * @param {string} mode Analysis mode ('ai' or 'statistical')
  * @returns {string} Formatted text summary
  */
-function generateFormattedSummary(insights, batteryData) {
+function generateFormattedSummary(insights, batteryData, mode = 'ai') {
   const lines = [];
 
   // Header
   lines.push('═══════════════════════════════════════════════════');
   lines.push('🔋 BATTERY SYSTEM INSIGHTS');
   lines.push('═══════════════════════════════════════════════════');
+  
+  // Add notice if using statistical fallback
+  if (mode === 'statistical') {
+    lines.push('');
+    lines.push('ℹ️  Analysis Mode: Statistical (AI unavailable)');
+    lines.push('   Using data-driven calculations for insights.');
+  }
+  
   lines.push('');
 
   // Health Status Section
@@ -734,37 +748,67 @@ function normalizeBatteryData(body) {
   return batteryData;
 }
 
+/**
+ * Get AI model instance with fallback chain
+ * Tries: gemini-2.5-flash → gemini-2.0-flash-exp → null (fallback analysis)
+ * @param {*} genAIOverride - Optional model override for testing
+ * @param {*} log - Logger instance
+ * @returns {Promise<*>} Model instance or null
+ */
 async function getAIModel(genAIOverride, log) {
   if (genAIOverride) return genAIOverride;
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    log.warn('GEMINI_API_KEY not configured');
+    log.warn('GEMINI_API_KEY not configured - will use statistical fallback analysis');
     return null;
   }
 
-  try {
-    const { GoogleGenerativeAI } = require('@google/generative-ai');
-    const client = new GoogleGenerativeAI(apiKey);
+  const { GoogleGenerativeAI } = require('@google/generative-ai');
+  const client = new GoogleGenerativeAI(apiKey);
 
-    // Use Gemini 2.5 Flash (latest stable model)
-    const model = client.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.95,
-        topK: 40,
-        maxOutputTokens: 2048,
+  const modelsToTry = [
+    { name: 'gemini-2.5-flash', description: 'latest stable model' },
+    { name: 'gemini-2.0-flash-exp', description: 'fallback experimental model' }
+  ];
+
+  for (const { name, description } of modelsToTry) {
+    try {
+      const model = client.getGenerativeModel({
+        model: name,
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 2048,
+        }
+      });
+
+      // Test the model with a simple call to verify it works
+      log.info(`Attempting to use ${name} (${description})`);
+      
+      // Return the model if initialization succeeds
+      log.info(`Successfully initialized ${name}`);
+      return model;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      const is404 = error.message && (
+        error.message.includes('404') || 
+        error.message.includes('not found') ||
+        error.message.includes('does not exist')
+      );
+      
+      if (is404) {
+        log.warn(`Model ${name} not available (404), trying next fallback`, { error: error.message });
+      } else {
+        log.warn(`Failed to initialize ${name}`, { error: error.message });
       }
-    });
-
-    log.info('Gemini 2.5 Flash model initialized successfully');
-    return model;
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    log.warn('Failed to initialize Gemini model', { error: error.message });
-    return null;
+    }
   }
+
+  // All models failed - will use statistical fallback
+  log.warn('All AI models unavailable - using statistical fallback analysis');
+  return null;
 }
 
 // Export the handlers
