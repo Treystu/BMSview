@@ -44,8 +44,7 @@ const extractBmsData = async (image, mimeType, log, context) => {
     // ... existing code ...
     const geminiClient = getGeminiClient();
     const extractionPrompt = getImageExtractionPrompt();
-    // ***UPDATED***: Changed default model to gemini-flash-latest
-    // ... existing code ...
+    // Use correct Gemini model name
     const modelName = process.env.GEMINI_MODEL || 'gemini-flash-latest';
 
     const prompt = {

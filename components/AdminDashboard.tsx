@@ -67,11 +67,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         editingSystem, bulkUploadResults, actionStatus,
         systemsPage, historyPage, totalSystems, totalHistory,
         historySortKey, historySortDirection, duplicateSets,
-        primarySystemId, selectedSystemIds, isConfirmingClearAll,
-        clearAllConfirmationText
+        primarySystemId, selectedSystemIds
     } = state;
 
-    const [cleanupProgress, setCleanupProgress] = useState<string | null>(null);
+    const [cleanupProgress] = useState<string | null>(null);
     const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
 
     // --- Data Fetching ---
@@ -288,12 +287,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
         try {
             if (systemId === '--create-new--') {
-                if (record.dlNumber) {
-                    // Open register modal (handled by dispatch in reducer/component)
-                    dispatch({ type: 'OPEN_REGISTER_MODAL', payload: { dlNumber: record.dlNumber } });
-                } else {
-                    throw new Error("Cannot create new system without a DL number in the record.");
-                }
+                // Creating new systems from link action is not currently supported
+                throw new Error("Please create the system first, then link the record.");
             } else {
                 await linkAnalysisToSystem(record.id, systemId, record.dlNumber);
                 log('info', 'Link successful.');
@@ -329,9 +324,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     // --- Data Management Handlers ---
 
     const handleGenericAction = async (
-        actionName: keyof AdminState['actionStatus'],
+        actionName: keyof typeof state.actionStatus,
         actionFn: () => Promise<any>,
-        successMessage: string,
+        _successMessage: string,
         refreshType: 'systems' | 'history' | 'all' | 'none' = 'none',
         options: { requiresConfirm?: boolean; confirmMessage?: string } = {}
     ) => {
@@ -509,7 +504,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             {state.error && (
                 <div className="mb-6 p-4 bg-red-900/50 border border-red-500 rounded-md text-red-300 flex justify-between items-center">
                     <span>Error: {state.error}</span>
-                    <button onClick={() => dispatch({ type: 'SET_ERROR', payload: null })} className="text-xl font-bold">&times;</button>
+                    <button type="button" onClick={() => dispatch({ type: 'SET_ERROR', payload: null })} className="text-xl font-bold">&times;</button>
                 </div>
             )}
 
@@ -627,6 +622,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
                                 <div className="flex gap-2">
                                     <button
+                                        type="button"
                                         onClick={() => {
                                             const allTests = ['database', 'syncAnalysis', 'asyncAnalysis', 'weather', 'solar', 'systemAnalytics', 'insightsWithTools', 'gemini'];
                                             dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: allTests });
@@ -636,6 +632,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                         Select All
                                     </button>
                                     <button
+                                        type="button"
                                         onClick={() => {
                                             dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: [] });
                                         }}
@@ -644,6 +641,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                         Deselect All
                                     </button>
                                     <button
+                                        type="button"
                                         onClick={handleRunDiagnostics}
                                         className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-50 ml-auto"
                                         disabled={state.actionStatus.isRunningDiagnostics || (state.selectedDiagnosticTests?.length === 0)}
@@ -684,46 +682,3 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 };
 
 export default AdminDashboard;
-
-const DiagnosticsSection: React.FC = () => {
-    const [diagnosticResults, setDiagnosticResults] = useState<any>(null);
-    const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
-
-    const runDiagnostics = async () => {
-        setIsRunningDiagnostics(true);
-        try {
-            const results = await runDiagnostics();
-            setDiagnosticResults(results);
-        } catch (error) {
-            setDiagnosticResults({ error: 'Failed to run diagnostics' });
-        } finally {
-            setIsRunningDiagnostics(false);
-        }
-    };
-
-    return (
-        <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
-            <p className="mb-4">Run a series of tests to check the health of the system, including database connectivity, API functions, and AI model responses.</p>
-            <button
-                onClick={runDiagnostics}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-50"
-                disabled={isRunningDiagnostics}
-            >
-                {isRunningDiagnostics ? (
-                    <div className="flex items-center">
-                        <SpinnerIcon className="w-5 h-5 mr-2" />
-                        <span>Running...</span>
-                    </div>
-                ) : (
-                    'Run Diagnostics'
-                )}
-            </button>
-            {diagnosticResults && (
-                <div className="mt-4">
-                    <h3 className="text-xl font-semibold mb-2">Diagnostics Results</h3>
-                    <pre className="bg-gray-900 p-4 rounded-lg overflow-auto max-h-64">{JSON.stringify(diagnosticResults, null, 2)}</pre>
-                </div>
-            )}
-        </div>
-    );
-};

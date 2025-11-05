@@ -1,7 +1,6 @@
 
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLogger } = require('./utils/logger.cjs');
-const { v4: uuidv4 } = require('uuid');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 
 // Production test suite - optional, will be created if needed
@@ -170,7 +169,7 @@ async function testWeatherService(log) {
         }, 5000);
 
         if (response.ok) {
-            const data = await response.json();
+            await response.json(); // Consume response
             return {
                 status: 'Success',
                 message: 'Weather service responding correctly',
@@ -206,10 +205,10 @@ async function testGeminiHealth(log) {
 
         if (typeof client.getGenerativeModel === 'function') {
             const startTime = Date.now();
-            const model = client.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            const model = client.getGenerativeModel({ model: 'gemini-flash-latest' });
 
             // Simple test prompt
-            const result = await Promise.race([
+            await Promise.race([
                 model.generateContent('Test prompt: respond with "OK"'),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('Gemini API timeout')), 10000))
             ]);
@@ -290,7 +289,7 @@ async function testSystemAnalytics(log) {
         }, 10000);
 
         if (response.ok) {
-            const data = await response.json();
+            await response.json(); // Consume response
             return {
                 status: 'Success',
                 message: 'System analytics responding correctly',

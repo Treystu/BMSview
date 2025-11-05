@@ -218,7 +218,7 @@ async function getAIModel(log) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     return genAI.getGenerativeModel({
-      model: 'gemini-1.5-pro',  // Use 1.5-pro for function calling support
+      model: 'gemini-flash-latest',  // Use working model name
       generationConfig: {
         temperature: 0.7,
         topP: 0.95,
