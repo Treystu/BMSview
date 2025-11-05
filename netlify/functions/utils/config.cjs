@@ -14,7 +14,7 @@ class Config {
   _validateEnvironment() {
     const required = ['MONGODB_URI'];
     const missing = required.filter(key => !process.env[key]);
-    
+
     if (missing.length > 0) {
       this.logger.critical('Missing required environment variables', { missing });
       throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
@@ -36,100 +36,100 @@ class Config {
   get gemini() {
     return {
       apiKey: process.env.GEMINI_API_KEY,
-      // ***UPDATED***: Changed default model to gemini-2.0-flash-exp
-      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp',
+      // ***UPDATED***: Changed default model to gemini-2.5-flash (latest stable)
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       temperature: parseFloat(process.env.GEMINI_TEMPERATURE || '0.7'),
       maxOutputTokens: parseInt(process.env.GEMINI_MAX_TOKENS || '8192'),
 
-  // Job Processing Configuration
-  get jobs() {
-    return {
-      maxRetries: parseInt(process.env.JOB_MAX_RETRIES || '5'),
-      retryDelayBase: parseInt(process.env.JOB_RETRY_DELAY_BASE || '60000'), // 1 minute
-      processingTimeout: parseInt(process.env.JOB_PROCESSING_TIMEOUT || '300000'), // 5 minutes
-      shepherdEnabled: process.env.JOB_SHEPHERD_ENABLED !== 'false',
-      shepherdBatchSize: parseInt(process.env.JOB_SHEPHERD_BATCH_SIZE || '5'),
-      shepherdInterval: parseInt(process.env.JOB_SHEPHERD_INTERVAL || '60000') // 1 minute
-    };
-  }
+      // Job Processing Configuration
+      get jobs() {
+        return {
+          maxRetries: parseInt(process.env.JOB_MAX_RETRIES || '5'),
+          retryDelayBase: parseInt(process.env.JOB_RETRY_DELAY_BASE || '60000'), // 1 minute
+          processingTimeout: parseInt(process.env.JOB_PROCESSING_TIMEOUT || '300000'), // 5 minutes
+          shepherdEnabled: process.env.JOB_SHEPHERD_ENABLED !== 'false',
+          shepherdBatchSize: parseInt(process.env.JOB_SHEPHERD_BATCH_SIZE || '5'),
+          shepherdInterval: parseInt(process.env.JOB_SHEPHERD_INTERVAL || '60000') // 1 minute
+        };
+      }
 
   // Site Configuration
   get site() {
-    return {
-      url: process.env.URL || process.env.DEPLOY_PRIME_URL || 'http://localhost:8888',
-      deployUrl: process.env.DEPLOY_PRIME_URL || process.env.URL,
-      context: process.env.CONTEXT || 'development',
-      isProd: process.env.CONTEXT === 'production',
-      isDev: process.env.CONTEXT === 'dev' || process.env.CONTEXT === 'development'
-    };
-  }
+        return {
+          url: process.env.URL || process.env.DEPLOY_PRIME_URL || 'http://localhost:8888',
+          deployUrl: process.env.DEPLOY_PRIME_URL || process.env.URL,
+          context: process.env.CONTEXT || 'development',
+          isProd: process.env.CONTEXT === 'production',
+          isDev: process.env.CONTEXT === 'dev' || process.env.CONTEXT === 'development'
+        };
+      }
 
   // Logging Configuration
   get logging() {
-    return {
-      level: process.env.LOG_LEVEL || 'INFO',
-      verbose: process.env.LOG_VERBOSE === 'true',
-      structuredLogging: process.env.LOG_STRUCTURED !== 'false'
-    };
-  }
+        return {
+          level: process.env.LOG_LEVEL || 'INFO',
+          verbose: process.env.LOG_VERBOSE === 'true',
+          structuredLogging: process.env.LOG_STRUCTURED !== 'false'
+        };
+      }
 
   // Rate Limiting Configuration
   get rateLimiting() {
-    return {
-      enabled: process.env.RATE_LIMITING_ENABLED !== 'false',
-      tokensPerMinute: parseInt(process.env.RATE_LIMIT_TOKENS_PER_MINUTE || '60'),
-      circuitBreakerThreshold: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
-      circuitBreakerTimeout: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '60000')
-    };
-  }
+        return {
+          enabled: process.env.RATE_LIMITING_ENABLED !== 'false',
+          tokensPerMinute: parseInt(process.env.RATE_LIMIT_TOKENS_PER_MINUTE || '60'),
+          circuitBreakerThreshold: parseInt(process.env.CIRCUIT_BREAKER_THRESHOLD || '5'),
+          circuitBreakerTimeout: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '60000')
+        };
+      }
 
   // Security Configuration
   get security() {
-    return {
-      allowedOrigins: (process.env.ALLOWED_ORIGINS || '*').split(','),
-      maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760'), // 10MB
-      maxFilesPerRequest: parseInt(process.env.MAX_FILES_PER_REQUEST || '10')
-    };
-  }
+        return {
+          allowedOrigins: (process.env.ALLOWED_ORIGINS || '*').split(','),
+          maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760'), // 10MB
+          maxFilesPerRequest: parseInt(process.env.MAX_FILES_PER_REQUEST || '10')
+        };
+      }
 
   // Weather API Configuration
   get weather() {
-    return {
-      apiKey: process.env.WEATHER_API_KEY,
-      provider: process.env.WEATHER_PROVIDER || 'openweathermap',
-      timeout: parseInt(process.env.WEATHER_TIMEOUT || '10000')
-    };
-  }
+        return {
+          apiKey: process.env.WEATHER_API_KEY,
+          provider: process.env.WEATHER_PROVIDER || 'openweathermap',
+          timeout: parseInt(process.env.WEATHER_TIMEOUT || '10000')
+        };
+      }
 
   // Function URLs
   getFunctionUrl(functionName) {
-    const baseUrl = this.site.url;
-    return `${baseUrl}/.netlify/functions/${functionName}`;
-  }
+        const baseUrl = this.site.url;
+        return `${baseUrl}/.netlify/functions/${functionName}`;
+      }
 
   // Get all configuration as object (for debugging)
   toObject() {
-    return {
-      mongodb: { ...this.mongodb, uri: '***' }, // Mask sensitive data
-      gemini: { ...this.gemini, apiKey: this.gemini.apiKey ? '***' : undefined },
-      jobs: this.jobs,
-      site: this.site,
-      logging: this.logging,
-      rateLimiting: this.rateLimiting,
-      security: this.security,
-      weather: { ...this.weather, apiKey: this.weather.apiKey ? '***' : undefined }
-    };
-  }
-}
+        return {
+          mongodb: { ...this.mongodb, uri: '***' }, // Mask sensitive data
+          gemini: { ...this.gemini, apiKey: this.gemini.apiKey ? '***' : undefined },
+          jobs: this.jobs,
+          site: this.site,
+          logging: this.logging,
+          rateLimiting: this.rateLimiting,
+          security: this.security,
+          weather: { ...this.weather, apiKey: this.weather.apiKey ? '***' : undefined }
+        };
+      }
+    }
 
-// Singleton instance
-let config = null;
+    // Singleton instance
+    let config = null;
 
-function getConfig() {
-  if (!config) {
-    config = new Config();
-  }
-  return config;
-}
+    function getConfig() {
+      if (!config) {
+        config = new Config();
+      }
+      return config;
+    }
 
-module.exports = { getConfig, Config };
+    module.exports = { getConfig, Config };

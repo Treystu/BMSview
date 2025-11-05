@@ -722,9 +722,9 @@ async function getAIModel(genAIOverride, log) {
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const client = new GoogleGenerativeAI(apiKey);
 
-    // Use Gemini 2.0 Flash (latest stable model)
+    // Use Gemini 2.5 Flash (latest stable model)
     const model = client.getGenerativeModel({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.5-flash',
       generationConfig: {
         temperature: 0.7,
         topP: 0.95,
@@ -733,7 +733,7 @@ async function getAIModel(genAIOverride, log) {
       }
     });
 
-    log.info('Gemini 2.0 Flash model initialized successfully');
+    log.info('Gemini 2.5 Flash model initialized successfully');
     return model;
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));

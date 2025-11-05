@@ -410,7 +410,7 @@ function generateOptimalSchedule(measurements, maintenanceHistory, timeHorizon) 
 async function generateAIInsights(systemData, timeHorizon, log) {
   try {
     log.debug('Calling Gemini API for AI insights', { systemName: systemData.system?.name, timeHorizon });
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const prompt = `
       Analyze this battery system data and provide predictive maintenance insights:
