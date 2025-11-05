@@ -101,7 +101,6 @@ const ChartControls: React.FC<{
     setEndDate: (date: string) => void;
     metricConfig: Partial<Record<MetricKey, { axis: Axis }>>;
     setMetricConfig: React.Dispatch<React.SetStateAction<Partial<Record<MetricKey, { axis: Axis }>>>>;
-    onGenerate: () => void;
     onResetView: () => void;
     hasChartData: boolean;
     zoomPercentage: number;
@@ -110,14 +109,13 @@ const ChartControls: React.FC<{
     setChartView: (view: ChartView) => void;
     hourlyMetric: MetricKey;
     setHourlyMetric: (metric: MetricKey) => void;
-    isGenerating: boolean;
     averagingEnabled: boolean;
     setAveragingEnabled: (enabled: boolean) => void;
     manualBucketSize: string | null;
     setManualBucketSize: (size: string | null) => void;
     bandEnabled: boolean;
     setBandEnabled: (enabled: boolean) => void;
-}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onGenerate, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, isGenerating, averagingEnabled, setAveragingEnabled, manualBucketSize, setManualBucketSize, bandEnabled, setBandEnabled }) => {
+}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, averagingEnabled, setAveragingEnabled, manualBucketSize, setManualBucketSize, bandEnabled, setBandEnabled }) => {
     const [isMetricConfigOpen, setIsMetricConfigOpen] = useState(false);
     const metricConfigRef = useRef<HTMLDivElement>(null);
 
@@ -296,9 +294,6 @@ const ChartControls: React.FC<{
                         </div>
                     </>
                 )}
-                <button onClick={onGenerate} disabled={isGenerating || !selectedSystemId} className="bg-secondary hover:bg-primary text-white font-bold py-2 px-6 rounded-md transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed">
-                    {isGenerating ? <><SpinnerIcon className="inline w-4 h-4 mr-2" /> Generating...</> : 'Generate Chart'}
-                </button>
             </div>
         </div>
     );
@@ -372,15 +367,38 @@ const SvgChart: React.FC<{
             return { key, d: pathData, color: METRICS[key].color };
         }).filter(Boolean);
 
-        // Calculate min/max bands for each metric
+        // Calculate min/max bands for each metric - per segment instead of global
         const bands = bandEnabled ? activeMetrics.map(({ key, axis }) => {
             const yScale = axis === 'left' ? yScaleLeft : yScaleRight;
             if (!yScale) return null;
-            const values = dataToRender.filter((d: any) => d[key] !== null).map((d: any) => d[key]);
-            if (values.length === 0) return null;
-            const min = Math.min(...values);
-            const max = Math.max(...values);
-            return { key, min, max, yScale, color: METRICS[key].color };
+
+            // Create band segments for each data point
+            const segments = dataToRender
+                .filter((d: any) => d[key] !== null)
+                .map((d: any, i: number) => {
+                    // For each point, calculate min/max in a local window (current point and neighbors)
+                    const windowSize = Math.max(1, Math.floor(dataToRender.length / 20)); // Adaptive window
+                    const start = Math.max(0, i - windowSize);
+                    const end = Math.min(dataToRender.length, i + windowSize + 1);
+
+                    const windowValues = dataToRender
+                        .slice(start, end)
+                        .filter((p: any) => p[key] !== null)
+                        .map((p: any) => p[key]);
+
+                    if (windowValues.length === 0) return null;
+
+                    const min = Math.min(...windowValues);
+                    const max = Math.max(...windowValues);
+                    const x = xScale(d.timestamp);
+                    const bandwidth = Math.max(2, (chartWidth / dataToRender.length) * 0.8);
+
+                    return { x, min, max, yScale, bandwidth, timestamp: d.timestamp };
+                })
+                .filter(Boolean);
+
+            if (segments.length === 0) return null;
+            return { key, segments, color: METRICS[key].color };
         }).filter(Boolean) : [];
 
         const anomalies = dataToRender.flatMap((d: any) => d.anomalies.map((a: any) => {
@@ -529,18 +547,22 @@ const SvgChart: React.FC<{
                     {xTicks.map((tick: any, i: number) => <line key={`gl-x-${i}`} x1={tick.x} y1="0" x2={tick.x} y2={chartHeight} stroke="#4b5563" strokeWidth="0.5" strokeDasharray="3 3" />)}
                     <g clipPath="url(#chart-area)">
                         <g transform={`translate(${-viewBox.x * (chartWidth / viewBox.width)}, 0) scale(${chartWidth / viewBox.width}, 1)`}>
-                            {/* Min/Max Bands */}
+                            {/* Min/Max Bands - per segment */}
                             {bands.map((band: any) => band && !hiddenMetrics.has(band.key) && (
-                                <rect
-                                    key={`band-${band.key}`}
-                                    x={0}
-                                    y={Math.min(band.yScale(band.min), band.yScale(band.max))}
-                                    width={chartWidth}
-                                    height={Math.abs(band.yScale(band.min) - band.yScale(band.max))}
-                                    fill={band.color}
-                                    fillOpacity="0.1"
-                                    pointerEvents="none"
-                                />
+                                <g key={`band-${band.key}`}>
+                                    {band.segments.map((seg: any, i: number) => (
+                                        <rect
+                                            key={`band-${band.key}-${i}`}
+                                            x={seg.x - seg.bandwidth / 2}
+                                            y={Math.min(seg.yScale(seg.min), seg.yScale(seg.max))}
+                                            width={seg.bandwidth}
+                                            height={Math.abs(seg.yScale(seg.min) - seg.yScale(seg.max))}
+                                            fill={band.color}
+                                            fillOpacity="0.15"
+                                            pointerEvents="none"
+                                        />
+                                    ))}
+                                </g>
                             ))}
                             {paths.map((p: any) => p && !hiddenMetrics.has(p.key) && <path key={p.key} d={p.d} fill="none" stroke={p.color} strokeWidth="2.5" vectorEffect="non-scaling-stroke" />)}
 
@@ -926,11 +948,10 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
                 systems={systems} selectedSystemId={selectedSystemId} setSelectedSystemId={setSelectedSystemId}
                 startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate}
                 metricConfig={metricConfig} setMetricConfig={setMetricConfig}
-                onGenerate={prepareChartData} onResetView={handleResetView} hasChartData={!!hasChartData}
+                onResetView={handleResetView} hasChartData={!!hasChartData}
                 zoomPercentage={zoomPercentage} setZoomPercentage={setZoomPercentage}
                 chartView={chartView} setChartView={setChartView}
                 hourlyMetric={hourlyMetric} setHourlyMetric={setHourlyMetric}
-                isGenerating={isGenerating}
                 averagingEnabled={averagingEnabled}
                 setAveragingEnabled={setAveragingEnabled}
                 manualBucketSize={manualBucketSize}
@@ -941,10 +962,10 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
             <div className="mt-4">
                 {isGenerating && <div className="flex items-center justify-center h-full text-gray-400 min-h-[600px]"><SpinnerIcon className="w-8 h-8 text-secondary" /> <span className="ml-4">Loading Analytics Data...</span></div>}
                 {error && <div className="text-red-400 p-4 bg-red-900/50 rounded-lg text-center">{error}</div>}
-                {!isGenerating && !error && (
+                {!error && (
                     <>
                         {!hasChartData ? (
-                            <div className="flex items-center justify-center h-full text-gray-400 bg-gray-900/50 rounded-lg p-8 min-h-[600px]">Select a system and generate a chart to view data.</div>
+                            <div className="flex items-center justify-center h-full text-gray-400 bg-gray-900/50 rounded-lg p-8 min-h-[600px]">Select a system to view historical data.</div>
                         ) : (
                             <div className="grid lg:grid-cols-3 gap-8 items-start">
                                 <div className="lg:col-span-2">

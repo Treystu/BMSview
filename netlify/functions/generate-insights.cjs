@@ -120,6 +120,16 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
     if (Object.prototype.hasOwnProperty.call(body, 'batteryData') && body.batteryData === null) {
       throw new Error('Malformed batteryData');
     }
+
+    // Log what we received for debugging
+    log.info('Request body received', {
+      hasAnalysisData: !!body.analysisData,
+      hasBatteryData: !!body.batteryData,
+      hasMeasurements: !!body.measurements,
+      analysisDataKeys: body.analysisData ? Object.keys(body.analysisData).slice(0, 5) : [],
+      systemId: body.systemId
+    });
+
     const batteryData = normalizeBatteryData(body);
 
     // Process battery data
@@ -533,27 +543,122 @@ function normalizeBatteryData(body) {
   } else if (body.analysisData) {
     // Convert analysisData to batteryData format
     const analysisData = body.analysisData;
-    batteryData = {
-      measurements: analysisData.measurements || [],
-      voltage: analysisData.voltage,
-      current: analysisData.current,
-      temperature: analysisData.temperature,
-      stateOfCharge: analysisData.stateOfCharge || analysisData.soc,
-      capacity: analysisData.capacity || analysisData.capacityAh,
-      dlNumber: analysisData.dlNumber
-    };
 
-    // If analysisData has arrays of values (voltage, current, etc.), convert to measurements
-    if (!batteryData.measurements.length && analysisData.voltage && Array.isArray(analysisData.voltage)) {
+    // Debug: log what we have in analysisData
+    if (typeof console !== 'undefined' && console.log) {
+      console.log('DEBUG: analysisData received', {
+        type: typeof analysisData,
+        isObject: analysisData && typeof analysisData === 'object',
+        keys: analysisData && typeof analysisData === 'object' ? Object.keys(analysisData).slice(0, 10) : 'N/A',
+        hasOverallVoltage: analysisData?.overallVoltage !== undefined,
+        hasCurrent: analysisData?.current !== undefined,
+        hasMeasurements: Array.isArray(analysisData?.measurements),
+        hasVoltageArray: Array.isArray(analysisData?.voltage)
+      });
+    }
+
+    // Check if analysisData has measurements array
+    if (analysisData.measurements && Array.isArray(analysisData.measurements)) {
+      batteryData = {
+        measurements: analysisData.measurements,
+        voltage: analysisData.voltage || analysisData.overallVoltage,
+        current: analysisData.current,
+        temperature: analysisData.temperature,
+        stateOfCharge: analysisData.stateOfCharge || analysisData.soc,
+        capacity: analysisData.capacity || analysisData.capacityAh,
+        dlNumber: analysisData.dlNumber
+      };
+    }
+    // Check if analysisData has arrays of values (voltage, current, etc.)
+    else if (analysisData.voltage && Array.isArray(analysisData.voltage)) {
       const timestamps = analysisData.timestamps || [];
-      batteryData.measurements = analysisData.voltage.map((voltage, i) => ({
-        timestamp: timestamps[i] || new Date(Date.now() - (analysisData.voltage.length - i) * 60000).toISOString(),
-        voltage: voltage,
-        current: analysisData.current?.[i],
-        temperature: analysisData.temperature?.[i],
-        stateOfCharge: analysisData.stateOfCharge?.[i] || analysisData.soc?.[i],
-        capacity: analysisData.capacity?.[i]
-      }));
+      batteryData = {
+        measurements: analysisData.voltage.map((voltage, i) => ({
+          timestamp: timestamps[i] || new Date(Date.now() - (analysisData.voltage.length - i) * 60000).toISOString(),
+          voltage: voltage,
+          current: analysisData.current?.[i],
+          temperature: analysisData.temperature?.[i],
+          stateOfCharge: analysisData.stateOfCharge?.[i] || analysisData.soc?.[i],
+          capacity: analysisData.capacity?.[i]
+        })),
+        voltage: analysisData.voltage[0],
+        current: analysisData.current?.[0],
+        temperature: analysisData.temperature?.[0],
+        stateOfCharge: analysisData.stateOfCharge?.[0] || analysisData.soc?.[0],
+        capacity: analysisData.capacity?.[0],
+        dlNumber: analysisData.dlNumber
+      };
+    }
+    // Handle single-point AnalysisData (from screenshot analysis)
+    else if (analysisData.overallVoltage !== undefined || analysisData.current !== undefined) {
+      // Create a single measurement from the analysisData
+      const measurement = {
+        timestamp: analysisData.timestampFromImage || new Date().toISOString(),
+        voltage: typeof analysisData.overallVoltage === 'number' ? analysisData.overallVoltage : null,
+        current: typeof analysisData.current === 'number' ? analysisData.current : null,
+        temperature: typeof analysisData.temperature === 'number' ? analysisData.temperature : null,
+        stateOfCharge: typeof analysisData.stateOfCharge === 'number' ? analysisData.stateOfCharge : null,
+        capacity: typeof analysisData.fullCapacity === 'number' ? analysisData.fullCapacity : null
+      };
+
+      batteryData = {
+        measurements: [measurement],
+        voltage: analysisData.overallVoltage,
+        current: analysisData.current,
+        temperature: analysisData.temperature,
+        stateOfCharge: analysisData.stateOfCharge || analysisData.soc,
+        capacity: analysisData.fullCapacity || analysisData.capacity || analysisData.capacityAh,
+        dlNumber: analysisData.dlNumber,
+        // Include additional metadata from analysisData
+        cycleCount: analysisData.cycleCount,
+        remainingCapacity: analysisData.remainingCapacity,
+        mosTemperature: analysisData.mosTemperature,
+        temperatures: analysisData.temperatures,
+        cellVoltages: analysisData.cellVoltages,
+        alerts: analysisData.alerts,
+        summary: analysisData.summary
+      };
+    } else {
+      // analysisData exists but doesn't match any known format
+      // Try to extract any numeric values from it
+      const measurement = {};
+      let hasAnyValue = false;
+
+      if (typeof analysisData.overallVoltage === 'number') {
+        measurement.voltage = analysisData.overallVoltage;
+        hasAnyValue = true;
+      }
+      if (typeof analysisData.current === 'number') {
+        measurement.current = analysisData.current;
+        hasAnyValue = true;
+      }
+      if (typeof analysisData.temperature === 'number') {
+        measurement.temperature = analysisData.temperature;
+        hasAnyValue = true;
+      }
+      if (typeof analysisData.stateOfCharge === 'number') {
+        measurement.stateOfCharge = analysisData.stateOfCharge;
+        hasAnyValue = true;
+      }
+      if (typeof analysisData.fullCapacity === 'number') {
+        measurement.capacity = analysisData.fullCapacity;
+        hasAnyValue = true;
+      }
+
+      if (hasAnyValue) {
+        measurement.timestamp = analysisData.timestampFromImage || new Date().toISOString();
+        batteryData = {
+          measurements: [measurement],
+          voltage: analysisData.overallVoltage,
+          current: analysisData.current,
+          temperature: analysisData.temperature,
+          stateOfCharge: analysisData.stateOfCharge || analysisData.soc,
+          capacity: analysisData.fullCapacity || analysisData.capacity || analysisData.capacityAh,
+          dlNumber: analysisData.dlNumber
+        };
+      } else {
+        batteryData = { measurements: [] };
+      }
     }
   } else if (body.measurements) {
     batteryData = { measurements: body.measurements };

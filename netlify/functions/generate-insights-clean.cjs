@@ -208,7 +208,7 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
     } else if (Array.isArray(body.analysisData?.measurements) && body.analysisData.measurements.length > 0) {
       batteryData.measurements = body.analysisData.measurements;
       Object.assign(batteryData, body.analysisData);
-    } else if (body.analysisData && (body.analysisData.voltage || body.analysisData.current)) {
+    } else if (body.analysisData && (body.analysisData.voltage || body.analysisData.current || body.analysisData.overallVoltage)) {
       // Handle analysisData with array values (voltage, current, etc.)
       const analysisData = body.analysisData;
       if (Array.isArray(analysisData.voltage)) {
@@ -221,6 +221,17 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
           stateOfCharge: analysisData.stateOfCharge?.[i] || analysisData.soc?.[i],
           capacity: analysisData.capacity?.[i]
         }));
+      } else if (analysisData.overallVoltage !== undefined || analysisData.current !== undefined) {
+        // Handle single-point AnalysisData (from screenshot analysis)
+        const measurement = {
+          timestamp: analysisData.timestampFromImage || new Date().toISOString(),
+          voltage: typeof analysisData.overallVoltage === 'number' ? analysisData.overallVoltage : null,
+          current: typeof analysisData.current === 'number' ? analysisData.current : null,
+          temperature: typeof analysisData.temperature === 'number' ? analysisData.temperature : null,
+          stateOfCharge: typeof analysisData.stateOfCharge === 'number' ? analysisData.stateOfCharge : null,
+          capacity: typeof analysisData.fullCapacity === 'number' ? analysisData.fullCapacity : null
+        };
+        batteryData.measurements = [measurement];
       }
       Object.assign(batteryData, analysisData);
     } else if (Array.isArray(body.measurementsWithItems?.items) && body.measurementsWithItems.items.length > 0) {
