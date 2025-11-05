@@ -223,7 +223,7 @@ async function processBatteryData(batteryData, body = {}, genAIOverride, log) {
 
   // Build prompt and get model
   const systemId = body.systemId || body.system || 'unknown';
-  const prompt = buildPrompt(systemId, dataString, body.customPrompt);
+  const prompt = buildPrompt(systemId, dataString, body.customPrompt, batteryData.metadata);
   const promptTokens = estimateTokens(prompt);
   const model = await getAIModel(genAIOverride, log);
 
@@ -549,11 +549,16 @@ function normalizeBatteryData(body) {
       console.log('DEBUG: analysisData received', {
         type: typeof analysisData,
         isObject: analysisData && typeof analysisData === 'object',
-        keys: analysisData && typeof analysisData === 'object' ? Object.keys(analysisData).slice(0, 10) : 'N/A',
-        hasOverallVoltage: analysisData?.overallVoltage !== undefined,
-        hasCurrent: analysisData?.current !== undefined,
+        keys: analysisData && typeof analysisData === 'object' ? Object.keys(analysisData) : 'N/A',
+        overallVoltage: analysisData?.overallVoltage,
+        current: analysisData?.current,
+        temperature: analysisData?.temperature,
+        stateOfCharge: analysisData?.stateOfCharge,
+        fullCapacity: analysisData?.fullCapacity,
         hasMeasurements: Array.isArray(analysisData?.measurements),
-        hasVoltageArray: Array.isArray(analysisData?.voltage)
+        hasVoltageArray: Array.isArray(analysisData?.voltage),
+        summary: analysisData?.summary,
+        alerts: analysisData?.alerts
       });
     }
 
@@ -696,8 +701,29 @@ function normalizeBatteryData(body) {
       m.capacity !== null
     );
 
-  // Add metadata
+  // Add metadata and preserve analysisData metadata for single-point analysis
   batteryData.systemId = body.systemId || body.system || 'unknown';
+
+  // Preserve the full analysisData metadata for better insights generation
+  if (body.analysisData && typeof body.analysisData === 'object') {
+    batteryData.metadata = {
+      dlNumber: body.analysisData.dlNumber,
+      timestampFromImage: body.analysisData.timestampFromImage,
+      alerts: body.analysisData.alerts,
+      summary: body.analysisData.summary,
+      cycleCount: body.analysisData.cycleCount,
+      cellVoltages: body.analysisData.cellVoltages,
+      cellVoltageDifference: body.analysisData.cellVoltageDifference,
+      temperatures: body.analysisData.temperatures,
+      mosTemperature: body.analysisData.mosTemperature,
+      generatorRecommendation: body.analysisData.generatorRecommendation,
+      runtimeEstimateConservativeHours: body.analysisData.runtimeEstimateConservativeHours,
+      runtimeEstimateMiddleHours: body.analysisData.runtimeEstimateMiddleHours,
+      runtimeEstimateAggressiveHours: body.analysisData.runtimeEstimateAggressiveHours,
+      sufficientChargeUntilDaylight: body.analysisData.sufficientChargeUntilDaylight,
+      predictedSolarChargeAmphours: body.analysisData.predictedSolarChargeAmphours
+    };
+  }
   batteryData.capacity = batteryData.capacity || body.capacity;
   batteryData.voltage = batteryData.voltage || body.voltage;
 
