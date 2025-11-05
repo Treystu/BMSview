@@ -1,3 +1,28 @@
+/**
+ * Generate Insights - Standard Mode
+ * 
+ * This is the primary insights generation endpoint that analyzes battery data
+ * and provides AI-powered insights using Google's Gemini 2.5 Flash model.
+ * 
+ * **Usage:**
+ * - Endpoint: /.netlify/functions/generate-insights
+ * - Used by: Default insights generation (non-enhanced mode)
+ * - Features: Basic AI analysis with deterministic fallbacks
+ * 
+ * **What it does:**
+ * 1. Accepts battery measurement data (time-series or single snapshot)
+ * 2. Generates insights using Gemini 2.5 Flash LLM
+ * 3. Falls back to deterministic analysis if LLM fails
+ * 4. Returns structured insights with health status, performance metrics,
+ *    runtime estimates, and generator recommendations
+ * 
+ * **Related Functions:**
+ * - generate-insights-with-tools.cjs: Enhanced mode with function calling
+ *   (can query historical data, weather, analytics)
+ * 
+ * @module netlify/functions/generate-insights
+ */
+
 const { createLogger, createTimer } = require('../../utils/logger.cjs');
 const { buildPrompt, fallbackTextSummary, parseInsights, calculateRuntimeEstimate, generateGeneratorRecommendations } = require('../../utils/battery-analysis.cjs');
 

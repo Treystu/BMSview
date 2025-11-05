@@ -1,9 +1,30 @@
 /**
- * Enhanced Insights Generation with Gemini Function Calling
+ * Generate Insights - Enhanced Mode with Function Calling
  * 
- * This function enables Gemini to intelligently query for additional data
- * (historical records, weather, solar estimates, system analytics) to provide
- * comprehensive, context-aware battery analysis.
+ * This is the advanced insights generation endpoint that uses Gemini 2.5 Flash's
+ * function calling capabilities to provide context-aware, comprehensive analysis.
+ * 
+ * **Usage:**
+ * - Endpoint: /.netlify/functions/generate-insights-with-tools
+ * - Used by: Enhanced mode insights generation (when useEnhancedMode=true)
+ * - Features: AI can query historical data, weather, solar, and analytics
+ * 
+ * **What it does:**
+ * 1. Accepts battery measurement data and system context
+ * 2. Provides Gemini with tools to query additional data:
+ *    - getSystemHistory: Historical battery records
+ *    - getWeatherData: Weather conditions affecting performance
+ *    - getSolarEstimates: Solar generation predictions
+ *    - getSystemAnalytics: Performance analytics and trends
+ * 3. AI intelligently decides which tools to call for comprehensive analysis
+ * 4. Combines all data sources for enhanced insights
+ * 5. Returns structured insights with richer context
+ * 
+ * **Related Functions:**
+ * - generate-insights.cjs: Standard mode (simpler, faster)
+ * - utils/gemini-tools.cjs: Tool definitions and execution logic
+ * 
+ * @module netlify/functions/generate-insights-with-tools
  */
 
 const { createLogger, createTimer } = require('../../utils/logger.cjs');

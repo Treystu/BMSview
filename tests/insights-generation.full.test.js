@@ -1,8 +1,8 @@
 /*
- Full insights generation integration-style tests (clean handler)
+ Full insights generation integration-style tests (standard handler)
 */
 
-const { generateHandler } = require('../netlify/functions/generate-insights-clean.cjs');
+const { generateHandler } = require('../netlify/functions/generate-insights.cjs');
 
 const createBatteryData = (n = 100) => {
   const base = { systemId: 's1', measurements: [] };
@@ -13,7 +13,7 @@ const createBatteryData = (n = 100) => {
   return base;
 };
 
-describe('generate-insights full scenarios (clean handler)', () => {
+describe('generate-insights full scenarios (standard handler)', () => {
   test('healthy dataset returns success and high retention', async () => {
     const data = createBatteryData(50);
     const res = await generateHandler({ body: JSON.stringify(data) });

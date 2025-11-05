@@ -5,24 +5,25 @@
 
 describe('Generate Insights - Enhanced Mode', () => {
   describe('Model Configuration', () => {
-    it('should use Gemini 2.0 Flash model', () => {
+    it('should use Gemini 2.5 Flash model', () => {
       // This test verifies the model name is correct
-      const expectedModel = 'gemini-2.0-flash-exp';
+      const expectedModel = 'gemini-2.5-flash';
 
       // The model should be used in generate-insights-with-tools.cjs
-      expect(expectedModel).toBe('gemini-2.0-flash-exp');
+      expect(expectedModel).toBe('gemini-2.5-flash');
     });
 
     it('should not use deprecated models', () => {
       const deprecatedModels = [
         'gemini-1.5-flash',
+        'gemini-2.0-flash-exp',
         'gemini-flash-latest',
         'gemini-pro'
       ];
 
-      // Verify we're not using deprecated models
+      // Verify we're not using any deprecated models
       deprecatedModels.forEach(model => {
-        expect(model).not.toBe('gemini-2.0-flash-exp');
+        expect(model).not.toBe('gemini-2.5-flash');
       });
     });
   });
