@@ -642,7 +642,8 @@ function normalizeBatteryData(body) {
         current: typeof analysisData.current === 'number' ? analysisData.current : null,
         temperature: typeof analysisData.temperature === 'number' ? analysisData.temperature : null,
         stateOfCharge: typeof analysisData.stateOfCharge === 'number' ? analysisData.stateOfCharge : null,
-        capacity: typeof analysisData.fullCapacity === 'number' ? analysisData.fullCapacity : null
+        capacity: typeof analysisData.fullCapacity === 'number' ? analysisData.fullCapacity : 
+                  typeof analysisData.remainingCapacity === 'number' ? analysisData.remainingCapacity : null
       };
 
       batteryData = {
@@ -651,6 +652,8 @@ function normalizeBatteryData(body) {
         current: analysisData.current,
         temperature: analysisData.temperature,
         stateOfCharge: analysisData.stateOfCharge || analysisData.soc,
+        // Use fullCapacity as capacityAh for runtime estimates
+        capacityAh: analysisData.fullCapacity || analysisData.remainingCapacity,
         capacity: analysisData.fullCapacity || analysisData.capacity || analysisData.capacityAh,
         dlNumber: analysisData.dlNumber,
         // Include additional metadata from analysisData
@@ -659,6 +662,7 @@ function normalizeBatteryData(body) {
         mosTemperature: analysisData.mosTemperature,
         temperatures: analysisData.temperatures,
         cellVoltages: analysisData.cellVoltages,
+        power: analysisData.power,
         alerts: analysisData.alerts,
         summary: analysisData.summary
       };
@@ -740,10 +744,12 @@ function normalizeBatteryData(body) {
       m.capacity !== null
     );
 
-  // Add metadata
+  // Add metadata - ensure all necessary fields are present for runtime estimates
   batteryData.systemId = body.systemId || body.system || 'unknown';
   batteryData.capacity = batteryData.capacity || body.capacity;
+  batteryData.capacityAh = batteryData.capacityAh || body.capacityAh || batteryData.capacity;
   batteryData.voltage = batteryData.voltage || body.voltage;
+  batteryData.soc = batteryData.stateOfCharge || body.soc;
 
   return batteryData;
 }
