@@ -461,7 +461,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'OPEN_DIAGNOSTICS_MODAL' });
         dispatch({ type: 'ACTION_START', payload: 'isRunningDiagnostics' });
         try {
-            const results = await runDiagnostics();
+            const selectedTests = state.selectedDiagnosticTests || [];
+            const results = await runDiagnostics(selectedTests);
             dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: results });
         } catch (err) {
             const error = err instanceof Error ? err.message : 'Failed to run diagnostics.';
@@ -591,20 +592,72 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">System Diagnostics</h2>
                             <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
                                 <p className="mb-4">Run a series of tests to check the health of the system, including database connectivity, API functions, and AI model responses.</p>
-                                <button
-                                    onClick={handleRunDiagnostics}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-50"
-                                    disabled={state.actionStatus.isRunningDiagnostics}
-                                >
-                                    {state.actionStatus.isRunningDiagnostics ? (
-                                        <div className="flex items-center">
-                                            <SpinnerIcon className="w-5 h-5 mr-2" />
-                                            <span>Running...</span>
-                                        </div>
-                                    ) : (
-                                        'Run Diagnostics'
-                                    )}
-                                </button>
+
+                                <div className="mb-4 grid grid-cols-2 md:grid-cols-3 gap-3">
+                                    {[
+                                        { id: 'database', label: 'Database Connection' },
+                                        { id: 'syncAnalysis', label: 'Sync Analysis' },
+                                        { id: 'asyncAnalysis', label: 'Async Analysis' },
+                                        { id: 'weather', label: 'Weather Service' },
+                                        { id: 'solar', label: 'Solar Service' },
+                                        { id: 'systemAnalytics', label: 'System Analytics' },
+                                        { id: 'insightsWithTools', label: 'Enhanced Insights' },
+                                        { id: 'gemini', label: 'Gemini API' },
+                                    ].map(test => (
+                                        <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
+                                            <input
+                                                type="checkbox"
+                                                checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
+                                                onChange={(e) => {
+                                                    const currentTests = state.selectedDiagnosticTests || [
+                                                        'database', 'syncAnalysis', 'asyncAnalysis', 'weather',
+                                                        'solar', 'systemAnalytics', 'insightsWithTools', 'gemini'
+                                                    ];
+                                                    const newTests = e.target.checked
+                                                        ? [...currentTests, test.id]
+                                                        : currentTests.filter(t => t !== test.id);
+                                                    dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: newTests });
+                                                }}
+                                                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                            />
+                                            <span>{test.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => {
+                                            const allTests = ['database', 'syncAnalysis', 'asyncAnalysis', 'weather', 'solar', 'systemAnalytics', 'insightsWithTools', 'gemini'];
+                                            dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: allTests });
+                                        }}
+                                        className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 text-sm"
+                                    >
+                                        Select All
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: [] });
+                                        }}
+                                        className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 text-sm"
+                                    >
+                                        Deselect All
+                                    </button>
+                                    <button
+                                        onClick={handleRunDiagnostics}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-50 ml-auto"
+                                        disabled={state.actionStatus.isRunningDiagnostics || (state.selectedDiagnosticTests?.length === 0)}
+                                    >
+                                        {state.actionStatus.isRunningDiagnostics ? (
+                                            <div className="flex items-center">
+                                                <SpinnerIcon className="w-5 h-5 mr-2" />
+                                                <span>Running...</span>
+                                            </div>
+                                        ) : (
+                                            `Run ${state.selectedDiagnosticTests?.length || 8} Test${(state.selectedDiagnosticTests?.length || 8) !== 1 ? 's' : ''}`
+                                        )}
+                                    </button>
+                                </div>
                             </div>
                         </section>
                     </>

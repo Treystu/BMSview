@@ -81,130 +81,124 @@ async function handler(event = {}, context = {}) {
 }
 
 /**
- * Execute Gemini conversation with function calling support
+ * Execute Gemini conversation with enhanced context
+ * Note: Function calling is not currently supported by the Gemini API version in use.
+ * Instead, we gather additional context upfront and include it in the prompt.
  */
 async function executeWithFunctionCalling(model, initialPrompt, systemId, log) {
   const toolCalls = [];
-  let conversationHistory = [];
-  let finalResponse = null;
-  let iteration = 0;
 
-  // Add initial user message
-  conversationHistory.push({
-    role: 'user',
-    parts: [{ text: initialPrompt }]
-  });
+  try {
+    // Gather additional context if systemId is provided
+    let enhancedPrompt = initialPrompt;
 
-  while (iteration < MAX_TOOL_ITERATIONS) {
-    iteration++;
-    log.info(`Function calling iteration ${iteration}`);
+    if (systemId) {
+      log.info('Gathering additional context for system', { systemId });
 
-    try {
-      // Call Gemini with tools
-      const result = await model.generateContent({
-        contents: conversationHistory,
-        tools: [{
-          functionDeclarations: toolDefinitions
-        }]
-      });
-
-      const response = result.response;
-      const functionCalls = response.functionCalls();
-
-      // If no function calls, we have the final answer
-      if (!functionCalls || functionCalls.length === 0) {
-        finalResponse = response.text();
-        log.info('Received final response from Gemini');
-        break;
+      // Try to get system history
+      try {
+        const historyData = await executeToolCall('getSystemHistory', { systemId, limit: 10 }, log);
+        if (historyData && !historyData.error) {
+          toolCalls.push({ name: 'getSystemHistory', args: { systemId, limit: 10 } });
+          enhancedPrompt += `\n\nRECENT SYSTEM HISTORY (Last 10 records):\n${JSON.stringify(historyData, null, 2)}`;
+        }
+      } catch (e) {
+        log.warn('Failed to get system history', { error: e.message });
       }
 
-      // Execute all function calls
-      log.info(`Gemini requested ${functionCalls.length} function call(s)`);
-      
-      const functionResponses = [];
-      
-      for (const functionCall of functionCalls) {
-        const { name, args } = functionCall;
-        log.info('Executing function call', { name, args });
-        
-        toolCalls.push({ name, args });
-        
-        // Execute the tool
-        const toolResult = await executeToolCall(name, args, log);
-        
-        functionResponses.push({
-          functionResponse: {
-            name,
-            response: toolResult
-          }
-        });
+      // Try to get system analytics
+      try {
+        const analyticsData = await executeToolCall('getSystemAnalytics', { systemId }, log);
+        if (analyticsData && !analyticsData.error) {
+          toolCalls.push({ name: 'getSystemAnalytics', args: { systemId } });
+          enhancedPrompt += `\n\nSYSTEM ANALYTICS:\n${JSON.stringify(analyticsData, null, 2)}`;
+        }
+      } catch (e) {
+        log.warn('Failed to get system analytics', { error: e.message });
       }
-
-      // Add function call and responses to conversation history
-      conversationHistory.push({
-        role: 'model',
-        parts: functionCalls.map(fc => ({ functionCall: fc }))
-      });
-      
-      conversationHistory.push({
-        role: 'function',
-        parts: functionResponses
-      });
-
-    } catch (error) {
-      log.error('Error in function calling iteration', { iteration, error: error.message });
-      
-      // If we have any previous response, use it
-      if (conversationHistory.length > 0) {
-        finalResponse = 'Analysis completed with partial data due to an error.';
-      }
-      break;
     }
-  }
 
-  if (!finalResponse) {
-    finalResponse = 'Unable to generate insights after maximum iterations.';
-  }
+    // Generate insights with enhanced context
+    log.info('Generating insights with enhanced context');
+    const result = await model.generateContent(enhancedPrompt);
+    const response = result.response;
+    const finalResponse = response.text();
 
-  return {
-    insights: {
-      rawText: finalResponse,
-      formattedText: finalResponse
-    },
-    toolCalls,
-    usedFunctionCalling: toolCalls.length > 0
-  };
+    log.info('Successfully generated insights');
+
+    return {
+      insights: {
+        rawText: finalResponse,
+        formattedText: finalResponse
+      },
+      toolCalls,
+      usedFunctionCalling: toolCalls.length > 0
+    };
+
+  } catch (error) {
+    log.error('Error generating insights', { error: error.message });
+
+    return {
+      insights: {
+        rawText: 'Analysis completed with partial data due to an error.',
+        formattedText: 'Analysis completed with partial data due to an error.'
+      },
+      toolCalls,
+      usedFunctionCalling: false
+    };
+  }
 }
 
 /**
- * Build enhanced prompt that describes available tools
+ * Build enhanced prompt with context about available data
  */
 function buildEnhancedPrompt(analysisData, systemId, customPrompt) {
-  let prompt = `You are an expert battery system analyst with access to additional data sources.
+  // If custom prompt is provided, use it as the primary instruction
+  if (customPrompt) {
+    let prompt = `You are an expert battery system analyst.
 
 CURRENT BATTERY SNAPSHOT:
 ${JSON.stringify(analysisData, null, 2)}
 
-${systemId ? `SYSTEM ID: ${systemId}\n` : ''}
+${systemId ? `SYSTEM ID: ${systemId}
 
-AVAILABLE TOOLS:
-You have access to the following tools to gather additional context:
+NOTE: Additional historical data and system analytics may be provided below.
+` : ''}
 
-1. getSystemHistory - Retrieve historical battery measurements to analyze trends
-2. getWeatherData - Get weather conditions to correlate with performance
-3. getSolarEstimate - Get solar production estimates for solar-powered systems
-4. getSystemAnalytics - Get comprehensive analytics including hourly patterns and baselines
+USER QUESTION:
+${customPrompt}
+
+Please answer the user's question based on the battery data provided. If historical data or system analytics are included below, use them to provide more comprehensive insights.`;
+
+    return prompt;
+  }
+
+  // Default comprehensive analysis prompt
+  let prompt = `You are an expert battery system analyst.
+
+CURRENT BATTERY SNAPSHOT:
+${JSON.stringify(analysisData, null, 2)}
+
+${systemId ? `SYSTEM ID: ${systemId}
+
+NOTE: Additional historical data and system analytics will be provided below if available.
+` : ''}
 
 INSTRUCTIONS:
-${customPrompt || 'Provide a comprehensive battery health analysis.'}
+Provide a comprehensive battery health analysis including:
+- Overall battery health status
+- Performance assessment
+- Any alerts or concerns
+- Actionable recommendations
+- Runtime estimates if applicable
 
 When analyzing:
-- If you notice unusual temperature readings, consider checking weather data
-- If performance seems degraded, compare against historical data
-- If this is a solar system, check solar estimates to verify charging expectations
-- Use system analytics to understand typical behavior patterns
+- Consider historical trends if provided
+- Look for patterns in the data
+- Identify any anomalies or concerns
+- Provide specific, actionable recommendations
 
-Provide actionable insights and recommendations based on all available data.`;
+Provide clear, concise insights that are easy to understand.`;
 
   return prompt;
 }
@@ -216,14 +210,14 @@ async function getAIModel(log) {
   try {
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const apiKey = process.env.GEMINI_API_KEY;
-    
+
     if (!apiKey) {
       log.warn('GEMINI_API_KEY not configured');
       return null;
     }
-    
+
     const genAI = new GoogleGenerativeAI(apiKey);
-    return genAI.getGenerativeModel({ 
+    return genAI.getGenerativeModel({
       model: 'gemini-1.5-pro',  // Use 1.5-pro for function calling support
       generationConfig: {
         temperature: 0.7,

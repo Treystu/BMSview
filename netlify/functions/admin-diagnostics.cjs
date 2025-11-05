@@ -106,7 +106,9 @@ async function testAsyncAnalysis(log) {
             id: DIAGNOSTIC_JOB_ID,
             status: 'pending',
             createdAt: new Date(),
-            image: { fileName: 'diagnostic-async-test.png', image: FAKE_IMAGE_B64 }
+            fileName: 'diagnostic-async-test.png',
+            image: FAKE_IMAGE_B64,
+            mimeType: 'image/png'
         };
 
         await jobsCollection.deleteOne({ id: DIAGNOSTIC_JOB_ID });
@@ -159,8 +161,12 @@ async function testWeatherService(log) {
     try {
         const weatherUrl = `${process.env.URL}/.netlify/functions/weather`;
         const response = await fetchWithTimeout(weatherUrl, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' }
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                lat: 38.8,
+                lon: -104.8
+            })
         }, 5000);
 
         if (response.ok) {
@@ -168,7 +174,7 @@ async function testWeatherService(log) {
             return {
                 status: 'Success',
                 message: 'Weather service responding correctly',
-                data: data.location || 'Weather data available'
+                data: 'Weather data available'
             };
         } else {
             return {
@@ -200,7 +206,7 @@ async function testGeminiHealth(log) {
 
         if (typeof client.getGenerativeModel === 'function') {
             const startTime = Date.now();
-            const model = client.getGenerativeModel({ model: 'gemini-flash-latest' });
+            const model = client.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
             // Simple test prompt
             const result = await Promise.race([
@@ -354,11 +360,10 @@ async function testInsightsWithTools(log) {
 async function testDeleteEndpoint(log, recordId) {
     log.info('Running diagnostic: Testing Delete Endpoint...', { recordId });
     try {
-        const deleteUrl = `${process.env.URL}/.netlify/functions/delete`;
+        const deleteUrl = `${process.env.URL}/.netlify/functions/history?id=${recordId}`;
         const response = await fetchWithTimeout(deleteUrl, {
             method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ recordId })
+            headers: { 'Content-Type': 'application/json' }
         }, 5000);
 
         if (response.ok) {
@@ -427,45 +432,83 @@ exports.handler = async (event, context) => {
         if (requestBody.test) {
             const testType = requestBody.test;
 
-            switch (testType) {
-                case 'database':
-                    results.database = await testDatabaseConnection(log);
-                    break;
-                case 'syncAnalysis':
-                    results.syncAnalysis = await testSyncAnalysis(log, context);
-                    break;
-                case 'asyncAnalysis':
-                    results.asyncAnalysis = await testAsyncAnalysis(log);
-                    break;
-                case 'weather':
-                    results.weatherService = await testWeatherService(log);
-                    break;
-                case 'solar':
-                    results.solarService = await testSolarService(log);
-                    break;
-                case 'systemAnalytics':
-                    results.systemAnalytics = await testSystemAnalytics(log);
-                    break;
-                case 'insightsWithTools':
-                    results.insightsWithTools = await testInsightsWithTools(log);
-                    break;
-                case 'gemini':
-                    results.gemini = await testGeminiHealth(log);
-                    break;
-                case 'comprehensive':
-                    results.comprehensive = await runComprehensiveTests(log, requestBody.selectedTests);
-                    break;
-                default:
-                    // Run all basic tests
-                    results.database = await testDatabaseConnection(log);
-                    results.syncAnalysis = await testSyncAnalysis(log, context);
-                    results.asyncAnalysis = await testAsyncAnalysis(log);
-                    results.weatherService = await testWeatherService(log);
-                    results.solarService = await testSolarService(log);
-                    results.systemAnalytics = await testSystemAnalytics(log);
-                    results.insightsWithTools = await testInsightsWithTools(log);
-                    results.gemini = await testGeminiHealth(log);
-                    break;
+            // If selectedTests is provided, run only those tests
+            if (requestBody.selectedTests && Array.isArray(requestBody.selectedTests) && requestBody.selectedTests.length > 0) {
+                log.info('Running selected diagnostic tests', { selectedTests: requestBody.selectedTests });
+
+                for (const testName of requestBody.selectedTests) {
+                    switch (testName) {
+                        case 'database':
+                            results.database = await testDatabaseConnection(log);
+                            break;
+                        case 'syncAnalysis':
+                            results.syncAnalysis = await testSyncAnalysis(log, context);
+                            break;
+                        case 'asyncAnalysis':
+                            results.asyncAnalysis = await testAsyncAnalysis(log);
+                            break;
+                        case 'weather':
+                            results.weatherService = await testWeatherService(log);
+                            break;
+                        case 'solar':
+                            results.solarService = await testSolarService(log);
+                            break;
+                        case 'systemAnalytics':
+                            results.systemAnalytics = await testSystemAnalytics(log);
+                            break;
+                        case 'insightsWithTools':
+                            results.insightsWithTools = await testInsightsWithTools(log);
+                            break;
+                        case 'gemini':
+                            results.gemini = await testGeminiHealth(log);
+                            break;
+                        default:
+                            log.warn('Unknown test type requested', { testName });
+                            break;
+                    }
+                }
+            } else {
+                // Run all tests if no selection provided
+                switch (testType) {
+                    case 'database':
+                        results.database = await testDatabaseConnection(log);
+                        break;
+                    case 'syncAnalysis':
+                        results.syncAnalysis = await testSyncAnalysis(log, context);
+                        break;
+                    case 'asyncAnalysis':
+                        results.asyncAnalysis = await testAsyncAnalysis(log);
+                        break;
+                    case 'weather':
+                        results.weatherService = await testWeatherService(log);
+                        break;
+                    case 'solar':
+                        results.solarService = await testSolarService(log);
+                        break;
+                    case 'systemAnalytics':
+                        results.systemAnalytics = await testSystemAnalytics(log);
+                        break;
+                    case 'insightsWithTools':
+                        results.insightsWithTools = await testInsightsWithTools(log);
+                        break;
+                    case 'gemini':
+                        results.gemini = await testGeminiHealth(log);
+                        break;
+                    case 'comprehensive':
+                        results.comprehensive = await runComprehensiveTests(log, requestBody.selectedTests);
+                        break;
+                    default:
+                        // Run all basic tests
+                        results.database = await testDatabaseConnection(log);
+                        results.syncAnalysis = await testSyncAnalysis(log, context);
+                        results.asyncAnalysis = await testAsyncAnalysis(log);
+                        results.weatherService = await testWeatherService(log);
+                        results.solarService = await testSolarService(log);
+                        results.systemAnalytics = await testSystemAnalytics(log);
+                        results.insightsWithTools = await testInsightsWithTools(log);
+                        results.gemini = await testGeminiHealth(log);
+                        break;
+                }
             }
         } else {
             // Run all tests including comprehensive suite

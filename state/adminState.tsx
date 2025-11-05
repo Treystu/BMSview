@@ -53,6 +53,7 @@ export interface AdminState {
   historySortDirection: 'asc' | 'desc';
   isDiagnosticsModalOpen: boolean;
   diagnosticResults: Record<string, { status: string; message: string }>;
+  selectedDiagnosticTests: string[];
 }
 
 export const initialState: AdminState = {
@@ -91,6 +92,7 @@ export const initialState: AdminState = {
   historySortDirection: 'desc',
   isDiagnosticsModalOpen: false,
   diagnosticResults: {},
+  selectedDiagnosticTests: ['database', 'syncAnalysis', 'asyncAnalysis', 'weather', 'solar', 'systemAnalytics', 'insightsWithTools', 'gemini'],
 };
 
 
@@ -128,6 +130,7 @@ export type AdminAction =
   | { type: 'OPEN_DIAGNOSTICS_MODAL' }
   | { type: 'CLOSE_DIAGNOSTICS_MODAL' }
   | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: Record<string, { status: string; message: string }> }
+  | { type: 'SET_SELECTED_DIAGNOSTIC_TESTS'; payload: string[] }
   | { type: 'REMOVE_HISTORY_RECORD'; payload: string };
 
 // 3. Reducer
@@ -249,6 +252,8 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         historyCache: state.historyCache.filter(r => r.id !== idToRemove),
         totalHistory: Math.max(0, state.totalHistory - (state.history.some(r => r.id === idToRemove) ? 1 : 0)),
       };
+    case 'SET_SELECTED_DIAGNOSTIC_TESTS':
+      return { ...state, selectedDiagnosticTests: action.payload };
     default:
       return state;
   }

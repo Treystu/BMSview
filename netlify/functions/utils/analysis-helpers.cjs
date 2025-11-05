@@ -64,19 +64,19 @@ const cleanAndParseJson = (text, log) => {
         log('error', 'The AI model returned an empty response.');
         throw new Error("The AI model returned an empty response.");
     }
-    
+
     log('debug', 'Raw AI response received.', { length: text.length, preview: text.substring(0, 200) });
-    
+
     const jsonStart = text.indexOf('{');
     const jsonEnd = text.lastIndexOf('}');
-    
+
     if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) {
         log('error', 'AI response did not contain a valid JSON object.', { responseText: text });
         throw new Error(`AI response did not contain a valid JSON object. Response: ${text}`);
     }
-    
+
     const jsonString = text.substring(jsonStart, jsonEnd + 1);
-    
+
     try {
         const parsed = JSON.parse(jsonString);
         log('debug', 'Successfully parsed JSON from AI response.', { parsedKeys: Object.keys(parsed) });
@@ -101,7 +101,7 @@ const mapExtractedToAnalysisData = (extracted, log) => {
         summary: "No summary provided by this model.", // Summary is generated on-demand by client
         status: null, // Status is generated in the next step
     };
-    
+
     // Auto-correct power sign if Gemini misses it
     if (analysis.current != null && analysis.power != null && analysis.current < 0 && analysis.power > 0) {
         log('warn', 'Correcting positive power sign for negative current.', { originalPower: analysis.power, current: analysis.current });
@@ -113,46 +113,46 @@ const mapExtractedToAnalysisData = (extracted, log) => {
         log('warn', 'Correcting large cell voltage difference (likely mV). Converting to V.', { originalDiff: analysis.cellVoltageDifference });
         analysis.cellVoltageDifference = analysis.cellVoltageDifference / 1000.0;
     }
-    
+
     log('debug', 'Mapped analysis data.', { analysisKeys: Object.keys(analysis) });
     return analysis;
 };
 
 const performPostAnalysis = (analysis, system, log) => {
     log('debug', 'Performing post-analysis calculations.', { hasSystem: !!system });
-    
+
     if (!analysis) return null;
-    
+
     const alerts = [];
     let status = 'Normal';
-    
+
     // Cell voltage analysis
     if (analysis.cellVoltages && analysis.cellVoltages.length > 0) {
         // If helper fields are null, calculate them from the array
         if (analysis.highestCellVoltage == null) {
             analysis.highestCellVoltage = Math.max(...analysis.cellVoltages);
         }
-         if (analysis.lowestCellVoltage == null) {
+        if (analysis.lowestCellVoltage == null) {
             analysis.lowestCellVoltage = Math.min(...analysis.cellVoltages);
         }
-         if (analysis.averageCellVoltage == null) {
+        if (analysis.averageCellVoltage == null) {
             analysis.averageCellVoltage = analysis.cellVoltages.reduce((a, b) => a + b, 0) / analysis.cellVoltages.length;
         }
         if (analysis.cellVoltageDifference == null) {
             analysis.cellVoltageDifference = analysis.highestCellVoltage - analysis.lowestCellVoltage;
         }
     }
-    
+
     if (analysis.cellVoltageDifference != null) {
-         if (analysis.cellVoltageDifference > 0.1) { // 100mV
+        if (analysis.cellVoltageDifference > 0.1) { // 100mV
             alerts.push(`CRITICAL: High cell voltage imbalance: ${(analysis.cellVoltageDifference * 1000).toFixed(1)}mV`);
             status = 'Critical';
         } else if (analysis.cellVoltageDifference > 0.05) { // 50mV
-             alerts.push(`WARNING: Cell voltage imbalance detected: ${(analysis.cellVoltageDifference * 1000).toFixed(1)}mV`);
+            alerts.push(`WARNING: Cell voltage imbalance detected: ${(analysis.cellVoltageDifference * 1000).toFixed(1)}mV`);
             if (status === 'Normal') status = 'Warning';
         }
     }
-    
+
     // Temperature analysis
     if (analysis.temperatures && analysis.temperatures.length > 0) {
         const maxTemp = Math.max(...analysis.temperatures, (analysis.mosTemperature || -Infinity));
@@ -161,17 +161,17 @@ const performPostAnalysis = (analysis, system, log) => {
             status = 'Critical';
         } else if (maxTemp > 45) {
             alerts.push(`WARNING: High temperature detected: ${maxTemp}°C`);
-             if (status === 'Normal') status = 'Warning';
+            if (status === 'Normal') status = 'Warning';
         }
         if (analysis.mosTemperature && analysis.mosTemperature > 80) {
-             alerts.push(`CRITICAL: MOS temperature is very high: ${analysis.mosTemperature}°C`);
+            alerts.push(`CRITICAL: MOS temperature is very high: ${analysis.mosTemperature}°C`);
             status = 'Critical';
         }
     }
-    
+
     // SOC analysis
     if (analysis.stateOfCharge != null) {
-         if (analysis.stateOfCharge < 10) {
+        if (analysis.stateOfCharge < 10) {
             alerts.push(`CRITICAL: Battery level is critical: ${analysis.stateOfCharge}%`);
             status = 'Critical';
         } else if (analysis.stateOfCharge < 20) {
@@ -179,10 +179,10 @@ const performPostAnalysis = (analysis, system, log) => {
             if (status === 'Normal') status = 'Warning';
         }
     }
-    
+
     analysis.alerts = alerts;
     analysis.status = status;
-    
+
     log('info', 'Post-analysis complete.', { status, alertCount: alerts.empty });
     return analysis;
 };
@@ -206,7 +206,7 @@ const parseTimestamp = (timestampFromImage, fileName, log) => {
             const date = new Date(`${y}-${m}-${d}T${h}:${min}:${s}Z`); // Assume UTC from filename
             if (!isNaN(date.getTime())) {
                 log('debug', 'Parsed date from filename.', { dateFromFilename: date.toISOString() });
-                
+
                 // 3. If filename gave date, check if image gave a valid *time* to override
                 if (timestampFromImage && /^\d{1,2}:\d{2}(:\d{2})?$/.test(timestampFromImage.trim())) {
                     log('debug', 'Applying time from image to filename date.', { timeFromImage: timestampFromImage });
@@ -219,7 +219,7 @@ const parseTimestamp = (timestampFromImage, fileName, log) => {
     } catch (e) {
         log('warn', 'Error during timestamp parsing.', { error: e.message });
     }
-    
+
     log('info', 'No valid timestamp found in image or filename, using current time.');
     return new Date(); // Fallback to current time
 };
@@ -245,6 +245,68 @@ const generateAnalysisKey = (analysis) => {
     }
 };
 
+/**
+ * Intelligently merge two analysis objects
+ * Prefers non-null, non-empty values from newAnalysis
+ * Falls back to oldAnalysis values if new ones are missing
+ * @param {Object} oldAnalysis - Existing analysis data
+ * @param {Object} newAnalysis - New analysis data from re-analysis
+ * @param {Function} log - Logger function
+ * @returns {Object} Merged analysis object
+ */
+const mergeAnalysisData = (oldAnalysis, newAnalysis, log) => {
+    if (!oldAnalysis) return newAnalysis;
+    if (!newAnalysis) return oldAnalysis;
+
+    const merged = { ...oldAnalysis };
+    let changesCount = 0;
+
+    // Helper to check if a value is "better" (non-null, non-empty)
+    const isBetterValue = (newVal, oldVal) => {
+        if (newVal === null || newVal === undefined) return false;
+        if (typeof newVal === 'string' && newVal.trim() === '') return false;
+        if (Array.isArray(newVal) && newVal.length === 0) return false;
+        return true;
+    };
+
+    // Merge each field
+    for (const key in newAnalysis) {
+        if (newAnalysis.hasOwnProperty(key)) {
+            const newVal = newAnalysis[key];
+            const oldVal = oldAnalysis[key];
+
+            // Special handling for arrays (like cellVoltages, temperatures, alerts)
+            if (Array.isArray(newVal) && Array.isArray(oldVal)) {
+                // Prefer the array with more data
+                if (newVal.length > oldVal.length) {
+                    merged[key] = newVal;
+                    changesCount++;
+                } else if (newVal.length === oldVal.length) {
+                    // If same length, prefer new values if they're different
+                    const isDifferent = JSON.stringify(newVal) !== JSON.stringify(oldVal);
+                    if (isDifferent) {
+                        merged[key] = newVal;
+                        changesCount++;
+                    }
+                }
+                // Otherwise keep old value (it has more data)
+            }
+            // For other values, prefer new if it's "better"
+            else if (isBetterValue(newVal, oldVal)) {
+                if (JSON.stringify(newVal) !== JSON.stringify(oldVal)) {
+                    merged[key] = newVal;
+                    changesCount++;
+                }
+            }
+            // If new value is not better, keep old value (already in merged)
+        }
+    }
+
+    log('info', 'Merged analysis data.', { changesCount, totalFields: Object.keys(newAnalysis).length });
+
+    return merged;
+};
+
 module.exports = {
     getResponseSchema,
     getImageExtractionPrompt,
@@ -253,5 +315,6 @@ module.exports = {
     performPostAnalysis,
     parseTimestamp,
     generateAnalysisKey,
+    mergeAnalysisData
 };
 

@@ -634,8 +634,11 @@ export const getHourlyWeather = async (lat: number, lon: number, date: string): 
     });
 };
 
-export const runDiagnostics = async (): Promise<Record<string, { status: string; message: string }>> => {
-    log('info', 'Running system diagnostics.');
-    return apiFetch<Record<string, { status: string; message: string }>>('admin-diagnostics');
+export const runDiagnostics = async (selectedTests?: string[]): Promise<Record<string, { status: string; message: string }>> => {
+    log('info', 'Running system diagnostics.', { selectedTests });
+    return apiFetch<Record<string, { status: string; message: string }>>('admin-diagnostics', {
+        method: 'POST',
+        body: JSON.stringify({ selectedTests }),
+    });
 };
 
