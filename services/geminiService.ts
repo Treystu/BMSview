@@ -60,8 +60,8 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
                                                 const payload = { 
                                                     image: {
                                                         image: base64,
-                                                        mimeType: mimeType,
-                                                        fileName: fileName
+                                                        mimeType,
+                                                        fileName
                                                     }
                                                 };
                                                 const resp = await fetch(endpoint, {
