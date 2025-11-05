@@ -674,6 +674,3 @@ const DiagnosticsSection: React.FC = () => {
         </div>
     );
 };
-
-export default AdminDashboard;
-

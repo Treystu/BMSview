@@ -1,41 +1,41 @@
-import React, { useEffect, useCallback } from 'react';
-import Header from './components/Header';
-import Footer from './components/Footer';
-import UploadSection from './components/UploadSection';
+import { useCallback, useEffect } from 'react';
 import AnalysisResult from './components/AnalysisResult';
+import Footer from './components/Footer';
+import Header from './components/Header';
 import RegisterBms from './components/RegisterBms';
+import UploadSection from './components/UploadSection';
 // ***MODIFIED***: Import the new *synchronous* service
-import { analyzeBmsScreenshot } from './services/geminiService';
-import { 
-    registerBmsSystem, 
-    getRegisteredSystems, 
-    getAnalysisHistory, 
-    linkAnalysisToSystem, 
-    associateDlToSystem 
+import {
+  associateDlToSystem,
+  getAnalysisHistory,
+  getRegisteredSystems,
+  linkAnalysisToSystem,
+  registerBmsSystem
 } from './services/clientService';
-import type { BmsSystem, DisplayableAnalysisResult, AnalysisRecord } from './types';
+import { analyzeBmsScreenshot } from './services/geminiService';
 import { useAppState } from './state/appState';
+import type { BmsSystem, DisplayableAnalysisResult } from './types';
 // ***REMOVED***: No longer need job polling
 // import { getIsActualError } from './utils';
 // import { useJobPolling } from './hooks/useJobPolling';
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
-    console.log(JSON.stringify({ level: level.toUpperCase(), timestamp: new Date().toISOString(), message, context }));
+  console.log(JSON.stringify({ level: level.toUpperCase(), timestamp: new Date().toISOString(), message, context }));
 };
 
 function App() {
   const { state, dispatch } = useAppState();
-  const { 
-    analysisResults, 
-    isLoading, 
-    error, 
-    isRegistering, 
-    registrationError, 
-    registrationSuccess, 
-    isRegisterModalOpen, 
-    registrationContext 
+  const {
+    analysisResults,
+    isLoading,
+    error,
+    isRegistering,
+    registrationError,
+    registrationSuccess,
+    isRegisterModalOpen,
+    registrationContext
   } = state;
-  
+
   // ***REMOVED***: All `useJobPolling` and related callbacks are gone.
 
   const fetchAppData = useCallback(async () => {
@@ -43,9 +43,9 @@ function App() {
     try {
       // Fetching systems and history remains the same
       const [systems, history] = await Promise.all([
-          getRegisteredSystems(1, 1000), // Load all systems for linking
-          getAnalysisHistory(1, 25)   // Load first page of history
-        ]);
+        getRegisteredSystems(1, 1000), // Load all systems for linking
+        getAnalysisHistory(1, 25)   // Load first page of history
+      ]);
       dispatch({ type: 'FETCH_DATA_SUCCESS', payload: { systems, history } });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
@@ -60,11 +60,11 @@ function App() {
   const handleLinkRecordToSystem = async (recordId: string, systemId: string, dlNumber?: string | null) => {
     log('info', 'Linking record to system.', { recordId, systemId });
     try {
-        await linkAnalysisToSystem(recordId, systemId, dlNumber);
-        await fetchAppData(); 
-        dispatch({ type: 'UPDATE_RESULTS_AFTER_LINK' });
+      await linkAnalysisToSystem(recordId, systemId, dlNumber);
+      await fetchAppData();
+      dispatch({ type: 'UPDATE_RESULTS_AFTER_LINK' });
     } catch (err) {
-        dispatch({ type: 'SET_ERROR', payload: "Failed to link the record." });
+      dispatch({ type: 'SET_ERROR', payload: "Failed to link the record." });
     }
   };
 
@@ -72,14 +72,14 @@ function App() {
    * ***MODIFIED***: This is the new, simpler analysis handler.
    * It processes files one by one and gets results immediately.
    */
-  const handleAnalyze = async (files: File[], options?: { forceFileName?: string }) => {
-    log('info', 'Analysis process initiated.', { fileCount: files.length, forceFileName: options?.forceFileName });
-    
+  const handleAnalyze = async (files: File[], options?: { forceFileName?: string; forceReanalysis?: boolean }) => {
+    log('info', 'Analysis process initiated.', { fileCount: files.length, forceFileName: options?.forceFileName, forceReanalysis: options?.forceReanalysis });
+
     // Prepare the UI by setting all files to a "Submitting" state
-    const initialResults: DisplayableAnalysisResult[] = files.map(f => ({ 
-        fileName: f.name, data: null, error: 'Submitting', file: f, submittedAt: Date.now()
+    const initialResults: DisplayableAnalysisResult[] = files.map(f => ({
+      fileName: f.name, data: null, error: 'Submitting', file: f, submittedAt: Date.now()
     }));
-    
+
     dispatch({ type: 'PREPARE_ANALYSIS', payload: initialResults });
     setTimeout(() => document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
 
@@ -90,47 +90,49 @@ function App() {
 
     // Process each file one by one
     for (const file of files) {
-        try {
-            // 1. Mark this specific file as "Processing"
-            dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
-            
-            // 2. Call the *new* synchronous service
-            const analysisData = await analyzeBmsScreenshot(file);
-            
-            // 3. Got data! Update the state for this one file.
-            log('info', 'Processing synchronous analysis result.', { fileName: file.name });
-            dispatch({ 
-                type: 'SYNC_ANALYSIS_COMPLETE', 
-                payload: { 
-                    fileName: file.name, 
-                    // This creates a minimal record for display.
-                    // The full record saving is now handled by a *different* process
-                    // (or could be added to the 'analyze' function).
-                    record: {
-                      id: `local-${Date.now()}`,
-                      timestamp: new Date().toISOString(),
-                      analysis: analysisData,
-                      fileName: file.name
-                    }
-                } 
-            });
+      try {
+        // 1. Mark this specific file as "Processing"
+        dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
 
-        } catch (err) {
-            // 4. Handle error for this specific file
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-            log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
-            dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${errorMessage}` } });
-        }
+        // 2. Call the *new* synchronous service
+        const analysisData = await analyzeBmsScreenshot(file, options?.forceReanalysis || false);
+
+        // 3. Got data! Update the state for this one file.
+        const isDuplicate = analysisData._isDuplicate || false;
+        log('info', 'Processing synchronous analysis result.', { fileName: file.name, isDuplicate });
+        dispatch({
+          type: 'SYNC_ANALYSIS_COMPLETE',
+          payload: {
+            fileName: file.name,
+            isDuplicate,
+            // This creates a minimal record for display.
+            // The full record saving is now handled by a *different* process
+            // (or could be added to the 'analyze' function).
+            record: {
+              id: analysisData._recordId || `local-${Date.now()}`,
+              timestamp: analysisData._timestamp || new Date().toISOString(),
+              analysis: analysisData,
+              fileName: file.name
+            }
+          }
+        });
+
+      } catch (err) {
+        // 4. Handle error for this specific file
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+        log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
+        dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${errorMessage}` } });
+      }
     }
-    
+
     // All files are processed
     dispatch({ type: 'ANALYSIS_COMPLETE' });
   };
-  
+
   const handleReprocess = async (fileToReprocess: File) => {
     log('info', 'Reprocess initiated.', { fileName: fileToReprocess.name });
-    // Reprocessing is now just a normal analysis call
-    await handleAnalyze([fileToReprocess], { forceFileName: fileToReprocess.name });
+    // Reprocessing is now just a normal analysis call with forceReanalysis=true
+    await handleAnalyze([fileToReprocess], { forceFileName: fileToReprocess.name, forceReanalysis: true });
   };
 
   // --- Registration logic remains unchanged ---
@@ -163,9 +165,9 @@ function App() {
     <div className="flex flex-col min-h-screen bg-neutral-light">
       <Header />
       <main className="flex-grow">
-        <UploadSection 
-          onAnalyze={handleAnalyze} 
-          isLoading={isLoading} 
+        <UploadSection
+          onAnalyze={handleAnalyze}
+          isLoading={isLoading}
           error={error}
           hasResults={analysisResults.length > 0}
         />
@@ -174,8 +176,8 @@ function App() {
             <div className="container mx-auto px-6 space-y-8">
               <h2 className="text-3xl font-bold text-center text-neutral-dark">Analysis Results</h2>
               {analysisResults.map((result) => (
-                <AnalysisResult 
-                  key={result.fileName} 
+                <AnalysisResult
+                  key={result.fileName}
                   result={result}
                   registeredSystems={state.registeredSystems.items || []}
                   onLinkRecord={handleLinkRecordToSystem}
@@ -188,14 +190,14 @@ function App() {
         )}
       </main>
       <Footer />
-      <RegisterBms 
-          onRegister={handleRegisterSystem} 
-          isRegistering={isRegistering} 
-          error={registrationError} 
-          successMessage={registrationSuccess} 
-          isOpen={isRegisterModalOpen}
-          onClose={handleCloseRegisterModal}
-        />
+      <RegisterBms
+        onRegister={handleRegisterSystem}
+        isRegistering={isRegistering}
+        error={registrationError}
+        successMessage={registrationSuccess}
+        isOpen={isRegisterModalOpen}
+        onClose={handleCloseRegisterModal}
+      />
     </div>
   );
 }

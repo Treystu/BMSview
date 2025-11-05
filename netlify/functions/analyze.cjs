@@ -53,6 +53,7 @@ exports.handler = async (event, context) => {
   const log = createLogger('analyze', context);
   log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
   const isSync = (event.queryStringParameters && event.queryStringParameters.sync === 'true');
+  const forceReanalysis = (event.queryStringParameters && event.queryStringParameters.force === 'true');
   const headersIn = event.headers || {};
   const idemKey = headersIn['Idempotency-Key'] || headersIn['idempotency-key'] || headersIn['IDEMPOTENCY-KEY'];
   let requestContext = { jobId: undefined };
@@ -69,7 +70,7 @@ exports.handler = async (event, context) => {
     if (isSync) {
       // Synchronous analysis path
       // *** FIX: Removed the 'timer' variable which was not defined in this scope. ***
-      return await handleSyncAnalysis(parsed.value, idemKey, headers, log, context);
+      return await handleSyncAnalysis(parsed.value, idemKey, forceReanalysis, headers, log, context);
     }
 
     // Legacy asynchronous analysis path
@@ -77,7 +78,7 @@ exports.handler = async (event, context) => {
 
   } catch (error) {
     log.error('Analyze function failed.', { error: error && error.message ? error.message : String(error), stack: error.stack });
-    
+
     // Best-effort legacy progress event logging
     try {
       if (requestContext.jobId) {
@@ -87,7 +88,7 @@ exports.handler = async (event, context) => {
           message: `Analysis failed: ${error.message}`
         });
       }
-    } catch (_) {}
+    } catch (_) { }
 
     log.exit(500, { error: error.message });
     return errorResponse(500, 'analysis_failed', 'Analysis failed', { message: error.message }, { ...headers, 'Content-Type': 'application/json' });
@@ -98,14 +99,15 @@ exports.handler = async (event, context) => {
  * Handles synchronous image analysis requests
  * @param {Object} requestBody - Parsed request body
  * @param {string} idemKey - Idempotency key if provided
+ * @param {boolean} forceReanalysis - Whether to bypass duplicate detection
  * @param {Object} headers - Response headers
  * @param {Object} log - Logger instance
  * @param {Object} context - Lambda context
  */
-async function handleSyncAnalysis(requestBody, idemKey, headers, log, context) {
+async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers, log, context) {
   const timer = createTimer(log, 'sync-analysis');
   const imagePayload = requestBody && requestBody.image;
-  
+
   // Validate image payload
   const imageValidation = validateImagePayload(imagePayload, log);
   if (!imageValidation.ok) {
@@ -117,8 +119,8 @@ async function handleSyncAnalysis(requestBody, idemKey, headers, log, context) {
   // Calculate content hash for deduplication
   const contentHash = sha256HexFromBase64(imagePayload.image);
 
-  // Check idempotency cache
-  if (idemKey) {
+  // Check idempotency cache (skip if force=true)
+  if (idemKey && !forceReanalysis) {
     const idemResponse = await checkIdempotency(idemKey, log);
     if (idemResponse) {
       const durationMs = timer.end({ idempotent: true });
@@ -131,25 +133,29 @@ async function handleSyncAnalysis(requestBody, idemKey, headers, log, context) {
     }
   }
 
-  // Check for existing analysis by content hash
-  const existingAnalysis = await checkExistingAnalysis(contentHash, log);
-  if (existingAnalysis) {
-    const responseBody = {
-      analysis: existingAnalysis.analysis,
-      recordId: existingAnalysis._id?.toString?.() || existingAnalysis.id,
-      fileName: existingAnalysis.fileName,
-      timestamp: existingAnalysis.timestamp,
-      dedupeHit: true
-    };
+  // Check for existing analysis by content hash (skip if force=true)
+  if (!forceReanalysis) {
+    const existingAnalysis = await checkExistingAnalysis(contentHash, log);
+    if (existingAnalysis) {
+      const responseBody = {
+        analysis: existingAnalysis.analysis,
+        recordId: existingAnalysis._id?.toString?.() || existingAnalysis.id,
+        fileName: existingAnalysis.fileName,
+        timestamp: existingAnalysis.timestamp,
+        dedupeHit: true
+      };
 
-    await storeIdempotentResponse(idemKey, responseBody);
-    const durationMs = timer.end({ recordId: responseBody.recordId, dedupe: true });
-    log.exit(200, { mode: 'sync', dedupe: true, durationMs });
-    return {
-      statusCode: 200,
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(responseBody)
-    };
+      await storeIdempotentResponse(idemKey, responseBody);
+      const durationMs = timer.end({ recordId: responseBody.recordId, dedupe: true });
+      log.exit(200, { mode: 'sync', dedupe: true, durationMs });
+      return {
+        statusCode: 200,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(responseBody)
+      };
+    }
+  } else {
+    log.info('Force re-analysis requested, bypassing duplicate detection.', { contentHash });
   }
 
   // Perform new analysis
@@ -212,7 +218,7 @@ async function handleLegacyAnalysis(requestBody, headers, log, requestContext) {
  */
 async function checkIdempotency(idemKey, log) {
   if (!idemKey) return null;
-  
+
   const idemCol = await getCollection('idempotent-requests');
   const existingIdem = await idemCol.findOne({ key: idemKey });
   if (existingIdem && existingIdem.response) {
@@ -269,11 +275,11 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
       shouldRetry: (e) => e && e.code !== 'operation_timeout' && e.code !== 'circuit_open',
       log
     })
-  , {
-    failureThreshold: parseInt(process.env.CB_FAILURES || '5'),
-    openMs: parseInt(process.env.CB_OPEN_MS || '30000'),
-    log
-  });
+    , {
+      failureThreshold: parseInt(process.env.CB_FAILURES || '5'),
+      openMs: parseInt(process.env.CB_OPEN_MS || '30000'),
+      log
+    });
 }
 
 /**
@@ -304,7 +310,7 @@ async function storeAnalysisResults(record, contentHash) {
  */
 async function storeIdempotentResponse(idemKey, response) {
   if (!idemKey) return;
-  
+
   try {
     const idemCol = await getCollection('idempotent-requests');
     await idemCol.updateOne(
@@ -312,7 +318,7 @@ async function storeIdempotentResponse(idemKey, response) {
       { $set: { key: idemKey, response, createdAt: new Date() } },
       { upsert: true }
     );
-  } catch (_) {}
+  } catch (_) { }
 }
 
 /**

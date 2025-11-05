@@ -401,7 +401,13 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
     <div className="bg-neutral-light p-8 rounded-xl shadow-lg max-w-4xl mx-auto">
       <div className="flex justify-between items-start mb-6">
         <h3 className="text-2xl font-bold text-neutral-dark break-all flex-1">{fileName}</h3>
-        <div className="ml-4">
+        <div className="ml-4 flex gap-2">
+          {isDuplicate && (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-blue-100 text-blue-800 border-blue-200">
+              <span className="mr-1">🔄</span>
+              Duplicate (from cache)
+            </span>
+          )}
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-${displayStatus.color}-100 text-${displayStatus.color}-800 border-${displayStatus.color}-200`}>
             {displayStatus.key === 'completed' && <span className="mr-1">✅</span>}
             {displayStatus.key === 'error' && <span className="mr-1">❌</span>}
@@ -411,21 +417,37 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
       </div>
 
       {isDuplicate && (
-        <div className="mb-6 p-4 bg-blue-50 border-l-4 border-blue-400 rounded-r-lg text-center">
-          <p className="text-blue-800">
-            {data
-              ? 'This appears to be a duplicate. Showing existing analysis.'
-              : isBatchDuplicate
-                ? 'Skipped: A file with the same name exists in this upload batch.'
-                : 'Skipped: A file with this name already exists in your history.'}
-            <button
-              onClick={handleReprocessClick}
-              className="ml-2 font-semibold text-secondary hover:underline focus:outline-none"
-              disabled={!file}
-            >
-              Click here to {data ? 're-process' : 'process'} anyway.
-            </button>
-          </p>
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center mb-2">
+                <span className="text-2xl mr-2">🔄</span>
+                <h4 className="text-lg font-semibold text-blue-800">Duplicate Detected</h4>
+              </div>
+              <p className="text-blue-700 mb-1">
+                {data
+                  ? 'This screenshot was previously analyzed. Showing cached results to save time and API costs.'
+                  : isBatchDuplicate
+                    ? 'Skipped: A file with the same name exists in this upload batch.'
+                    : 'Skipped: A file with this name already exists in your history.'}
+              </p>
+              {data && data._timestamp && (
+                <p className="text-blue-600 text-sm">
+                  Original analysis: {new Date(data._timestamp).toLocaleString()}
+                </p>
+              )}
+            </div>
+            {file && (
+              <button
+                type="button"
+                onClick={handleReprocessClick}
+                className="ml-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors whitespace-nowrap flex items-center gap-2"
+              >
+                <span>🔄</span>
+                <span>{data ? 'Re-analyze' : 'Analyze'} Anyway</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 

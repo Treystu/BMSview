@@ -1,10 +1,8 @@
-const { describe, test, expect, beforeEach, jest } = require('@jest/globals');
-
 // Mock the insights generation handler
 const mockHandler = jest.fn();
-jest.mock('../netlify/functions/generate-insights.cjs', () => ({
-  handler: mockHandler
-}));
+
+// Note: We're testing the API contract, not the actual implementation
+// The actual function is a Netlify serverless function that can't be easily imported
 
 describe('Insights Generation', () => {
   beforeEach(() => {

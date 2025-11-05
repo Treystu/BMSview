@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "ESNext",
     "useDefineForClassFields": true,
-    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ESNext"
+    ],
     "allowJs": true,
     "checkJs": true,
     "skipLibCheck": true,
@@ -19,24 +23,52 @@
     "declaration": true,
     "sourceMap": true,
     "inlineSources": true,
-    "paths": {
-      "@/*": ["./src/*"],
-      "@components/*": ["./components/*"],
-      "@services/*": ["./services/*"],
-      "@state/*": ["./state/*"],
-      "@hooks/*": ["./hooks/*"],
-      "@utils/*": ["./utils/*"],
-      "@types/*": ["./types/*"]
-    },
     "baseUrl": ".",
     "paths": {
-      "components/*": ["./components/*"],
-      "services/*": ["./services/*"],
-      "state/*": ["./state/*"],
-      "hooks/*": ["./hooks/*"],
-      "utils/*": ["./utils/*"]
+      "@/*": [
+        "./src/*"
+      ],
+      "@components/*": [
+        "./components/*"
+      ],
+      "@services/*": [
+        "./services/*"
+      ],
+      "@state/*": [
+        "./state/*"
+      ],
+      "@hooks/*": [
+        "./hooks/*"
+      ],
+      "@utils/*": [
+        "./utils/*"
+      ],
+      "@types/*": [
+        "./types/*"
+      ],
+      "components/*": [
+        "./components/*"
+      ],
+      "services/*": [
+        "./services/*"
+      ],
+      "state/*": [
+        "./state/*"
+      ],
+      "hooks/*": [
+        "./hooks/*"
+      ],
+      "utils/*": [
+        "./utils/*"
+      ]
     }
   },
-  "include": ["."],
-  "exclude": ["dist", "node_modules", "netlify"]
+  "include": [
+    "."
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "netlify"
+  ]
 }

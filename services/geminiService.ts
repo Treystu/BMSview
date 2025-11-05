@@ -33,17 +33,19 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
  * ***NEW SYNCHRONOUS FUNCTION***
  * Analyzes a single BMS screenshot and returns the data directly.
  * This replaces the old `analyzeBmsScreenshots` job-based function.
+ * @param file - The file to analyze
+ * @param forceReanalysis - If true, bypasses duplicate detection and forces a new analysis
  */
-export const analyzeBmsScreenshot = async (file: File): Promise<AnalysisData> => {
-    const analysisContext = { fileName: file.name, fileSize: file.size };
+export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean = false): Promise<AnalysisData> => {
+    const analysisContext = { fileName: file.name, fileSize: file.size, forceReanalysis };
     log('info', 'Starting synchronous analysis.', analysisContext);
-    
+
     try {
-                // Offload file read + network call to a worker using a blob fallback so it works
-                // regardless of bundler. If worker fails or times out, fall back to direct fetch.
-                if (typeof Worker !== 'undefined') {
-                        try {
-                                const workerScript = `
+        // Offload file read + network call to a worker using a blob fallback so it works
+        // regardless of bundler. If worker fails or times out, fall back to direct fetch.
+        if (typeof Worker !== 'undefined') {
+            try {
+                const workerScript = `
                                 self.onmessage = async function(e) {
                                     const { endpoint } = e.data || {};
                                     const file = e.data.file;
@@ -77,73 +79,73 @@ export const analyzeBmsScreenshot = async (file: File): Promise<AnalysisData> =>
                                 };
                                 `;
 
-                                const blob = new Blob([workerScript], { type: 'application/javascript' });
-                                const blobUrl = URL.createObjectURL(blob);
-                                const worker = new Worker(blobUrl);
+                const blob = new Blob([workerScript], { type: 'application/javascript' });
+                const blobUrl = URL.createObjectURL(blob);
+                const worker = new Worker(blobUrl);
 
-                                const workerPromise = new Promise<Response>( (resolve, reject) => {
-                                        const timeout = setTimeout(() => {
-                                                worker.terminate();
-                                                URL.revokeObjectURL(blobUrl);
-                                                reject(new Error('Worker timed out after 60 seconds'));
-                                        }, 60000);
+                const workerPromise = new Promise<Response>((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        worker.terminate();
+                        URL.revokeObjectURL(blobUrl);
+                        reject(new Error('Worker timed out after 60 seconds'));
+                    }, 60000);
 
-                                        worker.onmessage = (msg) => {
-                                                clearTimeout(timeout);
-                                                const data = msg.data || {};
-                                                if (data.error) {
-                                                        worker.terminate();
-                                                        URL.revokeObjectURL(blobUrl);
-                                                        reject(new Error(data.error));
-                                                        return;
-                                                }
-
-                                                // Build a fake Response-like object
-                                                const fakeResp = {
-                                                        ok: !!data.ok,
-                                                        status: data.status || 200,
-                                                        json: async () => data.json,
-                                                } as unknown as Response;
-
-                                                worker.terminate();
-                                                URL.revokeObjectURL(blobUrl);
-                                                resolve(fakeResp);
-                                        };
-
-                                        worker.onerror = (e) => {
-                                                clearTimeout(timeout);
-                                                worker.terminate();
-                                                URL.revokeObjectURL(blobUrl);
-                                                reject(new Error(e?.message || 'Worker error'));
-                                        };
-
-                                        // Post the file and endpoint (file is transferable in browsers)
-                                        try {
-                                            worker.postMessage({ file, endpoint: '/.netlify/functions/analyze?sync=true' });
-                                        } catch (postErr) {
-                                            clearTimeout(timeout);
-                                            worker.terminate();
-                                            URL.revokeObjectURL(blobUrl);
-                                            reject(postErr);
-                                        }
-                                });
-
-                                const response = await workerPromise;
-                                const result: { analysis: AnalysisData } = await response.json();
-                                if (!result || !result.analysis) {
-                                    log('error', 'API response was successful but missing analysis data (worker).', result);
-                                    throw new Error('API response was successful but missing analysis data.');
-                                }
-                                log('info', 'Synchronous analysis successful (worker).', { fileName: file.name });
-                                return result.analysis;
-                        } catch (workerErr) {
-                                log('warn', 'Worker analysis failed; falling back to direct fetch.', { error: workerErr instanceof Error ? workerErr.message : String(workerErr) });
-                                // Fall through to direct fetch
+                    worker.onmessage = (msg) => {
+                        clearTimeout(timeout);
+                        const data = msg.data || {};
+                        if (data.error) {
+                            worker.terminate();
+                            URL.revokeObjectURL(blobUrl);
+                            reject(new Error(data.error));
+                            return;
                         }
+
+                        // Build a fake Response-like object
+                        const fakeResp = {
+                            ok: !!data.ok,
+                            status: data.status || 200,
+                            json: async () => data.json,
+                        } as unknown as Response;
+
+                        worker.terminate();
+                        URL.revokeObjectURL(blobUrl);
+                        resolve(fakeResp);
+                    };
+
+                    worker.onerror = (e) => {
+                        clearTimeout(timeout);
+                        worker.terminate();
+                        URL.revokeObjectURL(blobUrl);
+                        reject(new Error(e?.message || 'Worker error'));
+                    };
+
+                    // Post the file and endpoint (file is transferable in browsers)
+                    try {
+                        worker.postMessage({ file, endpoint: '/.netlify/functions/analyze?sync=true' });
+                    } catch (postErr) {
+                        clearTimeout(timeout);
+                        worker.terminate();
+                        URL.revokeObjectURL(blobUrl);
+                        reject(postErr);
+                    }
+                });
+
+                const response = await workerPromise;
+                const result: { analysis: AnalysisData } = await response.json();
+                if (!result || !result.analysis) {
+                    log('error', 'API response was successful but missing analysis data (worker).', result);
+                    throw new Error('API response was successful but missing analysis data.');
                 }
+                log('info', 'Synchronous analysis successful (worker).', { fileName: file.name });
+                return result.analysis;
+            } catch (workerErr) {
+                log('warn', 'Worker analysis failed; falling back to direct fetch.', { error: workerErr instanceof Error ? workerErr.message : String(workerErr) });
+                // Fall through to direct fetch
+            }
+        }
 
         const imagePayload = await fileWithMetadataToBase64(file);
-        
+
         const controller = new AbortController();
         // Give it a 60-second timeout.
         const timeoutId = setTimeout(() => {
@@ -156,9 +158,13 @@ export const analyzeBmsScreenshot = async (file: File): Promise<AnalysisData> =>
             // We pass sync=true to tell the backend to process immediately
         };
 
-        log('info', 'Submitting analysis request to /.netlify/functions/analyze?sync=true', analysisContext);
+        const endpoint = forceReanalysis
+            ? '/.netlify/functions/analyze?sync=true&force=true'
+            : '/.netlify/functions/analyze?sync=true';
 
-        const response = await fetch('/.netlify/functions/analyze?sync=true', {
+        log('info', `Submitting analysis request to ${endpoint}`, analysisContext);
+
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(dataToSend),
@@ -166,12 +172,12 @@ export const analyzeBmsScreenshot = async (file: File): Promise<AnalysisData> =>
         });
 
         clearTimeout(timeoutId);
-        
+
         log('info', 'Analyze API response received.', { status: response.status });
         if (!response.ok) {
             let errorBody;
             // ***FIX: Declare errorText here to make it available in the outer scope.***
-            let errorText = 'Failed to read error response'; 
+            let errorText = 'Failed to read error response';
             try {
                 // Read as text first, then try to parse as JSON
                 errorText = await response.text();
@@ -189,18 +195,28 @@ export const analyzeBmsScreenshot = async (file: File): Promise<AnalysisData> =>
             const errorMessage = (typeof errorBody === 'object' && errorBody?.error) ? errorBody.error : `Server responded with status ${response.status}: ${errorText}`;
             throw new Error(errorMessage);
         }
-        
+
         // In sync mode, the server returns the full AnalysisRecord directly.
-        // We just want the 'analysis' part.
-        const result: { analysis: AnalysisData } = await response.json();
-        
+        // We extract the 'analysis' part and also check for dedupeHit flag
+        const result: { analysis: AnalysisData; dedupeHit?: boolean; recordId?: string; timestamp?: string } = await response.json();
+
         if (!result.analysis) {
             log('error', 'API response was successful but missing analysis data.', result);
             throw new Error('API response was successful but missing analysis data.');
         }
 
-        log('info', 'Synchronous analysis successful.', { fileName: file.name });
-        return result.analysis;
+        log('info', 'Synchronous analysis successful.', { fileName: file.name, isDuplicate: !!result.dedupeHit });
+
+        // Attach metadata about duplicate detection to the analysis data
+        // This allows the UI to show duplicate status
+        const analysisWithMeta = {
+            ...result.analysis,
+            _isDuplicate: result.dedupeHit || false,
+            _recordId: result.recordId,
+            _timestamp: result.timestamp
+        };
+
+        return analysisWithMeta as AnalysisData;
 
     } catch (error) {
         const isAbort = error instanceof Error && error.name === 'AbortError';

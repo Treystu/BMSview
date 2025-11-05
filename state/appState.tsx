@@ -1,5 +1,5 @@
-import React, { createContext, useReducer, useContext, Dispatch } from 'react';
-import type { BmsSystem, DisplayableAnalysisResult, AnalysisRecord } from '../types';
+import React, { createContext, Dispatch, useContext, useReducer } from 'react';
+import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
 
 // ***REMOVED***: JobCreationResponse is no longer needed.
 
@@ -46,7 +46,7 @@ export type AppAction =
   | { type: 'PREPARE_ANALYSIS'; payload: DisplayableAnalysisResult[] }
   // ***MODIFIED***: Simplified actions. No more job IDs.
   | { type: 'UPDATE_ANALYSIS_STATUS'; payload: { fileName: string; status: string } }
-  | { type: 'SYNC_ANALYSIS_COMPLETE'; payload: { fileName: string; record: AnalysisRecord } }
+  | { type: 'SYNC_ANALYSIS_COMPLETE'; payload: { fileName: string; record: AnalysisRecord; isDuplicate?: boolean } }
   | { type: 'ANALYSIS_COMPLETE' }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'FETCH_DATA_SUCCESS'; payload: { systems: PaginatedResponse<BmsSystem> | BmsSystem[]; history: PaginatedResponse<AnalysisRecord> | AnalysisRecord[] } }
@@ -58,7 +58,7 @@ export type AppAction =
   | { type: 'UPDATE_RESULTS_AFTER_LINK' }
   | { type: 'REPROCESS_START'; payload: { fileName: string } }
   | { type: 'ASSIGN_SYSTEM_TO_ANALYSIS'; payload: { fileName: string; systemId: string } };
-  // ***REMOVED***: All job-polling actions are gone.
+// ***REMOVED***: All job-polling actions are gone.
 
 // 3. Reducer
 const appReducer = (state: AppState, action: AppAction): AppState => {
@@ -74,20 +74,21 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
     case 'UPDATE_ANALYSIS_STATUS':
       return {
         ...state,
-        analysisResults: state.analysisResults.map(r => 
+        analysisResults: state.analysisResults.map(r =>
           r.fileName === action.payload.fileName ? { ...r, error: action.payload.status } : r
         ),
       };
-    
+
     case 'SYNC_ANALYSIS_COMPLETE': {
-      const { fileName, record } = action.payload;
+      const { fileName, record, isDuplicate } = action.payload;
       // Update analysisResults
-      const updatedResults = state.analysisResults.map(r => 
+      const updatedResults = state.analysisResults.map(r =>
         r.fileName === fileName ? {
           ...r,
           data: record.analysis,
           weather: record.weather,
           recordId: record.id,
+          isDuplicate: isDuplicate || false,
           error: null,
         } : r
       );
@@ -110,7 +111,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         analysisHistory: newHistory,
       };
     }
-    
+
     // ***REMOVED***: UPDATE_JOB_STATUS and UPDATE_JOB_COMPLETED are gone.
 
     case 'ANALYSIS_COMPLETE':
@@ -118,7 +119,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
 
     case 'SET_ERROR':
       return { ...state, error: action.payload, isLoading: false };
-      
+
     case 'FETCH_DATA_SUCCESS':
       return {
         ...state,
@@ -126,14 +127,14 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         analysisHistory: action.payload.history,
         error: null,
       };
-      
+
     case 'OPEN_REGISTER_MODAL':
-      return { 
+      return {
         ...state,
-        isRegisterModalOpen: true, 
+        isRegisterModalOpen: true,
         registrationContext: action.payload,
       };
-      
+
     case 'CLOSE_REGISTER_MODAL':
       return {
         ...state,
@@ -142,20 +143,20 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         registrationError: null,
         registrationSuccess: null,
       };
-      
+
     case 'REGISTER_SYSTEM_START':
       return { ...state, isRegistering: true, registrationError: null, registrationSuccess: null };
-      
+
     case 'REGISTER_SYSTEM_SUCCESS':
       return { ...state, isRegistering: false, registrationSuccess: action.payload };
-      
+
     case 'REGISTER_SYSTEM_ERROR':
       return { ...state, isRegistering: false, registrationError: action.payload };
-      
+
     case 'UPDATE_RESULTS_AFTER_LINK':
-       // This just forces a re-render of components listening to results
+      // This just forces a re-render of components listening to results
       return { ...state, analysisResults: [...state.analysisResults] };
-      
+
     case 'REPROCESS_START':
       return {
         ...state,
@@ -176,7 +177,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
             : r
         )
       };
-      
+
     default:
       return state;
   }

@@ -51,23 +51,23 @@ class UploadOptimizer {
       const startTime = Date.now();
       const result = await uploadFunction(file);
       const duration = Date.now() - startTime;
-      
+
       // Log performance metrics
       this.logPerformanceMetrics(file, duration, attempt, true);
-      
+
       return result;
     } catch (error) {
       const isRetryable = this.isRetryableError(error);
       const shouldRetry = isRetryable && attempt < this.maxRetries;
-      
+
       if (shouldRetry) {
         const delay = this.calculateRetryDelay(attempt, error);
         console.log(`Upload failed for ${file.name}, retry ${attempt}/${this.maxRetries} in ${delay}ms`);
-        
+
         await this.sleep(delay);
         return this.uploadWithBackoff(file, uploadFunction, attempt + 1);
       }
-      
+
       // Log failure
       this.logPerformanceMetrics(file, 0, attempt, false, error);
       throw error;
@@ -98,17 +98,17 @@ class UploadOptimizer {
    */
   calculateRetryDelay(attempt, error) {
     let baseDelay = this.baseRetryDelay * Math.pow(2, attempt - 1);
-    
+
     // Add jitter to prevent thundering herd
     const jitter = Math.random() * 0.3 * baseDelay;
     baseDelay += jitter;
-    
+
     // Adjust delay based on error type
     if (error.status === 429) {
       // Rate limit - use longer delay
       baseDelay *= 2;
     }
-    
+
     return Math.min(baseDelay, 30000); // Cap at 30 seconds
   }
 
@@ -118,30 +118,30 @@ class UploadOptimizer {
   async processBatch(files, uploadFunction, progressCallback) {
     const concurrency = this.calculateConcurrency(files.length, this.getTotalSize(files));
     const batchSize = this.calculateBatchSize(files.length, this.getAverageSize(files));
-    
+
     console.log(`Processing ${files.length} files with concurrency ${concurrency}, batch size ${batchSize}`);
-    
+
     const results = [];
     const errors = [];
     let completed = 0;
-    
+
     // Create batches
     const batches = [];
     for (let i = 0; i < files.length; i += batchSize) {
       batches.push(files.slice(i, i + batchSize));
     }
-    
+
     // Process batches with concurrency control
     const semaphore = new Semaphore(concurrency);
-    
+
     const batchPromises = batches.map(async (batch, batchIndex) => {
       await semaphore.acquire();
-      
+
       try {
         const batchResults = await Promise.allSettled(
           batch.map(file => this.uploadWithBackoff(file, uploadFunction))
         );
-        
+
         // Process results
         batchResults.forEach((result, index) => {
           if (result.status === 'fulfilled') {
@@ -153,7 +153,7 @@ class UploadOptimizer {
             });
           }
           completed++;
-          
+
           // Report progress
           if (progressCallback) {
             progressCallback({
@@ -169,9 +169,9 @@ class UploadOptimizer {
         semaphore.release();
       }
     });
-    
+
     await Promise.all(batchPromises);
-    
+
     return {
       results,
       errors,
@@ -211,7 +211,7 @@ class UploadOptimizer {
    */
   validateFiles(files) {
     const validationResults = [];
-    
+
     files.forEach(file => {
       const result = {
         name: file.name,
@@ -219,32 +219,32 @@ class UploadOptimizer {
         valid: true,
         errors: []
       };
-      
+
       // Check file size
       if (file.size > this.maxFileSize) {
         result.valid = false;
         result.errors.push(`File size ${this.formatBytes(file.size)} exceeds maximum ${this.formatBytes(this.maxFileSize)}`);
       }
-      
+
       // Check file type (basic validation)
       const allowedTypes = ['image/', 'text/', 'application/json', 'application/csv'];
       if (!allowedTypes.some(type => file.type.startsWith(type))) {
         result.valid = false;
         result.errors.push(`File type ${file.type} is not supported`);
       }
-      
+
       // Check filename
       if (file.name.length > 255) {
         result.valid = false;
         result.errors.push('Filename is too long (max 255 characters)');
       }
-      
+
       validationResults.push(result);
     });
-    
+
     const validFiles = validationResults.filter(r => r.valid).map(r => r.name);
     const invalidFiles = validationResults.filter(r => !r.valid);
-    
+
     return {
       validFiles,
       invalidFiles,
@@ -276,18 +276,51 @@ class UploadOptimizer {
       timestamp: new Date().toISOString(),
       error: error?.message
     };
-    
+
     // In production, this would go to a monitoring service
     console.log('Upload Metrics:', JSON.stringify(metrics, null, 2));
-    
+
     // Store in telemetry only if enabled (opt-in). Default: no persistent storage in prod.
+    // Telemetry is an ES module, so we can't use require() in a .js file
+    // Instead, we'll use a simple localStorage fallback for metrics storage
+    if (this._shouldStoreTelemetry()) {
+      this._storeMetricToLocalStorage('uploadMetrics', metrics);
+    }
+  }
+
+  /**
+   * Check if telemetry should be stored (opt-in only)
+   */
+  _shouldStoreTelemetry() {
     try {
-      const telemetry = require('./telemetry');
-      if (telemetry && typeof telemetry.storeMetric === 'function') {
-        telemetry.storeMetric('uploadMetrics', metrics);
+      if (typeof window !== 'undefined' && window.__ENABLE_TELEMETRY__ === true) return true;
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('enableTelemetry') === '1') return true;
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Store metric to localStorage or test storage
+   */
+  _storeMetricToLocalStorage(key, metric) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(key) || '[]';
+        const arr = JSON.parse(raw);
+        arr.push(metric);
+        localStorage.setItem(key, JSON.stringify(arr.slice(-100))); // Keep last 100
+      } else {
+        // For testing environments without localStorage
+        if (!this._testMetrics) {
+          this._testMetrics = [];
+        }
+        this._testMetrics.push(metric);
+        this._testMetrics = this._testMetrics.slice(-100); // Keep last 100
       }
     } catch (e) {
-      // ignore in environments without telemetry module resolution
+      // swallow
     }
   }
 
@@ -305,24 +338,29 @@ class UploadOptimizer {
     try {
       let metrics = [];
       try {
-        const telemetry = require('./telemetry');
-        if (telemetry && typeof telemetry.getMetrics === 'function') {
-          metrics = telemetry.getMetrics('uploadMetrics');
+        if (typeof localStorage !== 'undefined') {
+          const raw = localStorage.getItem('uploadMetrics') || '[]';
+          metrics = JSON.parse(raw);
+        } else if (this._testMetrics) {
+          // For testing environments without localStorage
+          metrics = this._testMetrics;
         }
       } catch (e) {
         // ignore
       }
-      
+
       if (metrics.length === 0) {
         return { message: 'No upload statistics available' };
       }
-      
+
       const successful = metrics.filter(m => m.success);
       const failed = metrics.filter(m => !m.success);
-      
-      const avgDuration = successful.reduce((sum, m) => sum + m.duration, 0) / successful.length;
+
+      const avgDuration = successful.length > 0
+        ? successful.reduce((sum, m) => sum + m.duration, 0) / successful.length
+        : 0;
       const totalSize = metrics.reduce((sum, m) => sum + m.size, 0);
-      
+
       return {
         totalUploads: metrics.length,
         successful: successful.length,
@@ -348,8 +386,8 @@ class UploadOptimizer {
         telemetry.clearMetrics('uploadMetrics');
         return;
       }
-    } catch (e) {}
-    try { localStorage.removeItem('uploadMetrics'); } catch (e) {}
+    } catch (e) { }
+    try { localStorage.removeItem('uploadMetrics'); } catch (e) { }
   }
 }
 

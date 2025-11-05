@@ -21,7 +21,7 @@ export interface AnalysisData {
   fullCapacity?: number | null;
   cycleCount?: number | null;
   temperature: number | null; // Main battery temperature (e.g., T1)
-  
+
   // New fields for richer data extraction
   temperatures?: number[]; // For all temp sensors, e.g., T1, T2
   mosTemperature?: number | null;
@@ -34,6 +34,10 @@ export interface AnalysisData {
   snCode?: string | null;
   numTempSensors?: number | null;
 
+  // Duplicate detection metadata (prefixed with _ to indicate internal use)
+  _isDuplicate?: boolean;
+  _recordId?: string;
+  _timestamp?: string;
 
   cellVoltages: number[];
   highestCellVoltage?: number | null;
