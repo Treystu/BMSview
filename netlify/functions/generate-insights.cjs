@@ -123,7 +123,7 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
     const batteryData = normalizeBatteryData(body);
 
     // Process battery data
-    response = await processBatteryData(batteryData, body, genAIOverride, log);
+    response = await processBatteryData(batteryData, body || {}, genAIOverride, log);
 
   } catch (error) {
     const err = error instanceof Error ? error : new Error('Unknown error');
@@ -160,10 +160,20 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
  * @param {Logger} log Logger instance
  * @returns {Promise<ResponseObject>} Response with insights
  */
-async function processBatteryData(batteryData, body, genAIOverride, log) {
-  // Handle empty measurements
-  // Handle empty measurements
+async function processBatteryData(batteryData, body = {}, genAIOverride, log) {
+  log.info('Processing battery data', {
+    measurementCount: batteryData?.measurements?.length || 0,
+    hasSystemId: !!body.systemId,
+    hasCustomPrompt: !!body.customPrompt
+  });
+
+  // Handle empty measurements with better logging
   if (!batteryData?.measurements?.length) {
+    log.warn('No battery measurements found in request', {
+      bodyKeys: Object.keys(body),
+      batteryDataKeys: batteryData ? Object.keys(batteryData) : []
+    });
+
     return {
       statusCode: 200,
       body: JSON.stringify({
@@ -171,14 +181,18 @@ async function processBatteryData(batteryData, body, genAIOverride, log) {
         insights: {
           healthStatus: 'Unknown',
           performance: { trend: 'Unknown', capacityRetention: 0, degradationRate: 0 },
-          recommendations: ['Insufficient data for analysis'],
+          recommendations: ['No battery measurements provided. Please ensure data is being sent correctly.'],
           estimatedLifespan: 'Unknown',
           efficiency: { chargeEfficiency: 0, dischargeEfficiency: 0, cyclesAnalyzed: 0 },
-          rawText: 'No battery measurements provided.',
+          rawText: 'No battery measurements provided in the request.',
           metadata: {
-            confidence: 'low',
+            confidence: 'none',
             source: 'empty_data_handler',
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            debug: {
+              receivedKeys: Object.keys(body),
+              batteryDataStructure: batteryData
+            }
           }
         },
         tokenUsage: { prompt: 0, generated: 0, total: 0 },
@@ -198,25 +212,44 @@ async function processBatteryData(batteryData, body, genAIOverride, log) {
   }
 
   // Build prompt and get model
-  const systemId = body.systemId || body.system || null;
+  const systemId = body.systemId || body.system || 'unknown';
   const prompt = buildPrompt(systemId, dataString, body.customPrompt);
   const promptTokens = estimateTokens(prompt);
   const model = await getAIModel(genAIOverride, log);
 
   // Generate insights
   let insightsText = '';
+  let llmError = null;
+
   try {
     if (model && typeof model.generateContent === 'function') {
+      log.info('Generating insights with Gemini', { promptLength: prompt.length });
+
       const genResult = await model.generateContent(prompt);
-      const resp = genResult && genResult.response;
-      insightsText = typeof resp?.text === 'function' ? resp.text() : String(resp || '');
+      const resp = genResult?.response;
+
+      if (resp && typeof resp.text === 'function') {
+        insightsText = resp.text();
+        log.info('Successfully generated insights', { responseLength: insightsText.length });
+      } else {
+        throw new Error('Invalid response structure from Gemini');
+      }
+    } else {
+      throw new Error('Model not available or invalid');
     }
-  } catch (error) {
-    log.warn('LLM generation failed, using fallback', { error: error.message });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    llmError = error;
+    log.warn('LLM generation failed, using fallback', {
+      error: error.message,
+      hasModel: !!model,
+      modelType: typeof (model && model.generateContent)
+    });
     insightsText = fallbackTextSummary(batteryData);
   }
 
   if (!insightsText) {
+    log.warn('No insights text generated, using fallback');
     insightsText = fallbackTextSummary(batteryData);
   }
 
@@ -229,26 +262,27 @@ async function processBatteryData(batteryData, body, genAIOverride, log) {
       const candidate = insightsText.slice(first, last + 1);
       llmJson = JSON.parse(candidate);
     }
-  } catch (e) {
-    log.warn('Could not parse JSON from LLM response, continuing with text parse', { error: e.message });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    log.warn('Could not parse JSON from LLM response, continuing with text parse', { error: error.message });
     llmJson = null;
   }
 
   // Parse free-text insights into structured object (will include defaults)
-  const structured = parseInsights(insightsText, batteryData, log) || {};
+  const structured = /** @type {any} */ (parseInsights(insightsText, batteryData, log) || {});
 
   // Deterministic runtime estimate (always compute to ensure availability)
   const runtimeDet = calculateRuntimeEstimate(batteryData.measurements || [], {
-    capacityAh: batteryData.capacity || batteryData.capacityAh || null,
-    stateOfCharge: batteryData.stateOfCharge || batteryData.soc || null,
-    voltage: batteryData.voltage || null
+    capacityAh: batteryData.capacity || batteryData.capacityAh || undefined,
+    stateOfCharge: batteryData.stateOfCharge || batteryData.soc || undefined,
+    voltage: batteryData.voltage || undefined
   });
 
   // Average discharge power (W) for generator sizing
   const discharge = (batteryData.measurements || []).filter(m => typeof m.current === 'number' && m.current < 0 && typeof m.voltage === 'number');
   let avgPowerW = null;
   if (discharge.length) {
-    const powers = discharge.map(m => Math.abs(m.current * m.voltage));
+    const powers = discharge.map(m => Math.abs((m.current || 0) * (m.voltage || 0)));
     avgPowerW = powers.reduce((s, v) => s + v, 0) / powers.length;
   }
 
@@ -256,14 +290,15 @@ async function processBatteryData(batteryData, body, genAIOverride, log) {
   const runtimeHours = llmJson && typeof llmJson.runtimeEstimateHours === 'number' ? llmJson.runtimeEstimateHours : runtimeDet.runtimeHours;
   const runtimeExplanation = llmJson && llmJson.runtimeEstimateExplanation ? llmJson.runtimeEstimateExplanation : runtimeDet.explanation;
 
-  const generatorRecommendations = llmJson && Array.isArray(llmJson.generatorRecommendations) && llmJson.generatorRecommendations.length ? llmJson.generatorRecommendations : generateGeneratorRecommendations(runtimeHours, avgPowerW);
+  const generatorRecommendations = llmJson && Array.isArray(llmJson.generatorRecommendations) && llmJson.generatorRecommendations.length ? llmJson.generatorRecommendations : generateGeneratorRecommendations(runtimeHours ?? NaN, avgPowerW ?? NaN);
 
   // Compute usage intensity (high/medium/low) from average absolute current
-  const currents = (batteryData.measurements || []).filter(m => typeof m.current === 'number').map(m => Math.abs(m.current));
+  const currents = (batteryData.measurements || []).filter(m => typeof m.current === 'number').map(m => Math.abs(m.current || 0));
   const avgAbsCurrent = currents.length ? currents.reduce((s, v) => s + v, 0) / currents.length : 0;
   const usageIntensity = avgAbsCurrent > 10 ? 'high' : avgAbsCurrent > 5 ? 'medium' : 'low';
 
   // Format runtime values for human-friendly answers
+  /** @param {number | null | undefined} h */
   const formatHours = (h) => {
     if (h == null) return 'unknown';
     if (h < 1) return `${Math.round(h * 60)} minutes`;
@@ -355,8 +390,8 @@ async function processBatteryData(batteryData, body, genAIOverride, log) {
 
 /**
  * Generate a beautifully formatted summary for display
- * @param {Object} insights The insights object
- * @param {Object} batteryData The battery data
+ * @param {any} insights The insights object
+ * @param {any} batteryData The battery data
  * @returns {string} Formatted text summary
  */
 function generateFormattedSummary(insights, batteryData) {
@@ -490,56 +525,53 @@ function getHealthIcon(status) {
 }
 
 function normalizeBatteryData(body) {
-  let batteryData = null;
+  let batteryData = {};
 
-  // Handle various input formats
-  if (Array.isArray(body)) {
-    batteryData = { measurements: body };
-  } else if (Array.isArray(body.measurements)) {
-    batteryData = { ...body, measurements: body.measurements };
-  } else if (Array.isArray(body.analysisData)) {
-    batteryData = { measurements: body.analysisData };
-  } else if (Array.isArray(body.analysisData?.measurements)) {
-    batteryData = { ...body.analysisData, measurements: body.analysisData.measurements };
-  } else if (Array.isArray(body.batteryData?.measurements)) {
-    batteryData = { ...body.batteryData, measurements: body.batteryData.measurements };
-  } else if (Array.isArray(body.data)) {
-    batteryData = { measurements: body.data };
-  } else if (body?.measurements?.items && Array.isArray(body.measurements.items)) {
-    batteryData = { measurements: body.measurements.items };
+  // Handle different input formats
+  if (body.batteryData) {
+    batteryData = body.batteryData;
+  } else if (body.analysisData) {
+    batteryData = body.analysisData;
+  } else if (body.measurements) {
+    batteryData = { measurements: body.measurements };
+  } else {
+    // Create empty structure
+    batteryData = { measurements: [] };
   }
 
-  // Validate and normalize measurements
-  if (batteryData?.measurements) {
-    batteryData.measurements = batteryData.measurements
-      .filter(m => m && typeof m === 'object')
-      .map(m => ({
-        timestamp: m.timestamp || new Date().toISOString(),
-        voltage: typeof m.voltage === 'number' ? m.voltage : null,
-        current: typeof m.current === 'number' ? m.current : null,
-        temperature: typeof m.temperature === 'number' ? m.temperature : null,
-        stateOfCharge: typeof m.stateOfCharge === 'number' ? m.stateOfCharge : null,
-        capacity: typeof m.capacity === 'number' ? m.capacity : null
-      }))
-      .filter(m =>
-        m.voltage !== null ||
-        m.current !== null ||
-        m.temperature !== null ||
-        m.stateOfCharge !== null
-      );
+  // Handle nested measurements structure
+  if (batteryData.measurements?.items) {
+    batteryData.measurements = batteryData.measurements.items;
   }
 
-  // Handle empty or invalid data
-  if (!batteryData || !Array.isArray(batteryData.measurements)) {
-    batteryData = {
-      dlNumber: body.dlNumber || body.systemId || 'unknown',
-      measurements: [],
-      metadata: {
-        source: 'empty_data_handler',
-        timestamp: new Date().toISOString()
-      }
-    };
+  // Ensure measurements is an array
+  if (!Array.isArray(batteryData.measurements)) {
+    batteryData.measurements = [];
   }
+
+  // Validate and clean measurements
+  batteryData.measurements = batteryData.measurements
+    .filter(m => m && typeof m === 'object')
+    .map(m => ({
+      timestamp: m.timestamp || new Date().toISOString(),
+      voltage: typeof m.voltage === 'number' ? m.voltage : null,
+      current: typeof m.current === 'number' ? m.current : null,
+      temperature: typeof m.temperature === 'number' ? m.temperature : null,
+      stateOfCharge: typeof m.stateOfCharge === 'number' ? m.stateOfCharge : null,
+      capacity: typeof m.capacity === 'number' ? m.capacity : null
+    }))
+    .filter(m =>
+      m.voltage !== null ||
+      m.current !== null ||
+      m.temperature !== null ||
+      m.stateOfCharge !== null ||
+      m.capacity !== null
+    );
+
+  // Add metadata
+  batteryData.systemId = body.systemId || body.system || 'unknown';
+  batteryData.capacity = batteryData.capacity || body.capacity;
+  batteryData.voltage = batteryData.voltage || body.voltage;
 
   return batteryData;
 }
@@ -547,12 +579,32 @@ function normalizeBatteryData(body) {
 async function getAIModel(genAIOverride, log) {
   if (genAIOverride) return genAIOverride;
 
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    log.warn('GEMINI_API_KEY not configured');
+    return null;
+  }
+
   try {
     const { GoogleGenerativeAI } = require('@google/generative-ai');
-    const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-    return client.getGenerativeModel ? client.getGenerativeModel({ model: 'gemini-pro' }) : null;
-  } catch (error) {
-    log.warn('LLM client not available', { error: error.message });
+    const client = new GoogleGenerativeAI(apiKey);
+
+    // Use a more reliable model configuration
+    const model = client.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+      generationConfig: {
+        temperature: 0.7,
+        topP: 0.95,
+        topK: 40,
+        maxOutputTokens: 2048,
+      }
+    });
+
+    log.info('Gemini model initialized successfully');
+    return model;
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    log.warn('Failed to initialize Gemini model', { error: error.message });
     return null;
   }
 }

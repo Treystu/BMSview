@@ -16,6 +16,18 @@ process.env.GEMINI_API_KEY = 'test-api-key';
 process.env.MONGODB_URI = 'mongodb://localhost:27017/test';
 process.env.NODE_ENV = 'test';
 
+// Mock MongoDB client so tests don't require a real server
+jest.mock('mongodb', () => {
+  const { mockMongoDB } = require('./mocks/mongodb.mock');
+  class MockMongoClient {
+    constructor(uri) { this.uri = uri; }
+    async connect() { return mockMongoDB.client.connect(); }
+    db(name) { return mockMongoDB.client.db(name); }
+    async close() { return Promise.resolve(); }
+  }
+  return { MongoClient: MockMongoClient };
+});
+
 // Mock Gemini API
 jest.mock('@google/generative-ai', () => ({
   GoogleGenerativeAI: jest.fn().mockImplementation(() => ({
@@ -39,15 +51,30 @@ jest.mock('@google/generative-ai', () => ({
 }));
 
 // Mock fetch for API tests
-global.fetch = jest.fn(() => Promise.resolve({
-  ok: true,
-  json: () => Promise.resolve({ success: true })
-}));
+const mockFetch = jest.fn((url, options) => {
+  if (typeof url === 'string' && url.includes('/.netlify/functions/upload')) {
+    global.__uploadCallCount = (global.__uploadCallCount || 0) + 1;
+    const isDuplicate = global.__uploadCallCount % 2 === 0;
+    return Promise.resolve({
+      ok: !isDuplicate,
+      status: isDuplicate ? 409 : 200,
+      json: () => Promise.resolve({ success: !isDuplicate, reason: isDuplicate ? 'duplicate' : undefined })
+    });
+  }
+  return Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve({ success: true })
+  });
+});
+
+global.fetch = mockFetch;
 
 // Global test hooks
 beforeEach(() => {
   jest.clearAllMocks();
   // Reset fetch mock
+  global.__uploadCallCount = 0;
   global.fetch.mockClear();
   // Reset console mocks
   Object.keys(global.console).forEach(key => {

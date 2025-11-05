@@ -184,18 +184,31 @@ async function generateHandler(event = {}, context = {}, genAIOverride) {
       system: body.system || body.systemId || ''
     };
 
-    // Set measurements from various possible sources
-    if (Array.isArray(body.measurements)) {
+
+    // Debug: log detected sources and final length
+    try {
+      logger.warn('normalize: source lengths', {
+        bodyMeasurements: Array.isArray(body.measurements) ? body.measurements.length : null,
+        bodyData: Array.isArray(body.data) ? body.data.length : null,
+        bodyBatteryData: Array.isArray(body.batteryData?.measurements) ? body.batteryData.measurements.length : null,
+        bodyAnalysisData: Array.isArray(body.analysisData?.measurements) ? body.analysisData.measurements.length : null,
+        items: Array.isArray(body.measurementsWithItems?.items) ? body.measurementsWithItems.items.length : null
+      });
+    } catch (_) { }
+
+    // Set measurements from various possible sources (prefer non-empty arrays)
+    if (Array.isArray(body.measurements) && body.measurements.length > 0) {
       batteryData.measurements = body.measurements;
-    } else if (Array.isArray(body.data)) {
+    } else if (Array.isArray(body.data) && body.data.length > 0) {
       batteryData.measurements = body.data;
-    } else if (body.batteryData?.measurements) {
+    } else if (Array.isArray(body.batteryData?.measurements) && body.batteryData.measurements.length > 0) {
       batteryData.measurements = body.batteryData.measurements;
       Object.assign(batteryData, body.batteryData);
-    } else if (body.analysisData?.measurements) {
+      try { logger.warn('normalize: final length', { len: Array.isArray(batteryData.measurements) ? batteryData.measurements.length : null }); } catch (_) { }
+    } else if (Array.isArray(body.analysisData?.measurements) && body.analysisData.measurements.length > 0) {
       batteryData.measurements = body.analysisData.measurements;
       Object.assign(batteryData, body.analysisData);
-    } else if (body.measurementsWithItems?.items) {
+    } else if (Array.isArray(body.measurementsWithItems?.items) && body.measurementsWithItems.items.length > 0) {
       batteryData.measurements = body.measurementsWithItems.items;
     }
 
@@ -332,16 +345,16 @@ REQUIRED RESPONSE FORMAT:
 }`;
   }
 
-  return `${base}\nANALYZE_AND_RETURN_JSON: { 
-    healthStatus, 
+  return `${base}\nANALYZE_AND_RETURN_JSON: {
+    healthStatus,
     performance: {
       trend,
       capacityRetention,
       degradationRate,
       currentDraw,
       estimatedRuntime
-    }, 
-    recommendations, 
+    },
+    recommendations,
     estimatedLifespan,
     efficiency: {
       chargeEfficiency,
@@ -409,11 +422,15 @@ function parseInsights(raw, batteryData) {
       }
 
       // Standard analysis response
+      const perf = analyzePerformance(batteryData);
+      const parsedPerf = { ...(parsed.performance || {}) };
+      // Never override deterministic trend with LLM text
+      if ('trend' in parsedPerf) delete parsedPerf.trend;
       return {
         healthStatus: parsed.healthStatus || extractHealthStatus(raw),
         performance: {
-          ...analyzePerformance(batteryData),
-          ...parsed.performance
+          ...perf,
+          ...parsedPerf
         },
         recommendations: parsed.recommendations || extractRecommendations(raw),
         estimatedLifespan: parsed.estimatedLifespan || extractLifespan(raw),

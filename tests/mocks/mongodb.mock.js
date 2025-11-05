@@ -1,4 +1,5 @@
-const mockDatabase = {
+// In-memory store backing the MongoDB mock
+const store = {
   systems: [
     {
       _id: 'system-1',
@@ -32,39 +33,98 @@ const mockDatabase = {
     { systemId: 'system-2', data: 'sample3' },
     { systemId: 'system-3', data: 'sample4' },
     { systemId: 'system-3', data: 'sample5' }
-  ]
+  ],
+  uploads: []
 };
+
+function getCollectionArray(name) {
+  if (!store[name]) store[name] = [];
+  return store[name];
+}
+
+function matches(doc, query) {
+  if (!query || Object.keys(query).length === 0) return true;
+  if (query.$or && Array.isArray(query.$or)) {
+    return query.$or.some(cond => cond && matches(doc, cond));
+  }
+  for (const key of Object.keys(query)) {
+    if (key === '$or') continue;
+    const expected = query[key];
+    const actual = doc[key];
+    if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
+      if ('$in' in expected) {
+        if (!expected.$in.includes(actual)) return false;
+      } else {
+        // Unsupported operator: do strict compare
+        if (JSON.stringify(expected) !== JSON.stringify(actual)) return false;
+      }
+    } else {
+      if (actual !== expected) return false;
+    }
+  }
+  return true;
+}
+
+function createCollection(name) {
+  return {
+    findOne: jest.fn(async (query) => {
+      const arr = getCollectionArray(name);
+      return arr.find(doc => matches(doc, query)) || null;
+    }),
+    insertOne: jest.fn(async (document) => {
+      const arr = getCollectionArray(name);
+      const _id = document._id || `${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const doc = { _id, ...document };
+      arr.push(doc);
+      return { insertedId: _id };
+    }),
+    insertMany: jest.fn(async (documents) => {
+      const arr = getCollectionArray(name);
+      for (const document of documents) {
+        const _id = document._id || `${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        arr.push({ _id, ...document });
+      }
+      return { insertedCount: documents.length };
+    }),
+    updateOne: jest.fn(async (filter, update) => {
+      const arr = getCollectionArray(name);
+      const idx = arr.findIndex(doc => matches(doc, filter));
+      if (idx === -1) return { modifiedCount: 0 };
+      if (update && update.$set) {
+        arr[idx] = { ...arr[idx], ...update.$set };
+      }
+      return { modifiedCount: 1 };
+    }),
+    deleteMany: jest.fn(async (filter) => {
+      const arr = getCollectionArray(name);
+      const before = arr.length;
+      const remaining = arr.filter(doc => !matches(doc, filter));
+      store[name] = remaining;
+      return { deletedCount: before - remaining.length };
+    }),
+    aggregate: jest.fn(() => ({ toArray: jest.fn().mockResolvedValue([]) })),
+    toArray: jest.fn(async () => getCollectionArray(name).slice())
+  };
+}
 
 // Initialize mock MongoDB implementation
 const mockMongoDB = {
   client: {
     connect: jest.fn().mockResolvedValue(undefined),
-    db: jest.fn()
+    db: jest.fn((dbName) => ({ collection: jest.fn((name) => createCollection(name)) }))
   },
-  db: {
-    collection: jest.fn()
-  },
-  collection: {
-    findOne: jest.fn(),
-    updateOne: jest.fn(),
-    aggregate: jest.fn(),
-    insertOne: jest.fn(),
-    toArray: jest.fn()
-  }
+  db: { collection: jest.fn((name) => createCollection(name)) }
 };
 
-// Configure basic database responses
-mockMongoDB.client.db.mockReturnValue(mockMongoDB.db);
-mockMongoDB.db.collection.mockReturnValue(mockMongoDB.collection);
-mockMongoDB.collection.aggregate.mockReturnValue({ toArray: mockMongoDB.collection.toArray });
-
-// Configure common responses
+// Legacy helpers preserved for compatibility with existing tests
 function setupMockResponses(data) {
-  mockMongoDB.collection.toArray.mockResolvedValueOnce(data);
+  // No-op: aggregate().toArray() returns [] by default; callers can override per test if needed
+  return data;
 }
 
 module.exports = {
-  mockDatabase,
+  mockDatabase: { systems: store.systems, records: store.records },
   mockMongoDB,
-  setupMockResponses
+  setupMockResponses,
+  __store: store
 };

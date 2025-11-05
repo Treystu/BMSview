@@ -14,7 +14,7 @@ describe('Paginated API response normalization', () => {
   beforeAll(() => {
     originalApiFetch = clientService.apiFetch;
     mockApiFetch = jest.fn();
-    clientService.apiFetch = mockApiFetch;
+    clientService.__internals.setApiFetch(mockApiFetch);
   });
 
   beforeEach(() => {
@@ -29,7 +29,7 @@ describe('Paginated API response normalization', () => {
   });
 
   afterAll(() => {
-    clientService.apiFetch = originalApiFetch;
+    clientService.__internals.setApiFetch(originalApiFetch);
     delete global.window;
   });
 

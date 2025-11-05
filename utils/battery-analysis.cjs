@@ -354,9 +354,22 @@ function parseInsights(text, batteryData, log = console) {
 
   // Get deterministic values
   const performance = calculatePerformance(measurements, 30);
-  const healthStatus = determineHealthStatus(measurements, maxTemp);
+  const baseHealth = determineHealthStatus(measurements, maxTemp);
   const chargeEfficiency = calculateChargeEfficiency(measurements);
   const dischargeEfficiency = chargeEfficiency > 0 ? chargeEfficiency - 2 : 0; // Only calculate if charge efficiency exists
+
+  // Adjust health based on performance trends to better flag degrading batteries
+  let healthStatus = baseHealth;
+  if (performance.trend === 'Poor') {
+    healthStatus = 'Poor';
+  }
+  if (performance.degradationRate > 5) {
+    healthStatus = 'Critical';
+  }
+  // Capacity retention below 75% should be considered Poor in our heuristics
+  if (performance.capacityRetention < 75 && healthStatus !== 'Critical') {
+    healthStatus = 'Poor';
+  }
 
   const recommendations = generateRecommendations(measurements, maxTemp, performance);
 

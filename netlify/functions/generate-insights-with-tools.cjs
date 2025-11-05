@@ -20,24 +20,41 @@ async function handler(event = {}, context = {}) {
   const timer = createTimer(log, 'generate-insights-with-tools');
 
   try {
-    // Parse request body
+    // Parse request body with better error handling
     let body = {};
     try {
       body = event.body ? JSON.parse(event.body) : {};
-    } catch (error) {
-      log.warn('Failed to parse request body', { error: error.message });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      log.warn('Failed to parse request body', { error: error.message, body: event.body });
       return respond(400, { error: 'Invalid JSON in request body' });
     }
 
-    const { analysisData, systemId, customPrompt } = body;
+    // Extract and normalize data
+    let analysisData = body.analysisData || body.batteryData || body;
 
-    if (!analysisData) {
-      return respond(400, { error: 'analysisData is required' });
+    // Handle different data structures
+    if (body.measurements) {
+      analysisData = { measurements: body.measurements };
     }
+
+    if (!analysisData || (!analysisData.measurements && !analysisData.voltage && !analysisData.current)) {
+      log.warn('No analysis data found', { bodyKeys: Object.keys(body) });
+      return respond(400, {
+        error: 'analysisData is required',
+        debug: {
+          receivedKeys: Object.keys(body),
+          expectedStructure: 'analysisData with measurements array or direct measurements'
+        }
+      });
+    }
+
+    const { systemId, customPrompt } = body;
 
     log.info('Starting insights generation with function calling', {
       hasSystemId: !!systemId,
-      hasCustomPrompt: !!customPrompt
+      hasCustomPrompt: !!customPrompt,
+      dataStructure: analysisData ? Object.keys(analysisData) : 'none'
     });
 
     // Get AI model
@@ -73,8 +90,9 @@ async function handler(event = {}, context = {}) {
       timestamp: new Date().toISOString()
     });
 
-  } catch (error) {
-    log.error('Error generating insights', { error: error.message, stack: error.stack });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    log.warn('Error generating insights', { error: error.message, stack: error.stack });
     timer.end();
     return respond(500, { error: 'Failed to generate insights', message: error.message });
   }
@@ -102,8 +120,9 @@ async function executeWithFunctionCalling(model, initialPrompt, systemId, log) {
           toolCalls.push({ name: 'getSystemHistory', args: { systemId, limit: 10 } });
           enhancedPrompt += `\n\nRECENT SYSTEM HISTORY (Last 10 records):\n${JSON.stringify(historyData, null, 2)}`;
         }
-      } catch (e) {
-        log.warn('Failed to get system history', { error: e.message });
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        log.warn('Failed to get system history', { error: error.message });
       }
 
       // Try to get system analytics
@@ -113,8 +132,9 @@ async function executeWithFunctionCalling(model, initialPrompt, systemId, log) {
           toolCalls.push({ name: 'getSystemAnalytics', args: { systemId } });
           enhancedPrompt += `\n\nSYSTEM ANALYTICS:\n${JSON.stringify(analyticsData, null, 2)}`;
         }
-      } catch (e) {
-        log.warn('Failed to get system analytics', { error: e.message });
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        log.warn('Failed to get system analytics', { error: error.message });
       }
     }
 
@@ -135,8 +155,9 @@ async function executeWithFunctionCalling(model, initialPrompt, systemId, log) {
       usedFunctionCalling: toolCalls.length > 0
     };
 
-  } catch (error) {
-    log.error('Error generating insights', { error: error.message });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    log.warn('Error generating insights', { error: error.message });
 
     return {
       insights: {
@@ -218,7 +239,7 @@ async function getAIModel(log) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     return genAI.getGenerativeModel({
-      model: 'gemini-flash-latest',  // Use working model name
+      model: 'gemini-1.5-flash',
       generationConfig: {
         temperature: 0.7,
         topP: 0.95,
@@ -226,8 +247,9 @@ async function getAIModel(log) {
         maxOutputTokens: 2048,
       }
     });
-  } catch (error) {
-    log.error('Failed to initialize AI model', { error: error.message });
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    log.warn('Failed to initialize AI model', { error: error.message });
     return null;
   }
 }

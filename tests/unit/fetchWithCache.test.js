@@ -10,11 +10,11 @@ global.window = {
 describe('fetchWithCache', () => {
   let originalApiFetch;
   let mockApiFetch;
-  
+
   beforeAll(() => {
     originalApiFetch = clientService.apiFetch;
     mockApiFetch = jest.fn();
-    clientService.apiFetch = mockApiFetch;
+    clientService.__internals.setApiFetch(mockApiFetch);
   });
 
   beforeEach(() => {
@@ -29,7 +29,7 @@ describe('fetchWithCache', () => {
   });
 
   afterAll(() => {
-    clientService.apiFetch = originalApiFetch;
+    clientService.__internals.setApiFetch(originalApiFetch);
     delete global.window;
   });
 
@@ -43,7 +43,7 @@ describe('fetchWithCache', () => {
     ];
     jest.runAllTimers();
     const [a, b] = await Promise.all(promises);
-    
+
     const expected = { items: [{ id: 1 }], totalItems: 1 };
     expect(a).toEqual(expected);
     expect(b).toEqual(expected);
@@ -54,13 +54,13 @@ describe('fetchWithCache', () => {
   test('caches until ttl expires', async () => {
     const resp1 = { items: [{ id: 1 }], totalItems: 1 };
     const resp2 = { items: [{ id: 2 }], totalItems: 1 };
-    
+
     mockApiFetch
       .mockResolvedValueOnce(resp1)
       .mockResolvedValueOnce(resp2);
 
     const ttl = 100; // Short TTL for testing
-    
+
     // First request
     const promise1 = clientService.__internals.fetchWithCache('test-endpoint', ttl);
     jest.runAllTimers();
@@ -99,7 +99,7 @@ describe('fetchWithCache', () => {
   test('different endpoints use separate caches', async () => {
     const resp1 = { items: [{ id: 1 }], totalItems: 1 };
     const resp2 = { items: [{ id: 2 }], totalItems: 1 };
-    
+
     mockApiFetch
       .mockResolvedValueOnce(resp1)
       .mockResolvedValueOnce(resp2);

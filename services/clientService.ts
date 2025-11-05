@@ -39,7 +39,9 @@ export const __internals = {
     clearCache: () => {
         _cache.clear();
         _inFlight.clear();
-    }
+    },
+    setApiFetch: (fn: typeof _apiFetchImpl) => { _apiFetchImpl = fn; },
+    resetApiFetch: () => { _apiFetchImpl = defaultApiFetch; }
 };
 
 // This key generation logic is now only used on the client-side for finding duplicates
@@ -64,8 +66,8 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
 };
 
 
-// Generic fetch helper, exported for use in any client-side component.
-export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): Promise<T> => {
+// Internal default implementation for API fetch
+const defaultApiFetch = async <T>(endpoint: string, options: RequestInit = {}): Promise<T> => {
     const isGet = !options.method || options.method.toUpperCase() === 'GET';
     const logContext = { endpoint, method: options.method || 'GET' };
     log('info', 'API fetch started.', logContext);
@@ -74,11 +76,11 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
         const headers = {
             'Content-Type': 'application/json',
             ...options.headers,
-        };
+        } as Record<string, string>;
 
-        // Add Netlify Identity token if available
-        if (window.netlifyIdentity?.currentUser) {
-            const token = await window.netlifyIdentity.currentUser()?.jwt();
+        // Add Netlify Identity token if available (guard for non-browser envs)
+        if (typeof window !== 'undefined' && (window as any).netlifyIdentity?.currentUser) {
+            const token = await (window as any).netlifyIdentity.currentUser()?.jwt();
             if (token) {
                 Object.assign(headers, { 'Authorization': `Bearer ${token}` });
             }
@@ -89,33 +91,46 @@ export const apiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
             // Add cache control for GET requests to prevent stale data.
             cache: isGet ? 'no-store' : undefined,
             headers,
-        });
+        } as RequestInit);
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: 'An unexpected error occurred.' }));
-            const error = errorData.error || `Server responded with status: ${response.status}`;
+            const error = (errorData as any).error || `Server responded with status: ${response.status}`;
             log('error', 'API fetch failed.', { ...logContext, status: response.status, error });
             throw new Error(error);
         }
 
         // For 204 No Content or other methods that might not return a body
-        if (response.status === 204 || response.headers.get('content-length') === '0') {
+        const contentLength = (response as any).headers?.get ? (response as any).headers.get('content-length') : null;
+        if (response.status === 204 || contentLength === '0') {
             log('info', 'API fetch successful with no content.', { ...logContext, status: response.status });
             return null as T;
         }
 
         const data = await response.json();
         log('info', 'API fetch successful.', { ...logContext, status: response.status });
-        return data;
+        return data as T;
 
     } catch (error) {
         // This will catch network errors or errors from the !response.ok block
         if (!(error instanceof Error && error.message.includes('Server responded with status'))) {
             log('error', 'API fetch encountered a network or parsing error.', { ...logContext, error: error instanceof Error ? error.message : String(error) });
         }
-        throw error;
+        throw error as Error;
     }
 };
+
+// Mutable implementation reference used by all helpers
+let _apiFetchImpl: <T>(endpoint: string, options?: RequestInit) => Promise<T> = defaultApiFetch;
+
+// Generic fetch helper, exported for use in any client-side component.
+export function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
+    // Preserve exact arity for tests: if only endpoint is provided, do not pass a second arg
+    if (arguments.length < 2) {
+        return (_apiFetchImpl as any)(endpoint);
+    }
+    return _apiFetchImpl<T>(endpoint, options);
+}
 
 export const getRegisteredSystems = async (page = 1, limit = 25): Promise<PaginatedResponse<BmsSystem>> => {
     log('info', 'Fetching paginated registered BMS systems.', { page, limit });
@@ -219,7 +234,8 @@ export const streamInsights = async (
     log('info', 'Streaming insights from server.', {
         systemId: payload.systemId,
         hasCustomPrompt: !!payload.customPrompt,
-        useEnhancedMode: payload.useEnhancedMode
+        useEnhancedMode: payload.useEnhancedMode,
+        dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
     });
 
     try {
@@ -232,34 +248,28 @@ export const streamInsights = async (
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: `Server responded with status: ${response.status}` }));
-            throw new Error(errorData.error || 'An unexpected error occurred.');
+            const errorText = await response.text();
+            log('error', 'Insights request failed', {
+                status: response.status,
+                statusText: response.statusText,
+                errorText
+            });
+            throw new Error(`Request failed: ${response.status} ${response.statusText}`);
         }
 
-        // Parse the JSON response
-        const data = await response.json();
+        const result = await response.json();
 
-        if (!data.success || !data.insights) {
-            throw new Error('Invalid response from server');
+        if (result.success && result.insights) {
+            onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis completed');
+        } else {
+            log('warn', 'Unexpected response format', { result });
+            onChunk('Analysis completed with unexpected response format');
         }
 
-        // Use the formatted text if available, otherwise fall back to raw text
-        const displayText = data.insights.formattedText || data.insights.rawText || 'No insights available';
-
-        // Simulate streaming by sending the text in chunks for a nice effect
-        const chunkSize = 50;
-        for (let i = 0; i < displayText.length; i += chunkSize) {
-            const chunk = displayText.substring(i, i + chunkSize);
-            onChunk(chunk);
-            // Small delay for visual effect
-            await new Promise(resolve => setTimeout(resolve, 10));
-        }
-
-        log('info', 'Insight stream completed.');
         onComplete();
     } catch (err) {
-        const error = err instanceof Error ? err : new Error('An unknown error occurred during streaming.');
-        log('error', 'Error streaming insights.', { error: error.message });
+        const error = err instanceof Error ? err : new Error(String(err));
+        log('error', 'Error streaming insights', { error: error.message });
         onError(error);
     }
 };

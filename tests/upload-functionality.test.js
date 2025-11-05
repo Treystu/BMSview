@@ -1,4 +1,4 @@
-const { describe, test, expect, beforeEach, jest } = require('@jest/globals');
+const { describe, test, expect, beforeEach } = require('@jest/globals');
 
 // Mock the upload handler
 const mockUploadHandler = jest.fn();
@@ -13,7 +13,7 @@ describe('Upload Functionality', () => {
 
     test('should handle valid file upload', async () => {
         const mockFileData = Buffer.from('timestamp,voltage,current\n2024-01-01T10:00:00Z,12.5,10').toString('base64');
-        
+
         mockUploadHandler.mockResolvedValue({
             statusCode: 200,
             body: JSON.stringify({
@@ -57,7 +57,7 @@ describe('Upload Functionality', () => {
                 fileBase64: 'dGVzdCBkYXRh', // base64 for "test data"
                 userId: 'test-user'
             })
-        });
+        };
 
         const result = await mockUploadHandler(event);
         const body = JSON.parse(result.body);
