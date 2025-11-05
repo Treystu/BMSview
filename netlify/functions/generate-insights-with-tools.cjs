@@ -1,9 +1,30 @@
 /**
- * Enhanced Insights Generation with Gemini Function Calling
+ * Generate Insights - Enhanced Mode with Function Calling
  * 
- * This function enables Gemini to intelligently query for additional data
- * (historical records, weather, solar estimates, system analytics) to provide
- * comprehensive, context-aware battery analysis.
+ * This is the advanced insights generation endpoint that uses Gemini 2.5 Flash's
+ * function calling capabilities to provide context-aware, comprehensive analysis.
+ * 
+ * **Usage:**
+ * - Endpoint: /.netlify/functions/generate-insights-with-tools
+ * - Used by: Enhanced mode insights generation (when useEnhancedMode=true)
+ * - Features: AI can query historical data, weather, solar, and analytics
+ * 
+ * **What it does:**
+ * 1. Accepts battery measurement data and system context
+ * 2. Provides Gemini with tools to query additional data:
+ *    - getSystemHistory: Historical battery records
+ *    - getWeatherData: Weather conditions affecting performance
+ *    - getSolarEstimates: Solar generation predictions
+ *    - getSystemAnalytics: Performance analytics and trends
+ * 3. AI intelligently decides which tools to call for comprehensive analysis
+ * 4. Combines all data sources for enhanced insights
+ * 5. Returns structured insights with richer context
+ * 
+ * **Related Functions:**
+ * - generate-insights.cjs: Standard mode (simpler, faster)
+ * - utils/gemini-tools.cjs: Tool definitions and execution logic
+ * 
+ * @module netlify/functions/generate-insights-with-tools
  */
 
 const { createLogger, createTimer } = require('../../utils/logger.cjs');
@@ -60,12 +81,23 @@ async function handler(event = {}, context = {}) {
     // Get AI model
     const model = await getAIModel(log);
     if (!model) {
-      log.warn('AI model not available, using fallback');
+      log.warn('AI model not available, using statistical fallback analysis');
       const fallbackText = fallbackTextSummary({ measurements: [analysisData] });
+      
+      // Add user-friendly notice
+      const noticeText = `ℹ️  Analysis Mode: Statistical (AI unavailable)\n   Using data-driven calculations for insights.\n\n${fallbackText}`;
+      
       return respond(200, {
         success: true,
-        insights: { rawText: fallbackText, formattedText: fallbackText },
-        usedFunctionCalling: false
+        insights: { 
+          rawText: noticeText, 
+          formattedText: noticeText,
+          healthStatus: 'Unknown',
+          performance: { trend: 'Unknown', capacityRetention: 0, degradationRate: 0 }
+        },
+        analysisMode: 'statistical',
+        usedFunctionCalling: false,
+        message: 'AI analysis unavailable, using statistical analysis'
       });
     }
 
@@ -87,6 +119,7 @@ async function handler(event = {}, context = {}) {
       insights: result.insights,
       toolCalls: result.toolCalls,
       usedFunctionCalling: result.usedFunctionCalling,
+      analysisMode: 'ai',
       timestamp: new Date().toISOString()
     });
 
@@ -225,33 +258,63 @@ Provide clear, concise insights that are easy to understand.`;
 }
 
 /**
- * Get AI model instance
+ * Get AI model instance with fallback chain
+ * Tries: gemini-2.5-flash → gemini-2.0-flash-exp → null (fallback analysis)
+ * @param {*} log - Logger instance
+ * @returns {Promise<*>} Model instance or null
  */
 async function getAIModel(log) {
-  try {
-    const { GoogleGenerativeAI } = require('@google/generative-ai');
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      log.warn('GEMINI_API_KEY not configured');
-      return null;
-    }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    return genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.95,
-        topK: 40,
-        maxOutputTokens: 2048,
-      }
-    });
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    log.warn('Failed to initialize AI model', { error: error.message });
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    log.warn('GEMINI_API_KEY not configured - will use statistical fallback analysis');
     return null;
   }
+
+  const { GoogleGenerativeAI } = require('@google/generative-ai');
+  const genAI = new GoogleGenerativeAI(apiKey);
+
+  const modelsToTry = [
+    { name: 'gemini-2.5-flash', description: 'latest stable model' },
+    { name: 'gemini-2.0-flash-exp', description: 'fallback experimental model' }
+  ];
+
+  for (const { name, description } of modelsToTry) {
+    try {
+      log.info(`Attempting to use ${name} (${description})`);
+      
+      const model = genAI.getGenerativeModel({
+        model: name,
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 2048,
+        }
+      });
+
+      // Model initialized - actual verification happens on first use
+      // If unavailable, error will be caught during generateContent call
+      log.info(`Model ${name} initialized, will verify on first use`);
+      return model;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      const is404 = error.message && (
+        error.message.includes('404') || 
+        error.message.includes('not found') ||
+        error.message.includes('does not exist')
+      );
+      
+      if (is404) {
+        log.warn(`Model ${name} not available (404), trying next fallback`, { error: error.message });
+      } else {
+        log.warn(`Failed to initialize ${name}`, { error: error.message });
+      }
+    }
+  }
+
+  // All models failed - will use statistical fallback
+  log.warn('All AI models unavailable - using statistical fallback analysis');
+  return null;
 }
 
 /**

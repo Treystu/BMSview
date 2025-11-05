@@ -28,7 +28,7 @@ jest.mock('mongodb', () => {
   return { MongoClient: MockMongoClient };
 });
 
-// Mock Gemini API
+// Mock Gemini API (mocking gemini-2.5-flash model)
 jest.mock('@google/generative-ai', () => ({
   GoogleGenerativeAI: jest.fn().mockImplementation(() => ({
     getGenerativeModel: jest.fn().mockReturnValue({

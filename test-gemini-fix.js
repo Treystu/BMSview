@@ -19,13 +19,13 @@ async function testGeminiAPI() {
 
     // Test 2: Check Model Name
     console.log('Test 2: Checking Model Name');
-    const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     console.log(`Model: ${modelName}`);
     
-    // Verify it's not using the old incorrect model name
-    if (modelName === 'gemini-1.5-flash-latest') {
-        console.error('❌ Using incorrect model name: gemini-1.5-flash-latest');
-        console.log('Should use: gemini-1.5-flash');
+    // Verify it's not using deprecated model names
+    if (modelName === 'gemini-1.5-flash-latest' || modelName === 'gemini-2.0-flash-exp') {
+        console.error(`❌ Using deprecated model name: ${modelName}`);
+        console.log('Should use: gemini-2.5-flash');
         return false;
     }
     console.log('✅ Model name is correct\n');
