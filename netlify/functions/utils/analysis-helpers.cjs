@@ -4,58 +4,86 @@
 const { Type } = require("@google/genai");
 
 // This is the JSON schema Gemini will be forced to output.
+// MANDATORY FIELDS are marked as required (not nullable) to ensure they're always extracted
 const getResponseSchema = () => ({
     type: Type.OBJECT,
     properties: {
-        dlNumber: { "type": Type.STRING, "nullable": true, "description": "This is the DL Number." },
+        // MANDATORY FIELDS - These must always be extracted
+        dlNumber: { "type": Type.STRING, "nullable": false, "description": "MANDATORY: The DL Number. If not visible, use 'UNKNOWN'." },
+        stateOfCharge: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: SOC percentage. Extract from 'SOC' field." },
+        overallVoltage: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Overall battery voltage." },
+        current: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Current in Amps. CRITICAL: Preserve negative sign if discharging." },
+        remainingCapacity: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Remaining capacity in Ah from 'Remaining Cap' field." },
+        chargeMosOn: { "type": Type.BOOLEAN, "nullable": false, "description": "MANDATORY: Charge MOS status (true=on/green, false=off/grey)." },
+        dischargeMosOn: { "type": Type.BOOLEAN, "nullable": false, "description": "MANDATORY: Discharge MOS status (true=on/green, false=off/grey)." },
+        balanceOn: { "type": Type.BOOLEAN, "nullable": false, "description": "MANDATORY: Balance status (true=on/green, false=off/grey)." },
+        highestCellVoltage: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Maximum cell voltage. Calculate from cellVoltages if needed." },
+        lowestCellVoltage: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Minimum cell voltage. Calculate from cellVoltages if needed." },
+        averageCellVoltage: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Average cell voltage. Calculate from cellVoltages if needed." },
+        cellVoltageDifference: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Voltage difference in V. If in mV, convert to V by dividing by 1000." },
+        cycleCount: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Cycle count. If not visible, use 0." },
+        power: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Power in Watts. If in kW, convert to W. If current is negative, power MUST be negative." },
+        
+        // OPTIONAL FIELDS
         timestampFromImage: { "type": Type.STRING, "nullable": true },
-        stateOfCharge: { "type": Type.NUMBER, "nullable": true },
-        overallVoltage: { "type": Type.NUMBER, "nullable": true },
-        current: { "type": Type.NUMBER, "nullable": true },
-        remainingCapacity: { "type": Type.NUMBER, "nullable": true },
         fullCapacity: { "type": Type.NUMBER, "nullable": true, "description": "The 'Full Cap' or 'Design Cap' value." },
-        power: { "type": Type.NUMBER, "nullable": true, "description": "Power in Watts. If in kW, convert to W." },
-        chargeMosOn: { "type": Type.BOOLEAN, "nullable": true },
-        dischargeMosOn: { "type": Type.BOOLEAN, "nullable": true },
-        balanceOn: { "type": Type.BOOLEAN, "nullable": true },
-        highestCellVoltage: { "type": Type.NUMBER, "nullable": true },
-        lowestCellVoltage: { "type": Type.NUMBER, "nullable": true },
-        cellVoltageDifference: { "type": Type.NUMBER, "nullable": true, "description": "The 'voltage difference'. If in mV, convert to V." },
-        averageCellVoltage: { "type": Type.NUMBER, "nullable": true },
         cellVoltages: { "type": Type.ARRAY, "items": { "type": Type.NUMBER }, "description": "ONLY if a numbered list of individual cells exists. Otherwise, must be []." },
-        cycleCount: { "type": Type.NUMBER, "nullable": true },
         temperatures: { "type": Type.ARRAY, "items": { "type": Type.NUMBER }, "description": "Array of temperatures from all sensors like T1, T2. If only 'Temp' exists, use that." },
         mosTemperature: { "type": Type.NUMBER, "nullable": true, "description": "The 'MOS Temperature'." },
         serialNumber: { "type": Type.STRING, "nullable": true },
         softwareVersion: { "type": Type.STRING, "nullable": true },
         hardwareVersion: { "type": Type.STRING, "nullable": true },
         snCode: { "type": Type.STRING, "nullable": true },
-    }
+    },
+    required: ["dlNumber", "stateOfCharge", "overallVoltage", "current", "remainingCapacity", 
+               "chargeMosOn", "dischargeMosOn", "balanceOn", "highestCellVoltage", 
+               "lowestCellVoltage", "averageCellVoltage", "cellVoltageDifference", "cycleCount", "power"]
 });
 
 // This is the system prompt sent to Gemini with the image.
 const getImageExtractionPrompt = () => `You are a meticulous data extraction AI. Analyze the provided BMS screenshot and extract its data into a JSON object, strictly following these rules:
+
+**CRITICAL: MANDATORY FIELDS**
+The following fields are MANDATORY and MUST ALWAYS be extracted. If a field is not clearly visible, use these defaults:
+- dlNumber: If not visible, use "UNKNOWN"
+- stateOfCharge: If not visible, use 0
+- overallVoltage: If not visible, use 0
+- current: If not visible, use 0
+- remainingCapacity: If not visible, use 0
+- chargeMosOn: If not visible, use false
+- dischargeMosOn: If not visible, use false
+- balanceOn: If not visible, use false
+- highestCellVoltage: Calculate from cellVoltages array if available, otherwise use 0
+- lowestCellVoltage: Calculate from cellVoltages array if available, otherwise use 0
+- averageCellVoltage: Calculate from cellVoltages array if available, otherwise use 0
+- cellVoltageDifference: Calculate as (highestCellVoltage - lowestCellVoltage), or extract from 'voltage difference' field
+- cycleCount: If not visible, use 0
+- power: If not visible, calculate as (current × overallVoltage), otherwise use 0
+
 1.  **JSON Object Output**: Your entire response MUST be a single, valid JSON object.
-2.  **Strict Schema Adherence**: Use the provided schema. If a value isn't visible, use \`null\` for single fields or \`[]\` for arrays.
-3.  **Data Extraction**:
-    -   \`dlNumber\`: Find 'DL Number' or similar identifier at the top.
-    -   \`stateOfCharge\`: Extract 'SOC' percentage.
-    -   \`overallVoltage\`: Extract 'voltage'.
-    -   \`current\`: Extract 'current'. **CRITICAL: Preserve the negative sign if it exists.** A negative sign indicates discharge.
-    -   \`remainingCapacity\`: Extract 'Remaining Cap' or 'remaining capacity'.
-    -   \`fullCapacity\`: Extract 'Full Cap' or 'full capacity'.
-    -   \`power\`: Extract 'Power'. If in 'kW', multiply by 1000 for Watts. **IMPORTANT: If the 'current' value is negative, the 'power' value MUST also be negative.**
-    -   \`chargeMosOn\`, \`dischargeMosOn\`, \`balanceOn\`: For each, determine if the indicator ('Chg MOS', 'Dischg MOS', 'Balance') is on (green, lit) which is \`true\`, or off (grey, unlit) which is \`false\`.
-    -   \`cellVoltageDifference\`: Extract 'voltage difference'. **If the unit is 'mV', divide by 1000 to convert to 'V'.** The schema requires Volts.
-    -   \`temperatures\`: Extract all 'Temp', 'T1', 'T2' values into this array.
-    -   \`mosTemperature\`: Extract 'MOS Temperature' or 'MOS'.
+2.  **Strict Schema Adherence**: MANDATORY fields must NEVER be null. Optional fields can be null or [] for arrays.
+3.  **Data Extraction Rules**:
+    -   \`dlNumber\`: Find 'DL Number' or similar identifier at the top. NEVER leave this null.
+    -   \`stateOfCharge\`: Extract 'SOC' percentage. MANDATORY.
+    -   \`overallVoltage\`: Extract 'voltage' or 'Total Voltage'. MANDATORY.
+    -   \`current\`: Extract 'current'. **CRITICAL: Preserve the negative sign if it exists.** A negative sign indicates discharge. MANDATORY.
+    -   \`remainingCapacity\`: Extract 'Remaining Cap' or 'remaining capacity'. MANDATORY.
+    -   \`fullCapacity\`: Extract 'Full Cap' or 'full capacity'. Optional.
+    -   \`power\`: Extract 'Power'. If in 'kW', multiply by 1000 for Watts. **IMPORTANT: If the 'current' value is negative, the 'power' value MUST also be negative.** MANDATORY.
+    -   \`chargeMosOn\`, \`dischargeMosOn\`, \`balanceOn\`: For each, determine if the indicator ('Chg MOS', 'Dischg MOS', 'Balance') is on (green, lit) which is \`true\`, or off (grey, unlit) which is \`false\`. MANDATORY.
+    -   \`highestCellVoltage\`, \`lowestCellVoltage\`, \`averageCellVoltage\`: Extract these from the display OR calculate from cellVoltages array. MANDATORY.
+    -   \`cellVoltageDifference\`: Extract 'voltage difference'. **If the unit is 'mV', divide by 1000 to convert to 'V'.** The schema requires Volts. MANDATORY.
+    -   \`cycleCount\`: Extract 'Cycle' or 'Cycles'. MANDATORY.
+    -   \`temperatures\`: Extract all 'Temp', 'T1', 'T2' values into this array. Optional.
+    -   \`mosTemperature\`: Extract 'MOS Temperature' or 'MOS'. Optional.
     -   \`cellVoltages\`: ONLY if a numbered list of individual cell voltages exists, populate this array. Otherwise, it MUST be \`[]\`.
-4.  **Timestamp Logic (CRITICAL)**:
+4.  **Cell Voltage Calculations**: If cellVoltages array has values, you MUST calculate highestCellVoltage, lowestCellVoltage, averageCellVoltage, and cellVoltageDifference from it.
+5.  **Timestamp Logic (CRITICAL)**:
     -   Find a timestamp within the image itself.
     -   If a full date and time are visible (e.g., "2023-01-01 12:04:00"), extract as "YYYY-MM-DDTHH:MM:SS".
     -   If only time is visible (e.g., "12:04:00"), extract only the time string "12:04:00". Do NOT add a date.
     -   If no timestamp is visible, \`timestampFromImage\` MUST be \`null\`.
-5.  **Final Review**: Your entire output must be ONLY the raw JSON object, without any surrounding text, explanations, or markdown formatting like \`\`\`json.`;
+6.  **Final Review**: Your entire output must be ONLY the raw JSON object, without any surrounding text, explanations, or markdown formatting like \`\`\`json. ALL MANDATORY FIELDS MUST HAVE VALUES.`;
 
 // --- Utility Functions (Copied from original) ---
 
@@ -93,8 +121,37 @@ const mapExtractedToAnalysisData = (extracted, log) => {
         return null;
     }
     log('debug', 'Mapping extracted data to analysis schema.', { extractedKeys: Object.keys(extracted) });
+    
+    // Ensure all mandatory fields have values (apply defaults if missing)
     const analysis = {
-        ...extracted,
+        // Mandatory fields with defaults - use ?? to only default on null/undefined
+        dlNumber: extracted.dlNumber || 'UNKNOWN', // string, so || is fine
+        stateOfCharge: extracted.stateOfCharge ?? 0,
+        overallVoltage: extracted.overallVoltage ?? 0,
+        current: extracted.current ?? 0,
+        remainingCapacity: extracted.remainingCapacity ?? 0,
+        chargeMosOn: extracted.chargeMosOn ?? false,
+        dischargeMosOn: extracted.dischargeMosOn ?? false,
+        balanceOn: extracted.balanceOn ?? false,
+        highestCellVoltage: extracted.highestCellVoltage ?? 0,
+        lowestCellVoltage: extracted.lowestCellVoltage ?? 0,
+        averageCellVoltage: extracted.averageCellVoltage ?? 0,
+        cellVoltageDifference: extracted.cellVoltageDifference ?? 0,
+        cycleCount: extracted.cycleCount ?? 0,
+        power: extracted.power ?? 0,
+        
+        // Optional fields
+        timestampFromImage: extracted.timestampFromImage || null,
+        fullCapacity: extracted.fullCapacity || null,
+        cellVoltages: extracted.cellVoltages || [],
+        temperatures: extracted.temperatures || [],
+        mosTemperature: extracted.mosTemperature || null,
+        serialNumber: extracted.serialNumber || null,
+        softwareVersion: extracted.softwareVersion || null,
+        hardwareVersion: extracted.hardwareVersion || null,
+        snCode: extracted.snCode || null,
+        
+        // Derived fields
         temperature: extracted.temperatures?.[0] || null,
         numTempSensors: extracted.temperatures?.length || 0,
         alerts: [], // Alerts are generated in the next step
@@ -107,11 +164,37 @@ const mapExtractedToAnalysisData = (extracted, log) => {
         log('warn', 'Correcting positive power sign for negative current.', { originalPower: analysis.power, current: analysis.current });
         analysis.power = -Math.abs(analysis.power);
     }
+    
+    // Calculate power if it's zero but we have current and voltage
+    if (analysis.power === 0 && analysis.current !== 0 && analysis.overallVoltage !== 0) {
+        analysis.power = analysis.current * analysis.overallVoltage;
+        log('info', 'Calculated power from current and voltage.', { power: analysis.power });
+    }
 
     // Auto-correct cell difference if Gemini returns mV
     if (analysis.cellVoltageDifference != null && analysis.cellVoltageDifference > 1) {
         log('warn', 'Correcting large cell voltage difference (likely mV). Converting to V.', { originalDiff: analysis.cellVoltageDifference });
         analysis.cellVoltageDifference = analysis.cellVoltageDifference / 1000.0;
+    }
+    
+    // Calculate cell voltage statistics if we have cell voltages but missing stats
+    if (analysis.cellVoltages && analysis.cellVoltages.length > 0) {
+        if (analysis.highestCellVoltage === 0) {
+            analysis.highestCellVoltage = Math.max(...analysis.cellVoltages);
+            log('info', 'Calculated highestCellVoltage from cellVoltages array.', { value: analysis.highestCellVoltage });
+        }
+        if (analysis.lowestCellVoltage === 0) {
+            analysis.lowestCellVoltage = Math.min(...analysis.cellVoltages);
+            log('info', 'Calculated lowestCellVoltage from cellVoltages array.', { value: analysis.lowestCellVoltage });
+        }
+        if (analysis.averageCellVoltage === 0) {
+            analysis.averageCellVoltage = analysis.cellVoltages.reduce((a, b) => a + b, 0) / analysis.cellVoltages.length;
+            log('info', 'Calculated averageCellVoltage from cellVoltages array.', { value: analysis.averageCellVoltage });
+        }
+        if (analysis.cellVoltageDifference === 0) {
+            analysis.cellVoltageDifference = analysis.highestCellVoltage - analysis.lowestCellVoltage;
+            log('info', 'Calculated cellVoltageDifference from min/max values.', { value: analysis.cellVoltageDifference });
+        }
     }
 
     log('debug', 'Mapped analysis data.', { analysisKeys: Object.keys(analysis) });
@@ -183,7 +266,7 @@ const performPostAnalysis = (analysis, system, log) => {
     analysis.alerts = alerts;
     analysis.status = status;
 
-    log('info', 'Post-analysis complete.', { status, alertCount: alerts.empty });
+    log('info', 'Post-analysis complete.', { status, alertCount: alerts.length });
     return analysis;
 };
 

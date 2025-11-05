@@ -177,12 +177,19 @@ async function executeWithFunctionCalling(model, initialPrompt, systemId, log) {
     const response = result.response;
     const finalResponse = response.text();
 
-    log.info('Successfully generated insights');
+    // Ensure we have actual content
+    if (!finalResponse || finalResponse.trim() === '') {
+      throw new Error('AI model returned empty response');
+    }
+
+    log.info('Successfully generated insights', { responseLength: finalResponse.length });
 
     return {
       insights: {
         rawText: finalResponse,
-        formattedText: finalResponse
+        formattedText: finalResponse,
+        healthStatus: 'Generated',
+        performance: { trend: 'See analysis above' }
       },
       toolCalls,
       usedFunctionCalling: toolCalls.length > 0
@@ -190,12 +197,24 @@ async function executeWithFunctionCalling(model, initialPrompt, systemId, log) {
 
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    log.warn('Error generating insights', { error: error.message });
+    log.error('Error during insights generation', { error: error.message, stack: error.stack });
+
+    // Sanitize error message to avoid exposing sensitive information
+    let userMessage = 'Failed to generate insights. Please try again.';
+    if (error.message.includes('404') || error.message.includes('not found')) {
+      userMessage = 'AI model unavailable. Please try standard mode or contact support.';
+    } else if (error.message.includes('timeout') || error.message.includes('timed out')) {
+      userMessage = 'Request timed out. Please try again.';
+    } else if (error.message.includes('quota') || error.message.includes('rate limit')) {
+      userMessage = 'Service temporarily unavailable due to high demand. Please try again later.';
+    }
 
     return {
       insights: {
-        rawText: 'Analysis completed with partial data due to an error.',
-        formattedText: 'Analysis completed with partial data due to an error.'
+        rawText: `❌ Error: ${userMessage}`,
+        formattedText: `❌ Error: ${userMessage}\n\nPlease try again or use Standard mode instead.`,
+        healthStatus: 'Error',
+        performance: { trend: 'Error' }
       },
       toolCalls,
       usedFunctionCalling: false

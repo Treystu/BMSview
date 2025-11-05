@@ -45,6 +45,48 @@ const DataManagement: React.FC<DataManagementProps> = ({
         <section>
             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">Data Management</h2>
             {error && <p className="text-red-500 mb-4 p-3 bg-red-900/50 border border-red-500 rounded-md">{error}</p>}
+            
+            {/* Data Export Section */}
+            <div className="mb-6 bg-green-900/20 p-4 rounded-lg border border-green-500/50">
+                <h3 className="font-semibold text-lg text-green-300 mb-2">📥 Export & Backup Data</h3>
+                <p className="text-sm text-gray-400 mb-4">Download your data for backup, analysis, or migration purposes.</p>
+                <div className="flex flex-wrap gap-4">
+                    <button 
+                        onClick={() => {
+                            const url = '/.netlify/functions/export-data?type=history&format=csv';
+                            window.open(url, '_blank');
+                        }}
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2"
+                    >
+                        <span>📊</span>
+                        <span>Download History CSV</span>
+                    </button>
+                    <button 
+                        onClick={() => {
+                            const url = '/.netlify/functions/export-data?type=systems&format=csv';
+                            window.open(url, '_blank');
+                        }}
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2"
+                    >
+                        <span>🔧</span>
+                        <span>Download Systems CSV</span>
+                    </button>
+                    <button 
+                        onClick={() => {
+                            const url = '/.netlify/functions/export-data?type=full&format=json';
+                            window.open(url, '_blank');
+                        }}
+                        className="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2"
+                    >
+                        <span>💾</span>
+                        <span>Download Full Backup (JSON)</span>
+                    </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                    💡 <strong>Tip:</strong> The Full Backup (JSON) format can be re-imported into MongoDB to restore your complete dataset.
+                </p>
+            </div>
+            
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div className="bg-gray-800 p-4 rounded-lg shadow-inner lg:col-span-2">
                     <h3 className="font-semibold text-lg mb-2">Combine Duplicate Systems</h3>
