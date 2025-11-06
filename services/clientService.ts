@@ -646,9 +646,56 @@ export const getHourlyWeather = async (lat: number, lon: number, date: string): 
 
 export const runDiagnostics = async (selectedTests?: string[]): Promise<Record<string, { status: string; message: string }>> => {
     log('info', 'Running system diagnostics.', { selectedTests });
-    return apiFetch<Record<string, { status: string; message: string }>>('admin-diagnostics', {
-        method: 'POST',
-        body: JSON.stringify({ selectedTests }),
-    });
+    
+    // Diagnostics can take 30+ seconds, so we need a custom timeout
+    // Use a 60-second timeout to allow comprehensive diagnostics to complete
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    
+    try {
+        const headers = {
+            'Content-Type': 'application/json',
+        } as Record<string, string>;
+
+        // Add Netlify Identity token if available (consistent with apiFetch pattern)
+        if (typeof window !== 'undefined' && (window as any).netlifyIdentity?.currentUser) {
+            const token = await (window as any).netlifyIdentity.currentUser()?.jwt();
+            if (token) {
+                Object.assign(headers, { 'Authorization': `Bearer ${token}` });
+            }
+        }
+
+        const response = await fetch(`/.netlify/functions/admin-diagnostics`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ selectedTests }),
+            signal: controller.signal,
+        } as RequestInit);
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'An unexpected error occurred.' }));
+            const error = (errorData as any).error || `Server responded with status: ${response.status}`;
+            log('error', 'Diagnostics API fetch failed.', { status: response.status, error });
+            throw new Error(error);
+        }
+
+        const data = await response.json();
+        log('info', 'Diagnostics API fetch successful.', { status: response.status });
+        return data as Record<string, { status: string; message: string }>;
+    } catch (error) {
+        // Provide a more helpful error message for timeout
+        if (error instanceof Error) {
+            if (error.name === 'AbortError') {
+                const timeoutError = 'Diagnostics request timed out after 60 seconds. The tests may still be running on the server.';
+                log('error', 'Diagnostics timed out.', { error: timeoutError });
+                throw new Error(timeoutError);
+            }
+            log('error', 'Diagnostics encountered an error.', { error: error.message });
+        }
+        throw error as Error;
+    } finally {
+        // Always clear timeout regardless of execution path
+        clearTimeout(timeoutId);
+    }
 };
 

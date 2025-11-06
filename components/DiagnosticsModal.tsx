@@ -18,10 +18,34 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
         return 'text-green-400';
       case 'failure':
         return 'text-red-400';
+      case 'skipped':
+        return 'text-yellow-400';
       default:
         return 'text-yellow-400';
     }
   };
+
+  const getStatusIcon = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'success':
+        return '✔';
+      case 'failure':
+        return '✖';
+      case 'skipped':
+        return 'ℹ';
+      default:
+        return '?';
+    }
+  };
+
+  // Filter out metadata keys that shouldn't be displayed as test results
+  const metadataKeys = ['suggestions', 'availableTests', 'availableTestsList', 'availableComprehensiveTests', 'testSummary'];
+  const testResults = Object.entries(results).filter(([key]) => !metadataKeys.includes(key));
+  const suggestions = Array.isArray(results.suggestions) ? results.suggestions : [];
+  const summary = results.testSummary as any;
+
+  // Check if there's a general error (e.g., from failed API call)
+  const hasGeneralError = testResults.length === 1 && testResults[0][0] === 'error';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
@@ -34,37 +58,81 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <SpinnerIcon className="w-8 h-8 text-secondary" />
-            <span className="ml-4 text-lg">Running diagnostic tests...</span>
+            <span className="ml-4 text-lg">Running diagnostic tests... (this may take up to 60 seconds)</span>
+          </div>
+        ) : hasGeneralError ? (
+          // Display general error message prominently
+          <div className="bg-red-900/50 border border-red-500 rounded-md p-4 mb-4">
+            <h3 className="font-semibold text-lg flex items-center text-red-300">
+              <span className="mr-2 text-red-400">✖</span>
+              Diagnostics Error
+            </h3>
+            <p className="text-red-300 mt-2 pl-6">{testResults[0][1].message}</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {Object.entries(results).map(([key, result]) => {
-              // Support suggestions array as a special key
-              if (key === 'suggestions' && Array.isArray(result)) {
+          <>
+            {/* Display summary if available */}
+            {summary && (
+              <div className="bg-gray-700 p-4 rounded-md mb-4">
+                <h3 className="font-semibold text-lg mb-2">Test Summary</h3>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-400">Total Tests:</span>
+                    <span className="ml-2 font-semibold">{summary.total}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">Success Rate:</span>
+                    <span className="ml-2 font-semibold text-green-400">{summary.successRate}%</span>
+                  </div>
+                  <div>
+                    <span className="text-green-400">✔ Passed:</span>
+                    <span className="ml-2 font-semibold">{summary.success}</span>
+                  </div>
+                  <div>
+                    <span className="text-red-400">✖ Failed:</span>
+                    <span className="ml-2 font-semibold">{summary.failure}</span>
+                  </div>
+                  {summary.skipped > 0 && (
+                    <div>
+                      <span className="text-yellow-400">ℹ Skipped:</span>
+                      <span className="ml-2 font-semibold">{summary.skipped}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Display individual test results */}
+            <div className="space-y-3">
+              {testResults.map(([key, result]) => {
+                const r = result as any;
                 return (
-                  <div key={key} className="bg-gray-700 p-4 rounded-md">
-                    <h3 className="font-semibold text-lg">Suggestions</h3>
-                    <ul className="list-disc list-inside text-gray-300 mt-2">
-                      {result.map((s, idx) => <li key={idx}>{String(s)}</li>)}
-                    </ul>
+                  <div key={key} className="bg-gray-700 p-3 rounded-md">
+                    <h3 className="font-semibold text-base capitalize flex items-center">
+                      <span className={`mr-2 ${getStatusColor(r.status || '')}`}>
+                        {getStatusIcon(r.status)}
+                      </span>
+                      {key.replace(/([A-Z])/g, ' $1')}
+                    </h3>
+                    <p className="text-gray-300 text-sm mt-1 pl-6">{r && r.message ? String(r.message) : ''}</p>
+                    {r && r.responseTime && (
+                      <p className="text-gray-400 text-xs mt-1 pl-6">Response time: {r.responseTime}ms</p>
+                    )}
                   </div>
                 );
-              }
+              })}
+            </div>
 
-              const r = result as any;
-              return (
-                <div key={key} className="bg-gray-700 p-4 rounded-md">
-                  <h3 className="font-semibold text-lg capitalize flex items-center">
-                    <span className={`mr-2 ${getStatusColor(r.status || '')}`}>
-                      {r && r.status === 'Success' ? '✔' : r && r.status === 'Failure' ? '✖' : 'ℹ'}
-                    </span>
-                    {key.replace(/([A-Z])/g, ' $1')}
-                  </h3>
-                  <p className="text-gray-300 mt-1 pl-6">{r && r.message ? String(r.message) : ''}</p>
-                </div>
-              );
-            })}
-          </div>
+            {/* Display suggestions if any */}
+            {suggestions.length > 0 && (
+              <div className="bg-blue-900/30 border border-blue-500 p-4 rounded-md mt-4">
+                <h3 className="font-semibold text-lg mb-2">Suggestions</h3>
+                <ul className="list-disc list-inside text-gray-300 space-y-1 text-sm">
+                  {suggestions.map((s, idx) => <li key={idx}>{String(s)}</li>)}
+                </ul>
+              </div>
+            )}
+          </>
         )}
 
         <div className="mt-6 text-right">
