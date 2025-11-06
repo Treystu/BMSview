@@ -68,8 +68,17 @@ function aggregateHourlyData(records, log) {
 
 /**
  * Compute average metrics for a bucket of records
+ * 
+ * @param {Array} records - Records to aggregate
+ * @param {Object} log - Logger instance
+ * @param {Object} options - Configuration options
+ * @param {number} options.chargingThreshold - Current threshold for charging (default: 0.5A)
+ * @param {number} options.dischargingThreshold - Current threshold for discharging (default: -0.5A)
+ * @returns {Object} Aggregated metrics
  */
-function computeBucketMetrics(records, log) {
+function computeBucketMetrics(records, log, options = {}) {
+  const { chargingThreshold = 0.5, dischargingThreshold = -0.5 } = options;
+  
   const metrics = {
     voltage: { sum: 0, count: 0 },
     current: { sum: 0, count: 0 },
@@ -98,11 +107,11 @@ function computeBucketMetrics(records, log) {
     if (typeof a.current === 'number') {
       metrics.current.sum += a.current;
       metrics.current.count++;
-      // Separate charging and discharging
-      if (a.current > 0) {
+      // Separate charging and discharging using configurable thresholds
+      if (a.current >= chargingThreshold) {
         metrics.chargingCurrent.sum += a.current;
         metrics.chargingCurrent.count++;
-      } else if (a.current < 0) {
+      } else if (a.current <= dischargingThreshold) {
         metrics.dischargingCurrent.sum += Math.abs(a.current);
         metrics.dischargingCurrent.count++;
       }

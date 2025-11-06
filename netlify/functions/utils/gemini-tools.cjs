@@ -447,8 +447,8 @@ function aggregateDailyData(records, metric, log) {
   for (const [bucketKey, bucketRecords] of dailyBuckets.entries()) {
     // Reuse hourly aggregation logic
     const { computeBucketMetrics } = require('./data-aggregation.cjs');
-    const log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }; // Dummy log
-    const metrics = computeBucketMetrics(bucketRecords, log);
+    const dummyLog = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
+    const metrics = computeBucketMetrics(bucketRecords, dummyLog);
     
     dailyData.push({
       timestamp: bucketKey,

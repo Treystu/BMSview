@@ -181,6 +181,10 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
       let response;
       
       try {
+        // Build conversation text once per iteration
+        // Note: Gemini 2.5 Flash doesn't yet support structured conversation history,
+        // so we format as a single text prompt. This will be optimized when the SDK
+        // supports native multi-turn conversations.
         const conversationText = conversationHistory.map(msg => 
           `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
         ).join('\n\n');
@@ -210,13 +214,36 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
 
       const responseText = response.response.text();
       
-      // Try to parse as JSON first (for tool calls)
+      // Try to parse as JSON - handle various formatting issues
       let parsedResponse;
       try {
+        // First, try to parse as-is (trimmed)
         parsedResponse = JSON.parse(responseText.trim());
       } catch {
-        // Not JSON, treat as final text answer
-        parsedResponse = null;
+        // If that fails, try to extract JSON from markdown code blocks
+        const jsonMatch = responseText.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+        if (jsonMatch) {
+          try {
+            parsedResponse = JSON.parse(jsonMatch[1].trim());
+          } catch {
+            // Still not valid JSON, treat as plain text
+            parsedResponse = null;
+          }
+        } else {
+          // Try to find JSON object in the text
+          const jsonObjectMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonObjectMatch) {
+            try {
+              parsedResponse = JSON.parse(jsonObjectMatch[0]);
+            } catch {
+              // Not valid JSON, treat as plain text
+              parsedResponse = null;
+            }
+          } else {
+            // No JSON found, treat as plain text
+            parsedResponse = null;
+          }
+        }
       }
 
       // Check if it's a tool call
