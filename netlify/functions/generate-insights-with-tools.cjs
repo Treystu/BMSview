@@ -451,6 +451,7 @@ NOTE: Use this data to answer the specific time-based query. Calculate energy de
     
     // Wrap Gemini call with timeout that cleans up properly
     let timeoutId;
+    let finalText; // Declare outside try block for proper scoping
     const timeoutPromise = new Promise((_, reject) => {
       timeoutId = setTimeout(() => {
         reject(new Error(`Gemini API timeout after ${GEMINI_TIMEOUT_MS}ms`));
@@ -473,7 +474,7 @@ NOTE: Use this data to answer the specific time-based query. Calculate energy de
       });
     
       const response = result.response;
-      const finalText = response.text();
+      finalText = response.text();
       
       log.debug('Received Gemini response', {
         responseLength: finalText.length,
