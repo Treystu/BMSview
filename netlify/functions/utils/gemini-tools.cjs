@@ -138,27 +138,49 @@ const toolDefinitions = [
  * @returns {Promise<object>} Tool execution result
  */
 async function executeToolCall(toolName, parameters, log) {
+  const startTime = Date.now();
   log.info('Executing tool call', { toolName, parameters });
 
   try {
+    let result;
     switch (toolName) {
       case 'getSystemHistory':
-        return await getSystemHistory(parameters, log);
+        result = await getSystemHistory(parameters, log);
+        break;
 
       case 'getWeatherData':
-        return await getWeatherData(parameters, log);
+        result = await getWeatherData(parameters, log);
+        break;
 
       case 'getSolarEstimate':
-        return await getSolarEstimate(parameters, log);
+        result = await getSolarEstimate(parameters, log);
+        break;
 
       case 'getSystemAnalytics':
-        return await getSystemAnalytics(parameters, log);
+        result = await getSystemAnalytics(parameters, log);
+        break;
 
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
+    
+    const duration = Date.now() - startTime;
+    log.info('Tool call completed successfully', { 
+      toolName, 
+      duration: `${duration}ms`,
+      resultSize: JSON.stringify(result).length
+    });
+    
+    return result;
   } catch (error) {
-    log.error('Tool execution failed', { toolName, error: error.message });
+    const duration = Date.now() - startTime;
+    log.error('Tool execution failed', { 
+      toolName, 
+      error: error.message,
+      stack: error.stack,
+      duration: `${duration}ms`,
+      parameters
+    });
     return {
       error: true,
       message: `Failed to execute ${toolName}: ${error.message}`
@@ -171,10 +193,19 @@ async function executeToolCall(toolName, parameters, log) {
  */
 async function getSystemHistory(params, log) {
   if (!getCollection) {
+    log.error('Database connection not available for getSystemHistory');
     throw new Error('Database connection not available');
   }
 
   const { systemId, limit = 100, startDate, endDate } = params;
+
+  log.debug('Fetching system history from database', { 
+    systemId, 
+    limit, 
+    hasDateRange: !!(startDate || endDate),
+    startDate,
+    endDate
+  });
 
   const historyCollection = await getCollection('history');
 
@@ -187,14 +218,24 @@ async function getSystemHistory(params, log) {
     if (endDate) query.timestamp.$lte = new Date(endDate).toISOString();
   }
 
+  log.debug('Executing database query', { query, limit: Math.min(limit, 500) });
+  
+  const queryStartTime = Date.now();
+
   // Fetch records
   const records = await historyCollection
     .find(query, { projection: { _id: 0 } })
     .sort({ timestamp: -1 })
     .limit(Math.min(limit, 500))
     .toArray();
+    
+  const queryDuration = Date.now() - queryStartTime;
 
-  log.info('Retrieved system history', { systemId, count: records.length });
+  log.info('Retrieved system history', { 
+    systemId, 
+    count: records.length,
+    queryDuration: `${queryDuration}ms`
+  });
 
   return {
     systemId,
@@ -212,10 +253,13 @@ async function getSystemHistory(params, log) {
  */
 async function getWeatherData(params, log) {
   if (!fetch) {
+    log.error('Fetch is not available in this environment');
     throw new Error('Fetch is not available in this environment');
   }
 
   const { latitude, longitude, timestamp, type = 'historical' } = params;
+
+  log.debug('Fetching weather data', { latitude, longitude, timestamp, type });
 
   // Call the weather function
   const baseUrl = process.env.URL || 'http://localhost:8888';
@@ -228,18 +272,35 @@ async function getWeatherData(params, log) {
     ...(type === 'hourly' && { type: 'hourly' })
   };
 
+  log.debug('Calling weather API', { url, bodyKeys: Object.keys(body) });
+  
+  const fetchStartTime = Date.now();
+
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
+  
+  const fetchDuration = Date.now() - fetchStartTime;
 
   if (!response.ok) {
+    log.error('Weather API error', { 
+      status: response.status, 
+      statusText: response.statusText,
+      duration: `${fetchDuration}ms`
+    });
     throw new Error(`Weather API returned ${response.status}`);
   }
 
   const data = await response.json();
-  log.info('Retrieved weather data', { latitude, longitude, type });
+  log.info('Retrieved weather data', { 
+    latitude, 
+    longitude, 
+    type,
+    duration: `${fetchDuration}ms`,
+    dataSize: JSON.stringify(data).length
+  });
 
   return data;
 }
@@ -282,23 +343,41 @@ async function getSolarEstimate(params, log) {
  */
 async function getSystemAnalytics(params, log) {
   if (!fetch) {
+    log.error('Fetch is not available in this environment');
     throw new Error('Fetch is not available in this environment');
   }
 
   const { systemId } = params;
 
+  log.debug('Fetching system analytics', { systemId });
+
   // Call the system-analytics function
   const baseUrl = process.env.URL || 'http://localhost:8888';
   const url = `${baseUrl}/.netlify/functions/system-analytics?systemId=${systemId}`;
 
+  log.debug('Calling system analytics API', { url });
+  
+  const fetchStartTime = Date.now();
+
   const response = await fetch(url);
+  
+  const fetchDuration = Date.now() - fetchStartTime;
 
   if (!response.ok) {
+    log.error('System analytics API error', { 
+      status: response.status, 
+      statusText: response.statusText,
+      duration: `${fetchDuration}ms`
+    });
     throw new Error(`System analytics API returned ${response.status}`);
   }
 
   const data = await response.json();
-  log.info('Retrieved system analytics', { systemId });
+  log.info('Retrieved system analytics', { 
+    systemId,
+    duration: `${fetchDuration}ms`,
+    dataSize: JSON.stringify(data).length
+  });
 
   return data;
 }
