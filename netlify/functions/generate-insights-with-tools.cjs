@@ -31,10 +31,15 @@
  */
 
 const { createLogger, createTimer } = require('../../utils/logger.cjs');
-const { toolDefinitions, executeToolCall } = require('./utils/gemini-tools.cjs');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const MAX_TOOL_ITERATIONS = 10; // Allow more iterations for complex queries
+// Constants for data fetching
+const DEFAULT_HISTORY_LIMIT = 30;
+const CUSTOM_QUERY_HISTORY_LIMIT = 100;
+const MAX_TIME_RANGE_RECORDS = 500;
+const MAX_DAYS_LOOKBACK = 90;
+
+const MAX_TOOL_ITERATIONS = 10; // Reserved for future SDK upgrade with native function calling
 
 /**
  * Main handler for insights generation with function calling
@@ -137,6 +142,8 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
   const toolCalls = [];
   
   try {
+    const { toolDefinitions, executeToolCall } = require('./utils/gemini-tools.cjs');
+    
     // Intelligently gather context based on the query and system
     let enhancedPrompt = initialPrompt;
     
@@ -147,7 +154,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
       try {
         const historyData = await executeToolCall('getSystemHistory', { 
           systemId, 
-          limit: customPrompt ? 100 : 30  // More history for custom queries
+          limit: customPrompt ? CUSTOM_QUERY_HISTORY_LIMIT : DEFAULT_HISTORY_LIMIT
         }, log);
         
         if (historyData && !historyData.error && historyData.records && historyData.records.length > 0) {
@@ -203,7 +210,7 @@ ${JSON.stringify(analyticsData, null, 2)}
         
         if (daysMatch || weeksMatch) {
           const days = daysMatch ? parseInt(daysMatch[1]) : (weeksMatch ? parseInt(weeksMatch[1]) * 7 : 0);
-          if (days > 0 && days <= 90) {
+          if (days > 0 && days <= MAX_DAYS_LOOKBACK) {
             const endDate = new Date();
             const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
             
@@ -212,7 +219,7 @@ ${JSON.stringify(analyticsData, null, 2)}
             try {
               const rangeHistory = await executeToolCall('getSystemHistory', {
                 systemId,
-                limit: 500,
+                limit: MAX_TIME_RANGE_RECORDS,
                 startDate: startDate.toISOString(),
                 endDate: endDate.toISOString()
               }, log);
@@ -220,7 +227,12 @@ ${JSON.stringify(analyticsData, null, 2)}
               if (rangeHistory && !rangeHistory.error && rangeHistory.records) {
                 toolCalls.push({ 
                   name: 'getSystemHistory', 
-                  args: { systemId, startDate: startDate.toISOString(), endDate: endDate.toISOString(), limit: 500 }
+                  args: { 
+                    systemId, 
+                    startDate: startDate.toISOString(), 
+                    endDate: endDate.toISOString(), 
+                    limit: MAX_TIME_RANGE_RECORDS 
+                  }
                 });
                 
                 enhancedPrompt += `\n\nREQUESTED TIME RANGE DATA (${days} days - ${rangeHistory.records.length} datapoints):
@@ -462,24 +474,10 @@ async function getAIModelWithTools(log) {
         }
       });
 
-      // Quick test to verify model is available
-      try {
-        await model.generateContent('test');
-        log.info(`Model ${name} verified and ready`);
-        return model;
-      } catch (testErr) {
-        const testError = testErr instanceof Error ? testErr : new Error(String(testErr));
-        // If it's a 404 or not found error, try next model
-        if (testError.message.includes('404') || 
-            testError.message.includes('not found') ||
-            testError.message.includes('does not exist')) {
-          log.warn(`Model ${name} not available (404), trying next fallback`, { error: testError.message });
-          continue;
-        }
-        // For other errors, the model exists but test failed - return it anyway
-        log.info(`Model ${name} initialized (test failed but model exists)`);
-        return model;
-      }
+      // Model initialized - return immediately for faster response
+      // Actual availability will be verified on first generateContent call
+      log.info(`Model ${name} initialized successfully`);
+      return model;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       log.warn(`Failed to initialize ${name}`, { error: error.message });

@@ -14,6 +14,9 @@
 
 const { createLogger, createTimer } = require('../../utils/logger.cjs');
 
+// Load enhanced handler once at module level
+const enhancedHandler = require('./generate-insights-with-tools.cjs').handler;
+
 /**
  * Generate insights handler - redirects to enhanced mode
  */
@@ -24,8 +27,7 @@ async function generateHandler(event = {}, context = {}) {
   try {
     log.info('Standard mode deprecated, redirecting to enhanced mode');
     
-    // Call the enhanced insights function directly
-    const enhancedHandler = require('./generate-insights-with-tools.cjs').handler;
+    // Call the enhanced insights function
     const result = await enhancedHandler(event, context);
     
     await timer.end();

@@ -6,6 +6,7 @@
  */
 
 // Lazy-load MongoDB to avoid connection errors when not needed
+/** @type {Function|null} getCollection - MongoDB collection getter function */
 let getCollection;
 try {
   const mongodb = require('./mongodb.cjs');
