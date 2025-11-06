@@ -449,27 +449,41 @@ NOTE: Use this data to answer the specific time-based query. Calculate energy de
     
     const geminiStartTime = Date.now();
     
-    // Wrap Gemini call with timeout
-    const result = await Promise.race([
-      model.generateContent(enhancedPrompt),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`Gemini API timeout after ${GEMINI_TIMEOUT_MS}ms`)), GEMINI_TIMEOUT_MS)
-      )
-    ]);
-    
-    const geminiDuration = Date.now() - geminiStartTime;
-    log.info('Gemini API call completed', { 
-      duration: `${geminiDuration}ms`,
-      durationSeconds: (geminiDuration / 1000).toFixed(2)
+    // Wrap Gemini call with timeout that cleans up properly
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`Gemini API timeout after ${GEMINI_TIMEOUT_MS}ms`));
+      }, GEMINI_TIMEOUT_MS);
     });
     
-    const response = result.response;
-    const finalText = response.text();
+    try {
+      const result = await Promise.race([
+        model.generateContent(enhancedPrompt),
+        timeoutPromise
+      ]);
+      
+      // Clear timeout if API call completes first
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      const geminiDuration = Date.now() - geminiStartTime;
+      log.info('Gemini API call completed', { 
+        duration: `${geminiDuration}ms`,
+        durationSeconds: (geminiDuration / 1000).toFixed(2)
+      });
     
-    log.debug('Received Gemini response', {
-      responseLength: finalText.length,
-      responsePreview: finalText.substring(0, 200) + '...'
-    });
+      const response = result.response;
+      const finalText = response.text();
+      
+      log.debug('Received Gemini response', {
+        responseLength: finalText.length,
+        responsePreview: finalText.substring(0, 200) + '...'
+      });
+    } catch (error) {
+      // Clear timeout on error
+      if (timeoutId) clearTimeout(timeoutId);
+      throw error;
+    }
 
     // Ensure we have actual content
     if (!finalText || finalText.trim() === '') {
