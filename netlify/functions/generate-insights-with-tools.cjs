@@ -134,6 +134,139 @@ async function handler(event = {}, context = {}) {
 }
 
 /**
+ * Extract and distill key trending metrics from historical data
+ * This creates a compact summary instead of sending all raw data to Gemini
+ */
+function extractTrendingInsights(records, log) {
+  if (!records || records.length === 0) {
+    return null;
+  }
+
+  log.debug('Extracting trending insights from historical data', { recordCount: records.length });
+
+  // Sort by timestamp to ensure chronological order
+  const sortedRecords = [...records].sort((a, b) => 
+    new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
+
+  // Helper to safely get numeric value
+  const getVal = (record, field) => {
+    const val = record.analysis?.[field];
+    return typeof val === 'number' && !isNaN(val) ? val : null;
+  };
+
+  // Helper to calculate trend (first, last, change, rate)
+  const calculateTrend = (records, field) => {
+    const values = records.map(r => getVal(r, field)).filter(v => v !== null);
+    if (values.length < 2) return null;
+
+    const first = values[0];
+    const last = values[values.length - 1];
+    const change = last - first;
+    const changePercent = first !== 0 ? ((change / first) * 100) : 0;
+
+    // Calculate rate of change per day
+    const firstRecord = records.find(r => getVal(r, field) !== null);
+    const lastRecord = [...records].reverse().find(r => getVal(r, field) !== null);
+    const timeDiffMs = new Date(lastRecord.timestamp).getTime() - new Date(firstRecord.timestamp).getTime();
+    const timeDiffDays = timeDiffMs / (1000 * 60 * 60 * 24);
+    const ratePerDay = timeDiffDays > 0 ? change / timeDiffDays : 0;
+
+    return {
+      first: parseFloat(first.toFixed(3)),
+      last: parseFloat(last.toFixed(3)),
+      change: parseFloat(change.toFixed(3)),
+      changePercent: parseFloat(changePercent.toFixed(2)),
+      ratePerDay: parseFloat(ratePerDay.toFixed(3)),
+      min: parseFloat(Math.min(...values).toFixed(3)),
+      max: parseFloat(Math.max(...values).toFixed(3)),
+      avg: parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(3)),
+      dataPoints: values.length
+    };
+  };
+
+  // Calculate charging/discharging cycles
+  const detectCycles = (records) => {
+    const cycles = { charging: 0, discharging: 0, idle: 0 };
+
+    for (const record of records) {
+      const current = getVal(record, 'current');
+      if (current === null) continue;
+
+      if (current > 0.5) cycles.charging++;
+      else if (current < -0.5) cycles.discharging++;
+      else cycles.idle++;
+    }
+
+    return cycles;
+  };
+
+  // Calculate SOC efficiency (charge gained vs expected)
+  const calculateSocEfficiency = (records) => {
+    const socValues = records.map(r => getVal(r, 'stateOfCharge')).filter(v => v !== null);
+    if (socValues.length < 2) return null;
+
+    let totalChargeGain = 0;
+    let totalChargeLoss = 0;
+    let chargeEvents = 0;
+    let dischargeEvents = 0;
+
+    for (let i = 1; i < socValues.length; i++) {
+      const delta = socValues[i] - socValues[i - 1];
+      if (delta > 1) {
+        totalChargeGain += delta;
+        chargeEvents++;
+      } else if (delta < -1) {
+        totalChargeLoss += Math.abs(delta);
+        dischargeEvents++;
+      }
+    }
+
+    return {
+      totalChargeGain: parseFloat(totalChargeGain.toFixed(2)),
+      totalChargeLoss: parseFloat(totalChargeLoss.toFixed(2)),
+      chargeEvents,
+      dischargeEvents,
+      avgChargePerEvent: chargeEvents > 0 ? parseFloat((totalChargeGain / chargeEvents).toFixed(2)) : 0,
+      avgDischargePerEvent: dischargeEvents > 0 ? parseFloat((totalChargeLoss / dischargeEvents).toFixed(2)) : 0
+    };
+  };
+
+  // Build compact trending summary
+  const trendingSummary = {
+    timeSpan: {
+      start: sortedRecords[0].timestamp,
+      end: sortedRecords[sortedRecords.length - 1].timestamp,
+      totalDataPoints: sortedRecords.length,
+      daysSpanned: parseFloat(((new Date(sortedRecords[sortedRecords.length - 1].timestamp).getTime() - 
+                               new Date(sortedRecords[0].timestamp).getTime()) / (1000 * 60 * 60 * 24)).toFixed(2))
+    },
+    voltage: calculateTrend(sortedRecords, 'overallVoltage'),
+    stateOfCharge: calculateTrend(sortedRecords, 'stateOfCharge'),
+    capacity: calculateTrend(sortedRecords, 'remainingCapacity'),
+    temperature: calculateTrend(sortedRecords, 'temperature'),
+    power: calculateTrend(sortedRecords, 'power'),
+    cellVoltageDelta: calculateTrend(sortedRecords, 'cellVoltageDifference'),
+    cycles: detectCycles(sortedRecords),
+    socEfficiency: calculateSocEfficiency(sortedRecords)
+  };
+
+  // Calculate data size savings
+  const originalSize = JSON.stringify(records).length;
+  const compactSize = JSON.stringify(trendingSummary).length;
+  const savings = ((1 - compactSize / originalSize) * 100).toFixed(1);
+
+  log.info('Trending insights extracted', {
+    originalDataSize: originalSize,
+    compactDataSize: compactSize,
+    compressionRatio: `${savings}%`,
+    dataPoints: sortedRecords.length
+  });
+
+  return trendingSummary;
+}
+
+/**
  * Execute Gemini conversation with intelligent context gathering
  * Since the current SDK version doesn't support native function calling,
  * we intelligently gather relevant context upfront based on the query.
@@ -152,55 +285,95 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
 
       // Always get recent history for trend analysis
       try {
+        log.debug('Fetching system history', { systemId, limit: customPrompt ? CUSTOM_QUERY_HISTORY_LIMIT : DEFAULT_HISTORY_LIMIT });
+        const historyStartTime = Date.now();
+        
         const historyData = await executeToolCall('getSystemHistory', { 
           systemId, 
           limit: customPrompt ? CUSTOM_QUERY_HISTORY_LIMIT : DEFAULT_HISTORY_LIMIT
         }, log);
         
+        const historyDuration = Date.now() - historyStartTime;
+        log.debug('System history fetch completed', { 
+          duration: `${historyDuration}ms`,
+          recordsReturned: historyData?.records?.length || 0 
+        });
+        
         if (historyData && !historyData.error && historyData.records && historyData.records.length > 0) {
           toolCalls.push({ name: 'getSystemHistory', args: { systemId, limit: historyData.records.length } });
           
-          // Format historical data for better analysis
-          const formattedHistory = historyData.records.map((r, idx) => ({
-            timestamp: r.timestamp,
-            datapoint: idx + 1,
-            voltage: r.analysis?.overallVoltage,
-            current: r.analysis?.current,
-            soc: r.analysis?.stateOfCharge,
-            capacity: r.analysis?.remainingCapacity,
-            temperature: r.analysis?.temperature,
-            power: r.analysis?.power
-          })).filter(r => r.voltage || r.current || r.soc);
+          // Extract compact trending insights instead of sending raw data
+          log.info('Pre-processing historical data for trending analysis', { 
+            totalRecords: historyData.records.length 
+          });
           
-          enhancedPrompt += `\n\nHISTORICAL DATA (${formattedHistory.length} recent datapoints for trend analysis):
-${JSON.stringify(formattedHistory, null, 2)}
+          const trendingInsights = extractTrendingInsights(historyData.records, log);
+          
+          if (trendingInsights) {
+            enhancedPrompt += `\n\nHISTORICAL TRENDING ANALYSIS (${trendingInsights.timeSpan.totalDataPoints} datapoints over ${trendingInsights.timeSpan.daysSpanned} days):
+${JSON.stringify(trendingInsights, null, 2)}
 
-IMPORTANT: Use this historical data to calculate:
-- Charging rate changes: Compare SoC increases during charging periods
-- Discharging rate changes: Compare SoC decreases during discharging periods
-- Voltage degradation: Track voltage trends over time
-- Capacity retention: Compare capacity values across uploads
-- Usage patterns: Identify charging/discharging cycles and times
-- Temperature correlation: Relate temperature to performance
+IMPORTANT: These are pre-calculated trends from actual data:
+- Use voltage/capacity/SOC trends to identify degradation patterns
+- Use cycles data to understand usage patterns (charging vs discharging vs idle)
+- Use socEfficiency to calculate real-world charge/discharge efficiency
+- Use ratePerDay values to project future performance
+- Compare current reading to historical min/max/avg to identify anomalies
 `;
+          }
         }
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
-        log.warn('Failed to get system history', { error: error.message });
+        log.warn('Failed to get system history', { 
+          error: error.message,
+          stack: error.stack,
+          systemId 
+        });
       }
 
       // Get system analytics for baseline comparison
       try {
+        log.debug('Fetching system analytics', { systemId });
+        const analyticsStartTime = Date.now();
+        
         const analyticsData = await executeToolCall('getSystemAnalytics', { systemId }, log);
+        
+        const analyticsDuration = Date.now() - analyticsStartTime;
+        log.debug('System analytics fetch completed', { 
+          duration: `${analyticsDuration}ms`,
+          hasData: !!analyticsData && !analyticsData.error 
+        });
+        
         if (analyticsData && !analyticsData.error) {
           toolCalls.push({ name: 'getSystemAnalytics', args: { systemId } });
+          
+          // Optimize analytics data - only include summary, not full details
+          const optimizedAnalytics = {
+            systemId: analyticsData.systemId,
+            averages: analyticsData.hourlyAverages ? {
+              count: analyticsData.hourlyAverages.length,
+              summary: 'Available for 24-hour pattern analysis'
+            } : null,
+            alerts: analyticsData.alerts || null,
+            performanceBaseline: analyticsData.performanceBaseline || null
+          };
+          
+          log.debug('Analytics data optimized', {
+            originalSize: JSON.stringify(analyticsData).length,
+            optimizedSize: JSON.stringify(optimizedAnalytics).length
+          });
+          
           enhancedPrompt += `\n\nSYSTEM ANALYTICS (performance baselines and patterns):
-${JSON.stringify(analyticsData, null, 2)}
+${JSON.stringify(optimizedAnalytics, null, 2)}
 `;
         }
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
-        log.warn('Failed to get system analytics', { error: error.message });
+        log.warn('Failed to get system analytics', { 
+          error: error.message,
+          stack: error.stack,
+          systemId 
+        });
       }
       
       // For custom prompts requesting specific time ranges, parse and fetch accordingly
@@ -235,18 +408,20 @@ ${JSON.stringify(analyticsData, null, 2)}
                   }
                 });
                 
-                enhancedPrompt += `\n\nREQUESTED TIME RANGE DATA (${days} days - ${rangeHistory.records.length} datapoints):
-${JSON.stringify(rangeHistory.records.map(r => ({
-  timestamp: r.timestamp,
-  voltage: r.analysis?.overallVoltage,
-  current: r.analysis?.current,
-  soc: r.analysis?.stateOfCharge,
-  capacity: r.analysis?.remainingCapacity,
-  power: r.analysis?.power
-})), null, 2)}
+                log.info('Pre-processing time range data for trending analysis', { 
+                  totalRecords: rangeHistory.records.length,
+                  requestedDays: days
+                });
+                
+                const rangeTrendingInsights = extractTrendingInsights(rangeHistory.records, log);
+                
+                if (rangeTrendingInsights) {
+                  enhancedPrompt += `\n\nREQUESTED TIME RANGE TRENDING ANALYSIS (${days} days - ${rangeTrendingInsights.timeSpan.totalDataPoints} datapoints):
+${JSON.stringify(rangeTrendingInsights, null, 2)}
 
-NOTE: Calculate energy deltas by comparing capacity/SoC changes between datapoints, especially during daylight hours for solar generation estimates.
+NOTE: Use this data to answer the specific time-based query. Calculate energy deltas from capacity/SoC changes.
 `;
+                }
               }
             } catch (err) {
               const error = err instanceof Error ? err : new Error(String(err));
@@ -260,12 +435,41 @@ NOTE: Calculate energy deltas by comparing capacity/SoC changes between datapoin
     // Generate insights with all gathered context
     log.info('Generating insights with comprehensive context', { 
       promptLength: enhancedPrompt.length,
-      toolCallsCount: toolCalls.length 
+      toolCallsCount: toolCalls.length,
+      estimatedTokens: Math.ceil(enhancedPrompt.length / 4) // Rough estimate
     });
     
-    const result = await model.generateContent(enhancedPrompt);
+    // Add timeout protection for Gemini API call
+    const GEMINI_TIMEOUT_MS = parseInt(process.env.GEMINI_TIMEOUT_MS || '25000'); // 25s default, under Netlify's 26s limit
+    
+    log.debug('Starting Gemini API call', {
+      timeout: GEMINI_TIMEOUT_MS,
+      promptPreview: enhancedPrompt.substring(0, 200) + '...'
+    });
+    
+    const geminiStartTime = Date.now();
+    
+    // Wrap Gemini call with timeout
+    const result = await Promise.race([
+      model.generateContent(enhancedPrompt),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error(`Gemini API timeout after ${GEMINI_TIMEOUT_MS}ms`)), GEMINI_TIMEOUT_MS)
+      )
+    ]);
+    
+    const geminiDuration = Date.now() - geminiStartTime;
+    log.info('Gemini API call completed', { 
+      duration: `${geminiDuration}ms`,
+      durationSeconds: (geminiDuration / 1000).toFixed(2)
+    });
+    
     const response = result.response;
     const finalText = response.text();
+    
+    log.debug('Received Gemini response', {
+      responseLength: finalText.length,
+      responsePreview: finalText.substring(0, 200) + '...'
+    });
 
     // Ensure we have actual content
     if (!finalText || finalText.trim() === '') {
@@ -290,19 +494,29 @@ NOTE: Calculate energy deltas by comparing capacity/SoC changes between datapoin
 
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    log.error('Error during insights generation', { error: error.message, stack: error.stack });
+    log.error('Error during insights generation', { 
+      error: error.message, 
+      stack: error.stack,
+      errorType: error.constructor.name,
+      toolCallsCompleted: toolCalls.length
+    });
 
     // Provide user-friendly error message
     let userMessage = 'Failed to generate insights. Please try again.';
+    let technicalDetails = error.message;
+    
     if (error.message.includes('404') || error.message.includes('not found')) {
       userMessage = 'AI model temporarily unavailable. Please try again in a few moments.';
     } else if (error.message.includes('timeout') || error.message.includes('timed out')) {
-      userMessage = 'Request timed out. Your query may be too complex. Try asking for specific information.';
+      userMessage = 'Request timed out. The AI took too long to process your data. Try with a smaller time range or simpler question.';
+      technicalDetails = `Gemini API exceeded timeout limit. Prompt size: ${enhancedPrompt?.length || 'unknown'} characters`;
     } else if (error.message.includes('quota') || error.message.includes('rate limit')) {
       userMessage = 'Service temporarily unavailable due to high demand. Please try again in a few minutes.';
     } else if (error.message.includes('blocked') || error.message.includes('SAFETY')) {
       userMessage = 'Response was blocked by safety filters. Please rephrase your question.';
     }
+    
+    log.warn('User-friendly error message generated', { userMessage, technicalDetails });
 
     return {
       insights: {
