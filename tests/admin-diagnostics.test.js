@@ -337,7 +337,18 @@ describe('Admin Diagnostics Enhanced Tests', () => {
 });
 
 describe('Admin Diagnostics API Contract', () => {
-  test('should accept request body with test selection', () => {
+  test('should accept request body with selectedTests only (primary mode)', () => {
+    const requestBody = {
+      selectedTests: ['database', 'gemini', 'syncAnalysis']
+    };
+
+    expect(requestBody).toHaveProperty('selectedTests');
+    expect(Array.isArray(requestBody.selectedTests)).toBe(true);
+    expect(requestBody.selectedTests).toHaveLength(3);
+    expect(requestBody).not.toHaveProperty('test');
+  });
+
+  test('should accept request body with test selection (legacy mode)', () => {
     const requestBody = {
       test: 'database',
       selectedTests: ['database', 'gemini']

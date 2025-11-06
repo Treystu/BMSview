@@ -1472,13 +1472,116 @@ exports.handler = async (event, context) => {
 
         const results = {};
 
-        // Check if specific tests are requested
-        if (requestBody.test) {
+        // Check if specific tests are requested via selectedTests array
+        if (requestBody.selectedTests && Array.isArray(requestBody.selectedTests) && requestBody.selectedTests.length > 0) {
+            log.info('Running selected diagnostic tests', { selectedTests: requestBody.selectedTests });
+
+            for (const testName of requestBody.selectedTests) {
+                switch (testName) {
+                    // Infrastructure Tests
+                    case 'database':
+                        results.database = await testDatabaseConnection(log);
+                        break;
+                    case 'gemini':
+                        results.gemini = await testGeminiHealth(log);
+                        break;
+                    
+                    // Core Analysis Functions
+                    case 'analyze':
+                        results.analyze = await testAnalyzeEndpoint(log);
+                        break;
+                    case 'syncAnalysis':
+                        results.syncAnalysis = await testSyncAnalysis(log, context);
+                        break;
+                    case 'asyncAnalysis':
+                        results.asyncAnalysis = await testAsyncAnalysis(log);
+                        break;
+                    case 'processAnalysis':
+                        results.processAnalysis = await testProcessAnalysisEndpoint(log);
+                        break;
+                    case 'extractDL':
+                        results.extractDL = await testExtractDLEndpoint(log);
+                        break;
+                    
+                    // Insights Generation
+                    case 'generateInsights':
+                        results.generateInsights = await testGenerateInsightsEndpoint(log);
+                        break;
+                    case 'insightsWithTools':
+                        results.insightsWithTools = await testInsightsWithTools(log);
+                        break;
+                    case 'debugInsights':
+                        results.debugInsights = await testDebugInsightsEndpoint(log);
+                        break;
+                    
+                    // Data Management
+                    case 'history':
+                        results.history = await testHistoryEndpoint(log);
+                        break;
+                    case 'systems':
+                        results.systems = await testSystemsEndpoint(log);
+                        break;
+                    case 'data':
+                        results.data = await testDataEndpoint(log);
+                        break;
+                    case 'exportData':
+                        results.exportData = await testExportDataEndpoint(log);
+                        break;
+                    
+                    // Job Management
+                    case 'getJobStatus':
+                        results.getJobStatus = await testGetJobStatusEndpoint(log);
+                        break;
+                    case 'jobShepherd':
+                        results.jobShepherd = await testJobShepherdEndpoint(log);
+                        break;
+                    
+                    // External Services
+                    case 'weather':
+                        results.weatherService = await testWeatherService(log);
+                        break;
+                    case 'solar':
+                        results.solarService = await testSolarService(log);
+                        break;
+                    case 'systemAnalytics':
+                        results.systemAnalytics = await testSystemAnalytics(log);
+                        break;
+                    
+                    // Utility & Admin
+                    case 'contact':
+                        results.contact = await testContactEndpoint(log);
+                        break;
+                    case 'getIP':
+                        results.getIP = await testGetIPEndpoint(log);
+                        break;
+                    case 'upload':
+                        results.upload = await testUploadEndpoint(log);
+                        break;
+                    case 'security':
+                        results.security = await testSecurityEndpoint(log);
+                        break;
+                    case 'predictiveMaintenance':
+                        results.predictiveMaintenance = await testPredictiveMaintenanceEndpoint(log);
+                        break;
+                    case 'ipAdmin':
+                        results.ipAdmin = await testIPAdminEndpoint(log);
+                        break;
+                    case 'adminSystems':
+                        results.adminSystems = await testAdminSystemsEndpoint(log);
+                        break;
+                    
+                    default:
+                        log.warn('Unknown test type requested', { testName });
+                        break;
+                }
+            }
+        } else if (requestBody.test) {
+            // Legacy support: Check if specific test type is requested via 'test' property
             const testType = requestBody.test;
 
-            // If selectedTests is provided, run only those tests
+            // If selectedTests is also provided (nested case), run only those tests
             if (requestBody.selectedTests && Array.isArray(requestBody.selectedTests) && requestBody.selectedTests.length > 0) {
-                log.info('Running selected diagnostic tests', { selectedTests: requestBody.selectedTests });
+                log.info('Running selected diagnostic tests (legacy mode)', { selectedTests: requestBody.selectedTests });
 
                 for (const testName of requestBody.selectedTests) {
                     switch (testName) {
