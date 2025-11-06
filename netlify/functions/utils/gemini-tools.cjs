@@ -34,8 +34,41 @@ try {
  */
 const toolDefinitions = [
   {
+    name: 'request_bms_data',
+    description: 'Request specific BMS data when you need additional information to answer a query. This is the PRIMARY tool for data access. Returns hourly averaged or raw data based on your needs.',
+    parameters: {
+      type: 'object',
+      properties: {
+        systemId: {
+          type: 'string',
+          description: 'The unique identifier of the battery system'
+        },
+        metric: {
+          type: 'string',
+          description: 'The specific data metric needed. Options: "all" (all metrics), "voltage", "current", "power", "soc", "capacity", "temperature", "cell_voltage_difference"',
+          enum: ['all', 'voltage', 'current', 'power', 'soc', 'capacity', 'temperature', 'cell_voltage_difference']
+        },
+        time_range_start: {
+          type: 'string',
+          description: 'Start of the time range in ISO 8601 format (e.g., "2025-08-01T00:00:00Z")'
+        },
+        time_range_end: {
+          type: 'string',
+          description: 'End of the time range in ISO 8601 format (e.g., "2025-11-01T00:00:00Z")'
+        },
+        granularity: {
+          type: 'string',
+          description: 'Time resolution: "hourly_avg" (default, recommended for large ranges), "daily_avg", or "raw" (use sparingly)',
+          enum: ['hourly_avg', 'daily_avg', 'raw'],
+          default: 'hourly_avg'
+        }
+      },
+      required: ['systemId', 'metric', 'time_range_start', 'time_range_end']
+    }
+  },
+  {
     name: 'getSystemHistory',
-    description: 'Retrieves historical battery measurements for a specific system. Use this to analyze trends, compare current performance to past performance, or investigate historical issues.',
+    description: 'DEPRECATED: Use request_bms_data instead. Legacy function for retrieving historical battery measurements.',
     parameters: {
       type: 'object',
       properties: {
@@ -144,6 +177,10 @@ async function executeToolCall(toolName, parameters, log) {
   try {
     let result;
     switch (toolName) {
+      case 'request_bms_data':
+        result = await requestBmsData(parameters, log);
+        break;
+
       case 'getSystemHistory':
         result = await getSystemHistory(parameters, log);
         break;
@@ -186,6 +223,242 @@ async function executeToolCall(toolName, parameters, log) {
       message: `Failed to execute ${toolName}: ${error.message}`
     };
   }
+}
+
+/**
+ * Request BMS data with specified granularity and metric filtering
+ * This is the primary data access tool for Gemini
+ */
+async function requestBmsData(params, log) {
+  if (!getCollection) {
+    log.error('Database connection not available for requestBmsData');
+    throw new Error('Database connection not available');
+  }
+
+  const { 
+    systemId, 
+    metric = 'all', 
+    time_range_start, 
+    time_range_end, 
+    granularity = 'hourly_avg' 
+  } = params;
+
+  log.info('Processing BMS data request', { 
+    systemId, 
+    metric, 
+    time_range_start, 
+    time_range_end, 
+    granularity 
+  });
+
+  // Validate time range
+  const startDate = new Date(time_range_start);
+  const endDate = new Date(time_range_end);
+  
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    throw new Error('Invalid date format. Use ISO 8601 format (e.g., "2025-11-01T00:00:00Z")');
+  }
+
+  if (startDate >= endDate) {
+    throw new Error('time_range_start must be before time_range_end');
+  }
+
+  const daysDiff = (endDate - startDate) / (1000 * 60 * 60 * 24);
+  log.debug('Time range parsed', { startDate, endDate, daysDiff });
+
+  const historyCollection = await getCollection('history');
+
+  // Build query
+  const query = {
+    systemId,
+    timestamp: {
+      $gte: startDate.toISOString(),
+      $lte: endDate.toISOString()
+    }
+  };
+
+  // Project only needed fields to reduce data transfer
+  const projection = { 
+    _id: 0, 
+    timestamp: 1, 
+    analysis: 1 
+  };
+
+  const queryStartTime = Date.now();
+  const records = await historyCollection
+    .find(query, { projection })
+    .sort({ timestamp: 1 })
+    .toArray();
+  
+  const queryDuration = Date.now() - queryStartTime;
+  log.info('Raw records fetched', { 
+    count: records.length, 
+    queryDuration: `${queryDuration}ms` 
+  });
+
+  if (records.length === 0) {
+    return {
+      systemId,
+      metric,
+      time_range: { start: time_range_start, end: time_range_end },
+      granularity,
+      dataPoints: 0,
+      message: 'No data found for the specified time range',
+      data: []
+    };
+  }
+
+  // Process based on granularity
+  let processedData;
+  if (granularity === 'raw') {
+    // Return raw records (filtered by metric if specified)
+    processedData = records.map(r => ({
+      timestamp: r.timestamp,
+      ...extractMetrics(r.analysis, metric)
+    }));
+  } else if (granularity === 'hourly_avg') {
+    // Aggregate into hourly buckets
+    const { aggregateHourlyData } = require('./data-aggregation.cjs');
+    const hourlyData = aggregateHourlyData(records, log);
+    processedData = hourlyData.map(h => ({
+      timestamp: h.timestamp,
+      dataPoints: h.dataPoints,
+      ...filterMetrics(h.metrics, metric)
+    }));
+  } else if (granularity === 'daily_avg') {
+    // Aggregate into daily buckets
+    processedData = aggregateDailyData(records, metric, log);
+  } else {
+    throw new Error(`Unknown granularity: ${granularity}`);
+  }
+
+  const resultSize = JSON.stringify(processedData).length;
+  log.info('BMS data request completed', {
+    systemId,
+    metric,
+    granularity,
+    outputDataPoints: processedData.length,
+    resultSize,
+    estimatedTokens: Math.ceil(resultSize / 4)
+  });
+
+  return {
+    systemId,
+    metric,
+    time_range: { start: time_range_start, end: time_range_end },
+    granularity,
+    dataPoints: processedData.length,
+    data: processedData
+  };
+}
+
+/**
+ * Extract specified metrics from analysis data
+ */
+function extractMetrics(analysis, metric) {
+  if (!analysis) return {};
+
+  if (metric === 'all') {
+    return {
+      voltage: analysis.overallVoltage,
+      current: analysis.current,
+      power: analysis.power,
+      soc: analysis.stateOfCharge,
+      capacity: analysis.remainingCapacity,
+      temperature: analysis.temperature,
+      mosTemperature: analysis.mosTemperature,
+      cellVoltageDiff: analysis.cellVoltageDifference
+    };
+  }
+
+  const metricMap = {
+    voltage: { voltage: analysis.overallVoltage },
+    current: { current: analysis.current },
+    power: { power: analysis.power },
+    soc: { soc: analysis.stateOfCharge },
+    capacity: { capacity: analysis.remainingCapacity },
+    temperature: { 
+      temperature: analysis.temperature,
+      mosTemperature: analysis.mosTemperature
+    },
+    cell_voltage_difference: { cellVoltageDiff: analysis.cellVoltageDifference }
+  };
+
+  return metricMap[metric] || {};
+}
+
+/**
+ * Filter averaged metrics based on requested metric
+ */
+function filterMetrics(metrics, metric) {
+  if (!metrics) return {};
+
+  if (metric === 'all') return metrics;
+
+  const metricMap = {
+    voltage: { avgVoltage: metrics.avgVoltage },
+    current: { 
+      avgCurrent: metrics.avgCurrent,
+      avgChargingCurrent: metrics.avgChargingCurrent,
+      avgDischargingCurrent: metrics.avgDischargingCurrent,
+      chargingCount: metrics.chargingCount,
+      dischargingCount: metrics.dischargingCount
+    },
+    power: { 
+      avgPower: metrics.avgPower,
+      avgChargingPower: metrics.avgChargingPower,
+      avgDischargingPower: metrics.avgDischargingPower
+    },
+    soc: { avgSoC: metrics.avgSoC },
+    capacity: { avgCapacity: metrics.avgCapacity },
+    temperature: { 
+      avgTemperature: metrics.avgTemperature,
+      avgMosTemperature: metrics.avgMosTemperature
+    },
+    cell_voltage_difference: { avgCellVoltageDiff: metrics.avgCellVoltageDiff }
+  };
+
+  return metricMap[metric] || metrics;
+}
+
+/**
+ * Aggregate records into daily buckets
+ */
+function aggregateDailyData(records, metric, log) {
+  const dailyBuckets = new Map();
+
+  for (const record of records) {
+    if (!record.timestamp || !record.analysis) continue;
+
+    const timestamp = new Date(record.timestamp);
+    const dayBucket = new Date(timestamp);
+    dayBucket.setHours(0, 0, 0, 0);
+    const bucketKey = dayBucket.toISOString();
+
+    if (!dailyBuckets.has(bucketKey)) {
+      dailyBuckets.set(bucketKey, []);
+    }
+    dailyBuckets.get(bucketKey).push(record);
+  }
+
+  log.debug('Records grouped into daily buckets', { bucketCount: dailyBuckets.size });
+
+  const dailyData = [];
+  for (const [bucketKey, bucketRecords] of dailyBuckets.entries()) {
+    // Reuse hourly aggregation logic
+    const { computeBucketMetrics } = require('./data-aggregation.cjs');
+    const log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }; // Dummy log
+    const metrics = computeBucketMetrics(bucketRecords, log);
+    
+    dailyData.push({
+      timestamp: bucketKey,
+      dataPoints: bucketRecords.length,
+      ...filterMetrics(metrics, metric)
+    });
+  }
+
+  dailyData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  return dailyData;
 }
 
 /**
