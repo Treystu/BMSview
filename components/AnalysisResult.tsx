@@ -30,7 +30,6 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   const [isLoading, setIsLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [useEnhancedMode, setUseEnhancedMode] = useState(true);
 
   const handleGenerateInsights = async (prompt?: string) => {
     setIsLoading(true);
@@ -39,7 +38,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
 
     try {
       await streamInsights(
-        { analysisData, systemId, customPrompt: prompt, useEnhancedMode },
+        { analysisData, systemId, customPrompt: prompt, useEnhancedMode: true }, // Always use enhanced mode
         (chunk) => { setInsights(prev => prev + chunk); },
         () => { setIsLoading(false); },
         (err) => {
@@ -67,7 +66,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       {isLoading && (
         <div className="flex items-center justify-center p-8 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-lg shadow-inner">
           <SpinnerIcon className="h-6 w-6 text-secondary animate-spin" />
-          <span className="ml-3 text-neutral-dark font-medium">🤖 AI is analyzing your battery data...</span>
+          <span className="ml-3 text-neutral-dark font-medium">🤖 AI is analyzing your battery data with intelligent data querying...</span>
         </div>
       )}
       {error && (
@@ -81,18 +80,6 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       )}
       {!isLoading && (
         <div className="p-5 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg space-y-4 border border-gray-200">
-          <div className="flex items-center gap-2 mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <input
-              type="checkbox"
-              id="enhanced-mode"
-              checked={useEnhancedMode}
-              onChange={(e) => setUseEnhancedMode(e.target.checked)}
-              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-            />
-            <label htmlFor="enhanced-mode" className="text-sm font-medium text-gray-700 cursor-pointer">
-              🚀 Enhanced Mode (AI can query historical data, weather, solar estimates, and analytics)
-            </label>
-          </div>
           <div className="flex flex-col sm:flex-row items-center gap-4">
             <button
               type="button"
@@ -100,18 +87,16 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 flex items-center justify-center gap-2"
             >
               <span>🔍</span>
-              <span>Generate {useEnhancedMode ? 'Enhanced' : 'Standard'} Insights</span>
+              <span>Generate AI Insights</span>
             </button>
             <p className="text-sm text-gray-600 text-center sm:text-left">
-              {useEnhancedMode
-                ? 'AI will intelligently query additional data sources for comprehensive analysis.'
-                : 'Get comprehensive battery analysis, runtime estimates, and recommendations.'}
+              AI will intelligently query historical data and analyze trends for comprehensive insights.
             </p>
           </div>
           <div className="border-t border-gray-300 pt-4 space-y-2">
             <label htmlFor={`custom-prompt-${analysisData.dlNumber || 'new'}`} className="block text-sm font-medium text-gray-700">
               Or ask a custom question about your system
-              {systemName && <span className="text-xs text-gray-500"> (context from '{systemName}' will be used)</span>}
+              {systemName && <span className="text-xs text-gray-500"> (AI can request relevant data to answer)</span>}
             </label>
             <textarea
               id={`custom-prompt-${analysisData.dlNumber || 'new'}`}

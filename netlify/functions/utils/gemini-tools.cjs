@@ -1,11 +1,20 @@
 /**
  * Gemini Function Calling Tool Definitions
  * 
- * This module defines the tools/functions that Gemini can call to query additional data
+ * This module defines the tools/functions that can be used to query additional data
  * when generating insights. This enables intelligent, context-aware analysis.
  */
 
-const { getCollection } = require('./mongodb.cjs');
+// Lazy-load MongoDB to avoid connection errors when not needed
+/** @type {Function|null} getCollection - MongoDB collection getter function */
+let getCollection;
+try {
+  const mongodb = require('./mongodb.cjs');
+  getCollection = mongodb.getCollection;
+} catch (err) {
+  // MongoDB not available - tools will return errors gracefully
+  getCollection = null;
+}
 
 // Dynamic import for node-fetch to handle ESM in CJS context
 let fetch;
@@ -161,6 +170,10 @@ async function executeToolCall(toolName, parameters, log) {
  * Get historical battery measurements for a system
  */
 async function getSystemHistory(params, log) {
+  if (!getCollection) {
+    throw new Error('Database connection not available');
+  }
+
   const { systemId, limit = 100, startDate, endDate } = params;
 
   const historyCollection = await getCollection('history');
