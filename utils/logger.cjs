@@ -1,5 +1,24 @@
 function createLogger(functionName, context = {}) {
+  // Cache LOG_LEVEL to avoid repeated environment variable lookups
+  const logLevel = process.env.LOG_LEVEL || 'INFO';
+  const isDebugEnabled = logLevel === 'DEBUG';
+  
   return {
+    debug: (message, data = {}) => {
+      // Only log debug messages if LOG_LEVEL is DEBUG
+      if (isDebugEnabled) {
+        console.log(JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'DEBUG',
+          function: functionName,
+          requestId: context.awsRequestId || 'unknown',
+          elapsed: data.elapsed || '0ms',
+          message,
+          ...data,
+          context
+        }));
+      }
+    },
     info: (message, data = {}) => {
       console.log(JSON.stringify({
         timestamp: new Date().toISOString(),
