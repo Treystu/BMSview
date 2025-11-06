@@ -25,6 +25,19 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
     }
   };
 
+  const getStatusIcon = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'success':
+        return '✔';
+      case 'failure':
+        return '✖';
+      case 'skipped':
+        return 'ℹ';
+      default:
+        return '?';
+    }
+  };
+
   // Filter out metadata keys that shouldn't be displayed as test results
   const metadataKeys = ['suggestions', 'availableTests', 'availableTestsList', 'availableComprehensiveTests', 'testSummary'];
   const testResults = Object.entries(results).filter(([key]) => !metadataKeys.includes(key));
@@ -97,7 +110,7 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                   <div key={key} className="bg-gray-700 p-3 rounded-md">
                     <h3 className="font-semibold text-base capitalize flex items-center">
                       <span className={`mr-2 ${getStatusColor(r.status || '')}`}>
-                        {r && r.status === 'Success' ? '✔' : r && r.status === 'Failure' ? '✖' : r && r.status === 'Skipped' ? 'ℹ' : '?'}
+                        {getStatusIcon(r.status)}
                       </span>
                       {key.replace(/([A-Z])/g, ' $1')}
                     </h3>

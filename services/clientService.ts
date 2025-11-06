@@ -657,7 +657,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Record<s
             'Content-Type': 'application/json',
         } as Record<string, string>;
 
-        // Add Netlify Identity token if available
+        // Add Netlify Identity token if available (consistent with apiFetch pattern)
         if (typeof window !== 'undefined' && (window as any).netlifyIdentity?.currentUser) {
             const token = await (window as any).netlifyIdentity.currentUser()?.jwt();
             if (token) {
@@ -672,8 +672,6 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Record<s
             signal: controller.signal,
         } as RequestInit);
 
-        clearTimeout(timeoutId);
-
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: 'An unexpected error occurred.' }));
             const error = (errorData as any).error || `Server responded with status: ${response.status}`;
@@ -685,8 +683,6 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Record<s
         log('info', 'Diagnostics API fetch successful.', { status: response.status });
         return data as Record<string, { status: string; message: string }>;
     } catch (error) {
-        clearTimeout(timeoutId);
-        
         // Provide a more helpful error message for timeout
         if (error instanceof Error) {
             if (error.name === 'AbortError') {
@@ -697,6 +693,9 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Record<s
             log('error', 'Diagnostics encountered an error.', { error: error.message });
         }
         throw error as Error;
+    } finally {
+        // Always clear timeout regardless of execution path
+        clearTimeout(timeoutId);
     }
 };
 
