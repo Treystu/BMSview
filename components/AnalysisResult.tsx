@@ -202,6 +202,8 @@ const AdoptionSection: React.FC<{
           value={selectedSystemId}
           onChange={handleSelectChange}
           disabled={disabled}
+          aria-label={`Select system for DL ${dlNumber}`}
+          title={`Select system for DL ${dlNumber}`}
           className="block w-full sm:w-auto px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-secondary focus:border-secondary sm:text-sm disabled:bg-gray-200"
         >
           <option value="">Select a system...</option>
@@ -472,7 +474,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
             </svg>
             <div className="flex-1">
               <h4 className="text-lg font-semibold text-red-800 mb-2">Analysis Failed</h4>
-              <p className="text-red-700 mb-3">{formatError(error)}</p>
+              <p className="text-red-700 mb-3">{formatError(error ?? 'Unknown error')}</p>
               {error?.includes('backend_error') && (
                 <div className="bg-red-100 p-3 rounded-md text-sm text-red-700 mb-3">
                   <strong>Backend Issue:</strong> We're experiencing connection problems. Please try again in a few minutes.

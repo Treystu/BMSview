@@ -1,9 +1,73 @@
 # BMSview AI Coding Agent Instructions
 
+## 🚀 Quick Start Reference
+
+**What is BMSview?** Battery Management System screenshot analysis tool using Google Gemini AI.
+
+**Essential Commands:**
+```bash
+netlify dev        # Local dev with functions (port 8888) - USE THIS for full-stack dev
+npm run dev        # Frontend only (port 5173)
+npm test           # Run tests
+npm run build      # Production build
+```
+
+**Critical Files to Know:**
+- `types.ts` - All TypeScript type definitions
+- `netlify/functions/analyze.cjs` - Main BMS analysis endpoint
+- `state/appState.tsx` - Frontend state management
+- `netlify/functions/utils/mongodb.cjs` - Database connection helper
+- `netlify/functions/utils/logger.cjs` - Structured logging
+
+**Module Systems (NEVER MIX!):**
+- Frontend (`.ts/.tsx`): ES modules (`import/export`)
+- Backend (`.cjs`): CommonJS (`require()/module.exports`)
+- Exception: `solar-estimate.ts` (TypeScript, bundled for Netlify)
+
+**Dual Entry Points:**
+- `index.html` → Main BMS analysis app
+- `admin.html` → Admin dashboard (system management, diagnostics)
+
+---
+
 ## Project Overview
 BMSview is a **Battery Management System (BMS) screenshot analysis tool** built with React + TypeScript (frontend) and Netlify Functions (serverless backend). It uses Google Gemini AI to extract battery metrics from images, integrates solar charging estimates, and tracks battery performance over time.
 
 ## Architecture & Data Flow
+
+### File Organization
+
+```
+BMSview/
+├── index.html, admin.html     # Entry points (main app + admin dashboard)
+├── types.ts                   # Central type definitions
+├── components/                # React components (use path alias: 'components/*')
+│   ├── UploadSection.tsx      # BMS image upload
+│   ├── AnalysisResult.tsx     # Analysis display
+│   ├── AdminDashboard.tsx     # Admin interface
+│   └── Solar*.tsx             # Solar integration components
+├── services/                  # API clients (path alias: 'services/*')
+│   ├── geminiService.ts       # Gemini API integration
+│   ├── solarService.ts        # Solar estimation
+│   └── weatherService.ts      # Weather data
+├── state/                     # Context + reducers (path alias: 'state/*')
+│   ├── appState.tsx           # Main app state
+│   └── adminState.tsx         # Admin state
+├── hooks/                     # Custom hooks (path alias: 'hooks/*')
+├── utils/                     # Frontend utilities (path alias: 'utils/*')
+└── netlify/functions/         # Serverless backend (CommonJS .cjs files)
+    ├── analyze.cjs            # ⭐ Main BMS analysis endpoint
+    ├── generate-insights-with-tools.cjs  # AI insights
+    ├── solar-estimate.ts      # Solar proxy (TypeScript exception)
+    ├── history.cjs            # Analysis history
+    ├── systems.cjs            # System management
+    └── utils/                 # Backend utilities
+        ├── mongodb.cjs        # ⭐ Database connection
+        ├── logger.cjs         # ⭐ Structured logging
+        ├── analysis-pipeline.cjs  # Analysis orchestration
+        ├── geminiClient.cjs   # Gemini API client
+        └── retry.cjs          # Retry/circuit breaker logic
+```
 
 ### Frontend: React + Vite
 - **Entry points**: `index.html` (main app) and `admin.html` (admin dashboard)
@@ -65,11 +129,12 @@ log.info('Message', { key: value });  // Use log levels: info, warn, error, debu
 - **Error responses**: Use `errorResponse(statusCode, code, message, details, headers)` from `utils/errors.cjs`
 
 ### 5. Analysis Pipeline (Synchronous Mode)
-**Old architecture** (deprecated): Job-based async processing with `job-shepherd.cjs`
+**Old architecture** (deprecated): Job-based async processing with `job-shepherd.cjs` ⚠️ **DO NOT USE**
 **Current architecture**: Synchronous analysis via `?sync=true` query parameter
 - No job polling (`useJobPolling` hook is commented out in `App.tsx`)
 - Direct response from `analyze.cjs` with full `AnalysisRecord`
 - Duplicate detection via content hashing (SHA-256 of image base64)
+- Functions `job-shepherd.cjs`, `get-job-status.cjs`, `process-analysis.cjs` are **legacy/deprecated**
 
 ## Environment Variables
 
