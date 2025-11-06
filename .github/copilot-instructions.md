@@ -156,6 +156,138 @@ dispatch({ type: 'SYNC_ANALYSIS_COMPLETE', payload: { fileName, record, isDuplic
 - **Path aliases**: Fixed import resolution issues (Oct 2025) - use configured aliases consistently
 - **MongoDB pooling**: Optimized connection pooling (reduced pool size 10→5 to prevent overload)
 
+## Task Scoping and Suitability
+
+### Ideal Tasks for AI Coding Agent
+- **Bug fixes**: Well-defined issues with clear reproduction steps
+- **Feature additions**: Specific, scoped enhancements with clear requirements
+- **Refactoring**: Targeted code improvements (e.g., extract function, rename variable)
+- **Test coverage**: Adding unit tests for existing functionality
+- **Documentation updates**: README, API docs, inline comments
+- **Dependency updates**: Package upgrades with compatibility checks
+- **Code style fixes**: ESLint/Prettier violations
+
+### Tasks Requiring Human Oversight
+- **Architecture changes**: Major structural refactoring or design decisions
+- **Security-critical code**: Authentication, authorization, data encryption
+- **Performance optimization**: Requires profiling and benchmarking
+- **Breaking changes**: API modifications affecting consumers
+- **Complex business logic**: Domain-specific rules requiring expertise
+
+### How to Write Good Issues for AI Coding Agent
+1. **Clear title**: Describe the problem or goal concisely
+2. **Context**: Explain why the change is needed
+3. **Acceptance criteria**: Define what "done" looks like
+4. **Scope guidance**: Specify which files or areas to modify
+5. **Examples**: Provide sample inputs/outputs if applicable
+6. **References**: Link to related issues, docs, or discussions
+
+Example:
+```
+Title: Fix duplicate analysis detection for identical images
+Context: Users uploading the same BMS screenshot twice aren't seeing duplicate warnings
+Expected: SHA-256 hash comparison should flag identical images
+Files: netlify/functions/utils/analysis-pipeline.cjs, services/geminiService.ts
+Test: Upload same screenshot twice, expect isDuplicate flag on second upload
+```
+
+## Security Guidelines
+
+### Critical Security Practices
+1. **Never commit secrets**: Use environment variables for API keys, credentials
+2. **Validate all inputs**: Sanitize user inputs before processing (especially file uploads)
+3. **Use parameterized queries**: Prevent MongoDB injection attacks
+4. **Set security headers**: CORS, CSP, X-Frame-Options in Netlify functions
+5. **Audit dependencies**: Check for known vulnerabilities before adding packages
+6. **Implement rate limiting**: Protect API endpoints from abuse
+7. **Log security events**: Track authentication failures, suspicious patterns
+
+### Secure Coding Patterns in This Project
+- **API keys**: All stored in environment variables (`GEMINI_API_KEY`, `MONGODB_URI`)
+- **MongoDB connection**: Uses `getCollection()` helper with connection pooling
+- **File uploads**: Base64 validation in `analyze.cjs` before processing
+- **Error messages**: Don't expose sensitive details in production responses
+- **Dependencies**: Run `npm audit` before adding new packages
+
+### Security Checklist for Changes
+- [ ] No hardcoded credentials or API keys
+- [ ] Input validation for all user-supplied data
+- [ ] Error handling doesn't leak sensitive information
+- [ ] Dependencies checked for known vulnerabilities
+- [ ] Authentication/authorization logic reviewed
+- [ ] Security-related changes documented
+
+## Review and Iteration Process
+
+### Pull Request Guidelines
+1. **Small, focused changes**: One issue per PR when possible
+2. **Clear description**: Explain what changed and why
+3. **Link to issue**: Reference the originating issue number
+4. **Test evidence**: Show test results, screenshots for UI changes
+5. **Breaking changes**: Clearly document any API changes
+
+### Responding to Review Feedback
+- Address feedback by mentioning `@copilot` in PR comments
+- Provide context if disagreeing with a suggestion
+- Ask clarifying questions if requirements are unclear
+- Request re-review after making significant changes
+
+### Self-Review Checklist
+Before marking a PR ready for review:
+- [ ] Code builds without errors (`npm run build`)
+- [ ] All tests pass (`npm test`)
+- [ ] Linting passes (`npm run lint`)
+- [ ] No console.log statements left in production code
+- [ ] Documentation updated if public APIs changed
+- [ ] No temporary/debug files committed
+- [ ] Git history is clean (no merge commits if rebase was needed)
+
+## Common Development Workflows
+
+### Adding a New React Component
+1. Create file in `components/` with PascalCase name (e.g., `NewFeature.tsx`)
+2. Use functional component with TypeScript
+3. Import types from `types.ts` or create in component if specific
+4. Add to appropriate parent component import
+5. Style with Tailwind CSS classes (existing pattern)
+6. Add unit test in `tests/` if component has logic
+
+### Adding a New Netlify Function
+1. Create `.cjs` file in `netlify/functions/`
+2. Use CommonJS (`require`/`module.exports`)
+3. Import logger: `const { createLogger } = require('./utils/logger.cjs');`
+4. Structure: exports.handler = async (event, context) => { ... }
+5. Return proper HTTP response: `{ statusCode, body: JSON.stringify(data) }`
+6. Add error handling with structured logging
+7. Test manually via `netlify dev` or unit test in `tests/`
+
+### Updating Dependencies
+1. Check for security advisories: `npm audit`
+2. Update package.json version
+3. Run `npm install`
+4. Test thoroughly (`npm test`, `npm run build`)
+5. Check for breaking changes in package changelog
+6. Update code if API changed
+7. Document breaking changes in PR description
+
+### Debugging Production Issues
+1. Check Netlify function logs for errors
+2. Verify environment variables are set correctly
+3. Test locally with `netlify dev` (mimics production)
+4. Review MongoDB queries in `analysis-results` collection
+5. Check Gemini API usage/rate limits
+6. Validate frontend state with React DevTools
+7. Review structured JSON logs for error context
+
+### Adding Tests
+1. Create test file in `tests/` with `.test.js` extension
+2. Import function to test and mocks from `tests/mocks/`
+3. Use Jest matchers: `expect(result).toBe(expected)`
+4. Mock MongoDB with `mongodb.mock.js` helper
+5. Mock external APIs (Gemini, weather) to avoid real calls
+6. Test both success and error cases
+7. Run with `npm test` or `npm run test:watch`
+
 ## When in Doubt
 
 1. Check existing patterns in `CODEBASE_PATTERNS_AND_BEST_PRACTICES.md`
@@ -163,3 +295,5 @@ dispatch({ type: 'SYNC_ANALYSIS_COMPLETE', payload: { fileName, record, isDuplic
 3. Use structured logging to debug issues
 4. Test with `npm test` before committing
 5. Verify build succeeds with `npm run build`
+6. Review this instructions file for project-specific guidance
+7. Ask for clarification if requirements are ambiguous
