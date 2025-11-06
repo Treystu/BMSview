@@ -129,110 +129,142 @@ async function handler(event = {}, context = {}) {
 }
 
 /**
- * Execute Gemini conversation with proper function calling support
- * This uses Gemini's native function calling API to allow the AI to intelligently
- * request historical data, weather info, solar estimates, and analytics as needed.
+ * Execute Gemini conversation with intelligent context gathering
+ * Since the current SDK version doesn't support native function calling,
+ * we intelligently gather relevant context upfront based on the query.
  */
 async function executeWithFunctionCalling(model, initialPrompt, analysisData, systemId, customPrompt, log) {
   const toolCalls = [];
-  let iteration = 0;
   
   try {
-    // Start the chat with function calling enabled
-    const chat = model.startChat({
-      history: [],
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.95,
-        topK: 40,
-        maxOutputTokens: 8192, // Increased from 2048 for complete responses
-      },
-      tools: [{
-        functionDeclarations: toolDefinitions.map(tool => ({
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters
-        }))
-      }]
+    // Intelligently gather context based on the query and system
+    let enhancedPrompt = initialPrompt;
+    
+    if (systemId) {
+      log.info('Gathering comprehensive context for system', { systemId });
+
+      // Always get recent history for trend analysis
+      try {
+        const historyData = await executeToolCall('getSystemHistory', { 
+          systemId, 
+          limit: customPrompt ? 100 : 30  // More history for custom queries
+        }, log);
+        
+        if (historyData && !historyData.error && historyData.records && historyData.records.length > 0) {
+          toolCalls.push({ name: 'getSystemHistory', args: { systemId, limit: historyData.records.length } });
+          
+          // Format historical data for better analysis
+          const formattedHistory = historyData.records.map((r, idx) => ({
+            timestamp: r.timestamp,
+            datapoint: idx + 1,
+            voltage: r.analysis?.overallVoltage,
+            current: r.analysis?.current,
+            soc: r.analysis?.stateOfCharge,
+            capacity: r.analysis?.remainingCapacity,
+            temperature: r.analysis?.temperature,
+            power: r.analysis?.power
+          })).filter(r => r.voltage || r.current || r.soc);
+          
+          enhancedPrompt += `\n\nHISTORICAL DATA (${formattedHistory.length} recent datapoints for trend analysis):
+${JSON.stringify(formattedHistory, null, 2)}
+
+IMPORTANT: Use this historical data to calculate:
+- Charging rate changes: Compare SoC increases during charging periods
+- Discharging rate changes: Compare SoC decreases during discharging periods
+- Voltage degradation: Track voltage trends over time
+- Capacity retention: Compare capacity values across uploads
+- Usage patterns: Identify charging/discharging cycles and times
+- Temperature correlation: Relate temperature to performance
+`;
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        log.warn('Failed to get system history', { error: error.message });
+      }
+
+      // Get system analytics for baseline comparison
+      try {
+        const analyticsData = await executeToolCall('getSystemAnalytics', { systemId }, log);
+        if (analyticsData && !analyticsData.error) {
+          toolCalls.push({ name: 'getSystemAnalytics', args: { systemId } });
+          enhancedPrompt += `\n\nSYSTEM ANALYTICS (performance baselines and patterns):
+${JSON.stringify(analyticsData, null, 2)}
+`;
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        log.warn('Failed to get system analytics', { error: error.message });
+      }
+      
+      // For custom prompts requesting specific time ranges, parse and fetch accordingly
+      if (customPrompt) {
+        const daysMatch = customPrompt.match(/(\d+)\s*days?/i);
+        const weeksMatch = customPrompt.match(/(\d+)\s*weeks?/i);
+        
+        if (daysMatch || weeksMatch) {
+          const days = daysMatch ? parseInt(daysMatch[1]) : (weeksMatch ? parseInt(weeksMatch[1]) * 7 : 0);
+          if (days > 0 && days <= 90) {
+            const endDate = new Date();
+            const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
+            
+            log.info('Custom query requests specific time range', { days, startDate, endDate });
+            
+            try {
+              const rangeHistory = await executeToolCall('getSystemHistory', {
+                systemId,
+                limit: 500,
+                startDate: startDate.toISOString(),
+                endDate: endDate.toISOString()
+              }, log);
+              
+              if (rangeHistory && !rangeHistory.error && rangeHistory.records) {
+                toolCalls.push({ 
+                  name: 'getSystemHistory', 
+                  args: { systemId, startDate: startDate.toISOString(), endDate: endDate.toISOString(), limit: 500 }
+                });
+                
+                enhancedPrompt += `\n\nREQUESTED TIME RANGE DATA (${days} days - ${rangeHistory.records.length} datapoints):
+${JSON.stringify(rangeHistory.records.map(r => ({
+  timestamp: r.timestamp,
+  voltage: r.analysis?.overallVoltage,
+  current: r.analysis?.current,
+  soc: r.analysis?.stateOfCharge,
+  capacity: r.analysis?.remainingCapacity,
+  power: r.analysis?.power
+})), null, 2)}
+
+NOTE: Calculate energy deltas by comparing capacity/SoC changes between datapoints, especially during daylight hours for solar generation estimates.
+`;
+              }
+            } catch (err) {
+              const error = err instanceof Error ? err : new Error(String(err));
+              log.warn('Failed to get historical range', { error: error.message });
+            }
+          }
+        }
+      }
+    }
+
+    // Generate insights with all gathered context
+    log.info('Generating insights with comprehensive context', { 
+      promptLength: enhancedPrompt.length,
+      toolCallsCount: toolCalls.length 
+    });
+    
+    const result = await model.generateContent(enhancedPrompt);
+    const response = result.response;
+    const finalText = response.text();
+
+    // Ensure we have actual content
+    if (!finalText || finalText.trim() === '') {
+      throw new Error('AI model returned empty response');
+    }
+
+    log.info('Successfully generated insights', { 
+      responseLength: finalText.length,
+      toolCallsUsed: toolCalls.length
     });
 
-    log.info('Starting function calling conversation');
-    
-    // Send initial prompt
-    let result = await chat.sendMessage(initialPrompt);
-    let response = result.response;
-    
-    // Handle multi-turn function calling
-    while (iteration < MAX_TOOL_ITERATIONS) {
-      iteration++;
-      
-      const functionCalls = response.functionCalls();
-      
-      // If no function calls, we have the final response
-      if (!functionCalls || functionCalls.length === 0) {
-        const finalText = response.text();
-        
-        if (!finalText || finalText.trim() === '') {
-          throw new Error('AI model returned empty response');
-        }
-        
-        log.info('Function calling completed', { 
-          iterations: iteration,
-          toolCallsCount: toolCalls.length,
-          responseLength: finalText.length 
-        });
-        
-        return {
-          insights: {
-            rawText: finalText,
-            formattedText: formatInsightsResponse(finalText),
-            healthStatus: 'Generated',
-            performance: { trend: 'See analysis above' }
-          },
-          toolCalls,
-          usedFunctionCalling: toolCalls.length > 0
-        };
-      }
-      
-      // Execute each function call
-      const functionResponses = [];
-      
-      for (const functionCall of functionCalls) {
-        const { name, args } = functionCall;
-        log.info('AI requested tool execution', { tool: name, args, iteration });
-        
-        toolCalls.push({ name, args, iteration });
-        
-        try {
-          const toolResult = await executeToolCall(name, args, log);
-          functionResponses.push({
-            name,
-            response: toolResult
-          });
-          
-          log.info('Tool execution successful', { tool: name, resultSize: JSON.stringify(toolResult).length });
-        } catch (err) {
-          const error = err instanceof Error ? err : new Error(String(err));
-          log.error('Tool execution failed', { tool: name, error: error.message });
-          functionResponses.push({
-            name,
-            response: { 
-              error: true, 
-              message: `Failed to execute ${name}: ${error.message}` 
-            }
-          });
-        }
-      }
-      
-      // Send function results back to the model
-      result = await chat.sendMessage(functionResponses);
-      response = result.response;
-    }
-    
-    // If we hit max iterations, return what we have
-    log.warn('Max function calling iterations reached', { maxIterations: MAX_TOOL_ITERATIONS });
-    const finalText = response.text() || 'Analysis incomplete due to complexity. Please try a more specific query.';
-    
     return {
       insights: {
         rawText: finalText,
@@ -246,7 +278,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
 
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    log.error('Error during function calling', { error: error.message, stack: error.stack });
+    log.error('Error during insights generation', { error: error.message, stack: error.stack });
 
     // Provide user-friendly error message
     let userMessage = 'Failed to generate insights. Please try again.';
@@ -256,6 +288,8 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
       userMessage = 'Request timed out. Your query may be too complex. Try asking for specific information.';
     } else if (error.message.includes('quota') || error.message.includes('rate limit')) {
       userMessage = 'Service temporarily unavailable due to high demand. Please try again in a few minutes.';
+    } else if (error.message.includes('blocked') || error.message.includes('SAFETY')) {
+      userMessage = 'Response was blocked by safety filters. Please rephrase your question.';
     }
 
     return {
@@ -384,8 +418,8 @@ Format your response clearly with sections and bullet points for readability.
 }
 
 /**
- * Get AI model instance with function calling support
- * Tries: gemini-2.0-flash-exp (supports function calling) → gemini-2.5-flash → null
+ * Get AI model instance with proper configuration
+ * Tries: gemini-2.5-flash → gemini-2.0-flash-exp → gemini-1.5-flash → null
  * @param {*} log - Logger instance
  * @returns {Promise<*>} Model instance or null
  */
@@ -398,32 +432,34 @@ async function getAIModelWithTools(log) {
 
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  // Try models in order of preference - experimental models with function calling first
+  // Try models in order of preference
   const modelsToTry = [
     { 
-      name: 'gemini-2.0-flash-exp', 
-      description: 'experimental model with function calling',
-      supportsTools: true 
+      name: 'gemini-2.5-flash', 
+      description: 'latest stable model'
     },
     { 
-      name: 'gemini-2.5-flash', 
-      description: 'latest stable model',
-      supportsTools: true 
+      name: 'gemini-2.0-flash-exp', 
+      description: 'experimental model'
     },
     { 
       name: 'gemini-1.5-flash', 
-      description: 'fallback stable model',
-      supportsTools: true 
+      description: 'fallback stable model'
     }
   ];
 
-  for (const { name, description, supportsTools } of modelsToTry) {
+  for (const { name, description } of modelsToTry) {
     try {
       log.info(`Attempting to use ${name} (${description})`);
       
       const model = genAI.getGenerativeModel({
         model: name,
-        // Don't set generation config here - it will be set per chat
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 8192, // Increased from 2048 for complete responses
+        }
       });
 
       // Quick test to verify model is available
