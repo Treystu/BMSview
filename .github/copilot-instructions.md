@@ -185,10 +185,17 @@ dispatch({ type: 'SYNC_ANALYSIS_COMPLETE', payload: { fileName, record, isDuplic
 Example:
 ```
 Title: Fix duplicate analysis detection for identical images
+
 Context: Users uploading the same BMS screenshot twice aren't seeing duplicate warnings
-Expected: SHA-256 hash comparison should flag identical images
-Files: netlify/functions/utils/analysis-pipeline.cjs, services/geminiService.ts
-Test: Upload same screenshot twice, expect isDuplicate flag on second upload
+
+Acceptance Criteria: SHA-256 hash comparison should flag identical images
+
+Files to Modify:
+- netlify/functions/utils/analysis-pipeline.cjs
+- services/geminiService.ts
+
+Testing:
+Upload same screenshot twice, expect isDuplicate flag on second upload
 ```
 
 ## Security Guidelines

@@ -141,7 +141,7 @@ Testing:
 Title: Fix the duplicate thing
 
 Description:
-Duplicates don't work right. Please fix.
+Duplicates don't work correctly. Please fix.
 ```
 
 ### Ideal Tasks for Copilot
