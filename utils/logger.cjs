@@ -1,5 +1,21 @@
 function createLogger(functionName, context = {}) {
   return {
+    debug: (message, data = {}) => {
+      // Only log debug messages if LOG_LEVEL is DEBUG
+      const logLevel = process.env.LOG_LEVEL || 'INFO';
+      if (logLevel === 'DEBUG') {
+        console.log(JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'DEBUG',
+          function: functionName,
+          requestId: context.awsRequestId || 'unknown',
+          elapsed: data.elapsed || '0ms',
+          message,
+          ...data,
+          context
+        }));
+      }
+    },
     info: (message, data = {}) => {
       console.log(JSON.stringify({
         timestamp: new Date().toISOString(),
