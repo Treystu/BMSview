@@ -1,9 +1,12 @@
 function createLogger(functionName, context = {}) {
+  // Cache LOG_LEVEL to avoid repeated environment variable lookups
+  const logLevel = process.env.LOG_LEVEL || 'INFO';
+  const isDebugEnabled = logLevel === 'DEBUG';
+  
   return {
     debug: (message, data = {}) => {
       // Only log debug messages if LOG_LEVEL is DEBUG
-      const logLevel = process.env.LOG_LEVEL || 'INFO';
-      if (logLevel === 'DEBUG') {
+      if (isDebugEnabled) {
         console.log(JSON.stringify({
           timestamp: new Date().toISOString(),
           level: 'DEBUG',
