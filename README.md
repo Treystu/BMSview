@@ -135,11 +135,39 @@ The application is automatically deployed via Netlify:
 
 ## Contributing
 
+### For Human Contributors
+
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test thoroughly
+4. Test thoroughly (`npm test`, `npm run build`)
 5. Submit a pull request
+
+### For GitHub Copilot Coding Agent
+
+This repository is configured with comprehensive instructions for GitHub Copilot coding agent:
+
+- **Instructions**: See `.github/copilot-instructions.md` for detailed coding guidelines, architecture patterns, and development workflows
+- **Configuration**: Custom settings in `.copilot/config.json`
+- **Best Practices**: When creating issues for Copilot to work on:
+  - Write clear, specific issue titles
+  - Provide context and acceptance criteria
+  - Specify which files to modify
+  - Include examples and test expectations
+  - See the instructions file for detailed guidance on writing good AI-friendly issues
+
+**Ideal Tasks for Copilot:**
+- Bug fixes with clear reproduction steps
+- Adding unit tests
+- Documentation updates
+- Code refactoring
+- Feature additions with well-defined requirements
+
+**Tasks Requiring Human Review:**
+- Architecture changes
+- Security-critical code
+- Performance optimization
+- Complex business logic
 
 ## Support
 
