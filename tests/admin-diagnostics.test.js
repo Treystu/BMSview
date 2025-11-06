@@ -68,9 +68,9 @@ describe('Admin Diagnostics Enhanced Tests', () => {
         expect(categories[category].length).toBeGreaterThan(0);
       });
 
-      // Verify total test count
+      // Verify total test count (27 selectable tests)
       const totalTests = Object.values(categories).reduce((sum, tests) => sum + tests.length, 0);
-      expect(totalTests).toBe(27); // 25 unique tests + deleteCheck + comprehensive
+      expect(totalTests).toBe(27);
     });
 
     test('should have all required infrastructure tests', () => {

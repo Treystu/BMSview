@@ -7,7 +7,7 @@ The admin-diagnostics endpoint has been significantly enhanced to provide compre
 ## Key Features
 
 ### 1. Comprehensive Test Coverage
-- **25 Total Tests** covering all critical system functions
+- **27 Selectable Tests** covering all critical system functions
 - **8 Test Categories** for logical organization
 - **Selective Testing** - Run individual tests or test categories
 - **Parallel Execution** support for faster diagnostics

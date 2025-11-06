@@ -1795,6 +1795,8 @@ exports.handler = async (event, context) => {
         };
 
         // Flat list for backward compatibility
+        // Note: 27 total tests (26 individual function tests + 1 comprehensive suite)
+        // When running all tests, 'deleteCheck' is also added dynamically
         results.availableTestsList = [
             'database', 'gemini', 'analyze', 'syncAnalysis', 'asyncAnalysis', 'processAnalysis', 
             'extractDL', 'generateInsights', 'insightsWithTools', 'debugInsights', 'history', 
@@ -1808,9 +1810,9 @@ exports.handler = async (event, context) => {
         results.availableComprehensiveTests = testSuite.getAvailableTests();
 
         // Calculate summary statistics
-        const allTestResults = Object.keys(results).filter(k => 
-            !['suggestions', 'availableTests', 'availableTestsList', 'availableComprehensiveTests', 'testSummary'].includes(k)
-        );
+        // Filter to get only actual test results (exclude metadata and lists)
+        const metadataKeys = ['suggestions', 'availableTests', 'availableTestsList', 'availableComprehensiveTests', 'testSummary'];
+        const allTestResults = Object.keys(results).filter(k => !metadataKeys.includes(k));
         const successCount = allTestResults.filter(k => results[k]?.status === 'Success').length;
         const failureCount = allTestResults.filter(k => results[k]?.status === 'Failure').length;
         const skippedCount = allTestResults.filter(k => results[k]?.status === 'Skipped').length;
