@@ -413,7 +413,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
         return {
           insights: {
             rawText: parsedResponse.final_answer,
-            formattedText: formatInsightsResponse(parsedResponse.final_answer),
+            formattedText: formatInsightsResponse(parsedResponse.final_answer, toolCallsExecuted),
             healthStatus: 'Generated',
             performance: { trend: 'See analysis above' }
           },
@@ -432,7 +432,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
       return {
         insights: {
           rawText: responseText,
-          formattedText: formatInsightsResponse(responseText),
+          formattedText: formatInsightsResponse(responseText, toolCallsExecuted),
           healthStatus: 'Generated',
           performance: { trend: 'See analysis above' }
         },
@@ -460,7 +460,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
     return {
       insights: {
         rawText: fallbackAnswer,
-        formattedText: formatInsightsResponse(fallbackAnswer),
+        formattedText: formatInsightsResponse(fallbackAnswer, toolCallsExecuted),
         healthStatus: 'Incomplete',
         performance: { trend: 'Analysis incomplete' }
       },
@@ -611,18 +611,48 @@ function compactifyToolResult(result, toolName, log) {
 }
 
 /**
- * Format insights response for better display
+ * Format insights response for better display with off-grid context
  */
-function formatInsightsResponse(text) {
+function formatInsightsResponse(text, toolCalls = [], confidence = null) {
   // If already formatted with headers, return as-is
-  if (text.includes('═══') || text.includes('🔋 Battery System')) {
+  if (text.includes('═══') || text.includes('🔋')) {
     return text;
   }
   
-  // Otherwise, wrap in a nice format
+  // Calculate confidence if not provided
+  if (confidence === null && toolCalls) {
+    confidence = calculateConfidence(text, toolCalls);
+  }
+  
+  // Otherwise, wrap in off-grid intelligence format
   const lines = [];
   lines.push('═══════════════════════════════════════════════════');
-  lines.push('🔋 BATTERY SYSTEM INSIGHTS');
+  lines.push('🔋 OFF-GRID ENERGY INTELLIGENCE');
+  lines.push('═══════════════════════════════════════════════════');
+  
+  if (confidence !== null) {
+    const confidenceIcon = confidence >= 80 ? '✓' : confidence >= 60 ? '~' : '!';
+    lines.push(`📊 Analysis Confidence: ${confidenceIcon} ${confidence}%`);
+  }
+  
+  if (toolCalls && toolCalls.length > 0) {
+    lines.push(`🔍 Data Sources Used: ${toolCalls.length} tool queries`);
+    
+    // Show which analysis types were used
+    const toolTypes = [...new Set(toolCalls.map(t => t.name))];
+    const hasPredict = toolTypes.some(t => t.includes('predict'));
+    const hasPattern = toolTypes.some(t => t.includes('pattern'));
+    const hasBudget = toolTypes.some(t => t.includes('budget'));
+    
+    const analysisTypes = [];
+    if (hasPredict) analysisTypes.push('Predictive');
+    if (hasPattern) analysisTypes.push('Pattern');
+    if (hasBudget) analysisTypes.push('Budget');
+    if (analysisTypes.length > 0) {
+      lines.push(`🧠 Analysis Type: ${analysisTypes.join(', ')}`);
+    }
+  }
+  
   lines.push('═══════════════════════════════════════════════════');
   lines.push('');
   lines.push(text);
@@ -635,16 +665,80 @@ function formatInsightsResponse(text) {
 }
 
 /**
+ * Calculate confidence score for insights
+ */
+function calculateConfidence(insightsText, toolCalls) {
+  let confidence = 100;
+  
+  // Reduce confidence based on factors
+  if (!toolCalls || toolCalls.length === 0) {
+    confidence -= 15; // No additional data requested
+  }
+  
+  // Check for uncertainty indicators in text
+  const uncertaintyPhrases = [
+    'insufficient data',
+    'limited data',
+    'cannot determine',
+    'unable to calculate',
+    'not enough',
+    'unavailable'
+  ];
+  
+  for (const phrase of uncertaintyPhrases) {
+    if (insightsText.toLowerCase().includes(phrase)) {
+      confidence -= 20;
+      break;
+    }
+  }
+  
+  // Check for prediction/analysis quality indicators
+  const qualityIndicators = [
+    'high confidence',
+    'strong correlation',
+    'consistent pattern',
+    'reliable data'
+  ];
+  
+  for (const indicator of qualityIndicators) {
+    if (insightsText.toLowerCase().includes(indicator)) {
+      confidence += 5;
+      break;
+    }
+  }
+  
+  // Bonus for using advanced tools
+  if (toolCalls && toolCalls.length > 0) {
+    const advancedTools = toolCalls.filter(t => 
+      t.name.includes('predict') || 
+      t.name.includes('pattern') || 
+      t.name.includes('budget')
+    );
+    if (advancedTools.length > 0) {
+      confidence += 10;
+    }
+  }
+  
+  // Ensure confidence is between 0 and 100
+  return Math.max(0, Math.min(100, Math.round(confidence)));
+}
+
+/**
  * Build enhanced prompt with system instructions for function calling
  * Uses compact statistical summaries for initial data to prevent token overflow
  */
 async function buildEnhancedPrompt(analysisData, systemId, customPrompt, log) {
   const { toolDefinitions } = require('./utils/gemini-tools.cjs');
 
-  // Build system prompt with function calling instructions
-  let prompt = `You are a BMS (Battery Management System) data analyst. Your goal is to answer the user's question based on the data provided.
+  // Build system prompt with off-grid intelligence and function calling instructions
+  let prompt = `You are an expert off-grid energy systems analyst with deep knowledge of battery management, solar integration, and energy storage optimization.
 
-You will receive an initial data set (current battery snapshot and recent historical data if available).
+**YOUR EXPERTISE:**
+- Battery degradation patterns and lifespan prediction
+- Solar charging efficiency and weather correlation
+- Energy consumption analysis and demand forecasting
+- Off-grid system optimization and backup planning
+- Predictive maintenance and anomaly detection
 
 **IMPORTANT INSTRUCTIONS FOR DATA REQUESTS:**
 
@@ -662,11 +756,12 @@ You will receive an initial data set (current battery snapshot and recent histor
      }
    }
 
-3. **QUERY OPTIMIZATION**: When requesting data, be strategic:
-   - For specific metric queries (e.g., "max temperature"), request ONLY that metric
+3. **STRATEGIC DATA REQUESTS**: When requesting data, be efficient:
+   - For specific metric queries, request ONLY that metric
    - For trend analysis, use "hourly_avg" or "daily_avg" granularity
-   - For specific value lookups, you can use "raw" granularity but limit time range
-   - Large time ranges work best with daily aggregation
+   - For predictive analysis, use predict_battery_trends tool
+   - For usage patterns, use analyze_usage_patterns tool
+   - For scenario planning, use calculate_energy_budget tool
 
 **AVAILABLE TOOLS:**
 
@@ -744,69 +839,93 @@ No system ID provided - limited to current snapshot analysis. If you need histor
   prompt += '\n\n';
 
   if (customPrompt) {
-    // Custom query mode
+    // Custom query mode with off-grid analysis framework
     prompt += `**USER QUESTION:**
 ${customPrompt}
 
-**YOUR TASK:**
-1. Analyze what data you need to answer this question comprehensively
-2. If the summary data above is sufficient, provide your answer immediately
-3. If you need specific data points, use request_bms_data with:
-   - ONLY the specific metric needed (e.g., "temperature" not "all")
-   - Targeted time range for the question
-   - Appropriate granularity (daily for long periods, hourly for detailed analysis)
-4. Calculate trends, deltas, and patterns from the data
-5. Provide a detailed, data-driven answer in the final_answer JSON
+**ANALYSIS FRAMEWORK:**
+1. **Understand the Question**: Parse what specific insight the user needs
+2. **Assess Data Requirements**: Determine what historical data, patterns, or predictions are needed
+3. **Strategic Tool Usage**:
+   - For predictions → use predict_battery_trends (capacity degradation, efficiency, lifetime)
+   - For usage patterns → use analyze_usage_patterns (daily/weekly/seasonal, anomalies)
+   - For planning/scenarios → use calculate_energy_budget (current/worst-case/average/emergency)
+   - For specific metrics → use request_bms_data (targeted time ranges and metrics)
+4. **Deep Analysis**: Apply statistical methods, pattern recognition, forecasting
+5. **Off-Grid Context**: Consider solar availability, weather impacts, backup needs
+6. **Actionable Insights**: Provide specific, data-driven recommendations with confidence levels
 
-**OPTIMIZATION EXAMPLES:**
-- "What's the maximum temperature ever recorded?" → Request metric="temperature", time_range=all time, note that only max value is needed from result
-- "How has SoC changed in past 7 days?" → Request metric="soc", time_range=7 days, granularity="hourly_avg"
-- "Energy generated yesterday?" → Request metric="power", time_range=yesterday, granularity="hourly_avg", filter for positive values
+**OFF-GRID ANALYSIS PATTERNS:**
+- **Energy Sufficiency**: Compare consumption vs generation with weather factors
+- **System Health**: Predict maintenance needs, identify degradation trends
+- **Optimization**: Suggest load shifting, solar expansion, backup strategies
+- **Emergency Planning**: Model worst-case scenarios and backup requirements
 
-**GUIDELINES:**
-- Use actual calculations from real data (charge/discharge deltas, capacity changes, energy calculations)
-- Be specific with time-based trends and patterns
-- Provide actionable insights based on the data
-- Show your methodology and calculations
-- DO NOT include generic recommendations without data support
+**TOOL SELECTION EXAMPLES:**
+- "How long will my battery last?" → predict_battery_trends with metric="lifetime"
+- "When do I use the most power?" → analyze_usage_patterns with patternType="daily"
+- "Can I run a fridge 24/7?" → calculate_energy_budget with scenario="current", then analyze if surplus exists
+- "Should I add solar panels?" → calculate_energy_budget with scenario="current" to see deficit
+- "Any unusual behavior?" → analyze_usage_patterns with patternType="anomalies"
+
+**RESPONSE REQUIREMENTS:**
+- Use tool_call for data requests (JSON only)
+- Use final_answer for complete analysis (include confidence levels when making predictions)
+- Always explain methodology and data sources
+- Provide specific numbers and timeframes
+- Consider off-grid living context (self-sufficiency, backup power, seasonal variations)
 - Always respond with valid JSON (either tool_call or final_answer)
 `;
   } else {
-    // Default comprehensive analysis mode
+    // Default comprehensive analysis mode with off-grid focus
     prompt += `**YOUR TASK:**
-Provide a comprehensive battery health analysis with deep insights based on available data.
+Provide a comprehensive off-grid energy system analysis with deep insights based on available data.
 
 **ANALYSIS AREAS:**
 
-1. **TREND ANALYSIS** (use the statistical summary provided):
+1. **SYSTEM HEALTH & DEGRADATION**:
    - Compare current values to historical min/max/avg
-   - Identify degradation patterns (voltage drops, capacity loss)
-   - Analyze charge/discharge efficiency from the statistics
-   - Note any anomalies or significant changes
-   
-2. **PERFORMANCE METRICS:**
-   - Current vs historical performance comparison
-   - Efficiency trends from charge/discharge statistics
-   - Temperature patterns and correlations
-   - Cell balance trends
+   - Identify degradation patterns (capacity loss, efficiency decline)
+   - Use predict_battery_trends for lifespan forecasting if system has sufficient history
+   - Temperature patterns and thermal management
+   - Cell balance and voltage consistency
 
-3. **ACTIONABLE INSIGHTS:**
-   - Specific issues detected from data
-   - Preventive maintenance based on trends
-   - Optimization opportunities from patterns
-   - Projected lifespan based on degradation
+2. **ENERGY FLOW & SUFFICIENCY**:
+   - Solar charging patterns and efficiency
+   - Consumption patterns (use analyze_usage_patterns for daily/weekly trends)
+   - Energy balance (generation vs consumption)
+   - Use calculate_energy_budget to assess solar sufficiency
+   - Identify opportunities for load optimization
+
+3. **OFF-GRID OPTIMIZATION**:
+   - Peak usage times and load shifting opportunities
+   - Solar utilization efficiency
+   - Battery autonomy (days of backup power)
+   - Seasonal variations and planning
+   - Emergency backup requirements
+
+4. **PREDICTIVE INSIGHTS**:
+   - Capacity degradation trends and replacement timeline
+   - System lifespan projection
+   - Anomaly detection for preventive maintenance
+   - Weather-dependent performance patterns
+
+**STRATEGIC TOOL USAGE**:
+- Use predict_battery_trends for degradation analysis and lifespan estimation
+- Use analyze_usage_patterns to identify daily/weekly consumption cycles
+- Use calculate_energy_budget to assess solar sufficiency and backup needs
+- Use request_bms_data only for specific metric queries not covered by other tools
 
 **GUIDELINES:**
-- The summary data includes min/max/avg/latest for all metrics - use these for trend analysis
-- Focus on data-driven insights from actual measurements
-- Provide specific, actionable recommendations
-- Clear explanations with supporting data
-- DO NOT include generic placeholder recommendations
-- DO NOT suggest generator sizing without data support
-- If summary data is insufficient for deep analysis, you can request specific metrics using request_bms_data
+- The summary data includes min/max/avg/latest for all metrics - use these for initial assessment
+- Leverage predictive and pattern analysis tools for deeper insights
+- Focus on off-grid specific concerns: self-sufficiency, backup power, seasonal planning
+- Provide specific, actionable recommendations with data support
+- Include confidence levels for predictions
+- Consider worst-case scenarios for emergency preparedness
 - Always respond with valid JSON (either tool_call or final_answer)
 
-**Note**: You have access to ${initialHistoricalData ? initialHistoricalData.timeRange.hours : 0} hours of statistical data. If you need specific data points for calculations, use request_bms_data with targeted parameters.
+**Note**: You have access to ${initialHistoricalData ? initialHistoricalData.timeRange.hours : 0} hours of statistical data. Use the new predictive and pattern analysis tools for comprehensive off-grid intelligence.
 `;
   }
 
