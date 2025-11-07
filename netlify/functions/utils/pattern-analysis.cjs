@@ -9,25 +9,7 @@
  */
 
 const { getCollection } = require('./mongodb.cjs');
-
-/**
- * Parse time range string (e.g., "7d", "30d", "90d", "1y") to days
- */
-function parseTimeRange(timeRange) {
-  const match = timeRange.match(/^(\d+)(d|w|m|y)$/);
-  if (!match) return 30; // Default to 30 days
-  
-  const value = parseInt(match[1]);
-  const unit = match[2];
-  
-  switch (unit) {
-    case 'd': return value;
-    case 'w': return value * 7;
-    case 'm': return value * 30;
-    case 'y': return value * 365;
-    default: return 30;
-  }
-}
+const { parseTimeRange, calculateStats, ANOMALY_THRESHOLD_SIGMA } = require('./analysis-utilities.cjs');
 
 /**
  * Analyze daily usage patterns (hourly consumption profiles)
@@ -425,9 +407,10 @@ async function detectAnomalies(systemId, timeRange = '30d', log) {
     const tempStats = tempValues.length > 0 ? calculateStats(tempValues) : null;
     const socStats = socValues.length > 0 ? calculateStats(socValues) : null;
     
-    // Detect anomalies (values beyond 2.5 standard deviations)
+    // Detect anomalies using configurable threshold (default: 2.5 standard deviations)
+    // This catches ~98% of normal data, flagging only significant outliers
     const anomalies = [];
-    const threshold = 2.5;
+    const threshold = ANOMALY_THRESHOLD_SIGMA;
     
     for (let i = 0; i < records.length; i++) {
       const record = records[i];
@@ -513,23 +496,6 @@ async function detectAnomalies(systemId, timeRange = '30d', log) {
     log.error('Anomaly detection failed', { error: error.message, systemId });
     throw error;
   }
-}
-
-/**
- * Calculate statistics (mean, std dev, min, max)
- */
-function calculateStats(values) {
-  if (values.length === 0) {
-    return { mean: 0, stdDev: 0, min: 0, max: 0 };
-  }
-  
-  const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
-  const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
-  const stdDev = Math.sqrt(variance);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  
-  return { mean, stdDev, min, max };
 }
 
 module.exports = {

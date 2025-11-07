@@ -8,6 +8,7 @@
  */
 
 const { getCollection } = require('./mongodb.cjs');
+const { BATTERY_REPLACEMENT_THRESHOLDS } = require('./analysis-utilities.cjs');
 
 /**
  * Predict capacity degradation over time using linear regression
@@ -102,8 +103,11 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
     // Current capacity (latest reading)
     const currentCapacity = dataPoints[dataPoints.length - 1].capacity;
     
-    // Estimated days until 80% of current capacity (common battery replacement threshold)
-    const capacityThreshold = currentCapacity * 0.8;
+    // Estimated days until replacement threshold
+    // Using configurable threshold (default 80% for lithium batteries)
+    // For lead-acid batteries, use BATTERY_REPLACEMENT_THRESHOLDS.leadAcid (70%)
+    const replacementThresholdPercent = BATTERY_REPLACEMENT_THRESHOLDS.default;
+    const capacityThreshold = currentCapacity * replacementThresholdPercent;
     const daysToThreshold = degradationPerDay > 0 
       ? Math.round((currentCapacity - capacityThreshold) / degradationPerDay)
       : null;

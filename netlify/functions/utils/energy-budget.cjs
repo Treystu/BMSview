@@ -8,24 +8,7 @@
  */
 
 const { getCollection } = require('./mongodb.cjs');
-
-/**
- * Parse time range string to days
- */
-function parseTimeRange(timeRange) {
-  const match = timeRange.match(/^(\d+)(d|w|m)$/);
-  if (!match) return 30;
-  
-  const value = parseInt(match[1]);
-  const unit = match[2];
-  
-  switch (unit) {
-    case 'd': return value;
-    case 'w': return value * 7;
-    case 'm': return value * 30;
-    default: return 30;
-  }
-}
+const { parseTimeRange, GENERATOR_FUEL_CONSUMPTION_L_PER_KWH } = require('./analysis-utilities.cjs');
 
 /**
  * Calculate current energy budget based on recent usage
@@ -190,6 +173,9 @@ async function calculateWorstCase(systemId, timeframe = '30d', includeWeather = 
         dailyData[date] = { generation: 0, consumption: 0 };
       }
       
+      // Note: Assuming ~1-minute data intervals for energy calculation
+      // For different intervals, this calculation should be adjusted dynamically
+      // based on actual timestamp differences
       if (power > 0) {
         dailyData[date].generation += power / 60; // Approximate Wh (assuming 1-min intervals)
       } else {
@@ -303,8 +289,10 @@ async function calculateEmergencyBackup(systemId, timeframe = '30d', log) {
         ? Math.ceil((generatorNeeded / days) / 0.5 / 10) * 10 // Round to nearest 10W
         : 0;
       
+      // Fuel estimate using configurable constant (0.3L/kWh is typical for portable generators)
+      // Note: Actual consumption varies by generator type, load, and efficiency
       const fuelNeeded = generatorWatts > 0
-        ? Math.round(generatorWatts * days * 0.3 / 1000 * 10) / 10 // Rough estimate: 0.3L/kWh
+        ? Math.round(generatorWatts * days * GENERATOR_FUEL_CONSUMPTION_L_PER_KWH / 1000 * 10) / 10
         : 0;
       
       return {
