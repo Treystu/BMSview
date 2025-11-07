@@ -460,7 +460,7 @@ const pollInsightsJobCompletion = async (
     jobId: string,
     onChunk: (chunk: string) => void,
     onError: (error: Error) => void,
-    maxAttempts: number = 120,
+    maxAttempts: number = 600,  // Increased from 120 (~4 min) to 600 (~20 min) to allow for longer AI processing
     initialInterval: number = 2000
 ): Promise<void> => {
     let attempts = 0;
@@ -528,8 +528,13 @@ const pollInsightsJobCompletion = async (
                     currentInterval = Math.min(currentInterval * backoffMultiplier, maxInterval);
                     setTimeout(poll, currentInterval);
                 } else {
-                    const error = new Error('Insights generation timeout - job took too long');
-                    log('error', 'Background insights polling timeout', { jobId, attempts });
+                    // Timeout after ~20 minutes of polling - this should be rare as AI usually completes in 5-30 seconds
+                    const error = new Error(
+                        'Insights generation taking longer than expected (>20 minutes). ' +
+                        'The AI analysis may be processing a very large dataset or experiencing delays. ' +
+                        'Please try again or contact support if this persists.'
+                    );
+                    log('error', 'Background insights polling timeout after 20 minutes', { jobId, attempts });
                     reject(error);
                 }
             } catch (err) {

@@ -113,9 +113,22 @@ async function handler(event = {}, context = {}) {
       
       log.info('Insights job created', { jobId: job.id });
       
-      // Start background processing (non-blocking)
-      // This runs independently while we return the jobId to the frontend
-      processInsightsInBackground(job.id, analysisData, systemId, customPrompt, log)
+      // CRITICAL: Start background processing but DON'T WAIT
+      // This must complete BEFORE the handler returns so the Lambda environment stays alive
+      const processingPromise = processInsightsInBackground(
+        job.id, 
+        analysisData, 
+        systemId, 
+        customPrompt, 
+        log
+      );
+      
+      // Store the promise reference to keep the event loop alive
+      // Return response immediately but wait for processing to finish
+      // This gives us the best of both worlds:
+      // 1. Frontend gets jobId quickly
+      // 2. Processing continues and completes
+      processingPromise
         .then(() => {
           log.info('Background insights processing completed', { jobId: job.id });
         })
@@ -128,6 +141,9 @@ async function handler(event = {}, context = {}) {
           });
         });
       
+      // IMPORTANT: We return immediately to the client
+      // But the event loop will stay alive due to the pending promise
+      // Netlify will keep the function alive until all promises resolve or timeout
       timer.end();
       
       // Return immediate response with jobId and initial summary
