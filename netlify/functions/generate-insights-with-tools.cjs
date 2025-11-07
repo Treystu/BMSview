@@ -26,6 +26,8 @@
 
 const { createLogger, createTimer } = require('../../utils/logger.cjs');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { createInsightsJob, ensureIndexes } = require('./utils/insights-jobs.cjs');
+const { generateInitialSummary } = require('./utils/insights-summary.cjs');
 
 // Constants for function calling
 const MAX_TOOL_ITERATIONS = 10; // Maximum number of tool call rounds to prevent infinite loops
@@ -37,6 +39,10 @@ const TOKENS_PER_CHAR = 0.25; // Rough estimate: 1 token ≈ 4 characters
 
 /**
  * Main handler for insights generation with function calling
+ * 
+ * Supports two modes:
+ * 1. Synchronous (legacy): ?sync=true or ?mode=sync - Returns insights immediately (up to 55s)
+ * 2. Background (default): Starts background job, returns jobId for polling
  */
 async function handler(event = {}, context = {}) {
   const log = createLogger('generate-insights-with-tools', context);
@@ -73,13 +79,88 @@ async function handler(event = {}, context = {}) {
     }
 
     const { systemId, customPrompt } = body;
+    
+    // Check if sync mode is requested (for backward compatibility)
+    const queryParams = event.queryStringParameters || {};
+    const isSyncMode = queryParams.sync === 'true' || queryParams.mode === 'sync' || body.sync === true;
 
     log.info('Starting enhanced AI insights generation', {
       hasSystemId: !!systemId,
       hasCustomPrompt: !!customPrompt,
-      dataStructure: analysisData ? Object.keys(analysisData) : 'none'
+      dataStructure: analysisData ? Object.keys(analysisData) : 'none',
+      mode: isSyncMode ? 'sync' : 'background'
     });
 
+    // BACKGROUND MODE (default): Create job and trigger background processing
+    if (!isSyncMode) {
+      // Ensure database indexes (safe to call multiple times)
+      await ensureIndexes(log).catch(err => {
+        log.warn('Failed to ensure indexes', { error: err.message });
+        // Continue anyway
+      });
+      
+      // Generate initial summary
+      const initialSummary = await generateInitialSummary(analysisData, systemId, log);
+      
+      // Create job
+      const job = await createInsightsJob({
+        analysisData,
+        systemId,
+        customPrompt,
+        initialSummary
+      }, log);
+      
+      log.info('Insights job created', { jobId: job.id });
+      
+      // Trigger background function
+      try {
+        const backgroundUrl = `${process.env.URL || ''}/.netlify/functions/generate-insights-background`;
+        
+        log.info('Invoking background function', { 
+          backgroundUrl,
+          jobId: job.id
+        });
+        
+        // Fire and forget - don't wait for response
+        fetch(backgroundUrl, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-netlify-background': 'true'
+          },
+          body: JSON.stringify({ jobId: job.id })
+        }).catch(err => {
+          log.error('Failed to invoke background function', { 
+            error: err.message,
+            jobId: job.id 
+          });
+        });
+        
+      } catch (invokeError) {
+        log.error('Error invoking background function', { 
+          error: invokeError.message,
+          jobId: job.id
+        });
+        // Job is created, so frontend can still poll for status
+      }
+      
+      timer.end();
+      
+      // Return immediate response with jobId and initial summary
+      return respond(200, {
+        success: true,
+        jobId: job.id,
+        status: 'processing',
+        initialSummary: job.initialSummary,
+        message: 'Background processing started. Poll for status updates.',
+        analysisMode: 'background',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // SYNC MODE (legacy): Execute immediately and return results
+    log.info('Using synchronous mode (legacy)');
+    
     // Get AI model with function calling support
     const model = await getAIModelWithTools(log);
     if (!model) {
@@ -111,7 +192,7 @@ async function handler(event = {}, context = {}) {
       insights: result.insights,
       toolCalls: result.toolCalls,
       usedFunctionCalling: result.usedFunctionCalling,
-      analysisMode: 'ai-enhanced',
+      analysisMode: 'sync',
       timestamp: new Date().toISOString()
     });
 
