@@ -506,7 +506,10 @@ Always respond with valid JSON (either tool_call or final_answer).
 }
 
 /**
- * Get AI model instance with fallback
+ * Get AI model with function calling support
+ * Uses standard production models only (no experimental)
+ * @param {*} log - Logger instance
+ * @returns {Promise<*>} Model instance configured for function calling
  */
 async function getAIModelWithTools(log) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -517,36 +520,12 @@ async function getAIModelWithTools(log) {
   
   const genAI = new GoogleGenerativeAI(apiKey);
   
+  // Try models in order of preference - PRODUCTION MODELS ONLY
   const modelsToTry = [
-    { name: 'gemini-2.0-flash-exp', description: 'latest experimental model' },
+    { name: 'gemini-2.5-flash', description: 'latest stable model with function calling' },
     { name: 'gemini-1.5-flash', description: 'stable fallback model' },
     { name: 'gemini-1.5-pro', description: 'advanced fallback model' }
   ];
-  
-  for (const { name, description } of modelsToTry) {
-    try {
-      log.info(`Attempting to use ${name} (${description})`);
-      
-      const model = genAI.getGenerativeModel({
-        model: name,
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.95,
-          topK: 40,
-          maxOutputTokens: 8192,
-        }
-      });
-      
-      log.info(`Model ${name} initialized successfully`);
-      return model;
-    } catch (err) {
-      log.warn(`Failed to initialize ${name}`, { error: err.message });
-    }
-  }
-  
-  log.error('All AI models unavailable');
-  return null;
-}
 
 module.exports = {
   processInsightsInBackground,

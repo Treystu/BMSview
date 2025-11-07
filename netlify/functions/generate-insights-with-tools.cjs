@@ -824,7 +824,8 @@ Provide a comprehensive battery health analysis with deep insights based on avai
 
 /**
  * Get AI model instance with proper configuration
- * Tries: gemini-2.5-flash → gemini-2.0-flash-exp → gemini-1.5-flash → null
+ * Uses standard production models only (no experimental)
+ * Tries: gemini-2.5-flash → gemini-1.5-flash → gemini-1.5-pro
  * @param {*} log - Logger instance
  * @returns {Promise<*>} Model instance or null
  */
@@ -837,19 +838,19 @@ async function getAIModelWithTools(log) {
 
   const genAI = new GoogleGenerativeAI(apiKey);
 
-  // Try models in order of preference
+  // Try models in order of preference - PRODUCTION MODELS ONLY
   const modelsToTry = [
     { 
       name: 'gemini-2.5-flash', 
-      description: 'latest stable model'
-    },
-    { 
-      name: 'gemini-2.0-flash-exp', 
-      description: 'experimental model'
+      description: 'latest stable model with function calling'
     },
     { 
       name: 'gemini-1.5-flash', 
-      description: 'fallback stable model'
+      description: 'stable fallback model'
+    },
+    { 
+      name: 'gemini-1.5-pro', 
+      description: 'advanced fallback model'
     }
   ];
 
