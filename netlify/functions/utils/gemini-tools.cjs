@@ -160,6 +160,89 @@ const toolDefinitions = [
       },
       required: ['systemId']
     }
+  },
+  {
+    name: 'predict_battery_trends',
+    description: 'Predict future battery performance using time series analysis and regression modeling. Use this for lifespan forecasting, capacity degradation prediction, and performance trend analysis for off-grid planning.',
+    parameters: {
+      type: 'object',
+      properties: {
+        systemId: {
+          type: 'string',
+          description: 'Battery system identifier'
+        },
+        metric: {
+          type: 'string',
+          enum: ['capacity', 'efficiency', 'temperature', 'voltage', 'lifetime'],
+          description: 'What metric to predict: capacity (degradation over time), efficiency (charge/discharge), temperature (thermal patterns), voltage (voltage trends), lifetime (estimated remaining life)'
+        },
+        forecastDays: {
+          type: 'number',
+          default: 30,
+          description: 'Number of days to forecast into the future (default: 30, max: 365)'
+        },
+        confidenceLevel: {
+          type: 'boolean',
+          default: true,
+          description: 'Include confidence intervals and prediction accuracy metrics'
+        }
+      },
+      required: ['systemId', 'metric']
+    }
+  },
+  {
+    name: 'analyze_usage_patterns',
+    description: 'Analyze energy consumption patterns and identify trends, cycles, and anomalies. Essential for off-grid optimization, load planning, and detecting unusual behavior.',
+    parameters: {
+      type: 'object',
+      properties: {
+        systemId: {
+          type: 'string',
+          description: 'Battery system identifier'
+        },
+        patternType: {
+          type: 'string',
+          enum: ['daily', 'weekly', 'seasonal', 'anomalies'],
+          default: 'daily',
+          description: 'Type of pattern to analyze: daily (hourly usage patterns), weekly (weekday vs weekend), seasonal (monthly/quarterly trends), anomalies (detect unusual events)'
+        },
+        timeRange: {
+          type: 'string',
+          default: '30d',
+          description: 'Analysis period in format "7d", "30d", "90d", or "1y"'
+        }
+      },
+      required: ['systemId']
+    }
+  },
+  {
+    name: 'calculate_energy_budget',
+    description: 'Calculate energy requirements, solar sufficiency, and system capacity for different scenarios. Critical for off-grid planning, expansion decisions, and backup requirements.',
+    parameters: {
+      type: 'object',
+      properties: {
+        systemId: {
+          type: 'string',
+          description: 'Battery system identifier'
+        },
+        scenario: {
+          type: 'string',
+          enum: ['current', 'worst_case', 'average', 'emergency'],
+          description: 'Energy scenario to model: current (existing usage), worst_case (minimum solar + max consumption), average (typical conditions), emergency (backup power needs)'
+        },
+        includeWeather: {
+          type: 'boolean',
+          default: true,
+          description: 'Include weather-based solar generation adjustments'
+        },
+        timeframe: {
+          type: 'string',
+          default: '30d',
+          description: 'Timeframe for budget calculation: "7d", "30d", "90d"'
+        }
+      },
+      required: ['systemId', 'scenario']
+    }
   }
 ];
 
@@ -195,6 +278,18 @@ async function executeToolCall(toolName, parameters, log) {
 
       case 'getSystemAnalytics':
         result = await getSystemAnalytics(parameters, log);
+        break;
+
+      case 'predict_battery_trends':
+        result = await predictBatteryTrends(parameters, log);
+        break;
+
+      case 'analyze_usage_patterns':
+        result = await analyzeUsagePatterns(parameters, log);
+        break;
+
+      case 'calculate_energy_budget':
+        result = await calculateEnergyBudget(parameters, log);
         break;
 
       default:
@@ -693,6 +788,142 @@ async function getSystemAnalytics(params, log) {
   });
 
   return data;
+}
+
+/**
+ * Predict battery trends using time series analysis
+ * Implements linear regression and statistical forecasting
+ */
+async function predictBatteryTrends(params, log) {
+  const { systemId, metric, forecastDays = 30, confidenceLevel = true } = params;
+  
+  log.info('Predicting battery trends', { systemId, metric, forecastDays });
+  
+  try {
+    // Lazy-load forecasting module to avoid circular dependencies
+    const forecasting = require('./forecasting.cjs');
+    
+    // Route to appropriate prediction function based on metric
+    switch (metric) {
+      case 'capacity':
+        return await forecasting.predictCapacityDegradation(systemId, forecastDays, confidenceLevel, log);
+      
+      case 'efficiency':
+        return await forecasting.predictEfficiency(systemId, forecastDays, confidenceLevel, log);
+      
+      case 'temperature':
+        return await forecasting.predictTemperature(systemId, forecastDays, confidenceLevel, log);
+      
+      case 'voltage':
+        return await forecasting.predictVoltage(systemId, forecastDays, confidenceLevel, log);
+      
+      case 'lifetime':
+        return await forecasting.predictLifetime(systemId, confidenceLevel, log);
+      
+      default:
+        throw new Error(`Unsupported metric for prediction: ${metric}`);
+    }
+  } catch (error) {
+    log.error('Prediction failed', { 
+      error: error.message, 
+      systemId, 
+      metric 
+    });
+    return { 
+      error: true, 
+      message: `Unable to generate ${metric} prediction: ${error.message}`,
+      systemId,
+      metric
+    };
+  }
+}
+
+/**
+ * Analyze usage patterns (daily, weekly, seasonal, anomalies)
+ */
+async function analyzeUsagePatterns(params, log) {
+  const { systemId, patternType = 'daily', timeRange = '30d' } = params;
+  
+  log.info('Analyzing usage patterns', { systemId, patternType, timeRange });
+  
+  try {
+    // Lazy-load pattern analysis module
+    const patternAnalysis = require('./pattern-analysis.cjs');
+    
+    // Route to appropriate analysis function
+    switch (patternType) {
+      case 'daily':
+        return await patternAnalysis.analyzeDailyPatterns(systemId, timeRange, log);
+      
+      case 'weekly':
+        return await patternAnalysis.analyzeWeeklyPatterns(systemId, timeRange, log);
+      
+      case 'seasonal':
+        return await patternAnalysis.analyzeSeasonalPatterns(systemId, timeRange, log);
+      
+      case 'anomalies':
+        return await patternAnalysis.detectAnomalies(systemId, timeRange, log);
+      
+      default:
+        throw new Error(`Unsupported pattern type: ${patternType}`);
+    }
+  } catch (error) {
+    log.error('Pattern analysis failed', { 
+      error: error.message, 
+      systemId, 
+      patternType 
+    });
+    return { 
+      error: true, 
+      message: `Unable to analyze ${patternType} patterns: ${error.message}`,
+      systemId,
+      patternType
+    };
+  }
+}
+
+/**
+ * Calculate energy budget for different scenarios
+ */
+async function calculateEnergyBudget(params, log) {
+  const { systemId, scenario, includeWeather = true, timeframe = '30d' } = params;
+  
+  log.info('Calculating energy budget', { systemId, scenario, includeWeather, timeframe });
+  
+  try {
+    // Lazy-load energy budget module
+    const energyBudget = require('./energy-budget.cjs');
+    
+    // Route to appropriate budget calculation
+    switch (scenario) {
+      case 'current':
+        return await energyBudget.calculateCurrentBudget(systemId, timeframe, includeWeather, log);
+      
+      case 'worst_case':
+        return await energyBudget.calculateWorstCase(systemId, timeframe, includeWeather, log);
+      
+      case 'average':
+        return await energyBudget.calculateAverage(systemId, timeframe, includeWeather, log);
+      
+      case 'emergency':
+        return await energyBudget.calculateEmergencyBackup(systemId, timeframe, log);
+      
+      default:
+        throw new Error(`Unsupported scenario: ${scenario}`);
+    }
+  } catch (error) {
+    log.error('Energy budget calculation failed', { 
+      error: error.message, 
+      systemId, 
+      scenario 
+    });
+    return { 
+      error: true, 
+      message: `Unable to calculate ${scenario} energy budget: ${error.message}`,
+      systemId,
+      scenario
+    };
+  }
 }
 
 module.exports = {
