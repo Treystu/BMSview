@@ -297,9 +297,33 @@ export const streamInsights = async (
 
         const result = await response.json();
 
+        // Log response structure for debugging
+        log('info', 'Insights response received', {
+            hasJobId: !!result.jobId,
+            hasInsights: !!result.insights,
+            hasSuccess: !!result.success,
+            hasStatus: !!result.status,
+            responseKeys: Object.keys(result),
+            jobId: result.jobId?.substring?.(0, 20) || 'none',
+            status: result.status,
+            mode: result.analysisMode
+        });
+
+        // AGGRESSIVE DEBUGGING: Log the actual values
+        const debugInfo = {
+            'result.jobId (type)': typeof result.jobId,
+            'result.jobId (value)': result.jobId,
+            'result.jobId (truthy)': !!result.jobId,
+            'result.insights (type)': typeof result.insights,
+            'result.insights (value)': result.insights,
+            'result.insights (falsy)': !result.insights,
+            'condition result': !!(result.jobId && !result.insights)
+        };
+        log('info', 'DEBUG: Response validation details', debugInfo);
+
         // Handle BACKGROUND MODE: Response contains jobId (async processing)
         if (result.jobId && !result.insights) {
-            log('info', 'Background insights job started', {
+            log('info', 'Background insights job started - CONDITION PASSED', {
                 jobId: result.jobId,
                 status: result.status
             });
@@ -351,8 +375,37 @@ export const streamInsights = async (
             return;
         }
 
-        // Unknown response format
-        log('warn', 'Unexpected insights response format', { result });
+        // Unknown response format - provide detailed error message for debugging
+        log('warn', 'Unexpected insights response format - PRIMARY CONDITIONS FAILED', { 
+            result,
+            detail: {
+                hasJobId: !!result.jobId,
+                hasInsights: !!result.insights,
+                hasSuccess: !!result.success,
+                hasStatus: !!result.status,
+                allKeys: Object.keys(result),
+                responseJSON: JSON.stringify(result)
+            }
+        });
+        
+        // Fallback: Try to detect mode even with unexpected structure
+        if (result.jobId && result.status === 'processing') {
+            log('info', 'Detected background mode from status field despite unexpected structure - FALLBACK CONDITION PASSED', { jobId: result.jobId });
+            if (result.initialSummary) {
+                const summaryText = formatInitialSummary(result.initialSummary);
+                if (summaryText) {
+                    onChunk(summaryText);
+                }
+            }
+            await pollInsightsJobCompletion(
+                result.jobId,
+                onChunk,
+                onError
+            );
+            onComplete();
+            return;
+        }
+        
         throw new Error('Server returned unexpected response format');
     } catch (err) {
         clearTimeout(timeoutId);
