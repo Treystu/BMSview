@@ -1,31 +1,25 @@
 /**
- * Generate Insights - Enhanced AI-Powered Analysis with Trend Tracking
+ * Generate Insights - Enhanced AI-Powered Analysis with True Function Calling
  * 
  * This is the primary insights generation endpoint that uses Gemini 2.5 Flash with
- * function calling capabilities to provide comprehensive, trend-based analysis.
- * 
- * **Usage:**
- * - Endpoint: /.netlify/functions/generate-insights-with-tools
- * - Used by: All insights generation (standard mode removed)
- * - Features: AI can query historical data, weather, solar, and analytics
+ * TRUE function calling capabilities to provide comprehensive, data-driven analysis.
  * 
  * **What it does:**
  * 1. Accepts battery measurement data and system context
- * 2. Provides Gemini with tools to intelligently query additional data:
- *    - getSystemHistory: Historical battery records for trend analysis
- *    - getWeatherData: Weather conditions affecting performance
- *    - getSolarEstimates: Solar generation predictions
- *    - getSystemAnalytics: Performance analytics and trends
- * 3. AI analyzes trends across datapoints:
- *    - Charging/discharging rate deltas over time
- *    - Voltage degradation patterns
- *    - Real efficiency metrics from actual data
- *    - Capacity retention tracking
- *    - Usage pattern analysis
- * 4. Returns actionable insights without generic recommendations
+ * 2. Provides Gemini with structured tool definitions (following Gemini's recommended pattern)
+ * 3. Implements multi-turn conversation loop where Gemini can:
+ *    - Request specific BMS data with customizable time ranges and granularity
+ *    - Query weather, solar, and analytics data
+ *    - Receive data and continue analysis
+ * 4. Validates tool call requests and responses using JSON schemas
+ * 5. Returns comprehensive, data-driven insights without generic recommendations
  * 
- * **Related Functions:**
- * - utils/gemini-tools.cjs: Tool definitions and execution logic
+ * **Function Calling Flow:**
+ * 1. User sends initial query + current snapshot
+ * 2. Gemini analyzes and may respond with tool_call (JSON) if more data needed
+ * 3. Backend executes tool call and sends results back to Gemini
+ * 4. Loop continues until Gemini responds with final_answer
+ * 5. Return final insights to user
  * 
  * @module netlify/functions/generate-insights-with-tools
  */
@@ -33,13 +27,11 @@
 const { createLogger, createTimer } = require('../../utils/logger.cjs');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Constants for data fetching
-const DEFAULT_HISTORY_LIMIT = 30;
-const CUSTOM_QUERY_HISTORY_LIMIT = 100;
-const MAX_TIME_RANGE_RECORDS = 500;
-const MAX_DAYS_LOOKBACK = 90;
-
-const MAX_TOOL_ITERATIONS = 10; // Reserved for future SDK upgrade with native function calling
+// Constants for function calling
+const MAX_TOOL_ITERATIONS = 10; // Maximum number of tool call rounds to prevent infinite loops
+const DEFAULT_DAYS_LOOKBACK = 30; // Default time range for initial data
+const ITERATION_TIMEOUT_MS = 20000; // 20 seconds per iteration
+const TOTAL_TIMEOUT_MS = 55000; // 55 seconds total (under Netlify's 60s limit for function execution)
 
 /**
  * Main handler for insights generation with function calling
@@ -98,7 +90,7 @@ async function handler(event = {}, context = {}) {
     }
 
     // Build enhanced prompt with context about available tools
-    const initialPrompt = buildEnhancedPrompt(analysisData, systemId, customPrompt);
+    const initialPrompt = await buildEnhancedPrompt(analysisData, systemId, customPrompt, log);
 
     // Execute multi-turn conversation with function calling
     const result = await executeWithFunctionCalling(
@@ -137,383 +129,263 @@ async function handler(event = {}, context = {}) {
  * Extract and distill key trending metrics from historical data
  * This creates a compact summary instead of sending all raw data to Gemini
  */
-function extractTrendingInsights(records, log) {
-  if (!records || records.length === 0) {
-    return null;
-  }
-
-  log.debug('Extracting trending insights from historical data', { recordCount: records.length });
-
-  // Sort by timestamp to ensure chronological order
-  const sortedRecords = [...records].sort((a, b) => 
-    new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-  );
-
-  // Helper to safely get numeric value
-  const getVal = (record, field) => {
-    const val = record.analysis?.[field];
-    return typeof val === 'number' && !isNaN(val) ? val : null;
-  };
-
-  // Helper to calculate trend (first, last, change, rate)
-  const calculateTrend = (records, field) => {
-    const values = records.map(r => getVal(r, field)).filter(v => v !== null);
-    if (values.length < 2) return null;
-
-    const first = values[0];
-    const last = values[values.length - 1];
-    const change = last - first;
-    const changePercent = first !== 0 ? ((change / first) * 100) : 0;
-
-    // Calculate rate of change per day
-    const firstRecord = records.find(r => getVal(r, field) !== null);
-    const lastRecord = [...records].reverse().find(r => getVal(r, field) !== null);
-    const timeDiffMs = new Date(lastRecord.timestamp).getTime() - new Date(firstRecord.timestamp).getTime();
-    const timeDiffDays = timeDiffMs / (1000 * 60 * 60 * 24);
-    const ratePerDay = timeDiffDays > 0 ? change / timeDiffDays : 0;
-
-    return {
-      first: parseFloat(first.toFixed(3)),
-      last: parseFloat(last.toFixed(3)),
-      change: parseFloat(change.toFixed(3)),
-      changePercent: parseFloat(changePercent.toFixed(2)),
-      ratePerDay: parseFloat(ratePerDay.toFixed(3)),
-      min: parseFloat(Math.min(...values).toFixed(3)),
-      max: parseFloat(Math.max(...values).toFixed(3)),
-      avg: parseFloat((values.reduce((a, b) => a + b, 0) / values.length).toFixed(3)),
-      dataPoints: values.length
-    };
-  };
-
-  // Calculate charging/discharging cycles
-  const detectCycles = (records) => {
-    const cycles = { charging: 0, discharging: 0, idle: 0 };
-
-    for (const record of records) {
-      const current = getVal(record, 'current');
-      if (current === null) continue;
-
-      if (current > 0.5) cycles.charging++;
-      else if (current < -0.5) cycles.discharging++;
-      else cycles.idle++;
-    }
-
-    return cycles;
-  };
-
-  // Calculate SOC efficiency (charge gained vs expected)
-  const calculateSocEfficiency = (records) => {
-    const socValues = records.map(r => getVal(r, 'stateOfCharge')).filter(v => v !== null);
-    if (socValues.length < 2) return null;
-
-    let totalChargeGain = 0;
-    let totalChargeLoss = 0;
-    let chargeEvents = 0;
-    let dischargeEvents = 0;
-
-    for (let i = 1; i < socValues.length; i++) {
-      const delta = socValues[i] - socValues[i - 1];
-      if (delta > 1) {
-        totalChargeGain += delta;
-        chargeEvents++;
-      } else if (delta < -1) {
-        totalChargeLoss += Math.abs(delta);
-        dischargeEvents++;
-      }
-    }
-
-    return {
-      totalChargeGain: parseFloat(totalChargeGain.toFixed(2)),
-      totalChargeLoss: parseFloat(totalChargeLoss.toFixed(2)),
-      chargeEvents,
-      dischargeEvents,
-      avgChargePerEvent: chargeEvents > 0 ? parseFloat((totalChargeGain / chargeEvents).toFixed(2)) : 0,
-      avgDischargePerEvent: dischargeEvents > 0 ? parseFloat((totalChargeLoss / dischargeEvents).toFixed(2)) : 0
-    };
-  };
-
-  // Build compact trending summary
-  const trendingSummary = {
-    timeSpan: {
-      start: sortedRecords[0].timestamp,
-      end: sortedRecords[sortedRecords.length - 1].timestamp,
-      totalDataPoints: sortedRecords.length,
-      daysSpanned: parseFloat(((new Date(sortedRecords[sortedRecords.length - 1].timestamp).getTime() - 
-                               new Date(sortedRecords[0].timestamp).getTime()) / (1000 * 60 * 60 * 24)).toFixed(2))
-    },
-    voltage: calculateTrend(sortedRecords, 'overallVoltage'),
-    stateOfCharge: calculateTrend(sortedRecords, 'stateOfCharge'),
-    capacity: calculateTrend(sortedRecords, 'remainingCapacity'),
-    temperature: calculateTrend(sortedRecords, 'temperature'),
-    power: calculateTrend(sortedRecords, 'power'),
-    cellVoltageDelta: calculateTrend(sortedRecords, 'cellVoltageDifference'),
-    cycles: detectCycles(sortedRecords),
-    socEfficiency: calculateSocEfficiency(sortedRecords)
-  };
-
-  // Calculate data size savings
-  const originalSize = JSON.stringify(records).length;
-  const compactSize = JSON.stringify(trendingSummary).length;
-  const savings = ((1 - compactSize / originalSize) * 100).toFixed(1);
-
-  log.info('Trending insights extracted', {
-    originalDataSize: originalSize,
-    compactDataSize: compactSize,
-    compressionRatio: `${savings}%`,
-    dataPoints: sortedRecords.length
-  });
-
-  return trendingSummary;
-}
-
 /**
- * Execute Gemini conversation with intelligent context gathering
- * Since the current SDK version doesn't support native function calling,
- * we intelligently gather relevant context upfront based on the query.
+ * Execute Gemini conversation with TRUE function calling loop
+ * Implements the pattern described by Gemini where:
+ * 1. AI receives system prompt + data
+ * 2. AI responds with either tool_call OR final_answer
+ * 3. If tool_call, execute it and loop back
+ * 4. If final_answer, return to user
  */
 async function executeWithFunctionCalling(model, initialPrompt, analysisData, systemId, customPrompt, log) {
-  const toolCalls = [];
+  const conversationHistory = [];
+  const toolCallsExecuted = [];
+  let iterationCount = 0;
   
+  const startTime = Date.now();
+  
+  log.info('Starting function calling loop', { 
+    hasSystemId: !!systemId, 
+    hasCustomPrompt: !!customPrompt 
+  });
+
   try {
-    const { toolDefinitions, executeToolCall } = require('./utils/gemini-tools.cjs');
-    
-    // Intelligently gather context based on the query and system
-    let enhancedPrompt = initialPrompt;
-    
-    if (systemId) {
-      log.info('Gathering comprehensive context for system', { systemId });
+    // Initial message to Gemini
+    conversationHistory.push({
+      role: 'user',
+      content: initialPrompt
+    });
 
-      // Always get recent history for trend analysis
-      try {
-        log.debug('Fetching system history', { systemId, limit: customPrompt ? CUSTOM_QUERY_HISTORY_LIMIT : DEFAULT_HISTORY_LIMIT });
-        const historyStartTime = Date.now();
-        
-        const historyData = await executeToolCall('getSystemHistory', { 
-          systemId, 
-          limit: customPrompt ? CUSTOM_QUERY_HISTORY_LIMIT : DEFAULT_HISTORY_LIMIT
-        }, log);
-        
-        const historyDuration = Date.now() - historyStartTime;
-        log.debug('System history fetch completed', { 
-          duration: `${historyDuration}ms`,
-          recordsReturned: historyData?.records?.length || 0 
-        });
-        
-        if (historyData && !historyData.error && historyData.records && historyData.records.length > 0) {
-          toolCalls.push({ name: 'getSystemHistory', args: { systemId, limit: historyData.records.length } });
-          
-          // Extract compact trending insights instead of sending raw data
-          log.info('Pre-processing historical data for trending analysis', { 
-            totalRecords: historyData.records.length 
-          });
-          
-          const trendingInsights = extractTrendingInsights(historyData.records, log);
-          
-          if (trendingInsights) {
-            enhancedPrompt += `\n\nHISTORICAL TRENDING ANALYSIS (${trendingInsights.timeSpan.totalDataPoints} datapoints over ${trendingInsights.timeSpan.daysSpanned} days):
-${JSON.stringify(trendingInsights, null, 2)}
-
-IMPORTANT: These are pre-calculated trends from actual data:
-- Use voltage/capacity/SOC trends to identify degradation patterns
-- Use cycles data to understand usage patterns (charging vs discharging vs idle)
-- Use socEfficiency to calculate real-world charge/discharge efficiency
-- Use ratePerDay values to project future performance
-- Compare current reading to historical min/max/avg to identify anomalies
-`;
-          }
-        }
-      } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        log.warn('Failed to get system history', { 
-          error: error.message,
-          stack: error.stack,
-          systemId 
-        });
-      }
-
-      // Get system analytics for baseline comparison
-      try {
-        log.debug('Fetching system analytics', { systemId });
-        const analyticsStartTime = Date.now();
-        
-        const analyticsData = await executeToolCall('getSystemAnalytics', { systemId }, log);
-        
-        const analyticsDuration = Date.now() - analyticsStartTime;
-        log.debug('System analytics fetch completed', { 
-          duration: `${analyticsDuration}ms`,
-          hasData: !!analyticsData && !analyticsData.error 
-        });
-        
-        if (analyticsData && !analyticsData.error) {
-          toolCalls.push({ name: 'getSystemAnalytics', args: { systemId } });
-          
-          // Optimize analytics data - only include summary, not full details
-          const optimizedAnalytics = {
-            systemId: analyticsData.systemId,
-            averages: analyticsData.hourlyAverages ? {
-              count: analyticsData.hourlyAverages.length,
-              summary: 'Available for 24-hour pattern analysis'
-            } : null,
-            alerts: analyticsData.alerts || null,
-            performanceBaseline: analyticsData.performanceBaseline || null
-          };
-          
-          log.debug('Analytics data optimized', {
-            originalSize: JSON.stringify(analyticsData).length,
-            optimizedSize: JSON.stringify(optimizedAnalytics).length
-          });
-          
-          enhancedPrompt += `\n\nSYSTEM ANALYTICS (performance baselines and patterns):
-${JSON.stringify(optimizedAnalytics, null, 2)}
-`;
-        }
-      } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        log.warn('Failed to get system analytics', { 
-          error: error.message,
-          stack: error.stack,
-          systemId 
-        });
-      }
+    // Multi-turn conversation loop
+    while (iterationCount < MAX_TOOL_ITERATIONS) {
+      iterationCount++;
       
-      // For custom prompts requesting specific time ranges, parse and fetch accordingly
-      if (customPrompt) {
-        const daysMatch = customPrompt.match(/(\d+)\s*days?/i);
-        const weeksMatch = customPrompt.match(/(\d+)\s*weeks?/i);
-        
-        if (daysMatch || weeksMatch) {
-          const days = daysMatch ? parseInt(daysMatch[1]) : (weeksMatch ? parseInt(weeksMatch[1]) * 7 : 0);
-          if (days > 0 && days <= MAX_DAYS_LOOKBACK) {
-            const endDate = new Date();
-            const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
-            
-            log.info('Custom query requests specific time range', { days, startDate, endDate });
-            
+      // Check total timeout
+      const elapsedTime = Date.now() - startTime;
+      if (elapsedTime > TOTAL_TIMEOUT_MS) {
+        log.warn('Function calling loop exceeded total timeout', {
+          elapsedTime,
+          iterationCount,
+          toolCallsExecuted: toolCallsExecuted.length
+        });
+        throw new Error(`Analysis exceeded time limit (${TOTAL_TIMEOUT_MS / 1000}s). Try a simpler question or smaller time range.`);
+      }
+
+      log.info(`Function calling iteration ${iterationCount}`, {
+        conversationLength: conversationHistory.length,
+        elapsedTime: `${elapsedTime}ms`
+      });
+
+      // Generate response from Gemini with timeout
+      const iterationStartTime = Date.now();
+      let response;
+      
+      try {
+        // Build conversation text once per iteration
+        // Note: Gemini 2.5 Flash doesn't yet support structured conversation history,
+        // so we format as a single text prompt. This will be optimized when the SDK
+        // supports native multi-turn conversations.
+        const conversationText = conversationHistory.map(msg => 
+          `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+        ).join('\n\n');
+
+        const responsePromise = model.generateContent(conversationText);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Iteration timeout')), ITERATION_TIMEOUT_MS)
+        );
+
+        response = await Promise.race([responsePromise, timeoutPromise]);
+      } catch (error) {
+        if (error.message === 'Iteration timeout') {
+          log.warn('Gemini iteration timed out', { 
+            iteration: iterationCount,
+            duration: Date.now() - iterationStartTime
+          });
+          throw new Error('AI processing took too long. Try simplifying your question.');
+        }
+        throw error;
+      }
+
+      const iterationDuration = Date.now() - iterationStartTime;
+      log.debug('Gemini response received', {
+        iteration: iterationCount,
+        duration: `${iterationDuration}ms`
+      });
+
+      const responseText = response.response.text();
+      
+      // Try to parse as JSON - handle various formatting issues
+      let parsedResponse;
+      try {
+        // First, try to parse as-is (trimmed)
+        parsedResponse = JSON.parse(responseText.trim());
+      } catch {
+        // If that fails, try to extract JSON from markdown code blocks
+        const jsonMatch = responseText.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+        if (jsonMatch) {
+          try {
+            parsedResponse = JSON.parse(jsonMatch[1].trim());
+          } catch {
+            // Still not valid JSON, treat as plain text
+            parsedResponse = null;
+          }
+        } else {
+          // Try to find JSON object in the text
+          const jsonObjectMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonObjectMatch) {
             try {
-              const rangeHistory = await executeToolCall('getSystemHistory', {
-                systemId,
-                limit: MAX_TIME_RANGE_RECORDS,
-                startDate: startDate.toISOString(),
-                endDate: endDate.toISOString()
-              }, log);
-              
-              if (rangeHistory && !rangeHistory.error && rangeHistory.records) {
-                toolCalls.push({ 
-                  name: 'getSystemHistory', 
-                  args: { 
-                    systemId, 
-                    startDate: startDate.toISOString(), 
-                    endDate: endDate.toISOString(), 
-                    limit: MAX_TIME_RANGE_RECORDS 
-                  }
-                });
-                
-                log.info('Pre-processing time range data for trending analysis', { 
-                  totalRecords: rangeHistory.records.length,
-                  requestedDays: days
-                });
-                
-                const rangeTrendingInsights = extractTrendingInsights(rangeHistory.records, log);
-                
-                if (rangeTrendingInsights) {
-                  enhancedPrompt += `\n\nREQUESTED TIME RANGE TRENDING ANALYSIS (${days} days - ${rangeTrendingInsights.timeSpan.totalDataPoints} datapoints):
-${JSON.stringify(rangeTrendingInsights, null, 2)}
-
-NOTE: Use this data to answer the specific time-based query. Calculate energy deltas from capacity/SoC changes.
-`;
-                }
-              }
-            } catch (err) {
-              const error = err instanceof Error ? err : new Error(String(err));
-              log.warn('Failed to get historical range', { error: error.message });
+              parsedResponse = JSON.parse(jsonObjectMatch[0]);
+            } catch {
+              // Not valid JSON, treat as plain text
+              parsedResponse = null;
             }
+          } else {
+            // No JSON found, treat as plain text
+            parsedResponse = null;
           }
         }
       }
-    }
 
-    // Generate insights with all gathered context
-    log.info('Generating insights with comprehensive context', { 
-      promptLength: enhancedPrompt.length,
-      toolCallsCount: toolCalls.length,
-      estimatedTokens: Math.ceil(enhancedPrompt.length / 4) // Rough estimate
-    });
-    
-    // Add timeout protection for Gemini API call
-    const GEMINI_TIMEOUT_MS = parseInt(process.env.GEMINI_TIMEOUT_MS || '25000'); // 25s default, under Netlify's 26s limit
-    
-    log.debug('Starting Gemini API call', {
-      timeout: GEMINI_TIMEOUT_MS,
-      promptPreview: enhancedPrompt.substring(0, 200) + '...'
-    });
-    
-    const geminiStartTime = Date.now();
-    
-    // Wrap Gemini call with timeout that cleans up properly
-    let timeoutId;
-    let finalText; // Declare outside try block for proper scoping
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => {
-        reject(new Error(`Gemini API timeout after ${GEMINI_TIMEOUT_MS}ms`));
-      }, GEMINI_TIMEOUT_MS);
-    });
-    
-    try {
-      const result = await Promise.race([
-        model.generateContent(enhancedPrompt),
-        timeoutPromise
-      ]);
-      
-      // Clear timeout if API call completes first
-      if (timeoutId) clearTimeout(timeoutId);
-      
-      const geminiDuration = Date.now() - geminiStartTime;
-      log.info('Gemini API call completed', { 
-        duration: `${geminiDuration}ms`,
-        durationSeconds: (geminiDuration / 1000).toFixed(2)
+      // Check if it's a tool call
+      if (parsedResponse && parsedResponse.tool_call) {
+        log.info('Gemini requested tool call', {
+          toolName: parsedResponse.tool_call,
+          parameters: parsedResponse.parameters,
+          iteration: iterationCount
+        });
+
+        // Validate tool call structure
+        if (!parsedResponse.parameters) {
+          throw new Error('Tool call missing parameters object');
+        }
+
+        // Execute the tool
+        const { toolDefinitions, executeToolCall } = require('./utils/gemini-tools.cjs');
+        const toolResult = await executeToolCall(
+          parsedResponse.tool_call,
+          parsedResponse.parameters,
+          log
+        );
+
+        toolCallsExecuted.push({
+          name: parsedResponse.tool_call,
+          parameters: parsedResponse.parameters,
+          iteration: iterationCount
+        });
+
+        // Check if tool execution failed
+        if (toolResult.error) {
+          log.warn('Tool execution returned error', { 
+            toolName: parsedResponse.tool_call,
+            error: toolResult.message 
+          });
+          
+          // Send error back to Gemini so it can adjust
+          conversationHistory.push({
+            role: 'assistant',
+            content: JSON.stringify(parsedResponse)
+          });
+          conversationHistory.push({
+            role: 'user',
+            content: `Tool execution error: ${toolResult.message}. Please adjust your request or provide an answer with available data.`
+          });
+          continue;
+        }
+
+        // Send tool result back to Gemini
+        conversationHistory.push({
+          role: 'assistant',
+          content: JSON.stringify(parsedResponse)
+        });
+        conversationHistory.push({
+          role: 'user',
+          content: `Tool response from ${parsedResponse.tool_call}:\n${JSON.stringify(toolResult, null, 2)}`
+        });
+
+        log.debug('Tool result sent back to Gemini', {
+          iteration: iterationCount,
+          resultSize: JSON.stringify(toolResult).length
+        });
+
+        // Continue loop for next iteration
+        continue;
+      }
+
+      // Check if it's a final answer
+      if (parsedResponse && parsedResponse.final_answer) {
+        log.info('Received final answer from Gemini', {
+          iterations: iterationCount,
+          toolCallsUsed: toolCallsExecuted.length,
+          answerLength: parsedResponse.final_answer.length
+        });
+
+        return {
+          insights: {
+            rawText: parsedResponse.final_answer,
+            formattedText: formatInsightsResponse(parsedResponse.final_answer),
+            healthStatus: 'Generated',
+            performance: { trend: 'See analysis above' }
+          },
+          toolCalls: toolCallsExecuted,
+          usedFunctionCalling: toolCallsExecuted.length > 0,
+          iterations: iterationCount
+        };
+      }
+
+      // No JSON structure, treat as final answer (plain text)
+      log.info('Received plain text response (treating as final answer)', {
+        iterations: iterationCount,
+        toolCallsUsed: toolCallsExecuted.length
       });
-    
-      const response = result.response;
-      finalText = response.text();
-      
-      log.debug('Received Gemini response', {
-        responseLength: finalText.length,
-        responsePreview: finalText.substring(0, 200) + '...'
-      });
-    } catch (error) {
-      // Clear timeout on error
-      if (timeoutId) clearTimeout(timeoutId);
-      throw error;
+
+      return {
+        insights: {
+          rawText: responseText,
+          formattedText: formatInsightsResponse(responseText),
+          healthStatus: 'Generated',
+          performance: { trend: 'See analysis above' }
+        },
+        toolCalls: toolCallsExecuted,
+        usedFunctionCalling: toolCallsExecuted.length > 0,
+        iterations: iterationCount
+      };
     }
 
-    // Ensure we have actual content
-    if (!finalText || finalText.trim() === '') {
-      throw new Error('AI model returned empty response');
-    }
-
-    log.info('Successfully generated insights', { 
-      responseLength: finalText.length,
-      toolCallsUsed: toolCalls.length
+    // Max iterations reached
+    log.warn('Max iterations reached without final answer', {
+      maxIterations: MAX_TOOL_ITERATIONS,
+      toolCallsExecuted: toolCallsExecuted.length
     });
+
+    // Get last assistant message as best-effort answer
+    const lastAssistantMsg = conversationHistory
+      .filter(msg => msg.role === 'assistant')
+      .pop();
+
+    const fallbackAnswer = lastAssistantMsg 
+      ? `Analysis incomplete (max iterations reached). Partial results:\n\n${lastAssistantMsg.content}`
+      : 'Analysis could not be completed within iteration limit. Please try a simpler question.';
 
     return {
       insights: {
-        rawText: finalText,
-        formattedText: formatInsightsResponse(finalText),
-        healthStatus: 'Generated',
-        performance: { trend: 'See analysis above' }
+        rawText: fallbackAnswer,
+        formattedText: formatInsightsResponse(fallbackAnswer),
+        healthStatus: 'Incomplete',
+        performance: { trend: 'Analysis incomplete' }
       },
-      toolCalls,
-      usedFunctionCalling: toolCalls.length > 0
+      toolCalls: toolCallsExecuted,
+      usedFunctionCalling: toolCallsExecuted.length > 0,
+      iterations: iterationCount,
+      warning: 'Max iterations reached'
     };
 
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    log.error('Error during insights generation', { 
+    log.error('Error during function calling loop', { 
       error: error.message, 
       stack: error.stack,
-      errorType: error.constructor.name,
-      toolCallsCompleted: toolCalls.length
+      iteration: iterationCount,
+      toolCallsExecuted: toolCallsExecuted.length
     });
 
     // Provide user-friendly error message
@@ -522,9 +394,8 @@ NOTE: Use this data to answer the specific time-based query. Calculate energy de
     
     if (error.message.includes('404') || error.message.includes('not found')) {
       userMessage = 'AI model temporarily unavailable. Please try again in a few moments.';
-    } else if (error.message.includes('timeout') || error.message.includes('timed out')) {
-      userMessage = 'Request timed out. The AI took too long to process your data. Try with a smaller time range or simpler question.';
-      technicalDetails = `Gemini API exceeded timeout limit. Prompt size: ${enhancedPrompt?.length || 'unknown'} characters`;
+    } else if (error.message.includes('timeout') || error.message.includes('timed out') || error.message.includes('time limit')) {
+      userMessage = error.message; // Use our detailed timeout message
     } else if (error.message.includes('quota') || error.message.includes('rate limit')) {
       userMessage = 'Service temporarily unavailable due to high demand. Please try again in a few minutes.';
     } else if (error.message.includes('blocked') || error.message.includes('SAFETY')) {
@@ -536,12 +407,14 @@ NOTE: Use this data to answer the specific time-based query. Calculate energy de
     return {
       insights: {
         rawText: `❌ Error: ${userMessage}`,
-        formattedText: `❌ Error: ${userMessage}\n\nPlease try again with a more specific question.`,
+        formattedText: `❌ Error: ${userMessage}\n\nTechnical details: ${technicalDetails}`,
         healthStatus: 'Error',
         performance: { trend: 'Error' }
       },
-      toolCalls,
-      usedFunctionCalling: false
+      toolCalls: toolCallsExecuted,
+      usedFunctionCalling: false,
+      iterations: iterationCount,
+      error: true
     };
   }
 }
@@ -571,87 +444,153 @@ function formatInsightsResponse(text) {
 }
 
 /**
- * Build enhanced prompt with context about available data and tools
+ * Build enhanced prompt with system instructions for function calling
  */
-function buildEnhancedPrompt(analysisData, systemId, customPrompt) {
-  // Build comprehensive system prompt
-  let prompt = `You are an expert battery system analyst with access to powerful data querying tools.
+async function buildEnhancedPrompt(analysisData, systemId, customPrompt, log) {
+  const { toolDefinitions } = require('./utils/gemini-tools.cjs');
 
-CURRENT BATTERY SNAPSHOT:
+  // Build system prompt with function calling instructions
+  let prompt = `You are a BMS (Battery Management System) data analyst. Your goal is to answer the user's question based on the data provided.
+
+You will receive an initial data set (current battery snapshot and recent historical data if available).
+
+**IMPORTANT INSTRUCTIONS FOR DATA REQUESTS:**
+
+1. If you can answer the user's question with the data provided, you **must** respond with a JSON object containing ONLY a \`final_answer\` key:
+   {
+     "final_answer": "Your detailed analysis here..."
+   }
+
+2. If the data is insufficient, you **must** request more data by responding with ONLY a JSON object that calls a tool. Do not add any conversational text. Format:
+   {
+     "tool_call": "tool_name",
+     "parameters": {
+       "param1": "value1",
+       "param2": "value2"
+     }
+   }
+
+**AVAILABLE TOOLS:**
+
+${JSON.stringify(toolDefinitions, null, 2)}
+
+**CURRENT BATTERY SNAPSHOT:**
 ${JSON.stringify(analysisData, null, 2)}
-
-${systemId ? `SYSTEM ID: ${systemId}
-
-You have access to the following tools to gather additional data for comprehensive analysis:
-- getSystemHistory: Query historical battery records to analyze trends over time
-- getWeatherData: Get weather conditions to correlate with performance
-- getSolarEstimate: Get solar generation estimates
-- getSystemAnalytics: Get detailed performance analytics and baselines
-
-IMPORTANT: Use these tools intelligently based on what analysis you need to perform.
-` : ''}
-
 `;
 
+  // Load initial 30 days of hourly data if systemId is provided
+  let initialHistoricalData = null;
+  if (systemId) {
+    try {
+      const { getHourlyAveragedData, formatHourlyDataForAI } = require('./utils/data-aggregation.cjs');
+      
+      log.info('Loading initial 30 days of hourly averaged data', { systemId });
+      const hourlyData = await getHourlyAveragedData(systemId, DEFAULT_DAYS_LOOKBACK, log);
+      
+      if (hourlyData && hourlyData.length > 0) {
+        initialHistoricalData = formatHourlyDataForAI(hourlyData, log);
+        
+        prompt += `
+
+**SYSTEM ID:** ${systemId}
+
+**INITIAL HISTORICAL DATA (${DEFAULT_DAYS_LOOKBACK} days of hourly averages):**
+${JSON.stringify(initialHistoricalData, null, 2)}
+
+Note: This is ${hourlyData.length} hours of data. If you need different metrics, time ranges, or granularity, use the request_bms_data tool.
+`;
+        
+        log.info('Initial historical data included in prompt', {
+          hours: hourlyData.length,
+          dataSize: JSON.stringify(initialHistoricalData).length
+        });
+      } else {
+        prompt += `
+
+**SYSTEM ID:** ${systemId}
+
+No historical data found for the past ${DEFAULT_DAYS_LOOKBACK} days. You can use request_bms_data to query different time ranges.
+`;
+        log.warn('No historical data found for initial load', { systemId, daysBack: DEFAULT_DAYS_LOOKBACK });
+      }
+    } catch (error) {
+      log.error('Failed to load initial historical data', {
+        error: error.message,
+        systemId
+      });
+      prompt += `
+
+**SYSTEM ID:** ${systemId}
+
+Historical data temporarily unavailable. You can use request_bms_data tool to query historical data if needed.
+`;
+    }
+  } else {
+    prompt += `
+
+No system ID provided - limited to current snapshot analysis. If you need historical data, it must be provided by the user.
+`;
+  }
+
+  prompt += '\n\n';
+
   if (customPrompt) {
-    // Custom query mode - guide the AI to use tools intelligently
-    prompt += `USER QUESTION:
+    // Custom query mode
+    prompt += `**USER QUESTION:**
 ${customPrompt}
 
-INSTRUCTIONS:
+**YOUR TASK:**
 1. Analyze what data you need to answer this question comprehensively
-2. Use the available tools to gather that data (e.g., for "kWh generated in past 7 days", request 7 days of history)
+2. If you need more data than provided, use request_bms_data tool with specific parameters
 3. Calculate trends, deltas, and patterns from the data
-4. Provide a detailed, data-driven answer
+4. Provide a detailed, data-driven answer in the final_answer JSON
 
-Focus on:
-- Actual calculations from real data (charge/discharge deltas, capacity changes, etc.)
-- Time-based trends and patterns
-- Specific, actionable insights
-- Clear explanations of your methodology
-
-DO NOT include generic recommendations or placeholder suggestions.
+**GUIDELINES:**
+- Use actual calculations from real data (charge/discharge deltas, capacity changes, energy calculations)
+- Be specific with time-based trends and patterns
+- Provide actionable insights based on the data
+- Show your methodology and calculations
+- DO NOT include generic recommendations without data support
+- Always respond with valid JSON (either tool_call or final_answer)
 `;
   } else {
     // Default comprehensive analysis mode
-    prompt += `INSTRUCTIONS:
+    prompt += `**YOUR TASK:**
 Provide a comprehensive battery health analysis with deep insights based on available data.
 
-${systemId ? `Since you have access to historical data, analyze:
-1. TREND ANALYSIS across multiple datapoints:
-   - Calculate charging rate deltas between uploads
-   - Calculate discharging rate deltas between uploads  
-   - Track voltage degradation patterns over time
-   - Compute real efficiency metrics from actual charge/discharge cycles
-   - Analyze capacity retention trends across uploads
+**ANALYSIS AREAS:**
+
+1. **TREND ANALYSIS** (use historical data provided):
+   - Calculate charging rate deltas over time
+   - Calculate discharging rate deltas over time  
+   - Track voltage degradation patterns
+   - Compute real efficiency metrics from charge/discharge cycles
+   - Analyze capacity retention trends
    - Identify usage patterns and anomalies
 
-2. PERFORMANCE METRICS:
+2. **PERFORMANCE METRICS:**
    - Current vs historical performance comparison
    - Degradation rates and projections
    - Efficiency trends (charge/discharge)
    - Peak usage times and patterns
    - Temperature correlation analysis
 
-3. ACTIONABLE INSIGHTS:
+3. **ACTIONABLE INSIGHTS:**
    - Specific issues detected from trends
    - Preventive maintenance recommendations based on data
-   - Optimization opportunities identified from usage patterns
+   - Optimization opportunities from usage patterns
    - Projected lifespan based on degradation trends
 
-` : ''}
-Focus on:
-- Data-driven insights from actual measurements
-- Trend analysis and pattern detection
-- Specific, actionable recommendations
+**GUIDELINES:**
+- Focus on data-driven insights from actual measurements
+- Use trend analysis and pattern detection
+- Provide specific, actionable recommendations
 - Clear explanations with supporting data
+- DO NOT include generic placeholder recommendations
+- DO NOT suggest generator sizing without data support
+- Always respond with valid JSON (either tool_call or final_answer)
 
-DO NOT include:
-- Generic placeholder recommendations
-- Generator sizing suggestions
-- Speculative advice without data support
-
-Format your response clearly with sections and bullet points for readability.
+If you need more historical data for comprehensive analysis, you can use request_bms_data tool.
 `;
   }
 

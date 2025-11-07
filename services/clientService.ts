@@ -238,6 +238,13 @@ export const streamInsights = async (
         dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
     });
 
+    // Add timeout for insights request (60 seconds to allow for function calling iterations)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+        controller.abort();
+        log('warn', 'Insights request timed out after 60 seconds.');
+    }, 60000);
+
     try {
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -245,22 +252,71 @@ export const streamInsights = async (
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(payload),
+            signal: controller.signal,
         });
 
+        clearTimeout(timeoutId);
+
         if (!response.ok) {
-            const errorText = await response.text();
+            let errorMessage = `Request failed: ${response.status}`;
+            
+            // Provide user-friendly error messages for common status codes
+            if (response.status === 504) {
+                errorMessage = 'Request timed out. The AI took too long to process your query. Try:\n' +
+                             '• Asking a simpler question\n' +
+                             '• Requesting a smaller time range\n' +
+                             '• Breaking complex queries into multiple questions';
+            } else if (response.status === 503) {
+                errorMessage = 'Service temporarily unavailable. Please try again in a few moments.';
+            } else if (response.status === 500) {
+                try {
+                    const errorData = await response.json();
+                    if (errorData.message) {
+                        errorMessage = errorData.message;
+                    }
+                } catch {
+                    errorMessage = 'Internal server error. Please try again.';
+                }
+            } else {
+                try {
+                    const errorText = await response.text();
+                    errorMessage = errorText || errorMessage;
+                } catch {
+                    // Use default error message
+                }
+            }
+
             log('error', 'Insights request failed', {
                 status: response.status,
                 statusText: response.statusText,
-                errorText
+                errorMessage
             });
-            throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+            
+            throw new Error(errorMessage);
         }
 
         const result = await response.json();
 
         if (result.success && result.insights) {
+            // Check for warnings (e.g., max iterations reached)
+            if (result.warning) {
+                log('warn', 'Insights generation warning', { warning: result.warning });
+            }
+            
             onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis completed');
+            
+            // Log performance metrics if available
+            if (result.iterations || result.toolCalls) {
+                log('info', 'Insights generation metrics', {
+                    iterations: result.iterations,
+                    toolCallsUsed: result.toolCalls?.length || 0,
+                    usedFunctionCalling: result.usedFunctionCalling
+                });
+            }
+        } else if (result.error && result.insights) {
+            // Handle error case where insights contains error message
+            log('warn', 'Insights generated with error', { result });
+            onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis failed');
         } else {
             log('warn', 'Unexpected response format', { result });
             onChunk('Analysis completed with unexpected response format');
@@ -268,9 +324,25 @@ export const streamInsights = async (
 
         onComplete();
     } catch (err) {
+        clearTimeout(timeoutId);
+        
         const error = err instanceof Error ? err : new Error(String(err));
-        log('error', 'Error streaming insights', { error: error.message });
-        onError(error);
+        
+        // Provide user-friendly message for timeout/abort
+        if (error.name === 'AbortError') {
+            const timeoutError = new Error(
+                'Request timed out after 60 seconds. The AI is taking too long to process your query.\n\n' +
+                'Suggestions:\n' +
+                '• Try a simpler question\n' +
+                '• Request a smaller time range (e.g., "past 7 days" instead of "past 30 days")\n' +
+                '• Break complex queries into multiple questions'
+            );
+            log('error', 'Insights request aborted due to timeout', { originalError: error.message });
+            onError(timeoutError);
+        } else {
+            log('error', 'Error streaming insights', { error: error.message });
+            onError(error);
+        }
     }
 };
 
