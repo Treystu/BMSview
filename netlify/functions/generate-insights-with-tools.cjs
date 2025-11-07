@@ -112,31 +112,43 @@ async function handler(event = {}, context = {}) {
       
       log.info('Insights job created', { jobId: job.id });
       
-      // Trigger background processing by calling the processor directly
-      // This ensures the processing actually starts instead of using unreliable fetch()
+      // Trigger background function via Netlify's background invocation
+      // Background functions are configured in netlify.toml
       try {
-        log.info('Starting background processing', { jobId: job.id });
+        const backgroundUrl = `${process.env.URL || ''}/.netlify/functions/generate-insights-background`;
         
-        // Import the background processor
-        const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
+        log.info('Invoking background function', { 
+          backgroundUrl,
+          jobId: job.id,
+          url: process.env.URL
+        });
         
-        // Execute in background (don't await - let it run async)
-        processInsightsInBackground(job.id, analysisData, systemId, customPrompt, log)
-          .catch(err => {
-            log.error('Background processing failed', { 
-              error: err.message,
-              jobId: job.id,
-              stack: err.stack
-            });
+        // Use Netlify's background function invocation
+        // The function will run independently and update the job status
+        const backgroundResponse = await fetch(backgroundUrl, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ jobId: job.id }),
+          signal: AbortSignal.timeout(5000) // 5 second timeout just for the invocation
+        });
+        
+        if (!backgroundResponse.ok) {
+          log.warn('Background function invocation returned non-OK status', { 
+            status: backgroundResponse.status,
+            jobId: job.id 
           });
-        
-        log.info('Background processing initiated successfully', { jobId: job.id });
+        } else {
+          log.info('Background function invoked successfully', { jobId: job.id });
+        }
         
       } catch (invokeError) {
-        log.error('Error starting background processing', { 
-          error: invokeError.message,
+        const error = invokeError instanceof Error ? invokeError : new Error(String(invokeError));
+        log.error('Error invoking background function', { 
+          error: error.message,
           jobId: job.id,
-          stack: invokeError.stack
+          stack: error.stack
         });
         // Job is created, so frontend can still poll for status
       }
