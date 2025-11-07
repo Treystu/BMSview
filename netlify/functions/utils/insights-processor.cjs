@@ -381,16 +381,16 @@ async function executeAIProcessing(analysisData, systemId, customPrompt, jobId, 
 }
 
 /**
- * Format insights response for better display
+ * Format insights response for better display with off-grid context
  */
 function formatInsightsResponse(text) {
-  if (text.includes('═══') || text.includes('🔋 Battery System')) {
+  if (text.includes('═══') || text.includes('🔋')) {
     return text;
   }
   
   const lines = [];
   lines.push('═══════════════════════════════════════════════════');
-  lines.push('🔋 BATTERY SYSTEM INSIGHTS');
+  lines.push('🔋 OFF-GRID ENERGY INTELLIGENCE');
   lines.push('═══════════════════════════════════════════════════');
   lines.push('');
   lines.push(text);
@@ -408,9 +408,14 @@ function formatInsightsResponse(text) {
 async function buildEnhancedPrompt(analysisData, systemId, customPrompt, log) {
   const { toolDefinitions } = require('./gemini-tools.cjs');
   
-  let prompt = `You are a BMS (Battery Management System) data analyst. Your goal is to answer the user's question based on the data provided.
+  let prompt = `You are an expert off-grid energy systems analyst with deep knowledge of battery management, solar integration, and energy storage optimization.
 
-You will receive an initial data set (current battery snapshot and recent historical data if available).
+**YOUR EXPERTISE:**
+- Battery degradation patterns and lifespan prediction
+- Solar charging efficiency and weather correlation
+- Energy consumption analysis and demand forecasting
+- Off-grid system optimization and backup planning
+- Predictive maintenance and anomaly detection
 
 **IMPORTANT INSTRUCTIONS FOR DATA REQUESTS:**
 
@@ -484,14 +489,42 @@ Historical data temporarily unavailable.
     prompt += `**USER QUESTION:**
 ${customPrompt}
 
-**YOUR TASK:**
-Analyze the data and answer the question comprehensively. Use tools if you need more data.
+**ANALYSIS FRAMEWORK:**
+1. **Understand the Question**: Parse what specific insight the user needs
+2. **Assess Data Requirements**: Determine what historical data, patterns, or predictions are needed
+3. **Strategic Tool Usage**:
+   - For predictions → use predict_battery_trends (capacity degradation, efficiency, lifetime)
+   - For usage patterns → use analyze_usage_patterns (daily/weekly/seasonal, anomalies)
+   - For planning/scenarios → use calculate_energy_budget (current/worst-case/average/emergency)
+   - For specific metrics → use request_bms_data (targeted time ranges and metrics)
+4. **Deep Analysis**: Apply statistical methods, pattern recognition, forecasting
+5. **Off-Grid Context**: Consider solar availability, weather impacts, backup needs
+6. **Actionable Insights**: Provide specific, data-driven recommendations
+
+**OFF-GRID ANALYSIS PATTERNS:**
+- **Energy Sufficiency**: Compare consumption vs generation with weather factors
+- **System Health**: Predict maintenance needs, identify degradation trends
+- **Optimization**: Suggest load shifting, solar expansion, backup strategies
+- **Emergency Planning**: Model worst-case scenarios and backup requirements
+
 Always respond with valid JSON (either tool_call or final_answer).
 `;
   } else {
     prompt += `**YOUR TASK:**
-Provide a comprehensive battery health analysis with deep insights based on available data.
-Use tools to request additional data if needed for thorough analysis.
+Provide a comprehensive off-grid energy system analysis with deep insights based on available data.
+
+**KEY ANALYSIS AREAS:**
+1. **System Health**: Use predict_battery_trends for degradation and lifespan forecasting
+2. **Usage Patterns**: Use analyze_usage_patterns to identify daily/weekly consumption cycles
+3. **Energy Sufficiency**: Use calculate_energy_budget to assess solar sufficiency and backup needs
+4. **Optimization**: Identify opportunities for load shifting and efficiency improvements
+
+**STRATEGIC TOOL USAGE**:
+- Use predict_battery_trends for degradation analysis and lifespan estimation
+- Use analyze_usage_patterns to identify consumption cycles and anomalies
+- Use calculate_energy_budget to assess solar sufficiency and backup requirements
+- Use request_bms_data only for specific metric queries not covered by other tools
+
 Always respond with valid JSON (either tool_call or final_answer).
 `;
   }
