@@ -80,7 +80,7 @@ async function handler(event = {}, context = {}) {
     }
 
     const { systemId, customPrompt } = body;
-    
+
     // Check if sync mode is requested (for backward compatibility)
     const queryParams = event.queryStringParameters || {};
     const isSyncMode = queryParams.sync === 'true' || queryParams.mode === 'sync' || body.sync === true;
@@ -99,10 +99,10 @@ async function handler(event = {}, context = {}) {
         log.warn('Failed to ensure indexes', { error: err.message });
         // Continue anyway
       });
-      
+
       // Generate initial summary
       const initialSummary = await generateInitialSummary(analysisData, systemId, log);
-      
+
       // Create job
       const job = await createInsightsJob({
         analysisData,
@@ -110,19 +110,19 @@ async function handler(event = {}, context = {}) {
         customPrompt,
         initialSummary
       }, log);
-      
+
       log.info('Insights job created', { jobId: job.id });
-      
+
       // CRITICAL: Start background processing but DON'T WAIT
       // This must complete BEFORE the handler returns so the Lambda environment stays alive
       const processingPromise = processInsightsInBackground(
-        job.id, 
-        analysisData, 
-        systemId, 
-        customPrompt, 
+        job.id,
+        analysisData,
+        systemId,
+        customPrompt,
         log
       );
-      
+
       // Store the promise reference to keep the event loop alive
       // Return response immediately but wait for processing to finish
       // This gives us the best of both worlds:
@@ -134,18 +134,18 @@ async function handler(event = {}, context = {}) {
         })
         .catch(err => {
           const error = err instanceof Error ? err : new Error(String(err));
-          log.error('Background insights processing failed', { 
+          log.error('Background insights processing failed', {
             jobId: job.id,
             error: error.message,
             stack: error.stack
           });
         });
-      
+
       // IMPORTANT: We return immediately to the client
       // But the event loop will stay alive due to the pending promise
       // Netlify will keep the function alive until all promises resolve or timeout
       timer.end();
-      
+
       // Return immediate response with jobId and initial summary
       return respond(200, {
         success: true,
@@ -160,7 +160,7 @@ async function handler(event = {}, context = {}) {
 
     // SYNC MODE (legacy): Execute immediately and return results
     log.info('Using synchronous mode (legacy)');
-    
+
     // Get AI model with function calling support
     const model = await getAIModelWithTools(log);
     if (!model) {
@@ -200,8 +200,8 @@ async function handler(event = {}, context = {}) {
     const error = err instanceof Error ? err : new Error(String(err));
     log.error('Error generating insights', { error: error.message, stack: error.stack });
     timer.end();
-    return respond(500, { 
-      error: 'Failed to generate insights', 
+    return respond(500, {
+      error: 'Failed to generate insights',
       message: 'An error occurred while analyzing your battery data. Please try again.',
       timestamp: new Date().toISOString()
     });
@@ -226,12 +226,12 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
   const conversationHistory = [];
   const toolCallsExecuted = [];
   let iterationCount = 0;
-  
+
   const startTime = Date.now();
-  
-  log.info('Starting function calling loop', { 
-    hasSystemId: !!systemId, 
-    hasCustomPrompt: !!customPrompt 
+
+  log.info('Starting function calling loop', {
+    hasSystemId: !!systemId,
+    hasCustomPrompt: !!customPrompt
   });
 
   try {
@@ -244,7 +244,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
     // Multi-turn conversation loop
     while (iterationCount < MAX_TOOL_ITERATIONS) {
       iterationCount++;
-      
+
       // Check total timeout
       const elapsedTime = Date.now() - startTime;
       if (elapsedTime > TOTAL_TIMEOUT_MS) {
@@ -267,25 +267,25 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
       // Generate response from Gemini with timeout
       const iterationStartTime = Date.now();
       let response;
-      
+
       try {
         // Build conversation text once per iteration
         // Note: Gemini 2.5 Flash doesn't yet support structured conversation history,
         // so we format as a single text prompt. This will be optimized when the SDK
         // supports native multi-turn conversations.
-        const conversationText = prunedHistory.map(msg => 
+        const conversationText = prunedHistory.map(msg =>
           `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
         ).join('\n\n');
 
         const responsePromise = model.generateContent(conversationText);
-        const timeoutPromise = new Promise((_, reject) => 
+        const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Iteration timeout')), ITERATION_TIMEOUT_MS)
         );
 
         response = await Promise.race([responsePromise, timeoutPromise]);
       } catch (error) {
         if (error.message === 'Iteration timeout') {
-          log.warn('Gemini iteration timed out', { 
+          log.warn('Gemini iteration timed out', {
             iteration: iterationCount,
             duration: Date.now() - iterationStartTime
           });
@@ -301,7 +301,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
       });
 
       const responseText = response.response.text();
-      
+
       // Try to parse as JSON - handle various formatting issues
       let parsedResponse;
       try {
@@ -363,11 +363,11 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
 
         // Check if tool execution failed
         if (toolResult.error) {
-          log.warn('Tool execution returned error', { 
+          log.warn('Tool execution returned error', {
             toolName: parsedResponse.tool_call,
-            error: toolResult.message 
+            error: toolResult.message
           });
-          
+
           // Send error back to Gemini so it can adjust
           conversationHistory.push({
             role: 'assistant',
@@ -382,7 +382,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
 
         // Send tool result back to Gemini (in compact format)
         const compactResult = compactifyToolResult(toolResult, parsedResponse.tool_call, log);
-        
+
         conversationHistory.push({
           role: 'assistant',
           content: JSON.stringify(parsedResponse)
@@ -453,7 +453,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
       .filter(msg => msg.role === 'assistant')
       .pop();
 
-    const fallbackAnswer = lastAssistantMsg 
+    const fallbackAnswer = lastAssistantMsg
       ? `Analysis incomplete (max iterations reached). Partial results:\n\n${lastAssistantMsg.content}`
       : 'Analysis could not be completed within iteration limit. Please try a simpler question.';
 
@@ -472,8 +472,8 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
 
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
-    log.error('Error during function calling loop', { 
-      error: error.message, 
+    log.error('Error during function calling loop', {
+      error: error.message,
       stack: error.stack,
       iteration: iterationCount,
       toolCallsExecuted: toolCallsExecuted.length
@@ -482,7 +482,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
     // Provide user-friendly error message
     let userMessage = 'Failed to generate insights. Please try again.';
     let technicalDetails = error.message;
-    
+
     if (error.message.includes('404') || error.message.includes('not found')) {
       userMessage = 'AI model temporarily unavailable. Please try again in a few moments.';
     } else if (error.message.includes('timeout') || error.message.includes('timed out') || error.message.includes('time limit')) {
@@ -492,7 +492,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
     } else if (error.message.includes('blocked') || error.message.includes('SAFETY')) {
       userMessage = 'Response was blocked by safety filters. Please rephrase your question.';
     }
-    
+
     log.warn('User-friendly error message generated', { userMessage, technicalDetails });
 
     return {
@@ -536,25 +536,25 @@ function pruneConversationHistory(history, log) {
   // Strategy: Keep first message (system prompt), last 4 messages (recent context)
   // and most important middle exchanges
   const pruned = [];
-  
+
   // Always keep first message (system prompt with initial data)
   pruned.push(history[0]);
-  
+
   // Keep last 4 messages for immediate context
   const recentMessages = history.slice(-4);
-  
+
   // Calculate how many middle messages we can keep
   const firstMsgTokens = history[0].content.length * TOKENS_PER_CHAR;
   const recentTokens = recentMessages.reduce((sum, msg) => sum + msg.content.length * TOKENS_PER_CHAR, 0);
   const remainingTokens = MAX_CONVERSATION_TOKENS - firstMsgTokens - recentTokens;
-  
+
   // Sample middle messages if we have room
   const middleMessages = history.slice(1, -4);
   if (middleMessages.length > 0 && remainingTokens > 0) {
     // Keep every nth middle message to fit in remaining budget
     const avgMiddleTokens = middleMessages.reduce((sum, msg) => sum + msg.content.length * TOKENS_PER_CHAR, 0) / middleMessages.length;
     const canKeepMiddle = Math.floor(remainingTokens / avgMiddleTokens);
-    
+
     if (canKeepMiddle > 0) {
       const step = Math.ceil(middleMessages.length / canKeepMiddle);
       for (let i = 0; i < middleMessages.length; i += step) {
@@ -562,7 +562,7 @@ function pruneConversationHistory(history, log) {
       }
     }
   }
-  
+
   // Add recent messages
   pruned.push(...recentMessages);
 
@@ -612,38 +612,38 @@ function compactifyToolResult(result, toolName, log) {
 
 /**
  * Format insights response for better display with off-grid context
+ * @param {string} text
+ * @param {Array<any>} toolCalls
+ * @param {number|null} [confidence]
  */
 function formatInsightsResponse(text, toolCalls = [], confidence = null) {
   // If already formatted with headers, return as-is
   if (text.includes('═══') || text.includes('🔋')) {
     return text;
   }
-  
   // Calculate confidence if not provided
   if (confidence === null && toolCalls) {
     confidence = calculateConfidence(text, toolCalls);
   }
-  
-  // Otherwise, wrap in off-grid intelligence format
   const lines = [];
   lines.push('═══════════════════════════════════════════════════');
   lines.push('🔋 OFF-GRID ENERGY INTELLIGENCE');
   lines.push('═══════════════════════════════════════════════════');
-  
+
   if (confidence !== null) {
     const confidenceIcon = confidence >= 80 ? '✓' : confidence >= 60 ? '~' : '!';
     lines.push(`📊 Analysis Confidence: ${confidenceIcon} ${confidence}%`);
   }
-  
+
   if (toolCalls && toolCalls.length > 0) {
     lines.push(`🔍 Data Sources Used: ${toolCalls.length} tool queries`);
-    
+
     // Show which analysis types were used
     const toolTypes = [...new Set(toolCalls.map(t => t.name))];
     const hasPredict = toolTypes.some(t => t.includes('predict'));
     const hasPattern = toolTypes.some(t => t.includes('pattern'));
     const hasBudget = toolTypes.some(t => t.includes('budget'));
-    
+
     const analysisTypes = [];
     if (hasPredict) analysisTypes.push('Predictive');
     if (hasPattern) analysisTypes.push('Pattern');
@@ -652,7 +652,7 @@ function formatInsightsResponse(text, toolCalls = [], confidence = null) {
       lines.push(`🧠 Analysis Type: ${analysisTypes.join(', ')}`);
     }
   }
-  
+
   lines.push('═══════════════════════════════════════════════════');
   lines.push('');
   lines.push(text);
@@ -660,21 +660,23 @@ function formatInsightsResponse(text, toolCalls = [], confidence = null) {
   lines.push('═══════════════════════════════════════════════════');
   lines.push(`Generated: ${new Date().toLocaleString()}`);
   lines.push('═══════════════════════════════════════════════════');
-  
+
   return lines.join('\n');
 }
 
 /**
  * Calculate confidence score for insights
+ * @param {string} insightsText
+ * @param {Array<any>} toolCalls
  */
 function calculateConfidence(insightsText, toolCalls) {
   let confidence = 100;
-  
+
   // Reduce confidence based on factors
   if (!toolCalls || toolCalls.length === 0) {
     confidence -= 15; // No additional data requested
   }
-  
+
   // Check for uncertainty indicators in text
   const uncertaintyPhrases = [
     'insufficient data',
@@ -684,14 +686,14 @@ function calculateConfidence(insightsText, toolCalls) {
     'not enough',
     'unavailable'
   ];
-  
+
   for (const phrase of uncertaintyPhrases) {
     if (insightsText.toLowerCase().includes(phrase)) {
       confidence -= 20;
       break;
     }
   }
-  
+
   // Check for prediction/analysis quality indicators
   const qualityIndicators = [
     'high confidence',
@@ -699,26 +701,26 @@ function calculateConfidence(insightsText, toolCalls) {
     'consistent pattern',
     'reliable data'
   ];
-  
+
   for (const indicator of qualityIndicators) {
     if (insightsText.toLowerCase().includes(indicator)) {
       confidence += 5;
       break;
     }
   }
-  
+
   // Bonus for using advanced tools
   if (toolCalls && toolCalls.length > 0) {
-    const advancedTools = toolCalls.filter(t => 
-      t.name.includes('predict') || 
-      t.name.includes('pattern') || 
+    const advancedTools = toolCalls.filter(t =>
+      t.name.includes('predict') ||
+      t.name.includes('pattern') ||
       t.name.includes('budget')
     );
     if (advancedTools.length > 0) {
       confidence += 10;
     }
   }
-  
+
   // Ensure confidence is between 0 and 100
   return Math.max(0, Math.min(100, Math.round(confidence)));
 }
@@ -726,6 +728,12 @@ function calculateConfidence(insightsText, toolCalls) {
 /**
  * Build enhanced prompt with system instructions for function calling
  * Uses compact statistical summaries for initial data to prevent token overflow
+ */
+/**
+ * @param {any} analysisData
+ * @param {string|undefined} systemId
+ * @param {string|undefined} customPrompt
+ * @param {any} log
  */
 async function buildEnhancedPrompt(analysisData, systemId, customPrompt, log) {
   const { toolDefinitions } = require('./utils/gemini-tools.cjs');
@@ -776,14 +784,14 @@ ${JSON.stringify(analysisData, null, 2)}
   if (systemId) {
     try {
       const { getHourlyAveragedData, createCompactSummary } = require('./utils/data-aggregation.cjs');
-      
+
       log.info('Loading initial 30 days as compact summary', { systemId });
       const hourlyData = await getHourlyAveragedData(systemId, DEFAULT_DAYS_LOOKBACK, log);
-      
+
       if (hourlyData && hourlyData.length > 0) {
         // Use compact summary instead of full data
         initialHistoricalData = createCompactSummary(hourlyData, log);
-        
+
         prompt += `
 
 **SYSTEM ID:** ${systemId}
@@ -801,7 +809,7 @@ If you need more detailed data for specific time ranges or metrics, use the requ
 - Targeted time range
 - Appropriate granularity ("hourly_avg" for trends, "daily_avg" for long periods)
 `;
-        
+
         log.info('Compact historical summary included in prompt', {
           hours: hourlyData.length,
           summarySize: JSON.stringify(initialHistoricalData).length,
@@ -818,8 +826,9 @@ No historical data found for the past ${DEFAULT_DAYS_LOOKBACK} days. You can use
         log.warn('No historical data found for initial load', { systemId, daysBack: DEFAULT_DAYS_LOOKBACK });
       }
     } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
       log.error('Failed to load initial historical data', {
-        error: error.message,
+        error: err.message,
         systemId
       });
       prompt += `
@@ -925,7 +934,7 @@ Provide a comprehensive off-grid energy system analysis with deep insights based
 - Consider worst-case scenarios for emergency preparedness
 - Always respond with valid JSON (either tool_call or final_answer)
 
-**Note**: You have access to ${initialHistoricalData ? initialHistoricalData.timeRange.hours : 0} hours of statistical data. Use the new predictive and pattern analysis tools for comprehensive off-grid intelligence.
+**Note**: You have access to ${(() => { try { const ihd = /** @type {any} */ (initialHistoricalData); return ihd && ihd.timeRange ? ihd.timeRange.hours : 0; } catch (_) { return 0; } })()} hours of statistical data. Use the new predictive and pattern analysis tools for comprehensive off-grid intelligence.
 `;
   }
 
@@ -950,24 +959,15 @@ async function getAIModelWithTools(log) {
 
   // Try models in order of preference - PRODUCTION MODELS ONLY
   const modelsToTry = [
-    { 
-      name: 'gemini-2.5-flash', 
-      description: 'latest stable model with function calling'
-    },
-    { 
-      name: 'gemini-1.5-flash', 
-      description: 'stable fallback model'
-    },
-    { 
-      name: 'gemini-1.5-pro', 
-      description: 'advanced fallback model'
-    }
+    { name: 'gemini-2.5-flash', description: 'latest stable model with function calling' },
+    { name: 'gemini-1.5-flash', description: 'stable fallback model' },
+    { name: 'gemini-1.5-pro', description: 'advanced fallback model' }
   ];
 
   for (const { name, description } of modelsToTry) {
     try {
       log.info(`Attempting to use ${name} (${description})`);
-      
+
       const model = genAI.getGenerativeModel({
         model: name,
         generationConfig: {
@@ -995,6 +995,10 @@ async function getAIModelWithTools(log) {
 
 /**
  * Helper to create HTTP response
+ */
+/**
+ * @param {number} statusCode
+ * @param {any} body
  */
 function respond(statusCode, body) {
   return {

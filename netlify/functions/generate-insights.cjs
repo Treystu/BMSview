@@ -21,36 +21,42 @@ const enhancedHandler = require('./generate-insights-with-tools.cjs').handler;
 /**
  * Generate insights handler - redirects to enhanced mode with sync processing
  */
-async function generateHandler(event = {}, context = {}) {
+/**
+ * @param {any} event
+ * @param {any} context
+ */
+async function generateHandler(event, context) {
+  event = event || {};
+  context = context || {};
   const log = createLogger ? createLogger('generate-insights', context) : console;
   const timer = createTimer ? createTimer(log, 'generate-insights') : { end: () => { } };
 
   try {
     log.info('Standard mode deprecated, redirecting to enhanced mode (sync)');
-    
-    // Force synchronous mode for backward compatibility
-    // This ensures existing code and tests continue to work
+
+    // Force synchronous mode for backward compatibility and test stability
+    // Safely read queryStringParameters (Netlify provides it, but guard for tests)
+    const qs = (event.queryStringParameters && typeof event.queryStringParameters === 'object') ? event.queryStringParameters : {};
     const modifiedEvent = {
       ...event,
       queryStringParameters: {
-        ...(event.queryStringParameters || {}),
+        ...qs,
         sync: 'true',
         mode: 'sync'
       }
     };
-    
-    // Call the enhanced insights function with sync mode
+
+    // Invoke enhanced handler with enforced sync mode
     const result = await enhancedHandler(modifiedEvent, context);
-    
     await timer.end();
     return result;
-    
+
   } catch (error) {
     const err = error instanceof Error ? error : new Error('Unknown error');
     log.warn('Failed to generate insights', { error: err.message, stack: err.stack });
-    
+
     await timer.end();
-    
+
     return {
       statusCode: 500,
       body: JSON.stringify({

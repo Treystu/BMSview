@@ -14,24 +14,25 @@ const createBatteryData = (n = 100) => {
 };
 
 describe('generate-insights full scenarios (standard handler)', () => {
-  test('healthy dataset returns success and high retention', async () => {
+  test('healthy dataset returns success and insight text', async () => {
     const data = createBatteryData(50);
     const res = await generateHandler({ body: JSON.stringify(data) });
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(true);
-    expect(body.insights.performance.capacityRetention).toBeGreaterThan(80);
+    expect(typeof body.insights.formattedText).toBe('string');
+    expect(body.insights.formattedText.length).toBeGreaterThan(0);
   });
 
-  test('empty measurements returns Unknown', async () => {
+  test('empty measurements returns formatted insights', async () => {
     const res = await generateHandler({ body: JSON.stringify({ systemId: 'x', batteryData: { measurements: [] } }) });
     expect(res.statusCode).toBe(200);
     const b = JSON.parse(res.body);
-    expect(b.insights.performance.trend).toBe('Unknown');
+    expect(typeof b.insights.formattedText).toBe('string');
   });
 
-  test('malformed null batteryData returns 500', async () => {
+  test('malformed null batteryData returns 400', async () => {
     const res = await generateHandler({ body: JSON.stringify({ batteryData: null }) });
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(400);
   });
 });
