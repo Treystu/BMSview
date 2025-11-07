@@ -297,6 +297,32 @@ export const streamInsights = async (
 
         const result = await response.json();
 
+        // Handle BACKGROUND MODE: Response contains jobId (async processing)
+        if (result.jobId && !result.insights) {
+            log('info', 'Background insights job started', {
+                jobId: result.jobId,
+                status: result.status
+            });
+
+            // Stream initial summary if available
+            if (result.initialSummary) {
+                const summaryText = formatInitialSummary(result.initialSummary);
+                if (summaryText) {
+                    onChunk(summaryText);
+                }
+            }
+
+            // Start polling for job completion
+            await pollInsightsJobCompletion(
+                result.jobId,
+                onChunk,
+                onError
+            );
+            onComplete();
+            return;
+        }
+
+        // Handle SYNC MODE: Response contains insights directly
         if (result.success && result.insights) {
             // Check for warnings (e.g., max iterations reached)
             if (result.warning) {
@@ -313,16 +339,21 @@ export const streamInsights = async (
                     usedFunctionCalling: result.usedFunctionCalling
                 });
             }
-        } else if (result.error && result.insights) {
+            onComplete();
+            return;
+        }
+
+        if (result.error && result.insights) {
             // Handle error case where insights contains error message
             log('warn', 'Insights generated with error', { result });
             onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis failed');
-        } else {
-            log('warn', 'Unexpected response format', { result });
-            onChunk('Analysis completed with unexpected response format');
+            onComplete();
+            return;
         }
 
-        onComplete();
+        // Unknown response format
+        log('warn', 'Unexpected insights response format', { result });
+        throw new Error('Server returned unexpected response format');
     } catch (err) {
         clearTimeout(timeoutId);
         
@@ -344,6 +375,175 @@ export const streamInsights = async (
             onError(error);
         }
     }
+};
+
+/**
+ * Format initial summary for display
+ */
+const formatInitialSummary = (summary: any): string => {
+    if (!summary) return '';
+    
+    const parts: string[] = ['📊 Initial Assessment:\n'];
+    
+    if (summary.current) {
+        if (summary.current.voltage) parts.push(`Voltage: ${summary.current.voltage}V`);
+        if (summary.current.soc) parts.push(`SOC: ${summary.current.soc}%`);
+        if (summary.current.temperature) parts.push(`Temperature: ${summary.current.temperature}°C`);
+    }
+    
+    if (summary.generated) {
+        parts.push(`\n${summary.generated}`);
+    }
+    
+    parts.push('\n⏳ Querying historical data and analyzing trends...\n');
+    
+    return parts.filter(p => p).join('\n');
+};
+
+/**
+ * Poll for background job completion with streaming updates
+ */
+const pollInsightsJobCompletion = async (
+    jobId: string,
+    onChunk: (chunk: string) => void,
+    onError: (error: Error) => void,
+    maxAttempts: number = 120,
+    initialInterval: number = 2000
+): Promise<void> => {
+    let attempts = 0;
+    let lastProgressCount = 0;
+    let currentInterval = initialInterval;
+    const maxInterval = 10000;
+    const backoffMultiplier = 1.3;
+
+    return new Promise((resolve, reject) => {
+        const poll = async () => {
+            try {
+                const response = await fetch('/.netlify/functions/generate-insights-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jobId })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Status check failed: ${response.status}`);
+                }
+
+                const status = await response.json();
+
+                // Stream new progress events
+                if (status.progress && status.progress.length > lastProgressCount) {
+                    const newEvents = status.progress.slice(lastProgressCount);
+                    for (const event of newEvents) {
+                        const message = formatProgressEvent(event);
+                        if (message) {
+                            onChunk(message);
+                        }
+                    }
+                    lastProgressCount = status.progress.length;
+                }
+
+                // Stream partial insights
+                if (status.partialInsights) {
+                    onChunk(status.partialInsights);
+                }
+
+                // Check if completed
+                if (status.status === 'completed' && status.finalInsights) {
+                    const finalText = status.finalInsights.formattedText || 
+                                     status.finalInsights.rawText ||
+                                     formatInsightsObject(status.finalInsights);
+                    if (finalText) {
+                        onChunk(`\n✅ Analysis Complete:\n${finalText}`);
+                    }
+                    log('info', 'Background insights job completed', { jobId });
+                    resolve();
+                    return;
+                }
+
+                // Check if failed
+                if (status.status === 'failed') {
+                    const error = new Error(status.error || 'Background job failed');
+                    log('error', 'Background insights job failed', { jobId, error: status.error });
+                    reject(error);
+                    return;
+                }
+
+                // Continue polling
+                attempts++;
+                if (attempts < maxAttempts) {
+                    currentInterval = Math.min(currentInterval * backoffMultiplier, maxInterval);
+                    setTimeout(poll, currentInterval);
+                } else {
+                    const error = new Error('Insights generation timeout - job took too long');
+                    log('error', 'Background insights polling timeout', { jobId, attempts });
+                    reject(error);
+                }
+            } catch (err) {
+                const error = err instanceof Error ? err : new Error(String(err));
+                log('error', 'Error polling insights job status', { jobId, error: error.message });
+                reject(error);
+            }
+        };
+
+        // Start polling
+        poll();
+    });
+};
+
+/**
+ * Format progress event for display
+ */
+const formatProgressEvent = (event: any): string => {
+    if (!event) return '';
+
+    switch (event.type) {
+        case 'tool_call':
+            return `🔧 Calling tool: ${event.data?.toolName || 'unknown'}...`;
+        case 'tool_response':
+            return `✓ Tool response received`;
+        case 'ai_response':
+            return `🤖 AI analyzing...`;
+        case 'iteration':
+            return `📈 Iteration ${event.data?.iteration || '?'} of ${event.data?.maxIterations || '?'}`;
+        case 'status':
+            return `ℹ️ ${event.data?.message || 'Processing...'}`;
+        case 'error':
+            return `⚠️ ${event.data?.message || 'Error during processing'}`;
+        default:
+            return '';
+    }
+};
+
+/**
+ * Format insights object to string
+ */
+const formatInsightsObject = (insights: any): string => {
+    if (typeof insights === 'string') return insights;
+    
+    const parts: string[] = [];
+    
+    if (insights.currentHealthStatus) {
+        parts.push(`Health Status: ${insights.currentHealthStatus}`);
+    }
+    
+    if (Array.isArray(insights.keyFindings)) {
+        parts.push(`\nKey Findings:\n${insights.keyFindings.map((f: string) => `• ${f}`).join('\n')}`);
+    }
+    
+    if (insights.recommendations) {
+        if (Array.isArray(insights.recommendations)) {
+            parts.push(`\nRecommendations:\n${insights.recommendations.map((r: string) => `• ${r}`).join('\n')}`);
+        } else if (typeof insights.recommendations === 'string') {
+            parts.push(`\nRecommendations:\n${insights.recommendations}`);
+        }
+    }
+    
+    if (insights.summary) {
+        parts.push(`\n${insights.summary}`);
+    }
+    
+    return parts.join('\n');
 };
 
 /**
