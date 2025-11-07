@@ -527,6 +527,33 @@ async function getAIModelWithTools(log) {
     { name: 'gemini-1.5-pro', description: 'advanced fallback model' }
   ];
 
+  for (const { name, description } of modelsToTry) {
+    try {
+      log.info(`Attempting to use ${name} (${description})`);
+      
+      const model = genAI.getGenerativeModel({
+        model: name,
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 8192,
+        }
+      });
+      
+      log.info(`Model ${name} initialized successfully`);
+      return model;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      log.warn(`Failed to initialize ${name}`, { error: error.message });
+    }
+  }
+
+  // All models failed
+  log.error('All AI models unavailable');
+  return null;
+}
+
 module.exports = {
   processInsightsInBackground,
   executeAIProcessing,
