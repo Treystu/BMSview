@@ -112,34 +112,31 @@ async function handler(event = {}, context = {}) {
       
       log.info('Insights job created', { jobId: job.id });
       
-      // Trigger background function
+      // Trigger background processing by calling the processor directly
+      // This ensures the processing actually starts instead of using unreliable fetch()
       try {
-        const backgroundUrl = `${process.env.URL || ''}/.netlify/functions/generate-insights-background`;
+        log.info('Starting background processing', { jobId: job.id });
         
-        log.info('Invoking background function', { 
-          backgroundUrl,
-          jobId: job.id
-        });
+        // Import the background processor
+        const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
         
-        // Fire and forget - don't wait for response
-        fetch(backgroundUrl, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-netlify-background': 'true'
-          },
-          body: JSON.stringify({ jobId: job.id })
-        }).catch(err => {
-          log.error('Failed to invoke background function', { 
-            error: err.message,
-            jobId: job.id 
+        // Execute in background (don't await - let it run async)
+        processInsightsInBackground(job.id, analysisData, systemId, customPrompt, log)
+          .catch(err => {
+            log.error('Background processing failed', { 
+              error: err.message,
+              jobId: job.id,
+              stack: err.stack
+            });
           });
-        });
+        
+        log.info('Background processing initiated successfully', { jobId: job.id });
         
       } catch (invokeError) {
-        log.error('Error invoking background function', { 
+        log.error('Error starting background processing', { 
           error: invokeError.message,
-          jobId: job.id
+          jobId: job.id,
+          stack: invokeError.stack
         });
         // Job is created, so frontend can still poll for status
       }
