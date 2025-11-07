@@ -28,6 +28,7 @@ const { createLogger, createTimer } = require('../../utils/logger.cjs');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { createInsightsJob, ensureIndexes } = require('./utils/insights-jobs.cjs');
 const { generateInitialSummary } = require('./utils/insights-summary.cjs');
+const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
 
 // Constants for function calling
 const MAX_TOOL_ITERATIONS = 10; // Maximum number of tool call rounds to prevent infinite loops
@@ -112,46 +113,20 @@ async function handler(event = {}, context = {}) {
       
       log.info('Insights job created', { jobId: job.id });
       
-      // Trigger background function via Netlify's background invocation
-      // Background functions are configured in netlify.toml
-      try {
-        const backgroundUrl = `${process.env.URL || ''}/.netlify/functions/generate-insights-background`;
-        
-        log.info('Invoking background function', { 
-          backgroundUrl,
-          jobId: job.id,
-          url: process.env.URL
-        });
-        
-        // Use Netlify's background function invocation
-        // The function will run independently and update the job status
-        const backgroundResponse = await fetch(backgroundUrl, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ jobId: job.id }),
-          signal: AbortSignal.timeout(5000) // 5 second timeout just for the invocation
-        });
-        
-        if (!backgroundResponse.ok) {
-          log.warn('Background function invocation returned non-OK status', { 
-            status: backgroundResponse.status,
-            jobId: job.id 
+      // Start background processing (non-blocking)
+      // This runs independently while we return the jobId to the frontend
+      processInsightsInBackground(job.id, analysisData, systemId, customPrompt, log)
+        .then(() => {
+          log.info('Background insights processing completed', { jobId: job.id });
+        })
+        .catch(err => {
+          const error = err instanceof Error ? err : new Error(String(err));
+          log.error('Background insights processing failed', { 
+            jobId: job.id,
+            error: error.message,
+            stack: error.stack
           });
-        } else {
-          log.info('Background function invoked successfully', { jobId: job.id });
-        }
-        
-      } catch (invokeError) {
-        const error = invokeError instanceof Error ? invokeError : new Error(String(invokeError));
-        log.error('Error invoking background function', { 
-          error: error.message,
-          jobId: job.id,
-          stack: error.stack
         });
-        // Job is created, so frontend can still poll for status
-      }
       
       timer.end();
       
