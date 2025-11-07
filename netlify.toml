@@ -6,6 +6,10 @@
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
 
+# Background function configuration for long-running insights generation
+[functions."generate-insights-background"]
+  external_node_modules = ["@google/generative-ai"]
+
 [context.production.environment]
   LOG_LEVEL = "INFO"
 [context.deploy-preview.environment]
