@@ -346,6 +346,102 @@ export const streamInsights = async (
     }
 };
 
+/**
+ * Generate insights using background processing (default mode)
+ * Returns jobId immediately for polling status updates
+ */
+export const generateInsightsBackground = async (
+    payload: {
+        analysisData: AnalysisData;
+        systemId?: string;
+        customPrompt?: string;
+        useEnhancedMode?: boolean;
+    }
+): Promise<{ jobId: string; initialSummary: any; status: string }> => {
+    const endpoint = payload.useEnhancedMode
+        ? '/.netlify/functions/generate-insights-with-tools'
+        : '/.netlify/functions/generate-insights';
+
+    log('info', 'Starting background insights generation.', {
+        systemId: payload.systemId,
+        hasCustomPrompt: !!payload.customPrompt,
+        useEnhancedMode: payload.useEnhancedMode
+    });
+
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
+            throw new Error(errorData.error || errorData.message || `Request failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (!result.success || !result.jobId) {
+            throw new Error(result.error || 'Failed to start background processing');
+        }
+
+        log('info', 'Background insights job created', {
+            jobId: result.jobId,
+            status: result.status
+        });
+
+        return {
+            jobId: result.jobId,
+            initialSummary: result.initialSummary || null,
+            status: result.status || 'processing'
+        };
+    } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        log('error', 'Failed to start background insights', { error: error.message });
+        throw error;
+    }
+};
+
+/**
+ * Get status of an insights generation job
+ */
+export const getInsightsJobStatus = async (jobId: string): Promise<any> => {
+    log('info', 'Fetching insights job status', { jobId });
+    
+    try {
+        const response = await fetch('/.netlify/functions/generate-insights-status', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ jobId }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
+            throw new Error(errorData.error || errorData.message || `Request failed: ${response.status}`);
+        }
+
+        const status = await response.json();
+        
+        log('info', 'Insights job status retrieved', {
+            jobId,
+            status: status.status,
+            hasProgress: !!status.progress,
+            progressCount: status.progressCount || 0
+        });
+
+        return status;
+    } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        log('error', 'Failed to get insights job status', { error: error.message, jobId });
+        throw error;
+    }
+};
+
 
 export const registerBmsSystem = async (
     systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>
