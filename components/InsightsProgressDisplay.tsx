@@ -150,7 +150,7 @@ function InitialSummaryDisplay({ summary }: { summary: any }) {
             <p>{historical.recordCount} data points collected</p>
             {historical.daily && historical.daily.length > 0 && (
               <p className="mt-1">
-                Daily average: {(historical.daily.reduce((sum: number, d: any) => sum + d.avgSOC, 0) / historical.daily.length).toFixed(1)}% SOC
+                Daily average: {(historical.daily.reduce((sum: number, d: any) => sum + (d.avgSOC || 0), 0) / historical.daily.length).toFixed(1)}% SOC
               </p>
             )}
           </div>

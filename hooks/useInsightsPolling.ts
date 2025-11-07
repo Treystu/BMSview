@@ -7,7 +7,7 @@
  * @module hooks/useInsightsPolling
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 export interface InsightsProgress {
   timestamp: string;
@@ -56,7 +56,16 @@ const DEFAULT_CONFIG: Required<PollingConfig> = {
  * @returns Polling state and control functions
  */
 export function useInsightsPolling(jobId: string | null, config: PollingConfig = {}) {
-  const fullConfig = { ...DEFAULT_CONFIG, ...config };
+  // Memoize fullConfig to prevent unnecessary re-renders
+  const fullConfig = useMemo(() => ({ ...DEFAULT_CONFIG, ...config }), [
+    config.initialInterval,
+    config.maxInterval,
+    config.backoffMultiplier,
+    config.maxRetries,
+    config.onComplete,
+    config.onError,
+    config.onProgress
+  ]);
   
   const [status, setStatus] = useState<InsightsJobStatus | null>(null);
   const [isPolling, setIsPolling] = useState(false);

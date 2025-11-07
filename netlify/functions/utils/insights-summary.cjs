@@ -53,9 +53,11 @@ async function generateInitialSummary(analysisData, systemId, log) {
  * @returns {Object} Current snapshot summary
  */
 function extractCurrentSnapshot(analysisData) {
+  const current = analysisData.current != null ? analysisData.current : null;
+  
   return {
     voltage: analysisData.overallVoltage || null,
-    current: analysisData.current || null,
+    current: current,
     power: analysisData.power || null,
     soc: analysisData.stateOfCharge || null,
     capacity: analysisData.remainingCapacity || null,
@@ -63,8 +65,8 @@ function extractCurrentSnapshot(analysisData) {
     temperature: analysisData.temperature || null,
     cellCount: analysisData.cellVoltages?.length || 0,
     cellVoltageDiff: analysisData.cellVoltageDifference || null,
-    isCharging: analysisData.current > 0.5,
-    isDischarging: analysisData.current < -0.5
+    isCharging: current != null && current > 0.5,
+    isDischarging: current != null && current < -0.5
   };
 }
 

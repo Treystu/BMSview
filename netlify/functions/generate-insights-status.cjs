@@ -7,7 +7,7 @@
  * @module netlify/functions/generate-insights-status
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger } = require('../../utils/logger.cjs');
 const { getInsightsJob } = require('./utils/insights-jobs.cjs');
 
 /**
