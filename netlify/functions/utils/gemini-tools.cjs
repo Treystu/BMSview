@@ -35,7 +35,7 @@ try {
 const toolDefinitions = [
   {
     name: 'request_bms_data',
-    description: 'Request specific BMS data when you need additional information to answer a query. This is the PRIMARY tool for data access. Returns hourly averaged or raw data based on your needs.',
+    description: 'Request specific BMS data when you need additional information to answer a query. This is the PRIMARY tool for data access. Returns hourly averaged or raw data based on your needs. IMPORTANT: Always request ONLY the specific metric needed (not "all") and use appropriate granularity to minimize data size.',
     parameters: {
       type: 'object',
       properties: {
@@ -45,12 +45,12 @@ const toolDefinitions = [
         },
         metric: {
           type: 'string',
-          description: 'The specific data metric needed. Options: "all" (all metrics), "voltage", "current", "power", "soc", "capacity", "temperature", "cell_voltage_difference"',
+          description: 'The SPECIFIC data metric needed. For best performance, request ONE metric at a time. Options: "all" (use sparingly), "voltage", "current", "power", "soc", "capacity", "temperature", "cell_voltage_difference"',
           enum: ['all', 'voltage', 'current', 'power', 'soc', 'capacity', 'temperature', 'cell_voltage_difference']
         },
         time_range_start: {
           type: 'string',
-          description: 'Start of the time range in ISO 8601 format (e.g., "2025-08-01T00:00:00Z")'
+          description: 'Start of the time range in ISO 8601 format (e.g., "2025-08-01T00:00:00Z"). Be strategic: use smaller time ranges when possible.'
         },
         time_range_end: {
           type: 'string',
@@ -58,7 +58,7 @@ const toolDefinitions = [
         },
         granularity: {
           type: 'string',
-          description: 'Time resolution: "hourly_avg" (default, recommended for large ranges), "daily_avg", or "raw" (use sparingly)',
+          description: 'Time resolution: "hourly_avg" (recommended for most queries), "daily_avg" (best for long time ranges >30 days), or "raw" (use only for specific point lookups). Choose wisely to minimize data transfer.',
           enum: ['hourly_avg', 'daily_avg', 'raw'],
           default: 'hourly_avg'
         }
@@ -228,6 +228,7 @@ async function executeToolCall(toolName, parameters, log) {
 /**
  * Request BMS data with specified granularity and metric filtering
  * This is the primary data access tool for Gemini
+ * Implements intelligent data size limits to prevent timeouts
  */
 async function requestBmsData(params, log) {
   if (!getCollection) {
@@ -312,15 +313,40 @@ async function requestBmsData(params, log) {
   let processedData;
   if (granularity === 'raw') {
     // Return raw records (filtered by metric if specified)
-    processedData = records.map(r => ({
+    // Apply intelligent sampling for large datasets
+    const maxRawPoints = 500; // Limit raw data to prevent token overflow
+    let sampledRecords = records;
+    
+    if (records.length > maxRawPoints) {
+      log.warn('Raw data exceeds limit, applying sampling', {
+        originalCount: records.length,
+        maxPoints: maxRawPoints
+      });
+      
+      // Sample evenly across the time range
+      const step = Math.ceil(records.length / maxRawPoints);
+      sampledRecords = records.filter((_, index) => index % step === 0);
+      
+      // Always include last record
+      if (sampledRecords[sampledRecords.length - 1] !== records[records.length - 1]) {
+        sampledRecords.push(records[records.length - 1]);
+      }
+    }
+    
+    processedData = sampledRecords.map(r => ({
       timestamp: r.timestamp,
       ...extractMetrics(r.analysis, metric)
     }));
   } else if (granularity === 'hourly_avg') {
     // Aggregate into hourly buckets
-    const { aggregateHourlyData } = require('./data-aggregation.cjs');
+    const { aggregateHourlyData, sampleDataPoints } = require('./data-aggregation.cjs');
     const hourlyData = aggregateHourlyData(records, log);
-    processedData = hourlyData.map(h => ({
+    
+    // Apply intelligent sampling if dataset is very large
+    const maxHourlyPoints = 200; // ~8 days of hourly data
+    const sampledHourly = sampleDataPoints(hourlyData, maxHourlyPoints, log);
+    
+    processedData = sampledHourly.map(h => ({
       timestamp: h.timestamp,
       dataPoints: h.dataPoints,
       ...filterMetrics(h.metrics, metric)
@@ -333,13 +359,24 @@ async function requestBmsData(params, log) {
   }
 
   const resultSize = JSON.stringify(processedData).length;
+  const estimatedTokens = Math.ceil(resultSize / 4);
+  
+  // Warn if response is still very large
+  if (estimatedTokens > 20000) {
+    log.warn('Response size still large after optimization', {
+      estimatedTokens,
+      dataPoints: processedData.length,
+      suggestion: 'Consider requesting specific metrics or smaller time range'
+    });
+  }
+  
   log.info('BMS data request completed', {
     systemId,
     metric,
     granularity,
     outputDataPoints: processedData.length,
     resultSize,
-    estimatedTokens: Math.ceil(resultSize / 4)
+    estimatedTokens
   });
 
   return {
@@ -348,7 +385,10 @@ async function requestBmsData(params, log) {
     time_range: { start: time_range_start, end: time_range_end },
     granularity,
     dataPoints: processedData.length,
-    data: processedData
+    data: processedData,
+    ...(records.length > processedData.length && { 
+      note: `Data was sampled from ${records.length} records to ${processedData.length} points for optimization`
+    })
   };
 }
 

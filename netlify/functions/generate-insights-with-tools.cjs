@@ -30,8 +30,10 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 // Constants for function calling
 const MAX_TOOL_ITERATIONS = 10; // Maximum number of tool call rounds to prevent infinite loops
 const DEFAULT_DAYS_LOOKBACK = 30; // Default time range for initial data
-const ITERATION_TIMEOUT_MS = 20000; // 20 seconds per iteration
-const TOTAL_TIMEOUT_MS = 55000; // 55 seconds total (under Netlify's 60s limit for function execution)
+const ITERATION_TIMEOUT_MS = 25000; // 25 seconds per iteration (increased from 20)
+const TOTAL_TIMEOUT_MS = 58000; // 58 seconds total (increased, leaving 2s buffer for Netlify's 60s limit)
+const MAX_CONVERSATION_TOKENS = 60000; // Maximum tokens for conversation history (rough estimate)
+const TOKENS_PER_CHAR = 0.25; // Rough estimate: 1 token ≈ 4 characters
 
 /**
  * Main handler for insights generation with function calling
@@ -136,6 +138,8 @@ async function handler(event = {}, context = {}) {
  * 2. AI responds with either tool_call OR final_answer
  * 3. If tool_call, execute it and loop back
  * 4. If final_answer, return to user
+ * 
+ * Includes intelligent conversation history management to prevent token overflow
  */
 async function executeWithFunctionCalling(model, initialPrompt, analysisData, systemId, customPrompt, log) {
   const conversationHistory = [];
@@ -176,6 +180,9 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
         elapsedTime: `${elapsedTime}ms`
       });
 
+      // Prune conversation history if it's getting too large
+      const prunedHistory = pruneConversationHistory(conversationHistory, log);
+
       // Generate response from Gemini with timeout
       const iterationStartTime = Date.now();
       let response;
@@ -185,7 +192,7 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
         // Note: Gemini 2.5 Flash doesn't yet support structured conversation history,
         // so we format as a single text prompt. This will be optimized when the SDK
         // supports native multi-turn conversations.
-        const conversationText = conversationHistory.map(msg => 
+        const conversationText = prunedHistory.map(msg => 
           `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
         ).join('\n\n');
 
@@ -292,19 +299,22 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
           continue;
         }
 
-        // Send tool result back to Gemini
+        // Send tool result back to Gemini (in compact format)
+        const compactResult = compactifyToolResult(toolResult, parsedResponse.tool_call, log);
+        
         conversationHistory.push({
           role: 'assistant',
           content: JSON.stringify(parsedResponse)
         });
         conversationHistory.push({
           role: 'user',
-          content: `Tool response from ${parsedResponse.tool_call}:\n${JSON.stringify(toolResult, null, 2)}`
+          content: `Tool response from ${parsedResponse.tool_call}:\n${JSON.stringify(compactResult, null, 2)}`
         });
 
         log.debug('Tool result sent back to Gemini', {
           iteration: iterationCount,
-          resultSize: JSON.stringify(toolResult).length
+          originalSize: JSON.stringify(toolResult).length,
+          compactSize: JSON.stringify(compactResult).length
         });
 
         // Continue loop for next iteration
@@ -420,6 +430,106 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
 }
 
 /**
+ * Prune conversation history to prevent token overflow
+ * Keeps system prompt, recent context, and essential exchanges
+ */
+function pruneConversationHistory(history, log) {
+  if (history.length <= 3) {
+    return history; // Too short to prune
+  }
+
+  // Estimate token count
+  const totalChars = history.reduce((sum, msg) => sum + msg.content.length, 0);
+  const estimatedTokens = totalChars * TOKENS_PER_CHAR;
+
+  if (estimatedTokens < MAX_CONVERSATION_TOKENS) {
+    return history; // Within limits
+  }
+
+  log.info('Pruning conversation history', {
+    originalMessages: history.length,
+    estimatedTokens,
+    maxTokens: MAX_CONVERSATION_TOKENS
+  });
+
+  // Strategy: Keep first message (system prompt), last 4 messages (recent context)
+  // and most important middle exchanges
+  const pruned = [];
+  
+  // Always keep first message (system prompt with initial data)
+  pruned.push(history[0]);
+  
+  // Keep last 4 messages for immediate context
+  const recentMessages = history.slice(-4);
+  
+  // Calculate how many middle messages we can keep
+  const firstMsgTokens = history[0].content.length * TOKENS_PER_CHAR;
+  const recentTokens = recentMessages.reduce((sum, msg) => sum + msg.content.length * TOKENS_PER_CHAR, 0);
+  const remainingTokens = MAX_CONVERSATION_TOKENS - firstMsgTokens - recentTokens;
+  
+  // Sample middle messages if we have room
+  const middleMessages = history.slice(1, -4);
+  if (middleMessages.length > 0 && remainingTokens > 0) {
+    // Keep every nth middle message to fit in remaining budget
+    const avgMiddleTokens = middleMessages.reduce((sum, msg) => sum + msg.content.length * TOKENS_PER_CHAR, 0) / middleMessages.length;
+    const canKeepMiddle = Math.floor(remainingTokens / avgMiddleTokens);
+    
+    if (canKeepMiddle > 0) {
+      const step = Math.ceil(middleMessages.length / canKeepMiddle);
+      for (let i = 0; i < middleMessages.length; i += step) {
+        pruned.push(middleMessages[i]);
+      }
+    }
+  }
+  
+  // Add recent messages
+  pruned.push(...recentMessages);
+
+  const prunedChars = pruned.reduce((sum, msg) => sum + msg.content.length, 0);
+  const prunedTokens = prunedChars * TOKENS_PER_CHAR;
+
+  log.info('Conversation history pruned', {
+    originalMessages: history.length,
+    prunedMessages: pruned.length,
+    originalTokens: estimatedTokens,
+    prunedTokens,
+    savedTokens: estimatedTokens - prunedTokens
+  });
+
+  return pruned;
+}
+
+/**
+ * Compactify tool results to reduce token usage
+ * For large data responses, summarize or sample intelligently
+ */
+function compactifyToolResult(result, toolName, log) {
+  if (!result || typeof result !== 'object') {
+    return result;
+  }
+
+  // If result has a large data array, consider summarizing
+  if (result.data && Array.isArray(result.data) && result.data.length > 100) {
+    log.info('Compactifying large tool result', {
+      toolName,
+      originalSize: result.data.length
+    });
+
+    // For very large datasets, provide summary statistics instead of all data
+    if (result.data.length > 200) {
+      const compactData = result.data.filter((_, i) => i % Math.ceil(result.data.length / 100) === 0);
+      return {
+        ...result,
+        data: compactData,
+        note: `Dataset sampled from ${result.data.length} to ${compactData.length} points for optimization. Use more specific time ranges or metrics if you need more detail.`
+      };
+    }
+  }
+
+  return result;
+}
+
+/**
  * Format insights response for better display
  */
 function formatInsightsResponse(text) {
@@ -445,6 +555,7 @@ function formatInsightsResponse(text) {
 
 /**
  * Build enhanced prompt with system instructions for function calling
+ * Uses compact statistical summaries for initial data to prevent token overflow
  */
 async function buildEnhancedPrompt(analysisData, systemId, customPrompt, log) {
   const { toolDefinitions } = require('./utils/gemini-tools.cjs');
@@ -470,6 +581,12 @@ You will receive an initial data set (current battery snapshot and recent histor
      }
    }
 
+3. **QUERY OPTIMIZATION**: When requesting data, be strategic:
+   - For specific metric queries (e.g., "max temperature"), request ONLY that metric
+   - For trend analysis, use "hourly_avg" or "daily_avg" granularity
+   - For specific value lookups, you can use "raw" granularity but limit time range
+   - Large time ranges work best with daily aggregation
+
 **AVAILABLE TOOLS:**
 
 ${JSON.stringify(toolDefinitions, null, 2)}
@@ -478,31 +595,42 @@ ${JSON.stringify(toolDefinitions, null, 2)}
 ${JSON.stringify(analysisData, null, 2)}
 `;
 
-  // Load initial 30 days of hourly data if systemId is provided
+  // Load initial 30 days of data as COMPACT SUMMARY (not full data)
   let initialHistoricalData = null;
   if (systemId) {
     try {
-      const { getHourlyAveragedData, formatHourlyDataForAI } = require('./utils/data-aggregation.cjs');
+      const { getHourlyAveragedData, createCompactSummary } = require('./utils/data-aggregation.cjs');
       
-      log.info('Loading initial 30 days of hourly averaged data', { systemId });
+      log.info('Loading initial 30 days as compact summary', { systemId });
       const hourlyData = await getHourlyAveragedData(systemId, DEFAULT_DAYS_LOOKBACK, log);
       
       if (hourlyData && hourlyData.length > 0) {
-        initialHistoricalData = formatHourlyDataForAI(hourlyData, log);
+        // Use compact summary instead of full data
+        initialHistoricalData = createCompactSummary(hourlyData, log);
         
         prompt += `
 
 **SYSTEM ID:** ${systemId}
 
-**INITIAL HISTORICAL DATA (${DEFAULT_DAYS_LOOKBACK} days of hourly averages):**
+**HISTORICAL DATA SUMMARY (past ${DEFAULT_DAYS_LOOKBACK} days):**
 ${JSON.stringify(initialHistoricalData, null, 2)}
 
-Note: This is ${hourlyData.length} hours of data. If you need different metrics, time ranges, or granularity, use the request_bms_data tool.
+**Note**: This is a statistical summary of ${hourlyData.length} hours of data. It includes:
+- Time range and data coverage
+- Min/max/avg/latest values for all key metrics
+- Sample data points (first, middle, last) for trend context
+
+If you need more detailed data for specific time ranges or metrics, use the request_bms_data tool with:
+- Specific metric (e.g., "temperature", "soc", "current")
+- Targeted time range
+- Appropriate granularity ("hourly_avg" for trends, "daily_avg" for long periods)
 `;
         
-        log.info('Initial historical data included in prompt', {
+        log.info('Compact historical summary included in prompt', {
           hours: hourlyData.length,
-          dataSize: JSON.stringify(initialHistoricalData).length
+          summarySize: JSON.stringify(initialHistoricalData).length,
+          fullDataSize: JSON.stringify(hourlyData).length,
+          compressionRatio: (JSON.stringify(hourlyData).length / JSON.stringify(initialHistoricalData).length).toFixed(2)
         });
       } else {
         prompt += `
@@ -541,9 +669,18 @@ ${customPrompt}
 
 **YOUR TASK:**
 1. Analyze what data you need to answer this question comprehensively
-2. If you need more data than provided, use request_bms_data tool with specific parameters
-3. Calculate trends, deltas, and patterns from the data
-4. Provide a detailed, data-driven answer in the final_answer JSON
+2. If the summary data above is sufficient, provide your answer immediately
+3. If you need specific data points, use request_bms_data with:
+   - ONLY the specific metric needed (e.g., "temperature" not "all")
+   - Targeted time range for the question
+   - Appropriate granularity (daily for long periods, hourly for detailed analysis)
+4. Calculate trends, deltas, and patterns from the data
+5. Provide a detailed, data-driven answer in the final_answer JSON
+
+**OPTIMIZATION EXAMPLES:**
+- "What's the maximum temperature ever recorded?" → Request metric="temperature", time_range=all time, note that only max value is needed from result
+- "How has SoC changed in past 7 days?" → Request metric="soc", time_range=7 days, granularity="hourly_avg"
+- "Energy generated yesterday?" → Request metric="power", time_range=yesterday, granularity="hourly_avg", filter for positive values
 
 **GUIDELINES:**
 - Use actual calculations from real data (charge/discharge deltas, capacity changes, energy calculations)
@@ -560,37 +697,35 @@ Provide a comprehensive battery health analysis with deep insights based on avai
 
 **ANALYSIS AREAS:**
 
-1. **TREND ANALYSIS** (use historical data provided):
-   - Calculate charging rate deltas over time
-   - Calculate discharging rate deltas over time  
-   - Track voltage degradation patterns
-   - Compute real efficiency metrics from charge/discharge cycles
-   - Analyze capacity retention trends
-   - Identify usage patterns and anomalies
-
+1. **TREND ANALYSIS** (use the statistical summary provided):
+   - Compare current values to historical min/max/avg
+   - Identify degradation patterns (voltage drops, capacity loss)
+   - Analyze charge/discharge efficiency from the statistics
+   - Note any anomalies or significant changes
+   
 2. **PERFORMANCE METRICS:**
    - Current vs historical performance comparison
-   - Degradation rates and projections
-   - Efficiency trends (charge/discharge)
-   - Peak usage times and patterns
-   - Temperature correlation analysis
+   - Efficiency trends from charge/discharge statistics
+   - Temperature patterns and correlations
+   - Cell balance trends
 
 3. **ACTIONABLE INSIGHTS:**
-   - Specific issues detected from trends
-   - Preventive maintenance recommendations based on data
-   - Optimization opportunities from usage patterns
-   - Projected lifespan based on degradation trends
+   - Specific issues detected from data
+   - Preventive maintenance based on trends
+   - Optimization opportunities from patterns
+   - Projected lifespan based on degradation
 
 **GUIDELINES:**
+- The summary data includes min/max/avg/latest for all metrics - use these for trend analysis
 - Focus on data-driven insights from actual measurements
-- Use trend analysis and pattern detection
 - Provide specific, actionable recommendations
 - Clear explanations with supporting data
 - DO NOT include generic placeholder recommendations
 - DO NOT suggest generator sizing without data support
+- If summary data is insufficient for deep analysis, you can request specific metrics using request_bms_data
 - Always respond with valid JSON (either tool_call or final_answer)
 
-If you need more historical data for comprehensive analysis, you can use request_bms_data tool.
+**Note**: You have access to ${initialHistoricalData ? initialHistoricalData.timeRange.hours : 0} hours of statistical data. If you need specific data points for calculations, use request_bms_data with targeted parameters.
 `;
   }
 

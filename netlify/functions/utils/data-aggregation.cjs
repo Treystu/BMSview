@@ -286,9 +286,182 @@ function formatHourlyDataForAI(hourlyData, log) {
   return summary;
 }
 
+/**
+ * Create a compact statistical summary of historical data
+ * Used for initial context without overwhelming token budget
+ * 
+ * @param {Array} hourlyData - Array of hourly aggregated data
+ * @param {Object} log - Logger instance
+ * @returns {Object} Compact statistical summary
+ */
+function createCompactSummary(hourlyData, log) {
+  if (!hourlyData || hourlyData.length === 0) {
+    return null;
+  }
+
+  log.debug('Creating compact summary', { hours: hourlyData.length });
+
+  // Extract all metrics
+  const metrics = hourlyData.map(h => h.metrics);
+  
+  // Helper to calculate stats for a metric
+  const calcStats = (values) => {
+    const filtered = values.filter(v => v != null);
+    if (filtered.length === 0) return null;
+    
+    const sorted = [...filtered].sort((a, b) => a - b);
+    return {
+      min: sorted[0],
+      max: sorted[sorted.length - 1],
+      avg: filtered.reduce((sum, v) => sum + v, 0) / filtered.length,
+      latest: values[values.length - 1]
+    };
+  };
+
+  // Aggregate all metrics
+  const summary = {
+    timeRange: {
+      start: hourlyData[0].timestamp,
+      end: hourlyData[hourlyData.length - 1].timestamp,
+      hours: hourlyData.length,
+      dataPoints: hourlyData.reduce((sum, h) => sum + h.dataPoints, 0)
+    },
+    statistics: {}
+  };
+
+  // Voltage stats
+  const voltages = metrics.map(m => m.avgVoltage).filter(v => v != null);
+  if (voltages.length > 0) {
+    summary.statistics.voltage = calcStats(voltages);
+  }
+
+  // Current stats (overall and charge/discharge separately)
+  const currents = metrics.map(m => m.avgCurrent).filter(v => v != null);
+  if (currents.length > 0) {
+    summary.statistics.current = calcStats(currents);
+  }
+  
+  const chargingCurrents = metrics.map(m => m.avgChargingCurrent).filter(v => v != null);
+  if (chargingCurrents.length > 0) {
+    summary.statistics.chargingCurrent = calcStats(chargingCurrents);
+  }
+  
+  const dischargingCurrents = metrics.map(m => m.avgDischargingCurrent).filter(v => v != null);
+  if (dischargingCurrents.length > 0) {
+    summary.statistics.dischargingCurrent = calcStats(dischargingCurrents);
+  }
+
+  // Power stats
+  const powers = metrics.map(m => m.avgPower).filter(v => v != null);
+  if (powers.length > 0) {
+    summary.statistics.power = calcStats(powers);
+  }
+
+  // SoC stats
+  const socs = metrics.map(m => m.avgSoC).filter(v => v != null);
+  if (socs.length > 0) {
+    summary.statistics.soc = calcStats(socs);
+  }
+
+  // Capacity stats
+  const capacities = metrics.map(m => m.avgCapacity).filter(v => v != null);
+  if (capacities.length > 0) {
+    summary.statistics.capacity = calcStats(capacities);
+  }
+
+  // Temperature stats
+  const temps = metrics.map(m => m.avgTemperature).filter(v => v != null);
+  if (temps.length > 0) {
+    summary.statistics.temperature = calcStats(temps);
+  }
+
+  // Cell voltage difference stats
+  const cellDiffs = metrics.map(m => m.avgCellVoltageDiff).filter(v => v != null);
+  if (cellDiffs.length > 0) {
+    summary.statistics.cellVoltageDiff = calcStats(cellDiffs);
+  }
+
+  // Add sample data points (first, middle, last) for trend visualization
+  const samplePoints = [];
+  if (hourlyData.length > 0) {
+    samplePoints.push({ time: hourlyData[0].timestamp, ...hourlyData[0].metrics });
+  }
+  if (hourlyData.length > 2) {
+    const midIndex = Math.floor(hourlyData.length / 2);
+    samplePoints.push({ time: hourlyData[midIndex].timestamp, ...hourlyData[midIndex].metrics });
+  }
+  if (hourlyData.length > 1) {
+    const lastIndex = hourlyData.length - 1;
+    samplePoints.push({ time: hourlyData[lastIndex].timestamp, ...hourlyData[lastIndex].metrics });
+  }
+  summary.sampleDataPoints = samplePoints;
+
+  const outputSize = JSON.stringify(summary).length;
+  log.info('Compact summary created', {
+    originalHours: hourlyData.length,
+    outputSize,
+    estimatedTokens: Math.ceil(outputSize / 4),
+    compressionRatio: ((JSON.stringify(hourlyData).length / outputSize).toFixed(2))
+  });
+
+  return summary;
+}
+
+/**
+ * Intelligently sample data points based on time range
+ * For very large datasets, returns strategically sampled points
+ * 
+ * @param {Array} hourlyData - Array of hourly aggregated data
+ * @param {number} maxPoints - Maximum number of points to return
+ * @param {Object} log - Logger instance
+ * @returns {Array} Sampled data points
+ */
+function sampleDataPoints(hourlyData, maxPoints = 100, log) {
+  if (!hourlyData || hourlyData.length === 0) {
+    return [];
+  }
+
+  if (hourlyData.length <= maxPoints) {
+    log.debug('Data within limit, no sampling needed', { 
+      hours: hourlyData.length, 
+      maxPoints 
+    });
+    return hourlyData;
+  }
+
+  log.info('Sampling data points', { 
+    originalHours: hourlyData.length, 
+    maxPoints 
+  });
+
+  // Use systematic sampling (every nth point)
+  const step = hourlyData.length / maxPoints;
+  const sampled = [];
+  
+  for (let i = 0; i < maxPoints; i++) {
+    const index = Math.floor(i * step);
+    sampled.push(hourlyData[index]);
+  }
+
+  // Always include the last point if not already included
+  const lastPoint = hourlyData[hourlyData.length - 1];
+  if (sampled[sampled.length - 1].timestamp !== lastPoint.timestamp) {
+    sampled[sampled.length - 1] = lastPoint;
+  }
+
+  log.debug('Sampling complete', { 
+    sampledPoints: sampled.length,
+    compressionRatio: (hourlyData.length / sampled.length).toFixed(2)
+  });
+
+  return sampled;
+}
+
 module.exports = {
   aggregateHourlyData,
   getHourlyAveragedData,
   formatHourlyDataForAI,
-  computeBucketMetrics
+  computeBucketMetrics,
+  createCompactSummary,
+  sampleDataPoints
 };
