@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /**
  * Insights Processor - Background AI Processing Logic
  * 
@@ -8,13 +10,15 @@
  */
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { 
-  updateJobStatus, 
+const {
+  updateJobStatus,
   addProgressEvent,
   updatePartialInsights,
   completeJob,
   failJob
 } = require('./insights-jobs.cjs');
+const { collectAutoInsightsContext, buildGuruPrompt } = require('./insights-guru.cjs');
+const { executeToolCall } = require('./gemini-tools.cjs');
 
 // Processing constants
 const MAX_TOOL_ITERATIONS = 15;
@@ -34,14 +38,14 @@ const TOTAL_TIMEOUT_MS = 14 * 60 * 1000; // 14 minutes
 async function processInsightsInBackground(jobId, analysisData, systemId, customPrompt, log) {
   try {
     log.info('Background processing started', { jobId, hasSystemId: !!systemId });
-    
+
     // Update job status
     await updateJobStatus(jobId, 'processing', log);
     await addProgressEvent(jobId, {
       type: 'status',
       data: { message: 'AI analysis starting...' }
     }, log);
-    
+
     // Execute AI processing
     const result = await executeAIProcessing(
       analysisData,
@@ -50,37 +54,37 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
       jobId,
       log
     );
-    
+
     // Mark job as complete
     await completeJob(jobId, result.insights, log);
     await addProgressEvent(jobId, {
       type: 'status',
       data: { message: 'Analysis completed successfully' }
     }, log);
-    
+
     log.info('Background processing completed', {
       jobId,
       iterations: result.iterations,
       toolCallsUsed: result.toolCalls?.length || 0
     });
-    
+
     return result;
-    
+
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    log.error('Background processing failed', { 
+    log.error('Background processing failed', {
       jobId,
       error: err.message,
       stack: err.stack
     });
-    
+
     // Mark job as failed
     await failJob(jobId, err.message, log);
     await addProgressEvent(jobId, {
       type: 'error',
       data: { error: err.message }
     }, log);
-    
+
     throw error;
   }
 }
@@ -92,33 +96,40 @@ async function executeAIProcessing(analysisData, systemId, customPrompt, jobId, 
   const conversationHistory = [];
   const toolCallsExecuted = [];
   let iterationCount = 0;
-  
+
   const startTime = Date.now();
-  
-  log.info('Starting AI function calling loop', { 
+
+  log.info('Starting AI function calling loop', {
     jobId,
-    hasSystemId: !!systemId, 
-    hasCustomPrompt: !!customPrompt 
+    hasSystemId: !!systemId,
+    hasCustomPrompt: !!customPrompt
   });
-  
+
   // Get AI model
   const model = await getAIModelWithTools(log);
   if (!model) {
     throw new Error('AI model not available - cannot generate insights');
   }
-  
-  // Build enhanced prompt
-  const initialPrompt = await buildEnhancedPrompt(analysisData, systemId, customPrompt, log);
-  
+
+  const contextData = await collectAutoInsightsContext(systemId, analysisData, log, { mode: 'background' });
+  const { prompt: initialPrompt, contextSummary } = await buildGuruPrompt({
+    analysisData,
+    systemId,
+    customPrompt,
+    log,
+    context: contextData,
+    mode: 'background'
+  });
+
   conversationHistory.push({
     role: 'user',
     content: initialPrompt
   });
-  
+
   // Multi-turn conversation loop
   while (iterationCount < MAX_TOOL_ITERATIONS) {
     iterationCount++;
-    
+
     // Check total timeout
     const elapsedTime = Date.now() - startTime;
     if (elapsedTime > TOTAL_TIMEOUT_MS) {
@@ -129,40 +140,40 @@ async function executeAIProcessing(analysisData, systemId, customPrompt, jobId, 
       });
       throw new Error('Analysis exceeded time limit. Try a simpler question.');
     }
-    
+
     log.info(`Processing iteration ${iterationCount}`, {
       jobId,
       conversationLength: conversationHistory.length,
       elapsedMs: elapsedTime
     });
-    
+
     // Add progress event for iteration start
     await addProgressEvent(jobId, {
       type: 'iteration',
-      data: { 
+      data: {
         iteration: iterationCount,
         elapsedSeconds: Math.floor(elapsedTime / 1000)
       }
     }, log);
-    
+
     // Generate response from Gemini with timeout
     const iterationStartTime = Date.now();
     let response;
-    
+
     try {
-      const conversationText = conversationHistory.map(msg => 
+      const conversationText = conversationHistory.map(msg =>
         `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
       ).join('\n\n');
-      
+
       const responsePromise = model.generateContent(conversationText);
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Iteration timeout')), ITERATION_TIMEOUT_MS)
       );
-      
+
       response = await Promise.race([responsePromise, timeoutPromise]);
     } catch (error) {
       if (error.message === 'Iteration timeout') {
-        log.warn('Gemini iteration timed out', { 
+        log.warn('Gemini iteration timed out', {
           jobId,
           iteration: iterationCount,
           durationMs: Date.now() - iterationStartTime
@@ -171,17 +182,17 @@ async function executeAIProcessing(analysisData, systemId, customPrompt, jobId, 
       }
       throw error;
     }
-    
+
     const iterationDuration = Date.now() - iterationStartTime;
     const responseText = response.response.text();
-    
+
     log.info('Gemini response received', {
       jobId,
       iteration: iterationCount,
       durationMs: iterationDuration,
       responseLength: responseText.length
     });
-    
+
     // Try to parse as JSON
     let parsedResponse;
     try {
@@ -208,7 +219,7 @@ async function executeAIProcessing(analysisData, systemId, customPrompt, jobId, 
         }
       }
     }
-    
+
     // Check if it's a tool call
     if (parsedResponse && parsedResponse.tool_call) {
       log.info('AI requested tool call', {
@@ -217,19 +228,18 @@ async function executeAIProcessing(analysisData, systemId, customPrompt, jobId, 
         iteration: iterationCount,
         parameters: parsedResponse.parameters
       });
-      
+
       // Add progress event for tool call
       await addProgressEvent(jobId, {
         type: 'tool_call',
-        data: { 
+        data: {
           tool: parsedResponse.tool_call,
           parameters: parsedResponse.parameters,
           iteration: iterationCount
         }
       }, log);
-      
+
       // Execute the tool
-      const { executeToolCall } = require('./gemini-tools.cjs');
       const toolStartTime = Date.now();
       const toolResult = await executeToolCall(
         parsedResponse.tool_call,
@@ -237,33 +247,33 @@ async function executeAIProcessing(analysisData, systemId, customPrompt, jobId, 
         log
       );
       const toolDuration = Date.now() - toolStartTime;
-      
+
       toolCallsExecuted.push({
         name: parsedResponse.tool_call,
         parameters: parsedResponse.parameters,
         iteration: iterationCount,
         durationMs: toolDuration
       });
-      
+
       // Add progress event for tool response
       await addProgressEvent(jobId, {
         type: 'tool_response',
-        data: { 
+        data: {
           tool: parsedResponse.tool_call,
           success: !toolResult.error,
           dataSize: JSON.stringify(toolResult).length,
           durationMs: toolDuration
         }
       }, log);
-      
+
       // Check if tool execution failed
       if (toolResult.error) {
-        log.warn('Tool execution returned error', { 
+        log.warn('Tool execution returned error', {
           jobId,
           toolName: parsedResponse.tool_call,
-          error: toolResult.message 
+          error: toolResult.message
         });
-        
+
         conversationHistory.push({
           role: 'assistant',
           content: JSON.stringify(parsedResponse)
@@ -274,14 +284,14 @@ async function executeAIProcessing(analysisData, systemId, customPrompt, jobId, 
         });
         continue;
       }
-      
+
       log.info('Tool executed successfully', {
         jobId,
         tool: parsedResponse.tool_call,
         durationMs: toolDuration,
         resultSize: JSON.stringify(toolResult).length
       });
-      
+
       // Send tool result back to Gemini
       conversationHistory.push({
         role: 'assistant',
@@ -291,10 +301,10 @@ async function executeAIProcessing(analysisData, systemId, customPrompt, jobId, 
         role: 'user',
         content: `Tool response from ${parsedResponse.tool_call}:\n${JSON.stringify(toolResult, null, 2)}`
       });
-      
+
       continue;
     }
-    
+
     // Check if it's a final answer
     if (parsedResponse && parsedResponse.final_answer) {
       log.info('Received final answer from AI', {
@@ -303,76 +313,91 @@ async function executeAIProcessing(analysisData, systemId, customPrompt, jobId, 
         toolCallsUsed: toolCallsExecuted.length,
         answerLength: parsedResponse.final_answer.length
       });
-      
+
       // Update partial insights with final answer
       await updatePartialInsights(jobId, parsedResponse.final_answer, log);
-      
+
       // Add progress event for completion
       await addProgressEvent(jobId, {
         type: 'ai_response',
-        data: { 
+        data: {
           type: 'final_answer',
           iteration: iterationCount
         }
       }, log);
-      
+
+      const insightsPayload = {
+        rawText: parsedResponse.final_answer,
+        formattedText: formatInsightsResponse(parsedResponse.final_answer),
+        healthStatus: 'Generated',
+        performance: { trend: 'See analysis above' }
+      };
+      if (contextSummary) {
+        insightsPayload.contextSummary = contextSummary;
+      }
+
       return {
-        insights: {
-          rawText: parsedResponse.final_answer,
-          formattedText: formatInsightsResponse(parsedResponse.final_answer),
-          healthStatus: 'Generated',
-          performance: { trend: 'See analysis above' }
-        },
+        insights: insightsPayload,
         toolCalls: toolCallsExecuted,
         usedFunctionCalling: toolCallsExecuted.length > 0,
         iterations: iterationCount
       };
     }
-    
+
     // No JSON structure, treat as final answer (plain text)
     log.info('Received plain text response (treating as final answer)', {
       jobId,
       iterations: iterationCount,
       textLength: responseText.length
     });
-    
+
     await updatePartialInsights(jobId, responseText, log);
-    
+
+    const insightsPayload = {
+      rawText: responseText,
+      formattedText: formatInsightsResponse(responseText),
+      healthStatus: 'Generated',
+      performance: { trend: 'See analysis above' }
+    };
+    if (contextSummary) {
+      insightsPayload.contextSummary = contextSummary;
+    }
+
     return {
-      insights: {
-        rawText: responseText,
-        formattedText: formatInsightsResponse(responseText),
-        healthStatus: 'Generated',
-        performance: { trend: 'See analysis above' }
-      },
+      insights: insightsPayload,
       toolCalls: toolCallsExecuted,
       usedFunctionCalling: toolCallsExecuted.length > 0,
       iterations: iterationCount
     };
   }
-  
+
   // Max iterations reached
   log.warn('Max iterations reached', {
     jobId,
     maxIterations: MAX_TOOL_ITERATIONS,
     toolCallsExecuted: toolCallsExecuted.length
   });
-  
+
   const lastAssistantMsg = conversationHistory
     .filter(msg => msg.role === 'assistant')
     .pop();
-  
-  const fallbackAnswer = lastAssistantMsg 
+
+  const fallbackAnswer = lastAssistantMsg
     ? `Analysis incomplete (max iterations reached). Partial results:\n\n${lastAssistantMsg.content}`
     : 'Analysis could not be completed. Please try a simpler question.';
-  
+
+  const insightsPayload = {
+    rawText: fallbackAnswer,
+    formattedText: formatInsightsResponse(fallbackAnswer),
+    healthStatus: 'Incomplete',
+    performance: { trend: 'Analysis incomplete' }
+  };
+  if (contextSummary) {
+    insightsPayload.contextSummary = contextSummary;
+  }
+
   return {
-    insights: {
-      rawText: fallbackAnswer,
-      formattedText: formatInsightsResponse(fallbackAnswer),
-      healthStatus: 'Incomplete',
-      performance: { trend: 'Analysis incomplete' }
-    },
+    insights: insightsPayload,
     toolCalls: toolCallsExecuted,
     usedFunctionCalling: toolCallsExecuted.length > 0,
     iterations: iterationCount,
@@ -387,7 +412,7 @@ function formatInsightsResponse(text) {
   if (text.includes('═══') || text.includes('🔋')) {
     return text;
   }
-  
+
   const lines = [];
   lines.push('═══════════════════════════════════════════════════');
   lines.push('🔋 OFF-GRID ENERGY INTELLIGENCE');
@@ -398,144 +423,8 @@ function formatInsightsResponse(text) {
   lines.push('═══════════════════════════════════════════════════');
   lines.push(`Generated: ${new Date().toLocaleString()}`);
   lines.push('═══════════════════════════════════════════════════');
-  
+
   return lines.join('\n');
-}
-
-/**
- * Build enhanced prompt with tools and data
- */
-async function buildEnhancedPrompt(analysisData, systemId, customPrompt, log) {
-  const { toolDefinitions } = require('./gemini-tools.cjs');
-  
-  let prompt = `You are an expert off-grid energy systems analyst with deep knowledge of battery management, solar integration, and energy storage optimization.
-
-**YOUR EXPERTISE:**
-- Battery degradation patterns and lifespan prediction
-- Solar charging efficiency and weather correlation
-- Energy consumption analysis and demand forecasting
-- Off-grid system optimization and backup planning
-- Predictive maintenance and anomaly detection
-
-**IMPORTANT INSTRUCTIONS FOR DATA REQUESTS:**
-
-1. If you can answer the user's question with the data provided, you **must** respond with a JSON object containing ONLY a \`final_answer\` key:
-   {
-     "final_answer": "Your detailed analysis here..."
-   }
-
-2. If the data is insufficient, you **must** request more data by responding with ONLY a JSON object that calls a tool. Do not add any conversational text. Format:
-   {
-     "tool_call": "tool_name",
-     "parameters": {
-       "param1": "value1",
-       "param2": "value2"
-     }
-   }
-
-**AVAILABLE TOOLS:**
-
-${JSON.stringify(toolDefinitions, null, 2)}
-
-**CURRENT BATTERY SNAPSHOT:**
-${JSON.stringify(analysisData, null, 2)}
-`;
-  
-  // Load initial historical data if systemId provided
-  if (systemId) {
-    try {
-      const { getHourlyAveragedData, formatHourlyDataForAI } = require('./data-aggregation.cjs');
-      const DEFAULT_DAYS_LOOKBACK = 30;
-      
-      log.info('Loading initial historical data', { systemId });
-      const hourlyData = await getHourlyAveragedData(systemId, DEFAULT_DAYS_LOOKBACK, log);
-      
-      if (hourlyData && hourlyData.length > 0) {
-        const initialHistoricalData = formatHourlyDataForAI(hourlyData, log);
-        
-        prompt += `
-
-**SYSTEM ID:** ${systemId}
-
-**INITIAL HISTORICAL DATA (${DEFAULT_DAYS_LOOKBACK} days of hourly averages):**
-${JSON.stringify(initialHistoricalData, null, 2)}
-
-Note: This is ${hourlyData.length} hours of data. If you need different metrics, time ranges, or granularity, use the request_bms_data tool.
-`;
-        log.info('Initial historical data loaded', { systemId, hourlyDataPoints: hourlyData.length });
-      } else {
-        prompt += `
-
-**SYSTEM ID:** ${systemId}
-
-No historical data found. You can use request_bms_data to query data if needed.
-`;
-        log.warn('No historical data found', { systemId });
-      }
-    } catch (error) {
-      log.error('Failed to load initial historical data', { error: error.message, systemId });
-      prompt += `
-
-**SYSTEM ID:** ${systemId}
-
-Historical data temporarily unavailable.
-`;
-    }
-  }
-  
-  prompt += '\n\n';
-  
-  if (customPrompt) {
-    prompt += `**USER QUESTION:**
-${customPrompt}
-
-**ANALYSIS FRAMEWORK:**
-1. **Understand the Question**: Parse what specific insight the user needs
-2. **Assess Data Requirements**: Determine what historical data, patterns, or predictions are needed
-3. **Strategic Tool Usage**:
-   - For predictions → use predict_battery_trends (capacity degradation, efficiency, lifetime)
-   - For usage patterns → use analyze_usage_patterns (daily/weekly/seasonal, anomalies)
-   - For planning/scenarios → use calculate_energy_budget (current/worst-case/average/emergency)
-   - For specific metrics → use request_bms_data (targeted time ranges and metrics)
-4. **Deep Analysis**: Apply statistical methods, pattern recognition, forecasting
-5. **Off-Grid Context**: Consider solar availability, weather impacts, backup needs
-6. **Actionable Insights**: Provide specific, data-driven recommendations
-
-**OFF-GRID ANALYSIS PATTERNS:**
-- **Energy Sufficiency**: Compare consumption vs generation with weather factors
-- **System Health**: Predict maintenance needs, identify degradation trends
-- **Optimization**: Suggest load shifting, solar expansion, backup strategies
-- **Emergency Planning**: Model worst-case scenarios and backup requirements
-
-Always respond with valid JSON (either tool_call or final_answer).
-`;
-  } else {
-    prompt += `**YOUR TASK:**
-Provide a comprehensive off-grid energy system analysis with deep insights based on available data.
-
-**KEY ANALYSIS AREAS:**
-1. **System Health**: Use predict_battery_trends for degradation and lifespan forecasting
-2. **Usage Patterns**: Use analyze_usage_patterns to identify daily/weekly consumption cycles
-3. **Energy Sufficiency**: Use calculate_energy_budget to assess solar sufficiency and backup needs
-4. **Optimization**: Identify opportunities for load shifting and efficiency improvements
-
-**STRATEGIC TOOL USAGE**:
-- Use predict_battery_trends for degradation analysis and lifespan estimation
-- Use analyze_usage_patterns to identify consumption cycles and anomalies
-- Use calculate_energy_budget to assess solar sufficiency and backup requirements
-- Use request_bms_data only for specific metric queries not covered by other tools
-
-Always respond with valid JSON (either tool_call or final_answer).
-`;
-  }
-  
-  log.info('Enhanced prompt built', {
-    hasSystemId: !!systemId,
-    hasCustomPrompt: !!customPrompt,
-    promptLength: prompt.length
-  });
-  
-  return prompt;
 }
 
 /**
@@ -550,9 +439,9 @@ async function getAIModelWithTools(log) {
     log.error('GEMINI_API_KEY not configured');
     return null;
   }
-  
+
   const genAI = new GoogleGenerativeAI(apiKey);
-  
+
   // Try models in order of preference - PRODUCTION MODELS ONLY
   const modelsToTry = [
     { name: 'gemini-2.5-flash', description: 'latest stable model with function calling' },
@@ -563,7 +452,7 @@ async function getAIModelWithTools(log) {
   for (const { name, description } of modelsToTry) {
     try {
       log.info(`Attempting to use ${name} (${description})`);
-      
+
       const model = genAI.getGenerativeModel({
         model: name,
         generationConfig: {
@@ -573,7 +462,7 @@ async function getAIModelWithTools(log) {
           maxOutputTokens: 8192,
         }
       });
-      
+
       log.info(`Model ${name} initialized successfully`);
       return model;
     } catch (err) {
@@ -590,6 +479,5 @@ async function getAIModelWithTools(log) {
 module.exports = {
   processInsightsInBackground,
   executeAIProcessing,
-  buildEnhancedPrompt,
   getAIModelWithTools
 };

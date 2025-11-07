@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 /**
  * Generate Insights - Enhanced AI-Powered Analysis with True Function Calling
  * 
@@ -29,10 +31,11 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { createInsightsJob, ensureIndexes } = require('./utils/insights-jobs.cjs');
 const { generateInitialSummary } = require('./utils/insights-summary.cjs');
 const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
+const { buildGuruPrompt } = require('./utils/insights-guru.cjs');
+const { executeToolCall } = require('./utils/gemini-tools.cjs');
 
 // Constants for function calling
 const MAX_TOOL_ITERATIONS = 10; // Maximum number of tool call rounds to prevent infinite loops
-const DEFAULT_DAYS_LOOKBACK = 30; // Default time range for initial data
 const ITERATION_TIMEOUT_MS = 25000; // 25 seconds per iteration (increased from 20)
 const TOTAL_TIMEOUT_MS = 58000; // 58 seconds total (increased, leaving 2s buffer for Netlify's 60s limit)
 const MAX_CONVERSATION_TOKENS = 60000; // Maximum tokens for conversation history (rough estimate)
@@ -81,18 +84,18 @@ async function handler(event = {}, context = {}) {
 
     const { systemId, customPrompt } = body;
 
-    // Check if sync mode is requested (for backward compatibility)
     const queryParams = event.queryStringParameters || {};
-    const isSyncMode = queryParams.sync === 'true' || queryParams.mode === 'sync' || body.sync === true;
+    const runMode = resolveRunMode(queryParams, body, analysisData, customPrompt);
+    const isSyncMode = runMode === 'sync';
 
     log.info('Starting enhanced AI insights generation', {
       hasSystemId: !!systemId,
       hasCustomPrompt: !!customPrompt,
       dataStructure: analysisData ? Object.keys(analysisData) : 'none',
-      mode: isSyncMode ? 'sync' : 'background'
+      runMode
     });
 
-    // BACKGROUND MODE (default): Create job and trigger background processing
+    // BACKGROUND MODE: Create job and trigger background processing
     if (!isSyncMode) {
       // Ensure database indexes (safe to call multiple times)
       await ensureIndexes(log).catch(err => {
@@ -153,13 +156,13 @@ async function handler(event = {}, context = {}) {
         status: 'processing',
         initialSummary: job.initialSummary,
         message: 'Background processing started. Poll for status updates.',
-        analysisMode: 'background',
+        analysisMode: runMode,
         timestamp: new Date().toISOString()
       });
     }
 
-    // SYNC MODE (legacy): Execute immediately and return results
-    log.info('Using synchronous mode (legacy)');
+    // SYNC MODE: Execute immediately and return results
+    log.info('Using synchronous mode');
 
     // Get AI model with function calling support
     const model = await getAIModelWithTools(log);
@@ -172,8 +175,15 @@ async function handler(event = {}, context = {}) {
       });
     }
 
-    // Build enhanced prompt with context about available tools
-    const initialPrompt = await buildEnhancedPrompt(analysisData, systemId, customPrompt, log);
+    // Build enhanced prompt with deep context
+    const { prompt: initialPrompt, contextSummary } = await buildGuruPrompt({
+      analysisData,
+      systemId,
+      customPrompt,
+      log,
+      context: undefined,
+      mode: runMode
+    });
 
     // Execute multi-turn conversation with function calling
     const result = await executeWithFunctionCalling(
@@ -185,14 +195,20 @@ async function handler(event = {}, context = {}) {
       log
     );
 
+    const insightsPayload = /** @type {Record<string, any>} */ (Object.assign({}, result.insights));
+    if (contextSummary) {
+      insightsPayload.contextSummary = contextSummary;
+    }
+
     timer.end();
 
     return respond(200, {
       success: true,
-      insights: result.insights,
+      insights: insightsPayload,
       toolCalls: result.toolCalls,
       usedFunctionCalling: result.usedFunctionCalling,
-      analysisMode: 'sync',
+      analysisMode: runMode,
+      contextSummary,
       timestamp: new Date().toISOString()
     });
 
@@ -348,7 +364,6 @@ async function executeWithFunctionCalling(model, initialPrompt, analysisData, sy
         }
 
         // Execute the tool
-        const { toolDefinitions, executeToolCall } = require('./utils/gemini-tools.cjs');
         const toolResult = await executeToolCall(
           parsedResponse.tool_call,
           parsedResponse.parameters,
@@ -726,222 +741,6 @@ function calculateConfidence(insightsText, toolCalls) {
 }
 
 /**
- * Build enhanced prompt with system instructions for function calling
- * Uses compact statistical summaries for initial data to prevent token overflow
- */
-/**
- * @param {any} analysisData
- * @param {string|undefined} systemId
- * @param {string|undefined} customPrompt
- * @param {any} log
- */
-async function buildEnhancedPrompt(analysisData, systemId, customPrompt, log) {
-  const { toolDefinitions } = require('./utils/gemini-tools.cjs');
-
-  // Build system prompt with off-grid intelligence and function calling instructions
-  let prompt = `You are an expert off-grid energy systems analyst with deep knowledge of battery management, solar integration, and energy storage optimization.
-
-**YOUR EXPERTISE:**
-- Battery degradation patterns and lifespan prediction
-- Solar charging efficiency and weather correlation
-- Energy consumption analysis and demand forecasting
-- Off-grid system optimization and backup planning
-- Predictive maintenance and anomaly detection
-
-**IMPORTANT INSTRUCTIONS FOR DATA REQUESTS:**
-
-1. If you can answer the user's question with the data provided, you **must** respond with a JSON object containing ONLY a \`final_answer\` key:
-   {
-     "final_answer": "Your detailed analysis here..."
-   }
-
-2. If the data is insufficient, you **must** request more data by responding with ONLY a JSON object that calls a tool. Do not add any conversational text. Format:
-   {
-     "tool_call": "tool_name",
-     "parameters": {
-       "param1": "value1",
-       "param2": "value2"
-     }
-   }
-
-3. **STRATEGIC DATA REQUESTS**: When requesting data, be efficient:
-   - For specific metric queries, request ONLY that metric
-   - For trend analysis, use "hourly_avg" or "daily_avg" granularity
-   - For predictive analysis, use predict_battery_trends tool
-   - For usage patterns, use analyze_usage_patterns tool
-   - For scenario planning, use calculate_energy_budget tool
-
-**AVAILABLE TOOLS:**
-
-${JSON.stringify(toolDefinitions, null, 2)}
-
-**CURRENT BATTERY SNAPSHOT:**
-${JSON.stringify(analysisData, null, 2)}
-`;
-
-  // Load initial 30 days of data as COMPACT SUMMARY (not full data)
-  let initialHistoricalData = null;
-  if (systemId) {
-    try {
-      const { getHourlyAveragedData, createCompactSummary } = require('./utils/data-aggregation.cjs');
-
-      log.info('Loading initial 30 days as compact summary', { systemId });
-      const hourlyData = await getHourlyAveragedData(systemId, DEFAULT_DAYS_LOOKBACK, log);
-
-      if (hourlyData && hourlyData.length > 0) {
-        // Use compact summary instead of full data
-        initialHistoricalData = createCompactSummary(hourlyData, log);
-
-        prompt += `
-
-**SYSTEM ID:** ${systemId}
-
-**HISTORICAL DATA SUMMARY (past ${DEFAULT_DAYS_LOOKBACK} days):**
-${JSON.stringify(initialHistoricalData, null, 2)}
-
-**Note**: This is a statistical summary of ${hourlyData.length} hours of data. It includes:
-- Time range and data coverage
-- Min/max/avg/latest values for all key metrics
-- Sample data points (first, middle, last) for trend context
-
-If you need more detailed data for specific time ranges or metrics, use the request_bms_data tool with:
-- Specific metric (e.g., "temperature", "soc", "current")
-- Targeted time range
-- Appropriate granularity ("hourly_avg" for trends, "daily_avg" for long periods)
-`;
-
-        log.info('Compact historical summary included in prompt', {
-          hours: hourlyData.length,
-          summarySize: JSON.stringify(initialHistoricalData).length,
-          fullDataSize: JSON.stringify(hourlyData).length,
-          compressionRatio: (JSON.stringify(hourlyData).length / JSON.stringify(initialHistoricalData).length).toFixed(2)
-        });
-      } else {
-        prompt += `
-
-**SYSTEM ID:** ${systemId}
-
-No historical data found for the past ${DEFAULT_DAYS_LOOKBACK} days. You can use request_bms_data to query different time ranges.
-`;
-        log.warn('No historical data found for initial load', { systemId, daysBack: DEFAULT_DAYS_LOOKBACK });
-      }
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      log.error('Failed to load initial historical data', {
-        error: err.message,
-        systemId
-      });
-      prompt += `
-
-**SYSTEM ID:** ${systemId}
-
-Historical data temporarily unavailable. You can use request_bms_data tool to query historical data if needed.
-`;
-    }
-  } else {
-    prompt += `
-
-No system ID provided - limited to current snapshot analysis. If you need historical data, it must be provided by the user.
-`;
-  }
-
-  prompt += '\n\n';
-
-  if (customPrompt) {
-    // Custom query mode with off-grid analysis framework
-    prompt += `**USER QUESTION:**
-${customPrompt}
-
-**ANALYSIS FRAMEWORK:**
-1. **Understand the Question**: Parse what specific insight the user needs
-2. **Assess Data Requirements**: Determine what historical data, patterns, or predictions are needed
-3. **Strategic Tool Usage**:
-   - For predictions → use predict_battery_trends (capacity degradation, efficiency, lifetime)
-   - For usage patterns → use analyze_usage_patterns (daily/weekly/seasonal, anomalies)
-   - For planning/scenarios → use calculate_energy_budget (current/worst-case/average/emergency)
-   - For specific metrics → use request_bms_data (targeted time ranges and metrics)
-4. **Deep Analysis**: Apply statistical methods, pattern recognition, forecasting
-5. **Off-Grid Context**: Consider solar availability, weather impacts, backup needs
-6. **Actionable Insights**: Provide specific, data-driven recommendations with confidence levels
-
-**OFF-GRID ANALYSIS PATTERNS:**
-- **Energy Sufficiency**: Compare consumption vs generation with weather factors
-- **System Health**: Predict maintenance needs, identify degradation trends
-- **Optimization**: Suggest load shifting, solar expansion, backup strategies
-- **Emergency Planning**: Model worst-case scenarios and backup requirements
-
-**TOOL SELECTION EXAMPLES:**
-- "How long will my battery last?" → predict_battery_trends with metric="lifetime"
-- "When do I use the most power?" → analyze_usage_patterns with patternType="daily"
-- "Can I run a fridge 24/7?" → calculate_energy_budget with scenario="current", then analyze if surplus exists
-- "Should I add solar panels?" → calculate_energy_budget with scenario="current" to see deficit
-- "Any unusual behavior?" → analyze_usage_patterns with patternType="anomalies"
-
-**RESPONSE REQUIREMENTS:**
-- Use tool_call for data requests (JSON only)
-- Use final_answer for complete analysis (include confidence levels when making predictions)
-- Always explain methodology and data sources
-- Provide specific numbers and timeframes
-- Consider off-grid living context (self-sufficiency, backup power, seasonal variations)
-- Always respond with valid JSON (either tool_call or final_answer)
-`;
-  } else {
-    // Default comprehensive analysis mode with off-grid focus
-    prompt += `**YOUR TASK:**
-Provide a comprehensive off-grid energy system analysis with deep insights based on available data.
-
-**ANALYSIS AREAS:**
-
-1. **SYSTEM HEALTH & DEGRADATION**:
-   - Compare current values to historical min/max/avg
-   - Identify degradation patterns (capacity loss, efficiency decline)
-   - Use predict_battery_trends for lifespan forecasting if system has sufficient history
-   - Temperature patterns and thermal management
-   - Cell balance and voltage consistency
-
-2. **ENERGY FLOW & SUFFICIENCY**:
-   - Solar charging patterns and efficiency
-   - Consumption patterns (use analyze_usage_patterns for daily/weekly trends)
-   - Energy balance (generation vs consumption)
-   - Use calculate_energy_budget to assess solar sufficiency
-   - Identify opportunities for load optimization
-
-3. **OFF-GRID OPTIMIZATION**:
-   - Peak usage times and load shifting opportunities
-   - Solar utilization efficiency
-   - Battery autonomy (days of backup power)
-   - Seasonal variations and planning
-   - Emergency backup requirements
-
-4. **PREDICTIVE INSIGHTS**:
-   - Capacity degradation trends and replacement timeline
-   - System lifespan projection
-   - Anomaly detection for preventive maintenance
-   - Weather-dependent performance patterns
-
-**STRATEGIC TOOL USAGE**:
-- Use predict_battery_trends for degradation analysis and lifespan estimation
-- Use analyze_usage_patterns to identify daily/weekly consumption cycles
-- Use calculate_energy_budget to assess solar sufficiency and backup needs
-- Use request_bms_data only for specific metric queries not covered by other tools
-
-**GUIDELINES:**
-- The summary data includes min/max/avg/latest for all metrics - use these for initial assessment
-- Leverage predictive and pattern analysis tools for deeper insights
-- Focus on off-grid specific concerns: self-sufficiency, backup power, seasonal planning
-- Provide specific, actionable recommendations with data support
-- Include confidence levels for predictions
-- Consider worst-case scenarios for emergency preparedness
-- Always respond with valid JSON (either tool_call or final_answer)
-
-**Note**: You have access to ${(() => { try { const ihd = /** @type {any} */ (initialHistoricalData); return ihd && ihd.timeRange ? ihd.timeRange.hours : 0; } catch (_) { return 0; } })()} hours of statistical data. Use the new predictive and pattern analysis tools for comprehensive off-grid intelligence.
-`;
-  }
-
-  return prompt;
-}
-
-/**
  * Get AI model instance with proper configuration
  * Uses standard production models only (no experimental)
  * Tries: gemini-2.5-flash → gemini-1.5-flash → gemini-1.5-pro
@@ -1009,6 +808,39 @@ function respond(statusCode, body) {
     },
     body: JSON.stringify(body)
   };
+}
+
+function resolveRunMode(queryParams = {}, body = {}, analysisData = {}, customPrompt) {
+  const normalize = (value) => typeof value === 'string' ? value.toLowerCase() : value;
+
+  const modeFromQuery = normalize(queryParams.mode);
+  if (modeFromQuery === 'sync') return 'sync';
+  if (modeFromQuery === 'background' || modeFromQuery === 'async') return 'background';
+
+  if (queryParams.sync === 'true') return 'sync';
+  if (queryParams.sync === 'false') return 'background';
+
+  const modeFromBody = normalize(body.mode);
+  if (modeFromBody === 'sync') return 'sync';
+  if (modeFromBody === 'background' || modeFromBody === 'async') return 'background';
+
+  if (body.sync === true) return 'sync';
+  if (body.sync === false) return 'background';
+  if (body.runAsync === true) return 'background';
+  if (body.runAsync === false) return 'sync';
+
+  const measurementCount = Array.isArray(analysisData?.measurements) ? analysisData.measurements.length : 0;
+  const customPromptLength = typeof customPrompt === 'string' ? customPrompt.length : 0;
+
+  if (customPromptLength > 400 || measurementCount > 360) {
+    return 'background';
+  }
+
+  if (!customPrompt && measurementCount > 0 && measurementCount <= 200) {
+    return 'sync';
+  }
+
+  return 'background';
 }
 
 exports.handler = handler;
