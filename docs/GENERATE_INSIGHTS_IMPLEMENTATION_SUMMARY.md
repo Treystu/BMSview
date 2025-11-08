@@ -167,6 +167,13 @@ Suggestions:
    - Performance metrics logging
    - ~50 lines changed
 
+### November 2025 Upgrade: Ultimate AI Battery Guru
+- `netlify/functions/utils/insights-guru.cjs` now preloads energy budgets, anomaly scans, forecasts, weather, **and** the latest 24 history snapshots with delta calculations
+- Background status endpoint (`generate-insights-status.cjs`) exposes the guru context summary so polling clients see the same situational awareness as sync runs
+- Front-end streaming (`services/clientService.ts`) surfaces a “Guru Context Primer” block, summarizing snapshot metrics, solar sufficiency, forecasts, and recent alert volume before the AI answer arrives
+- Recent snapshot loader reuses the MongoDB history collection, highlighting SOC drift, amp-hour deltas, and alert counts for fast incident triage
+- Background dispatch accepts full Netlify function URLs, preventing double suffix bugs when custom endpoints are supplied via environment variables
+
 ### Code Review Fixes Applied
 ✅ Fixed variable shadowing (dummy log → dummyLog)
 ✅ Made charging/discharging thresholds configurable

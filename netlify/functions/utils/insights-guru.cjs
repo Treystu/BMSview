@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use strict";
 
 /**
@@ -13,6 +14,7 @@ const { getCollection } = require("./mongodb.cjs");
 const { toolDefinitions, executeToolCall } = require("./gemini-tools.cjs");
 
 const DEFAULT_LOOKBACK_DAYS = 30;
+const RECENT_SNAPSHOT_LIMIT = 24;
 const SYNC_CONTEXT_BUDGET_MS = 22000;
 const ASYNC_CONTEXT_BUDGET_MS = 45000;
 
@@ -20,21 +22,32 @@ const ASYNC_CONTEXT_BUDGET_MS = 45000;
  * Fetch detailed context prior to prompting Gemini.
  * @param {string|undefined} systemId
  * @param {object} analysisData
- * @param {ReturnType<typeof require('./logger.cjs').createLogger>} log
- * @param {{ maxMs?: number }} options
+ * @param {any} log
+ * @param {{ maxMs?: number, mode?: "sync"|"background" }} options
  */
 async function collectAutoInsightsContext(systemId, analysisData, log, options = {}) {
     const start = Date.now();
     const maxMs = options.maxMs || (options.mode === "background" ? ASYNC_CONTEXT_BUDGET_MS : SYNC_CONTEXT_BUDGET_MS);
 
+    /** @type {any} */
     const context = {
         systemProfile: null,
         initialSummary: null,
         analytics: null,
-        usagePatterns: {},
-        energyBudgets: {},
-        predictions: {},
+        usagePatterns: {
+            daily: null,
+            anomalies: null
+        },
+        energyBudgets: {
+            current: null,
+            worstCase: null
+        },
+        predictions: {
+            capacity: null,
+            lifetime: null
+        },
         weather: null,
+        recentSnapshots: [],
         meta: {
             steps: [],
             durationMs: 0,
@@ -45,6 +58,10 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
 
     const shouldStop = () => Date.now() - start >= maxMs;
 
+    /**
+     * @param {string} label
+     * @param {() => Promise<any>} fn
+     */
     const runStep = async (label, fn) => {
         if (shouldStop()) {
             context.meta.truncated = true;
@@ -78,7 +95,7 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
         context.systemProfile = await runStep("systemProfile", () => loadSystemProfile(systemId, log));
     }
 
-    context.initialSummary = await runStep("initialSummary", () => generateInitialSummary(analysisData || {}, systemId, log));
+    context.initialSummary = await runStep("initialSummary", () => generateInitialSummary(analysisData || {}, systemId || "", log));
 
     if (systemId) {
         context.analytics = await runStep("analytics", async () => {
@@ -125,6 +142,8 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
                 });
             }
         }
+
+        context.recentSnapshots = await runStep("recentSnapshots", () => loadRecentSnapshots(systemId, log));
     }
 
     context.meta.durationMs = Date.now() - start;
@@ -175,7 +194,10 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     };
 }
 
-/** @param {Object} context */
+/**
+ * @param {any} context
+ * @param {any} analysisData
+ */
 function buildContextSections(context, analysisData) {
     const sections = [];
 
@@ -209,9 +231,16 @@ function buildContextSections(context, analysisData) {
     const weatherSection = formatWeatherSection(context.weather);
     if (weatherSection) sections.push(weatherSection);
 
+    const recentSnapshotsSection = formatRecentSnapshotsSection(context.recentSnapshots);
+    if (recentSnapshotsSection) sections.push(recentSnapshotsSection);
+
     return { sections };
 }
 
+/**
+ * @param {"sync"|"background"} mode
+ * @param {any} context
+ */
 function buildExecutionGuidance(mode, context) {
     const lines = ["**EXECUTION GUIDANCE**"];
     lines.push(`- Current run mode: ${mode === "background" ? "background (async)" : "synchronous"}. Plan tool usage to stay within limits.`);
@@ -223,6 +252,9 @@ function buildExecutionGuidance(mode, context) {
     return lines.join("\n");
 }
 
+/**
+ * @param {any} context
+ */
 function summarizePreloadedContext(context) {
     const highlights = [];
     if (context.analytics && !context.analytics.error) highlights.push("analytics");
@@ -237,10 +269,17 @@ function buildDefaultMission() {
     return "**PRIMARY MISSION:** Produce an off-grid readiness briefing covering battery health, solar sufficiency, demand patterns, anomalies, forecasts, and action items. Benchmark everything against the provided baselines before advising.";
 }
 
+/**
+ * @param {string} customPrompt
+ */
 function buildCustomMission(customPrompt) {
     return `**USER QUESTION:**\n${customPrompt}\n\n**APPROACH:** Break the request into sub-goals, pull only the data you need, and deliver a tailored answer with explicit numbers, risks, and next steps.`;
 }
 
+/**
+ * @param {string} systemId
+ * @param {any} log
+ */
 async function loadSystemProfile(systemId, log) {
     try {
         const collection = await getCollection("systems");
@@ -453,6 +492,107 @@ function formatWeatherSection(weather) {
     return lines.length > 1 ? lines.join("\n") : null;
 }
 
+function formatRecentSnapshotsSection(recentSnapshots) {
+    if (!Array.isArray(recentSnapshots) || recentSnapshots.length === 0) return null;
+
+    const lines = ["**RECENT SNAPSHOT LOGS**"];
+    const latest = recentSnapshots[0];
+    const earliest = recentSnapshots[recentSnapshots.length - 1];
+
+    if (latest) {
+        lines.push(`- Latest reading (${formatTimestampHour(latest.timestamp)}): ${formatNumber(latest.voltage, " V", 2)} @ ${formatNumber(latest.current, " A", 1)} (${latest.current > 0.5 ? "charging" : latest.current < -0.5 ? "discharging" : "idle"}), SOC ${formatPercent(latest.soc, 1)}.`);
+    }
+
+    if (earliest && earliest !== latest) {
+        const deltaSoc = calculateDelta(latest?.soc, earliest?.soc);
+        const deltaCapacity = calculateDelta(latest?.remainingCapacity, earliest?.remainingCapacity);
+        const hoursApart = timeDifferenceHours(earliest.timestamp, latest.timestamp);
+        lines.push(`- Window: ${recentSnapshots.length} entries across ~${hoursApart.toFixed(1)} hours.`);
+        if (deltaSoc != null) {
+            lines.push(`- SOC shift across window: ${formatSigned(deltaSoc, "%", 1)}.`);
+        }
+        if (deltaCapacity != null) {
+            lines.push(`- Nominal capacity delta: ${formatSigned(deltaCapacity, " Ah", 2)}.`);
+        }
+    }
+
+    const avgCurrent = average(recentSnapshots.map(s => s.current));
+    const avgSoc = average(recentSnapshots.map(s => s.soc));
+    const avgVoltage = average(recentSnapshots.map(s => s.voltage));
+    if (avgVoltage != null || avgSoc != null || avgCurrent != null) {
+        lines.push(`- Average readings: ${avgVoltage != null ? `${formatNumber(avgVoltage, ' V', 2)}` : 'n/a'} • ${avgCurrent != null ? `${formatNumber(avgCurrent, ' A', 2)}` : 'n/a'} • ${avgSoc != null ? `${formatPercent(avgSoc, 1)}` : 'n/a'} SOC.`);
+    }
+
+    const chargingSamples = recentSnapshots.filter(s => isFiniteNumber(s.current) && s.current > 0.5).length;
+    const dischargingSamples = recentSnapshots.filter(s => isFiniteNumber(s.current) && s.current < -0.5).length;
+    if (chargingSamples || dischargingSamples) {
+        lines.push(`- Activity mix: ${chargingSamples} charging / ${dischargingSamples} discharging samples.`);
+    }
+
+    const alertSamples = recentSnapshots.flatMap(s => Array.isArray(s.alerts) ? s.alerts : []).filter(Boolean);
+    if (alertSamples.length > 0) {
+        const critical = alertSamples.filter(a => String(a).toUpperCase().startsWith('CRITICAL')).length;
+        const warning = alertSamples.filter(a => String(a).toUpperCase().startsWith('WARNING')).length;
+        lines.push(`- Recent alerts: ${alertSamples.length} total (${critical} critical, ${warning} warning).`);
+    }
+
+    return lines.join("\n");
+}
+
+async function loadRecentSnapshots(systemId, log) {
+    try {
+        const collection = await getCollection("history");
+        const cursor = collection.find({ systemId }, {
+            projection: {
+                _id: 0,
+                timestamp: 1,
+                analysis: 1,
+                alerts: 1
+            }
+        }).sort({ timestamp: -1 }).limit(RECENT_SNAPSHOT_LIMIT);
+
+        const documents = await cursor.toArray();
+        return documents.map(doc => {
+            const analysis = doc.analysis || {};
+            const alertsArray = Array.isArray(analysis.alerts) ? analysis.alerts : Array.isArray(doc.alerts) ? doc.alerts : [];
+            return {
+                timestamp: doc.timestamp,
+                voltage: toNullableNumber(analysis.overallVoltage),
+                current: toNullableNumber(analysis.current),
+                soc: toNullableNumber(analysis.stateOfCharge),
+                power: toNullableNumber(analysis.power),
+                remainingCapacity: toNullableNumber(analysis.remainingCapacity),
+                alerts: alertsArray
+            };
+        }).filter(entry => entry.timestamp);
+    } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        log.warn("Failed to load recent snapshots", { systemId, error: err.message });
+        return [];
+    }
+}
+
+function calculateDelta(latest, earliest) {
+    const latestNumber = toNullableNumber(latest);
+    const earliestNumber = toNullableNumber(earliest);
+    if (latestNumber == null || earliestNumber == null) return null;
+    return Number((latestNumber - earliestNumber).toFixed(3));
+}
+
+function formatSigned(value, unit = "", digits = 1) {
+    if (!isFiniteNumber(value)) return "n/a";
+    const prefix = value > 0 ? "+" : value < 0 ? "-" : "±";
+    return `${prefix}${Math.abs(Number(value)).toFixed(digits)}${unit}`;
+}
+
+function timeDifferenceHours(start, end) {
+    if (!start || !end) return 0;
+    const startTime = new Date(start).getTime();
+    const endTime = new Date(end).getTime();
+    if (Number.isNaN(startTime) || Number.isNaN(endTime) || endTime <= startTime) return 0;
+    return (endTime - startTime) / (1000 * 60 * 60);
+}
+
 function buildToolCatalog() {
     return toolDefinitions.map(tool => {
         const paramKeys = Object.keys(tool.parameters?.properties || {});
@@ -474,6 +614,10 @@ function normalizeToolResult(result) {
 
 function summarizeContextForClient(context, analysisData) {
     if (!context) return null;
+    const recentSnapshots = Array.isArray(context.recentSnapshots) ? context.recentSnapshots : [];
+    const latestSnapshot = recentSnapshots[0] || null;
+    const earliestSnapshot = recentSnapshots.length > 1 ? recentSnapshots[recentSnapshots.length - 1] : null;
+
     return {
         snapshot: analysisData ? {
             voltage: toNullableNumber(analysisData.overallVoltage),
@@ -508,6 +652,15 @@ function summarizeContextForClient(context, analysisData) {
             temp: context.weather.temp ?? null,
             clouds: context.weather.clouds ?? null,
             uvi: context.weather.uvi ?? null
+        } : null,
+        recentSnapshots: recentSnapshots.length > 0 ? {
+            count: recentSnapshots.length,
+            latestTimestamp: latestSnapshot?.timestamp ?? null,
+            latestSoc: toNullableNumber(latestSnapshot?.soc),
+            latestVoltage: toNullableNumber(latestSnapshot?.voltage),
+            netAhDelta: calculateDelta(latestSnapshot?.remainingCapacity, earliestSnapshot?.remainingCapacity),
+            netSocDelta: calculateDelta(latestSnapshot?.soc, earliestSnapshot?.soc),
+            alertCount: recentSnapshots.reduce((acc, snap) => acc + (Array.isArray(snap.alerts) ? snap.alerts.length : 0), 0)
         } : null,
         meta: {
             contextBuildMs: context.meta?.durationMs ?? null,

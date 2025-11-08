@@ -20,6 +20,13 @@ The Generate Insights feature has been completely redesigned to implement **true
 - **Efficient**: Data aggregation reduces token usage by 50-90%
 - **Robust**: Timeout protection at iteration and total levels
 
+## Context Enrichment (November 2025)
+- **Guru Preload Pipeline**: `insights-guru.cjs` now gathers system analytics, energy budgets, forecasts, weather snapshots, and the latest 24 history records before Gemini is prompted
+- **Snapshot Delta Insights**: Recent history aggregation computes SOC drift, net amp-hour movement, charging/discharging ratios, and alert counts for immediate situational awareness
+- **Shared Context Summary**: Both synchronous and background flows return a structured `contextSummary`, enabling the UI to display a “Guru Context Primer” alongside streaming insights
+- **Status Endpoint Upgrade**: `generate-insights-status.cjs` surfaces `contextSummary`, so operators polling background jobs receive the same contextual brief without waiting for final output
+- **Background Dispatch Hardening**: Full qualified Netlify URLs are accepted in `INSIGHTS_BACKGROUND_URL`, preventing duplicate `generate-insights-background` suffixes in custom deployments
+
 ## Data Flow
 
 ```

@@ -231,6 +231,8 @@ export const streamInsights = async (
         ? '/.netlify/functions/generate-insights-with-tools'
         : '/.netlify/functions/generate-insights';
 
+    let contextSummarySent = false;
+
     log('info', 'Streaming insights from server.', {
         systemId: payload.systemId,
         hasCustomPrompt: !!payload.customPrompt,
@@ -259,13 +261,13 @@ export const streamInsights = async (
 
         if (!response.ok) {
             let errorMessage = `Request failed: ${response.status}`;
-            
+
             // Provide user-friendly error messages for common status codes
             if (response.status === 504) {
                 errorMessage = 'Request timed out. The AI took too long to process your query. Try:\n' +
-                             '• Asking a simpler question\n' +
-                             '• Requesting a smaller time range\n' +
-                             '• Breaking complex queries into multiple questions';
+                    '• Asking a simpler question\n' +
+                    '• Requesting a smaller time range\n' +
+                    '• Breaking complex queries into multiple questions';
             } else if (response.status === 503) {
                 errorMessage = 'Service temporarily unavailable. Please try again in a few moments.';
             } else if (response.status === 500) {
@@ -291,7 +293,7 @@ export const streamInsights = async (
                 statusText: response.statusText,
                 errorMessage
             });
-            
+
             throw new Error(errorMessage);
         }
 
@@ -321,6 +323,14 @@ export const streamInsights = async (
         };
         log('info', 'DEBUG: Response validation details', debugInfo);
 
+        if (result.contextSummary && !contextSummarySent) {
+            const summaryText = formatContextSummary(result.contextSummary);
+            if (summaryText) {
+                onChunk(summaryText);
+                contextSummarySent = true;
+            }
+        }
+
         // Handle BACKGROUND MODE: Response contains jobId (async processing)
         if (result.jobId && !result.insights) {
             log('info', 'Background insights job started - CONDITION PASSED', {
@@ -340,7 +350,10 @@ export const streamInsights = async (
             await pollInsightsJobCompletion(
                 result.jobId,
                 onChunk,
-                onError
+                onError,
+                600,
+                2000,
+                contextSummarySent ? undefined : result.contextSummary
             );
             onComplete();
             return;
@@ -352,9 +365,17 @@ export const streamInsights = async (
             if (result.warning) {
                 log('warn', 'Insights generation warning', { warning: result.warning });
             }
-            
+
+            if (!contextSummarySent && result.insights.contextSummary) {
+                const summaryText = formatContextSummary(result.insights.contextSummary);
+                if (summaryText) {
+                    onChunk(summaryText);
+                    contextSummarySent = true;
+                }
+            }
+
             onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis completed');
-            
+
             // Log performance metrics if available
             if (result.iterations || result.toolCalls) {
                 log('info', 'Insights generation metrics', {
@@ -376,7 +397,7 @@ export const streamInsights = async (
         }
 
         // Unknown response format - provide detailed error message for debugging
-        log('warn', 'Unexpected insights response format - PRIMARY CONDITIONS FAILED', { 
+        log('warn', 'Unexpected insights response format - PRIMARY CONDITIONS FAILED', {
             result,
             detail: {
                 hasJobId: !!result.jobId,
@@ -387,7 +408,7 @@ export const streamInsights = async (
                 responseJSON: JSON.stringify(result)
             }
         });
-        
+
         // Fallback: Try to detect mode even with unexpected structure
         if (result.jobId && result.status === 'processing') {
             log('info', 'Detected background mode from status field despite unexpected structure - FALLBACK CONDITION PASSED', { jobId: result.jobId });
@@ -400,18 +421,21 @@ export const streamInsights = async (
             await pollInsightsJobCompletion(
                 result.jobId,
                 onChunk,
-                onError
+                onError,
+                600,
+                2000,
+                contextSummarySent ? undefined : result.contextSummary
             );
             onComplete();
             return;
         }
-        
+
         throw new Error('Server returned unexpected response format');
     } catch (err) {
         clearTimeout(timeoutId);
-        
+
         const error = err instanceof Error ? err : new Error(String(err));
-        
+
         // Provide user-friendly message for timeout/abort
         if (error.name === 'AbortError') {
             const timeoutError = new Error(
@@ -435,22 +459,130 @@ export const streamInsights = async (
  */
 const formatInitialSummary = (summary: any): string => {
     if (!summary) return '';
-    
+
     const parts: string[] = ['📊 Initial Assessment:\n'];
-    
+
     if (summary.current) {
         if (summary.current.voltage) parts.push(`Voltage: ${summary.current.voltage}V`);
         if (summary.current.soc) parts.push(`SOC: ${summary.current.soc}%`);
         if (summary.current.temperature) parts.push(`Temperature: ${summary.current.temperature}°C`);
     }
-    
+
     if (summary.generated) {
         parts.push(`\n${summary.generated}`);
     }
-    
+
     parts.push('\n⏳ Querying historical data and analyzing trends...\n');
-    
+
     return parts.filter(p => p).join('\n');
+};
+
+const formatContextSummary = (summary: any): string => {
+    if (!summary || typeof summary !== 'object') {
+        return '';
+    }
+
+    const lines: string[] = ['🧠 Guru Context Primer:\n'];
+
+    if (summary.systemProfile?.name || summary.systemProfile?.chemistry) {
+        const profilePieces: string[] = [];
+        if (summary.systemProfile.name) profilePieces.push(summary.systemProfile.name);
+        if (summary.systemProfile.chemistry) profilePieces.push(summary.systemProfile.chemistry);
+        if (typeof summary.systemProfile.voltage === 'number') {
+            profilePieces.push(`${summary.systemProfile.voltage.toFixed(1)}V`);
+        }
+        if (profilePieces.length > 0) {
+            lines.push(`• System: ${profilePieces.join(' | ')}`);
+        }
+    }
+
+    if (summary.snapshot) {
+        const snapshotBits: string[] = [];
+        if (typeof summary.snapshot.voltage === 'number') snapshotBits.push(`${summary.snapshot.voltage.toFixed(2)}V`);
+        if (typeof summary.snapshot.current === 'number') snapshotBits.push(`${summary.snapshot.current.toFixed(1)}A`);
+        if (typeof summary.snapshot.soc === 'number') snapshotBits.push(`${summary.snapshot.soc.toFixed(1)}% SOC`);
+        if (snapshotBits.length > 0) {
+            lines.push(`• Live snapshot: ${snapshotBits.join(' | ')}`);
+        }
+    }
+
+    if (summary.energyBudget) {
+        const budgetParts: string[] = [];
+        if (typeof summary.energyBudget.solarSufficiency === 'number') {
+            budgetParts.push(`Solar ${summary.energyBudget.solarSufficiency.toFixed(0)}%`);
+        }
+        if (typeof summary.energyBudget.autonomyDays === 'number') {
+            budgetParts.push(`${summary.energyBudget.autonomyDays.toFixed(1)} days autonomy`);
+        }
+        if (budgetParts.length > 0) {
+            lines.push(`• Energy budget: ${budgetParts.join(' | ')}`);
+        }
+    }
+
+    if (summary.predictions?.capacity) {
+        const predPieces: string[] = [];
+        if (typeof summary.predictions.capacity.degradationAhPerDay === 'number') {
+            predPieces.push(`${summary.predictions.capacity.degradationAhPerDay.toFixed(2)} Ah/day fade`);
+        }
+        if (typeof summary.predictions.capacity.daysToThreshold === 'number') {
+            predPieces.push(`${summary.predictions.capacity.daysToThreshold} days to threshold`);
+        }
+        if (predPieces.length > 0) {
+            lines.push(`• Forecast: ${predPieces.join(' | ')}`);
+        }
+    }
+
+    if (typeof summary.predictions?.lifetimeMonths === 'number') {
+        lines.push(`• Remaining life: ${summary.predictions.lifetimeMonths} months`);
+    }
+
+    if (summary.anomalies && typeof summary.anomalies.total === 'number') {
+        const anomalyParts: string[] = [`${summary.anomalies.total} anomalies`];
+        if (typeof summary.anomalies.highSeverity === 'number') {
+            anomalyParts.push(`${summary.anomalies.highSeverity} high severity`);
+        }
+        lines.push(`• Anomalies: ${anomalyParts.join(' | ')}`);
+    }
+
+    if (summary.weather) {
+        const weatherBits: string[] = [];
+        if (typeof summary.weather.temp === 'number') weatherBits.push(`${summary.weather.temp.toFixed(1)}°C`);
+        if (typeof summary.weather.clouds === 'number') weatherBits.push(`${summary.weather.clouds.toFixed(0)}% clouds`);
+        if (typeof summary.weather.uvi === 'number') weatherBits.push(`UVI ${summary.weather.uvi.toFixed(1)}`);
+        if (weatherBits.length > 0) {
+            lines.push(`• Weather: ${weatherBits.join(' | ')}`);
+        }
+    }
+
+    if (summary.recentSnapshots) {
+        const snapshotMeta: string[] = [];
+        if (typeof summary.recentSnapshots.count === 'number') {
+            snapshotMeta.push(`${summary.recentSnapshots.count} samples`);
+        }
+        if (typeof summary.recentSnapshots.netSocDelta === 'number') {
+            snapshotMeta.push(`ΔSOC ${summary.recentSnapshots.netSocDelta >= 0 ? '+' : ''}${summary.recentSnapshots.netSocDelta.toFixed(1)}%`);
+        }
+        if (typeof summary.recentSnapshots.netAhDelta === 'number') {
+            snapshotMeta.push(`ΔAh ${summary.recentSnapshots.netAhDelta >= 0 ? '+' : ''}${summary.recentSnapshots.netAhDelta.toFixed(2)}`);
+        }
+        if (typeof summary.recentSnapshots.alertCount === 'number' && summary.recentSnapshots.alertCount > 0) {
+            snapshotMeta.push(`${summary.recentSnapshots.alertCount} alerts`);
+        }
+        if (snapshotMeta.length > 0) {
+            lines.push(`• Recent logs: ${snapshotMeta.join(' | ')}`);
+        }
+    }
+
+    if (summary.meta?.contextBuildMs) {
+        lines.push(`• Context build time: ${Math.round(summary.meta.contextBuildMs)} ms${summary.meta.truncated ? ' (truncated)' : ''}`);
+    }
+
+    const filtered = lines.filter(Boolean);
+    if (filtered.length <= 1) {
+        return '';
+    }
+
+    return filtered.join('\n') + '\n';
 };
 
 /**
@@ -461,13 +593,28 @@ const pollInsightsJobCompletion = async (
     onChunk: (chunk: string) => void,
     onError: (error: Error) => void,
     maxAttempts: number = 600,  // Increased from 120 (~4 min) to 600 (~20 min) to allow for longer AI processing
-    initialInterval: number = 2000
+    initialInterval: number = 2000,
+    initialContextSummary?: any
 ): Promise<void> => {
     let attempts = 0;
     let lastProgressCount = 0;
     let currentInterval = initialInterval;
     const maxInterval = 10000;
     const backoffMultiplier = 1.3;
+    let contextSummarySent = false;
+
+    const emitContextSummary = (summary: any) => {
+        if (!summary || contextSummarySent) {
+            return;
+        }
+        const formatted = formatContextSummary(summary);
+        if (formatted) {
+            onChunk(formatted);
+            contextSummarySent = true;
+        }
+    };
+
+    emitContextSummary(initialContextSummary);
 
     return new Promise((resolve, reject) => {
         const poll = async () => {
@@ -484,6 +631,8 @@ const pollInsightsJobCompletion = async (
 
                 const status = await response.json();
 
+                emitContextSummary(status.contextSummary || status.partialInsights?.contextSummary || status.finalInsights?.contextSummary);
+
                 // Stream new progress events
                 if (status.progress && status.progress.length > lastProgressCount) {
                     const newEvents = status.progress.slice(lastProgressCount);
@@ -498,14 +647,21 @@ const pollInsightsJobCompletion = async (
 
                 // Stream partial insights
                 if (status.partialInsights) {
-                    onChunk(status.partialInsights);
+                    if (typeof status.partialInsights === 'string') {
+                        onChunk(status.partialInsights);
+                    } else if (status.partialInsights.formattedText) {
+                        onChunk(status.partialInsights.formattedText);
+                    } else if (status.partialInsights.rawText) {
+                        onChunk(status.partialInsights.rawText);
+                    }
                 }
 
                 // Check if completed
                 if (status.status === 'completed' && status.finalInsights) {
-                    const finalText = status.finalInsights.formattedText || 
-                                     status.finalInsights.rawText ||
-                                     formatInsightsObject(status.finalInsights);
+                    emitContextSummary(status.finalInsights.contextSummary);
+                    const finalText = status.finalInsights.formattedText ||
+                        status.finalInsights.rawText ||
+                        formatInsightsObject(status.finalInsights);
                     if (finalText) {
                         onChunk(`\n✅ Analysis Complete:\n${finalText}`);
                     }
@@ -578,17 +734,17 @@ const formatProgressEvent = (event: any): string => {
  */
 const formatInsightsObject = (insights: any): string => {
     if (typeof insights === 'string') return insights;
-    
+
     const parts: string[] = [];
-    
+
     if (insights.currentHealthStatus) {
         parts.push(`Health Status: ${insights.currentHealthStatus}`);
     }
-    
+
     if (Array.isArray(insights.keyFindings)) {
         parts.push(`\nKey Findings:\n${insights.keyFindings.map((f: string) => `• ${f}`).join('\n')}`);
     }
-    
+
     if (insights.recommendations) {
         if (Array.isArray(insights.recommendations)) {
             parts.push(`\nRecommendations:\n${insights.recommendations.map((r: string) => `• ${r}`).join('\n')}`);
@@ -596,11 +752,11 @@ const formatInsightsObject = (insights: any): string => {
             parts.push(`\nRecommendations:\n${insights.recommendations}`);
         }
     }
-    
+
     if (insights.summary) {
         parts.push(`\n${insights.summary}`);
     }
-    
+
     return parts.join('\n');
 };
 
@@ -668,7 +824,7 @@ export const generateInsightsBackground = async (
  */
 export const getInsightsJobStatus = async (jobId: string): Promise<any> => {
     log('info', 'Fetching insights job status', { jobId });
-    
+
     try {
         const response = await fetch('/.netlify/functions/generate-insights-status', {
             method: 'POST',
@@ -684,7 +840,7 @@ export const getInsightsJobStatus = async (jobId: string): Promise<any> => {
         }
 
         const status = await response.json();
-        
+
         log('info', 'Insights job status retrieved', {
             jobId,
             status: status.status,
@@ -1072,12 +1228,12 @@ export const getHourlyWeather = async (lat: number, lon: number, date: string): 
 
 export const runDiagnostics = async (selectedTests?: string[]): Promise<Record<string, { status: string; message: string }>> => {
     log('info', 'Running system diagnostics.', { selectedTests });
-    
+
     // Diagnostics can take 30+ seconds, so we need a custom timeout
     // Use a 60-second timeout to allow comprehensive diagnostics to complete
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000);
-    
+
     try {
         const headers = {
             'Content-Type': 'application/json',

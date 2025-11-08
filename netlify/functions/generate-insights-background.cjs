@@ -1,46 +1,110 @@
 /**
- * Background wrapper for Generate Insights
+ * Background processor for Generate Insights jobs.
  *
- * Restores the legacy background endpoint name and forwards to the enhanced
- * insights implementation while emitting structured logs.
- *
- * Endpoint: /.netlify/functions/generate-insights-background
- * Behavior: Background function (Netlify returns 202 to caller).
+ * This function is invoked asynchronously via /.netlify/functions/generate-insights-background
+ * and is responsible for loading the queued job payload, executing the AI analysis,
+ * and persisting the results back to MongoDB.
  */
 
 const { createLogger, createTimer } = require('../../utils/logger.cjs');
-const enhancedHandler = require('./generate-insights-with-tools.cjs').handler;
+const { getInsightsJob, failJob } = require('./utils/insights-jobs.cjs');
+const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
 
 exports.handler = async (event = {}, context = {}) => {
   const log = createLogger('generate-insights-background', context);
   const timer = createTimer(log, 'generate-insights-background');
 
+  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+
+  let jobId = null;
+
   try {
-    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+    const payload = parseBackgroundPayload(event, log);
+    jobId = payload?.jobId || event?.queryStringParameters?.jobId || null;
 
-    const result = await enhancedHandler(event, context);
-    const durationMs = timer.end({ statusCode: result && result.statusCode });
-    log.exit(result?.statusCode || 200, { durationMs });
+    if (!jobId) {
+      log.warn('Background invocation missing jobId');
+      timer.end({ error: true });
+      return buildBackgroundResponse(false, 'Missing jobId');
+    }
 
-    return {
-      statusCode: 202,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({
-        success: true,
-        message: 'generate-insights-background accepted',
-        proxiedStatus: result?.statusCode || 200,
-        timestamp: new Date().toISOString()
-      })
-    };
+    const job = await getInsightsJob(jobId, log);
+    if (!job) {
+      log.warn('Background job not found', { jobId });
+      await markJobFailed(jobId, 'Job not found during background processing', log);
+      timer.end({ error: true });
+      return buildBackgroundResponse(false, 'Job not found');
+    }
+
+    log.info('Starting background insights processing', {
+      jobId,
+      hasSystemId: !!job.systemId,
+      hasCustomPrompt: !!job.customPrompt
+    });
+
+    await processInsightsInBackground(
+      jobId,
+      job.analysisData,
+      job.systemId,
+      job.customPrompt,
+      log
+    );
+
+    const durationMs = timer.end();
+    log.exit(200, { jobId, durationMs });
+
+    return buildBackgroundResponse(true, null, { jobId });
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    log.error('Background insights failed', { error: err.message, stack: err.stack });
-    timer.end({ error: true });
+    log.error('Background insights processing failed', { jobId, error: err.message, stack: err.stack });
 
-    return {
-      statusCode: 202,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ success: false, error: err.message })
-    };
+    if (jobId) {
+      await markJobFailed(jobId, err.message, log);
+    }
+
+    timer.end({ error: true });
+    return buildBackgroundResponse(false, err.message, { jobId });
   }
 };
+
+function parseBackgroundPayload(event, log) {
+  if (!event?.body) {
+    return null;
+  }
+
+  try {
+    const raw = event.isBase64Encoded
+      ? Buffer.from(event.body, 'base64').toString('utf8')
+      : event.body;
+    return JSON.parse(raw);
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    log.warn('Failed to parse background request body', { error: err.message });
+    return null;
+  }
+}
+
+async function markJobFailed(jobId, message, log) {
+  try {
+    await failJob(jobId, message, log);
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    log.error('Failed to record job failure', { jobId, error: err.message });
+  }
+}
+
+function buildBackgroundResponse(success, errorMessage, extra = {}) {
+  return {
+    statusCode: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    },
+    body: JSON.stringify({
+      success,
+      error: errorMessage || undefined,
+      ...extra,
+      timestamp: new Date().toISOString()
+    })
+  };
+}

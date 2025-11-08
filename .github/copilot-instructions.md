@@ -217,7 +217,7 @@ dispatch({ type: 'SYNC_ANALYSIS_COMPLETE', payload: { fileName, record, isDuplic
 ## Recent Migration Notes
 
 - **Gemini 2.5 Flash**: Upgraded from older models (see `GEMINI_2.5_MIGRATION_COMPLETE.md`)
-- **Sync analysis**: Migrated from job-based async to synchronous processing
+- **Sync analysis**: Use job-based async AND/OR synchronous processing situationally, whichever will work best to avoid Netlify Timeouts, and guarantee results.
 - **Path aliases**: Fixed import resolution issues (Oct 2025) - use configured aliases consistently
 - **MongoDB pooling**: Optimized connection pooling (reduced pool size 10→5 to prevent overload)
 

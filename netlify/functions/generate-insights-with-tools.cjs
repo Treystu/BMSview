@@ -28,9 +28,8 @@
 
 const { createLogger, createTimer } = require('../../utils/logger.cjs');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { createInsightsJob, ensureIndexes } = require('./utils/insights-jobs.cjs');
+const { createInsightsJob, ensureIndexes, failJob } = require('./utils/insights-jobs.cjs');
 const { generateInitialSummary } = require('./utils/insights-summary.cjs');
-const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
 const { buildGuruPrompt } = require('./utils/insights-guru.cjs');
 const { executeToolCall } = require('./utils/gemini-tools.cjs');
 
@@ -40,6 +39,7 @@ const ITERATION_TIMEOUT_MS = 25000; // 25 seconds per iteration (increased from 
 const TOTAL_TIMEOUT_MS = 58000; // 58 seconds total (increased, leaving 2s buffer for Netlify's 60s limit)
 const MAX_CONVERSATION_TOKENS = 60000; // Maximum tokens for conversation history (rough estimate)
 const TOKENS_PER_CHAR = 0.25; // Rough estimate: 1 token ≈ 4 characters
+const BACKGROUND_FUNCTION_NAME = 'generate-insights-background';
 
 /**
  * Main handler for insights generation with function calling
@@ -116,37 +116,46 @@ async function handler(event = {}, context = {}) {
 
       log.info('Insights job created', { jobId: job.id });
 
-      // CRITICAL: Start background processing but DON'T WAIT
-      // This must complete BEFORE the handler returns so the Lambda environment stays alive
-      const processingPromise = processInsightsInBackground(
-        job.id,
-        analysisData,
-        systemId,
-        customPrompt,
-        log
-      );
-
-      // Store the promise reference to keep the event loop alive
-      // Return response immediately but wait for processing to finish
-      // This gives us the best of both worlds:
-      // 1. Frontend gets jobId quickly
-      // 2. Processing continues and completes
-      processingPromise
-        .then(() => {
-          log.info('Background insights processing completed', { jobId: job.id });
-        })
-        .catch(err => {
-          const error = err instanceof Error ? err : new Error(String(err));
-          log.error('Background insights processing failed', {
-            jobId: job.id,
-            error: error.message,
-            stack: error.stack
-          });
+      try {
+        const dispatchInfo = await dispatchBackgroundProcessing({
+          jobId: job.id,
+          event,
+          log
         });
 
-      // IMPORTANT: We return immediately to the client
-      // But the event loop will stay alive due to the pending promise
-      // Netlify will keep the function alive until all promises resolve or timeout
+        log.info('Background processing dispatched', {
+          jobId: job.id,
+          dispatchUrl: dispatchInfo.url,
+          status: dispatchInfo.status
+        });
+      } catch (dispatchError) {
+        const error = dispatchError instanceof Error ? dispatchError : new Error(String(dispatchError));
+        log.error('Failed to dispatch background insights processing', {
+          jobId: job.id,
+          error: error.message
+        });
+
+        try {
+          await failJob(job.id, `Background dispatch failed: ${error.message}`, log);
+        } catch (failErr) {
+          const failError = failErr instanceof Error ? failErr : new Error(String(failErr));
+          log.error('Failed to mark job as failed after dispatch error', {
+            jobId: job.id,
+            error: failError.message
+          });
+        }
+
+        timer.end();
+        return respond(500, {
+          success: false,
+          error: 'Unable to start background processing. Please try again.',
+          message: error.message,
+          jobId: job.id,
+          analysisMode: runMode,
+          timestamp: new Date().toISOString()
+        });
+      }
+
       timer.end();
 
       // Return immediate response with jobId and initial summary
@@ -799,6 +808,94 @@ async function getAIModelWithTools(log) {
  * @param {number} statusCode
  * @param {any} body
  */
+async function dispatchBackgroundProcessing({ jobId, event, log }) {
+  if (!jobId) {
+    throw new Error('dispatchBackgroundProcessing called without jobId');
+  }
+
+  const url = resolveBackgroundFunctionUrl(event);
+  if (!url) {
+    throw new Error('Unable to resolve background function URL');
+  }
+
+  log.debug('Dispatching background insights function', { jobId, url });
+
+  const response = await fetchWithFallback(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Insights-Dispatch': 'generate-insights'
+    },
+    body: JSON.stringify({ jobId })
+  });
+
+  if (!response.ok) {
+    const errorText = await readResponseText(response);
+    throw new Error(`Background function responded with status ${response.status}${errorText ? `: ${errorText}` : ''}`);
+  }
+
+  return { status: response.status, url };
+}
+
+function resolveBackgroundFunctionUrl(event) {
+  const explicit = process.env.INSIGHTS_BACKGROUND_URL;
+  if (explicit) {
+    return buildBackgroundUrl(explicit);
+  }
+
+  const envBase = process.env.URL || process.env.DEPLOY_URL || process.env.DEPLOY_PRIME_URL || process.env.SITE_URL;
+  if (envBase) {
+    return buildBackgroundUrl(envBase);
+  }
+
+  const host = event?.headers?.host;
+  if (host) {
+    const protocol = event?.headers?.['x-forwarded-proto'] || event?.headers?.['X-Forwarded-Proto'] || 'https';
+    return buildBackgroundUrl(`${protocol}://${host}`);
+  }
+
+  if (process.env.NETLIFY_DEV === 'true') {
+    const port = process.env.NETLIFY_DEV_PORT || process.env.PORT || 8888;
+    return buildBackgroundUrl(`http://localhost:${port}`);
+  }
+
+  return null;
+}
+
+function buildBackgroundUrl(base) {
+  if (!base) return null;
+  const trimmed = base.trim();
+  if (!trimmed) return null;
+
+  const withoutTrailingSlash = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+
+  if (withoutTrailingSlash.includes('/.netlify/functions/')) {
+    if (withoutTrailingSlash.endsWith(`/${BACKGROUND_FUNCTION_NAME}`)) {
+      return withoutTrailingSlash;
+    }
+    return `${withoutTrailingSlash}/${BACKGROUND_FUNCTION_NAME}`;
+  }
+
+  return `${withoutTrailingSlash}/.netlify/functions/${BACKGROUND_FUNCTION_NAME}`;
+}
+
+async function fetchWithFallback(url, options) {
+  if (typeof fetch === 'function') {
+    return fetch(url, options);
+  }
+
+  const { default: nodeFetch } = await import('node-fetch');
+  return nodeFetch(url, options);
+}
+
+async function readResponseText(response) {
+  try {
+    return await response.text();
+  } catch (error) {
+    return '';
+  }
+}
+
 function respond(statusCode, body) {
   return {
     statusCode,

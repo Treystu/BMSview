@@ -17,6 +17,13 @@ View your app in AI Studio: https://ai.studio/apps/drive/1ATGOGWROvHw_0dBbow54GO
 - 📈 **Data Visualization**: Interactive charts and graphs
 - 🔍 **Anomaly Detection**: Identify potential issues automatically
 
+### ⚡ Ultimate AI Battery Guru
+- **Context-Rich Insights**: The guru preloads system analytics, energy budgets, forecasts, weather, and the latest 24 snapshot logs before answering
+- **Smart Tool Orchestration**: Gemini 2.5 Flash uses structured tool calls for targeted queries, with automated background escalation on complex prompts
+- **Operational Summaries**: Front-end stream now surfaces a “Guru Context Primer” so operators see the data foundation used in every AI recommendation
+- **Recent Snapshot Intel**: Netlify functions aggregate the most recent history entries, highlighting SOC deltas, net amp-hour movement, and alert trends
+- **Production-Ready Background Jobs**: Status polling returns context summaries alongside progress so async runs remain transparent
+
 ### ☀️ NEW: Solar Integration
 - **Solar Energy Estimation**: Get accurate solar generation estimates based on location and panel specs
 - **Battery-Solar Correlation**: Compare expected solar input with actual battery charging
