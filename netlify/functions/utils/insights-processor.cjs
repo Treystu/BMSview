@@ -17,8 +17,7 @@ const {
   completeJob,
   failJob
 } = require('./insights-jobs.cjs');
-const { collectAutoInsightsContext, buildGuruPrompt } = require('./insights-guru.cjs');
-const { executeToolCall } = require('./gemini-tools.cjs');
+const { runGuruConversation, DEFAULT_CONVERSATION_TOKEN_LIMIT, TOKENS_PER_CHAR } = require('./insights-guru-runner.cjs');
 
 // Processing constants
 const MAX_TOOL_ITERATIONS = 15;
@@ -28,7 +27,6 @@ const TOTAL_TIMEOUT_MS = 14 * 60 * 1000; // 14 minutes
 /**
  * Main background processing function
  * 
- * @param {string} jobId - Job ID to process
  * @param {Object} analysisData - Battery analysis data
  * @param {string} systemId - Optional system ID
  * @param {string} customPrompt - Optional custom user prompt
@@ -46,14 +44,105 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
       data: { message: 'AI analysis starting...' }
     }, log);
 
-    // Execute AI processing
-    const result = await executeAIProcessing(
+    const model = await getAIModelWithTools(log);
+    if (!model) {
+      throw new Error('AI model not available - cannot generate insights');
+    }
+
+    const result = await runGuruConversation({
+      model,
       analysisData,
       systemId,
       customPrompt,
-      jobId,
-      log
-    );
+      log,
+      mode: 'background',
+      maxIterations: MAX_TOOL_ITERATIONS,
+      iterationTimeoutMs: ITERATION_TIMEOUT_MS,
+      totalTimeoutMs: TOTAL_TIMEOUT_MS,
+      conversationTokenLimit: DEFAULT_CONVERSATION_TOKEN_LIMIT,
+      tokensPerChar: TOKENS_PER_CHAR,
+      hooks: {
+        onIterationStart: async ({ iteration, elapsedMs }) => {
+          try {
+            await addProgressEvent(jobId, {
+              type: 'iteration',
+              data: {
+                iteration,
+                elapsedSeconds: Math.floor(elapsedMs / 1000)
+              }
+            }, log);
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            log.warn('Failed to record iteration progress', { jobId, error: err.message });
+          }
+        },
+        onToolCall: async ({ iteration, name, parameters }) => {
+          try {
+            await addProgressEvent(jobId, {
+              type: 'tool_call',
+              data: {
+                tool: name,
+                parameters,
+                iteration
+              }
+            }, log);
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            log.warn('Failed to record tool call', { jobId, error: err.message });
+          }
+        },
+        onToolResult: async ({ iteration, name, durationMs, result, error }) => {
+          try {
+            await addProgressEvent(jobId, {
+              type: 'tool_response',
+              data: {
+                tool: name,
+                success: !error,
+                dataSize: result ? JSON.stringify(result).length : 0,
+                durationMs,
+                iteration
+              }
+            }, log);
+          } catch (errLike) {
+            const err = errLike instanceof Error ? errLike : new Error(String(errLike));
+            log.warn('Failed to record tool response', { jobId, error: err.message });
+          }
+        },
+        onPartialUpdate: async ({ text }) => {
+          try {
+            await updatePartialInsights(jobId, text, log);
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            log.warn('Failed to record partial insights', { jobId, error: err.message });
+          }
+        },
+        onFinalAnswer: async ({ iteration, warning }) => {
+          try {
+            await addProgressEvent(jobId, {
+              type: 'ai_response',
+              data: {
+                type: warning ? 'warning' : 'final_answer',
+                iteration
+              }
+            }, log);
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            log.warn('Failed to record AI response event', { jobId, error: err.message });
+          }
+        },
+        onError: async ({ error }) => {
+          try {
+            await addProgressEvent(jobId, {
+              type: 'error',
+              data: { error: error instanceof Error ? error.message : String(error) }
+            }, log);
+          } catch (errLike) {
+            const err = errLike instanceof Error ? errLike : new Error(String(errLike));
+            log.warn('Failed to record AI error event', { jobId, error: err.message });
+          }
+        }
+      }
+    });
 
     // Mark job as complete
     await completeJob(jobId, result.insights, log);
@@ -89,350 +178,6 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
   }
 }
 
-/**
- * Execute AI processing with function calling loop
- */
-async function executeAIProcessing(analysisData, systemId, customPrompt, jobId, log) {
-  const conversationHistory = [];
-  const toolCallsExecuted = [];
-  let iterationCount = 0;
-
-  const startTime = Date.now();
-
-  log.info('Starting AI function calling loop', {
-    jobId,
-    hasSystemId: !!systemId,
-    hasCustomPrompt: !!customPrompt
-  });
-
-  // Get AI model
-  const model = await getAIModelWithTools(log);
-  if (!model) {
-    throw new Error('AI model not available - cannot generate insights');
-  }
-
-  const contextData = await collectAutoInsightsContext(systemId, analysisData, log, { mode: 'background' });
-  const { prompt: initialPrompt, contextSummary } = await buildGuruPrompt({
-    analysisData,
-    systemId,
-    customPrompt,
-    log,
-    context: contextData,
-    mode: 'background'
-  });
-
-  conversationHistory.push({
-    role: 'user',
-    content: initialPrompt
-  });
-
-  // Multi-turn conversation loop
-  while (iterationCount < MAX_TOOL_ITERATIONS) {
-    iterationCount++;
-
-    // Check total timeout
-    const elapsedTime = Date.now() - startTime;
-    if (elapsedTime > TOTAL_TIMEOUT_MS) {
-      log.warn('Processing exceeded total timeout', {
-        jobId,
-        elapsedTime,
-        iterationCount
-      });
-      throw new Error('Analysis exceeded time limit. Try a simpler question.');
-    }
-
-    log.info(`Processing iteration ${iterationCount}`, {
-      jobId,
-      conversationLength: conversationHistory.length,
-      elapsedMs: elapsedTime
-    });
-
-    // Add progress event for iteration start
-    await addProgressEvent(jobId, {
-      type: 'iteration',
-      data: {
-        iteration: iterationCount,
-        elapsedSeconds: Math.floor(elapsedTime / 1000)
-      }
-    }, log);
-
-    // Generate response from Gemini with timeout
-    const iterationStartTime = Date.now();
-    let response;
-
-    try {
-      const conversationText = conversationHistory.map(msg =>
-        `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
-      ).join('\n\n');
-
-      const responsePromise = model.generateContent(conversationText);
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Iteration timeout')), ITERATION_TIMEOUT_MS)
-      );
-
-      response = await Promise.race([responsePromise, timeoutPromise]);
-    } catch (error) {
-      if (error.message === 'Iteration timeout') {
-        log.warn('Gemini iteration timed out', {
-          jobId,
-          iteration: iterationCount,
-          durationMs: Date.now() - iterationStartTime
-        });
-        throw new Error('AI processing took too long. Try simplifying your question.');
-      }
-      throw error;
-    }
-
-    const iterationDuration = Date.now() - iterationStartTime;
-    const responseText = response.response.text();
-
-    log.info('Gemini response received', {
-      jobId,
-      iteration: iterationCount,
-      durationMs: iterationDuration,
-      responseLength: responseText.length
-    });
-
-    // Try to parse as JSON
-    let parsedResponse;
-    try {
-      parsedResponse = JSON.parse(responseText.trim());
-    } catch {
-      // Try to extract JSON from markdown code blocks
-      const jsonMatch = responseText.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-      if (jsonMatch) {
-        try {
-          parsedResponse = JSON.parse(jsonMatch[1].trim());
-        } catch {
-          parsedResponse = null;
-        }
-      } else {
-        const jsonObjectMatch = responseText.match(/\{[\s\S]*\}/);
-        if (jsonObjectMatch) {
-          try {
-            parsedResponse = JSON.parse(jsonObjectMatch[0]);
-          } catch {
-            parsedResponse = null;
-          }
-        } else {
-          parsedResponse = null;
-        }
-      }
-    }
-
-    // Check if it's a tool call
-    if (parsedResponse && parsedResponse.tool_call) {
-      log.info('AI requested tool call', {
-        jobId,
-        toolName: parsedResponse.tool_call,
-        iteration: iterationCount,
-        parameters: parsedResponse.parameters
-      });
-
-      // Add progress event for tool call
-      await addProgressEvent(jobId, {
-        type: 'tool_call',
-        data: {
-          tool: parsedResponse.tool_call,
-          parameters: parsedResponse.parameters,
-          iteration: iterationCount
-        }
-      }, log);
-
-      // Execute the tool
-      const toolStartTime = Date.now();
-      const toolResult = await executeToolCall(
-        parsedResponse.tool_call,
-        parsedResponse.parameters,
-        log
-      );
-      const toolDuration = Date.now() - toolStartTime;
-
-      toolCallsExecuted.push({
-        name: parsedResponse.tool_call,
-        parameters: parsedResponse.parameters,
-        iteration: iterationCount,
-        durationMs: toolDuration
-      });
-
-      // Add progress event for tool response
-      await addProgressEvent(jobId, {
-        type: 'tool_response',
-        data: {
-          tool: parsedResponse.tool_call,
-          success: !toolResult.error,
-          dataSize: JSON.stringify(toolResult).length,
-          durationMs: toolDuration
-        }
-      }, log);
-
-      // Check if tool execution failed
-      if (toolResult.error) {
-        log.warn('Tool execution returned error', {
-          jobId,
-          toolName: parsedResponse.tool_call,
-          error: toolResult.message
-        });
-
-        conversationHistory.push({
-          role: 'assistant',
-          content: JSON.stringify(parsedResponse)
-        });
-        conversationHistory.push({
-          role: 'user',
-          content: `Tool execution error: ${toolResult.message}. Please adjust your request or provide an answer with available data.`
-        });
-        continue;
-      }
-
-      log.info('Tool executed successfully', {
-        jobId,
-        tool: parsedResponse.tool_call,
-        durationMs: toolDuration,
-        resultSize: JSON.stringify(toolResult).length
-      });
-
-      // Send tool result back to Gemini
-      conversationHistory.push({
-        role: 'assistant',
-        content: JSON.stringify(parsedResponse)
-      });
-      conversationHistory.push({
-        role: 'user',
-        content: `Tool response from ${parsedResponse.tool_call}:\n${JSON.stringify(toolResult, null, 2)}`
-      });
-
-      continue;
-    }
-
-    // Check if it's a final answer
-    if (parsedResponse && parsedResponse.final_answer) {
-      log.info('Received final answer from AI', {
-        jobId,
-        iterations: iterationCount,
-        toolCallsUsed: toolCallsExecuted.length,
-        answerLength: parsedResponse.final_answer.length
-      });
-
-      // Update partial insights with final answer
-      await updatePartialInsights(jobId, parsedResponse.final_answer, log);
-
-      // Add progress event for completion
-      await addProgressEvent(jobId, {
-        type: 'ai_response',
-        data: {
-          type: 'final_answer',
-          iteration: iterationCount
-        }
-      }, log);
-
-      const insightsPayload = {
-        rawText: parsedResponse.final_answer,
-        formattedText: formatInsightsResponse(parsedResponse.final_answer),
-        healthStatus: 'Generated',
-        performance: { trend: 'See analysis above' }
-      };
-      if (contextSummary) {
-        insightsPayload.contextSummary = contextSummary;
-      }
-
-      return {
-        insights: insightsPayload,
-        toolCalls: toolCallsExecuted,
-        usedFunctionCalling: toolCallsExecuted.length > 0,
-        iterations: iterationCount
-      };
-    }
-
-    // No JSON structure, treat as final answer (plain text)
-    log.info('Received plain text response (treating as final answer)', {
-      jobId,
-      iterations: iterationCount,
-      textLength: responseText.length
-    });
-
-    await updatePartialInsights(jobId, responseText, log);
-
-    const insightsPayload = {
-      rawText: responseText,
-      formattedText: formatInsightsResponse(responseText),
-      healthStatus: 'Generated',
-      performance: { trend: 'See analysis above' }
-    };
-    if (contextSummary) {
-      insightsPayload.contextSummary = contextSummary;
-    }
-
-    return {
-      insights: insightsPayload,
-      toolCalls: toolCallsExecuted,
-      usedFunctionCalling: toolCallsExecuted.length > 0,
-      iterations: iterationCount
-    };
-  }
-
-  // Max iterations reached
-  log.warn('Max iterations reached', {
-    jobId,
-    maxIterations: MAX_TOOL_ITERATIONS,
-    toolCallsExecuted: toolCallsExecuted.length
-  });
-
-  const lastAssistantMsg = conversationHistory
-    .filter(msg => msg.role === 'assistant')
-    .pop();
-
-  const fallbackAnswer = lastAssistantMsg
-    ? `Analysis incomplete (max iterations reached). Partial results:\n\n${lastAssistantMsg.content}`
-    : 'Analysis could not be completed. Please try a simpler question.';
-
-  const insightsPayload = {
-    rawText: fallbackAnswer,
-    formattedText: formatInsightsResponse(fallbackAnswer),
-    healthStatus: 'Incomplete',
-    performance: { trend: 'Analysis incomplete' }
-  };
-  if (contextSummary) {
-    insightsPayload.contextSummary = contextSummary;
-  }
-
-  return {
-    insights: insightsPayload,
-    toolCalls: toolCallsExecuted,
-    usedFunctionCalling: toolCallsExecuted.length > 0,
-    iterations: iterationCount,
-    warning: 'Max iterations reached'
-  };
-}
-
-/**
- * Format insights response for better display with off-grid context
- */
-function formatInsightsResponse(text) {
-  if (text.includes('═══') || text.includes('🔋')) {
-    return text;
-  }
-
-  const lines = [];
-  lines.push('═══════════════════════════════════════════════════');
-  lines.push('🔋 OFF-GRID ENERGY INTELLIGENCE');
-  lines.push('═══════════════════════════════════════════════════');
-  lines.push('');
-  lines.push(text);
-  lines.push('');
-  lines.push('═══════════════════════════════════════════════════');
-  lines.push(`Generated: ${new Date().toLocaleString()}`);
-  lines.push('═══════════════════════════════════════════════════');
-
-  return lines.join('\n');
-}
-
-/**
- * Get AI model with function calling support
- * Uses standard production models only (no experimental)
- * @param {*} log - Logger instance
- * @returns {Promise<*>} Model instance configured for function calling
- */
 async function getAIModelWithTools(log) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -478,6 +223,5 @@ async function getAIModelWithTools(log) {
 
 module.exports = {
   processInsightsInBackground,
-  executeAIProcessing,
   getAIModelWithTools
 };
