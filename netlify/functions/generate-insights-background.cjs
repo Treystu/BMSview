@@ -14,7 +14,11 @@ exports.handler = async (event = {}, context = {}) => {
   const log = createLogger('generate-insights-background', context);
   const timer = createTimer(log, 'generate-insights-background');
 
-  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+  log.info('Background invocation received', {
+    method: event.httpMethod,
+    path: event.path,
+    query: event.queryStringParameters
+  });
 
   let jobId = null;
 
@@ -51,7 +55,7 @@ exports.handler = async (event = {}, context = {}) => {
     );
 
     const durationMs = timer.end();
-    log.exit(200, { jobId, durationMs });
+    log.info('Background insights processing completed', { jobId, durationMs });
 
     return buildBackgroundResponse(true, null, { jobId });
   } catch (error) {
