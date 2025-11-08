@@ -564,9 +564,34 @@ function formatPredictionsSection(predictions) {
         } else if (capacity.insufficient_data) {
             lines.push(`- Capacity trend: insufficient data (${capacity.message}).`);
         } else {
-            lines.push(`- Capacity decline: ${formatNumber(capacity.degradationRate?.value, " Ah/day", 2)}; replacement threshold in ${formatNumber(capacity.daysToReplacementThreshold, " days", 0)}.`);
-            if (capacity.confidence?.confidenceLevel) {
-                lines.push(`- Forecast confidence: ${capacity.confidence.confidenceLevel} (R² ${formatNumber(capacity.confidence.rSquared, "", 2)}).`);
+            // Check if this is a new battery with provisional results
+            if (capacity.degradationRate?.note) {
+                lines.push(`- **New Battery Status**: ${capacity.degradationRate.note}`);
+                if (capacity.averageRetention != null) {
+                    lines.push(`- Current capacity retention: ${formatNumber(capacity.averageRetention, "%", 1)} (${capacity.cycleCount || 'unknown'} cycles).`);
+                }
+                if (capacity.recommendation) {
+                    lines.push(`- ${capacity.recommendation}`);
+                }
+            } else {
+                // Established degradation trend
+                const ahPerDay = capacity.degradationRate?.value || 0;
+                const percentPerDay = capacity.degradationRate?.percentPerDay || 0;
+                const vsExpected = capacity.degradationRate?.vsExpected;
+
+                lines.push(`- Measured degradation: ${formatNumber(ahPerDay, " Ah/day", 3)} (${formatNumber(percentPerDay * 100, "%/day", 4)})${vsExpected != null ? ` – ${formatNumber(vsExpected, "x expected", 1)}` : ""}.`);
+
+                if (capacity.daysToReplacementThreshold != null && capacity.daysToReplacementThreshold > 0) {
+                    lines.push(`- Replacement threshold (80% retention) in ${formatNumber(capacity.daysToReplacementThreshold, " days", 0)}.`);
+                }
+
+                if (capacity.confidence?.confidenceLevel) {
+                    lines.push(`- Forecast confidence: ${capacity.confidence.confidenceLevel} (R² ${formatNumber(capacity.confidence.rSquared, "", 2)})${capacity.confidence.dataQuality && capacity.confidence.dataQuality !== 'acceptable' ? ` – ${capacity.confidence.dataQuality}` : ""}.`);
+                }
+
+                if (capacity.cycleCount != null) {
+                    lines.push(`- Analysis based on ${capacity.cycleCount} cycles, ${capacity.historicalDataPoints || 0} high-SOC measurements over ${capacity.timeRange?.days || 0} days.`);
+                }
             }
         }
     }

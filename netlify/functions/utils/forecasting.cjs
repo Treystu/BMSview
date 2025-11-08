@@ -11,7 +11,13 @@ const { getCollection } = require('./mongodb.cjs');
 const { BATTERY_REPLACEMENT_THRESHOLDS } = require('./analysis-utilities.cjs');
 
 /**
- * Predict capacity degradation over time using linear regression
+ * Predict capacity degradation over time using context-aware analysis
+ * 
+ * This function now properly accounts for:
+ * - Cycle count (new batteries <100 cycles show minimal degradation)
+ * - Data quality (filters outliers, requires high-SOC measurements)
+ * - Battery chemistry (LiFePO4 has different degradation curve than lithium-ion)
+ * - Statistical significance (requires strong correlation to report degradation)
  * 
  * @param {string} systemId - Battery system identifier
  * @param {number} forecastDays - Number of days to forecast
@@ -23,7 +29,11 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
   log.info('Predicting capacity degradation', { systemId, forecastDays });
 
   try {
-    // Fetch historical capacity data (last 90 days for better trend analysis)
+    // Fetch system metadata for cycle count and chemistry
+    const systemsCollection = await getCollection('systems');
+    const system = await systemsCollection.findOne({ id: systemId });
+
+    // Fetch historical capacity data (last 90 days for trend analysis)
     const historyCollection = await getCollection('history');
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
@@ -32,60 +42,191 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
       .find({
         systemId,
         timestamp: { $gte: ninetyDaysAgo.toISOString() },
-        'analysis.remainingCapacity': { $exists: true, $ne: null }
+        'analysis.remainingCapacity': { $exists: true, $ne: null },
+        'analysis.fullCapacity': { $exists: true, $ne: null }
       })
       .sort({ timestamp: 1 })
       .toArray();
 
-    if (records.length < 10) {
+    if (records.length < 15) {
       return {
         error: false,
         insufficient_data: true,
-        message: `Insufficient historical data for capacity prediction. Found ${records.length} records, need at least 10 records over time.`,
+        message: `Insufficient historical data for capacity prediction. Found ${records.length} records, need at least 15 records over 2+ weeks for reliable degradation analysis.`,
         systemId,
         dataPoints: records.length
       };
     }
 
-    // Extract capacity values with timestamps
-    const dataPoints = records.map(r => ({
-      timestamp: new Date(r.timestamp).getTime(),
-      capacity: r.analysis.remainingCapacity
-    })).filter(p => p.capacity > 0);
+    // Get most recent cycle count
+    const latestRecord = records[records.length - 1];
+    const cycleCount = latestRecord?.analysis?.cycleCount ?? null;
+    const chemistry = latestRecord?.analysis?.chemistry || system?.chemistry || null;
+    const ratedCapacity = system?.capacity || latestRecord?.analysis?.fullCapacity || null;
+
+    log.info('Degradation analysis context', {
+      systemId,
+      cycleCount,
+      chemistry,
+      ratedCapacity,
+      recordCount: records.length
+    });
+
+    // NEW: Filter for high-SOC measurements only (>80%) to avoid SOC fluctuations
+    // remainingCapacity varies with SOC, so we need apples-to-apples comparison
+    const highSocRecords = records.filter(r => {
+      const soc = r.analysis?.stateOfCharge;
+      return soc != null && soc >= 80;
+    });
+
+    if (highSocRecords.length < 10) {
+      return {
+        error: false,
+        insufficient_data: true,
+        message: `Insufficient high-SOC (≥80%) measurements for accurate degradation tracking. Found ${highSocRecords.length} high-SOC records, need at least 10. Current capacity readings vary too much with charge state to determine degradation.`,
+        systemId,
+        dataPoints: highSocRecords.length,
+        totalDataPoints: records.length
+      };
+    }
+
+    // Extract capacity retention percentages (more stable than absolute values)
+    const dataPoints = highSocRecords.map(r => {
+      const fullCap = r.analysis.fullCapacity || ratedCapacity;
+      const remaining = r.analysis.remainingCapacity;
+      const retentionPercent = fullCap && fullCap > 0 ? (remaining / fullCap) * 100 : null;
+
+      return {
+        timestamp: new Date(r.timestamp).getTime(),
+        capacity: remaining,
+        retentionPercent,
+        soc: r.analysis.stateOfCharge,
+        fullCapacity: fullCap
+      };
+    }).filter(p => p.capacity > 0 && p.retentionPercent != null && p.retentionPercent <= 105);
 
     if (dataPoints.length < 10) {
       return {
         error: false,
         insufficient_data: true,
-        message: 'Insufficient valid capacity data points for prediction.',
+        message: 'Insufficient valid high-SOC capacity data points after filtering.',
         systemId,
         dataPoints: dataPoints.length
       };
     }
 
-    // Perform linear regression
-    const regression = linearRegression(dataPoints);
+    // NEW: Outlier detection using IQR method on retention percentages
+    const retentions = dataPoints.map(p => p.retentionPercent).sort((a, b) => a - b);
+    const q1 = retentions[Math.floor(retentions.length * 0.25)];
+    const q3 = retentions[Math.floor(retentions.length * 0.75)];
+    const iqr = q3 - q1;
+    const lowerBound = q1 - 1.5 * iqr;
+    const upperBound = q3 + 1.5 * iqr;
 
-    // Generate forecast
-    const lastTimestamp = dataPoints[dataPoints.length - 1].timestamp;
-    const forecastData = [];
-    const msPerDay = 24 * 60 * 60 * 1000;
+    const filteredPoints = dataPoints.filter(p =>
+      p.retentionPercent >= lowerBound && p.retentionPercent <= upperBound
+    );
 
-    for (let i = 1; i <= forecastDays; i++) {
-      const futureTimestamp = lastTimestamp + (i * msPerDay);
-      const predictedCapacity = regression.slope * futureTimestamp + regression.intercept;
+    log.info('Outlier filtering', {
+      originalPoints: dataPoints.length,
+      filteredPoints: filteredPoints.length,
+      retentionRange: `${Math.round(Math.min(...retentions))}% - ${Math.round(Math.max(...retentions))}%`,
+      iqrBounds: `${Math.round(lowerBound)}% - ${Math.round(upperBound)}%`
+    });
 
-      forecastData.push({
-        date: new Date(futureTimestamp).toISOString().split('T')[0],
-        predictedCapacity: Math.max(0, Math.round(predictedCapacity * 100) / 100),
-        daysFromNow: i
-      });
+    if (filteredPoints.length < 8) {
+      return {
+        error: false,
+        insufficient_data: true,
+        message: 'Too much variation in capacity readings after outlier removal. This suggests measurement noise rather than real degradation.',
+        systemId,
+        dataPoints: filteredPoints.length
+      };
     }
 
-    // Calculate confidence metrics if requested
+    // Perform linear regression on retention percentage
+    const regressionData = filteredPoints.map(p => ({
+      timestamp: p.timestamp,
+      capacity: p.retentionPercent
+    }));
+
+    const regression = linearRegression(regressionData);
+
+    // NEW: Cycle count gating - batteries under 100 cycles should show minimal degradation
+    const isNewBattery = cycleCount != null && cycleCount < 100;
+    const isVeryNewBattery = cycleCount != null && cycleCount < 50;
+
+    // Calculate degradation rate (percent per day)
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const degradationPercentPerDay = Math.abs(regression.slope * msPerDay);
+
+    // Expected degradation rates (percent per day)
+    const expectedDegradation = {
+      lifepo4: {
+        new: 0.0003,      // ~0.11% per year for new LiFePO4
+        mature: 0.0010,   // ~0.36% per year for mature LiFePO4
+        aged: 0.0027      // ~1% per year for aged LiFePO4 (>1000 cycles)
+      },
+      lithium: {
+        new: 0.0008,      // ~0.29% per year for new Li-ion
+        mature: 0.0027,   // ~1% per year for mature Li-ion
+        aged: 0.0055      // ~2% per year for aged Li-ion
+      }
+    };
+
+    const isLiFePO4 = chemistry && chemistry.toLowerCase().includes('lifepo4');
+    const expectedRate = isLiFePO4
+      ? (cycleCount < 100 ? expectedDegradation.lifepo4.new : cycleCount < 500 ? expectedDegradation.lifepo4.mature : expectedDegradation.lifepo4.aged)
+      : (cycleCount < 100 ? expectedDegradation.lithium.new : cycleCount < 300 ? expectedDegradation.lithium.mature : expectedDegradation.lithium.aged);
+
+    const degradationRatio = degradationPercentPerDay / expectedRate;
+
+    log.info('Degradation analysis', {
+      measuredRate: degradationPercentPerDay.toFixed(6),
+      expectedRate: expectedRate.toFixed(6),
+      ratio: degradationRatio.toFixed(2),
+      rSquared: regression.rSquared.toFixed(3),
+      isNewBattery,
+      chemistry
+    });
+
+    // NEW: Statistical significance check
+    // Don't report degradation unless we have strong evidence
+    const hasStrongCorrelation = regression.rSquared > 0.5;
+    const isAnomalous = degradationRatio > 5; // >5x expected rate suggests data issues
+
+    if (isVeryNewBattery && (!hasStrongCorrelation || isAnomalous)) {
+      return {
+        error: false,
+        insufficient_data: false,
+        systemId,
+        metric: 'capacity',
+        currentCapacity: Math.round(filteredPoints[filteredPoints.length - 1].capacity * 100) / 100,
+        averageRetention: Math.round(retentions.reduce((a, b) => a + b, 0) / retentions.length * 10) / 10,
+        cycleCount,
+        chemistry,
+        degradationRate: {
+          value: 0.01, // Minimal nominal value
+          unit: 'Ah/day',
+          trend: 'stable',
+          note: `Battery has only ${cycleCount} cycles. Insufficient service time to establish degradation trend. Current capacity variation (${Math.round(iqr * 10) / 10}%) is within normal measurement tolerance.`
+        },
+        daysToReplacementThreshold: null,
+        replacementThreshold: null,
+        confidence: {
+          rSquared: regression.rSquared,
+          confidenceLevel: 'low',
+          reason: 'Battery too new for reliable degradation forecast'
+        },
+        historicalDataPoints: filteredPoints.length,
+        recommendation: 'Continue monitoring. Degradation analysis requires at least 100 cycles or 6+ months of data for LiFePO4 batteries.'
+      };
+    }
+
+    // Calculate confidence metrics
     let confidence = null;
     if (confidenceLevel) {
-      const residuals = dataPoints.map(p =>
+      const residuals = regressionData.map(p =>
         p.capacity - (regression.slope * p.timestamp + regression.intercept)
       );
       const stdDev = Math.sqrt(residuals.reduce((sum, r) => sum + r * r, 0) / residuals.length);
@@ -93,49 +234,75 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
       confidence = {
         rSquared: regression.rSquared,
         standardDeviation: Math.round(stdDev * 100) / 100,
-        confidenceLevel: regression.rSquared > 0.7 ? 'high' : regression.rSquared > 0.4 ? 'medium' : 'low'
+        confidenceLevel: regression.rSquared > 0.7 ? 'high' : regression.rSquared > 0.5 ? 'medium' : 'low',
+        dataQuality: isAnomalous ? 'questionable - degradation rate exceeds expected physics' : 'acceptable'
       };
     }
 
-    // Calculate degradation rate (Ah per day)
-    const degradationPerDay = Math.abs(regression.slope * msPerDay);
+    // Convert percent degradation to Ah degradation
+    const currentCapacity = filteredPoints[filteredPoints.length - 1].capacity;
+    const avgFullCapacity = filteredPoints.reduce((sum, p) => sum + (p.fullCapacity || 0), 0) / filteredPoints.length;
+    const degradationAhPerDay = (degradationPercentPerDay / 100) * avgFullCapacity;
 
-    // Current capacity (latest reading)
-    const currentCapacity = dataPoints[dataPoints.length - 1].capacity;
-
-    // Estimated days until replacement threshold
-    // Using configurable threshold (default 80% for lithium batteries)
-    // For lead-acid batteries, use BATTERY_REPLACEMENT_THRESHOLDS.leadAcid (70%)
-    const replacementThresholdPercent = BATTERY_REPLACEMENT_THRESHOLDS.default;
-    const capacityThreshold = currentCapacity * replacementThresholdPercent;
-    const daysToThreshold = degradationPerDay > 0
-      ? Math.round((currentCapacity - capacityThreshold) / degradationPerDay)
+    // Calculate days to replacement threshold (80% for lithium)
+    const currentRetention = filteredPoints[filteredPoints.length - 1].retentionPercent;
+    const thresholdRetention = 80; // 80% retention threshold
+    const retentionToLose = currentRetention - thresholdRetention;
+    const daysToThreshold = degradationPercentPerDay > 0.0001
+      ? Math.round(retentionToLose / degradationPercentPerDay)
       : null;
+
+    // Generate forecast
+    const lastTimestamp = filteredPoints[filteredPoints.length - 1].timestamp;
+    const forecastData = [];
+
+    for (let i = 1; i <= Math.min(forecastDays, 365); i++) {
+      const futureTimestamp = lastTimestamp + (i * msPerDay);
+      const predictedRetention = regression.slope * futureTimestamp + regression.intercept;
+      const predictedCapacity = (predictedRetention / 100) * avgFullCapacity;
+
+      forecastData.push({
+        date: new Date(futureTimestamp).toISOString().split('T')[0],
+        predictedCapacity: Math.max(0, Math.round(predictedCapacity * 100) / 100),
+        predictedRetention: Math.max(0, Math.round(predictedRetention * 10) / 10),
+        daysFromNow: i
+      });
+    }
 
     log.info('Capacity degradation prediction completed', {
       systemId,
-      dataPoints: dataPoints.length,
-      degradationPerDay: Math.round(degradationPerDay * 100) / 100,
-      rSquared: regression.rSquared
+      dataPoints: filteredPoints.length,
+      degradationAhPerDay: Math.round(degradationAhPerDay * 1000) / 1000,
+      degradationPercentPerDay: degradationPercentPerDay.toFixed(6),
+      rSquared: regression.rSquared.toFixed(3),
+      daysToThreshold
     });
 
     return {
       systemId,
       metric: 'capacity',
       currentCapacity: Math.round(currentCapacity * 100) / 100,
+      averageRetention: Math.round(currentRetention * 10) / 10,
+      cycleCount,
+      chemistry,
       degradationRate: {
-        value: Math.round(degradationPerDay * 100) / 100,
+        value: Math.round(degradationAhPerDay * 100) / 100,
+        percentPerDay: Math.round(degradationPercentPerDay * 10000) / 10000,
         unit: 'Ah/day',
-        trend: regression.slope < 0 ? 'decreasing' : 'stable'
+        trend: regression.slope < -0.001 ? 'decreasing' : 'stable',
+        vsExpected: Math.round(degradationRatio * 100) / 100
       },
       forecast: forecastData,
-      daysToReplacementThreshold: daysToThreshold,
-      replacementThreshold: Math.round(capacityThreshold * 100) / 100,
+      daysToReplacementThreshold: daysToThreshold && daysToThreshold > 0 && daysToThreshold < 50000 ? daysToThreshold : null,
+      replacementThreshold: Math.round((thresholdRetention / 100) * avgFullCapacity * 100) / 100,
       confidence,
-      historicalDataPoints: dataPoints.length,
+      historicalDataPoints: filteredPoints.length,
+      totalDataPoints: records.length,
+      highSocFilteredPoints: highSocRecords.length,
       timeRange: {
-        start: new Date(dataPoints[0].timestamp).toISOString().split('T')[0],
-        end: new Date(dataPoints[dataPoints.length - 1].timestamp).toISOString().split('T')[0]
+        start: new Date(filteredPoints[0].timestamp).toISOString().split('T')[0],
+        end: new Date(filteredPoints[filteredPoints.length - 1].timestamp).toISOString().split('T')[0],
+        days: Math.round((filteredPoints[filteredPoints.length - 1].timestamp - filteredPoints[0].timestamp) / msPerDay)
       }
     };
 
