@@ -146,6 +146,29 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
         context.recentSnapshots = await runStep("recentSnapshots", () => loadRecentSnapshots(systemId, log));
     }
 
+    context.batteryFacts = await runStep("batteryFacts", async () =>
+        buildBatteryFacts({ analysisData, systemProfile: context.systemProfile })
+    );
+
+    const nightDischarge = await runStep("nightDischarge", async () =>
+        analyzeNightDischargePatterns({
+            snapshots: context.recentSnapshots,
+            analysisData,
+            systemProfile: context.systemProfile
+        })
+    );
+    context.nightDischarge = nightDischarge;
+
+    context.solarVariance = await runStep("solarVariance", async () =>
+        estimateSolarVariance({
+            snapshots: context.recentSnapshots,
+            analysisData,
+            systemProfile: context.systemProfile,
+            weather: context.weather,
+            nightDischarge
+        })
+    );
+
     context.meta.durationMs = Date.now() - start;
     return context;
 }
@@ -180,6 +203,21 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
 
     prompt += `\n${missionStatement}\n`;
 
+    if (contextData?.batteryFacts?.brandNewLikely) {
+        prompt += "\n**BATTERY CONDITION NOTE**\n- Pack is recently installed (<50 cycles). Do not declare severe capacity decline unless analytics tools corroborate with recent trend data. Prefer to frame concerns as monitoring items.\n";
+    }
+
+    if (contextData?.nightDischarge?.aggregate?.totalAh) {
+        prompt += `\n**LOAD BASELINE NOTE**\n- Overnight draw baseline is ${formatNumber(contextData.nightDischarge.aggregate.avgCurrent, " A", 1)} consuming ~${formatNumber(contextData.nightDischarge.aggregate.totalAh, " Ah", 1)} before sunrise. Use this to explain SOC dips and distinguish from battery wear.\n`;
+    }
+
+    if (contextData?.solarVariance && isFiniteNumber(contextData.solarVariance.varianceAh)) {
+        const varianceText = contextData.solarVariance.varianceAh > 0
+            ? `Charging exceeded expectation by ${formatNumber(contextData.solarVariance.varianceAh, " Ah", 1)}.`
+            : `Charging lagged expectation by ${formatNumber(Math.abs(contextData.solarVariance.varianceAh), " Ah", 1)}.`;
+        prompt += `\n**SOLAR MODEL NOTE**\n- ${varianceText} Calibrate recommendations based on this variance rather than default assumptions.\n`;
+    }
+
     prompt += "\n**CRITICAL RESPONSE RULES**\n";
     prompt += "1. If you can answer with the provided context, respond with JSON: {\n   \"final_answer\": \"detailed analysis...\"\n}.\n";
     prompt += "2. If you need more information, respond ONLY with JSON describing a tool call: {\n   \"tool_call\": \"tool_name\",\n   \"parameters\": { ... }\n}. Never include explanatory text with tool calls.\n";
@@ -206,6 +244,9 @@ function buildContextSections(context, analysisData) {
         if (systemProfileSection) sections.push(systemProfileSection);
     }
 
+    const batteryFactsSection = formatBatteryFactsSection(context.batteryFacts, analysisData);
+    if (batteryFactsSection) sections.push(batteryFactsSection);
+
     const snapshotSection = formatCurrentSnapshot(analysisData);
     if (snapshotSection) sections.push(snapshotSection);
 
@@ -231,6 +272,12 @@ function buildContextSections(context, analysisData) {
     const weatherSection = formatWeatherSection(context.weather);
     if (weatherSection) sections.push(weatherSection);
 
+    const nightDischargeSection = formatNightDischargeSection(context.nightDischarge, context.systemProfile);
+    if (nightDischargeSection) sections.push(nightDischargeSection);
+
+    const solarVarianceSection = formatSolarVarianceSection(context.solarVariance);
+    if (solarVarianceSection) sections.push(solarVarianceSection);
+
     const recentSnapshotsSection = formatRecentSnapshotsSection(context.recentSnapshots);
     if (recentSnapshotsSection) sections.push(recentSnapshotsSection);
 
@@ -247,6 +294,19 @@ function buildExecutionGuidance(mode, context) {
     lines.push("- Synchronize only the data you need. If more than four tool calls or multi-week raw data seems necessary, recommend a background follow-up.");
     if (context?.meta) {
         lines.push(`- Preloaded context (${Math.round(context.meta.durationMs)} ms budget): ${summarizePreloadedContext(context)}`);
+    }
+    if (context?.batteryFacts?.brandNewLikely) {
+        lines.push("- Pack flagged as low-cycle (<50). Treat capacity decline claims as provisional unless trend data confirms them.");
+    }
+    if (context?.nightDischarge?.aggregate?.avgCurrent) {
+        lines.push(`- Overnight load baseline ≈ ${formatNumber(context.nightDischarge.aggregate.avgCurrent, " A", 1)} (${formatNumber(context.nightDischarge.aggregate.totalAh, " Ah", 1)} consumed) – use this before attributing SOC drops to cell degradation.`);
+    }
+    if (context?.solarVariance && isFiniteNumber(context.solarVariance.varianceAh)) {
+        const variance = context.solarVariance.varianceAh;
+        const varianceText = variance > 0
+            ? `surplus charging of ${formatNumber(variance, " Ah", 1)}`
+            : `deficit of ${formatNumber(Math.abs(variance), " Ah", 1)}`;
+        lines.push(`- Solar comparison: ${varianceText} vs irradiance expectation. Adjust recommendations accordingly.`);
     }
     lines.push("- Use predictive, pattern, and budget tools to validate every recommendation against measured trends.");
     return lines.join("\n");
@@ -328,6 +388,40 @@ function formatSystemProfile(profile) {
         lines.push(`- Associated DLs: ${profile.associatedDLs.slice(0, 5).join(", ")}${profile.associatedDLs.length > 5 ? "…" : ""}`);
     }
     return lines.join("\n");
+}
+
+function formatBatteryFactsSection(facts, analysisData) {
+    if (!facts) return null;
+    const lines = ["**BATTERY BASELINE**"];
+
+    if (isFiniteNumber(facts.ratedCapacityAh)) {
+        lines.push(`- Rated capacity: ${formatNumber(facts.ratedCapacityAh, " Ah", 1)}.`);
+    } else if (isFiniteNumber(analysisData?.fullCapacity)) {
+        lines.push(`- Rated capacity (from snapshot): ${formatNumber(analysisData.fullCapacity, " Ah", 1)}.`);
+    }
+
+    if (facts.chemistry) {
+        lines.push(`- Chemistry: ${facts.chemistry}.`);
+    }
+
+    if (isFiniteNumber(facts.cycleCount)) {
+        const cycleText = formatNumber(facts.cycleCount, "", 0);
+        lines.push(`- Cycle count: ${cycleText}${facts.brandNewLikely ? " (recent install)" : ""}.`);
+    }
+
+    if (facts.brandNewLikely && !lines.some(line => line.includes('recent install'))) {
+        lines.push("- Cells flagged as recently installed (<50 cycles). Treat degradation estimates cautiously.");
+    }
+
+    if (isFiniteNumber(facts.referenceVoltage)) {
+        lines.push(`- Reference voltage: ${formatNumber(facts.referenceVoltage, " V", 1)} used for power estimates.`);
+    }
+
+    if (isFiniteNumber(facts.cellsInSeries)) {
+        lines.push(`- Cells in series: ${formatNumber(facts.cellsInSeries, "", 0)}.`);
+    }
+
+    return lines.length > 1 ? lines.join("\n") : null;
 }
 
 function formatCurrentSnapshot(analysisData) {
@@ -492,6 +586,76 @@ function formatWeatherSection(weather) {
     return lines.length > 1 ? lines.join("\n") : null;
 }
 
+function formatNightDischargeSection(nightDischarge, systemProfile) {
+    if (!nightDischarge || !nightDischarge.aggregate) return null;
+    const { aggregate, segments } = nightDischarge;
+    if (!aggregate.avgCurrent && !aggregate.totalAh) return null;
+
+    const lines = ["**OVERNIGHT LOAD ANALYSIS**"];
+    if (isFiniteNumber(aggregate.avgCurrent)) {
+        const wattsText = isFiniteNumber(aggregate.avgWatts)
+            ? ` (~${formatNumber(aggregate.avgWatts, " W", 0)})`
+            : "";
+        lines.push(`- Average overnight draw: ${formatNumber(aggregate.avgCurrent, " A", 1)}${wattsText}.`);
+    }
+    if (isFiniteNumber(aggregate.totalAh) && isFiniteNumber(aggregate.totalHours)) {
+        lines.push(`- Consumption window: ${formatNumber(aggregate.totalHours, " h", 1)} totaling ${formatNumber(aggregate.totalAh, " Ah", 1)}.`);
+    } else if (isFiniteNumber(aggregate.totalAh)) {
+        lines.push(`- Estimated overnight consumption: ${formatNumber(aggregate.totalAh, " Ah", 1)}.`);
+    }
+
+    const latestSegment = Array.isArray(segments) && segments.length > 0 ? segments[segments.length - 1] : null;
+    if (latestSegment) {
+        lines.push(`- Most recent heavy draw lasted ${formatNumber(latestSegment.durationHours, " h", 1)} with peaks at ${formatNumber(latestSegment.peakCurrent, " A", 1)}.`);
+    }
+
+    if (!aggregate.isNightDominant) {
+        lines.push("- Note: discharge activity spans beyond typical night hours; investigate continuous loads.");
+    }
+
+    if (systemProfile?.solar?.maxAmps && isFiniteNumber(systemProfile.voltage)) {
+        const replacementAh = systemProfile.solar.maxAmps * Math.max(aggregate.totalHours || 0, 1);
+        lines.push(`- To offset this, solar must deliver ≈${formatNumber(replacementAh, " Ah", 1)} at ${formatNumber(systemProfile.voltage, " V", 1)} during daylight.`);
+    }
+
+    return lines.join("\n");
+}
+
+function formatSolarVarianceSection(variance) {
+    if (!variance) return null;
+    const lines = ["**SOLAR VARIANCE CHECK**"];
+
+    if (isFiniteNumber(variance.actualSolarAh)) {
+        lines.push(`- Actual recovered charge: ${formatNumber(variance.actualSolarAh, " Ah", 1)}${isFiniteNumber(variance.actualSolarWh) ? ` (~${formatNumber(variance.actualSolarWh, " Wh", 0)})` : ""}.`);
+    }
+
+    if (isFiniteNumber(variance.expectedSolarAh)) {
+        lines.push(`- Modeled expectation (weather-adjusted): ${formatNumber(variance.expectedSolarAh, " Ah", 1)} using ${formatNumber(variance.sunHours, " h", 1)} sun hours${isFiniteNumber(variance.cloudCover) ? ` at ${formatPercent(variance.cloudCover, 0)} clouds` : ""}.`);
+    }
+
+    if (isFiniteNumber(variance.varianceAh)) {
+        const varianceText = variance.varianceAh > 0
+            ? `surplus of ${formatNumber(variance.varianceAh, " Ah", 1)}`
+            : `deficit of ${formatNumber(Math.abs(variance.varianceAh), " Ah", 1)}`;
+        lines.push(`- Solar variance vs expectation: ${varianceText}.`);
+    }
+
+    if (isFiniteNumber(variance.anticipatedNightConsumptionAh)) {
+        lines.push(`- Nightly consumption needing replacement: ${formatNumber(variance.anticipatedNightConsumptionAh, " Ah", 1)}.`);
+    }
+
+    if (isFiniteNumber(variance.balanceAh)) {
+        const balancePositive = variance.balanceAh >= 0;
+        lines.push(`- Net balance after night usage: ${balancePositive ? "+" : ""}${formatNumber(variance.balanceAh, " Ah", 1)} (${balancePositive ? "remaining headroom" : "shortfall"}).`);
+    }
+
+    if (variance.recommendation) {
+        lines.push(`- Insight: ${variance.recommendation}`);
+    }
+
+    return lines.length > 1 ? lines.join("\n") : null;
+}
+
 function formatRecentSnapshotsSection(recentSnapshots) {
     if (!Array.isArray(recentSnapshots) || recentSnapshots.length === 0) return null;
 
@@ -572,6 +736,246 @@ async function loadRecentSnapshots(systemId, log) {
     }
 }
 
+function buildBatteryFacts({ analysisData = {}, systemProfile = null }) {
+    const ratedCapacityAh = toNullableNumber(
+        systemProfile?.capacityAh ??
+        analysisData.fullCapacity ??
+        analysisData.nominalCapacity ??
+        analysisData.capacityAh ??
+        analysisData.capacity ??
+        null
+    );
+
+    const cycleCount = toNullableNumber(analysisData.cycleCount);
+    const chemistry = analysisData.chemistry || systemProfile?.chemistry || null;
+    const referenceVoltage = toNullableNumber(systemProfile?.voltage ?? analysisData.overallVoltage);
+    const cellsInSeries = toNullableNumber(analysisData.seriesCells ?? analysisData.seriesCount ?? analysisData.cellCount);
+
+    const brandNewLikely = cycleCount != null && cycleCount <= 50;
+
+    return {
+        ratedCapacityAh,
+        cycleCount,
+        chemistry,
+        referenceVoltage,
+        cellsInSeries,
+        brandNewLikely,
+        lastMeasurementTimestamp: analysisData.timestamp ?? null
+    };
+}
+
+function analyzeNightDischargePatterns({ snapshots = [], analysisData = {}, systemProfile = null }) {
+    if (!Array.isArray(snapshots) || snapshots.length === 0) {
+        return null;
+    }
+
+    const orderedSnapshots = [...snapshots].sort((a, b) => {
+        const aTime = new Date(a.timestamp).getTime();
+        const bTime = new Date(b.timestamp).getTime();
+        return aTime - bTime;
+    });
+
+    const dischargeSequences = extractSequences(orderedSnapshots, snap => isFiniteNumber(snap.current) && snap.current < -0.5);
+    if (dischargeSequences.length === 0) {
+        return { segments: [], nightSegments: [], aggregate: null };
+    }
+
+    const nominalVoltage = toNullableNumber(systemProfile?.voltage ?? analysisData.overallVoltage);
+
+    const segments = dischargeSequences.map(sequence =>
+        computeSequenceStats(sequence, { nominalVoltage, treatAsDischarge: true })
+    ).filter(Boolean);
+
+    if (segments.length === 0) {
+        return { segments: [], nightSegments: [], aggregate: null };
+    }
+
+    const nightSegments = segments.filter(segment => segment.isLikelyNight);
+    const targetSegments = nightSegments.length > 0 ? nightSegments : segments;
+
+    const totalAh = targetSegments.reduce((sum, segment) => sum + (segment.totalAh || 0), 0);
+    const totalHours = targetSegments.reduce((sum, segment) => sum + (segment.durationHours || 0), 0);
+    const avgCurrent = totalHours > 0 ? totalAh / totalHours : 0;
+    const avgWatts = nominalVoltage != null ? avgCurrent * nominalVoltage : null;
+
+    return {
+        segments,
+        nightSegments,
+        aggregate: {
+            totalAh: roundNumber(totalAh, 2),
+            totalHours: roundNumber(totalHours, 2),
+            avgCurrent: roundNumber(avgCurrent, 2),
+            avgWatts: avgWatts != null ? roundNumber(avgWatts, 1) : null,
+            sampleCount: targetSegments.reduce((sum, segment) => sum + (segment.sampleCount || 0), 0),
+            isNightDominant: nightSegments.length > 0
+        }
+    };
+}
+
+function estimateSolarVariance({ snapshots = [], analysisData = {}, systemProfile = null, weather = null, nightDischarge = null }) {
+    const orderedSnapshots = Array.isArray(snapshots)
+        ? [...snapshots].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+        : [];
+
+    const nominalVoltage = toNullableNumber(systemProfile?.voltage ?? analysisData.overallVoltage);
+    const chargeSequences = extractSequences(orderedSnapshots, snap => isFiniteNumber(snap.current) && snap.current > 0.5);
+    const chargeSegments = chargeSequences.map(sequence =>
+        computeSequenceStats(sequence, { nominalVoltage, treatAsDischarge: false })
+    ).filter(Boolean);
+
+    const actualSolarAh = chargeSegments.reduce((sum, segment) => sum + Math.max(0, segment.totalAh || 0), 0);
+    const actualSolarWh = nominalVoltage != null ? actualSolarAh * nominalVoltage : null;
+
+    const cloudCover = weather && isFiniteNumber(weather.clouds) ? weather.clouds : null;
+    const baselineSunHours = inferSunHours(cloudCover);
+
+    const maxSolarAmps = toNullableNumber(systemProfile?.solar?.maxAmps);
+    const fallbackAmps = toNullableNumber(analysisData.maxChargeCurrent ?? analysisData.chargeCurrent ?? null);
+    const representativeAmps = maxSolarAmps ?? fallbackAmps;
+
+    const averageChargeDuration = chargeSegments.reduce((sum, segment) => sum + (segment.durationHours || 0), 0);
+    const inferredAmpsFromData = averageChargeDuration > 0 ? actualSolarAh / averageChargeDuration : null;
+
+    const expectedChargingAmps = representativeAmps ?? inferredAmpsFromData ?? null;
+    const expectedSolarAh = expectedChargingAmps != null ? expectedChargingAmps * baselineSunHours : null;
+    const expectedSolarWh = expectedSolarAh != null && nominalVoltage != null ? expectedSolarAh * nominalVoltage : null;
+
+    const anticipatedConsumptionAh = nightDischarge?.aggregate?.totalAh ?? null;
+    const balanceAh = anticipatedConsumptionAh != null ? actualSolarAh - anticipatedConsumptionAh : null;
+    const expectedBalanceAh = anticipatedConsumptionAh != null && expectedSolarAh != null
+        ? expectedSolarAh - anticipatedConsumptionAh
+        : null;
+    const varianceAh = expectedSolarAh != null ? actualSolarAh - expectedSolarAh : null;
+
+    let recommendation = null;
+    if (varianceAh != null) {
+        if (varianceAh < -3) {
+            recommendation = 'Solar intake is trailing expectations; consider verifying panel output or shading during low irradiance days.';
+        } else if (varianceAh > 3) {
+            recommendation = 'Solar charging exceeded modeled expectations. Review discharge assumptions or recalibrate baseline.';
+        }
+    }
+
+    return {
+        segments: chargeSegments,
+        cloudCover,
+        sunHours: baselineSunHours,
+        expectedSolarAh: expectedSolarAh != null ? roundNumber(expectedSolarAh, 2) : null,
+        expectedSolarWh: expectedSolarWh != null ? Math.round(expectedSolarWh) : null,
+        actualSolarAh: roundNumber(actualSolarAh, 2),
+        actualSolarWh: actualSolarWh != null ? Math.round(actualSolarWh) : null,
+        anticipatedNightConsumptionAh: anticipatedConsumptionAh != null ? roundNumber(anticipatedConsumptionAh, 2) : null,
+        balanceAh: balanceAh != null ? roundNumber(balanceAh, 2) : null,
+        expectedBalanceAh: expectedBalanceAh != null ? roundNumber(expectedBalanceAh, 2) : null,
+        varianceAh: varianceAh != null ? roundNumber(varianceAh, 2) : null,
+        recommendation
+    };
+}
+
+function extractSequences(snapshots, predicate) {
+    const sequences = [];
+    let current = [];
+
+    for (const snapshot of snapshots) {
+        if (predicate(snapshot)) {
+            current.push(snapshot);
+        } else if (current.length > 0) {
+            sequences.push(current);
+            current = [];
+        }
+    }
+
+    if (current.length > 0) {
+        sequences.push(current);
+    }
+
+    return sequences;
+}
+
+function computeSequenceStats(sequence, { nominalVoltage = null, treatAsDischarge = false } = {}) {
+    if (!sequence || sequence.length === 0) {
+        return null;
+    }
+
+    const durations = [];
+    for (let i = 0; i < sequence.length - 1; i++) {
+        const currentTs = new Date(sequence[i].timestamp).getTime();
+        const nextTs = new Date(sequence[i + 1].timestamp).getTime();
+        if (Number.isNaN(currentTs) || Number.isNaN(nextTs) || nextTs <= currentTs) {
+            continue;
+        }
+        const hours = (nextTs - currentTs) / (1000 * 60 * 60);
+        if (hours <= 0) continue;
+        durations.push(Math.min(hours, 6));
+    }
+
+    let durationHours = durations.reduce((sum, value) => sum + value, 0);
+    if (durationHours <= 0) {
+        durationHours = Math.max(0.25, sequence.length * 0.25);
+    }
+
+    const currents = sequence
+        .map(entry => toNullableNumber(entry.current))
+        .filter(current => current != null);
+
+    if (currents.length === 0) {
+        return null;
+    }
+
+    const avgRaw = currents.reduce((sum, value) => sum + value, 0) / currents.length;
+    const avgCurrent = treatAsDischarge ? Math.abs(avgRaw) : avgRaw;
+    const peakCurrent = currents.reduce((peak, value) => {
+        const candidate = treatAsDischarge ? Math.abs(value) : value;
+        return Math.max(peak, candidate);
+    }, 0);
+
+    const totalAh = avgCurrent * durationHours;
+    const avgWatts = nominalVoltage != null ? avgCurrent * nominalVoltage : null;
+
+    const nightSamples = sequence.filter(entry => isNightHour(entry.timestamp)).length;
+    const isLikelyNight = nightSamples >= Math.ceil(sequence.length * 0.5);
+
+    return {
+        start: sequence[0].timestamp,
+        end: sequence[sequence.length - 1].timestamp,
+        durationHours: roundNumber(durationHours, 2),
+        avgCurrent: roundNumber(avgCurrent, 2),
+        peakCurrent: roundNumber(peakCurrent, 2),
+        totalAh: roundNumber(totalAh, 2),
+        avgWatts: avgWatts != null ? roundNumber(avgWatts, 1) : null,
+        isLikelyNight,
+        sampleCount: sequence.length
+    };
+}
+
+function isNightHour(timestamp) {
+    if (!timestamp) return false;
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return false;
+    const hour = date.getHours();
+    return hour >= 18 || hour < 6;
+}
+
+function inferSunHours(cloudCover) {
+    const base = 5;
+    if (!isFiniteNumber(cloudCover)) {
+        return base;
+    }
+    const penalty = (cloudCover / 100) * 3; // up to -3 hours at 100% clouds
+    return clamp(base - penalty, 2, 6);
+}
+
+function roundNumber(value, digits = 2) {
+    if (!isFiniteNumber(value)) return null;
+    const factor = Math.pow(10, digits);
+    return Math.round(value * factor) / factor;
+}
+
+function clamp(value, min, max) {
+    if (!isFiniteNumber(value)) return value;
+    return Math.max(min, Math.min(max, value));
+}
+
 function calculateDelta(latest, earliest) {
     const latestNumber = toNullableNumber(latest);
     const earliestNumber = toNullableNumber(earliest);
@@ -628,6 +1032,12 @@ function summarizeContextForClient(context, analysisData) {
             alerts: Array.isArray(analysisData.alerts) ? analysisData.alerts.slice(0, 5) : []
         } : null,
         systemProfile: context.systemProfile || null,
+        batteryFacts: context.batteryFacts ? {
+            ratedCapacityAh: toNullableNumber(context.batteryFacts.ratedCapacityAh),
+            cycleCount: toNullableNumber(context.batteryFacts.cycleCount),
+            brandNewLikely: !!context.batteryFacts.brandNewLikely,
+            referenceVoltage: toNullableNumber(context.batteryFacts.referenceVoltage)
+        } : null,
         energyBudget: context.energyBudgets?.current && !context.energyBudgets.current.error ? {
             solarSufficiency: context.energyBudgets.current.solarSufficiency?.percentage ?? null,
             autonomyDays: context.energyBudgets.current.batteryMetrics?.daysOfAutonomy ?? null,
@@ -647,6 +1057,18 @@ function summarizeContextForClient(context, analysisData) {
         anomalies: context.usagePatterns?.anomalies && !context.usagePatterns.anomalies.error ? {
             total: context.usagePatterns.anomalies.summary?.total ?? null,
             highSeverity: context.usagePatterns.anomalies.summary?.highSeverity ?? null
+        } : null,
+        nightDischarge: context.nightDischarge?.aggregate ? {
+            avgCurrent: toNullableNumber(context.nightDischarge.aggregate.avgCurrent),
+            totalAh: toNullableNumber(context.nightDischarge.aggregate.totalAh),
+            totalHours: toNullableNumber(context.nightDischarge.aggregate.totalHours),
+            isNightDominant: !!context.nightDischarge.aggregate.isNightDominant
+        } : null,
+        solarVariance: context.solarVariance ? {
+            expectedSolarAh: toNullableNumber(context.solarVariance.expectedSolarAh),
+            actualSolarAh: toNullableNumber(context.solarVariance.actualSolarAh),
+            varianceAh: toNullableNumber(context.solarVariance.varianceAh),
+            sunHours: toNullableNumber(context.solarVariance.sunHours)
         } : null,
         weather: context.weather && !context.weather.error ? {
             temp: context.weather.temp ?? null,
