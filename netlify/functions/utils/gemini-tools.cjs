@@ -174,7 +174,7 @@ const toolDefinitions = [
         metric: {
           type: 'string',
           enum: ['capacity', 'efficiency', 'temperature', 'voltage', 'lifetime'],
-          description: 'What metric to predict: capacity (degradation over time), efficiency (charge/discharge), temperature (thermal patterns), voltage (voltage trends), lifetime (estimated remaining life)'
+          description: 'What metric to predict: capacity (degradation over time), efficiency (charge/discharge), temperature (thermal patterns), voltage (voltage trends), lifetime (estimated SERVICE LIFE until replacement threshold based on degradation - NOT runtime before discharge)'
         },
         forecastDays: {
           type: 'number',
@@ -295,19 +295,19 @@ async function executeToolCall(toolName, parameters, log) {
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
-    
+
     const duration = Date.now() - startTime;
-    log.info('Tool call completed successfully', { 
-      toolName, 
+    log.info('Tool call completed successfully', {
+      toolName,
       duration: `${duration}ms`,
       resultSize: JSON.stringify(result).length
     });
-    
+
     return result;
   } catch (error) {
     const duration = Date.now() - startTime;
-    log.error('Tool execution failed', { 
-      toolName, 
+    log.error('Tool execution failed', {
+      toolName,
       error: error.message,
       stack: error.stack,
       duration: `${duration}ms`,
@@ -331,26 +331,26 @@ async function requestBmsData(params, log) {
     throw new Error('Database connection not available');
   }
 
-  const { 
-    systemId, 
-    metric = 'all', 
-    time_range_start, 
-    time_range_end, 
-    granularity = 'hourly_avg' 
+  const {
+    systemId,
+    metric = 'all',
+    time_range_start,
+    time_range_end,
+    granularity = 'hourly_avg'
   } = params;
 
-  log.info('Processing BMS data request', { 
-    systemId, 
-    metric, 
-    time_range_start, 
-    time_range_end, 
-    granularity 
+  log.info('Processing BMS data request', {
+    systemId,
+    metric,
+    time_range_start,
+    time_range_end,
+    granularity
   });
 
   // Validate time range
   const startDate = new Date(time_range_start);
   const endDate = new Date(time_range_end);
-  
+
   if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
     throw new Error('Invalid date format. Use ISO 8601 format (e.g., "2025-11-01T00:00:00Z")');
   }
@@ -374,10 +374,10 @@ async function requestBmsData(params, log) {
   };
 
   // Project only needed fields to reduce data transfer
-  const projection = { 
-    _id: 0, 
-    timestamp: 1, 
-    analysis: 1 
+  const projection = {
+    _id: 0,
+    timestamp: 1,
+    analysis: 1
   };
 
   const queryStartTime = Date.now();
@@ -385,11 +385,11 @@ async function requestBmsData(params, log) {
     .find(query, { projection })
     .sort({ timestamp: 1 })
     .toArray();
-  
+
   const queryDuration = Date.now() - queryStartTime;
-  log.info('Raw records fetched', { 
-    count: records.length, 
-    queryDuration: `${queryDuration}ms` 
+  log.info('Raw records fetched', {
+    count: records.length,
+    queryDuration: `${queryDuration}ms`
   });
 
   if (records.length === 0) {
@@ -411,23 +411,23 @@ async function requestBmsData(params, log) {
     // Apply intelligent sampling for large datasets
     const maxRawPoints = 500; // Limit raw data to prevent token overflow
     let sampledRecords = records;
-    
+
     if (records.length > maxRawPoints) {
       log.warn('Raw data exceeds limit, applying sampling', {
         originalCount: records.length,
         maxPoints: maxRawPoints
       });
-      
+
       // Sample evenly across the time range
       const step = Math.ceil(records.length / maxRawPoints);
       sampledRecords = records.filter((_, index) => index % step === 0);
-      
+
       // Always include last record
       if (sampledRecords[sampledRecords.length - 1] !== records[records.length - 1]) {
         sampledRecords.push(records[records.length - 1]);
       }
     }
-    
+
     processedData = sampledRecords.map(r => ({
       timestamp: r.timestamp,
       ...extractMetrics(r.analysis, metric)
@@ -436,11 +436,11 @@ async function requestBmsData(params, log) {
     // Aggregate into hourly buckets
     const { aggregateHourlyData, sampleDataPoints } = require('./data-aggregation.cjs');
     const hourlyData = aggregateHourlyData(records, log);
-    
+
     // Apply intelligent sampling if dataset is very large
     const maxHourlyPoints = 200; // ~8 days of hourly data
     const sampledHourly = sampleDataPoints(hourlyData, maxHourlyPoints, log);
-    
+
     processedData = sampledHourly.map(h => ({
       timestamp: h.timestamp,
       dataPoints: h.dataPoints,
@@ -455,7 +455,7 @@ async function requestBmsData(params, log) {
 
   const resultSize = JSON.stringify(processedData).length;
   const estimatedTokens = Math.ceil(resultSize / 4);
-  
+
   // Warn if response is still very large
   if (estimatedTokens > 20000) {
     log.warn('Response size still large after optimization', {
@@ -464,7 +464,7 @@ async function requestBmsData(params, log) {
       suggestion: 'Consider requesting specific metrics or smaller time range'
     });
   }
-  
+
   log.info('BMS data request completed', {
     systemId,
     metric,
@@ -481,7 +481,7 @@ async function requestBmsData(params, log) {
     granularity,
     dataPoints: processedData.length,
     data: processedData,
-    ...(records.length > processedData.length && { 
+    ...(records.length > processedData.length && {
       note: `Data was sampled from ${records.length} records to ${processedData.length} points for optimization`
     })
   };
@@ -512,7 +512,7 @@ function extractMetrics(analysis, metric) {
     power: { power: analysis.power },
     soc: { soc: analysis.stateOfCharge },
     capacity: { capacity: analysis.remainingCapacity },
-    temperature: { 
+    temperature: {
       temperature: analysis.temperature,
       mosTemperature: analysis.mosTemperature
     },
@@ -532,21 +532,21 @@ function filterMetrics(metrics, metric) {
 
   const metricMap = {
     voltage: { avgVoltage: metrics.avgVoltage },
-    current: { 
+    current: {
       avgCurrent: metrics.avgCurrent,
       avgChargingCurrent: metrics.avgChargingCurrent,
       avgDischargingCurrent: metrics.avgDischargingCurrent,
       chargingCount: metrics.chargingCount,
       dischargingCount: metrics.dischargingCount
     },
-    power: { 
+    power: {
       avgPower: metrics.avgPower,
       avgChargingPower: metrics.avgChargingPower,
       avgDischargingPower: metrics.avgDischargingPower
     },
     soc: { avgSoC: metrics.avgSoC },
     capacity: { avgCapacity: metrics.avgCapacity },
-    temperature: { 
+    temperature: {
       avgTemperature: metrics.avgTemperature,
       avgMosTemperature: metrics.avgMosTemperature
     },
@@ -582,9 +582,9 @@ function aggregateDailyData(records, metric, log) {
   for (const [bucketKey, bucketRecords] of dailyBuckets.entries()) {
     // Reuse hourly aggregation logic
     const { computeBucketMetrics } = require('./data-aggregation.cjs');
-    const dummyLog = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
+    const dummyLog = { debug: () => { }, info: () => { }, warn: () => { }, error: () => { } };
     const metrics = computeBucketMetrics(bucketRecords, dummyLog);
-    
+
     dailyData.push({
       timestamp: bucketKey,
       dataPoints: bucketRecords.length,
@@ -607,9 +607,9 @@ async function getSystemHistory(params, log) {
 
   const { systemId, limit = 100, startDate, endDate } = params;
 
-  log.debug('Fetching system history from database', { 
-    systemId, 
-    limit, 
+  log.debug('Fetching system history from database', {
+    systemId,
+    limit,
     hasDateRange: !!(startDate || endDate),
     startDate,
     endDate
@@ -627,7 +627,7 @@ async function getSystemHistory(params, log) {
   }
 
   log.debug('Executing database query', { query, limit: Math.min(limit, 500) });
-  
+
   const queryStartTime = Date.now();
 
   // Fetch records
@@ -636,11 +636,11 @@ async function getSystemHistory(params, log) {
     .sort({ timestamp: -1 })
     .limit(Math.min(limit, 500))
     .toArray();
-    
+
   const queryDuration = Date.now() - queryStartTime;
 
-  log.info('Retrieved system history', { 
-    systemId, 
+  log.info('Retrieved system history', {
+    systemId,
     count: records.length,
     queryDuration: `${queryDuration}ms`
   });
@@ -681,7 +681,7 @@ async function getWeatherData(params, log) {
   };
 
   log.debug('Calling weather API', { url, bodyKeys: Object.keys(body) });
-  
+
   const fetchStartTime = Date.now();
 
   const response = await fetch(url, {
@@ -689,12 +689,12 @@ async function getWeatherData(params, log) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  
+
   const fetchDuration = Date.now() - fetchStartTime;
 
   if (!response.ok) {
-    log.error('Weather API error', { 
-      status: response.status, 
+    log.error('Weather API error', {
+      status: response.status,
       statusText: response.statusText,
       duration: `${fetchDuration}ms`
     });
@@ -702,9 +702,9 @@ async function getWeatherData(params, log) {
   }
 
   const data = await response.json();
-  log.info('Retrieved weather data', { 
-    latitude, 
-    longitude, 
+  log.info('Retrieved weather data', {
+    latitude,
+    longitude,
     type,
     duration: `${fetchDuration}ms`,
     dataSize: JSON.stringify(data).length
@@ -764,16 +764,16 @@ async function getSystemAnalytics(params, log) {
   const url = `${baseUrl}/.netlify/functions/system-analytics?systemId=${systemId}`;
 
   log.debug('Calling system analytics API', { url });
-  
+
   const fetchStartTime = Date.now();
 
   const response = await fetch(url);
-  
+
   const fetchDuration = Date.now() - fetchStartTime;
 
   if (!response.ok) {
-    log.error('System analytics API error', { 
-      status: response.status, 
+    log.error('System analytics API error', {
+      status: response.status,
       statusText: response.statusText,
       duration: `${fetchDuration}ms`
     });
@@ -781,7 +781,7 @@ async function getSystemAnalytics(params, log) {
   }
 
   const data = await response.json();
-  log.info('Retrieved system analytics', { 
+  log.info('Retrieved system analytics', {
     systemId,
     duration: `${fetchDuration}ms`,
     dataSize: JSON.stringify(data).length
@@ -796,41 +796,41 @@ async function getSystemAnalytics(params, log) {
  */
 async function predictBatteryTrends(params, log) {
   const { systemId, metric, forecastDays = 30, confidenceLevel = true } = params;
-  
+
   log.info('Predicting battery trends', { systemId, metric, forecastDays });
-  
+
   try {
     // Lazy-load forecasting module to avoid circular dependencies
     const forecasting = require('./forecasting.cjs');
-    
+
     // Route to appropriate prediction function based on metric
     switch (metric) {
       case 'capacity':
         return await forecasting.predictCapacityDegradation(systemId, forecastDays, confidenceLevel, log);
-      
+
       case 'efficiency':
         return await forecasting.predictEfficiency(systemId, forecastDays, confidenceLevel, log);
-      
+
       case 'temperature':
         return await forecasting.predictTemperature(systemId, forecastDays, confidenceLevel, log);
-      
+
       case 'voltage':
         return await forecasting.predictVoltage(systemId, forecastDays, confidenceLevel, log);
-      
+
       case 'lifetime':
         return await forecasting.predictLifetime(systemId, confidenceLevel, log);
-      
+
       default:
         throw new Error(`Unsupported metric for prediction: ${metric}`);
     }
   } catch (error) {
-    log.error('Prediction failed', { 
-      error: error.message, 
-      systemId, 
-      metric 
+    log.error('Prediction failed', {
+      error: error.message,
+      systemId,
+      metric
     });
-    return { 
-      error: true, 
+    return {
+      error: true,
       message: `Unable to generate ${metric} prediction: ${error.message}`,
       systemId,
       metric
@@ -843,38 +843,38 @@ async function predictBatteryTrends(params, log) {
  */
 async function analyzeUsagePatterns(params, log) {
   const { systemId, patternType = 'daily', timeRange = '30d' } = params;
-  
+
   log.info('Analyzing usage patterns', { systemId, patternType, timeRange });
-  
+
   try {
     // Lazy-load pattern analysis module
     const patternAnalysis = require('./pattern-analysis.cjs');
-    
+
     // Route to appropriate analysis function
     switch (patternType) {
       case 'daily':
         return await patternAnalysis.analyzeDailyPatterns(systemId, timeRange, log);
-      
+
       case 'weekly':
         return await patternAnalysis.analyzeWeeklyPatterns(systemId, timeRange, log);
-      
+
       case 'seasonal':
         return await patternAnalysis.analyzeSeasonalPatterns(systemId, timeRange, log);
-      
+
       case 'anomalies':
         return await patternAnalysis.detectAnomalies(systemId, timeRange, log);
-      
+
       default:
         throw new Error(`Unsupported pattern type: ${patternType}`);
     }
   } catch (error) {
-    log.error('Pattern analysis failed', { 
-      error: error.message, 
-      systemId, 
-      patternType 
+    log.error('Pattern analysis failed', {
+      error: error.message,
+      systemId,
+      patternType
     });
-    return { 
-      error: true, 
+    return {
+      error: true,
       message: `Unable to analyze ${patternType} patterns: ${error.message}`,
       systemId,
       patternType
@@ -887,38 +887,38 @@ async function analyzeUsagePatterns(params, log) {
  */
 async function calculateEnergyBudget(params, log) {
   const { systemId, scenario, includeWeather = true, timeframe = '30d' } = params;
-  
+
   log.info('Calculating energy budget', { systemId, scenario, includeWeather, timeframe });
-  
+
   try {
     // Lazy-load energy budget module
     const energyBudget = require('./energy-budget.cjs');
-    
+
     // Route to appropriate budget calculation
     switch (scenario) {
       case 'current':
         return await energyBudget.calculateCurrentBudget(systemId, timeframe, includeWeather, log);
-      
+
       case 'worst_case':
         return await energyBudget.calculateWorstCase(systemId, timeframe, includeWeather, log);
-      
+
       case 'average':
         return await energyBudget.calculateAverage(systemId, timeframe, includeWeather, log);
-      
+
       case 'emergency':
         return await energyBudget.calculateEmergencyBackup(systemId, timeframe, log);
-      
+
       default:
         throw new Error(`Unsupported scenario: ${scenario}`);
     }
   } catch (error) {
-    log.error('Energy budget calculation failed', { 
-      error: error.message, 
-      systemId, 
-      scenario 
+    log.error('Energy budget calculation failed', {
+      error: error.message,
+      systemId,
+      scenario
     });
-    return { 
-      error: true, 
+    return {
+      error: true,
       message: `Unable to calculate ${scenario} energy budget: ${error.message}`,
       systemId,
       scenario

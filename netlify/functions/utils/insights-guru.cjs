@@ -224,6 +224,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "3. Keep tool requests scoped (specific metric + precise window). Prefer hourly or daily granularity unless raw samples are essential.\n";
     prompt += "4. When giving the final answer, cite the data sources you used (tools, summaries, forecasts) and include confidence, risks, and next actions.\n";
     prompt += "5. Always use bullet structure or sections so operators can act quickly. Tie every recommendation to a quantitative observation.\n";
+    prompt += "6. TERMINOLOGY: 'Battery autonomy' or 'days of autonomy' = RUNTIME until discharge at current load. 'Service life' or 'lifetime' = years/months until replacement due to degradation. Never confuse these.\n";
 
     return {
         prompt,
@@ -326,7 +327,7 @@ function summarizePreloadedContext(context) {
 }
 
 function buildDefaultMission() {
-    return "**PRIMARY MISSION:** Produce an off-grid readiness briefing covering battery health, solar sufficiency, demand patterns, anomalies, forecasts, and action items. Benchmark everything against the provided baselines before advising.";
+    return "**PRIMARY MISSION:** Produce an off-grid readiness briefing covering battery health, solar sufficiency, demand patterns, anomalies, forecasts, and action items. Benchmark everything against the provided baselines before advising.\n\n**CRITICAL TERMINOLOGY:**\n- 'Battery autonomy' / 'days of autonomy' / 'runtime' = How many DAYS/HOURS the battery will power loads at current discharge rate before complete depletion (found in Energy Budget section).\n- 'Service life' / 'lifetime' / 'replacement timeline' = How many MONTHS/YEARS until the battery reaches end-of-life replacement threshold (70% capacity) based on degradation trends (found in Predictive Outlook section).\n- NEVER confuse these two concepts. They measure completely different things.";
 }
 
 /**
@@ -571,7 +572,8 @@ function formatPredictionsSection(predictions) {
     }
     const lifetime = predictions.lifetime;
     if (lifetime && !lifetime.error && !lifetime.insufficient_data) {
-        lines.push(`- Estimated remaining life: ${formatNumber(lifetime.estimatedRemainingLife?.months, " months", 0)} (${formatNumber(lifetime.estimatedRemainingLife?.years, " years", 1)}).`);
+        lines.push(`- Estimated SERVICE LIFE until replacement: ${formatNumber(lifetime.estimatedRemainingLife?.months, " months", 0)} (${formatNumber(lifetime.estimatedRemainingLife?.years, " years", 1)}) based on degradation trends.`);
+        lines.push(`- NOTE: For RUNTIME until discharge at current load, see Battery Autonomy in Energy Budget section.`);
     }
     return lines.length > 1 ? lines.join("\n") : null;
 }

@@ -21,13 +21,13 @@ const { BATTERY_REPLACEMENT_THRESHOLDS } = require('./analysis-utilities.cjs');
  */
 async function predictCapacityDegradation(systemId, forecastDays = 30, confidenceLevel = true, log) {
   log.info('Predicting capacity degradation', { systemId, forecastDays });
-  
+
   try {
     // Fetch historical capacity data (last 90 days for better trend analysis)
     const historyCollection = await getCollection('history');
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-    
+
     const records = await historyCollection
       .find({
         systemId,
@@ -36,7 +36,7 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
       })
       .sort({ timestamp: 1 })
       .toArray();
-    
+
     if (records.length < 10) {
       return {
         error: false,
@@ -46,13 +46,13 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
         dataPoints: records.length
       };
     }
-    
+
     // Extract capacity values with timestamps
     const dataPoints = records.map(r => ({
       timestamp: new Date(r.timestamp).getTime(),
       capacity: r.analysis.remainingCapacity
     })).filter(p => p.capacity > 0);
-    
+
     if (dataPoints.length < 10) {
       return {
         error: false,
@@ -62,63 +62,63 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
         dataPoints: dataPoints.length
       };
     }
-    
+
     // Perform linear regression
     const regression = linearRegression(dataPoints);
-    
+
     // Generate forecast
     const lastTimestamp = dataPoints[dataPoints.length - 1].timestamp;
     const forecastData = [];
     const msPerDay = 24 * 60 * 60 * 1000;
-    
+
     for (let i = 1; i <= forecastDays; i++) {
       const futureTimestamp = lastTimestamp + (i * msPerDay);
       const predictedCapacity = regression.slope * futureTimestamp + regression.intercept;
-      
+
       forecastData.push({
         date: new Date(futureTimestamp).toISOString().split('T')[0],
         predictedCapacity: Math.max(0, Math.round(predictedCapacity * 100) / 100),
         daysFromNow: i
       });
     }
-    
+
     // Calculate confidence metrics if requested
     let confidence = null;
     if (confidenceLevel) {
-      const residuals = dataPoints.map(p => 
+      const residuals = dataPoints.map(p =>
         p.capacity - (regression.slope * p.timestamp + regression.intercept)
       );
       const stdDev = Math.sqrt(residuals.reduce((sum, r) => sum + r * r, 0) / residuals.length);
-      
+
       confidence = {
         rSquared: regression.rSquared,
         standardDeviation: Math.round(stdDev * 100) / 100,
         confidenceLevel: regression.rSquared > 0.7 ? 'high' : regression.rSquared > 0.4 ? 'medium' : 'low'
       };
     }
-    
+
     // Calculate degradation rate (Ah per day)
     const degradationPerDay = Math.abs(regression.slope * msPerDay);
-    
+
     // Current capacity (latest reading)
     const currentCapacity = dataPoints[dataPoints.length - 1].capacity;
-    
+
     // Estimated days until replacement threshold
     // Using configurable threshold (default 80% for lithium batteries)
     // For lead-acid batteries, use BATTERY_REPLACEMENT_THRESHOLDS.leadAcid (70%)
     const replacementThresholdPercent = BATTERY_REPLACEMENT_THRESHOLDS.default;
     const capacityThreshold = currentCapacity * replacementThresholdPercent;
-    const daysToThreshold = degradationPerDay > 0 
+    const daysToThreshold = degradationPerDay > 0
       ? Math.round((currentCapacity - capacityThreshold) / degradationPerDay)
       : null;
-    
+
     log.info('Capacity degradation prediction completed', {
       systemId,
       dataPoints: dataPoints.length,
       degradationPerDay: Math.round(degradationPerDay * 100) / 100,
       rSquared: regression.rSquared
     });
-    
+
     return {
       systemId,
       metric: 'capacity',
@@ -138,7 +138,7 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
         end: new Date(dataPoints[dataPoints.length - 1].timestamp).toISOString().split('T')[0]
       }
     };
-    
+
   } catch (error) {
     log.error('Capacity degradation prediction failed', {
       error: error.message,
@@ -157,36 +157,36 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
  */
 function linearRegression(dataPoints) {
   const n = dataPoints.length;
-  
+
   // Calculate means
   const meanX = dataPoints.reduce((sum, p) => sum + p.timestamp, 0) / n;
   const meanY = dataPoints.reduce((sum, p) => sum + p.capacity, 0) / n;
-  
+
   // Calculate slope and intercept
   let numerator = 0;
   let denominator = 0;
-  
+
   for (const point of dataPoints) {
     const xDiff = point.timestamp - meanX;
     const yDiff = point.capacity - meanY;
     numerator += xDiff * yDiff;
     denominator += xDiff * xDiff;
   }
-  
+
   const slope = denominator !== 0 ? numerator / denominator : 0;
   const intercept = meanY - slope * meanX;
-  
+
   // Calculate R-squared
   const predictedValues = dataPoints.map(p => slope * p.timestamp + intercept);
-  const ssRes = dataPoints.reduce((sum, p, i) => 
+  const ssRes = dataPoints.reduce((sum, p, i) =>
     sum + Math.pow(p.capacity - predictedValues[i], 2), 0
   );
-  const ssTot = dataPoints.reduce((sum, p) => 
+  const ssTot = dataPoints.reduce((sum, p) =>
     sum + Math.pow(p.capacity - meanY, 2), 0
   );
-  
+
   const rSquared = ssTot !== 0 ? 1 - (ssRes / ssTot) : 0;
-  
+
   return {
     slope,
     intercept,
@@ -199,12 +199,12 @@ function linearRegression(dataPoints) {
  */
 async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
   log.info('Predicting efficiency trends', { systemId, forecastDays });
-  
+
   try {
     const historyCollection = await getCollection('history');
     const sixtyDaysAgo = new Date();
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-    
+
     const records = await historyCollection
       .find({
         systemId,
@@ -214,7 +214,7 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
       })
       .sort({ timestamp: 1 })
       .toArray();
-    
+
     if (records.length < 10) {
       return {
         error: false,
@@ -223,11 +223,11 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
         systemId
       };
     }
-    
+
     // Calculate efficiency metrics from historical data
     // Efficiency = (Energy Out) / (Energy In) during charge/discharge cycles
     const efficiencyData = [];
-    
+
     for (const record of records) {
       const { current, power, stateOfCharge } = record.analysis;
       if (current && power && stateOfCharge) {
@@ -242,7 +242,7 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
         }
       }
     }
-    
+
     if (efficiencyData.length < 5) {
       return {
         error: false,
@@ -251,11 +251,11 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
         systemId
       };
     }
-    
+
     // Calculate average efficiency and trend
     const avgEfficiency = efficiencyData.reduce((sum, d) => sum + d.efficiency, 0) / efficiencyData.length;
     const regression = linearRegression(efficiencyData.map(d => ({ timestamp: d.timestamp, capacity: d.efficiency })));
-    
+
     return {
       systemId,
       metric: 'efficiency',
@@ -269,7 +269,7 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
       dataPoints: efficiencyData.length,
       message: 'Efficiency tracking based on power/current ratio analysis. Stable values indicate good battery health.'
     };
-    
+
   } catch (error) {
     log.error('Efficiency prediction failed', { error: error.message, systemId });
     throw error;
@@ -281,7 +281,7 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
  */
 async function predictTemperature(systemId, forecastDays, confidenceLevel, log) {
   log.info('Predicting temperature patterns', { systemId, forecastDays });
-  
+
   return {
     systemId,
     metric: 'temperature',
@@ -295,7 +295,7 @@ async function predictTemperature(systemId, forecastDays, confidenceLevel, log) 
  */
 async function predictVoltage(systemId, forecastDays, confidenceLevel, log) {
   log.info('Predicting voltage trends', { systemId, forecastDays });
-  
+
   return {
     systemId,
     metric: 'voltage',
@@ -305,33 +305,37 @@ async function predictVoltage(systemId, forecastDays, confidenceLevel, log) {
 }
 
 /**
- * Predict battery lifetime (estimated remaining life)
+ * Predict battery SERVICE LIFE (time until replacement threshold based on degradation)
+ * 
+ * NOTE: This is NOT the same as "runtime" or "autonomy" (how long until discharge).
+ * This predicts when the battery will reach end-of-service-life (typically 70% capacity).
+ * For runtime calculations, use the energy budget tools (daysOfAutonomy).
  */
 async function predictLifetime(systemId, confidenceLevel, log) {
-  log.info('Predicting battery lifetime', { systemId });
-  
+  log.info('Predicting battery service lifetime', { systemId });
+
   try {
     // Use capacity degradation to estimate lifetime
     const capacityPrediction = await predictCapacityDegradation(systemId, 365, confidenceLevel, log);
-    
+
     if (capacityPrediction.error || capacityPrediction.insufficient_data) {
       return capacityPrediction;
     }
-    
+
     const { currentCapacity, degradationRate, daysToReplacementThreshold } = capacityPrediction;
-    
-    // Estimate total lifetime based on degradation rate
+
+    // Estimate total service lifetime based on degradation rate
     // Assume battery is replaced at 70% of original capacity
     // Estimate original capacity from system data or use current + degradation extrapolation
-    
+
     let estimatedMonthsRemaining = null;
     let estimatedYearsRemaining = null;
-    
+
     if (daysToReplacementThreshold && daysToReplacementThreshold > 0) {
       estimatedMonthsRemaining = Math.round(daysToReplacementThreshold / 30);
       estimatedYearsRemaining = Math.round((daysToReplacementThreshold / 365) * 10) / 10;
     }
-    
+
     return {
       systemId,
       metric: 'lifetime',
@@ -344,12 +348,12 @@ async function predictLifetime(systemId, confidenceLevel, log) {
       },
       replacementThreshold: capacityPrediction.replacementThreshold,
       confidence: capacityPrediction.confidence,
-      note: 'Lifetime estimate based on capacity degradation trends. Actual lifetime may vary based on usage patterns, temperature, and maintenance.',
-      recommendation: degradationRate.value > 0.5 
+      note: 'SERVICE LIFE estimate based on capacity degradation trends until replacement threshold (70% capacity). This is NOT runtime/autonomy. Actual service life may vary based on usage patterns, temperature, and maintenance.',
+      recommendation: degradationRate.value > 0.5
         ? 'High degradation rate detected. Consider reviewing charging practices and temperature management.'
         : 'Normal degradation rate. Continue monitoring monthly.'
     };
-    
+
   } catch (error) {
     log.error('Lifetime prediction failed', { error: error.message, systemId });
     throw error;
