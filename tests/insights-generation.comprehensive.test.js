@@ -201,13 +201,18 @@ describe('Battery Insights Generator - Comprehensive Tests', () => {
         capacity: 100
       }));
 
+      // Explicitly request sync mode to test error handling of large datasets
+      // without requiring background job infrastructure in test environment
       const event = {
-        body: JSON.stringify({ measurements })
+        body: JSON.stringify({ measurements }),
+        queryStringParameters: { sync: 'true' }
       };
 
       const response = await generateHandler(event, mockContext);
-      // Enhanced handler processes large datasets; expect 200
+      // Should handle large dataset in sync mode or return proper error
       expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.success).toBeDefined();
     });
   });
 

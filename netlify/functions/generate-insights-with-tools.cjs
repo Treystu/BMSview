@@ -367,6 +367,7 @@ function respond(statusCode, body) {
 function resolveRunMode(queryParams = {}, body = {}, analysisData = {}, customPrompt) {
   const normalize = (value) => typeof value === 'string' ? value.toLowerCase() : value;
 
+  // Explicit mode from query parameters takes highest priority
   const modeFromQuery = normalize(queryParams.mode);
   if (modeFromQuery === 'sync') return 'sync';
   if (modeFromQuery === 'background' || modeFromQuery === 'async') return 'background';
@@ -374,6 +375,7 @@ function resolveRunMode(queryParams = {}, body = {}, analysisData = {}, customPr
   if (queryParams.sync === 'true') return 'sync';
   if (queryParams.sync === 'false') return 'background';
 
+  // Explicit mode from body
   const modeFromBody = normalize(body.mode);
   if (modeFromBody === 'sync') return 'sync';
   if (modeFromBody === 'background' || modeFromBody === 'async') return 'background';
@@ -383,18 +385,18 @@ function resolveRunMode(queryParams = {}, body = {}, analysisData = {}, customPr
   if (body.runAsync === true) return 'background';
   if (body.runAsync === false) return 'sync';
 
+  // Intelligent routing based on data characteristics
   const measurementCount = Array.isArray(analysisData?.measurements) ? analysisData.measurements.length : 0;
   const customPromptLength = typeof customPrompt === 'string' ? customPrompt.length : 0;
 
+  // Large datasets or complex prompts → background
   if (customPromptLength > 400 || measurementCount > 360) {
     return 'background';
   }
 
-  if (!customPrompt && measurementCount > 0 && measurementCount <= 200) {
-    return 'sync';
-  }
-
-  return 'background';
+  // Default to sync for most requests (empty data, small datasets, simple analysis)
+  // This ensures backward compatibility with tests and existing callers
+  return 'sync';
 }
 
 exports.handler = handler;

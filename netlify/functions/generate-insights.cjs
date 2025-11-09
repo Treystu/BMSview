@@ -1,14 +1,21 @@
 /**
- * Generate Insights - Redirect to Enhanced Mode (Sync)
+ * Generate Insights - AI-Powered Battery Analysis
  * 
- * This endpoint redirects to the enhanced mode with synchronous processing.
- * Standard mode has been deprecated in favor of AI-powered analysis with 
- * intelligent data querying and trend analysis.
+ * This endpoint provides hybrid sync/async processing for battery insights generation:
+ * - Sync kickoff: Returns immediate job ID and initial summary
+ * - Async processing: Background AI analysis with historical data queries
+ * - Sync close: Poll for results when complete
+ * 
+ * **Processing Flow:**
+ * 1. Synchronous validation and initial summary (< 1 second)
+ * 2. Background AI processing with tool calling (10-50 seconds)
+ * 3. Client polls for completion or receives webhook
  * 
  * **Usage:**
  * - Endpoint: /.netlify/functions/generate-insights
- * - Redirects to: /.netlify/functions/generate-insights-with-tools?sync=true
- * - Processes synchronously (up to 55 seconds)
+ * - Delegates to: /.netlify/functions/generate-insights-with-tools
+ * - Mode: Intelligent routing via resolveRunMode() based on data size & complexity
+ * - Override: Can specify ?mode=sync or ?mode=background explicitly
  * 
  * @module netlify/functions/generate-insights
  */
@@ -32,22 +39,15 @@ async function generateHandler(event, context) {
   const timer = createTimer ? createTimer(log, 'generate-insights') : { end: () => { } };
 
   try {
-    log.info('Standard mode deprecated, redirecting to enhanced mode (sync)');
+    log.info('Generate insights request - delegating to enhanced mode with intelligent routing');
 
-    // Force synchronous mode for backward compatibility and test stability
-    // Safely read queryStringParameters (Netlify provides it, but guard for tests)
-    const qs = (event.queryStringParameters && typeof event.queryStringParameters === 'object') ? event.queryStringParameters : {};
-    const modifiedEvent = {
-      ...event,
-      queryStringParameters: {
-        ...qs,
-        sync: 'true',
-        mode: 'sync'
-      }
-    };
-
-    // Invoke enhanced handler with enforced sync mode
-    const result = await enhancedHandler(modifiedEvent, context);
+    // Let resolveRunMode() make intelligent decision based on:
+    // - Data size (measurement count, custom prompt length)
+    // - Explicit mode parameters (?mode=sync or ?sync=true)
+    // - Request characteristics
+    // 
+    // No forced mode - resolveRunMode() handles all logic intelligently
+    const result = await enhancedHandler(event, context);
     await timer.end();
     return result;
 
