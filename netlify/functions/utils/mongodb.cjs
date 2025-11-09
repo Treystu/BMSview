@@ -127,10 +127,6 @@ async function connectToDatabase() {
                 w: 'majority',
                 wtimeoutMS: 5000,
 
-                // Keep connections alive in serverless environments
-                keepAlive: true,
-                keepAliveInitialDelay: 30000,
-
                 // Enable monitoring to diagnose issues
                 monitorCommands: process.env.NODE_ENV !== 'production',
             });
