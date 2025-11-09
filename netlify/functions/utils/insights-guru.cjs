@@ -219,12 +219,14 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     }
 
     prompt += "\n**CRITICAL RESPONSE RULES**\n";
-    prompt += "1. If you can answer with the provided context, respond with JSON: {\n   \"final_answer\": \"detailed analysis...\"\n}.\n";
-    prompt += "2. If you need more information, respond ONLY with JSON describing a tool call: {\n   \"tool_call\": \"tool_name\",\n   \"parameters\": { ... }\n}. Never include explanatory text with tool calls.\n";
-    prompt += "3. Keep tool requests scoped (specific metric + precise window). Prefer hourly or daily granularity unless raw samples are essential.\n";
-    prompt += "4. When giving the final answer, cite the data sources you used (tools, summaries, forecasts) and include confidence, risks, and next actions.\n";
-    prompt += "5. Always use bullet structure or sections so operators can act quickly. Tie every recommendation to a quantitative observation.\n";
-    prompt += "6. TERMINOLOGY: 'Battery autonomy' or 'days of autonomy' = RUNTIME until discharge at current load. 'Service life' or 'lifetime' = years/months until replacement due to degradation. Never confuse these.\n";
+    prompt += "1. PROACTIVELY gather data using tools before answering. Don't suggest tools - USE them. If solar correlation would strengthen your analysis, call request_bms_data for solar current over recent days NOW.\n";
+    prompt += "2. After gathering necessary data, respond with JSON: {\n   \"final_answer\": \"analysis...\"\n}.\n";
+    prompt += "3. To request data, respond ONLY with JSON: {\n   \"tool_call\": \"tool_name\",\n   \"parameters\": { ... }\n}. Never include explanatory text with tool calls.\n";
+    prompt += "4. Keep tool requests scoped (specific metric + precise window). Prefer hourly or daily granularity unless raw samples are essential.\n";
+    prompt += "5. WRITING STYLE: Terse, highlight-driven bullets. Lead with KEY FINDINGS in bold. Skip verbose explanations - operators need actionable intel, not essays.\n";
+    prompt += "6. Structure: ## KEY FINDINGS (2-4 critical bullets with bold labels) → ## OPERATIONAL STATUS (metrics) → ## RECOMMENDATIONS (numbered actions with urgency flags).\n";
+    prompt += "7. Cite data sources in parentheticals, not separate sections: 'Solar deficit 15Ah (weather data + BMS logs)' not 'Data sources: weather, BMS'.\n";
+    prompt += "8. TERMINOLOGY: 'Battery autonomy' or 'days of autonomy' = RUNTIME until discharge at current load. 'Service life' or 'lifetime' = years/months until replacement due to degradation. Never confuse these.\n";
 
     return {
         prompt,
@@ -327,14 +329,14 @@ function summarizePreloadedContext(context) {
 }
 
 function buildDefaultMission() {
-    return "**PRIMARY MISSION:** Produce an off-grid readiness briefing covering battery health, solar sufficiency, demand patterns, anomalies, forecasts, and action items. Benchmark everything against the provided baselines before advising.\n\n**CRITICAL TERMINOLOGY:**\n- 'Battery autonomy' / 'days of autonomy' / 'runtime' = How many DAYS/HOURS the battery will power loads at current discharge rate before complete depletion (found in Energy Budget section).\n- 'Service life' / 'lifetime' / 'replacement timeline' = How many MONTHS/YEARS until the battery reaches end-of-life replacement threshold (70% capacity) based on degradation trends (found in Predictive Outlook section).\n- NEVER confuse these two concepts. They measure completely different things.";
+    return "**PRIMARY MISSION:** Deliver a terse, actionable off-grid readiness brief.\n\n**FORMAT REQUIREMENTS:**\n- Use markdown headers (##) for sections\n- Lead with ## KEY FINDINGS - 2-4 critical bullets with **bold labels**\n- Follow with ## OPERATIONAL STATUS - current metrics\n- Close with ## RECOMMENDATIONS - numbered actions with urgency indicators (🔴 Critical / 🟡 Soon / 🟢 Monitor)\n- NO verbose narratives - operators need fast intel\n- Cite sources inline: 'metric (source)' not separate attribution sections\n\n**CRITICAL TERMINOLOGY:**\n- 'Battery autonomy' / 'days of autonomy' / 'runtime' = How many DAYS/HOURS the battery will power loads at current discharge rate before complete depletion (found in Energy Budget section).\n- 'Service life' / 'lifetime' / 'replacement timeline' = How many MONTHS/YEARS until the battery reaches end-of-life replacement threshold (70% capacity) based on degradation trends (found in Predictive Outlook section).\n- NEVER confuse these two concepts. They measure completely different things.";
 }
 
 /**
  * @param {string} customPrompt
  */
 function buildCustomMission(customPrompt) {
-    return `**USER QUESTION:**\n${customPrompt}\n\n**APPROACH:** Break the request into sub-goals, pull only the data you need, and deliver a tailored answer with explicit numbers, risks, and next steps.`;
+    return `**USER QUESTION:**\n${customPrompt}\n\n**APPROACH:**\n1. Identify what data would definitively answer this question\n2. CALL the necessary tools NOW (don't suggest them)\n3. Analyze results and deliver terse, highlight-driven answer\n4. Format: ## KEY FINDINGS → ## ANALYSIS → ## NEXT STEPS\n5. Use bold labels, cite sources inline, skip fluff`;
 }
 
 /**

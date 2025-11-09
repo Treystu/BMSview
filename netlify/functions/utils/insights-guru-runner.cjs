@@ -165,8 +165,14 @@ function formatInsightsResponse(text, toolCalls = [], confidence = null) {
         return text;
     }
 
+    // Don't double-format if already formatted
     if (text.includes('═══') || text.includes('🔋')) {
         return text;
+    }
+
+    // Don't add wrapper if content already has markdown structure
+    if (text.includes('## KEY FINDINGS') || text.includes('## OPERATIONAL STATUS')) {
+        return text.trim();
     }
 
     if (confidence === null) {
@@ -180,19 +186,11 @@ function formatInsightsResponse(text, toolCalls = [], confidence = null) {
 
     if (confidence !== null) {
         const confidenceIcon = confidence >= 80 ? '✓' : confidence >= 60 ? '~' : '!';
-        lines.push(`📊 Analysis Confidence: ${confidenceIcon} ${confidence}%`);
+        lines.push(`📊 Confidence: ${confidenceIcon} ${confidence}%`);
     }
 
     if (toolCalls && toolCalls.length > 0) {
-        lines.push(`🔍 Data Sources Used: ${toolCalls.length} tool queries`);
-        const toolTypes = [...new Set(toolCalls.map(t => t.name))];
-        const analysisTypes = [];
-        if (toolTypes.some(name => name && name.includes('predict'))) analysisTypes.push('Predictive');
-        if (toolTypes.some(name => name && name.includes('pattern'))) analysisTypes.push('Pattern');
-        if (toolTypes.some(name => name && name.includes('budget'))) analysisTypes.push('Budget');
-        if (analysisTypes.length > 0) {
-            lines.push(`🧠 Analysis Type: ${analysisTypes.join(', ')}`);
-        }
+        lines.push(`🔍 Data Sources: ${toolCalls.length} tool${toolCalls.length > 1 ? 's' : ''} queried`);
     }
 
     lines.push('═══════════════════════════════════════════════════');
