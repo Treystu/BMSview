@@ -80,13 +80,36 @@ async function calculateCurrentBudget(systemId, timeframe = '30d', includeWeathe
     const dailyEnergyOut = totalEnergyOut / days;
     const netDaily = dailyEnergyIn - dailyEnergyOut;
 
+    // NEW: Data quality check for sporadic screenshots
+    const expectedSamplesPerDay = 24; // Hourly screenshots
+    const actualSamplesPerDay = records.length / days;
+    const dataCompleteness = Math.min(100, (actualSamplesPerDay / expectedSamplesPerDay) * 100);
+
+    // If data is sparse, we can't reliably detect deficits
+    const hasSparsData = dataCompleteness < 60; // Less than 60% coverage
+
+    log.info('Energy budget data quality', {
+      systemId,
+      dataCompleteness: Math.round(dataCompleteness),
+      samplesPerDay: Math.round(actualSamplesPerDay),
+      hasSparsData
+    });
+
     // Get system capacity from first record
     const systemCapacity = records[0].analysis.remainingCapacity || null;
     const nominalVoltage = records[0].analysis.overallVoltage || 12; // Assume 12V if not available
     const batteryCapacityWh = systemCapacity ? systemCapacity * nominalVoltage : null;
 
-    // Calculate sufficiency metrics
-    const solarSufficiency = dailyEnergyIn > 0
+    // Calculate sufficiency metrics with tolerance for measurement variance
+    // NEW: Apply ±10% tolerance band to account for sporadic data and measurement noise
+    const TOLERANCE_PERCENT = 10;
+    const toleranceBand = dailyEnergyOut * (TOLERANCE_PERCENT / 100);
+    const effectiveDeficit = Math.max(0, dailyEnergyOut - dailyEnergyIn - toleranceBand);
+
+    // Only report deficit if it's significant (>10% under needs) AND we have good data
+    const hasTrueDeficit = !hasSparsData && effectiveDeficit > 0;
+
+    const solarSufficiency = dailyEnergyIn > 0 && dailyEnergyOut > 0
       ? Math.min(100, Math.round((dailyEnergyIn / dailyEnergyOut) * 100))
       : 0;
 
@@ -100,7 +123,9 @@ async function calculateCurrentBudget(systemId, timeframe = '30d', includeWeathe
       systemId,
       dailyEnergyIn: Math.round(dailyEnergyIn),
       dailyEnergyOut: Math.round(dailyEnergyOut),
-      solarSufficiency
+      solarSufficiency,
+      hasTrueDeficit,
+      effectiveDeficit: Math.round(effectiveDeficit)
     });
 
     return {
@@ -108,6 +133,11 @@ async function calculateCurrentBudget(systemId, timeframe = '30d', includeWeathe
       scenario: 'current',
       timeframe: `${days} days`,
       dataPoints: records.length,
+      dataQuality: {
+        completeness: Math.round(dataCompleteness),
+        samplesPerDay: Math.round(actualSamplesPerDay),
+        isReliable: !hasSparsData
+      },
       energyFlow: {
         dailyGeneration: Math.round(dailyEnergyIn),
         dailyConsumption: Math.round(dailyEnergyOut),
@@ -116,8 +146,9 @@ async function calculateCurrentBudget(systemId, timeframe = '30d', includeWeathe
       },
       solarSufficiency: {
         percentage: solarSufficiency,
-        status: solarSufficiency >= 100 ? 'surplus' : solarSufficiency >= 80 ? 'adequate' : 'deficit',
-        deficit: solarSufficiency < 100 ? Math.round(dailyEnergyOut - dailyEnergyIn) : 0
+        status: hasTrueDeficit ? 'deficit' : solarSufficiency >= 100 ? 'surplus' : solarSufficiency >= 80 ? 'adequate' : 'balanced',
+        deficit: hasTrueDeficit ? Math.round(effectiveDeficit) : 0,
+        note: hasSparsData ? 'Sporadic data - calculations may be inaccurate. Need more frequent screenshots for reliable deficit detection.' : null
       },
       batteryMetrics: {
         capacity: systemCapacity ? `${systemCapacity} Ah` : 'unknown',

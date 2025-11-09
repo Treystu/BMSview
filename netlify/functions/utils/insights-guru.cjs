@@ -211,11 +211,15 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += `\n**LOAD BASELINE NOTE**\n- Overnight draw baseline is ${formatNumber(contextData.nightDischarge.aggregate.avgCurrent, " A", 1)} consuming ~${formatNumber(contextData.nightDischarge.aggregate.totalAh, " Ah", 1)} before sunrise. Use this to explain SOC dips and distinguish from battery wear.\n`;
     }
 
-    if (contextData?.solarVariance && isFiniteNumber(contextData.solarVariance.varianceAh)) {
-        const varianceText = contextData.solarVariance.varianceAh > 0
-            ? `Charging exceeded expectation by ${formatNumber(contextData.solarVariance.varianceAh, " Ah", 1)}.`
-            : `Charging lagged expectation by ${formatNumber(Math.abs(contextData.solarVariance.varianceAh), " Ah", 1)}.`;
-        prompt += `\n**SOLAR MODEL NOTE**\n- ${varianceText} Calibrate recommendations based on this variance rather than default assumptions.\n`;
+    if (contextData?.solarVariance) {
+        if (contextData.solarVariance.withinTolerance) {
+            prompt += `\n**SOLAR MODEL NOTE**\n- Solar charging within expected range (±15% tolerance). No significant variance detected. Use baseline expectations for recommendations.\n`;
+        } else if (isFiniteNumber(contextData.solarVariance.significantVarianceAh)) {
+            const varianceText = contextData.solarVariance.significantVarianceAh > 0
+                ? `Charging exceeded expectation by ${formatNumber(contextData.solarVariance.significantVarianceAh, " Ah", 1)} (beyond ±15% tolerance).`
+                : `Charging lagged expectation by ${formatNumber(Math.abs(contextData.solarVariance.significantVarianceAh), " Ah", 1)} (beyond ±15% tolerance).`;
+            prompt += `\n**SOLAR MODEL NOTE**\n- ${varianceText} Calibrate recommendations based on this significant variance.\n`;
+        }
     }
 
     prompt += "\n**CRITICAL RESPONSE RULES**\n";
@@ -227,6 +231,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "6. Structure: ## KEY FINDINGS (2-4 critical bullets with bold labels) → ## OPERATIONAL STATUS (metrics) → ## RECOMMENDATIONS (numbered actions with urgency flags).\n";
     prompt += "7. Cite data sources in parentheticals, not separate sections: 'Solar deficit 15Ah (weather data + BMS logs)' not 'Data sources: weather, BMS'.\n";
     prompt += "8. TERMINOLOGY: 'Battery autonomy' or 'days of autonomy' = RUNTIME until discharge at current load. 'Service life' or 'lifetime' = years/months until replacement due to degradation. Never confuse these.\n";
+    prompt += "9. DATA QUALITY: Sporadic screenshot-based monitoring has gaps. Use ±10% tolerance for energy deficits, ±15% for solar variance. Only flag issues beyond tolerance with reliable data (>60% coverage). Acknowledge data sparsity when relevant.\n";
 
     return {
         prompt,
@@ -542,8 +547,22 @@ function formatEnergyBudgetsSection(energyBudgets) {
         } else if (current.insufficient_data) {
             lines.push(`- Current scenario: insufficient data (${current.message}).`);
         } else {
+            // NEW: Show data quality warnings
+            if (current.dataQuality && !current.dataQuality.isReliable) {
+                lines.push(`- ⚠️ Data quality: ${current.dataQuality.completeness}% coverage (${formatNumber(current.dataQuality.samplesPerDay, " samples/day", 1)}). Sporadic screenshots limit accuracy.`);
+            }
+
             lines.push(`- Daily generation vs consumption: ${formatNumber(current.energyFlow?.dailyGeneration, " Wh", 0)} in / ${formatNumber(current.energyFlow?.dailyConsumption, " Wh", 0)} out.`);
-            lines.push(`- Solar sufficiency: ${formatPercent(current.solarSufficiency?.percentage, 0)} (${current.solarSufficiency?.status || "unknown"}).`);
+
+            // NEW: Only show deficit if it's real and data is reliable
+            if (current.solarSufficiency?.deficit > 0 && current.dataQuality?.isReliable) {
+                lines.push(`- Solar sufficiency: ${formatPercent(current.solarSufficiency?.percentage, 0)} (${formatNumber(current.solarSufficiency.deficit, " Wh/day", 0)} deficit – verified with ${current.dataPoints} measurements).`);
+            } else if (current.solarSufficiency?.note) {
+                lines.push(`- Solar status: ${current.solarSufficiency.status} (${current.solarSufficiency.note}).`);
+            } else {
+                lines.push(`- Solar sufficiency: ${formatPercent(current.solarSufficiency?.percentage, 0)} (${current.solarSufficiency?.status || "unknown"}).`);
+            }
+
             if (isFiniteNumber(current.batteryMetrics?.daysOfAutonomy)) {
                 lines.push(`- Battery autonomy at current load: ${formatNumber(current.batteryMetrics.daysOfAutonomy, " days", 1)}.`);
             }
@@ -662,7 +681,22 @@ function formatSolarVarianceSection(variance) {
         lines.push(`- Modeled expectation (weather-adjusted): ${formatNumber(variance.expectedSolarAh, " Ah", 1)} using ${formatNumber(variance.sunHours, " h", 1)} sun hours${isFiniteNumber(variance.cloudCover) ? ` at ${formatPercent(variance.cloudCover, 0)} clouds` : ""}.`);
     }
 
-    if (isFiniteNumber(variance.varianceAh)) {
+    // NEW: Show tolerance-aware variance reporting
+    if (variance.withinTolerance !== undefined) {
+        if (variance.withinTolerance) {
+            lines.push(`- Solar variance: Within expected range (±15% tolerance = ±${formatNumber(variance.toleranceAh, " Ah", 1)}).`);
+            if (isFiniteNumber(variance.rawVarianceAh)) {
+                const direction = variance.rawVarianceAh > 0 ? "above" : "below";
+                lines.push(`- Measured difference: ${formatNumber(Math.abs(variance.rawVarianceAh), " Ah", 1)} ${direction} expected (normal variation).`);
+            }
+        } else if (isFiniteNumber(variance.significantVarianceAh)) {
+            const varianceText = variance.significantVarianceAh > 0
+                ? `surplus of ${formatNumber(variance.significantVarianceAh, " Ah", 1)}`
+                : `deficit of ${formatNumber(Math.abs(variance.significantVarianceAh), " Ah", 1)}`;
+            lines.push(`- Significant solar variance detected: ${varianceText} (exceeds ±15% tolerance of ±${formatNumber(variance.toleranceAh, " Ah", 1)}).`);
+        }
+    } else if (isFiniteNumber(variance.varianceAh)) {
+        // Fallback for old format (backward compatibility)
         const varianceText = variance.varianceAh > 0
             ? `surplus of ${formatNumber(variance.varianceAh, " Ah", 1)}`
             : `deficit of ${formatNumber(Math.abs(variance.varianceAh), " Ah", 1)}`;
@@ -874,15 +908,23 @@ function estimateSolarVariance({ snapshots = [], analysisData = {}, systemProfil
     const expectedBalanceAh = anticipatedConsumptionAh != null && expectedSolarAh != null
         ? expectedSolarAh - anticipatedConsumptionAh
         : null;
-    const varianceAh = expectedSolarAh != null ? actualSolarAh - expectedSolarAh : null;
+
+    // NEW: Calculate variance with tolerance for sporadic data
+    // Sporadic screenshots mean we're estimating from incomplete data
+    // Apply ±15% tolerance band before flagging variance
+    const rawVarianceAh = expectedSolarAh != null ? actualSolarAh - expectedSolarAh : null;
+    const toleranceAh = expectedSolarAh != null ? expectedSolarAh * 0.15 : 0; // 15% tolerance
+    const significantVarianceAh = rawVarianceAh != null && Math.abs(rawVarianceAh) > toleranceAh ? rawVarianceAh : null;
 
     let recommendation = null;
-    if (varianceAh != null) {
-        if (varianceAh < -3) {
-            recommendation = 'Solar intake is trailing expectations; consider verifying panel output or shading during low irradiance days.';
-        } else if (varianceAh > 3) {
-            recommendation = 'Solar charging exceeded modeled expectations. Review discharge assumptions or recalibrate baseline.';
+    if (significantVarianceAh != null) {
+        if (significantVarianceAh < -5) {
+            recommendation = 'Solar intake trailing expectations beyond tolerance band. Verify panel output, shading, or adjust expected capacity in system profile.';
+        } else if (significantVarianceAh > 5) {
+            recommendation = 'Solar charging exceeded modeled expectations beyond tolerance. Review discharge assumptions or recalibrate baseline capacity.';
         }
+    } else if (rawVarianceAh != null) {
+        recommendation = `Solar variance within ±15% tolerance (±${formatNumber(toleranceAh, ' Ah', 1)}). System operating as expected given sporadic screenshot data.`;
     }
 
     return {
@@ -896,7 +938,10 @@ function estimateSolarVariance({ snapshots = [], analysisData = {}, systemProfil
         anticipatedNightConsumptionAh: anticipatedConsumptionAh != null ? roundNumber(anticipatedConsumptionAh, 2) : null,
         balanceAh: balanceAh != null ? roundNumber(balanceAh, 2) : null,
         expectedBalanceAh: expectedBalanceAh != null ? roundNumber(expectedBalanceAh, 2) : null,
-        varianceAh: varianceAh != null ? roundNumber(varianceAh, 2) : null,
+        varianceAh: significantVarianceAh != null ? roundNumber(significantVarianceAh, 2) : null,
+        rawVarianceAh: rawVarianceAh != null ? roundNumber(rawVarianceAh, 2) : null,
+        toleranceAh: roundNumber(toleranceAh, 2),
+        withinTolerance: significantVarianceAh === null && rawVarianceAh != null,
         recommendation
     };
 }
