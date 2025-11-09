@@ -140,6 +140,44 @@ The application is automatically deployed via Netlify:
 2. Netlify automatically builds and deploys
 3. Environment variables are configured in Netlify dashboard
 
+## Local-First Sync Migration
+
+The new local-first sync layer relies on fresh `updatedAt` and `_syncStatus` fields across MongoDB collections. Run the migration function **after** completing the backup procedure and validating in staging.
+
+### Backup Procedure (Run Before Migration)
+
+- Export the target database:
+  ```bash
+  mongodump --uri "$MONGODB_URI" --db "$MONGODB_DB_NAME" --out ./backups/$(date +%Y%m%d-%H%M%S)
+  ```
+- Verify the dump folder contains collection archives (`systems.bson`, `history.bson`, `analysis-results.bson`).
+- Compress the dump and store it in secure object storage (Netlify build artifacts or S3) with the timestamped folder name.
+- Record the backup location in your deployment log so it can be restored quickly with `mongorestore` if needed.
+
+### Migration Steps (Staging First)
+
+1. Point your shell at the staging environment variables (`MONGODB_URI`, `MONGODB_DB_NAME`).
+2. Trigger the migration:
+   ```bash
+   curl -X POST "https://<staging-site>/.netlify/functions/migrate-add-sync-fields"
+   ```
+3. Confirm the JSON response reports `success: true` and lists all migrated collections.
+4. Spot check the database:
+   - Ensure documents now include ISO 8601 `updatedAt` values ending in `Z`.
+   - Confirm `_syncStatus` defaults to `synced` on legacy records.
+   - Validate the new indexes with `db.getCollection('<name>').getIndexes()`.
+5. Hit the sync metadata endpoint to verify canonical timestamps:
+   ```bash
+   curl "https://<staging-site>/.netlify/functions/sync-metadata?collection=systems"
+   ```
+6. Repeat the same process in production only after staging verification passes and the backup is stored safely.
+
+### Post-Migration Verification
+
+- `/.netlify/functions/sync-incremental` should return freshly normalized documents when queried with a recent ISO timestamp.
+- `sync-metadata` checksums should be non-null for populated collections.
+- Admin diagnostics (Phase 4) should be updated later to assert timestamp formatting and sync status consistency.
+
 ## Contributing
 
 ### For Human Contributors

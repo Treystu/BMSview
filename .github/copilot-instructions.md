@@ -28,6 +28,13 @@ npm run build      # Production build
 - `index.html` → Main BMS analysis app
 - `admin.html` → Admin dashboard (system management, diagnostics)
 
+**Path Aliases (Frontend Only):**
+Both `vite.config.ts` and `tsconfig.json` define aliases - use them consistently:
+```typescript
+import { AppState } from 'state/appState';  // ✅ Correct
+import { AppState } from '../state/appState';  // ❌ Avoid relative imports for aliased paths
+```
+
 ---
 
 ## Project Overview
@@ -79,11 +86,13 @@ BMSview/
 - **Location**: `netlify/functions/*.cjs`
 - **Key functions**:
   - `analyze.cjs` - BMS image analysis (supports sync mode with `?sync=true`)
-  - `generate-insights-with-tools.cjs` - AI-powered insights using Gemini 2.5 Flash
+  - `generate-insights-with-tools.cjs` - AI "Battery Guru" with function calling (supports sync and background modes)
+  - `generate-insights-background.cjs` - Long-running insights jobs (>60s)
   - `solar-estimate.ts` - Solar energy estimation proxy (TypeScript, bundled separately)
   - `history.cjs` - Analysis history with pagination
   - `systems.cjs` - BMS system registration and management
-- **Utilities**: `netlify/functions/utils/*.cjs` (logger, MongoDB, retry logic, validation, analysis pipeline)
+  - `admin-diagnostics.cjs` - System diagnostics and health checks
+- **Utilities**: `netlify/functions/utils/*.cjs` (logger, MongoDB, retry logic, validation, analysis pipeline, insights jobs)
 
 ### Data Flow
 1. User uploads BMS screenshot → `UploadSection.tsx`
@@ -105,13 +114,16 @@ BMSview/
 
 ### 2. MongoDB Collections & Schema
 **Collections** (database name: `bmsview` or from `MONGODB_DB_NAME`):
-- `analysis-results` - Analysis records with deduplication hashes
+- `analysis-results` - Analysis records with deduplication hashes (SHA-256)
 - `systems` - Registered BMS systems with associated DL numbers
 - `history` - Legacy analysis history (paginated responses)
 - `idempotent-requests` - Request/response caching for idempotency
 - `progress-events` - Legacy job progress tracking (mostly unused after sync mode migration)
+- `insights-jobs` - Background insights generation jobs (for queries >60s)
 
 **Connection pattern**: Use `getCollection('collectionName')` from `utils/mongodb.cjs` (handles pooling, retries, health checks)
+
+**Connection pooling**: Pool size reduced to 5 (from 10) to prevent MongoDB connection overload. Reuses connections aggressively with 60s health check intervals.
 
 ### 3. Logging Strategy
 **Structured JSON logging** everywhere:
@@ -135,6 +147,14 @@ log.info('Message', { key: value });  // Use log levels: info, warn, error, debu
 - Direct response from `analyze.cjs` with full `AnalysisRecord`
 - Duplicate detection via content hashing (SHA-256 of image base64)
 - Functions `job-shepherd.cjs`, `get-job-status.cjs`, `process-analysis.cjs` are **legacy/deprecated**
+
+### 6. AI Insights with Function Calling
+**Battery Guru** (`generate-insights-with-tools.cjs`) uses Gemini 2.5 Flash with structured function calling:
+- Supports both sync (queries <55s) and background modes (>60s)
+- Multi-turn conversation: Gemini can request specific BMS data, weather, solar, and analytics
+- Implements tool definitions following Gemini's recommended pattern
+- Background jobs use `insights-jobs.cjs` for state management and status polling
+- Max 10 tool call iterations with 25s timeout per iteration, 58s total
 
 ## Environment Variables
 
@@ -188,8 +208,11 @@ WeatherData           // Cached weather info (temp, clouds, UVI)
 ## Testing Conventions
 
 - **Mocks**: `tests/mocks/mongodb.mock.js` provides in-memory MongoDB for tests
+- **Test files**: Create in `tests/` with `.test.js` or `.simple.test.js` extension
+- **Jest config**: `jest.config.cjs` with 30s timeout, Babel transform for ES modules/CommonJS
 - **Timeouts**: Use short timeouts (100ms) in tests, not production values
 - **No global assertions**: Avoid `afterEach(() => expect(console.error).not.toHaveBeenCalled())` - breaks error tests
+- **Coverage**: Run `npm run test:coverage` to generate HTML coverage report
 
 ## State Management Pattern
 
@@ -217,9 +240,10 @@ dispatch({ type: 'SYNC_ANALYSIS_COMPLETE', payload: { fileName, record, isDuplic
 ## Recent Migration Notes
 
 - **Gemini 2.5 Flash**: Upgraded from older models (see `GEMINI_2.5_MIGRATION_COMPLETE.md`)
-- **Sync analysis**: Use job-based async AND/OR synchronous processing situationally, whichever will work best to avoid Netlify Timeouts, and guarantee results.
+- **Sync analysis**: Moved from job-based async to synchronous processing with `?sync=true`
 - **Path aliases**: Fixed import resolution issues (Oct 2025) - use configured aliases consistently
 - **MongoDB pooling**: Optimized connection pooling (reduced pool size 10→5 to prevent overload)
+- **Function calling**: Enhanced insights generation with true function calling (multi-turn conversation)
 
 ## Task Scoping and Suitability
 

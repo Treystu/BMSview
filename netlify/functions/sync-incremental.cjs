@@ -1,0 +1,176 @@
+"use strict";
+
+const { getCollection } = require("./utils/mongodb.cjs");
+const { createLogger } = require("./utils/logger.cjs");
+const { errorResponse } = require("./utils/errors.cjs");
+
+const JSON_HEADERS = {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store"
+};
+
+const ISO_UTC_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+const COLLECTION_CONFIG = {
+    systems: {
+        dbName: "systems",
+        fallbackUpdatedAtFields: [
+            { name: "createdAt", type: "date" },
+            { name: "timestamp", type: "string" }
+        ]
+    },
+    history: {
+        dbName: "history",
+        fallbackUpdatedAtFields: [
+            { name: "timestamp", type: "string" },
+            { name: "createdAt", type: "date" }
+        ]
+    },
+    "analysis-results": {
+        dbName: "analysis-results",
+        fallbackUpdatedAtFields: [
+            { name: "timestamp", type: "string" },
+            { name: "createdAt", type: "date" }
+        ]
+    },
+    analytics: {
+        dbName: "system-analytics",
+        fallbackUpdatedAtFields: [
+            { name: "timestamp", type: "string" },
+            { name: "createdAt", type: "date" }
+        ]
+    }
+};
+
+function jsonResponse(statusCode, body) {
+    return {
+        statusCode,
+        headers: JSON_HEADERS,
+        body: JSON.stringify(body)
+    };
+}
+
+function normalizeToIsoString(value) {
+    if (!value) {
+        return null;
+    }
+
+    if (typeof value === "string") {
+        if (ISO_UTC_REGEX.test(value)) {
+            return value;
+        }
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) {
+            return parsed.toISOString();
+        }
+        return null;
+    }
+
+    if (value instanceof Date) {
+        return value.toISOString();
+    }
+
+    return null;
+}
+
+function buildIncrementalFilter(sinceIso, sinceDate, fallbackFields) {
+    const orClauses = [
+        { updatedAt: { $exists: true, $gte: sinceIso } }
+    ];
+
+    for (const field of fallbackFields) {
+        if (field.type === "date") {
+            orClauses.push({ [field.name]: { $exists: true, $gte: sinceDate } });
+        } else {
+            orClauses.push({ [field.name]: { $exists: true, $gte: sinceIso } });
+        }
+    }
+
+    // Include legacy documents with no timestamp so they sync at least once
+    orClauses.push({ updatedAt: { $exists: false } });
+
+    return { $or: orClauses };
+}
+
+exports.handler = async function (event, context) {
+    const log = createLogger("sync-incremental", context);
+    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+
+    if (event.httpMethod !== "GET") {
+        log.warn("Method not allowed", { method: event.httpMethod });
+        return jsonResponse(405, { error: "Method Not Allowed" });
+    }
+
+    const params = event.queryStringParameters || {};
+    const collectionKey = params.collection;
+    const since = params.since;
+
+    if (!collectionKey) {
+        log.warn("Missing collection query parameter");
+        return errorResponse(400, "missing_collection", "The 'collection' query parameter is required.");
+    }
+
+    if (!since) {
+        log.warn("Missing since query parameter", { collection: collectionKey });
+        return errorResponse(400, "missing_since", "The 'since' query parameter is required.");
+    }
+
+    if (!ISO_UTC_REGEX.test(since)) {
+        log.warn("Invalid since timestamp format", { since });
+        return errorResponse(400, "invalid_since", "The 'since' parameter must be an ISO 8601 UTC timestamp with milliseconds.");
+    }
+
+    const sinceDate = new Date(since);
+    if (Number.isNaN(sinceDate.getTime())) {
+        log.warn("Unparseable since timestamp", { since });
+        return errorResponse(400, "invalid_since", "The 'since' parameter could not be parsed as a valid date.");
+    }
+
+    const config = COLLECTION_CONFIG[collectionKey];
+    if (!config) {
+        log.warn("Unsupported collection requested", { collection: collectionKey });
+        return errorResponse(400, "invalid_collection", `Collection '${collectionKey}' is not supported.`);
+    }
+
+    try {
+        const collection = await getCollection(config.dbName);
+        const fallbackFields = config.fallbackUpdatedAtFields || [];
+        const filter = buildIncrementalFilter(since, sinceDate, fallbackFields);
+
+        const items = await collection.find(filter, { projection: { _id: 0 } }).toArray();
+        const deletedCollection = await getCollection("deleted-records");
+        const deletedRecords = await deletedCollection.find({ collection: config.dbName }, { projection: { _id: 0 } }).toArray();
+
+        const deletedIds = [];
+        for (const record of deletedRecords) {
+            const deletedAtIso = normalizeToIsoString(record.deletedAt);
+            if (deletedAtIso && deletedAtIso >= since) {
+                if (record.id) {
+                    deletedIds.push(record.id);
+                }
+            }
+        }
+
+        const serverTime = new Date().toISOString();
+
+        log.info("Incremental sync complete", {
+            collection: collectionKey,
+            returnedItems: items.length,
+            deletedCount: deletedIds.length,
+            since
+        });
+        log.exit(200, { collection: collectionKey, returnedItems: items.length });
+
+        return jsonResponse(200, {
+            collection: collectionKey,
+            since,
+            serverTime,
+            items,
+            deletedIds
+        });
+    } catch (error) {
+        log.error("Failed to execute incremental sync", { message: error.message, stack: error.stack, collection: collectionKey });
+        log.exit(500, { collection: collectionKey });
+        return errorResponse(500, "sync_incremental_error", "Failed to retrieve incremental updates for the requested collection.");
+    }
+};
