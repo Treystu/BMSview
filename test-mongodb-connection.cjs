@@ -53,8 +53,6 @@ async function testConnection() {
             connectTimeoutMS: 10000,
             retryWrites: true,
             retryReads: true,
-            keepAlive: true,
-            keepAliveInitialDelay: 30000,
         });
 
         // Add event listeners
