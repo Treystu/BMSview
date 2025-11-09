@@ -8,6 +8,39 @@
 
 ---
 
+### Phase 0: CRITICAL HOTFIXES (Immediate)
+
+#### MongoDB Query Spike (Atlas connections climbing)
+- [ ] Capture fresh Atlas metrics (query/connection graphs) and attach to diagnostics logbook
+- [x] Add temporary query counters + timing logs in `netlify/functions/sync-metadata.cjs`, `sync-incremental.cjs`, and `sync-push.cjs`
+- [ ] Verify frontend services hit `localCache` before network (audit `services/clientService.ts` and related hooks)
+- [ ] Run staged `netlify dev` session to reproduce and compare request volume with IndexedDB enabled/disabled
+- [ ] Inspect incremental sync filters for missing `updatedAt` normalization that could force full scans
+- [ ] Document remediation plan and expected post-fix metrics
+
+#### Weather Function GET/HEAD Body Error
+- [ ] Reproduce from `analysis-pipeline` path in `netlify dev` (ensure systems with lat/lon)
+- [x] Patch `callWeatherFunction` helper to send POST with JSON payload + headers
+- [x] Harden weather Netlify function to reject and log non-POST callers with actionable message
+- [ ] Update Admin Diagnostics weather test to cover POST + payload validation
+- [ ] Add regression unit/diagnostic test (Phase 4) once fix verified
+
+#### Generate Insights Timeout Regression
+- [ ] Pull latest logs for `generate-insights-with-tools.cjs` and capture tool-call timing + iteration counts
+- [ ] Confirm handoff to background job when wall clock hits 55s and ensure status polling surfaces context
+- [x] Add instrumentation around Gemini responses, Mongo aggregation, and weather/tool calls for slow-path insight requests
+- [ ] Re-run "Generate Insights" happy path locally after instrumentation and record duration
+- [ ] Document mitigation (e.g., prompt slimming, background default) based on findings
+
+#### Admin Diagnostics Fatal Error
+- [ ] Retrieve failing request logs for `admin-diagnostics.cjs` (include selected test IDs)
+- [ ] Identify dependency failures (weather, solar, systems) and ensure mock data available in dev mode
+- [ ] Add defensive error wrapping so one failing test does not crash suite
+- [ ] Verify diagnostics UI handles partial failures with actionable messaging
+- [ ] Update diagnostics documentation with new troubleshooting notes after fix
+
+---
+
 ### Phase 1: FOUNDATION + BACKEND (Steps 1-7)
 
 #### Step 1-2: IndexedDB Cache Layer Setup

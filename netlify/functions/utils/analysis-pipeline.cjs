@@ -20,7 +20,8 @@ const callWeatherFunction = async (lat, lon, timestamp, log) => {
     log('debug', 'Calling weather function.', logContext);
     try {
         const response = await fetch(weatherUrl, {
-            // ... existing code ...
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ lat, lon, timestamp }),
         });
         if (!response.ok) {

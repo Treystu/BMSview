@@ -95,6 +95,7 @@ function buildIncrementalFilter(sinceIso, sinceDate, fallbackFields) {
 exports.handler = async function (event, context) {
     const log = createLogger("sync-incremental", context);
     log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+    const requestStartedAt = Date.now();
 
     if (event.httpMethod !== "GET") {
         log.warn("Method not allowed", { method: event.httpMethod });
@@ -137,9 +138,14 @@ exports.handler = async function (event, context) {
         const fallbackFields = config.fallbackUpdatedAtFields || [];
         const filter = buildIncrementalFilter(since, sinceDate, fallbackFields);
 
+        const itemsQueryStartedAt = Date.now();
         const items = await collection.find(filter, { projection: { _id: 0 } }).toArray();
+        const itemsQueryDurationMs = Date.now() - itemsQueryStartedAt;
+
         const deletedCollection = await getCollection("deleted-records");
+        const deletedQueryStartedAt = Date.now();
         const deletedRecords = await deletedCollection.find({ collection: config.dbName }, { projection: { _id: 0 } }).toArray();
+        const deletedQueryDurationMs = Date.now() - deletedQueryStartedAt;
 
         const deletedIds = [];
         for (const record of deletedRecords) {
@@ -153,11 +159,20 @@ exports.handler = async function (event, context) {
 
         const serverTime = new Date().toISOString();
 
+        log.debug("Incremental sync query metrics", {
+            collection: collectionKey,
+            itemsQueryDurationMs,
+            deletedQueryDurationMs,
+            itemsReturned: items.length,
+            deletedCandidates: deletedRecords.length
+        });
+
         log.info("Incremental sync complete", {
             collection: collectionKey,
             returnedItems: items.length,
             deletedCount: deletedIds.length,
-            since
+            since,
+            durationMs: Date.now() - requestStartedAt
         });
         log.exit(200, { collection: collectionKey, returnedItems: items.length });
 
@@ -169,7 +184,12 @@ exports.handler = async function (event, context) {
             deletedIds
         });
     } catch (error) {
-        log.error("Failed to execute incremental sync", { message: error.message, stack: error.stack, collection: collectionKey });
+        log.error("Failed to execute incremental sync", {
+            message: error.message,
+            stack: error.stack,
+            collection: collectionKey,
+            durationMs: Date.now() - requestStartedAt
+        });
         log.exit(500, { collection: collectionKey });
         return errorResponse(500, "sync_incremental_error", "Failed to retrieve incremental updates for the requested collection.");
     }

@@ -45,6 +45,7 @@ function sanitizeItem(rawItem, serverTime) {
 exports.handler = async function (event, context) {
     const log = createLogger("sync-push", context);
     log.entry({ method: event.httpMethod, path: event.path });
+    const requestStartedAt = Date.now();
 
     if (event.httpMethod !== "POST") {
         log.warn("Method not allowed", { method: event.httpMethod });
@@ -124,7 +125,9 @@ exports.handler = async function (event, context) {
 
     try {
         const collection = await getCollection(config.dbName);
+        const bulkStartedAt = Date.now();
         const result = await collection.bulkWrite(operations, { ordered: false });
+        const bulkDurationMs = Date.now() - bulkStartedAt;
 
         const inserted = result.upsertedCount || 0;
         const updated = result.modifiedCount || 0;
@@ -137,7 +140,9 @@ exports.handler = async function (event, context) {
             inserted,
             updated,
             matched,
-            skipped
+            skipped,
+            bulkDurationMs,
+            durationMs: Date.now() - requestStartedAt
         });
         log.exit(200, { collection: collectionKey, processed, inserted, updated });
 
@@ -147,10 +152,16 @@ exports.handler = async function (event, context) {
             updated,
             processed,
             skipped,
-            serverTime
+            serverTime,
+            bulkDurationMs
         });
     } catch (error) {
-        log.error("Failed to execute sync push", { message: error.message, stack: error.stack, collection: collectionKey });
+        log.error("Failed to execute sync push", {
+            message: error.message,
+            stack: error.stack,
+            collection: collectionKey,
+            durationMs: Date.now() - requestStartedAt
+        });
         log.exit(500, { collection: collectionKey });
         return errorResponse(500, "sync_push_error", "Failed to persist items for the requested collection.");
     }

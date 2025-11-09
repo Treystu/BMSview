@@ -143,6 +143,7 @@ async function calculateChecksum(payload) {
 exports.handler = async function (event, context) {
     const log = createLogger("sync-metadata", context);
     log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+    const requestStartedAt = Date.now();
 
     if (event.httpMethod !== "GET") {
         log.warn("Method not allowed", { method: event.httpMethod });
@@ -169,7 +170,14 @@ exports.handler = async function (event, context) {
             projection[field.name] = 1;
         }
 
+        const queryStartedAt = Date.now();
         const records = await collection.find({}, { projection }).toArray();
+        const queryDurationMs = Date.now() - queryStartedAt;
+        log.debug("Mongo query completed", {
+            collection: collectionKey,
+            queryDurationMs,
+            recordsReturned: records.length
+        });
         const recordCount = records.length;
 
         const { payload, lastModified, legacyTimestampCount } = buildChecksumPayload(records, fallbackFields);
@@ -181,7 +189,8 @@ exports.handler = async function (event, context) {
             recordCount,
             lastModified,
             checksumPresent: !!checksum,
-            legacyTimestampCount
+            legacyTimestampCount,
+            durationMs: Date.now() - requestStartedAt
         });
         log.exit(200, { collection: collectionKey, recordCount });
 
@@ -193,7 +202,12 @@ exports.handler = async function (event, context) {
             serverTime
         });
     } catch (error) {
-        log.error("Failed to compute sync metadata", { message: error.message, stack: error.stack, collection: collectionKey });
+        log.error("Failed to compute sync metadata", {
+            message: error.message,
+            stack: error.stack,
+            collection: collectionKey,
+            durationMs: Date.now() - requestStartedAt
+        });
         log.exit(500, { collection: collectionKey });
         return errorResponse(500, "metadata_error", "Failed to compute metadata for the requested collection.");
     }

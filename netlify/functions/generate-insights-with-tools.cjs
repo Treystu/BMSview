@@ -116,6 +116,7 @@ async function handler(event = {}, context = {}) {
       log.info('Insights job created', { jobId: job.id });
 
       try {
+        const dispatchStartedAt = Date.now();
         const dispatchInfo = await dispatchBackgroundProcessing({
           jobId: job.id,
           event,
@@ -125,7 +126,8 @@ async function handler(event = {}, context = {}) {
         log.info('Background processing dispatched', {
           jobId: job.id,
           dispatchUrl: dispatchInfo.url,
-          status: dispatchInfo.status
+          status: dispatchInfo.status,
+          dispatchDurationMs: Date.now() - dispatchStartedAt
         });
       } catch (dispatchError) {
         const error = dispatchError instanceof Error ? dispatchError : new Error(String(dispatchError));
@@ -184,6 +186,7 @@ async function handler(event = {}, context = {}) {
     }
 
     let conversationResult;
+    const conversationStartedAt = Date.now();
     try {
       conversationResult = await runGuruConversation({
         model,
@@ -197,9 +200,21 @@ async function handler(event = {}, context = {}) {
         totalTimeoutMs: TOTAL_TIMEOUT_MS,
         conversationTokenLimit: MAX_CONVERSATION_TOKENS
       });
+      const conversationDurationMs = Date.now() - conversationStartedAt;
+      log.info('Guru conversation completed', {
+        durationMs: conversationDurationMs,
+        iterations: conversationResult.iterations,
+        toolCallCount: Array.isArray(conversationResult.toolCalls) ? conversationResult.toolCalls.length : 0,
+        usedFunctionCalling: conversationResult.usedFunctionCalling,
+        warning: conversationResult.warning
+      });
     } catch (conversationError) {
       const err = conversationError instanceof Error ? conversationError : new Error(String(conversationError));
-      log.error('Guru conversation failed', { error: err.message, stack: err.stack });
+      log.error('Guru conversation failed', {
+        error: err.message,
+        stack: err.stack,
+        durationMs: Date.now() - conversationStartedAt
+      });
 
       const { userMessage, technicalDetails } = mapConversationError(err);
       const errorInsights = {
@@ -230,6 +245,7 @@ async function handler(event = {}, context = {}) {
       contextSummary: conversationResult.contextSummary,
       iterations: conversationResult.iterations,
       warning: conversationResult.warning,
+      durationMs: Date.now() - conversationStartedAt,
       timestamp: new Date().toISOString()
     });
 
