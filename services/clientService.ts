@@ -1780,7 +1780,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
     // Diagnostics can take 30+ seconds, so we need a custom timeout
     // Use a 60-second timeout to allow comprehensive diagnostics to complete
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    const timeoutId = setTimeout(() => controller.abort(), 65000);
 
     try {
         const headers = {
@@ -1803,8 +1803,11 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
         } as RequestInit);
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: 'An unexpected error occurred.' }));
-            const error = (errorData as any).error || `Server responded with status: ${response.status}`;
+            const errorData = await response.json().catch(async () => {
+                const text = await response.text().catch(() => '');
+                return { error: text || 'An unexpected error occurred.' };
+            });
+            const error = (errorData as any).error ? String((errorData as any).error) : `Server responded with status ${response.status}`;
             log('error', 'Diagnostics API fetch failed.', { status: response.status, error });
             
             // Return structured error response
