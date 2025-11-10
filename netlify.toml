@@ -10,6 +10,12 @@
 [functions."generate-insights-background"]
   external_node_modules = ["@google/generative-ai"]
 
+# Admin diagnostics function - needs longer timeout for comprehensive testing
+[functions."admin-diagnostics"]
+  # Note: This is a hint; actual timeout depends on Netlify plan tier
+  # Free: 10s, Pro: 26s, Business+: 26s
+  # Tests run in parallel to stay well under limits
+
 [context.production.environment]
   LOG_LEVEL = "INFO"
 [context.deploy-preview.environment]
