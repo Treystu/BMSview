@@ -156,6 +156,19 @@ log.info('Message', { key: value });  // Use log levels: info, warn, error, debu
 - Background jobs use `insights-jobs.cjs` for state management and status polling
 - Max 10 tool call iterations with 25s timeout per iteration, 58s total
 
+**Critical Insights Behavior (Nov 2025 Updates):**
+- **Alert Event Grouping**: Consecutive alerts at same threshold are grouped into single events with duration tracking, not counted per screenshot
+- **Solar Variance Interpretation**: Delta between expected and actual charge represents daytime load consumption, NOT solar underperformance
+  - Example: 220Ah expected, 58Ah recovered = 162Ah consumed by loads during day (8.3kWh @ 51.2V)
+- **Redundant Sections Removed**: OPERATIONAL STATUS section eliminated from insights (already shown elsewhere)
+- **90-Day Hourly/Daily Rollups**: Preloaded context now includes up to 90 daily records with hourly aggregations for comprehensive trend analysis
+- **Terminology Precision**:
+  - "Battery autonomy" / "days of autonomy" = RUNTIME until discharge at current load (from Energy Budget)
+  - "Service life" / "lifetime" = YEARS/MONTHS until replacement due to degradation (from Predictive Outlook)
+  - NEVER confuse these two distinct concepts
+- **Daily Net Balance**: Detailed calculations show generator runtime recommendations (max charging amps ÷ Ah deficit)
+- **Smart Recommendations**: Solar issues only flagged when variance exceeds tolerance AND weather conditions were favorable (correlate with cloud %, irradiance)
+
 ## Environment Variables
 
 ### Required
@@ -236,6 +249,10 @@ dispatch({ type: 'SYNC_ANALYSIS_COMPLETE', payload: { fileName, record, isDuplic
 4. **Don't skip logging** - All critical operations must log with context
 5. **Don't ignore duplicate detection** - Check `_isDuplicate` flag in `AnalysisData`
 6. **Don't hardcode model names** - Use `process.env.GEMINI_MODEL` with fallback to `gemini-2.5-flash`
+7. **Don't count alerts per screenshot** - Group consecutive alerts into time-based events with threshold recovery detection
+8. **Don't misinterpret solar variance** - Remember: expected minus actual often equals daytime load, not solar deficiency
+9. **Don't include redundant data in insights** - Current operational metrics are already displayed in the UI
+10. **Don't confuse battery autonomy with service life** - One is runtime, the other is replacement timeline
 
 ## Recent Migration Notes
 
@@ -244,6 +261,13 @@ dispatch({ type: 'SYNC_ANALYSIS_COMPLETE', payload: { fileName, record, isDuplic
 - **Path aliases**: Fixed import resolution issues (Oct 2025) - use configured aliases consistently
 - **MongoDB pooling**: Optimized connection pooling (reduced pool size 10→5 to prevent overload)
 - **Function calling**: Enhanced insights generation with true function calling (multi-turn conversation)
+- **Insights Logic Refinements (Nov 2025)**:
+  - Alert event grouping with time-based consolidation and threshold recovery detection
+  - Solar variance now correctly distinguishes generation from daytime load consumption
+  - Removed redundant operational status from insights output
+  - Added 90-day hourly/daily data rollups for comprehensive trend analysis
+  - Enhanced admin panel with trending statistics and daily net balance tracking
+  - Improved formatting and presentation of degradation/cycle count information
 
 ## Task Scoping and Suitability
 
@@ -393,3 +417,50 @@ Before marking a PR ready for review:
 5. Verify build succeeds with `npm run build`
 6. Review this instructions file for project-specific guidance
 7. Ask for clarification if requirements are ambiguous
+
+## AI Insights Generation Best Practices
+
+### Alert Event Grouping Logic
+When processing battery alerts for insights:
+- **Group consecutive alerts**: Multiple screenshots showing same alert = one event until threshold recovery
+- **Track event duration**: Estimate using time-of-day context (e.g., low battery at night likely clears when sun comes up)
+- **Threshold recovery inference**: If alert threshold is 20%, next reading >20% means event ended
+- **Time gaps matter**: Hours between screenshots may hide alert recovery - use solar/time context to infer
+- **Example**: 30 screenshots with "Low battery: 18.6%" from 2am-6am = ONE 4-hour event, not 30 events
+
+### Solar Variance Interpretation
+The key insight: **Solar variance often represents daytime load, not solar underperformance**
+- **Expected solar**: Based on irradiance model and max charging amps
+- **Actual charge recovered**: Net charge added to battery (after loads)
+- **The delta**: Expected - Actual = daytime load consumption
+- **Example calculation**:
+  - Expected: 220Ah @ 51.2V = 11.3kWh
+  - Recovered: 58Ah @ 51.2V = 3.0kWh  
+  - Delta: 162Ah = 8.3kWh consumed by loads during charging hours
+- **Only flag solar issues when**: Variance exceeds tolerance (±15%) AND weather was favorable (low cloud %, high irradiance)
+
+### Data Context for Gemini
+Structure preloaded context for comprehensive analysis:
+- **90-day rollups**: Maximum 90 daily records, each with up to 24 hourly averages
+- **Efficient aggregation**: Daily averages for quick patterns, hourly breakdowns for detailed analysis
+- **Include all metrics**: SOC, voltage, current, power, temperature, alerts per time bucket
+- **Metadata matters**: Data quality indicators (sample count, coverage %) help Gemini assess reliability
+- **ReAct loop ready**: Gemini can request additional specific data via `request_bms_data` tool
+
+### Insights Output Format Rules
+Keep insights actionable and avoid redundancy:
+- **Remove OPERATIONAL STATUS**: Current voltage/SOC/current already shown in UI - don't repeat in insights
+- **Lead with KEY FINDINGS**: 2-4 critical bullets with bold labels, cite sources inline
+- **Be precise with terminology**:
+  - Battery autonomy / runtime = days until discharge at current load
+  - Service life / lifetime = months/years until replacement threshold
+- **Format professionally**: Clean markdown, no broken formatting in cycle count or degradation sections
+- **Cite data sources inline**: "Solar deficit 15Ah (weather data + BMS logs)" not separate attribution sections
+
+### Daily Net Balance & Generator Recommendations
+Provide actionable generator runtime guidance:
+- **Calculate net balance**: Total daily generation minus total daily consumption
+- **Show the math**: If -25.2Ah deficit, show calculation: 25.2Ah ÷ max generator amps = hours needed
+- **Context aware**: Correlate with weather - deficit on cloudy day may not indicate problem
+- **Track trends**: Show in both insights and admin panel for long-term planning
+- **Example output**: "Daily deficit: 25.2Ah. At 60A generator charging, run for 25min to compensate."
