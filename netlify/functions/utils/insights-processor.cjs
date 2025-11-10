@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 /**
  * Insights Processor - Background AI Processing Logic
  * 
@@ -9,7 +7,7 @@
  * @module netlify/functions/utils/insights-processor
  */
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenAI } = require('@google/genai');
 const {
   updateJobStatus,
   addProgressEvent,
@@ -214,7 +212,7 @@ async function getAIModelWithTools(log) {
     return null;
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
+  const genAI = new GoogleGenAI(apiKey);
 
   // Try models in order of preference - PRODUCTION MODELS ONLY
   const modelsToTry = [
