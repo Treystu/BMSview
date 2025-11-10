@@ -28,14 +28,11 @@ const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 const { sha256HexFromBase64 } = require('./utils/hash.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry.cjs');
+const { getCorsHeaders } = require('./utils/cors.cjs');
 
 exports.handler = async (event, context) => {
-  // Enable CORS
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  };
+  // Get CORS headers (strict mode in production, permissive in development)
+  const headers = getCorsHeaders(event);
 
   // Handle preflight requests
   if (event.httpMethod === 'OPTIONS') {
