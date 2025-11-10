@@ -1,2 +1,2 @@
-// Shim re-export to satisfy legacy require('./utils/weather.cjs') paths.
+// Shim re-export for legacy require('./utils/weather.cjs')
 module.exports = require('../weather.cjs');
