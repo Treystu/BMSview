@@ -185,8 +185,23 @@ export const getRegisteredSystems = async (page = 1, limit = 25): Promise<Pagina
 
 export const getAnalysisHistory = async (page = 1, limit = 25): Promise<PaginatedResponse<AnalysisRecord>> => {
     log('info', 'Fetching paginated analysis history.', { page, limit });
-    const resp = await fetchWithCache<{ items: AnalysisRecord[]; total: number }>(`history?page=${page}&limit=${limit}`, 5_000);
-    return { items: resp.items, totalItems: resp.total };
+    const response = await fetchWithCache<any>(`history?page=${page}&limit=${limit}`, 5_000);
+
+    if (Array.isArray(response)) {
+        return { items: response, totalItems: response.length };
+    }
+
+    if (response && typeof response === 'object') {
+        const items = Array.isArray(response.items) ? response.items : [];
+        const totalCandidates = [response.total, response.totalItems, response.count];
+        const totalItems = totalCandidates.find(value => typeof value === 'number' && Number.isFinite(value));
+        return {
+            items,
+            totalItems: typeof totalItems === 'number' ? totalItems : items.length
+        };
+    }
+
+    return { items: [], totalItems: 0 };
 };
 
 export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => void, onComplete: () => void): Promise<void> => {
@@ -199,10 +214,22 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
         try {
             log('info', 'Fetching history page for streaming.', { page, limit });
             const response = await getAnalysisHistory(page, limit);
-            if (response.items.length > 0) {
-                onData(response.items);
+            if (response.items.length === 0) {
+                log('info', 'History stream hit empty page, stopping.', { page });
+                hasMore = false;
+                continue;
             }
-            if (page * limit >= response.totalItems) {
+
+            onData(response.items);
+
+            const totalItems = response.totalItems;
+            if (typeof totalItems === 'number' && Number.isFinite(totalItems)) {
+                if (page * limit >= totalItems) {
+                    hasMore = false;
+                } else {
+                    page++;
+                }
+            } else if (response.items.length < limit) {
                 hasMore = false;
             } else {
                 page++;

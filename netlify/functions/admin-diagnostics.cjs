@@ -157,36 +157,103 @@ async function testAsyncAnalysis(log) {
 
 async function testWeatherService(log) {
     log.info('Running diagnostic: Testing Weather Service...');
-    try {
-        const weatherUrl = `${process.env.URL}/.netlify/functions/weather`;
-        const response = await fetchWithTimeout(weatherUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                lat: 38.8,
-                lon: -104.8
-            })
-        }, 5000);
+    const weatherUrl = `${process.env.URL}/.netlify/functions/weather`;
+    const subtests = [];
 
-        if (response.ok) {
-            await response.json(); // Consume response
-            return {
-                status: 'Success',
-                message: 'Weather service responding correctly',
-                data: 'Weather data available'
-            };
-        } else {
-            return {
-                status: 'Failure',
-                message: `Weather service returned status: ${response.status}`
-            };
+    try {
+        // 1. Ensure non-POST requests are rejected with actionable feedback
+        try {
+            const getResponse = await fetchWithTimeout(weatherUrl, { method: 'GET' }, 5000);
+            const getPassed = getResponse.status === 405;
+            const getMessage = getPassed
+                ? 'GET request correctly rejected with 405.'
+                : `Expected 405 for GET, received ${getResponse.status}`;
+            subtests.push({ name: 'Reject GET', status: getPassed ? 'Success' : 'Failure', message: getMessage });
+        } catch (error) {
+            subtests.push({ name: 'Reject GET', status: 'Failure', message: `GET request threw error: ${error.message}` });
         }
-    } catch (error) {
-        log.error('Weather service test failed.', { error: error.message });
+
+        // 2. Validate payload requirements (missing lat/lon)
+        try {
+            const missingPayloadResponse = await fetchWithTimeout(weatherUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            }, 5000);
+            const parsed = await safeJson(missingPayloadResponse);
+            const missingPayloadPassed = missingPayloadResponse.status === 400;
+            const missingPayloadMessage = missingPayloadPassed
+                ? 'POST without lat/lon correctly returned 400.'
+                : `Expected 400 for missing lat/lon, received ${missingPayloadResponse.status} ${parsed && parsed.error ? parsed.error : ''}`;
+            subtests.push({ name: 'Validate POST payload', status: missingPayloadPassed ? 'Success' : 'Failure', message: missingPayloadMessage });
+        } catch (error) {
+            subtests.push({ name: 'Validate POST payload', status: 'Failure', message: `POST validation threw error: ${error.message}` });
+        }
+
+        // 3. Execute valid POST request with timestamp and verify response shape
+        try {
+            const timestamp = new Date().toISOString();
+            const validResponse = await fetchWithTimeout(weatherUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    lat: 38.8,
+                    lon: -104.8,
+                    timestamp
+                })
+            }, 8000);
+
+            if (!validResponse.ok) {
+                const parsed = await safeJson(validResponse);
+                subtests.push({
+                    name: 'Valid POST weather fetch',
+                    status: 'Failure',
+                    message: `Weather service returned status ${validResponse.status}${parsed && parsed.error ? `: ${parsed.error}` : ''}`
+                });
+            } else {
+                const payload = await validResponse.json();
+                const requiredKeys = ['temp', 'clouds', 'uvi', 'weather_main'];
+                const missingKeys = requiredKeys.filter(key => !Object.prototype.hasOwnProperty.call(payload, key));
+                if (missingKeys.length > 0) {
+                    subtests.push({
+                        name: 'Valid POST weather fetch',
+                        status: 'Failure',
+                        message: `Response missing keys: ${missingKeys.join(', ')}`
+                    });
+                } else {
+                    subtests.push({
+                        name: 'Valid POST weather fetch',
+                        status: 'Success',
+                        message: 'Weather service returned expected fields.'
+                    });
+                }
+            }
+        } catch (error) {
+            subtests.push({ name: 'Valid POST weather fetch', status: 'Failure', message: `Valid request threw error: ${error.message}` });
+        }
+
+        const failed = subtests.some(test => test.status === 'Failure');
+        return {
+            status: failed ? 'Failure' : 'Success',
+            message: failed ? 'One or more weather service checks failed.' : 'Weather service passed all checks.',
+            details: subtests
+        };
+    } catch (outerError) {
+        log.error('Weather service test failed catastrophically.', { error: outerError.message });
+        subtests.push({ name: 'Weather diagnostic execution', status: 'Failure', message: outerError.message });
         return {
             status: 'Failure',
-            message: error.message
+            message: outerError.message,
+            details: subtests
         };
+    }
+}
+
+async function safeJson(response) {
+    try {
+        return await response.json();
+    } catch (error) {
+        return null;
     }
 }
 
@@ -403,7 +470,7 @@ async function testAnalyzeEndpoint(log) {
         log.debug('Sending analyze request', { url: analyzeUrl, fileName: testData.fileName });
         const response = await fetchWithTimeout(analyzeUrl, {
             method: 'POST',
-            headers: { 
+            headers: {
                 'Content-Type': 'application/json',
                 'Idempotency-Key': `diagnostic-test-${Date.now()}`
             },
@@ -412,10 +479,10 @@ async function testAnalyzeEndpoint(log) {
 
         const duration = Date.now() - startTime;
         const responseData = await response.json().catch(() => null);
-        
+
         if (response.ok && responseData) {
-            log.info('Analyze endpoint test completed successfully.', { 
-                duration, 
+            log.info('Analyze endpoint test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 recordId: responseData.id,
                 hasAnalysis: !!responseData.analysis
@@ -428,10 +495,10 @@ async function testAnalyzeEndpoint(log) {
                 data: { statusCode: response.status, hasAnalysis: !!responseData.analysis }
             };
         } else {
-            log.warn('Analyze endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status, 
-                responseData 
+            log.warn('Analyze endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status,
+                responseData
             });
             return {
                 status: 'Failure',
@@ -441,10 +508,10 @@ async function testAnalyzeEndpoint(log) {
         }
     } catch (error) {
         const duration = Date.now() - startTime;
-        log.error('Analyze endpoint test failed.', { 
-            error: error.message, 
-            duration, 
-            stack: error.stack 
+        log.error('Analyze endpoint test failed.', {
+            error: error.message,
+            duration,
+            stack: error.stack
         });
         return {
             status: 'Failure',
@@ -460,7 +527,7 @@ async function testProcessAnalysisEndpoint(log) {
     try {
         const jobId = `diagnostic-process-test-${Date.now()}`;
         const jobsCollection = await getCollection('jobs');
-        
+
         // Create a test job
         const testJob = {
             id: jobId,
@@ -476,7 +543,7 @@ async function testProcessAnalysisEndpoint(log) {
 
         const processUrl = `${process.env.URL}/.netlify/functions/process-analysis`;
         log.debug('Invoking process-analysis function', { url: processUrl, jobId });
-        
+
         const response = await fetchWithTimeout(processUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-netlify-background': 'true' },
@@ -491,21 +558,21 @@ async function testProcessAnalysisEndpoint(log) {
         while (attempts < maxAttempts) {
             await new Promise(resolve => setTimeout(resolve, 1000));
             const job = await jobsCollection.findOne({ id: jobId });
-            
+
             if (job && (job.status === 'completed' || job.status === 'failed')) {
                 await jobsCollection.deleteOne({ id: jobId });
-                
-                log.info('Process analysis test completed', { 
-                    jobId, 
-                    finalStatus: job.status, 
+
+                log.info('Process analysis test completed', {
+                    jobId,
+                    finalStatus: job.status,
                     totalDuration: Date.now() - startTime,
-                    attempts 
+                    attempts
                 });
-                
+
                 return {
                     status: job.status === 'completed' ? 'Success' : 'Failure',
-                    message: job.status === 'completed' 
-                        ? 'Process analysis completed successfully' 
+                    message: job.status === 'completed'
+                        ? 'Process analysis completed successfully'
                         : `Process analysis failed: ${job.error || 'Unknown error'}`,
                     responseTime: Date.now() - startTime,
                     data: { finalStatus: job.status, attempts }
@@ -554,8 +621,8 @@ async function testExtractDLEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok) {
-            log.info('Extract DL test completed successfully.', { 
-                duration, 
+            log.info('Extract DL test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 hasDlNumber: !!(responseData && responseData.dlNumber)
             });
@@ -566,10 +633,10 @@ async function testExtractDLEndpoint(log) {
                 data: { statusCode: response.status, extractedData: !!responseData }
             };
         } else {
-            log.warn('Extract DL endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status, 
-                responseData 
+            log.warn('Extract DL endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status,
+                responseData
             });
             return {
                 status: 'Failure',
@@ -623,8 +690,8 @@ async function testGenerateInsightsEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok && responseData) {
-            log.info('Generate insights test completed successfully.', { 
-                duration, 
+            log.info('Generate insights test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 hasInsights: !!responseData.insights
             });
@@ -635,10 +702,10 @@ async function testGenerateInsightsEndpoint(log) {
                 data: { statusCode: response.status, hasInsights: !!responseData.insights }
             };
         } else {
-            log.warn('Generate insights endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status, 
-                responseData 
+            log.warn('Generate insights endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status,
+                responseData
             });
             return {
                 status: 'Failure',
@@ -685,9 +752,9 @@ async function testDebugInsightsEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok) {
-            log.info('Debug insights test completed successfully.', { 
-                duration, 
-                statusCode: response.status 
+            log.info('Debug insights test completed successfully.', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Success',
@@ -696,9 +763,9 @@ async function testDebugInsightsEndpoint(log) {
                 data: { statusCode: response.status }
             };
         } else {
-            log.warn('Debug insights endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('Debug insights endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -728,7 +795,7 @@ async function testHistoryEndpoint(log) {
         // Test GET request
         const historyUrl = `${process.env.URL}/.netlify/functions/history?page=1&limit=5`;
         log.debug('Testing history GET request', { url: historyUrl });
-        
+
         const response = await fetchWithTimeout(historyUrl, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -738,8 +805,8 @@ async function testHistoryEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok && responseData) {
-            log.info('History endpoint test completed successfully.', { 
-                duration, 
+            log.info('History endpoint test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 itemCount: responseData.items ? responseData.items.length : 0,
                 totalItems: responseData.totalItems
@@ -748,16 +815,16 @@ async function testHistoryEndpoint(log) {
                 status: 'Success',
                 message: 'History endpoint working correctly',
                 responseTime: duration,
-                data: { 
-                    statusCode: response.status, 
+                data: {
+                    statusCode: response.status,
                     itemCount: responseData.items ? responseData.items.length : 0,
-                    totalItems: responseData.totalItems 
+                    totalItems: responseData.totalItems
                 }
             };
         } else {
-            log.warn('History endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('History endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -782,7 +849,7 @@ async function testSystemsEndpoint(log) {
     try {
         const systemsUrl = `${process.env.URL}/.netlify/functions/systems?page=1&limit=5`;
         log.debug('Testing systems GET request', { url: systemsUrl });
-        
+
         const response = await fetchWithTimeout(systemsUrl, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -792,8 +859,8 @@ async function testSystemsEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok && responseData) {
-            log.info('Systems endpoint test completed successfully.', { 
-                duration, 
+            log.info('Systems endpoint test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 itemCount: responseData.items ? responseData.items.length : 0,
                 totalItems: responseData.totalItems
@@ -802,16 +869,16 @@ async function testSystemsEndpoint(log) {
                 status: 'Success',
                 message: 'Systems endpoint working correctly',
                 responseTime: duration,
-                data: { 
-                    statusCode: response.status, 
+                data: {
+                    statusCode: response.status,
                     itemCount: responseData.items ? responseData.items.length : 0,
-                    totalItems: responseData.totalItems 
+                    totalItems: responseData.totalItems
                 }
             };
         } else {
-            log.warn('Systems endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('Systems endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -836,7 +903,7 @@ async function testDataEndpoint(log) {
     try {
         const dataUrl = `${process.env.URL}/.netlify/functions/data`;
         log.debug('Testing data GET request', { url: dataUrl });
-        
+
         const response = await fetchWithTimeout(dataUrl, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -846,8 +913,8 @@ async function testDataEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok) {
-            log.info('Data endpoint test completed successfully.', { 
-                duration, 
+            log.info('Data endpoint test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 hasData: !!responseData
             });
@@ -858,9 +925,9 @@ async function testDataEndpoint(log) {
                 data: { statusCode: response.status, hasData: !!responseData }
             };
         } else {
-            log.warn('Data endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('Data endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -885,7 +952,7 @@ async function testExportDataEndpoint(log) {
     try {
         const exportUrl = `${process.env.URL}/.netlify/functions/export-data?type=history&format=csv`;
         log.debug('Testing export-data request', { url: exportUrl });
-        
+
         const response = await fetchWithTimeout(exportUrl, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -895,8 +962,8 @@ async function testExportDataEndpoint(log) {
 
         if (response.ok) {
             const contentType = response.headers.get('content-type');
-            log.info('Export data test completed successfully.', { 
-                duration, 
+            log.info('Export data test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 contentType
             });
@@ -907,9 +974,9 @@ async function testExportDataEndpoint(log) {
                 data: { statusCode: response.status, contentType }
             };
         } else {
-            log.warn('Export data endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('Export data endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -950,7 +1017,7 @@ async function testGetJobStatusEndpoint(log) {
 
         const statusUrl = `${process.env.URL}/.netlify/functions/get-job-status?ids=${testJobId}`;
         log.debug('Testing get-job-status request', { url: statusUrl });
-        
+
         const response = await fetchWithTimeout(statusUrl, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -963,8 +1030,8 @@ async function testGetJobStatusEndpoint(log) {
         await jobsCollection.deleteOne({ id: testJobId });
 
         if (response.ok && responseData && Array.isArray(responseData) && responseData.length > 0) {
-            log.info('Get job status test completed successfully.', { 
-                duration, 
+            log.info('Get job status test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 jobCount: responseData.length,
                 jobStatus: responseData[0].status
@@ -973,16 +1040,16 @@ async function testGetJobStatusEndpoint(log) {
                 status: 'Success',
                 message: 'Get job status endpoint working correctly',
                 responseTime: duration,
-                data: { 
-                    statusCode: response.status, 
-                    jobCount: responseData.length 
+                data: {
+                    statusCode: response.status,
+                    jobCount: responseData.length
                 }
             };
         } else {
-            log.warn('Get job status endpoint returned unexpected response', { 
-                duration, 
+            log.warn('Get job status endpoint returned unexpected response', {
+                duration,
                 statusCode: response.status,
-                responseData 
+                responseData
             });
             return {
                 status: 'Failure',
@@ -1007,7 +1074,7 @@ async function testJobShepherdEndpoint(log) {
     try {
         const shepherdUrl = `${process.env.URL}/.netlify/functions/job-shepherd`;
         log.debug('Testing job-shepherd request', { url: shepherdUrl });
-        
+
         const response = await fetchWithTimeout(shepherdUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1018,8 +1085,8 @@ async function testJobShepherdEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok) {
-            log.info('Job shepherd test completed successfully.', { 
-                duration, 
+            log.info('Job shepherd test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 processedJobs: responseData?.processedJobs || 0
             });
@@ -1027,15 +1094,15 @@ async function testJobShepherdEndpoint(log) {
                 status: 'Success',
                 message: 'Job shepherd endpoint working correctly',
                 responseTime: duration,
-                data: { 
-                    statusCode: response.status, 
-                    processedJobs: responseData?.processedJobs || 0 
+                data: {
+                    statusCode: response.status,
+                    processedJobs: responseData?.processedJobs || 0
                 }
             };
         } else {
-            log.warn('Job shepherd endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('Job shepherd endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -1090,9 +1157,9 @@ async function testContactEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok) {
-            log.info('Contact endpoint test completed successfully.', { 
-                duration, 
-                statusCode: response.status 
+            log.info('Contact endpoint test completed successfully.', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Success',
@@ -1101,9 +1168,9 @@ async function testContactEndpoint(log) {
                 data: { statusCode: response.status }
             };
         } else {
-            log.warn('Contact endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('Contact endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -1128,7 +1195,7 @@ async function testGetIPEndpoint(log) {
     try {
         const ipUrl = `${process.env.URL}/.netlify/functions/get-ip`;
         log.debug('Testing get-ip request', { url: ipUrl });
-        
+
         const response = await fetchWithTimeout(ipUrl, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -1138,8 +1205,8 @@ async function testGetIPEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok && responseData) {
-            log.info('Get IP test completed successfully.', { 
-                duration, 
+            log.info('Get IP test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 hasIP: !!responseData.ip
             });
@@ -1150,9 +1217,9 @@ async function testGetIPEndpoint(log) {
                 data: { statusCode: response.status, hasIP: !!responseData.ip }
             };
         } else {
-            log.warn('Get IP endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('Get IP endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -1179,7 +1246,7 @@ async function testUploadEndpoint(log) {
         // This test validates the endpoint responds appropriately
         const uploadUrl = `${process.env.URL}/.netlify/functions/upload`;
         log.debug('Testing upload endpoint availability', { url: uploadUrl });
-        
+
         const response = await fetchWithTimeout(uploadUrl, {
             method: 'OPTIONS',
             headers: { 'Content-Type': 'application/json' }
@@ -1188,9 +1255,9 @@ async function testUploadEndpoint(log) {
         const duration = Date.now() - startTime;
 
         if (response.ok || response.status === 200) {
-            log.info('Upload endpoint test completed successfully.', { 
-                duration, 
-                statusCode: response.status 
+            log.info('Upload endpoint test completed successfully.', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Success',
@@ -1199,9 +1266,9 @@ async function testUploadEndpoint(log) {
                 data: { statusCode: response.status }
             };
         } else {
-            log.warn('Upload endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('Upload endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -1225,7 +1292,7 @@ async function testSecurityEndpoint(log) {
     try {
         const securityUrl = `${process.env.URL}/.netlify/functions/security`;
         log.debug('Testing security request', { url: securityUrl });
-        
+
         const response = await fetchWithTimeout(securityUrl, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -1235,9 +1302,9 @@ async function testSecurityEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok) {
-            log.info('Security endpoint test completed successfully.', { 
-                duration, 
-                statusCode: response.status 
+            log.info('Security endpoint test completed successfully.', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Success',
@@ -1246,9 +1313,9 @@ async function testSecurityEndpoint(log) {
                 data: { statusCode: response.status }
             };
         } else {
-            log.warn('Security endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('Security endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -1287,7 +1354,7 @@ async function testPredictiveMaintenanceEndpoint(log) {
         const systemId = systems[0].id;
         const maintenanceUrl = `${process.env.URL}/.netlify/functions/predictive-maintenance?systemId=${systemId}`;
         log.debug('Testing predictive-maintenance request', { url: maintenanceUrl, systemId });
-        
+
         const response = await fetchWithTimeout(maintenanceUrl, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -1297,8 +1364,8 @@ async function testPredictiveMaintenanceEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok) {
-            log.info('Predictive maintenance test completed successfully.', { 
-                duration, 
+            log.info('Predictive maintenance test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 systemId
             });
@@ -1309,9 +1376,9 @@ async function testPredictiveMaintenanceEndpoint(log) {
                 data: { statusCode: response.status, systemId }
             };
         } else {
-            log.warn('Predictive maintenance endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('Predictive maintenance endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -1336,7 +1403,7 @@ async function testIPAdminEndpoint(log) {
     try {
         const ipAdminUrl = `${process.env.URL}/.netlify/functions/ip-admin`;
         log.debug('Testing ip-admin request', { url: ipAdminUrl });
-        
+
         const response = await fetchWithTimeout(ipAdminUrl, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -1346,9 +1413,9 @@ async function testIPAdminEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok) {
-            log.info('IP Admin test completed successfully.', { 
-                duration, 
-                statusCode: response.status 
+            log.info('IP Admin test completed successfully.', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Success',
@@ -1357,9 +1424,9 @@ async function testIPAdminEndpoint(log) {
                 data: { statusCode: response.status }
             };
         } else {
-            log.warn('IP Admin endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('IP Admin endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -1384,7 +1451,7 @@ async function testAdminSystemsEndpoint(log) {
     try {
         const adminSystemsUrl = `${process.env.URL}/.netlify/functions/admin-systems?adopted=false`;
         log.debug('Testing admin-systems request', { url: adminSystemsUrl });
-        
+
         const response = await fetchWithTimeout(adminSystemsUrl, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
@@ -1394,8 +1461,8 @@ async function testAdminSystemsEndpoint(log) {
         const responseData = await response.json().catch(() => null);
 
         if (response.ok && responseData) {
-            log.info('Admin systems test completed successfully.', { 
-                duration, 
+            log.info('Admin systems test completed successfully.', {
+                duration,
                 statusCode: response.status,
                 systemCount: responseData.items ? responseData.items.length : 0
             });
@@ -1403,15 +1470,15 @@ async function testAdminSystemsEndpoint(log) {
                 status: 'Success',
                 message: 'Admin systems endpoint working correctly',
                 responseTime: duration,
-                data: { 
-                    statusCode: response.status, 
-                    systemCount: responseData.items ? responseData.items.length : 0 
+                data: {
+                    statusCode: response.status,
+                    systemCount: responseData.items ? responseData.items.length : 0
                 }
             };
         } else {
-            log.warn('Admin systems endpoint returned non-OK response', { 
-                duration, 
-                statusCode: response.status 
+            log.warn('Admin systems endpoint returned non-OK response', {
+                duration,
+                statusCode: response.status
             });
             return {
                 status: 'Failure',
@@ -1485,7 +1552,7 @@ exports.handler = async (event, context) => {
                     case 'gemini':
                         results.gemini = await testGeminiHealth(log);
                         break;
-                    
+
                     // Core Analysis Functions
                     case 'analyze':
                         results.analyze = await testAnalyzeEndpoint(log);
@@ -1502,7 +1569,7 @@ exports.handler = async (event, context) => {
                     case 'extractDL':
                         results.extractDL = await testExtractDLEndpoint(log);
                         break;
-                    
+
                     // Insights Generation
                     case 'generateInsights':
                         results.generateInsights = await testGenerateInsightsEndpoint(log);
@@ -1513,7 +1580,7 @@ exports.handler = async (event, context) => {
                     case 'debugInsights':
                         results.debugInsights = await testDebugInsightsEndpoint(log);
                         break;
-                    
+
                     // Data Management
                     case 'history':
                         results.history = await testHistoryEndpoint(log);
@@ -1527,7 +1594,7 @@ exports.handler = async (event, context) => {
                     case 'exportData':
                         results.exportData = await testExportDataEndpoint(log);
                         break;
-                    
+
                     // Job Management
                     case 'getJobStatus':
                         results.getJobStatus = await testGetJobStatusEndpoint(log);
@@ -1535,7 +1602,7 @@ exports.handler = async (event, context) => {
                     case 'jobShepherd':
                         results.jobShepherd = await testJobShepherdEndpoint(log);
                         break;
-                    
+
                     // External Services
                     case 'weather':
                         results.weatherService = await testWeatherService(log);
@@ -1546,7 +1613,7 @@ exports.handler = async (event, context) => {
                     case 'systemAnalytics':
                         results.systemAnalytics = await testSystemAnalytics(log);
                         break;
-                    
+
                     // Utility & Admin
                     case 'contact':
                         results.contact = await testContactEndpoint(log);
@@ -1569,7 +1636,7 @@ exports.handler = async (event, context) => {
                     case 'adminSystems':
                         results.adminSystems = await testAdminSystemsEndpoint(log);
                         break;
-                    
+
                     default:
                         log.warn('Unknown test type requested', { testName });
                         break;
@@ -1592,7 +1659,7 @@ exports.handler = async (event, context) => {
                         case 'gemini':
                             results.gemini = await testGeminiHealth(log);
                             break;
-                        
+
                         // Core Analysis Functions
                         case 'analyze':
                             results.analyze = await testAnalyzeEndpoint(log);
@@ -1609,7 +1676,7 @@ exports.handler = async (event, context) => {
                         case 'extractDL':
                             results.extractDL = await testExtractDLEndpoint(log);
                             break;
-                        
+
                         // Insights Generation
                         case 'generateInsights':
                             results.generateInsights = await testGenerateInsightsEndpoint(log);
@@ -1620,7 +1687,7 @@ exports.handler = async (event, context) => {
                         case 'debugInsights':
                             results.debugInsights = await testDebugInsightsEndpoint(log);
                             break;
-                        
+
                         // Data Management
                         case 'history':
                             results.history = await testHistoryEndpoint(log);
@@ -1634,7 +1701,7 @@ exports.handler = async (event, context) => {
                         case 'exportData':
                             results.exportData = await testExportDataEndpoint(log);
                             break;
-                        
+
                         // Job Management
                         case 'getJobStatus':
                             results.getJobStatus = await testGetJobStatusEndpoint(log);
@@ -1642,7 +1709,7 @@ exports.handler = async (event, context) => {
                         case 'jobShepherd':
                             results.jobShepherd = await testJobShepherdEndpoint(log);
                             break;
-                        
+
                         // External Services
                         case 'weather':
                             results.weatherService = await testWeatherService(log);
@@ -1653,7 +1720,7 @@ exports.handler = async (event, context) => {
                         case 'systemAnalytics':
                             results.systemAnalytics = await testSystemAnalytics(log);
                             break;
-                        
+
                         // Utility & Admin
                         case 'contact':
                             results.contact = await testContactEndpoint(log);
@@ -1676,7 +1743,7 @@ exports.handler = async (event, context) => {
                         case 'adminSystems':
                             results.adminSystems = await testAdminSystemsEndpoint(log);
                             break;
-                        
+
                         default:
                             log.warn('Unknown test type requested', { testName });
                             break;
@@ -1692,7 +1759,7 @@ exports.handler = async (event, context) => {
                     case 'gemini':
                         results.gemini = await testGeminiHealth(log);
                         break;
-                    
+
                     // Core Analysis Functions
                     case 'analyze':
                         results.analyze = await testAnalyzeEndpoint(log);
@@ -1709,7 +1776,7 @@ exports.handler = async (event, context) => {
                     case 'extractDL':
                         results.extractDL = await testExtractDLEndpoint(log);
                         break;
-                    
+
                     // Insights Generation
                     case 'generateInsights':
                         results.generateInsights = await testGenerateInsightsEndpoint(log);
@@ -1720,7 +1787,7 @@ exports.handler = async (event, context) => {
                     case 'debugInsights':
                         results.debugInsights = await testDebugInsightsEndpoint(log);
                         break;
-                    
+
                     // Data Management
                     case 'history':
                         results.history = await testHistoryEndpoint(log);
@@ -1734,7 +1801,7 @@ exports.handler = async (event, context) => {
                     case 'exportData':
                         results.exportData = await testExportDataEndpoint(log);
                         break;
-                    
+
                     // Job Management
                     case 'getJobStatus':
                         results.getJobStatus = await testGetJobStatusEndpoint(log);
@@ -1742,7 +1809,7 @@ exports.handler = async (event, context) => {
                     case 'jobShepherd':
                         results.jobShepherd = await testJobShepherdEndpoint(log);
                         break;
-                    
+
                     // External Services
                     case 'weather':
                         results.weatherService = await testWeatherService(log);
@@ -1753,7 +1820,7 @@ exports.handler = async (event, context) => {
                     case 'systemAnalytics':
                         results.systemAnalytics = await testSystemAnalytics(log);
                         break;
-                    
+
                     // Utility & Admin
                     case 'contact':
                         results.contact = await testContactEndpoint(log);
@@ -1813,7 +1880,7 @@ exports.handler = async (event, context) => {
         } else {
             // Run all tests including comprehensive suite
             log.info('Running all diagnostic tests (comprehensive mode)');
-            
+
             // Infrastructure Tests
             results.database = await testDatabaseConnection(log);
             results.gemini = await testGeminiHealth(log);
@@ -1865,7 +1932,7 @@ exports.handler = async (event, context) => {
             results.predictiveMaintenance = await testPredictiveMaintenanceEndpoint(log);
             results.ipAdmin = await testIPAdminEndpoint(log);
             results.adminSystems = await testAdminSystemsEndpoint(log);
-            
+
             // Comprehensive Test Suite
             results.comprehensive = await runComprehensiveTests(log);
         }
@@ -1901,10 +1968,10 @@ exports.handler = async (event, context) => {
         // Note: 27 total tests (26 individual function tests + 1 comprehensive suite)
         // When running all tests, 'deleteCheck' is also added dynamically
         results.availableTestsList = [
-            'database', 'gemini', 'analyze', 'syncAnalysis', 'asyncAnalysis', 'processAnalysis', 
-            'extractDL', 'generateInsights', 'insightsWithTools', 'debugInsights', 'history', 
-            'systems', 'data', 'exportData', 'getJobStatus', 'jobShepherd', 'weather', 'solar', 
-            'systemAnalytics', 'contact', 'getIP', 'upload', 'security', 'predictiveMaintenance', 
+            'database', 'gemini', 'analyze', 'syncAnalysis', 'asyncAnalysis', 'processAnalysis',
+            'extractDL', 'generateInsights', 'insightsWithTools', 'debugInsights', 'history',
+            'systems', 'data', 'exportData', 'getJobStatus', 'jobShepherd', 'weather', 'solar',
+            'systemAnalytics', 'contact', 'getIP', 'upload', 'security', 'predictiveMaintenance',
             'ipAdmin', 'adminSystems', 'comprehensive'
         ];
 
@@ -1928,9 +1995,9 @@ exports.handler = async (event, context) => {
             successRate: allTestResults.length > 0 ? ((successCount / allTestResults.length) * 100).toFixed(2) : 0
         };
 
-        log.info('All diagnostic tests completed.', { 
+        log.info('All diagnostic tests completed.', {
             summary: results.testSummary,
-            testCount: allTestResults.length 
+            testCount: allTestResults.length
         });
 
         return {

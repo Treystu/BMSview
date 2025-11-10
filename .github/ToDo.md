@@ -13,6 +13,7 @@
 #### MongoDB Query Spike (Atlas connections climbing)
 - [ ] Capture fresh Atlas metrics (query/connection graphs) and attach to diagnostics logbook
 - [x] Add temporary query counters + timing logs in `netlify/functions/sync-metadata.cjs`, `sync-incremental.cjs`, and `sync-push.cjs`
+- [x] Stop history cache builder from paging endlessly (streamAllHistory fix)
 - [ ] Verify frontend services hit `localCache` before network (audit `services/clientService.ts` and related hooks)
 - [ ] Run staged `netlify dev` session to reproduce and compare request volume with IndexedDB enabled/disabled
 - [ ] Inspect incremental sync filters for missing `updatedAt` normalization that could force full scans
@@ -22,8 +23,8 @@
 - [ ] Reproduce from `analysis-pipeline` path in `netlify dev` (ensure systems with lat/lon)
 - [x] Patch `callWeatherFunction` helper to send POST with JSON payload + headers
 - [x] Harden weather Netlify function to reject and log non-POST callers with actionable message
-- [ ] Update Admin Diagnostics weather test to cover POST + payload validation
-- [ ] Add regression unit/diagnostic test (Phase 4) once fix verified
+- [x] Update Admin Diagnostics weather test to cover POST + payload validation
+- [x] Add regression unit/diagnostic test (Phase 4) once fix verified
 
 #### Generate Insights Timeout Regression
 - [ ] Pull latest logs for `generate-insights-with-tools.cjs` and capture tool-call timing + iteration counts

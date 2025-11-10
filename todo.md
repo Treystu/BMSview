@@ -7,6 +7,7 @@ _Last synced: 2025-11-09_
 - [ ] MongoDB Query Spike
 	- [ ] Capture fresh Atlas metrics and archive screenshots/logs
 	- [x] Add temporary query counters + timing logs in `sync-metadata.cjs`, `sync-incremental.cjs`, `sync-push.cjs`
+	- [x] Stop history cache builder from paging endlessly (streamAllHistory fix)
 	- [ ] Verify client services consult `localCache` before network
 	- [ ] Compare request volume with IndexedDB enabled vs disabled in `netlify dev`
 	- [ ] Inspect incremental sync filters for missing `updatedAt` normalization
@@ -15,8 +16,8 @@ _Last synced: 2025-11-09_
 	- [ ] Reproduce via `analysis-pipeline` in `netlify dev`
 	- [x] Patch `callWeatherFunction` to POST with JSON payload
 	- [x] Harden weather Netlify function to log/reject non-POST calls
-	- [ ] Update Admin Diagnostics weather test coverage
-	- [ ] Add regression test post-fix (Phase 4 dependency)
+	- [x] Update Admin Diagnostics weather test coverage
+	- [x] Add regression test post-fix (Phase 4 dependency)
 - [ ] Generate Insights Timeout Regression
 	- [ ] Capture latest `generate-insights-with-tools.cjs` timing logs
 	- [ ] Confirm background handoff at 55s threshold
