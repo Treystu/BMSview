@@ -69,19 +69,18 @@ async function handler(event, context) {
       response.progressCount = job.progress.length;
     }
 
-    // Include partial insights if available
-    if (job.partialInsights) {
-      response.partialInsights = job.partialInsights;
-      if (!response.contextSummary && job.partialInsights.contextSummary) {
-        response.contextSummary = job.partialInsights.contextSummary;
-      }
-    }
-
     // Include final insights if completed
     if (job.status === 'completed' && job.finalInsights) {
       response.finalInsights = job.finalInsights;
       if (job.finalInsights.contextSummary) {
         response.contextSummary = job.finalInsights.contextSummary;
+      }
+      // Don't include partialInsights when finalInsights is available to avoid duplicate output
+    } else if (job.partialInsights) {
+      // Include partial insights only when job is still in progress (not completed)
+      response.partialInsights = job.partialInsights;
+      if (!response.contextSummary && job.partialInsights.contextSummary) {
+        response.contextSummary = job.partialInsights.contextSummary;
       }
     }
 
