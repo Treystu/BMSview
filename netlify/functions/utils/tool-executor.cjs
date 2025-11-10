@@ -457,25 +457,90 @@ async function getSolarEstimate(params, log) {
 }
 
 /**
- * Get system analytics (placeholder - calls analytics service)
+ * Get system analytics with intelligent alert event grouping
  */
 async function getSystemAnalytics(params, log) {
-    const { systemId } = params;
+    const { systemId, lookbackDays = 60 } = params;
 
     if (!systemId) {
         throw new Error('systemId is required');
     }
 
-    log.info('System analytics requested', { systemId });
+    log.info('System analytics requested', { systemId, lookbackDays });
 
-    // Placeholder return
-    return {
-        systemId,
-        hourlyAverages: null,
-        performanceBaseline: null,
-        alertAnalysis: null,
-        note: 'Analytics integration pending'
-    };
+    try {
+        const collection = await getCollection('history');
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - lookbackDays);
+
+        // Fetch records for alert analysis
+        const records = await collection
+            .find({
+                systemId,
+                timestamp: { $gte: startDate.toISOString() }
+            }, {
+                projection: {
+                    _id: 0,
+                    timestamp: 1,
+                    'analysis.alerts': 1,
+                    'analysis.stateOfCharge': 1
+                }
+            })
+            .sort({ timestamp: 1 })
+            .toArray();
+
+        log.debug('Fetched records for analytics', { count: records.length });
+
+        // Transform to snapshots format for alert grouping
+        const snapshots = records.map(r => ({
+            timestamp: r.timestamp,
+            alerts: r.analysis?.alerts || [],
+            soc: r.analysis?.stateOfCharge
+        }));
+
+        // Use new groupAlertEvents function
+        const { groupAlertEvents } = require('./analysis-utilities.cjs');
+        const alertAnalysis = groupAlertEvents(snapshots);
+
+        // Calculate total occurrences across all events
+        const totalAlerts = alertAnalysis.totalAlertOccurrences;
+
+        // Format for compatibility with existing code
+        const alertCounts = alertAnalysis.summary.map(group => ({
+            alert: group.alert,
+            count: group.eventCount, // Number of EVENTS, not occurrences
+            occurrences: group.totalOccurrences, // Total screenshot count
+            avgDurationHours: group.avgDurationHours,
+            avgSOC: group.avgSOC
+        }));
+
+        return {
+            systemId,
+            lookbackDays,
+            recordCount: records.length,
+            hourlyAverages: null, // TODO: Implement hourly averages
+            performanceBaseline: null, // TODO: Implement performance baseline
+            alertAnalysis: {
+                totalAlerts,
+                totalEvents: alertAnalysis.totalEvents,
+                alertCounts,
+                events: alertAnalysis.events.slice(-20), // Last 20 events for detail
+                note: `Grouped ${totalAlerts} alert occurrences into ${alertAnalysis.totalEvents} distinct events using intelligent time-based consolidation`
+            }
+        };
+    } catch (error) {
+        log.error('Failed to get system analytics', {
+            systemId,
+            error: error.message,
+            stack: error.stack
+        });
+
+        return {
+            error: true,
+            systemId,
+            message: `Analytics failed: ${error.message}`
+        };
+    }
 }
 
 /**
