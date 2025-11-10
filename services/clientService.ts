@@ -861,13 +861,10 @@ export const streamInsights = async (
 const formatInitialSummary = (summary: any): string => {
     if (!summary) return '';
 
-    const parts: string[] = ['📊 Initial Assessment:\n'];
-
-    if (summary.current) {
-        if (summary.current.voltage) parts.push(`Voltage: ${summary.current.voltage}V`);
-        if (summary.current.soc) parts.push(`SOC: ${summary.current.soc}%`);
-        if (summary.current.temperature) parts.push(`Temperature: ${summary.current.temperature}°C`);
-    }
+    const parts: string[] = ['🤖 Initializing Advanced Insights Generation..\n'];
+    
+    // Describe what data is being packaged for Gemini
+    parts.push('📦 Packaging the data from this analysis (now)');
 
     if (summary.generated) {
         parts.push(`\n${summary.generated}`);
