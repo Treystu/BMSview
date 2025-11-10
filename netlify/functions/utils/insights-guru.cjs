@@ -15,7 +15,7 @@ const { toolDefinitions, executeToolCall } = require("./gemini-tools.cjs");
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const RECENT_SNAPSHOT_LIMIT = 24;
-const SYNC_CONTEXT_BUDGET_MS = 22000;
+const SYNC_CONTEXT_BUDGET_MS = 8000; // Reduced from 22000 - sync mode should be fast with minimal preload
 const ASYNC_CONTEXT_BUDGET_MS = 45000;
 
 /**
@@ -23,11 +23,14 @@ const ASYNC_CONTEXT_BUDGET_MS = 45000;
  * @param {string|undefined} systemId
  * @param {object} analysisData
  * @param {any} log
- * @param {{ maxMs?: number, mode?: "sync"|"background" }} options
+ * @param {{ maxMs?: number, mode?: "sync"|"background", skipExpensiveOps?: boolean }} options
  */
 async function collectAutoInsightsContext(systemId, analysisData, log, options = {}) {
     const start = Date.now();
     const maxMs = options.maxMs || (options.mode === "background" ? ASYNC_CONTEXT_BUDGET_MS : SYNC_CONTEXT_BUDGET_MS);
+    
+    // In sync mode, skip expensive analytics and rely on ReAct loop instead
+    const skipExpensiveOps = options.skipExpensiveOps !== undefined ? options.skipExpensiveOps : (options.mode === "sync");
 
     /** @type {any} */
     const context = {
@@ -97,7 +100,10 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
 
     context.initialSummary = await runStep("initialSummary", () => generateInitialSummary(analysisData || {}, systemId || "", log));
 
-    if (systemId) {
+    if (systemId && !skipExpensiveOps) {
+        // These are expensive operations - skip in sync mode, let Gemini request via ReAct loop
+        log.info('Loading full context (async mode)', { skipExpensiveOps });
+        
         context.analytics = await runStep("analytics", async () => {
             const result = await executeToolCall("getSystemAnalytics", { systemId }, log);
             return normalizeToolResult(result);
@@ -132,7 +138,11 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
             const result = await executeToolCall("predict_battery_trends", { systemId, metric: "lifetime", confidenceLevel: true }, log);
             return normalizeToolResult(result);
         });
+    } else if (systemId) {
+        log.info('Skipping expensive context preload (sync mode) - Gemini will request via tools if needed', { skipExpensiveOps });
+    }
 
+    if (systemId) {
         if (context.systemProfile && context.systemProfile.location) {
             const { latitude, longitude } = context.systemProfile.location;
             if (isFiniteNumber(latitude) && isFiniteNumber(longitude)) {
@@ -228,10 +238,12 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "3. To request data, respond ONLY with JSON: {\n   \"tool_call\": \"tool_name\",\n   \"parameters\": { ... }\n}. Never include explanatory text with tool calls.\n";
     prompt += "4. Keep tool requests scoped (specific metric + precise window). Prefer hourly or daily granularity unless raw samples are essential.\n";
     prompt += "5. WRITING STYLE: Terse, highlight-driven bullets. Lead with KEY FINDINGS in bold. Skip verbose explanations - operators need actionable intel, not essays.\n";
-    prompt += "6. Structure: ## KEY FINDINGS (2-4 critical bullets with bold labels) → ## OPERATIONAL STATUS (metrics) → ## RECOMMENDATIONS (numbered actions with urgency flags).\n";
+    prompt += "6. Structure: ## KEY FINDINGS (2-4 critical bullets with bold labels) → ## RECOMMENDATIONS (numbered actions with urgency flags). DO NOT include OPERATIONAL STATUS section - current metrics are already visible in the UI.\n";
     prompt += "7. Cite data sources in parentheticals, not separate sections: 'Solar deficit 15Ah (weather data + BMS logs)' not 'Data sources: weather, BMS'.\n";
-    prompt += "8. TERMINOLOGY: 'Battery autonomy' or 'days of autonomy' = RUNTIME until discharge at current load. 'Service life' or 'lifetime' = years/months until replacement due to degradation. Never confuse these.\n";
+    prompt += "8. TERMINOLOGY: 'Battery autonomy' or 'days of autonomy' = RUNTIME until discharge at current load (Energy Budget). 'Service life' or 'lifetime' = YEARS/MONTHS until replacement due to degradation (Predictive Outlook). Never confuse these.\n";
     prompt += "9. DATA QUALITY: Sporadic screenshot-based monitoring has gaps. Use ±10% tolerance for energy deficits, ±15% for solar variance. Only flag issues beyond tolerance with reliable data (>60% coverage). Acknowledge data sparsity when relevant.\n";
+    prompt += "10. SOLAR VARIANCE: Remember that delta between expected and actual charge often represents DAYTIME LOAD CONSUMPTION, not solar underperformance. Example: 220Ah expected, 58Ah recovered = 162Ah consumed by loads during charging hours. Only flag solar issues when variance exceeds ±15% tolerance AND weather was favorable.\n";
+    prompt += "11. ALERT EVENTS: Group consecutive alerts into time-based events. Multiple screenshots showing same alert = ONE event until threshold recovery. Estimate duration using time-of-day context (e.g., low battery at night likely clears when sun comes up).\n";
 
     return {
         prompt,
@@ -334,7 +346,7 @@ function summarizePreloadedContext(context) {
 }
 
 function buildDefaultMission() {
-    return "**PRIMARY MISSION:** Deliver a terse, actionable off-grid readiness brief.\n\n**FORMAT REQUIREMENTS:**\n- Use markdown headers (##) for sections\n- Lead with ## KEY FINDINGS - 2-4 critical bullets with **bold labels**\n- Follow with ## OPERATIONAL STATUS - current metrics\n- Close with ## RECOMMENDATIONS - numbered actions with urgency indicators (🔴 Critical / 🟡 Soon / 🟢 Monitor)\n- NO verbose narratives - operators need fast intel\n- Cite sources inline: 'metric (source)' not separate attribution sections\n\n**CRITICAL TERMINOLOGY:**\n- 'Battery autonomy' / 'days of autonomy' / 'runtime' = How many DAYS/HOURS the battery will power loads at current discharge rate before complete depletion (found in Energy Budget section).\n- 'Service life' / 'lifetime' / 'replacement timeline' = How many MONTHS/YEARS until the battery reaches end-of-life replacement threshold (70% capacity) based on degradation trends (found in Predictive Outlook section).\n- NEVER confuse these two concepts. They measure completely different things.";
+    return "**PRIMARY MISSION:** Deliver a terse, actionable off-grid readiness brief.\n\n**FORMAT REQUIREMENTS:**\n- Use markdown headers (##) for sections\n- Lead with ## KEY FINDINGS - 2-4 critical bullets with **bold labels**\n- Close with ## RECOMMENDATIONS - numbered actions with urgency indicators (🔴 Critical / 🟡 Soon / 🟢 Monitor)\n- DO NOT include OPERATIONAL STATUS section - current voltage/SOC/current/temperature are already displayed in the UI\n- NO verbose narratives - operators need fast intel\n- Cite sources inline: 'metric (source)' not separate attribution sections\n\n**CRITICAL TERMINOLOGY:**\n- 'Battery autonomy' / 'days of autonomy' / 'runtime' = How many DAYS/HOURS the battery will power loads at current discharge rate before complete depletion (found in Energy Budget section).\n- 'Service life' / 'lifetime' / 'replacement timeline' = How many MONTHS/YEARS until the battery reaches end-of-life replacement threshold (70% capacity) based on degradation trends (found in Predictive Outlook section).\n- NEVER confuse these two concepts. They measure completely different things.\n\n**SOLAR VARIANCE INTERPRETATION:**\n- Delta between expected and actual solar charge often represents DAYTIME LOAD CONSUMPTION, not solar underperformance\n- Example: 220Ah expected, 58Ah recovered = 162Ah consumed by loads during charging hours (not a solar deficit)\n- Only flag solar issues when variance exceeds ±15% tolerance AND weather conditions were favorable (low clouds, high irradiance)\n\n**ALERT EVENT HANDLING:**\n- Group consecutive alerts showing same threshold into single events with duration estimates\n- Multiple screenshots with same alert ≠ multiple events - count as ONE event until threshold recovery\n- Use time-of-day context to infer when alerts likely cleared (e.g., low battery at night → sun comes up → likely recovered by noon)";
 }
 
 /**
@@ -494,7 +506,18 @@ function formatAnalyticsSection(analytics) {
             lines.push(`- Sunny-day baseline: ${formatNumber(sunnyMax.avgCurrent, " A", 1)} at ${sunnyMax.hour}:00.`);
         }
     }
-    if (analytics.alertAnalysis?.totalAlerts) {
+    if (analytics.alertAnalysis?.totalEvents) {
+        const topAlert = analytics.alertAnalysis.alertCounts?.[0];
+        const totalEvents = analytics.alertAnalysis.totalEvents;
+        const totalOccurrences = analytics.alertAnalysis.totalAlerts;
+        
+        if (topAlert) {
+            lines.push(`- Alert events: ${totalEvents} distinct events from ${totalOccurrences} screenshot occurrences (top: ${topAlert.alert} - ${topAlert.count} events, ${topAlert.occurrences} occurrences${topAlert.avgDurationHours ? `, avg ${formatNumber(topAlert.avgDurationHours, "h", 1)}` : ""}).`);
+        } else {
+            lines.push(`- Alert events: ${totalEvents} distinct events from ${totalOccurrences} screenshot occurrences.`);
+        }
+    } else if (analytics.alertAnalysis?.totalAlerts) {
+        // Fallback for old format
         const topAlert = analytics.alertAnalysis.alertCounts?.[0];
         lines.push(`- Alert volume: ${analytics.alertAnalysis.totalAlerts} (top: ${topAlert ? `${topAlert.alert} ×${topAlert.count}` : "none"}).`);
     }
@@ -565,6 +588,12 @@ function formatEnergyBudgetsSection(energyBudgets) {
 
             if (isFiniteNumber(current.batteryMetrics?.daysOfAutonomy)) {
                 lines.push(`- Battery autonomy at current load: ${formatNumber(current.batteryMetrics.daysOfAutonomy, " days", 1)}.`);
+            }
+
+            // NEW: Generator runtime recommendation
+            if (current.generatorRecommendation) {
+                const gen = current.generatorRecommendation;
+                lines.push(`- Generator recommendation: Run at ${formatNumber(gen.generatorMaxAmps, " A", 0)} for ${gen.recommendedRuntimeMinutes} min/day to compensate ${formatNumber(gen.dailyDeficitAh, " Ah", 1)} deficit (est. ${formatNumber(gen.estimatedFuelLiters, " L/day", 1)} fuel).`);
             }
         }
     }
@@ -681,7 +710,12 @@ function formatSolarVarianceSection(variance) {
         lines.push(`- Modeled expectation (weather-adjusted): ${formatNumber(variance.expectedSolarAh, " Ah", 1)} using ${formatNumber(variance.sunHours, " h", 1)} sun hours${isFiniteNumber(variance.cloudCover) ? ` at ${formatPercent(variance.cloudCover, 0)} clouds` : ""}.`);
     }
 
-    // NEW: Show tolerance-aware variance reporting
+    // NEW: Show daytime load consumption (key insight!)
+    if (isFiniteNumber(variance.daytimeLoadAh) && variance.daytimeLoadAh > 5) {
+        lines.push(`- Estimated daytime load: ${formatNumber(variance.daytimeLoadAh, " Ah", 1)}${isFiniteNumber(variance.daytimeLoadWh) ? ` (~${formatNumber(variance.daytimeLoadWh / 1000, " kWh", 1)})` : ""} consumed during charging hours.`);
+    }
+
+    // Show tolerance-aware variance reporting
     if (variance.withinTolerance !== undefined) {
         if (variance.withinTolerance) {
             lines.push(`- Solar variance: Within expected range (±15% tolerance = ±${formatNumber(variance.toleranceAh, " Ah", 1)}).`);
@@ -693,7 +727,8 @@ function formatSolarVarianceSection(variance) {
             const varianceText = variance.significantVarianceAh > 0
                 ? `surplus of ${formatNumber(variance.significantVarianceAh, " Ah", 1)}`
                 : `deficit of ${formatNumber(Math.abs(variance.significantVarianceAh), " Ah", 1)}`;
-            lines.push(`- Significant solar variance detected: ${varianceText} (exceeds ±15% tolerance of ±${formatNumber(variance.toleranceAh, " Ah", 1)}).`);
+            const weatherContext = variance.favorableWeather ? " despite favorable weather" : " (may be weather-related)";
+            lines.push(`- Significant solar variance detected: ${varianceText}${weatherContext} (exceeds ±15% tolerance of ±${formatNumber(variance.toleranceAh, " Ah", 1)}).`);
         }
     } else if (isFiniteNumber(variance.varianceAh)) {
         // Fallback for old format (backward compatibility)
@@ -916,15 +951,37 @@ function estimateSolarVariance({ snapshots = [], analysisData = {}, systemProfil
     const toleranceAh = expectedSolarAh != null ? expectedSolarAh * 0.15 : 0; // 15% tolerance
     const significantVarianceAh = rawVarianceAh != null && Math.abs(rawVarianceAh) > toleranceAh ? rawVarianceAh : null;
 
+    // NEW: Calculate daytime load consumption
+    // The key insight: delta between expected and actual often represents loads running during solar charging
+    // Example: 220Ah expected, 58Ah recovered = 162Ah consumed by loads during day
+    const daytimeLoadAh = expectedSolarAh != null && actualSolarAh != null
+        ? expectedSolarAh - actualSolarAh
+        : null;
+    const daytimeLoadWh = daytimeLoadAh != null && nominalVoltage != null
+        ? daytimeLoadAh * nominalVoltage
+        : null;
+
+    // Weather-aware recommendation logic
     let recommendation = null;
+    const favorableWeather = cloudCover != null && cloudCover < 30; // <30% clouds = favorable
+
     if (significantVarianceAh != null) {
         if (significantVarianceAh < -5) {
-            recommendation = 'Solar intake trailing expectations beyond tolerance band. Verify panel output, shading, or adjust expected capacity in system profile.';
+            // Negative variance = actual < expected
+            if (favorableWeather) {
+                recommendation = `Solar charging below expectations by ${formatNumber(Math.abs(significantVarianceAh), ' Ah', 1)} despite favorable weather (${formatNumber(cloudCover, '% clouds', 0)}). Verify panel output, shading, or connections.`;
+            } else {
+                recommendation = `Charging deficit of ${formatNumber(Math.abs(significantVarianceAh), ' Ah', 1)} likely due to weather (${formatNumber(cloudCover, '% clouds', 0)}). This may represent normal daytime load consumption of ${formatNumber(Math.abs(daytimeLoadAh || 0), ' Ah', 1)}${daytimeLoadWh != null ? ` (${formatNumber(daytimeLoadWh / 1000, ' kWh', 1)})` : ''} during charging hours.`;
+            }
         } else if (significantVarianceAh > 5) {
-            recommendation = 'Solar charging exceeded modeled expectations beyond tolerance. Review discharge assumptions or recalibrate baseline capacity.';
+            recommendation = `Solar charging exceeded modeled expectations by ${formatNumber(significantVarianceAh, ' Ah', 1)}. Review discharge assumptions or recalibrate baseline capacity.`;
         }
     } else if (rawVarianceAh != null) {
-        recommendation = `Solar variance within ±15% tolerance (±${formatNumber(toleranceAh, ' Ah', 1)}). System operating as expected given sporadic screenshot data.`;
+        if (daytimeLoadAh != null && daytimeLoadAh > 5) {
+            recommendation = `Solar variance within ±15% tolerance. Estimated daytime load consumption: ${formatNumber(daytimeLoadAh, ' Ah', 1)}${daytimeLoadWh != null ? ` (${formatNumber(daytimeLoadWh / 1000, ' kWh', 1)})` : ''} during charging hours.`;
+        } else {
+            recommendation = `Solar variance within ±15% tolerance (±${formatNumber(toleranceAh, ' Ah', 1)}). System operating as expected given sporadic screenshot data.`;
+        }
     }
 
     return {
@@ -935,6 +992,8 @@ function estimateSolarVariance({ snapshots = [], analysisData = {}, systemProfil
         expectedSolarWh: expectedSolarWh != null ? Math.round(expectedSolarWh) : null,
         actualSolarAh: roundNumber(actualSolarAh, 2),
         actualSolarWh: actualSolarWh != null ? Math.round(actualSolarWh) : null,
+        daytimeLoadAh: daytimeLoadAh != null ? roundNumber(daytimeLoadAh, 2) : null,
+        daytimeLoadWh: daytimeLoadWh != null ? Math.round(daytimeLoadWh) : null,
         anticipatedNightConsumptionAh: anticipatedConsumptionAh != null ? roundNumber(anticipatedConsumptionAh, 2) : null,
         balanceAh: balanceAh != null ? roundNumber(balanceAh, 2) : null,
         expectedBalanceAh: expectedBalanceAh != null ? roundNumber(expectedBalanceAh, 2) : null,
@@ -942,6 +1001,7 @@ function estimateSolarVariance({ snapshots = [], analysisData = {}, systemProfil
         rawVarianceAh: rawVarianceAh != null ? roundNumber(rawVarianceAh, 2) : null,
         toleranceAh: roundNumber(toleranceAh, 2),
         withinTolerance: significantVarianceAh === null && rawVarianceAh != null,
+        favorableWeather,
         recommendation
     };
 }
@@ -1142,7 +1202,10 @@ function summarizeContextForClient(context, analysisData) {
             expectedSolarAh: toNullableNumber(context.solarVariance.expectedSolarAh),
             actualSolarAh: toNullableNumber(context.solarVariance.actualSolarAh),
             varianceAh: toNullableNumber(context.solarVariance.varianceAh),
-            sunHours: toNullableNumber(context.solarVariance.sunHours)
+            daytimeLoadAh: toNullableNumber(context.solarVariance.daytimeLoadAh),
+            daytimeLoadWh: toNullableNumber(context.solarVariance.daytimeLoadWh),
+            sunHours: toNullableNumber(context.solarVariance.sunHours),
+            favorableWeather: context.solarVariance.favorableWeather ?? null
         } : null,
         weather: context.weather && !context.weather.error ? {
             temp: context.weather.temp ?? null,

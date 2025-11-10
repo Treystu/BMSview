@@ -11,6 +11,18 @@ const { getInsightsJob, failJob } = require('./utils/insights-jobs.cjs');
 const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
 
 exports.handler = async (event = {}, context = {}) => {
+  // CRITICAL: Log immediately at handler entry
+  console.log(JSON.stringify({
+    level: 'INFO',
+    timestamp: new Date().toISOString(),
+    message: 'generate-insights-background HANDLER INVOKED',
+    context: {
+      method: event.httpMethod,
+      path: event.path,
+      hasBody: !!event.body
+    }
+  }));
+
   const log = createLogger('generate-insights-background', context);
   const timer = createTimer(log, 'generate-insights-background');
 
@@ -25,6 +37,13 @@ exports.handler = async (event = {}, context = {}) => {
   try {
     const payload = parseBackgroundPayload(event, log);
     jobId = payload?.jobId || event?.queryStringParameters?.jobId || null;
+
+    console.log(JSON.stringify({
+      level: 'INFO',
+      timestamp: new Date().toISOString(),
+      message: 'Parsed background payload',
+      context: { jobId, hasPayload: !!payload }
+    }));
 
     if (!jobId) {
       log.warn('Background invocation missing jobId');
@@ -57,10 +76,24 @@ exports.handler = async (event = {}, context = {}) => {
     const durationMs = timer.end();
     log.info('Background insights processing completed', { jobId, durationMs });
 
+    console.log(JSON.stringify({
+      level: 'INFO',
+      timestamp: new Date().toISOString(),
+      message: 'Background processing SUCCESS',
+      context: { jobId, durationMs }
+    }));
+
     return buildBackgroundResponse(true, null, { jobId });
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     log.error('Background insights processing failed', { jobId, error: err.message, stack: err.stack });
+
+    console.log(JSON.stringify({
+      level: 'ERROR',
+      timestamp: new Date().toISOString(),
+      message: 'Background processing FAILED',
+      context: { jobId, error: err.message, stack: err.stack }
+    }));
 
     if (jobId) {
       await markJobFailed(jobId, err.message, log);

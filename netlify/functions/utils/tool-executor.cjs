@@ -197,6 +197,17 @@ async function requestBmsData(params, log) {
             throw new Error(`Unknown granularity: ${granularity}`);
         }
 
+        // Add explanatory note based on granularity
+        let note = null;
+        if (records.length > processedData.length) {
+            note = `Data aggregated from ${records.length} raw records to ${processedData.length} ${granularity === 'daily_avg' ? 'daily' : 'hourly'} points`;
+        }
+        if (granularity === 'daily_avg') {
+            note = note 
+                ? `${note}. Each day includes hourly breakdown (up to 24 hours) for detailed analysis.`
+                : 'Each daily record includes hourly breakdown data (up to 24 hours) for detailed analysis.';
+        }
+
         return {
             systemId,
             metric,
@@ -204,9 +215,7 @@ async function requestBmsData(params, log) {
             granularity,
             dataPoints: processedData.length,
             data: processedData,
-            ...(records.length > processedData.length && {
-                note: `Data aggregated from ${records.length} raw records to ${processedData.length} points`
-            })
+            ...(note && { note })
         };
     } catch (error) {
         log.error('requestBmsData failed', { error: error.message, params });
@@ -283,37 +292,63 @@ function aggregateByHour(records, metric, log) {
 }
 
 /**
- * Aggregate records by day
+ * Aggregate records by day with optional hourly breakdown
+ * Provides 90-day rollups with up to 24 hourly events per day
  */
 function aggregateByDay(records, metric, log) {
-    const buckets = new Map();
+    const dayBuckets = new Map();
 
+    // First, group all records by day
     for (const record of records) {
         if (!record.timestamp || !record.analysis) continue;
 
         const date = new Date(record.timestamp);
-        const bucket = new Date(date);
-        bucket.setHours(0, 0, 0, 0);
-        const bucketKey = bucket.toISOString().split('T')[0];
+        const dayKey = date.toISOString().split('T')[0];
 
-        if (!buckets.has(bucketKey)) {
-            buckets.set(bucketKey, []);
+        if (!dayBuckets.has(dayKey)) {
+            dayBuckets.set(dayKey, []);
         }
-        buckets.get(bucketKey).push(record);
+        dayBuckets.get(dayKey).push(record);
     }
 
-    log.debug('Records grouped by day', { bucketCount: buckets.size });
+    log.debug('Records grouped by day', { bucketCount: dayBuckets.size });
 
-    const dailyData = Array.from(buckets.entries()).map(([bucket, recs]) => {
-        const metrics = computeAggregateMetrics(recs, metric);
+    const dailyData = Array.from(dayBuckets.entries()).map(([dayKey, dayRecords]) => {
+        // Calculate daily aggregates
+        const dailyMetrics = computeAggregateMetrics(dayRecords, metric);
+
+        // Also create hourly breakdown for this day
+        const hourBuckets = new Map();
+        for (const record of dayRecords) {
+            const date = new Date(record.timestamp);
+            const hour = date.getHours();
+
+            if (!hourBuckets.has(hour)) {
+                hourBuckets.set(hour, []);
+            }
+            hourBuckets.get(hour).push(record);
+        }
+
+        const hourlyBreakdown = Array.from(hourBuckets.entries())
+            .map(([hour, hourRecords]) => {
+                const hourMetrics = computeAggregateMetrics(hourRecords, metric);
+                return {
+                    hour,
+                    dataPoints: hourRecords.length,
+                    ...hourMetrics
+                };
+            })
+            .sort((a, b) => a.hour - b.hour);
+
         return {
-            timestamp: bucket,
-            dataPoints: recs.length,
-            ...metrics
+            date: dayKey,
+            dataPoints: dayRecords.length,
+            ...dailyMetrics,
+            hourlyData: hourlyBreakdown
         };
     });
 
-    return dailyData.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    return dailyData.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**
@@ -457,25 +492,96 @@ async function getSolarEstimate(params, log) {
 }
 
 /**
- * Get system analytics (placeholder - calls analytics service)
+ * Get system analytics with intelligent alert event grouping
  */
 async function getSystemAnalytics(params, log) {
-    const { systemId } = params;
+    const { systemId, lookbackDays = 60 } = params;
 
     if (!systemId) {
         throw new Error('systemId is required');
     }
 
-    log.info('System analytics requested', { systemId });
+    log.info('System analytics requested', { systemId, lookbackDays });
 
-    // Placeholder return
-    return {
-        systemId,
-        hourlyAverages: null,
-        performanceBaseline: null,
-        alertAnalysis: null,
-        note: 'Analytics integration pending'
-    };
+    try {
+        const collection = await getCollection('history');
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - lookbackDays);
+
+        // Fetch records for alert analysis with limit to prevent timeout
+        const MAX_RECORDS = 1000; // Limit to prevent timeout on huge datasets
+        const records = await collection
+            .find({
+                systemId,
+                timestamp: { $gte: startDate.toISOString() }
+            }, {
+                projection: {
+                    _id: 0,
+                    timestamp: 1,
+                    'analysis.alerts': 1,
+                    'analysis.stateOfCharge': 1
+                }
+            })
+            .sort({ timestamp: -1 }) // Most recent first
+            .limit(MAX_RECORDS)
+            .toArray();
+
+        log.debug('Fetched records for analytics', { count: records.length, limit: MAX_RECORDS });
+
+        // Reverse to chronological order for event grouping
+        records.reverse();
+
+        // Transform to snapshots format for alert grouping
+        const snapshots = records.map(r => ({
+            timestamp: r.timestamp,
+            alerts: r.analysis?.alerts || [],
+            soc: r.analysis?.stateOfCharge
+        }));
+
+        // Use new groupAlertEvents function
+        const { groupAlertEvents } = require('./analysis-utilities.cjs');
+        const alertAnalysis = groupAlertEvents(snapshots);
+
+        // Calculate total occurrences across all events
+        const totalAlerts = alertAnalysis.totalAlertOccurrences;
+
+        // Format for compatibility with existing code
+        const alertCounts = alertAnalysis.summary.map(group => ({
+            alert: group.alert,
+            count: group.eventCount, // Number of EVENTS, not occurrences
+            occurrences: group.totalOccurrences, // Total screenshot count
+            avgDurationHours: group.avgDurationHours,
+            avgSOC: group.avgSOC
+        }));
+
+        return {
+            systemId,
+            lookbackDays,
+            recordCount: records.length,
+            wasLimited: records.length >= MAX_RECORDS,
+            hourlyAverages: null, // TODO: Implement hourly averages
+            performanceBaseline: null, // TODO: Implement performance baseline
+            alertAnalysis: {
+                totalAlerts,
+                totalEvents: alertAnalysis.totalEvents,
+                alertCounts,
+                events: alertAnalysis.events.slice(-20), // Last 20 events for detail
+                note: `Grouped ${totalAlerts} alert occurrences into ${alertAnalysis.totalEvents} distinct events using intelligent time-based consolidation`
+            }
+        };
+    } catch (error) {
+        log.error('Failed to get system analytics', {
+            systemId,
+            error: error.message,
+            stack: error.stack
+        });
+
+        return {
+            error: true,
+            systemId,
+            message: `Analytics failed: ${error.message}`
+        };
+    }
 }
 
 /**
