@@ -103,131 +103,91 @@ const diagnosticTests = {
     }
   },
 
-  // Test asynchronous insights generation (background mode)
+  // Test asynchronous insights generation (REAL background mode via function call)
   asyncAnalysis: async () => {
     const startTime = Date.now();
-    
     try {
-      logger.info('Testing Asynchronous Insights Generation (Background Mode)...');
-      const db = await getDb();
-      
-      // Create minimal test data for insights
-      const testAnalysis = {
-        id: 'async-test-' + Date.now(),
-        stateOfCharge: 75,
-        overallVoltage: 52.1,
-        current: -5.2,
-        power: -270.92,
-        highestCellVoltage: 3.35,
-        lowestCellVoltage: 3.28,
-        cellVoltageDifference: 0.07,
-        temperatures: [25, 26],
-        status: 'Normal',
-        timestamp: new Date()
+      logger.info('Testing Asynchronous Insights Generation (Real Background Mode)...');
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const createUrl = `${baseUrl}/.netlify/functions/generate-insights-with-tools`; // default = background mode
+
+      // Minimal realistic analysisData payload
+      const payload = {
+        analysisData: {
+          measurements: [
+            { timestamp: new Date().toISOString(), stateOfCharge: 75, overallVoltage: 52.1, current: -5.2 }
+          ],
+          overallVoltage: 52.1,
+          stateOfCharge: 75,
+          current: -5.2
+        },
+        customPrompt: 'Provide a brief status.'
       };
-      
-      // Create an insights job directly (simulating background mode)
-      const jobId = `diagnostic_test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const testJob = {
-        id: jobId,
-        status: 'queued',
-        analysisData: testAnalysis,
-        systemId: null,
-        customPrompt: 'Provide a brief status.',
-        initialSummary: { message: 'Test summary' },
-        progress: [],
-        partialInsights: null,
-        finalInsights: null,
-        error: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-      
-      await db.collection('insights-jobs').insertOne(testJob);
-      logger.info('Test insights job created for async test.', { jobId });
-      
-      // Poll for job status changes (simulating background processing)
-      const maxWaitTime = 3000; // 3 seconds max wait for test
-      const pollInterval = 500;
-      let elapsedTime = 0;
-      let finalJob = null;
-      
-      while (elapsedTime < maxWaitTime) {
-        const job = await db.collection('insights-jobs').findOne({ id: jobId });
-        
-        if (job && (job.status === 'completed' || job.status === 'failed')) {
-          finalJob = job;
-          break;
-        }
-        
-        // For diagnostic tests, we consider job creation + queuing as success
-        // since we can't guarantee a background worker is running
-        if (elapsedTime >= 1000) {
-          finalJob = job;
-          break;
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-        elapsedTime += pollInterval;
+
+      const createResp = await fetch(createUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!createResp.ok) {
+        const errText = await createResp.text().catch(() => '');
+        throw new Error(`Background insights creation failed (${createResp.status}) ${errText}`);
       }
-      
+
+      const createJson = await createResp.json();
+      const jobId = createJson.jobId;
+      if (!jobId) throw new Error('Background insights response missing jobId');
+      logger.info('Background insights job created', { jobId });
+
+      // Poll status endpoint
+      const statusUrl = `${baseUrl}/.netlify/functions/generate-insights-status`;
+      const pollInterval = 1000;
+      const maxWaitMs = 15000; // 15s cap inside diagnostics
+      let elapsed = 0;
+      let lastStatus = 'unknown';
+      let finalData = null;
+
+      while (elapsed < maxWaitMs) {
+        const statusResp = await fetch(statusUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId })
+        });
+        if (!statusResp.ok && statusResp.status !== 404) {
+          const t = await statusResp.text().catch(() => '');
+          throw new Error(`Status check failed (${statusResp.status}) ${t}`);
+        }
+        if (statusResp.ok) {
+          const statusJson = await statusResp.json();
+          lastStatus = statusJson.status;
+          finalData = statusJson;
+          logger.debug('Polled job status', { jobId, status: lastStatus, progressEvents: statusJson.progressCount || 0 });
+          if (['completed', 'failed'].includes(lastStatus)) break;
+        }
+        await new Promise(r => setTimeout(r, pollInterval));
+        elapsed += pollInterval;
+      }
+
       const duration = Date.now() - startTime;
-      
-      // Clean up test job
-      await db.collection('insights-jobs').deleteOne({ id: jobId });
-      
-      // Evaluate results
-      if (finalJob) {
-        if (finalJob.status === 'completed') {
-          logger.info('Asynchronous insights test completed successfully.', { 
-            jobId,
-            duration 
-          });
-          
-          return {
-            name: 'Asynchronous Insights Generation',
-            status: 'success',
-            duration,
-            details: {
-              jobId,
-              finalStatus: finalJob.status,
-              message: 'Background job processing verified'
-            }
-          };
-        } else if (finalJob.status === 'queued' || finalJob.status === 'processing') {
-          // Job created successfully but no worker processed it yet
-          logger.warn('Asynchronous insights test completed with warning.', { 
-            jobId,
-            duration,
-            status: finalJob.status
-          });
-          
-          return {
-            name: 'Asynchronous Insights Generation',
-            status: 'warning',
-            duration,
-            details: {
-              jobId,
-              finalStatus: finalJob.status,
-              message: 'Job created successfully but no background worker detected',
-              recommendation: 'Ensure generate-insights-background function is deployed and accessible'
-            }
-          };
-        } else {
-          throw new Error(`Job ended with status: ${finalJob.status}`);
-        }
-      } else {
-        throw new Error('Job not found after creation');
-      }
-      
+      const outcome = lastStatus === 'completed' ? 'success' : (lastStatus === 'failed' ? 'error' : 'warning');
+
+      return {
+        name: 'Asynchronous Insights Generation',
+        status: outcome,
+        duration,
+        details: {
+          jobId,
+          finalStatus: lastStatus,
+          iterations: finalData?.progressCount || 0,
+          hasFinalInsights: !!finalData?.finalInsights,
+          message: outcome === 'warning' ? 'Job did not finish within diagnostics wait window' : 'Background flow exercised'
+        },
+        error: outcome === 'error' ? (finalData?.error || 'Job failed') : undefined
+      };
     } catch (error) {
       const duration = Date.now() - startTime;
-      
-      logger.error('Asynchronous insights test failed.', { 
-        error: error.message,
-        duration 
-      });
-      
+      logger.error('Asynchronous insights test failed.', { error: error.message, duration });
       return {
         name: 'Asynchronous Insights Generation',
         status: 'error',
