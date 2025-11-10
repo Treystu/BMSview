@@ -218,19 +218,73 @@ class GeminiClient {
     const model = options.model || 'gemini-2.5-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    let parts = [];
-    if (typeof prompt === 'string') {
-      parts.push({ text: prompt });
-    } else if (typeof prompt === 'object' && prompt.text && prompt.image && prompt.mimeType) {
-      parts.push({ text: prompt.text });
-      parts.push({
-        inlineData: {
-          mimeType: prompt.mimeType,
-          data: prompt.image
+    // Build request body with support for conversation history and tools
+    const requestBody = {
+      generationConfig: {
+        temperature: options.temperature || 0.7,
+        maxOutputTokens: options.maxOutputTokens || 8192,
+        topP: options.topP || 0.95,
+        topK: options.topK || 40
+      }
+    };
+
+    // Handle conversation history (for multi-turn ReAct loops)
+    if (options.history && Array.isArray(options.history)) {
+      requestBody.contents = options.history;
+
+      // Add new prompt to history if provided
+      if (prompt) {
+        let parts = [];
+        if (typeof prompt === 'string') {
+          parts.push({ text: prompt });
+        } else if (typeof prompt === 'object' && prompt.text && prompt.image && prompt.mimeType) {
+          parts.push({ text: prompt.text });
+          parts.push({
+            inlineData: {
+              mimeType: prompt.mimeType,
+              data: prompt.image
+            }
+          });
         }
-      });
+
+        if (parts.length > 0) {
+          requestBody.contents.push({ role: 'user', parts });
+        }
+      }
     } else {
-      throw new Error('Invalid prompt format. Must be a string or a valid image prompt object.');
+      // Single turn - build contents from prompt
+      let parts = [];
+      if (typeof prompt === 'string') {
+        parts.push({ text: prompt });
+      } else if (typeof prompt === 'object' && prompt.text && prompt.image && prompt.mimeType) {
+        parts.push({ text: prompt.text });
+        parts.push({
+          inlineData: {
+            mimeType: prompt.mimeType,
+            data: prompt.image
+          }
+        });
+      } else if (!prompt && !options.history) {
+        throw new Error('Either prompt or history must be provided');
+      }
+
+      if (parts.length > 0) {
+        requestBody.contents = [{ role: 'user', parts }];
+      }
+    }
+
+    // Add tools support for function calling (ReAct loop)
+    if (options.tools && Array.isArray(options.tools) && options.tools.length > 0) {
+      requestBody.tools = [{
+        function_declarations: options.tools
+      }];
+
+      // Configure tool behavior
+      requestBody.tool_config = {
+        function_calling_config: {
+          mode: options.toolMode || 'AUTO' // AUTO = tool calls when needed, ANY = always use tools
+        }
+      };
     }
 
     const response = await fetch(url, {
@@ -238,13 +292,7 @@ class GeminiClient {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          temperature: options.temperature || 0.7,
-          maxOutputTokens: options.maxOutputTokens || 8192,
-        }
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
