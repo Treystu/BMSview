@@ -452,11 +452,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         'history'
     );
 
+    // All available diagnostic tests
+    const ALL_DIAGNOSTIC_TESTS = [
+        'database', 'gemini',
+        'analyze', 'syncAnalysis', 'asyncAnalysis',
+        'generateInsights', 'insightsWithTools',
+        'history', 'systems',
+        'weather', 'solar', 'systemAnalytics',
+        'getJobStatus',
+        'contact', 'getIP', 'security', 'predictiveMaintenance', 'adminSystems'
+    ];
+
+    const handleTestToggle = (testId: string, checked: boolean) => {
+        const currentTests = state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS;
+        const newTests = checked
+            ? [...currentTests, testId]
+            : currentTests.filter(t => t !== testId);
+        dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: newTests });
+    };
+
     const handleRunDiagnostics = async () => {
         dispatch({ type: 'OPEN_DIAGNOSTICS_MODAL' });
         dispatch({ type: 'ACTION_START', payload: 'isRunningDiagnostics' });
         try {
-            const selectedTests = state.selectedDiagnosticTests || [];
+            const selectedTests = state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS;
             const results = await runDiagnostics(selectedTests);
             dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: results });
         } catch (err) {
@@ -596,44 +615,164 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
                                 <p className="mb-4">Run a series of tests to check the health of the system, including database connectivity, API functions, and AI model responses.</p>
 
-                                <div className="mb-4 grid grid-cols-2 md:grid-cols-3 gap-3">
-                                    {[
-                                        { id: 'database', label: 'Database Connection' },
-                                        { id: 'syncAnalysis', label: 'Sync Analysis' },
-                                        { id: 'asyncAnalysis', label: 'Async Analysis' },
-                                        { id: 'weather', label: 'Weather Service' },
-                                        { id: 'solar', label: 'Solar Service' },
-                                        { id: 'systemAnalytics', label: 'System Analytics' },
-                                        { id: 'insightsWithTools', label: 'Enhanced Insights' },
-                                        { id: 'gemini', label: 'Gemini API' },
-                                    ].map(test => (
-                                        <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
-                                            <input
-                                                type="checkbox"
-                                                checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
-                                                onChange={(e) => {
-                                                    const currentTests = state.selectedDiagnosticTests || [
-                                                        'database', 'syncAnalysis', 'asyncAnalysis', 'weather',
-                                                        'solar', 'systemAnalytics', 'insightsWithTools', 'gemini'
-                                                    ];
-                                                    const newTests = e.target.checked
-                                                        ? [...currentTests, test.id]
-                                                        : currentTests.filter(t => t !== test.id);
-                                                    dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: newTests });
-                                                }}
-                                                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                            />
-                                            <span>{test.label}</span>
-                                        </label>
-                                    ))}
+                                <div className="mb-4">
+                                    {/* Infrastructure Tests */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Infrastructure</h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                            {[
+                                                { id: 'database', label: 'Database Connection' },
+                                                { id: 'gemini', label: 'Gemini API' },
+                                            ].map(test => (
+                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
+                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
+                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <span>{test.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Core Analysis Tests */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Core Analysis</h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                            {[
+                                                { id: 'analyze', label: 'Analyze Endpoint' },
+                                                { id: 'syncAnalysis', label: 'Sync Analysis' },
+                                                { id: 'asyncAnalysis', label: 'Async Analysis' },
+                                            ].map(test => (
+                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
+                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
+                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <span>{test.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Insights Tests */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Insights</h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                            {[
+                                                { id: 'generateInsights', label: 'Generate Insights' },
+                                                { id: 'insightsWithTools', label: 'Enhanced Insights' },
+                                            ].map(test => (
+                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
+                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
+                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <span>{test.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Data Management Tests */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Data Management</h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                            {[
+                                                { id: 'history', label: 'History' },
+                                                { id: 'systems', label: 'Systems' },
+                                            ].map(test => (
+                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
+                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
+                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <span>{test.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* External Services Tests */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">External Services</h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                            {[
+                                                { id: 'weather', label: 'Weather Service' },
+                                                { id: 'solar', label: 'Solar Service' },
+                                                { id: 'systemAnalytics', label: 'System Analytics' },
+                                            ].map(test => (
+                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
+                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
+                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <span>{test.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Job Management Tests */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Job Management</h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                            {[
+                                                { id: 'getJobStatus', label: 'Get Job Status' },
+                                            ].map(test => (
+                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
+                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
+                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <span>{test.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Utility/Admin Tests */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Utility/Admin</h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                            {[
+                                                { id: 'contact', label: 'Contact' },
+                                                { id: 'getIP', label: 'Get IP' },
+                                                { id: 'security', label: 'Security' },
+                                                { id: 'predictiveMaintenance', label: 'Predictive Maintenance' },
+                                                { id: 'adminSystems', label: 'Admin Systems' },
+                                            ].map(test => (
+                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
+                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
+                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <span>{test.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div className="flex gap-2">
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            const allTests = ['database', 'syncAnalysis', 'asyncAnalysis', 'weather', 'solar', 'systemAnalytics', 'insightsWithTools', 'gemini'];
-                                            dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: allTests });
+                                            dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: ALL_DIAGNOSTIC_TESTS });
                                         }}
                                         className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 text-sm"
                                     >

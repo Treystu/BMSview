@@ -491,6 +491,453 @@ const diagnosticTests = {
         error: error.message
       };
     }
+  },
+
+  // Test analyze endpoint
+  analyze: async () => {
+    const startTime = Date.now();
+    try {
+      logger.info('Testing Analyze Endpoint...');
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const analyzeUrl = `${baseUrl}/.netlify/functions/analyze?sync=true`;
+      
+      const response = await fetch(analyzeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: TEST_IMAGE_BASE64,
+          fileName: 'diagnostic-analyze-test.png'
+        })
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      if (!response.ok) {
+        throw new Error(`Analyze endpoint returned ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      return {
+        name: 'Analyze Endpoint',
+        status: 'success',
+        duration,
+        details: {
+          hasResult: !!result,
+          recordId: result?.id
+        }
+      };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('Analyze endpoint test failed.', { error: error.message, duration });
+      return {
+        name: 'Analyze Endpoint',
+        status: 'error',
+        duration,
+        error: error.message
+      };
+    }
+  },
+
+  // Test history endpoint
+  history: async () => {
+    const startTime = Date.now();
+    try {
+      logger.info('Testing History Endpoint...');
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const historyUrl = `${baseUrl}/.netlify/functions/history?page=1&limit=5`;
+      
+      const response = await fetch(historyUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      if (!response.ok) {
+        throw new Error(`History endpoint returned ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      return {
+        name: 'History Endpoint',
+        status: 'success',
+        duration,
+        details: {
+          hasData: !!result,
+          itemCount: result?.items?.length || 0,
+          totalItems: result?.totalItems || 0
+        }
+      };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('History endpoint test failed.', { error: error.message, duration });
+      return {
+        name: 'History Endpoint',
+        status: 'error',
+        duration,
+        error: error.message
+      };
+    }
+  },
+
+  // Test systems endpoint
+  systems: async () => {
+    const startTime = Date.now();
+    try {
+      logger.info('Testing Systems Endpoint...');
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const systemsUrl = `${baseUrl}/.netlify/functions/systems`;
+      
+      const response = await fetch(systemsUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      if (!response.ok) {
+        throw new Error(`Systems endpoint returned ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      return {
+        name: 'Systems Endpoint',
+        status: 'success',
+        duration,
+        details: {
+          hasData: !!result,
+          systemCount: result?.items?.length || 0,
+          totalItems: result?.totalItems || 0
+        }
+      };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('Systems endpoint test failed.', { error: error.message, duration });
+      return {
+        name: 'Systems Endpoint',
+        status: 'error',
+        duration,
+        error: error.message
+      };
+    }
+  },
+
+  // Test get-job-status endpoint
+  getJobStatus: async () => {
+    const startTime = Date.now();
+    try {
+      logger.info('Testing Get Job Status Endpoint...');
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      // Use a non-existent job ID - should return 404 gracefully
+      const jobStatusUrl = `${baseUrl}/.netlify/functions/get-job-status?id=test-nonexistent-job`;
+      
+      const response = await fetch(jobStatusUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      // For non-existent job, we expect 404 which is success for this test
+      if (response.status === 404) {
+        return {
+          name: 'Get Job Status Endpoint',
+          status: 'success',
+          duration,
+          details: {
+            message: 'Endpoint correctly returns 404 for non-existent job'
+          }
+        };
+      } else if (response.ok) {
+        return {
+          name: 'Get Job Status Endpoint',
+          status: 'success',
+          duration,
+          details: {
+            message: 'Endpoint accessible and responding'
+          }
+        };
+      } else {
+        throw new Error(`Get job status endpoint returned ${response.status}`);
+      }
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('Get job status endpoint test failed.', { error: error.message, duration });
+      return {
+        name: 'Get Job Status Endpoint',
+        status: 'error',
+        duration,
+        error: error.message
+      };
+    }
+  },
+
+  // Test generate-insights endpoint
+  generateInsights: async () => {
+    const startTime = Date.now();
+    try {
+      logger.info('Testing Generate Insights Endpoint...');
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const insightsUrl = `${baseUrl}/.netlify/functions/generate-insights`;
+      
+      const testData = {
+        analysisData: {
+          stateOfCharge: 75,
+          overallVoltage: 52.1,
+          current: -5.2
+        },
+        customPrompt: 'Brief status check'
+      };
+      
+      const response = await fetch(insightsUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testData)
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      if (!response.ok) {
+        throw new Error(`Generate insights endpoint returned ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      return {
+        name: 'Generate Insights Endpoint',
+        status: 'success',
+        duration,
+        details: {
+          hasInsights: !!result?.insights,
+          hasJobId: !!result?.jobId
+        }
+      };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('Generate insights endpoint test failed.', { error: error.message, duration });
+      return {
+        name: 'Generate Insights Endpoint',
+        status: 'error',
+        duration,
+        error: error.message
+      };
+    }
+  },
+
+  // Test contact endpoint
+  contact: async () => {
+    const startTime = Date.now();
+    try {
+      logger.info('Testing Contact Endpoint...');
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const contactUrl = `${baseUrl}/.netlify/functions/contact`;
+      
+      const response = await fetch(contactUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Diagnostic Test',
+          email: 'test@example.com',
+          message: 'Automated diagnostic test'
+        })
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      // Contact may require additional setup, so we accept various responses
+      if (response.ok || response.status === 400 || response.status === 503) {
+        return {
+          name: 'Contact Endpoint',
+          status: 'success',
+          duration,
+          details: {
+            statusCode: response.status,
+            message: 'Endpoint accessible'
+          }
+        };
+      } else {
+        throw new Error(`Contact endpoint returned ${response.status}`);
+      }
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('Contact endpoint test failed.', { error: error.message, duration });
+      return {
+        name: 'Contact Endpoint',
+        status: 'error',
+        duration,
+        error: error.message
+      };
+    }
+  },
+
+  // Test get-ip endpoint
+  getIP: async () => {
+    const startTime = Date.now();
+    try {
+      logger.info('Testing Get IP Endpoint...');
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const getIPUrl = `${baseUrl}/.netlify/functions/get-ip`;
+      
+      const response = await fetch(getIPUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      if (!response.ok) {
+        throw new Error(`Get IP endpoint returned ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      return {
+        name: 'Get IP Endpoint',
+        status: 'success',
+        duration,
+        details: {
+          hasIP: !!result?.ip
+        }
+      };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('Get IP endpoint test failed.', { error: error.message, duration });
+      return {
+        name: 'Get IP Endpoint',
+        status: 'error',
+        duration,
+        error: error.message
+      };
+    }
+  },
+
+  // Test security endpoint
+  security: async () => {
+    const startTime = Date.now();
+    try {
+      logger.info('Testing Security Endpoint...');
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const securityUrl = `${baseUrl}/.netlify/functions/security`;
+      
+      const response = await fetch(securityUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      // Security endpoint may have various responses based on configuration
+      if (response.ok || response.status === 401 || response.status === 403) {
+        return {
+          name: 'Security Endpoint',
+          status: 'success',
+          duration,
+          details: {
+            statusCode: response.status,
+            message: 'Endpoint accessible'
+          }
+        };
+      } else {
+        throw new Error(`Security endpoint returned ${response.status}`);
+      }
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('Security endpoint test failed.', { error: error.message, duration });
+      return {
+        name: 'Security Endpoint',
+        status: 'error',
+        duration,
+        error: error.message
+      };
+    }
+  },
+
+  // Test predictive maintenance endpoint
+  predictiveMaintenance: async () => {
+    const startTime = Date.now();
+    try {
+      logger.info('Testing Predictive Maintenance Endpoint...');
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const predUrl = `${baseUrl}/.netlify/functions/predictive-maintenance`;
+      
+      const response = await fetch(predUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemId: 'test-system'
+        })
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      // Accept various responses as the endpoint may require specific data
+      if (response.ok || response.status === 400 || response.status === 404) {
+        return {
+          name: 'Predictive Maintenance Endpoint',
+          status: 'success',
+          duration,
+          details: {
+            statusCode: response.status,
+            message: 'Endpoint accessible'
+          }
+        };
+      } else {
+        throw new Error(`Predictive maintenance endpoint returned ${response.status}`);
+      }
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('Predictive maintenance endpoint test failed.', { error: error.message, duration });
+      return {
+        name: 'Predictive Maintenance Endpoint',
+        status: 'error',
+        duration,
+        error: error.message
+      };
+    }
+  },
+
+  // Test admin-systems endpoint
+  adminSystems: async () => {
+    const startTime = Date.now();
+    try {
+      logger.info('Testing Admin Systems Endpoint...');
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const adminUrl = `${baseUrl}/.netlify/functions/admin-systems`;
+      
+      const response = await fetch(adminUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const duration = Date.now() - startTime;
+      
+      if (!response.ok) {
+        throw new Error(`Admin systems endpoint returned ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      return {
+        name: 'Admin Systems Endpoint',
+        status: 'success',
+        duration,
+        details: {
+          hasData: !!result
+        }
+      };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      logger.error('Admin systems endpoint test failed.', { error: error.message, duration });
+      return {
+        name: 'Admin Systems Endpoint',
+        status: 'error',
+        duration,
+        error: error.message
+      };
+    }
   }
 };
 
