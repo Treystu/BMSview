@@ -6,7 +6,7 @@
  * and persisting the results back to MongoDB.
  */
 
-const { createLogger, createTimer } = require('../../utils/logger.cjs');
+const { createLogger, createTimer } = require('./utils/logger.cjs');
 const { getInsightsJob, failJob } = require('./utils/insights-jobs.cjs');
 const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
 
