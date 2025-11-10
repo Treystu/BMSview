@@ -48,11 +48,31 @@ const diagnosticTests = {
     const startTime = Date.now();
     try {
       logger.info('Testing Synchronous Analysis...');
+      
+      // Create a log function for analysis pipeline (expects function-style logger)
+      const log = (level, message, data) => {
+        if (typeof logger[level] === 'function') {
+          logger[level](message, data);
+        } else {
+          logger.info(message, { level, ...data });
+        }
+      };
+      // Copy logger methods
+      log.info = logger.info.bind(logger);
+      log.warn = logger.warn.bind(logger);
+      log.error = logger.error.bind(logger);
+      log.debug = logger.debug.bind(logger);
+      
       const result = await performAnalysisPipeline(
-        TEST_IMAGE_BASE64,
-        'diagnostic-sync-test.png',
-        { forceReanalyze: true },
-        logger
+        {
+          image: TEST_IMAGE_BASE64,
+          mimeType: 'image/png',
+          fileName: 'diagnostic-sync-test.png',
+          force: true
+        },
+        null, // systems
+        log,
+        {} // context
       );
       const duration = Date.now() - startTime;
       
@@ -274,20 +294,19 @@ const diagnosticTests = {
     try {
       logger.info('Testing Solar Service...');
       
-      // Call solar estimate API via HTTP
+      // Call solar estimate API via HTTP (GET method with query parameters)
       const baseUrl = process.env.URL || 'http://localhost:8888';
-      const solarUrl = `${baseUrl}/.netlify/functions/solar-estimate`;
+      const params = new URLSearchParams({
+        location: '37.7749,-122.4194',  // San Francisco lat,lon
+        panelWatts: '3000',
+        startDate: new Date().toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0]
+      });
+      const solarUrl = `${baseUrl}/.netlify/functions/solar-estimate?${params.toString()}`;
       
       const response = await fetch(solarUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          latitude: 37.7749,  // San Francisco
-          longitude: -122.4194,
-          date: new Date().toISOString().split('T')[0],
-          batteryVoltage: 51.2,
-          maxChargingAmps: 60
-        })
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
       });
       
       const duration = Date.now() - startTime;
@@ -398,8 +417,8 @@ const diagnosticTests = {
         log: logger,
         mode: 'sync',
         maxIterations: 3,
-        iterationTimeoutMs: 10000,
-        totalTimeoutMs: 15000
+        iterationTimeoutMs: 20000,  // 20s per iteration (enough for Gemini response)
+        totalTimeoutMs: 50000  // 50s total (safe margin under 60s function timeout)
       });
       
       const duration = Date.now() - startTime;
