@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 /**
  * Generate Insights - Enhanced AI-Powered Analysis with True Function Calling
  * 
@@ -26,7 +24,7 @@
  * @module netlify/functions/generate-insights-with-tools
  */
 
-const { createLogger, createTimer } = require('../../utils/logger.cjs');
+const { createLogger, createTimer } = require('./utils/logger.cjs');
 const { createInsightsJob, ensureIndexes, failJob } = require('./utils/insights-jobs.cjs');
 const { generateInitialSummary } = require('./utils/insights-summary.cjs');
 const { runGuruConversation } = require('./utils/insights-guru-runner.cjs');

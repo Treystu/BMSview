@@ -1,6 +1,20 @@
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger } = require("./utils/logger.cjs");
+const { z } = require("zod");
+
+// System validation schema
+const SystemSchema = z.object({
+  name: z.string().min(1, "System name is required"),
+  chemistry: z.enum(["LiFePO4", "LiPo", "LiIon", "LeadAcid", "NiMH", "Other"]).optional(),
+  voltage: z.number().positive("Voltage must be positive").optional(),
+  capacity: z.number().positive("Capacity must be positive").optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  associatedDLs: z.array(z.string()).optional(),
+  notes: z.string().optional(),
+  location: z.string().optional()
+});
 
 const respond = (statusCode, body) => ({
     statusCode,
@@ -59,6 +73,28 @@ exports.handler = async function(event, context) {
                 const allDlsToMerge = systemsToMerge.flatMap(s => s.associatedDLs || []);
                 primarySystem.associatedDLs = [...new Set([...(primarySystem.associatedDLs || []), ...allDlsToMerge])];
 
+                // Check for conflicting chemistry/voltage and record metadata
+                const conflicts = [];
+                const mergedSystems = systemsToMerge.filter(s => s.id !== primarySystemId);
+                mergedSystems.forEach(system => {
+                    if (system.chemistry && primarySystem.chemistry && system.chemistry !== primarySystem.chemistry) {
+                        conflicts.push({ field: 'chemistry', primary: primarySystem.chemistry, conflicting: system.chemistry, systemId: system.id });
+                    }
+                    if (system.voltage && primarySystem.voltage && Math.abs(system.voltage - primarySystem.voltage) > 0.1) {
+                        conflicts.push({ field: 'voltage', primary: primarySystem.voltage, conflicting: system.voltage, systemId: system.id });
+                    }
+                });
+
+                if (conflicts.length > 0) {
+                    log('warn', 'Detected conflicts during merge operation.', { ...postLogContext, conflicts });
+                }
+
+                const mergeMetadata = {
+                    mergedAt: new Date().toISOString(),
+                    mergedSystemIds: idsToDelete,
+                    conflicts: conflicts.length > 0 ? conflicts : undefined
+                };
+
                 log('debug', `Re-assigning history records from ${idsToDelete.length} systems to primary system.`, postLogContext);
                 const { modifiedCount } = await historyCollection.updateMany(
                     { systemId: { $in: idsToDelete } },
@@ -66,7 +102,10 @@ exports.handler = async function(event, context) {
                 );
                 log('info', `Updated ${modifiedCount} history records during merge.`, postLogContext);
 
-                await systemsCollection.updateOne({ id: primarySystem.id }, { $set: { associatedDLs: primarySystem.associatedDLs } });
+                await systemsCollection.updateOne(
+                    { id: primarySystem.id }, 
+                    { $set: { associatedDLs: primarySystem.associatedDLs, mergeMetadata } }
+                );
                 log('info', 'Updated primary system in store.', { ...postLogContext, systemId: primarySystem.id });
 
                 if (idsToDelete.length > 0) {
@@ -75,15 +114,28 @@ exports.handler = async function(event, context) {
                 }
                 
                 log('warn', 'System merge operation completed successfully.', postLogContext);
-                return respond(200, { success: true });
+                return respond(200, { success: true, conflicts: conflicts.length > 0 ? conflicts : undefined });
             }
 
-            const newSystem = { ...parsedBody, id: uuidv4(), associatedDLs: parsedBody.associatedDLs || [] };
-            log('info', 'Creating new system.', { ...logContext, systemId: newSystem.id, systemName: newSystem.name });
-            await systemsCollection.insertOne(newSystem);
-            // Return new system without the internal _id
-            const { _id, ...systemToReturn } = newSystem;
-            return respond(201, systemToReturn);
+            // Validate and create new system
+            try {
+                const validatedSystem = SystemSchema.parse(parsedBody);
+                const newSystem = { ...validatedSystem, id: uuidv4(), associatedDLs: validatedSystem.associatedDLs || [] };
+                log('info', 'Creating new system.', { ...logContext, systemId: newSystem.id, systemName: newSystem.name });
+                await systemsCollection.insertOne(newSystem);
+                // Return new system without the internal _id
+                const { _id, ...systemToReturn } = newSystem;
+                return respond(201, systemToReturn);
+            } catch (validationError) {
+                if (validationError.errors) {
+                    log('warn', 'System validation failed.', { ...logContext, errors: validationError.errors });
+                    return respond(400, { 
+                        error: 'Validation failed', 
+                        details: validationError.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
+                    });
+                }
+                throw validationError;
+            }
         }
 
         if (httpMethod === 'PUT') {
@@ -94,16 +146,30 @@ exports.handler = async function(event, context) {
             log('info', 'Updating system.', putLogContext);
             const updateData = JSON.parse(body);
             log('debug', 'Parsed PUT body.', { ...putLogContext, body: updateData });
-            const { id, ...dataToUpdate } = updateData; // Ensure `id` is not in the update payload
             
-            const result = await systemsCollection.updateOne({ id: systemId }, { $set: dataToUpdate });
+            // Validate update data
+            try {
+                const { id, ...dataToUpdate } = updateData; // Ensure `id` is not in the update payload
+                const validatedUpdate = SystemSchema.partial().parse(dataToUpdate);
+                
+                const result = await systemsCollection.updateOne({ id: systemId }, { $set: validatedUpdate });
 
-            if (result.matchedCount === 0) {
-                return respond(404, { error: "System not found." });
+                if (result.matchedCount === 0) {
+                    return respond(404, { error: "System not found." });
+                }
+                
+                const updatedSystem = await systemsCollection.findOne({ id: systemId }, { projection: { _id: 0 } });
+                return respond(200, updatedSystem);
+            } catch (validationError) {
+                if (validationError.errors) {
+                    log('warn', 'System update validation failed.', { ...putLogContext, errors: validationError.errors });
+                    return respond(400, { 
+                        error: 'Validation failed', 
+                        details: validationError.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
+                    });
+                }
+                throw validationError;
             }
-            
-            const updatedSystem = await systemsCollection.findOne({ id: systemId }, { projection: { _id: 0 } });
-            return respond(200, updatedSystem);
         }
 
         if (httpMethod === 'DELETE') {

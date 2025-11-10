@@ -28,24 +28,6 @@
       "@/*": [
         "./src/*"
       ],
-      "@components/*": [
-        "./components/*"
-      ],
-      "@services/*": [
-        "./services/*"
-      ],
-      "@state/*": [
-        "./state/*"
-      ],
-      "@hooks/*": [
-        "./hooks/*"
-      ],
-      "@utils/*": [
-        "./utils/*"
-      ],
-      "@types/*": [
-        "./types/*"
-      ],
       "components/*": [
         "./components/*"
       ],
@@ -60,15 +42,18 @@
       ],
       "utils/*": [
         "./utils/*"
+      ],
+      "@types/*": [
+        "./types/*"
       ]
     }
   },
   "include": [
-    "."
+    ".",
+    "netlify/functions/solar-estimate.ts"
   ],
   "exclude": [
     "dist",
-    "node_modules",
-    "netlify"
+    "node_modules"
   ]
 }

@@ -145,7 +145,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
         dedupeHit: true
       };
 
-      await storeIdempotentResponse(idemKey, responseBody);
+      await storeIdempotentResponse(idemKey, responseBody, 'dedupe_hit');
       const durationMs = timer.end({ recordId: responseBody.recordId, dedupe: true });
       log.exit(200, { mode: 'sync', dedupe: true, durationMs });
       return {
@@ -155,7 +155,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
       };
     }
   } else {
-    log.info('Force re-analysis requested, bypassing duplicate detection.', { contentHash });
+    log.info('Force re-analysis requested, bypassing duplicate detection.', { contentHash, auditEvent: 'force_reanalysis', timestamp: new Date().toISOString() });
   }
 
   // Perform new analysis
@@ -163,7 +163,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
   const record = await executeAnalysisPipeline(imagePayload, log, context);
 
   // Store results for future deduplication
-  await storeAnalysisResults(record, contentHash);
+  await storeAnalysisResults(record, contentHash, log, forceReanalysis);
 
   const responseBody = {
     analysis: record.analysis,
@@ -172,7 +172,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
     timestamp: record.timestamp
   };
 
-  await storeIdempotentResponse(idemKey, responseBody);
+  await storeIdempotentResponse(idemKey, responseBody, forceReanalysis ? 'force_reanalysis' : 'new_analysis');
 
   const durationMs = timer.end({ recordId: record.id });
   log.exit(200, { mode: 'sync', recordId: record.id, durationMs });
@@ -286,8 +286,10 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
  * Stores analysis results for future deduplication
  * @param {Object} record - Analysis record to store
  * @param {string} contentHash - Content hash for deduplication
+ * @param {Object} log - Logger instance
+ * @param {boolean} forceReanalysis - Whether this was a forced reanalysis
  */
-async function storeAnalysisResults(record, contentHash) {
+async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false) {
   const resultsCol = await getCollection('analysis-results');
   try {
     await resultsCol.insertOne({
@@ -296,7 +298,8 @@ async function storeAnalysisResults(record, contentHash) {
       timestamp: record.timestamp,
       analysis: record.analysis,
       contentHash,
-      createdAt: new Date()
+      createdAt: new Date(),
+      _forceReanalysis: forceReanalysis
     });
   } catch (e) {
     log.warn('Failed to persist analysis-results record.', { error: e && e.message ? e.message : String(e) });
@@ -307,15 +310,16 @@ async function storeAnalysisResults(record, contentHash) {
  * Stores response for idempotency
  * @param {string} idemKey - Idempotency key
  * @param {Object} response - Response to store
+ * @param {string} reasonCode - Reason code for tracking (e.g., 'new_analysis', 'force_reanalysis', 'dedupe_hit')
  */
-async function storeIdempotentResponse(idemKey, response) {
+async function storeIdempotentResponse(idemKey, response, reasonCode = 'new_analysis') {
   if (!idemKey) return;
 
   try {
     const idemCol = await getCollection('idempotent-requests');
     await idemCol.updateOne(
       { key: idemKey },
-      { $set: { key: idemKey, response, createdAt: new Date() } },
+      { $set: { key: idemKey, response, reasonCode, createdAt: new Date() } },
       { upsert: true }
     );
   } catch (_) { }
@@ -333,52 +337,4 @@ async function storeProgressEvent(jobId, eventData) {
   } catch (error) {
     // Intentionally swallow errors to avoid masking primary failure
   }
-}
-
-// Legacy analysis support functions
-async function validateAndParseFile(fileData) {
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  if (!fileData || fileData.length === 0) {
-    throw new Error('Empty file data');
-  }
-  return {
-    format: 'csv',
-    rows: fileData.split('\n').length,
-    columns: fileData.split('\n')[0]?.split(',').length || 0,
-    data: fileData
-  };
-}
-
-async function extractBatteryMetrics(parsedData) {
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  return {
-    totalCycles: Math.floor(Math.random() * 1000) + 100,
-    avgCapacity: Math.floor(Math.random() * 50) + 50,
-    maxTemperature: Math.floor(Math.random() * 20) + 25,
-    efficiency: Math.random() * 0.3 + 0.7,
-    healthScore: Math.floor(Math.random() * 30) + 70
-  };
-}
-
-async function performAnalysis(metrics) {
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  return {
-    degradationTrend: metrics.efficiency > 0.85 ? 'stable' : 'declining',
-    riskFactors: metrics.avgCapacity < 60 ? ['low capacity'] : [],
-    performanceIssues: metrics.maxTemperature > 40 ? ['high temperature'] : [],
-    maintenanceNeeds: metrics.healthScore < 80 ? ['service recommended'] : []
-  };
-}
-
-async function generateInsights(analysis) {
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  return {
-    summary: `Battery health is ${analysis.degradationTrend} with ${analysis.riskFactors.length} risk factors identified.`,
-    recommendations: [
-      analysis.degradationTrend === 'declining' ? 'Monitor capacity closely' : 'Continue normal operation',
-      analysis.riskFactors.includes('low capacity') ? 'Consider capacity calibration' : '',
-      analysis.performanceIssues.includes('high temperature') ? 'Improve cooling system' : ''
-    ].filter(Boolean),
-    nextMaintenance: analysis.maintenanceNeeds.length > 0 ? 'Schedule service within 30 days' : 'No immediate maintenance required'
-  };
 }

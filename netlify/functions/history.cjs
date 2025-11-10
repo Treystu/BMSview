@@ -207,11 +207,14 @@ exports.handler = async function(event, context) {
 
                 const recordsNeedingWeatherCursor = historyCollection.find({ systemId: { $ne: null }, $or: [{ weather: null }, { 'weather.clouds': { $exists: false } }] });
                 let updatedCount = 0;
+                let errorCount = 0;
                 const bulkOps = [];
                 const BATCH_SIZE = 50; // Smaller batch for external API calls
+                const THROTTLE_DELAY_MS = 1000; // 1 second delay between batches
+                const RETRY_DELAY_MS = 2000; // 2 second delay after error
 
                 for await (const record of recordsNeedingWeatherCursor) {
-        log('info', `Processing record: ${record.id}, _id type: ${typeof record._id}`);
+                    log('debug', `Processing weather backfill for record: ${record.id}`);
                     const location = systemLocationMap.get(record.systemId);
                     if (location && record.timestamp) {
                         try {
@@ -226,34 +229,46 @@ exports.handler = async function(event, context) {
                                 updatedCount++;
                             }
                         } catch (weatherError) {
+                            errorCount++;
                             log('warn', 'Failed to fetch weather during backfill.', { recordId: record.id, error: weatherError.message });
+                            // Add delay after error to avoid rate limiting
+                            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
                         }
 
-                                    if (bulkOps.length >= BATCH_SIZE) {
-                                        try {
-                                            log('debug', `Performing bulkWrite with ${bulkOps.length} operations.`);
-                                            const result = await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                                            log('debug', 'Processed backfill-weather batch.', { ...postLogContext, count: BATCH_SIZE, result });
-                                        } catch (e) {
-                                            log('error', 'Error during bulkWrite.', { error: e.message });
-                                        }
-                                        bulkOps.length = 0;
-                                        // Add a small delay to avoid hitting rate limits too hard
-                                        await new Promise(resolve => setTimeout(resolve, 500));
-                                    }
-                                }
+                        if (bulkOps.length >= BATCH_SIZE) {
+                            try {
+                                const result = await historyCollection.bulkWrite(bulkOps, { ordered: false });
+                                log('info', 'Processed backfill-weather batch.', { 
+                                    ...postLogContext, 
+                                    batchSize: bulkOps.length, 
+                                    modified: result.modifiedCount,
+                                    totalProcessed: updatedCount 
+                                });
+                            } catch (e) {
+                                log('error', 'Error during bulkWrite.', { error: e.message, batchSize: bulkOps.length });
                             }
-                            if (bulkOps.length > 0) {
-                                try {
-                                    log('debug', `Performing final bulkWrite with ${bulkOps.length} operations.`);
-                                    const result = await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                                    log('debug', 'Processed final backfill-weather batch.', { ...postLogContext, result });
-                                } catch (e) {
-                                    log('error', 'Error during final bulkWrite.', { error: e.message });
-                                }
-                            }
-                log('info', 'Backfill-weather task complete.', { ...postLogContext, updatedCount });
-                return respond(200, { success: true, updatedCount });
+                            bulkOps.length = 0;
+                            // Throttle to avoid hitting rate limits
+                            await new Promise(resolve => setTimeout(resolve, THROTTLE_DELAY_MS));
+                        }
+                    }
+                }
+                
+                if (bulkOps.length > 0) {
+                    try {
+                        const result = await historyCollection.bulkWrite(bulkOps, { ordered: false });
+                        log('info', 'Processed final backfill-weather batch.', { 
+                            ...postLogContext, 
+                            batchSize: bulkOps.length,
+                            modified: result.modifiedCount 
+                        });
+                    } catch (e) {
+                        log('error', 'Error during final bulkWrite.', { error: e.message, batchSize: bulkOps.length });
+                    }
+                }
+                
+                log('info', 'Backfill-weather task complete.', { ...postLogContext, updatedCount, errorCount });
+                return respond(200, { success: true, updatedCount, errorCount });
             }
 
 
