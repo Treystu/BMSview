@@ -90,8 +90,12 @@ async function handler(event = {}, context = {}) {
     log.info('Starting enhanced AI insights generation', {
       hasSystemId: !!systemId,
       hasCustomPrompt: !!customPrompt,
+      customPromptLength: typeof customPrompt === 'string' ? customPrompt.length : 0,
+      measurementCount: Array.isArray(analysisData?.measurements) ? analysisData.measurements.length : 0,
       dataStructure: analysisData ? Object.keys(analysisData) : 'none',
-      runMode
+      queryParams,
+      resolvedMode: runMode,
+      explicitModeRequested: !!(queryParams.mode || queryParams.sync || body.mode || body.sync)
     });
 
     // BACKGROUND MODE: Create job and trigger background processing
@@ -268,10 +272,18 @@ async function dispatchBackgroundProcessing({ jobId, event, log }) {
 
   const url = resolveBackgroundFunctionUrl(event);
   if (!url) {
+    log.error('Failed to resolve background function URL', {
+      envVars: {
+        URL: process.env.URL,
+        DEPLOY_URL: process.env.DEPLOY_URL,
+        NETLIFY_DEV: process.env.NETLIFY_DEV
+      },
+      eventHeaders: event?.headers ? Object.keys(event.headers) : 'none'
+    });
     throw new Error('Unable to resolve background function URL');
   }
 
-  log.debug('Dispatching background insights function', { jobId, url });
+  log.info('Dispatching background insights function', { jobId, url });
 
   const response = await fetchWithFallback(url, {
     method: 'POST',
@@ -284,8 +296,21 @@ async function dispatchBackgroundProcessing({ jobId, event, log }) {
 
   if (!response.ok) {
     const errorText = await readResponseText(response);
+    log.error('Background function dispatch failed', {
+      jobId,
+      url,
+      status: response.status,
+      statusText: response.statusText,
+      errorText
+    });
     throw new Error(`Background function responded with status ${response.status}${errorText ? `: ${errorText}` : ''}`);
   }
+
+  log.info('Background function dispatched successfully', {
+    jobId,
+    url,
+    status: response.status
+  });
 
   return { status: response.status, url };
 }
@@ -410,9 +435,15 @@ function resolveRunMode(queryParams = {}, body = {}, analysisData = {}, customPr
     return 'background';
   }
 
-  // Default to sync for most requests (empty data, small datasets, simple analysis)
-  // This ensures backward compatibility with tests and existing callers
-  return 'sync';
+  // **DEFAULT CHANGED TO BACKGROUND MODE**
+  // Background mode is more reliable for production use:
+  // - Has 14-minute timeout (vs 58s for sync)
+  // - Provides progress updates to user
+  // - Handles long-running AI queries gracefully
+  // - Gemini API + tool calls often exceed 58s even for simple queries
+  //
+  // Sync mode can still be explicitly requested via ?sync=true for testing
+  return 'background';
 }
 
 exports.handler = handler;
