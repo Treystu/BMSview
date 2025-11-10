@@ -1799,13 +1799,22 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
             signal: controller.signal,
         } as RequestInit);
 
+        // Log response details for debugging
+        log('info', 'Diagnostics response received.', { 
+            status: response.status, 
+            ok: response.ok,
+            statusText: response.statusText,
+            contentType: response.headers.get('content-type')
+        });
+
         if (!response.ok) {
             const errorData = await response.json().catch(async () => {
                 const text = await response.text().catch(() => '');
+                log('error', 'Failed to parse error response as JSON.', { text });
                 return { error: text || 'An unexpected error occurred.' };
             });
             const error = (errorData as any).error ? String((errorData as any).error) : `Server responded with status ${response.status}`;
-            log('error', 'Diagnostics API fetch failed.', { status: response.status, error });
+            log('error', 'Diagnostics API fetch failed.', { status: response.status, error, errorData });
             
             // Return structured error response
             return {
@@ -1817,8 +1826,27 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
             };
         }
 
-        const data = await response.json();
-        log('info', 'Diagnostics API fetch successful.', { status: response.status, data });
+        let data;
+        try {
+            data = await response.json();
+            log('info', 'Diagnostics response parsed successfully.', { 
+                status: response.status, 
+                hasResults: !!data.results,
+                resultsCount: data.results?.length,
+                dataStatus: data.status
+            });
+        } catch (parseError) {
+            const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown JSON parse error';
+            log('error', 'Failed to parse diagnostics response as JSON.', { error: errorMessage });
+            return {
+                status: 'error',
+                timestamp: new Date().toISOString(),
+                duration: 0,
+                results: [],
+                error: `Failed to parse response: ${errorMessage}`
+            };
+        }
+        
         return data as DiagnosticsResponse;
     } catch (error) {
         // Provide a more helpful error message for timeout

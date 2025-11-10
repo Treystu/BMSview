@@ -956,31 +956,36 @@ exports.handler = async (event, context) => {
     
     logger.info('Running selected diagnostic tests', { selectedTests });
     
-    // Run selected tests in parallel where possible
-    const results = [];
-    let hasErrors = false;
-    let hasWarnings = false;
-    
-    for (const testName of selectedTests) {
+    // Run tests in parallel to reduce total execution time (critical for staying under 26s Netlify timeout)
+    const testPromises = selectedTests.map(async (testName) => {
       if (diagnosticTests[testName]) {
         try {
           const result = await diagnosticTests[testName]();
-          results.push(result);
-          
-          if (result.status === 'error') hasErrors = true;
-          if (result.status === 'warning') hasWarnings = true;
+          return result;
         } catch (error) {
           logger.error(`Test ${testName} threw unexpected error`, { 
             error: error.message 
           });
-          results.push({
+          return {
             name: testName,
             status: 'error',
             error: `Unexpected error: ${error.message}`
-          });
-          hasErrors = true;
+          };
         }
       }
+      return null;
+    });
+    
+    // Wait for all tests to complete
+    const allResults = await Promise.all(testPromises);
+    const results = allResults.filter(r => r !== null);
+    
+    // Check for errors and warnings
+    let hasErrors = false;
+    let hasWarnings = false;
+    for (const result of results) {
+      if (result.status === 'error') hasErrors = true;
+      if (result.status === 'warning') hasWarnings = true;
     }
     
     const totalDuration = Date.now() - startTime;
