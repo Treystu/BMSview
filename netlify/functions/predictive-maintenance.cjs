@@ -1,9 +1,9 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenAI } = require('@google/genai');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLogger, createTimer } = require('./utils/logger.cjs');
 
 // Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenAI(process.env.GEMINI_API_KEY);
 
 exports.handler = async (event, context) => {
   const log = createLogger('predictive-maintenance', context);

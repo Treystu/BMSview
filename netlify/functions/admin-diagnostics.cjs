@@ -431,13 +431,13 @@ const diagnosticTests = {
     const startTime = Date.now();
     try {
       logger.info('Testing Gemini API...');
-      const { GoogleGenerativeAI } = require('@google/generative-ai');
+      const { GoogleGenAI } = require('@google/genai');
       
       if (!process.env.GEMINI_API_KEY) {
         throw new Error('GEMINI_API_KEY not configured');
       }
       
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const genAI = new GoogleGenAI(process.env.GEMINI_API_KEY);
       
       // Use environment variable with proper fallback chain
       const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';

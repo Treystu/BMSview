@@ -208,21 +208,21 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
         }
 
         // In sync mode, the server returns the full AnalysisRecord directly.
-        // We extract the 'analysis' part and also check for dedupeHit flag
-        const result: { analysis: AnalysisData; dedupeHit?: boolean; recordId?: string; timestamp?: string } = await response.json();
+        // We extract the 'analysis' part and also check for isDuplicate flag
+        const result: { analysis: AnalysisData; isDuplicate?: boolean; recordId?: string; timestamp?: string } = await response.json();
 
         if (!result.analysis) {
             log('error', 'API response was successful but missing analysis data.', result);
             throw new Error('API response was successful but missing analysis data.');
         }
 
-        log('info', 'Synchronous analysis successful.', { fileName: file.name, isDuplicate: !!result.dedupeHit });
+        log('info', 'Synchronous analysis successful.', { fileName: file.name, isDuplicate: !!result.isDuplicate });
 
         // Attach metadata about duplicate detection to the analysis data
         // This allows the UI to show duplicate status
         const analysisWithMeta = {
             ...result.analysis,
-            _isDuplicate: result.dedupeHit || false,
+            _isDuplicate: result.isDuplicate || false,
             _recordId: result.recordId,
             _timestamp: result.timestamp
         };

@@ -2,9 +2,11 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# BMS Validator - Battery Management System Analysis Tool
+# BMSview - Battery Management System Analysis Tool
 
 An advanced application for analyzing Battery Management System (BMS) screenshots using AI, with integrated solar energy estimation and battery charging correlation features.
+
+_Note: Previously known as "BMS Validator"_
 
 View your app in AI Studio: https://ai.studio/apps/drive/1ATGOGWROvHw_0dBbow54GOPJ3IUn_Qsk
 

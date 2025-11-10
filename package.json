@@ -19,7 +19,6 @@
     "@babel/plugin-transform-modules-commonjs": "^7.27.1",
     "@dqbd/tiktoken": "^1.0.13",
     "@google/genai": "^0.11.0",
-    "@google/generative-ai": "^0.2.1",
     "@netlify/blobs": "^7.3.0",
     "@netlify/functions": "^2.6.0",
     "buffer": "^6.0.3",

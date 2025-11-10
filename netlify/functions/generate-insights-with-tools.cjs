@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 /**
  * Generate Insights - Enhanced AI-Powered Analysis with True Function Calling
  * 
@@ -26,11 +24,12 @@
  * @module netlify/functions/generate-insights-with-tools
  */
 
-const { createLogger, createTimer } = require('../../utils/logger.cjs');
+const { createLogger, createTimer } = require('./utils/logger.cjs');
 const { createInsightsJob, ensureIndexes, failJob } = require('./utils/insights-jobs.cjs');
 const { generateInitialSummary } = require('./utils/insights-summary.cjs');
 const { runGuruConversation } = require('./utils/insights-guru-runner.cjs');
 const { getAIModelWithTools } = require('./utils/insights-processor.cjs');
+const { getCorsHeaders } = require('./utils/cors.cjs');
 
 // Constants for function calling
 const MAX_TOOL_ITERATIONS = 10; // Maximum number of tool call rounds to prevent infinite loops
@@ -50,6 +49,7 @@ const BACKGROUND_FUNCTION_NAME = 'generate-insights-background';
 async function handler(event = {}, context = {}) {
   const log = createLogger('generate-insights-with-tools', context);
   const timer = createTimer(log, 'generate-insights-with-tools');
+  const corsHeaders = getCorsHeaders(event);
 
   try {
     // Parse request body with better error handling
@@ -59,7 +59,7 @@ async function handler(event = {}, context = {}) {
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       log.warn('Failed to parse request body', { error: error.message, body: event.body });
-      return respond(400, { error: 'Invalid JSON in request body' });
+      return respond(400, { error: 'Invalid JSON in request body' }, corsHeaders);
     }
 
     // Extract and normalize data
@@ -78,7 +78,7 @@ async function handler(event = {}, context = {}) {
           receivedKeys: Object.keys(body),
           expectedStructure: 'analysisData with measurements array or direct measurements'
         }
-      });
+      }, corsHeaders);
     }
 
     const { systemId, customPrompt } = body;
@@ -158,7 +158,7 @@ async function handler(event = {}, context = {}) {
           jobId: job.id,
           analysisMode: runMode,
           timestamp: new Date().toISOString()
-        });
+        }, corsHeaders);
       }
 
       timer.end();
@@ -172,7 +172,7 @@ async function handler(event = {}, context = {}) {
         message: 'Background processing started. Poll for status updates.',
         analysisMode: runMode,
         timestamp: new Date().toISOString()
-      });
+      }, corsHeaders);
     }
 
     // SYNC MODE: Execute immediately and return results
@@ -186,7 +186,7 @@ async function handler(event = {}, context = {}) {
         error: 'AI service temporarily unavailable',
         message: 'Unable to initialize AI model. Please try again later.',
         timestamp: new Date().toISOString()
-      });
+      }, corsHeaders);
     }
 
     let conversationResult;
@@ -235,7 +235,7 @@ async function handler(event = {}, context = {}) {
         analysisMode: runMode,
         error: userMessage,
         timestamp: new Date().toISOString()
-      });
+      }, corsHeaders);
     }
 
     timer.end();
@@ -257,11 +257,12 @@ async function handler(event = {}, context = {}) {
     const error = err instanceof Error ? err : new Error(String(err));
     log.error('Error generating insights', { error: error.message, stack: error.stack });
     timer.end();
+    const corsHeaders = getCorsHeaders(event);
     return respond(500, {
       error: 'Failed to generate insights',
       message: 'An error occurred while analyzing your battery data. Please try again.',
       timestamp: new Date().toISOString()
-    });
+    }, corsHeaders);
   }
 }
 
@@ -394,12 +395,12 @@ function mapConversationError(error) {
   };
 }
 
-function respond(statusCode, body) {
+function respond(statusCode, body, corsHeaders = {}) {
   return {
     statusCode,
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*'
+      ...corsHeaders
     },
     body: JSON.stringify(body)
   };
