@@ -1043,8 +1043,8 @@ const pollInsightsJobCompletion = async (
                     lastProgressCount = status.progress.length;
                 }
 
-                // Stream partial insights
-                if (status.partialInsights) {
+                // Stream partial insights (only if job is not yet completed to avoid duplicate output)
+                if (status.partialInsights && status.status !== 'completed') {
                     if (typeof status.partialInsights === 'string') {
                         onChunk(status.partialInsights);
                     } else if (status.partialInsights.formattedText) {
