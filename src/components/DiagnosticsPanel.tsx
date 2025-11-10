@@ -25,6 +25,7 @@ export const DiagnosticsPanel: React.FC = () => {
     const [selectedTests, setSelectedTests] = useState<Set<string>>(new Set());
     const [isRunning, setIsRunning] = useState(false);
     const [results, setResults] = useState<DiagnosticResult[]>([]);
+    const [suggestions, setSuggestions] = useState<string[]>([]);
     const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set());
 
     // Available diagnostic tests
@@ -116,17 +117,25 @@ export const DiagnosticsPanel: React.FC = () => {
 
             const data = await response.json();
 
-            // Transform results for display
+            // Capture any top-level suggestions from the diagnostics response
+            setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
+
+            // Transform results for display — map selected tests to backend keys
             const displayResults: DiagnosticResult[] = Array.from(selectedTests)
                 .map(testId => {
-                    const testResult = data[testId];
+                    // Backend test keys generally match the frontend test ids
+                    const testResult = data[testId] || data[camelCaseToBackendKey(testId)] || data[snakeToCamel(testId)] || data[testId];
+
+                    // Use the testResult itself as details if specific 'details' property missing
+                    const details = testResult?.details || (testResult && typeof testResult === 'object' ? testResult : undefined);
+
                     return {
                         id: testId,
                         name: availableTests.find(t => t.id === testId)?.name || testId,
-                        status: testResult?.status || 'Unknown',
+                        status: (testResult && testResult.status) ? testResult.status : 'Unknown',
                         duration: testResult?.duration || 0,
-                        message: testResult?.message || 'No result',
-                        details: testResult?.details,
+                        message: testResult?.message || (testResult && testResult.error) || (testResult && testResult.details && testResult.details.message) || 'No result',
+                        details,
                     };
                 });
 
@@ -137,6 +146,16 @@ export const DiagnosticsPanel: React.FC = () => {
         } finally {
             setIsRunning(false);
         }
+    };
+
+    // Helpers to try alternate key formats the backend might use
+    const camelCaseToBackendKey = (s: string) => {
+        // Example: "cache-integrity" -> "cacheIntegrity"
+        return s.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
+    };
+
+    const snakeToCamel = (s: string) => {
+        return s.replace(/_([a-z])/g, (_, ch) => ch.toUpperCase());
     };
 
     const toggleExpanded = (testId: string) => {
@@ -230,6 +249,20 @@ export const DiagnosticsPanel: React.FC = () => {
                     {isRunning ? 'Running Tests...' : 'Run Selected Tests'}
                 </button>
             </div>
+
+            {/* Suggestions (top-level guidance from diagnostics) */}
+            {suggestions.length > 0 && (
+                <div className="space-y-2 border-t border-gray-200 pt-6">
+                    <h3 className="text-lg font-semibold text-gray-700">Suggestions</h3>
+                    <div className="bg-yellow-50 border-l-4 border-yellow-300 p-3 rounded text-sm text-yellow-800">
+                        <ul className="list-disc list-inside space-y-1">
+                            {suggestions.map((s, i) => (
+                                <li key={i}>{s}</li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            )}
 
             {/* Results */}
             {results.length > 0 && (

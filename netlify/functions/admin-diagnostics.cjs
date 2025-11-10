@@ -423,7 +423,7 @@ async function testInsightsWithTools(log) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(testData)
-        }, 15000);
+        }, 30000); // increased timeout: some enhanced-insights runs can take >15s
 
         if (response.ok) {
             const data = await response.json();
@@ -2350,6 +2350,13 @@ exports.handler = async (event, context) => {
         }
         if (results.comprehensive && results.comprehensive.status === 'Failure') {
             results.suggestions.push('Check individual test failures in the comprehensive test results.');
+        }
+        // If enhanced insights (function-calling) failed due to an abort/timeout, add a targeted suggestion
+        if (results.insightsWithTools && results.insightsWithTools.status === 'Failure') {
+            const message = (results.insightsWithTools.message || '').toString().toLowerCase();
+            if (message.includes('abort') || message.includes('aborted') || message.includes('timeout')) {
+                results.suggestions.push('Enhanced insights aborted or timed out - consider increasing the timeout, checking GEMINI_API_KEY, model quotas, and network connectivity.');
+            }
         }
 
         // Add available test types for UI (organized by category)
