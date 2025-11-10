@@ -104,6 +104,9 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
         // These are expensive operations - skip in sync mode, let Gemini request via ReAct loop
         log.info('Loading full context (async mode)', { skipExpensiveOps });
         
+        // Load 90-day daily rollup for comprehensive trend analysis
+        context.dailyRollup90d = await runStep("dailyRollup90d", () => load90DayDailyRollup(systemId, log));
+        
         context.analytics = await runStep("analytics", async () => {
             const result = await executeToolCall("getSystemAnalytics", { systemId }, log);
             return normalizeToolResult(result);
@@ -291,6 +294,9 @@ function buildContextSections(context, analysisData) {
 
     const weatherSection = formatWeatherSection(context.weather);
     if (weatherSection) sections.push(weatherSection);
+
+    const dailyRollupSection = formatDailyRollupSection(context.dailyRollup90d);
+    if (dailyRollupSection) sections.push(dailyRollupSection);
 
     const nightDischargeSection = formatNightDischargeSection(context.nightDischarge, context.systemProfile);
     if (nightDischargeSection) sections.push(nightDischargeSection);
@@ -754,6 +760,93 @@ function formatSolarVarianceSection(variance) {
     return lines.length > 1 ? lines.join("\n") : null;
 }
 
+/**
+ * Format 90-day daily rollup section for AI context
+ * Provides comprehensive historical trend data with hourly granularity
+ */
+function formatDailyRollupSection(dailyRollup) {
+    if (!Array.isArray(dailyRollup) || dailyRollup.length === 0) return null;
+    
+    const lines = ["**90-DAY HISTORICAL TREND DATA**"];
+    
+    // Calculate overall statistics
+    const totalDays = dailyRollup.length;
+    const totalDataPoints = dailyRollup.reduce((sum, day) => sum + day.dataPoints, 0);
+    const avgPointsPerDay = (totalDataPoints / totalDays).toFixed(1);
+    
+    const startDate = dailyRollup[0].date;
+    const endDate = dailyRollup[dailyRollup.length - 1].date;
+    
+    lines.push(`- Time range: ${startDate} to ${endDate} (${totalDays} days)`);
+    lines.push(`- Data coverage: ${totalDataPoints} total readings (avg ${avgPointsPerDay} per day)`);
+    
+    // Calculate trend statistics
+    const allDailySummaries = dailyRollup.map(d => d.dailySummary).filter(Boolean);
+    
+    if (allDailySummaries.length > 0) {
+        const avgSocValues = allDailySummaries.map(d => d.avgSoc).filter(isFiniteNumber);
+        const avgVoltageValues = allDailySummaries.map(d => d.avgVoltage).filter(isFiniteNumber);
+        const avgCurrentValues = allDailySummaries.map(d => d.avgCurrent).filter(isFiniteNumber);
+        const totalAlertsCount = allDailySummaries.reduce((sum, d) => sum + (d.totalAlerts || 0), 0);
+        
+        if (avgSocValues.length > 0) {
+            const overallAvgSoc = average(avgSocValues);
+            const minSoc = Math.min(...avgSocValues);
+            const maxSoc = Math.max(...avgSocValues);
+            lines.push(`- SOC range: ${formatPercent(minSoc, 0)} to ${formatPercent(maxSoc, 0)} (avg ${formatPercent(overallAvgSoc, 0)})`);
+        }
+        
+        if (avgVoltageValues.length > 0) {
+            const overallAvgVoltage = average(avgVoltageValues);
+            lines.push(`- Average voltage: ${formatNumber(overallAvgVoltage, " V", 2)}`);
+        }
+        
+        if (avgCurrentValues.length > 0) {
+            const overallAvgCurrent = average(avgCurrentValues);
+            const chargingDays = avgCurrentValues.filter(c => c > 0.5).length;
+            const dischargingDays = avgCurrentValues.filter(c => c < -0.5).length;
+            lines.push(`- Average current: ${formatNumber(overallAvgCurrent, " A", 1)} (${chargingDays} charging days, ${dischargingDays} discharging days)`);
+        }
+        
+        if (totalAlertsCount > 0) {
+            lines.push(`- Total alerts across period: ${totalAlertsCount}`);
+        }
+    }
+    
+    // Include sample of recent daily data (last 7 days with hourly detail)
+    const recentDays = dailyRollup.slice(-7);
+    if (recentDays.length > 0) {
+        lines.push("\n- **Recent 7-day hourly detail:**");
+        for (const day of recentDays) {
+            const summary = day.dailySummary;
+            if (!summary) continue;
+            
+            const socRange = isFiniteNumber(summary.minSoc) && isFiniteNumber(summary.maxSoc)
+                ? `${formatPercent(summary.minSoc, 0)}-${formatPercent(summary.maxSoc, 0)}`
+                : 'n/a';
+            
+            lines.push(`  - ${day.date}: ${day.hours}h coverage (${day.dataPoints} points), SOC ${socRange}, ${summary.totalAlerts || 0} alerts`);
+            
+            // Include hourly averages for this day (compact format)
+            if (Array.isArray(day.hourlyAverages) && day.hourlyAverages.length > 0) {
+                const hourlyCompact = day.hourlyAverages
+                    .map(h => {
+                        const hour = new Date(h.timestamp).getHours();
+                        const soc = isFiniteNumber(h.soc) ? formatPercent(h.soc, 0) : '--';
+                        const current = isFiniteNumber(h.current) ? formatNumber(h.current, "A", 1) : '--';
+                        return `${hour}h:${soc}@${current}`;
+                    })
+                    .join(', ');
+                lines.push(`    Hours: ${hourlyCompact}`);
+            }
+        }
+    }
+    
+    lines.push("\n- **Usage notes:** This dataset provides comprehensive context for trend analysis. Use request_bms_data tool to query specific metrics or time ranges for deeper analysis.");
+    
+    return lines.join("\n");
+}
+
 function formatRecentSnapshotsSection(recentSnapshots) {
     if (!Array.isArray(recentSnapshots) || recentSnapshots.length === 0) return null;
 
@@ -832,6 +925,203 @@ async function loadRecentSnapshots(systemId, log) {
         log.warn("Failed to load recent snapshots", { systemId, error: err.message });
         return [];
     }
+}
+
+/**
+ * Load 90-day daily rollup with hourly averages for comprehensive trend analysis
+ * This provides Gemini with deep historical context while managing token usage
+ * 
+ * @param {string} systemId - System ID to query
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Array>} Array of daily rollups, each with hourly averages
+ */
+async function load90DayDailyRollup(systemId, log) {
+    try {
+        const collection = await getCollection("history");
+        const daysBack = 90;
+        
+        // Calculate date range
+        const endDate = new Date();
+        const startDate = new Date(endDate.getTime() - daysBack * 24 * 60 * 60 * 1000);
+        
+        log.info('Loading 90-day daily rollup', { systemId, startDate: startDate.toISOString(), endDate: endDate.toISOString() });
+        
+        // Query database for all records in 90-day window
+        const query = {
+            systemId,
+            timestamp: {
+                $gte: startDate.toISOString(),
+                $lte: endDate.toISOString()
+            }
+        };
+        
+        const records = await collection
+            .find(query, {
+                projection: {
+                    _id: 0,
+                    timestamp: 1,
+                    analysis: 1,
+                    alerts: 1
+                }
+            })
+            .sort({ timestamp: 1 })
+            .toArray();
+        
+        log.info('Records fetched for 90-day rollup', { count: records.length });
+        
+        if (records.length === 0) {
+            return [];
+        }
+        
+        // Group records by day
+        const dailyBuckets = new Map();
+        
+        for (const record of records) {
+            if (!record.timestamp || !record.analysis) continue;
+            
+            const timestamp = new Date(record.timestamp);
+            const dayBucket = new Date(timestamp);
+            dayBucket.setHours(0, 0, 0, 0);
+            const bucketKey = dayBucket.toISOString().split('T')[0]; // YYYY-MM-DD
+            
+            if (!dailyBuckets.has(bucketKey)) {
+                dailyBuckets.set(bucketKey, []);
+            }
+            dailyBuckets.get(bucketKey).push(record);
+        }
+        
+        log.debug('Records grouped into daily buckets', { dayCount: dailyBuckets.size });
+        
+        // Process each day: create hourly averages within the day
+        const dailyRollups = [];
+        
+        for (const [dayKey, dayRecords] of dailyBuckets.entries()) {
+            // Group this day's records by hour
+            const hourlyBuckets = new Map();
+            
+            for (const record of dayRecords) {
+                const timestamp = new Date(record.timestamp);
+                const hour = timestamp.getHours();
+                const hourKey = `${dayKey}T${hour.toString().padStart(2, '0')}:00:00.000Z`;
+                
+                if (!hourlyBuckets.has(hourKey)) {
+                    hourlyBuckets.set(hourKey, []);
+                }
+                hourlyBuckets.get(hourKey).push(record);
+            }
+            
+            // Calculate hourly averages for this day
+            const hourlyAverages = [];
+            for (const [hourKey, hourRecords] of hourlyBuckets.entries()) {
+                const hourlyMetrics = computeHourlyMetrics(hourRecords);
+                hourlyAverages.push({
+                    timestamp: hourKey,
+                    dataPoints: hourRecords.length,
+                    ...hourlyMetrics
+                });
+            }
+            
+            // Sort hourly averages by time
+            hourlyAverages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+            // Calculate daily summary from hourly data
+            const dailySummary = computeDailySummary(hourlyAverages, dayRecords);
+            
+            dailyRollups.push({
+                date: dayKey,
+                dataPoints: dayRecords.length,
+                hours: hourlyAverages.length,
+                hourlyAverages,
+                dailySummary
+            });
+        }
+        
+        // Sort by date ascending
+        dailyRollups.sort((a, b) => new Date(a.date) - new Date(b.date));
+        
+        log.info('90-day rollup complete', {
+            days: dailyRollups.length,
+            totalDataPoints: records.length,
+            avgPointsPerDay: (records.length / dailyRollups.length).toFixed(1)
+        });
+        
+        return dailyRollups;
+    } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        log.warn("Failed to load 90-day rollup", { systemId, error: err.message });
+        return [];
+    }
+}
+
+/**
+ * Compute metrics for an hour's worth of records
+ */
+function computeHourlyMetrics(records) {
+    const metrics = {
+        voltage: [],
+        current: [],
+        power: [],
+        soc: [],
+        capacity: [],
+        temperature: [],
+        alertCount: 0
+    };
+    
+    for (const record of records) {
+        const a = record.analysis;
+        if (!a) continue;
+        
+        if (isFiniteNumber(a.overallVoltage)) metrics.voltage.push(a.overallVoltage);
+        if (isFiniteNumber(a.current)) metrics.current.push(a.current);
+        if (isFiniteNumber(a.power)) metrics.power.push(a.power);
+        if (isFiniteNumber(a.stateOfCharge)) metrics.soc.push(a.stateOfCharge);
+        if (isFiniteNumber(a.remainingCapacity)) metrics.capacity.push(a.remainingCapacity);
+        
+        if (Array.isArray(a.temperatures) && a.temperatures.length > 0) {
+            const avgTemp = a.temperatures.reduce((sum, t) => sum + t, 0) / a.temperatures.length;
+            if (isFiniteNumber(avgTemp)) metrics.temperature.push(avgTemp);
+        }
+        
+        if (Array.isArray(a.alerts) || Array.isArray(record.alerts)) {
+            const alerts = a.alerts || record.alerts;
+            metrics.alertCount += alerts.filter(Boolean).length;
+        }
+    }
+    
+    return {
+        voltage: average(metrics.voltage),
+        current: average(metrics.current),
+        power: average(metrics.power),
+        soc: average(metrics.soc),
+        capacity: average(metrics.capacity),
+        temperature: average(metrics.temperature),
+        alertCount: metrics.alertCount
+    };
+}
+
+/**
+ * Compute daily summary from hourly averages
+ */
+function computeDailySummary(hourlyAverages, dayRecords) {
+    const allVoltage = hourlyAverages.map(h => h.voltage).filter(isFiniteNumber);
+    const allCurrent = hourlyAverages.map(h => h.current).filter(isFiniteNumber);
+    const allPower = hourlyAverages.map(h => h.power).filter(isFiniteNumber);
+    const allSoc = hourlyAverages.map(h => h.soc).filter(isFiniteNumber);
+    const allCapacity = hourlyAverages.map(h => h.capacity).filter(isFiniteNumber);
+    const allTemp = hourlyAverages.map(h => h.temperature).filter(isFiniteNumber);
+    
+    return {
+        avgVoltage: average(allVoltage),
+        avgCurrent: average(allCurrent),
+        avgPower: average(allPower),
+        avgSoc: average(allSoc),
+        avgCapacity: average(allCapacity),
+        avgTemperature: average(allTemp),
+        minSoc: allSoc.length > 0 ? Math.min(...allSoc) : null,
+        maxSoc: allSoc.length > 0 ? Math.max(...allSoc) : null,
+        totalAlerts: hourlyAverages.reduce((sum, h) => sum + (h.alertCount || 0), 0),
+        coverage: (hourlyAverages.length / 24 * 100).toFixed(1) + '%' // % of day covered
+    };
 }
 
 function buildBatteryFacts({ analysisData = {}, systemProfile = null }) {
