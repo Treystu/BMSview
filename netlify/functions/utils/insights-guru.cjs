@@ -15,7 +15,7 @@ const { toolDefinitions, executeToolCall } = require("./gemini-tools.cjs");
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const RECENT_SNAPSHOT_LIMIT = 24;
-const SYNC_CONTEXT_BUDGET_MS = 22000;
+const SYNC_CONTEXT_BUDGET_MS = 8000; // Reduced from 22000 - sync mode should be fast with minimal preload
 const ASYNC_CONTEXT_BUDGET_MS = 45000;
 
 /**
@@ -23,11 +23,14 @@ const ASYNC_CONTEXT_BUDGET_MS = 45000;
  * @param {string|undefined} systemId
  * @param {object} analysisData
  * @param {any} log
- * @param {{ maxMs?: number, mode?: "sync"|"background" }} options
+ * @param {{ maxMs?: number, mode?: "sync"|"background", skipExpensiveOps?: boolean }} options
  */
 async function collectAutoInsightsContext(systemId, analysisData, log, options = {}) {
     const start = Date.now();
     const maxMs = options.maxMs || (options.mode === "background" ? ASYNC_CONTEXT_BUDGET_MS : SYNC_CONTEXT_BUDGET_MS);
+    
+    // In sync mode, skip expensive analytics and rely on ReAct loop instead
+    const skipExpensiveOps = options.skipExpensiveOps !== undefined ? options.skipExpensiveOps : (options.mode === "sync");
 
     /** @type {any} */
     const context = {
@@ -97,7 +100,10 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
 
     context.initialSummary = await runStep("initialSummary", () => generateInitialSummary(analysisData || {}, systemId || "", log));
 
-    if (systemId) {
+    if (systemId && !skipExpensiveOps) {
+        // These are expensive operations - skip in sync mode, let Gemini request via ReAct loop
+        log.info('Loading full context (async mode)', { skipExpensiveOps });
+        
         context.analytics = await runStep("analytics", async () => {
             const result = await executeToolCall("getSystemAnalytics", { systemId }, log);
             return normalizeToolResult(result);
@@ -132,7 +138,11 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
             const result = await executeToolCall("predict_battery_trends", { systemId, metric: "lifetime", confidenceLevel: true }, log);
             return normalizeToolResult(result);
         });
+    } else if (systemId) {
+        log.info('Skipping expensive context preload (sync mode) - Gemini will request via tools if needed', { skipExpensiveOps });
+    }
 
+    if (systemId) {
         if (context.systemProfile && context.systemProfile.location) {
             const { latitude, longitude } = context.systemProfile.location;
             if (isFiniteNumber(latitude) && isFiniteNumber(longitude)) {

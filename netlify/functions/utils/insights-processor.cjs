@@ -27,6 +27,7 @@ const TOTAL_TIMEOUT_MS = 14 * 60 * 1000; // 14 minutes
 /**
  * Main background processing function
  * 
+ * @param {string} jobId - Job identifier
  * @param {Object} analysisData - Battery analysis data
  * @param {string} systemId - Optional system ID
  * @param {string} customPrompt - Optional custom user prompt
@@ -34,6 +35,14 @@ const TOTAL_TIMEOUT_MS = 14 * 60 * 1000; // 14 minutes
  * @returns {Promise<Object>} Processing result
  */
 async function processInsightsInBackground(jobId, analysisData, systemId, customPrompt, log) {
+  // CRITICAL: Log immediately at function entry for debugging
+  console.log(JSON.stringify({
+    level: 'INFO',
+    timestamp: new Date().toISOString(),
+    message: 'processInsightsInBackground ENTRY',
+    context: { jobId, hasSystemId: !!systemId, hasCustomPrompt: !!customPrompt }
+  }));
+
   try {
     log.info('Background processing started', { jobId, hasSystemId: !!systemId });
 
@@ -49,6 +58,8 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
       throw new Error('AI model not available - cannot generate insights');
     }
 
+    log.info('AI model loaded, starting conversation', { jobId });
+
     const result = await runGuruConversation({
       model,
       analysisData,
@@ -63,6 +74,12 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
       tokensPerChar: TOKENS_PER_CHAR,
       hooks: {
         onIterationStart: async ({ iteration, elapsedMs }) => {
+          console.log(JSON.stringify({
+            level: 'INFO',
+            timestamp: new Date().toISOString(),
+            message: 'Insights iteration started',
+            context: { jobId, iteration, elapsedSeconds: Math.floor(elapsedMs / 1000) }
+          }));
           try {
             await addProgressEvent(jobId, {
               type: 'iteration',
@@ -77,6 +94,12 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
           }
         },
         onToolCall: async ({ iteration, name, parameters }) => {
+          console.log(JSON.stringify({
+            level: 'INFO',
+            timestamp: new Date().toISOString(),
+            message: 'Tool call requested',
+            context: { jobId, iteration, tool: name }
+          }));
           try {
             await addProgressEvent(jobId, {
               type: 'tool_call',
@@ -92,6 +115,12 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
           }
         },
         onToolResult: async ({ iteration, name, durationMs, result, error }) => {
+          console.log(JSON.stringify({
+            level: error ? 'WARN' : 'INFO',
+            timestamp: new Date().toISOString(),
+            message: 'Tool call completed',
+            context: { jobId, iteration, tool: name, success: !error, durationMs }
+          }));
           try {
             await addProgressEvent(jobId, {
               type: 'tool_response',

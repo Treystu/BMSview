@@ -508,7 +508,8 @@ async function getSystemAnalytics(params, log) {
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - lookbackDays);
 
-        // Fetch records for alert analysis
+        // Fetch records for alert analysis with limit to prevent timeout
+        const MAX_RECORDS = 1000; // Limit to prevent timeout on huge datasets
         const records = await collection
             .find({
                 systemId,
@@ -521,10 +522,14 @@ async function getSystemAnalytics(params, log) {
                     'analysis.stateOfCharge': 1
                 }
             })
-            .sort({ timestamp: 1 })
+            .sort({ timestamp: -1 }) // Most recent first
+            .limit(MAX_RECORDS)
             .toArray();
 
-        log.debug('Fetched records for analytics', { count: records.length });
+        log.debug('Fetched records for analytics', { count: records.length, limit: MAX_RECORDS });
+
+        // Reverse to chronological order for event grouping
+        records.reverse();
 
         // Transform to snapshots format for alert grouping
         const snapshots = records.map(r => ({
@@ -553,6 +558,7 @@ async function getSystemAnalytics(params, log) {
             systemId,
             lookbackDays,
             recordCount: records.length,
+            wasLimited: records.length >= MAX_RECORDS,
             hourlyAverages: null, // TODO: Implement hourly averages
             performanceBaseline: null, // TODO: Implement performance baseline
             alertAnalysis: {
