@@ -140,8 +140,18 @@ exports.handler = async function(event, context) {
   const logContext = { clientIp, httpMethod };
   log("info", "Weather function invoked.", { ...logContext, path: event.path });
   if (httpMethod !== "POST") {
-    log("warn", `Method Not Allowed: ${httpMethod}`, logContext);
-    return { statusCode: 405, body: JSON.stringify({ error: "Method Not Allowed" }) };
+    log("warn", `Method Not Allowed: ${httpMethod}`, {
+      ...logContext,
+      queryStringParameters: event.queryStringParameters,
+      hasBody: Boolean(event.body)
+    });
+    return {
+      statusCode: 405,
+      headers: { "Content-Type": "application/json", Allow: "POST" },
+      body: JSON.stringify({
+        error: 'Weather endpoint expects POST requests with JSON body { "lat": number, "lon": number, "timestamp"?: string }.'
+      })
+    };
   }
   const apiKey = process.env.WEATHER_API_KEY;
   log("info", `WEATHER_API_KEY: ${apiKey ? "loaded" : "not loaded"}`);

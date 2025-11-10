@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import SpinnerIcon from './icons/SpinnerIcon';
 
 interface DiagnosticsModalProps {
@@ -10,6 +10,8 @@ interface DiagnosticsModalProps {
 }
 
 const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, results, isLoading }) => {
+  const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
+
   if (!isOpen) return null;
 
   const getStatusColor = (status: string) => {
@@ -106,17 +108,46 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
             <div className="space-y-3">
               {testResults.map(([key, result]) => {
                 const r = result as any;
+                const isExpanded = expandedTestId === key;
+                const isFailed = r.status && r.status.toLowerCase() === 'failure';
+
                 return (
-                  <div key={key} className="bg-gray-700 p-3 rounded-md">
-                    <h3 className="font-semibold text-base capitalize flex items-center">
-                      <span className={`mr-2 ${getStatusColor(r.status || '')}`}>
-                        {getStatusIcon(r.status)}
-                      </span>
-                      {key.replace(/([A-Z])/g, ' $1')}
-                    </h3>
-                    <p className="text-gray-300 text-sm mt-1 pl-6">{r && r.message ? String(r.message) : ''}</p>
-                    {r && r.responseTime && (
-                      <p className="text-gray-400 text-xs mt-1 pl-6">Response time: {r.responseTime}ms</p>
+                  <div key={key} className={`bg-gray-700 p-3 rounded-md ${isFailed ? 'border border-red-500/30' : ''}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-base capitalize flex items-center">
+                          <span className={`mr-2 ${getStatusColor(r.status || '')}`}>
+                            {getStatusIcon(r.status)}
+                          </span>
+                          {key.replace(/([A-Z])/g, ' $1')}
+                        </h3>
+                        <p className="text-gray-300 text-sm mt-1 pl-6">{r && r.message ? String(r.message) : ''}</p>
+                        {r && r.responseTime && (
+                          <p className="text-gray-400 text-xs mt-1 pl-6">Response time: {r.responseTime}ms</p>
+                        )}
+                      </div>
+                      {isFailed && (
+                        <button
+                          onClick={() => setExpandedTestId(isExpanded ? null : key)}
+                          className="ml-2 text-red-400 hover:text-red-300 text-xs px-2 py-1 bg-red-900/30 rounded"
+                        >
+                          {isExpanded ? 'Hide' : 'Details'}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Expanded raw output for failures */}
+                    {isExpanded && isFailed && (
+                      <div className="mt-3 p-3 bg-gray-800 rounded text-gray-300 text-xs font-mono border border-red-500/20">
+                        <div className="font-semibold text-red-300 mb-2">Error Details:</div>
+                        <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                          {typeof r.error === 'string' ? (
+                            <pre>{r.error}</pre>
+                          ) : (
+                            <pre>{JSON.stringify(r, null, 2)}</pre>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
                 );
@@ -129,6 +160,20 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                 <h3 className="font-semibold text-lg mb-2">Suggestions</h3>
                 <ul className="list-disc list-inside text-gray-300 space-y-1 text-sm">
                   {suggestions.map((s, idx) => <li key={idx}>{String(s)}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {/* Troubleshooting section for partial failures */}
+            {testResults.some(([, r]) => (r as any).status?.toLowerCase() === 'failure') && (
+              <div className="bg-yellow-900/20 border border-yellow-600 p-4 rounded-md mt-4">
+                <h3 className="font-semibold text-lg text-yellow-300 mb-2">Troubleshooting Failed Tests</h3>
+                <ul className="list-disc list-inside text-gray-300 space-y-2 text-sm">
+                  <li><strong>Check Dependencies:</strong> Ensure MongoDB, Netlify Functions, and external APIs (Gemini, Weather) are reachable.</li>
+                  <li><strong>Review Logs:</strong> Check Netlify function logs for detailed error messages and stack traces.</li>
+                  <li><strong>Test Isolation:</strong> Failed tests do not affect other tests—retry individual failures after fixing upstream issues.</li>
+                  <li><strong>Network Issues:</strong> Verify connectivity and timeout values if requests are timing out.</li>
+                  <li><strong>Configuration:</strong> Verify environment variables (GEMINI_API_KEY, MONGODB_URI, etc.) are set correctly.</li>
                 </ul>
               </div>
             )}

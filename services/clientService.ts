@@ -9,6 +9,155 @@ interface FetchListOptions {
     forceRefresh?: boolean;
 }
 
+type CacheMode = 'enabled' | 'disabled-via-override' | 'unavailable';
+
+interface ClientServiceMetrics {
+    cache: {
+        mode: CacheMode;
+        systemsHits: number;
+        historyHits: number;
+        disabledSkips: number;
+        loadFailures: number;
+    };
+    memoryCache: {
+        hits: number;
+        misses: number;
+    };
+    network: {
+        total: number;
+        byEndpoint: Record<string, number>;
+    };
+}
+
+const metrics: ClientServiceMetrics = {
+    cache: {
+        mode: 'unavailable',
+        systemsHits: 0,
+        historyHits: 0,
+        disabledSkips: 0,
+        loadFailures: 0
+    },
+    memoryCache: {
+        hits: 0,
+        misses: 0
+    },
+    network: {
+        total: 0,
+        byEndpoint: {}
+    }
+};
+
+function detectCacheMode(): CacheMode {
+    if (typeof indexedDB === 'undefined') {
+        return 'unavailable';
+    }
+
+    const globalOverride = typeof globalThis !== 'undefined'
+        ? (globalThis as any).__BMSVIEW_DISABLE_CACHE
+        : undefined;
+
+    if (globalOverride === true) {
+        return 'disabled-via-override';
+    }
+    if (globalOverride === false) {
+        return 'enabled';
+    }
+
+    if (typeof window !== 'undefined') {
+        try {
+            const override = window.localStorage?.getItem('bmsview:disableCache');
+            if (override === 'true') {
+                return 'disabled-via-override';
+            }
+            if (override === 'force') {
+                return 'enabled';
+            }
+        } catch (_err) {
+            // Ignore storage access errors (Safari private mode, etc.)
+        }
+    }
+
+    return 'enabled';
+}
+
+metrics.cache.mode = detectCacheMode();
+
+function isLocalCacheEnabled(): boolean {
+    const mode = detectCacheMode();
+    metrics.cache.mode = mode;
+    return mode === 'enabled';
+}
+
+function recordCacheHit(target: 'systems' | 'history'): void {
+    if (target === 'systems') {
+        metrics.cache.systemsHits += 1;
+    } else {
+        metrics.cache.historyHits += 1;
+    }
+}
+
+function recordCacheDisabledSkip(): void {
+    metrics.cache.disabledSkips += 1;
+}
+
+function recordCacheFailure(): void {
+    metrics.cache.loadFailures += 1;
+}
+
+function recordMemoryCacheHit(): void {
+    metrics.memoryCache.hits += 1;
+}
+
+function recordMemoryCacheMiss(): void {
+    metrics.memoryCache.misses += 1;
+}
+
+function networkKey(endpoint: string, method?: string): string {
+    const base = endpoint.split('?')[0] || endpoint;
+    const verb = (method || 'GET').toUpperCase();
+    return `${verb} ${base}`;
+}
+
+function recordNetworkRequest(endpoint: string, method?: string): void {
+    const key = networkKey(endpoint, method);
+    metrics.network.total += 1;
+    metrics.network.byEndpoint[key] = (metrics.network.byEndpoint[key] || 0) + 1;
+}
+
+function getClientServiceMetrics(): ClientServiceMetrics {
+    return {
+        cache: { ...metrics.cache },
+        memoryCache: { ...metrics.memoryCache },
+        network: {
+            total: metrics.network.total,
+            byEndpoint: { ...metrics.network.byEndpoint }
+        }
+    };
+}
+
+function resetClientServiceMetrics(): void {
+    metrics.cache.systemsHits = 0;
+    metrics.cache.historyHits = 0;
+    metrics.cache.disabledSkips = 0;
+    metrics.cache.loadFailures = 0;
+    metrics.memoryCache.hits = 0;
+    metrics.memoryCache.misses = 0;
+    metrics.network.total = 0;
+    metrics.network.byEndpoint = {};
+    metrics.cache.mode = detectCacheMode();
+}
+
+export { getClientServiceMetrics, resetClientServiceMetrics };
+
+declare global {
+    interface Window {
+        __BMSVIEW_STATS?: ClientServiceMetrics;
+        __BMSVIEW_GET_STATS?: () => ClientServiceMetrics;
+        __BMSVIEW_RESET_STATS?: () => void;
+        __BMSVIEW_SET_CACHE_DISABLED?: (disabled: boolean) => void;
+    }
+}
+
 // In-memory short-lived cache and in-flight dedupe map
 const _cache = new Map<string, { data: any; expires: number }>();
 const _inFlight = new Map<string, Promise<any>>();
@@ -19,12 +168,15 @@ async function fetchWithCache<T>(endpoint: string, ttl = 5000): Promise<T> {
 
     const cached = _cache.get(key);
     if (cached && cached.expires > now) {
+        recordMemoryCacheHit();
         return cached.data as T;
     }
 
     if (_inFlight.has(key)) {
         return _inFlight.get(key)! as Promise<T>;
     }
+
+    recordMemoryCacheMiss();
 
     const p = (async () => {
         const data = await apiFetch<any>(endpoint);
@@ -45,7 +197,9 @@ export const __internals = {
         _inFlight.clear();
     },
     setApiFetch: (fn: typeof _apiFetchImpl) => { _apiFetchImpl = fn; },
-    resetApiFetch: () => { _apiFetchImpl = defaultApiFetch; }
+    resetApiFetch: () => { _apiFetchImpl = defaultApiFetch; },
+    getMetrics: () => getClientServiceMetrics(),
+    resetMetrics: () => resetClientServiceMetrics()
 };
 
 // This key generation logic is now only used on the client-side for finding duplicates
@@ -69,14 +223,51 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
     }));
 };
 
-const hasIndexedDb = typeof indexedDB !== 'undefined';
+if (typeof window !== 'undefined') {
+    const globalWindow = window as Window;
+    if (!globalWindow.__BMSVIEW_STATS) {
+        globalWindow.__BMSVIEW_STATS = metrics;
+        globalWindow.__BMSVIEW_GET_STATS = () => getClientServiceMetrics();
+        globalWindow.__BMSVIEW_RESET_STATS = () => {
+            resetClientServiceMetrics();
+            log('info', 'Client service metrics reset via window helper.', {
+                cacheMode: metrics.cache.mode
+            });
+        };
+        globalWindow.__BMSVIEW_SET_CACHE_DISABLED = (disabled: boolean) => {
+            try {
+                if (disabled) {
+                    window.localStorage?.setItem('bmsview:disableCache', 'true');
+                } else {
+                    window.localStorage?.removeItem('bmsview:disableCache');
+                }
+            } catch (_err) {
+                // Fall back to global override if localStorage not accessible
+            }
+
+            if (typeof globalThis !== 'undefined') {
+                (globalThis as any).__BMSVIEW_DISABLE_CACHE = disabled;
+            }
+
+            metrics.cache.mode = detectCacheMode();
+            log('info', 'Updated local cache override.', {
+                disabled,
+                cacheMode: metrics.cache.mode
+            });
+        };
+
+        log('info', 'Client service instrumentation attached to window.', {
+            cacheMode: metrics.cache.mode
+        });
+    }
+}
 
 type LocalCacheModule = typeof import('@/services/localCache');
 let localCacheModulePromise: Promise<LocalCacheModule> | null = null;
 
 // Lazy-load the Dexie-backed cache so tests or SSR environments without IndexedDB succeed.
 async function loadLocalCacheModule(): Promise<LocalCacheModule | null> {
-    if (!hasIndexedDb) {
+    if (!isLocalCacheEnabled()) {
         return null;
     }
 
@@ -87,6 +278,7 @@ async function loadLocalCacheModule(): Promise<LocalCacheModule | null> {
     try {
         return await localCacheModulePromise;
     } catch (error) {
+        recordCacheFailure();
         log('warn', 'Failed to load local cache module.', {
             error: error instanceof Error ? error.message : String(error)
         });
@@ -103,7 +295,8 @@ function stripCacheMetadata<T>(record: CacheAugmented<T>): T {
 }
 
 async function getCachedSystemsPage(page: number, limit: number): Promise<PaginatedResponse<BmsSystem> | null> {
-    if (!hasIndexedDb) {
+    if (!isLocalCacheEnabled()) {
+        recordCacheDisabledSkip();
         return null;
     }
 
@@ -117,6 +310,8 @@ async function getCachedSystemsPage(page: number, limit: number): Promise<Pagina
         if (!allSystems.length) {
             return null;
         }
+
+        recordCacheHit('systems');
 
         const start = Math.max(0, (page - 1) * limit);
         const end = start + limit;
@@ -136,6 +331,7 @@ async function getCachedSystemsPage(page: number, limit: number): Promise<Pagina
             totalItems: allSystems.length
         };
     } catch (error) {
+        recordCacheFailure();
         log('warn', 'Failed to read systems cache.', {
             error: error instanceof Error ? error.message : String(error)
         });
@@ -144,7 +340,8 @@ async function getCachedSystemsPage(page: number, limit: number): Promise<Pagina
 }
 
 async function getCachedHistoryPage(page: number, limit: number): Promise<PaginatedResponse<AnalysisRecord> | null> {
-    if (!hasIndexedDb) {
+    if (!isLocalCacheEnabled()) {
+        recordCacheDisabledSkip();
         return null;
     }
 
@@ -158,6 +355,8 @@ async function getCachedHistoryPage(page: number, limit: number): Promise<Pagina
         if (!allHistory.length) {
             return null;
         }
+
+        recordCacheHit('history');
 
         const start = Math.max(0, (page - 1) * limit);
         const end = start + limit;
@@ -177,6 +376,7 @@ async function getCachedHistoryPage(page: number, limit: number): Promise<Pagina
             totalItems: allHistory.length
         };
     } catch (error) {
+        recordCacheFailure();
         log('warn', 'Failed to read history cache.', {
             error: error instanceof Error ? error.message : String(error)
         });
@@ -189,6 +389,7 @@ async function getCachedHistoryPage(page: number, limit: number): Promise<Pagina
 const defaultApiFetch = async <T>(endpoint: string, options: RequestInit = {}): Promise<T> => {
     const isGet = !options.method || options.method.toUpperCase() === 'GET';
     const logContext = { endpoint, method: options.method || 'GET' };
+    recordNetworkRequest(endpoint, options.method);
     log('info', 'API fetch started.', logContext);
 
     try {
@@ -295,12 +496,13 @@ export const getRegisteredSystems = async (page = 1, limit = 25, options: FetchL
         }
     }
 
-    if (hasIndexedDb && result.items.length) {
+    if (isLocalCacheEnabled() && result.items.length) {
         const cacheModule = await loadLocalCacheModule();
         if (cacheModule) {
             try {
                 await cacheModule.systemsCache.bulkPut(result.items, 'synced');
             } catch (error) {
+                recordCacheFailure();
                 log('warn', 'Failed to update systems cache.', {
                     error: error instanceof Error ? error.message : String(error)
                 });
@@ -340,12 +542,13 @@ export const getAnalysisHistory = async (page = 1, limit = 25, options: FetchLis
         };
     }
 
-    if (hasIndexedDb && result.items.length) {
+    if (isLocalCacheEnabled() && result.items.length) {
         const cacheModule = await loadLocalCacheModule();
         if (cacheModule) {
             try {
                 await cacheModule.historyCache.bulkPut(result.items, 'synced');
             } catch (error) {
+                recordCacheFailure();
                 log('warn', 'Failed to update history cache.', {
                     error: error instanceof Error ? error.message : String(error)
                 });
@@ -1035,15 +1238,102 @@ export const getInsightsJobStatus = async (jobId: string): Promise<any> => {
     }
 };
 
+// ============================================
+// Dual-Write Helpers with Timer Reset
+// ============================================
+
+/**
+ * Helper to perform dual-write (server + local cache) + timer reset
+ * This is used for critical actions that should persist locally and trigger sync
+ */
+async function dualWriteWithTimerReset<T>(
+    operation: 'create' | 'update' | 'link',
+    serverFn: () => Promise<T>,
+    localCacheFn?: () => Promise<void>,
+    context?: Record<string, any>
+): Promise<T> {
+    const startTime = Date.now();
+
+    try {
+        // 1. Call server function
+        log('info', `Dual-write: server write (${operation})`, context);
+        const result = await serverFn();
+
+        // 2. Write to local cache (non-blocking, fire-and-forget)
+        if (localCacheFn && isLocalCacheEnabled()) {
+            (async () => {
+                try {
+                    await localCacheFn();
+                    log('info', `Dual-write: local cache write (${operation}) completed`, context);
+                } catch (cacheErr) {
+                    log('warn', `Dual-write: local cache write (${operation}) failed`, {
+                        ...context,
+                        error: cacheErr instanceof Error ? cacheErr.message : String(cacheErr)
+                    });
+                }
+            })();
+        }
+
+        // 3. Reset sync timer to trigger periodic sync
+        try {
+            const sm = await import('@/services/syncManager');
+            if (sm.default && sm.default.resetPeriodicTimer) {
+                sm.default.resetPeriodicTimer();
+                log('info', `Dual-write: sync timer reset (${operation})`, context);
+            }
+        } catch (timerErr) {
+            log('warn', `Dual-write: failed to reset sync timer`, {
+                ...context,
+                error: timerErr instanceof Error ? timerErr.message : String(timerErr)
+            });
+        }
+
+        // 4. Log performance
+        const duration = Date.now() - startTime;
+        log('info', `Dual-write completed (${operation})`, { ...context, durationMs: duration });
+
+        return result;
+    } catch (error) {
+        const duration = Date.now() - startTime;
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        log('error', `Dual-write failed (${operation})`, { ...context, error: errorMsg, durationMs: duration });
+        throw error;
+    }
+}
 
 export const registerBmsSystem = async (
     systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>
 ): Promise<BmsSystem> => {
-    log('info', 'Registering new BMS system.', { name: systemData.name });
-    return apiFetch<BmsSystem>('systems', {
-        method: 'POST',
-        body: JSON.stringify(systemData),
-    });
+    return dualWriteWithTimerReset(
+        'create',
+        async () => {
+            log('info', 'Registering new BMS system.', { name: systemData.name });
+            return apiFetch<BmsSystem>('systems', {
+                method: 'POST',
+                body: JSON.stringify(systemData),
+            });
+        },
+        async () => {
+            // Write to local BMS systems cache
+            try {
+                const localCache = await loadLocalCacheModule();
+                if (localCache && localCache.systemsCache) {
+                    const newSystem: BmsSystem = {
+                        id: `temp-${Date.now()}`,
+                        ...systemData,
+                        associatedDLs: []
+                    };
+                    await localCache.systemsCache.put(newSystem, 'pending');
+                }
+            } catch (err) {
+                // Non-fatal: cache write is best-effort
+                log('warn', 'Failed to cache new BMS system locally', {
+                    error: err instanceof Error ? err.message : String(err)
+                });
+            }
+        },
+        { operationType: 'registerBmsSystem', name: systemData.name }
+    );
 };
 
 export const getSystemById = async (systemId: string): Promise<BmsSystem> => {
@@ -1090,19 +1380,50 @@ export const saveAnalysisResult = async (
     systemId?: string,
     weatherData?: WeatherData
 ): Promise<AnalysisRecord> => {
-    log('info', 'Saving analysis result to history.', { fileName, systemId, dlNumber: analysisData.dlNumber });
-    const recordToSave = {
-        systemId,
-        analysis: analysisData,
-        weather: weatherData,
-        dlNumber: analysisData.dlNumber,
-        fileName: fileName,
-    };
+    return dualWriteWithTimerReset(
+        'create',
+        async () => {
+            log('info', 'Saving analysis result to history.', { fileName, systemId, dlNumber: analysisData.dlNumber });
+            const recordToSave = {
+                systemId,
+                analysis: analysisData,
+                weather: weatherData,
+                dlNumber: analysisData.dlNumber,
+                fileName: fileName,
+            };
 
-    return apiFetch<AnalysisRecord>('history', {
-        method: 'POST',
-        body: JSON.stringify(recordToSave),
-    });
+            return apiFetch<AnalysisRecord>('history', {
+                method: 'POST',
+                body: JSON.stringify(recordToSave),
+            });
+        },
+        async () => {
+            // Cache the analysis record locally
+            try {
+                const localCache = await loadLocalCacheModule();
+                if (localCache && localCache.historyCache) {
+                    // Create a temporary record with the analysis data
+                    const tempRecord: AnalysisRecord = {
+                        id: `temp-${Date.now()}`,
+                        systemId,
+                        analysis: analysisData,
+                        weather: weatherData,
+                        dlNumber: analysisData.dlNumber,
+                        fileName: fileName,
+                        timestamp: new Date().toISOString()
+                    };
+                    await localCache.historyCache.put(tempRecord, 'pending');
+                }
+            } catch (err) {
+                // Non-fatal: cache write is best-effort
+                log('warn', 'Failed to cache analysis result locally', {
+                    error: err instanceof Error ? err.message : String(err),
+                    fileName
+                });
+            }
+        },
+        { operationType: 'saveAnalysisResult', fileName, systemId }
+    );
 };
 
 export const getAnalysisRecordById = async (recordId: string): Promise<AnalysisRecord> => {
@@ -1251,11 +1572,18 @@ export const deleteAnalysisRecord = async (recordId: string): Promise<void> => {
 };
 
 export const linkAnalysisToSystem = async (recordId: string, systemId: string, dlNumber?: string | null): Promise<void> => {
-    log('info', 'Linking analysis record to system.', { recordId, systemId, dlNumber });
-    await apiFetch('history', {
-        method: 'PUT',
-        body: JSON.stringify({ recordId, systemId, dlNumber }),
-    });
+    return dualWriteWithTimerReset(
+        'link',
+        async () => {
+            log('info', 'Linking analysis record to system.', { recordId, systemId, dlNumber });
+            await apiFetch('history', {
+                method: 'PUT',
+                body: JSON.stringify({ recordId, systemId, dlNumber }),
+            });
+        },
+        undefined, // Link operation doesn't need local cache update, just server sync
+        { operationType: 'linkAnalysisToSystem', recordId, systemId }
+    );
 };
 
 export const clearAllData = async (): Promise<void> => {

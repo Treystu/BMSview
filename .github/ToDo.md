@@ -38,8 +38,8 @@
 - [ ] Retrieve failing request logs for `admin-diagnostics.cjs` (include selected test IDs)
 - [ ] Identify dependency failures (weather, solar, systems) and ensure mock data available in dev mode
 - [x] Add defensive error wrapping so one failing test does not crash suite
-- [ ] Verify diagnostics UI handles partial failures with actionable messaging
-- [ ] Update diagnostics documentation with new troubleshooting notes after fix
+- [x] Verify diagnostics UI handles partial failures with actionable messaging
+- [x] Update diagnostics documentation with new troubleshooting notes after fix
 
 ---
 

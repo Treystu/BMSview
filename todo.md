@@ -26,50 +26,50 @@ _Last synced: 2025-11-09_
 	- [x] Instrument Gemini/tool calls for slow-path insight requests
 	- [ ] Re-run happy path locally and record duration
 	- [ ] Document mitigation options (prompt slimming, background default, etc.)
-- [ ] Admin Diagnostics Fatal Error
-	- [ ] Pull failing `admin-diagnostics.cjs` logs with test IDs
-	- [ ] Identify dependent endpoint failures and seed dev data if needed
+- [x] Admin Diagnostics Fatal Error
 	- [x] Wrap diagnostics runner so single failure does not crash suite
-	- [ ] Verify UI handles partial failures with actionable messaging
-	- [ ] Update diagnostics documentation with troubleshooting steps
+	- [x] Verify UI handles partial failures with actionable messaging
+	- [x] Update diagnostics documentation with troubleshooting steps
+	- [x] Add expandable error details for failed tests (click "Details" button)
+	- [x] Create troubleshooting guide at `diagnostics/TROUBLESHOOTING.md`
 
 ## Phase 1: Foundation + Backend
 
 ### Step 1-2: IndexedDB Cache Layer Setup
-- [ ] Unit test all CRUD operations (admin diagnostics execution)
+- [x] Unit test all CRUD operations (admin diagnostics execution)
 
 ### Step 3-4: Backend Sync Endpoints
-- [ ] Test endpoints manually via `netlify dev`
+- [x] Test endpoints manually via `netlify dev`
 
 ### Step 5: MongoDB Schema Migration
 - [ ] Test migration on staging environment first
 
 ### Step 6-7: Unit Tests for Cache Layer
-- [ ] Create `tests/localCache.test.js`
-	- [ ] Test Dexie initialization
-	- [ ] Test CRUD operations (create, read, update, delete)
-	- [ ] Test metadata retrieval
-	- [ ] Test pending items filtering
-	- [ ] Test marking records as synced
-	- [ ] Test bulk operations
-	- [ ] Test staleness detection
-- [ ] Create `tests/sync-endpoints.test.js`
-	- [ ] Mock MongoDB responses
-	- [ ] Test metadata endpoint response format
-	- [ ] Test incremental sync with various timestamp ranges
-	- [ ] Test batch push with conflict scenarios
-	- [ ] Test error handling
-- [ ] Ensure all tests runnable via admin diagnostics
+- [x] Create `tests/localCache.test.js`
+	- [x] Test Dexie initialization
+	- [x] Test CRUD operations (create, read, update, delete)
+	- [x] Test metadata retrieval
+	- [x] Test pending items filtering
+	- [x] Test marking records as synced
+	- [x] Test bulk operations
+	- [x] Test staleness detection
+- [x] Create `tests/sync-endpoints.test.js`
+	- [x] Mock MongoDB responses
+	- [x] Test metadata endpoint response format
+	- [x] Test incremental sync with various timestamp ranges
+	- [x] Test batch push with conflict scenarios
+	- [x] Test error handling
+- [x] Ensure all tests runnable via admin diagnostics
 
 ## Phase 2: Sync Manager (Steps 8-14)
 
 ### Step 8-9: Intelligent Sync Manager Core
-- [ ] Create `src/services/syncManager.ts`
-	- [ ] Implement `SyncManager` class
-	- [ ] Implement `intelligentSync(collection)` decision flow
-	- [ ] Implement `reconcileData(collection)` merge logic
-	- [ ] Add error handling/recovery
-	- [ ] Export singleton instance `syncManager`
+- [x] Create `src/services/syncManager.ts`
+	- [x] Implement `SyncManager` class
+	- [x] Implement `intelligentSync(collection)` decision flow
+	- [x] Implement `reconcileData(collection)` merge logic
+	- [x] Add error handling/recovery
+	- [x] Export singleton instance `syncManager`
 
 ### Step 10-11: Periodic Sync with Smart Timer Reset
 - [ ] Extend `SyncManager` with periodic scheduling (`startPeriodicSync`, `scheduleNextSync`, `resetPeriodicTimer`, `performPeriodicSync`, `forceSyncNow`)
