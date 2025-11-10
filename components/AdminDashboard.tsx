@@ -462,7 +462,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         } catch (err) {
             const error = err instanceof Error ? err.message : 'Failed to run diagnostics.';
             log('error', 'Diagnostics failed.', { error });
-            dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: { 'error': { status: 'Failure', message: error } } });
+            // Create an error response object
+            const errorResponse: any = {
+                status: 'error',
+                timestamp: new Date().toISOString(),
+                duration: 0,
+                results: [],
+                error
+            };
+            dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: errorResponse });
         } finally {
             dispatch({ type: 'ACTION_END', payload: 'isRunningDiagnostics' });
         }

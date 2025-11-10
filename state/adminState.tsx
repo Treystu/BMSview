@@ -4,6 +4,29 @@ import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../ty
 
 export type HistorySortKey = HistoryColumnKey;
 
+// Diagnostic types
+interface DiagnosticTestResult {
+  name: string;
+  status: 'success' | 'warning' | 'error';
+  duration: number;
+  details?: Record<string, any>;
+  error?: string;
+}
+
+interface DiagnosticsResponse {
+  status: 'success' | 'partial' | 'warning' | 'error';
+  timestamp: string;
+  duration: number;
+  results: DiagnosticTestResult[];
+  summary?: {
+    total: number;
+    success: number;
+    warnings: number;
+    errors: number;
+  };
+  error?: string;
+}
+
 // 1. State Shape
 export interface AdminState {
   systems: BmsSystem[]; // Holds the current page of systems
@@ -52,7 +75,7 @@ export interface AdminState {
   historySortKey: HistorySortKey;
   historySortDirection: 'asc' | 'desc';
   isDiagnosticsModalOpen: boolean;
-  diagnosticResults: Record<string, { status: string; message: string }>;
+  diagnosticResults: DiagnosticsResponse | null;
   selectedDiagnosticTests: string[];
 }
 
@@ -91,7 +114,7 @@ export const initialState: AdminState = {
   historySortKey: 'timestamp',
   historySortDirection: 'desc',
   isDiagnosticsModalOpen: false,
-  diagnosticResults: {},
+  diagnosticResults: null,
   selectedDiagnosticTests: ['database', 'syncAnalysis', 'asyncAnalysis', 'weather', 'solar', 'systemAnalytics', 'insightsWithTools', 'gemini'],
 };
 
@@ -129,7 +152,7 @@ export type AdminAction =
   | { type: 'UPDATE_BULK_JOB_SKIPPED'; payload: { fileName: string, reason: string } }
   | { type: 'OPEN_DIAGNOSTICS_MODAL' }
   | { type: 'CLOSE_DIAGNOSTICS_MODAL' }
-  | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: Record<string, { status: string; message: string }> }
+  | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: DiagnosticsResponse | null }
   | { type: 'SET_SELECTED_DIAGNOSTIC_TESTS'; payload: string[] }
   | { type: 'REMOVE_HISTORY_RECORD'; payload: string };
 
@@ -238,9 +261,9 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       return { ...state, historySortKey: key, historySortDirection: direction, historyPage: 1 };
     }
     case 'OPEN_DIAGNOSTICS_MODAL':
-      return { ...state, isDiagnosticsModalOpen: true, diagnosticResults: {} };
+      return { ...state, isDiagnosticsModalOpen: true, diagnosticResults: null };
     case 'CLOSE_DIAGNOSTICS_MODAL':
-      return { ...state, isDiagnosticsModalOpen: false, diagnosticResults: {} };
+      return { ...state, isDiagnosticsModalOpen: false, diagnosticResults: null };
     case 'SET_DIAGNOSTIC_RESULTS':
       return { ...state, diagnosticResults: action.payload };
     case 'REMOVE_HISTORY_RECORD':

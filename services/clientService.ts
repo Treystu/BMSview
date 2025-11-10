@@ -637,12 +637,16 @@ export const streamInsights = async (
         dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
     });
 
-    // Add timeout for insights request (60 seconds to allow for function calling iterations)
+    // Add timeout for insights request (90 seconds to allow for background job creation + startup)
+    // Background mode is now the default, which requires time to:
+    // - Create job in MongoDB
+    // - Dispatch to background function
+    // - Background function to start processing
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
         controller.abort();
-        log('warn', 'Insights request timed out after 60 seconds.');
-    }, 60000);
+        log('warn', 'Insights request timed out after 90 seconds.');
+    }, 90000);
 
     try {
         const response = await fetch(endpoint, {
@@ -836,11 +840,11 @@ export const streamInsights = async (
         // Provide user-friendly message for timeout/abort
         if (error.name === 'AbortError') {
             const timeoutError = new Error(
-                'Request timed out after 60 seconds. The AI is taking too long to process your query.\n\n' +
-                'Suggestions:\n' +
-                '• Try a simpler question\n' +
-                '• Request a smaller time range (e.g., "past 7 days" instead of "past 30 days")\n' +
-                '• Break complex queries into multiple questions'
+                'Request timed out after 90 seconds. The server is taking too long to start processing.\n\n' +
+                'This usually means:\n' +
+                '• The background processing service is busy\n' +
+                '• There may be a temporary service issue\n\n' +
+                'Please try again in a few moments.'
             );
             log('error', 'Insights request aborted due to timeout', { originalError: error.message });
             onError(timeoutError);
@@ -1748,7 +1752,29 @@ export const getHourlyWeather = async (lat: number, lon: number, date: string): 
     });
 };
 
-export const runDiagnostics = async (selectedTests?: string[]): Promise<Record<string, { status: string; message: string }>> => {
+export interface DiagnosticTestResult {
+    name: string;
+    status: 'success' | 'warning' | 'error';
+    duration: number;
+    details?: Record<string, any>;
+    error?: string;
+}
+
+export interface DiagnosticsResponse {
+    status: 'success' | 'partial' | 'warning' | 'error';
+    timestamp: string;
+    duration: number;
+    results: DiagnosticTestResult[];
+    summary?: {
+        total: number;
+        success: number;
+        warnings: number;
+        errors: number;
+    };
+    error?: string;
+}
+
+export const runDiagnostics = async (selectedTests?: string[]): Promise<DiagnosticsResponse> => {
     log('info', 'Running system diagnostics.', { selectedTests });
 
     // Diagnostics can take 30+ seconds, so we need a custom timeout
@@ -1780,21 +1806,42 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Record<s
             const errorData = await response.json().catch(() => ({ error: 'An unexpected error occurred.' }));
             const error = (errorData as any).error || `Server responded with status: ${response.status}`;
             log('error', 'Diagnostics API fetch failed.', { status: response.status, error });
-            throw new Error(error);
+            
+            // Return structured error response
+            return {
+                status: 'error',
+                timestamp: new Date().toISOString(),
+                duration: 0,
+                results: [],
+                error
+            };
         }
 
         const data = await response.json();
-        log('info', 'Diagnostics API fetch successful.', { status: response.status });
-        return data as Record<string, { status: string; message: string }>;
+        log('info', 'Diagnostics API fetch successful.', { status: response.status, data });
+        return data as DiagnosticsResponse;
     } catch (error) {
         // Provide a more helpful error message for timeout
         if (error instanceof Error) {
             if (error.name === 'AbortError') {
                 const timeoutError = 'Diagnostics request timed out after 60 seconds. The tests may still be running on the server.';
                 log('error', 'Diagnostics timed out.', { error: timeoutError });
-                throw new Error(timeoutError);
+                return {
+                    status: 'error',
+                    timestamp: new Date().toISOString(),
+                    duration: 60000,
+                    results: [],
+                    error: timeoutError
+                };
             }
             log('error', 'Diagnostics encountered an error.', { error: error.message });
+            return {
+                status: 'error',
+                timestamp: new Date().toISOString(),
+                duration: 0,
+                results: [],
+                error: error.message
+            };
         }
         throw error as Error;
     } finally {
