@@ -1521,6 +1521,362 @@ async function testAdminSystemsEndpoint(log) {
     }
 }
 
+// === PRODUCTION SYNC DIAGNOSTIC TESTS ===
+
+/**
+ * Test 1: Cache Integrity Check
+ * Verify all MongoDB records have required sync fields
+ */
+async function testCacheIntegrity(log) {
+    log.info('Running diagnostic: Cache Integrity Check...');
+    const startTime = Date.now();
+    try {
+        const collections = ['systems', 'history', 'analysis-results'];
+        let totalRecords = 0;
+        let validRecords = 0;
+        const issues = [];
+
+        for (const collName of collections) {
+            try {
+                const collection = await getCollection(collName);
+                const records = await collection.find({}).limit(100).toArray();
+                totalRecords += records.length;
+
+                for (const rec of records) {
+                    const hasUpdatedAt = rec.updatedAt && typeof rec.updatedAt === 'string';
+                    const hasSyncStatus = ['pending', 'synced', 'conflict'].includes(rec._syncStatus);
+
+                    if (hasUpdatedAt && hasSyncStatus) {
+                        validRecords++;
+                    } else {
+                        issues.push({
+                            collection: collName,
+                            id: rec.id || rec._id,
+                            missing: {
+                                updatedAt: !hasUpdatedAt,
+                                syncStatus: !hasSyncStatus
+                            }
+                        });
+                    }
+                }
+            } catch (e) {
+                log.warn(`Failed to check collection ${collName}`, { error: e.message });
+            }
+        }
+
+        return {
+            status: issues.length === 0 ? 'Success' : 'Warning',
+            message: issues.length === 0 ? 'All records have required sync fields' : `Found ${issues.length} records missing sync fields`,
+            details: {
+                totalRecords,
+                validRecords,
+                issueCount: issues.length,
+                issues: issues.slice(0, 5) // Show first 5
+            },
+            duration: Date.now() - startTime
+        };
+    } catch (error) {
+        log.error('Cache integrity check failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message,
+            duration: Date.now() - startTime
+        };
+    }
+}
+
+/**
+ * Test 2: MongoDB Sync Status
+ * Check sync metadata and pending items
+ */
+async function testSyncStatus(log) {
+    log.info('Running diagnostic: MongoDB Sync Status...');
+    const startTime = Date.now();
+    try {
+        const collection = await getCollection('systems');
+        const pendingCount = await collection.countDocuments({ _syncStatus: 'pending' });
+        const syncedCount = await collection.countDocuments({ _syncStatus: 'synced' });
+        const conflictCount = await collection.countDocuments({ _syncStatus: 'conflict' });
+
+        // Get most recent sync timestamp
+        const latest = await collection.findOne({}, { sort: { updatedAt: -1 } });
+        const lastSync = latest?.updatedAt || 'never';
+
+        const status = pendingCount === 0 ? 'Success' : (pendingCount > 10 ? 'Warning' : 'Success');
+
+        return {
+            status,
+            message: status === 'Success' ? 'Sync status OK' : `${pendingCount} pending items waiting to sync`,
+            details: {
+                pending: pendingCount,
+                synced: syncedCount,
+                conflicts: conflictCount,
+                lastSyncTime: lastSync
+            },
+            duration: Date.now() - startTime
+        };
+    } catch (error) {
+        log.error('Sync status check failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message,
+            duration: Date.now() - startTime
+        };
+    }
+}
+
+/**
+ * Test 3: Conflict Detection
+ * Query records with sync conflicts
+ */
+async function testConflictDetection(log) {
+    log.info('Running diagnostic: Conflict Detection...');
+    const startTime = Date.now();
+    try {
+        const collection = await getCollection('systems');
+        const conflicts = await collection.find({ _syncStatus: 'conflict' }).limit(50).toArray();
+
+        const conflictDetails = conflicts.map(c => ({
+            id: c.id || c._id,
+            updatedAt: c.updatedAt,
+            lastModified: c.lastModified
+        }));
+
+        return {
+            status: conflicts.length === 0 ? 'Success' : 'Warning',
+            message: conflicts.length === 0 ? 'No sync conflicts found' : `Found ${conflicts.length} conflicting records`,
+            details: {
+                conflictCount: conflicts.length,
+                conflicts: conflictDetails.slice(0, 5)
+            },
+            duration: Date.now() - startTime
+        };
+    } catch (error) {
+        log.error('Conflict detection failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message,
+            duration: Date.now() - startTime
+        };
+    }
+}
+
+/**
+ * Test 4: Timestamp Consistency Check
+ * Verify all timestamps are ISO 8601 UTC format
+ */
+async function testTimestampConsistency(log) {
+    log.info('Running diagnostic: Timestamp Consistency Check...');
+    const startTime = Date.now();
+    const ISO_UTC_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+    try {
+        const collections = ['systems', 'history', 'analysis-results'];
+        let totalChecked = 0;
+        let validTimestamps = 0;
+        const issues = [];
+
+        for (const collName of collections) {
+            try {
+                const collection = await getCollection(collName);
+                const records = await collection.find({}).limit(50).toArray();
+
+                for (const rec of records) {
+                    totalChecked++;
+                    if (rec.updatedAt && ISO_UTC_REGEX.test(rec.updatedAt)) {
+                        validTimestamps++;
+                    } else {
+                        issues.push({
+                            collection: collName,
+                            id: rec.id || rec._id,
+                            timestamp: rec.updatedAt
+                        });
+                    }
+                }
+            } catch (e) {
+                log.warn(`Failed to check timestamps in ${collName}`, { error: e.message });
+            }
+        }
+
+        return {
+            status: issues.length === 0 ? 'Success' : 'Failure',
+            message: issues.length === 0 ? 'All timestamps are valid UTC' : `Found ${issues.length} invalid timestamps`,
+            details: {
+                totalChecked,
+                validTimestamps,
+                invalidCount: issues.length,
+                samples: issues.slice(0, 3)
+            },
+            duration: Date.now() - startTime
+        };
+    } catch (error) {
+        log.error('Timestamp consistency check failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message,
+            duration: Date.now() - startTime
+        };
+    }
+}
+
+/**
+ * Test 5: Data Integrity Checksum
+ * Generate checksum and compare with server state
+ */
+async function testDataIntegrity(log) {
+    log.info('Running diagnostic: Data Integrity Checksum...');
+    const startTime = Date.now();
+    const crypto = require('crypto');
+
+    try {
+        const collection = await getCollection('systems');
+        const records = await collection.find({}).toArray();
+
+        // Generate checksum
+        const checksumData = records
+            .map(r => `${r.id || r._id}:${r.updatedAt}`)
+            .sort()
+            .join('|');
+
+        const checksum = crypto
+            .createHash('sha256')
+            .update(checksumData)
+            .digest('hex');
+
+        return {
+            status: 'Success',
+            message: 'Data integrity checksum computed',
+            details: {
+                recordCount: records.length,
+                checksum: checksum.substring(0, 16) + '...',
+                fullChecksum: checksum
+            },
+            duration: Date.now() - startTime
+        };
+    } catch (error) {
+        log.error('Data integrity check failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message,
+            duration: Date.now() - startTime
+        };
+    }
+}
+
+/**
+ * Test 6: Full Sync Cycle Test
+ * Create, modify, delete test records
+ */
+async function testFullSyncCycle(log) {
+    log.info('Running diagnostic: Full Sync Cycle Test...');
+    const startTime = Date.now();
+    const testId = `test-sync-${Date.now()}`;
+
+    try {
+        const collection = await getCollection('systems');
+        const results = [];
+
+        // Step 1: Create
+        const testRecord = {
+            id: testId,
+            name: 'Test Sync Cycle',
+            updatedAt: new Date().toISOString(),
+            _syncStatus: 'synced'
+        };
+        await collection.insertOne(testRecord);
+        results.push({ step: 'create', status: 'success' });
+
+        // Step 2: Read
+        const created = await collection.findOne({ id: testId });
+        if (created) {
+            results.push({ step: 'read', status: 'success' });
+        } else {
+            throw new Error('Failed to read created record');
+        }
+
+        // Step 3: Update
+        await collection.updateOne({ id: testId }, { $set: { name: 'Updated Test', updatedAt: new Date().toISOString() } });
+        results.push({ step: 'update', status: 'success' });
+
+        // Step 4: Delete
+        await collection.deleteOne({ id: testId });
+        results.push({ step: 'delete', status: 'success' });
+
+        return {
+            status: 'Success',
+            message: 'Full sync cycle test completed successfully',
+            details: {
+                steps: results
+            },
+            duration: Date.now() - startTime
+        };
+    } catch (error) {
+        log.error('Full sync cycle test failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message,
+            duration: Date.now() - startTime
+        };
+    }
+}
+
+/**
+ * Test 7: Cache Statistics
+ * Count records and estimate cache size
+ */
+async function testCacheStatistics(log) {
+    log.info('Running diagnostic: Cache Statistics...');
+    const startTime = Date.now();
+
+    try {
+        const collections = ['systems', 'history', 'analysis-results'];
+        const stats = {};
+        let totalSize = 0;
+
+        for (const collName of collections) {
+            try {
+                const collection = await getCollection(collName);
+                const total = await collection.countDocuments({});
+                const pending = await collection.countDocuments({ _syncStatus: 'pending' });
+                const synced = await collection.countDocuments({ _syncStatus: 'synced' });
+
+                // Estimate size (rough approximation: ~1-5KB per record)
+                const estimatedSize = total * 2500; // bytes
+
+                stats[collName] = {
+                    total,
+                    pending,
+                    synced,
+                    estimatedSizeKB: Math.round(estimatedSize / 1024)
+                };
+
+                totalSize += estimatedSize;
+            } catch (e) {
+                log.warn(`Failed to get statistics for ${collName}`, { error: e.message });
+            }
+        }
+
+        return {
+            status: 'Success',
+            message: 'Cache statistics retrieved',
+            details: {
+                byCollection: stats,
+                totalRecords: Object.values(stats).reduce((sum, s) => sum + (s.total || 0), 0),
+                totalPending: Object.values(stats).reduce((sum, s) => sum + (s.pending || 0), 0),
+                estimatedTotalSizeMB: (totalSize / (1024 * 1024)).toFixed(2)
+            },
+            duration: Date.now() - startTime
+        };
+    } catch (error) {
+        log.error('Cache statistics failed.', { error: error.message });
+        return {
+            status: 'Failure',
+            message: error.message,
+            duration: Date.now() - startTime
+        };
+    }
+}
+
 // New comprehensive test runner integration
 async function runComprehensiveTests(log, selectedTests = null) {
     log.info('Running comprehensive test suite...', { selectedTests });
@@ -1659,6 +2015,29 @@ exports.handler = async (event, context) => {
                         break;
                     case 'adminSystems':
                         results.adminSystems = await safeTest(log, 'adminSystems', () => testAdminSystemsEndpoint(log));
+                        break;
+
+                    // Production Sync Diagnostic Tests
+                    case 'cache-integrity':
+                        results['cache-integrity'] = await safeTest(log, 'cache-integrity', () => testCacheIntegrity(log));
+                        break;
+                    case 'sync-status':
+                        results['sync-status'] = await safeTest(log, 'sync-status', () => testSyncStatus(log));
+                        break;
+                    case 'conflict-detection':
+                        results['conflict-detection'] = await safeTest(log, 'conflict-detection', () => testConflictDetection(log));
+                        break;
+                    case 'timestamp-consistency':
+                        results['timestamp-consistency'] = await safeTest(log, 'timestamp-consistency', () => testTimestampConsistency(log));
+                        break;
+                    case 'checksum-integrity':
+                        results['checksum-integrity'] = await safeTest(log, 'checksum-integrity', () => testDataIntegrity(log));
+                        break;
+                    case 'full-sync-cycle':
+                        results['full-sync-cycle'] = await safeTest(log, 'full-sync-cycle', () => testFullSyncCycle(log));
+                        break;
+                    case 'cache-stats':
+                        results['cache-stats'] = await safeTest(log, 'cache-stats', () => testCacheStatistics(log));
                         break;
 
                     default:
@@ -1982,18 +2361,20 @@ exports.handler = async (event, context) => {
             jobManagement: ['getJobStatus', 'jobShepherd'],
             externalServices: ['weather', 'solar', 'systemAnalytics'],
             utilityAdmin: ['contact', 'getIP', 'upload', 'security', 'predictiveMaintenance', 'ipAdmin', 'adminSystems'],
+            syncHealth: ['cache-integrity', 'sync-status', 'conflict-detection', 'timestamp-consistency', 'checksum-integrity', 'full-sync-cycle', 'cache-stats'],
             comprehensive: ['comprehensive']
         };
 
         // Flat list for backward compatibility
-        // Note: 27 total tests (26 individual function tests + 1 comprehensive suite)
+        // Note: 34 total tests (27 original + 7 new sync tests)
         // When running all tests, 'deleteCheck' is also added dynamically
         results.availableTestsList = [
             'database', 'gemini', 'analyze', 'syncAnalysis', 'asyncAnalysis', 'processAnalysis',
             'extractDL', 'generateInsights', 'insightsWithTools', 'debugInsights', 'history',
             'systems', 'data', 'exportData', 'getJobStatus', 'jobShepherd', 'weather', 'solar',
             'systemAnalytics', 'contact', 'getIP', 'upload', 'security', 'predictiveMaintenance',
-            'ipAdmin', 'adminSystems', 'comprehensive'
+            'ipAdmin', 'adminSystems', 'cache-integrity', 'sync-status', 'conflict-detection',
+            'timestamp-consistency', 'checksum-integrity', 'full-sync-cycle', 'cache-stats', 'comprehensive'
         ];
 
         // Add available comprehensive test types

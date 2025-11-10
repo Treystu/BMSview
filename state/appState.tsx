@@ -25,6 +25,15 @@ export interface AppState {
   registrationContext: {
     dlNumber: string;
   } | null;
+  // Local-first sync status fields
+  isSyncing: boolean;
+  lastSyncTime: Record<string, number>; // e.g., { systems: 1699..., history: 1699... }
+  syncError: string | null;
+  cacheStats: {
+    systemsCount: number;
+    historyCount: number;
+    cacheSizeBytes: number;
+  };
 }
 
 export const initialState: AppState = {
@@ -39,6 +48,15 @@ export const initialState: AppState = {
   registeredSystems: { items: [], total: 0 },
   analysisHistory: { items: [], total: 0 },
   registrationContext: null,
+  // Local-first sync status
+  isSyncing: false,
+  lastSyncTime: {},
+  syncError: null,
+  cacheStats: {
+    systemsCount: 0,
+    historyCount: 0,
+    cacheSizeBytes: 0,
+  },
 };
 
 // 2. Actions
@@ -57,7 +75,11 @@ export type AppAction =
   | { type: 'REGISTER_SYSTEM_ERROR'; payload: string | null }
   | { type: 'UPDATE_RESULTS_AFTER_LINK' }
   | { type: 'REPROCESS_START'; payload: { fileName: string } }
-  | { type: 'ASSIGN_SYSTEM_TO_ANALYSIS'; payload: { fileName: string; systemId: string } };
+  | { type: 'ASSIGN_SYSTEM_TO_ANALYSIS'; payload: { fileName: string; systemId: string } }
+  // Sync status actions
+  | { type: 'UPDATE_SYNC_STATUS'; payload: { isSyncing: boolean; lastSyncTime?: Record<string, number> } }
+  | { type: 'SET_CACHE_STATS'; payload: { systemsCount: number; historyCount: number; cacheSizeBytes: number } }
+  | { type: 'SYNC_ERROR'; payload: string | null };
 // ***REMOVED***: All job-polling actions are gone.
 
 // 3. Reducer
@@ -176,6 +198,27 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
             ? { ...r, forcedSystemId: action.payload.systemId }
             : r
         )
+      };
+
+    case 'UPDATE_SYNC_STATUS':
+      return {
+        ...state,
+        isSyncing: action.payload.isSyncing,
+        lastSyncTime: action.payload.lastSyncTime ?? state.lastSyncTime,
+        syncError: null,
+      };
+
+    case 'SET_CACHE_STATS':
+      return {
+        ...state,
+        cacheStats: action.payload,
+      };
+
+    case 'SYNC_ERROR':
+      return {
+        ...state,
+        syncError: action.payload,
+        isSyncing: false,
       };
 
     default:
