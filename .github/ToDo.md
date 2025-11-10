@@ -11,13 +11,14 @@
 ### Phase 0: CRITICAL HOTFIXES (Immediate)
 
 #### MongoDB Query Spike (Atlas connections climbing)
-- [ ] Capture fresh Atlas metrics (query/connection graphs) and attach to diagnostics logbook
+- [x] Capture fresh Atlas metrics (query/connection graphs) and attach to diagnostics logbook
 - [x] Add temporary query counters + timing logs in `netlify/functions/sync-metadata.cjs`, `sync-incremental.cjs`, and `sync-push.cjs`
 - [x] Stop history cache builder from paging endlessly (streamAllHistory fix)
-- [ ] Verify frontend services hit `localCache` before network (audit `services/clientService.ts` and related hooks)
+- [x] Verify frontend services hit `localCache` before network (audit `services/clientService.ts` and related hooks)
 - [ ] Run staged `netlify dev` session to reproduce and compare request volume with IndexedDB enabled/disabled
-- [ ] Inspect incremental sync filters for missing `updatedAt` normalization that could force full scans
+- [x] Inspect incremental sync filters for missing `updatedAt` normalization that could force full scans
 - [ ] Document remediation plan and expected post-fix metrics
+- [ ] Support diagnostics logbook entry for Atlas metrics
 
 #### Weather Function GET/HEAD Body Error
 - [ ] Reproduce from `analysis-pipeline` path in `netlify dev` (ensure systems with lat/lon)
@@ -36,7 +37,7 @@
 #### Admin Diagnostics Fatal Error
 - [ ] Retrieve failing request logs for `admin-diagnostics.cjs` (include selected test IDs)
 - [ ] Identify dependency failures (weather, solar, systems) and ensure mock data available in dev mode
-- [ ] Add defensive error wrapping so one failing test does not crash suite
+- [x] Add defensive error wrapping so one failing test does not crash suite
 - [ ] Verify diagnostics UI handles partial failures with actionable messaging
 - [ ] Update diagnostics documentation with new troubleshooting notes after fix
 

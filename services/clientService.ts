@@ -5,6 +5,10 @@ interface PaginatedResponse<T> {
     totalItems: number;
 }
 
+interface FetchListOptions {
+    forceRefresh?: boolean;
+}
+
 // In-memory short-lived cache and in-flight dedupe map
 const _cache = new Map<string, { data: any; expires: number }>();
 const _inFlight = new Map<string, Promise<any>>();
@@ -64,6 +68,121 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
         context
     }));
 };
+
+const hasIndexedDb = typeof indexedDB !== 'undefined';
+
+type LocalCacheModule = typeof import('@/services/localCache');
+let localCacheModulePromise: Promise<LocalCacheModule> | null = null;
+
+// Lazy-load the Dexie-backed cache so tests or SSR environments without IndexedDB succeed.
+async function loadLocalCacheModule(): Promise<LocalCacheModule | null> {
+    if (!hasIndexedDb) {
+        return null;
+    }
+
+    if (!localCacheModulePromise) {
+        localCacheModulePromise = import('@/services/localCache');
+    }
+
+    try {
+        return await localCacheModulePromise;
+    } catch (error) {
+        log('warn', 'Failed to load local cache module.', {
+            error: error instanceof Error ? error.message : String(error)
+        });
+        localCacheModulePromise = null;
+        return null;
+    }
+}
+
+type CacheAugmented<T> = T & { _syncStatus?: string; updatedAt?: string };
+
+function stripCacheMetadata<T>(record: CacheAugmented<T>): T {
+    const { _syncStatus, updatedAt, ...rest } = record as Record<string, unknown>;
+    return { ...rest } as T;
+}
+
+async function getCachedSystemsPage(page: number, limit: number): Promise<PaginatedResponse<BmsSystem> | null> {
+    if (!hasIndexedDb) {
+        return null;
+    }
+
+    try {
+        const cacheModule = await loadLocalCacheModule();
+        if (!cacheModule) {
+            return null;
+        }
+
+        const allSystems = await cacheModule.systemsCache.getAll();
+        if (!allSystems.length) {
+            return null;
+        }
+
+        const start = Math.max(0, (page - 1) * limit);
+        const end = start + limit;
+        const items = allSystems
+            .slice(start, end)
+            .map((system: typeof allSystems[number]) => stripCacheMetadata<BmsSystem>(system));
+
+        log('info', 'Serving systems from local cache.', {
+            page,
+            limit,
+            returned: items.length,
+            total: allSystems.length
+        });
+
+        return {
+            items,
+            totalItems: allSystems.length
+        };
+    } catch (error) {
+        log('warn', 'Failed to read systems cache.', {
+            error: error instanceof Error ? error.message : String(error)
+        });
+        return null;
+    }
+}
+
+async function getCachedHistoryPage(page: number, limit: number): Promise<PaginatedResponse<AnalysisRecord> | null> {
+    if (!hasIndexedDb) {
+        return null;
+    }
+
+    try {
+        const cacheModule = await loadLocalCacheModule();
+        if (!cacheModule) {
+            return null;
+        }
+
+        const allHistory = await cacheModule.historyCache.getAll();
+        if (!allHistory.length) {
+            return null;
+        }
+
+        const start = Math.max(0, (page - 1) * limit);
+        const end = start + limit;
+        const items = allHistory
+            .slice(start, end)
+            .map((record: typeof allHistory[number]) => stripCacheMetadata<AnalysisRecord>(record));
+
+        log('info', 'Serving analysis history from local cache.', {
+            page,
+            limit,
+            returned: items.length,
+            total: allHistory.length
+        });
+
+        return {
+            items,
+            totalItems: allHistory.length
+        };
+    } catch (error) {
+        log('warn', 'Failed to read history cache.', {
+            error: error instanceof Error ? error.message : String(error)
+        });
+        return null;
+    }
+}
 
 
 // Internal default implementation for API fetch
@@ -132,76 +251,109 @@ export function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T>
     return _apiFetchImpl<T>(endpoint, options);
 }
 
-export const getRegisteredSystems = async (page = 1, limit = 25): Promise<PaginatedResponse<BmsSystem>> => {
-    log('info', 'Fetching paginated registered BMS systems.', { page, limit });
-    const response = await fetchWithCache<any>(`systems?page=${page}&limit=${limit}`, 10_000);
+export const getRegisteredSystems = async (page = 1, limit = 25, options: FetchListOptions = {}): Promise<PaginatedResponse<BmsSystem>> => {
+    const { forceRefresh = false } = options;
+    log('info', 'Fetching paginated registered BMS systems.', { page, limit, forceRefresh });
 
-    // Case 1: Array response (including empty arrays)
-    if (Array.isArray(response)) {
-        return {
-            items: [...response], // Create a new array to ensure immutability
-            totalItems: response.length // For array responses, always use array length
-        };
+    if (!forceRefresh) {
+        const cached = await getCachedSystemsPage(page, limit);
+        if (cached) {
+            return cached;
+        }
     }
 
-    // Case 2: Object response
-    if (response && typeof response === 'object') {
-        // Get total items from any source that might provide it
-        const totalItems = typeof response.total === 'number' ? response.total :
-            typeof response.totalItems === 'number' ? response.totalItems :
-                undefined;
+    const response = forceRefresh
+        ? await apiFetch<any>(`systems?page=${page}&limit=${limit}`)
+        : await fetchWithCache<any>(`systems?page=${page}&limit=${limit}`, 10_000);
 
-        // Case 2a: Has an items array
+    let result: PaginatedResponse<BmsSystem> = { items: [], totalItems: 0 };
+
+    if (Array.isArray(response)) {
+        result = {
+            items: [...response],
+            totalItems: response.length
+        };
+    } else if (response && typeof response === 'object') {
+        const totalCandidates = [response.total, response.totalItems, response.count];
+        const totalItems = totalCandidates.find(value => typeof value === 'number' && Number.isFinite(value));
+
         if (Array.isArray(response.items)) {
-            return {
+            result = {
                 items: response.items,
-                totalItems: totalItems ?? response.items.length
+                totalItems: typeof totalItems === 'number' ? totalItems : response.items.length
             };
-        }
-
-        // Case 2b: Has a total field but no items array
-        if (totalItems !== undefined) {
-            return {
+        } else if (totalItems !== undefined) {
+            result = {
                 items: Array.isArray(response.items) ? response.items : [],
                 totalItems
             };
-        }
-
-        // Case 2c: Treat it as a single item if it's an object with content
-        if (Object.keys(response).length > 0) {
-            return {
+        } else if (Object.keys(response).length > 0) {
+            result = {
                 items: [response],
                 totalItems: 1
             };
         }
     }
 
-    // Case 3: Empty/invalid response
-    return {
-        items: [],
-        totalItems: 0
-    };
-};
-
-export const getAnalysisHistory = async (page = 1, limit = 25): Promise<PaginatedResponse<AnalysisRecord>> => {
-    log('info', 'Fetching paginated analysis history.', { page, limit });
-    const response = await fetchWithCache<any>(`history?page=${page}&limit=${limit}`, 5_000);
-
-    if (Array.isArray(response)) {
-        return { items: response, totalItems: response.length };
+    if (hasIndexedDb && result.items.length) {
+        const cacheModule = await loadLocalCacheModule();
+        if (cacheModule) {
+            try {
+                await cacheModule.systemsCache.bulkPut(result.items, 'synced');
+            } catch (error) {
+                log('warn', 'Failed to update systems cache.', {
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
     }
 
-    if (response && typeof response === 'object') {
+    return result;
+};
+
+export const getAnalysisHistory = async (page = 1, limit = 25, options: FetchListOptions = {}): Promise<PaginatedResponse<AnalysisRecord>> => {
+    const { forceRefresh = false } = options;
+    log('info', 'Fetching paginated analysis history.', { page, limit, forceRefresh });
+
+    if (!forceRefresh) {
+        const cached = await getCachedHistoryPage(page, limit);
+        if (cached) {
+            return cached;
+        }
+    }
+
+    const response = forceRefresh
+        ? await apiFetch<any>(`history?page=${page}&limit=${limit}`)
+        : await fetchWithCache<any>(`history?page=${page}&limit=${limit}`, 5_000);
+
+    let result: PaginatedResponse<AnalysisRecord> = { items: [], totalItems: 0 };
+
+    if (Array.isArray(response)) {
+        result = { items: response, totalItems: response.length };
+    } else if (response && typeof response === 'object') {
         const items = Array.isArray(response.items) ? response.items : [];
         const totalCandidates = [response.total, response.totalItems, response.count];
         const totalItems = totalCandidates.find(value => typeof value === 'number' && Number.isFinite(value));
-        return {
+        result = {
             items,
             totalItems: typeof totalItems === 'number' ? totalItems : items.length
         };
     }
 
-    return { items: [], totalItems: 0 };
+    if (hasIndexedDb && result.items.length) {
+        const cacheModule = await loadLocalCacheModule();
+        if (cacheModule) {
+            try {
+                await cacheModule.historyCache.bulkPut(result.items, 'synced');
+            } catch (error) {
+                log('warn', 'Failed to update history cache.', {
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
+    }
+
+    return result;
 };
 
 export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => void, onComplete: () => void): Promise<void> => {
@@ -213,7 +365,7 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
     while (hasMore) {
         try {
             log('info', 'Fetching history page for streaming.', { page, limit });
-            const response = await getAnalysisHistory(page, limit);
+            const response = await getAnalysisHistory(page, limit, { forceRefresh: true });
             if (response.items.length === 0) {
                 log('info', 'History stream hit empty page, stopping.', { page });
                 hasMore = false;

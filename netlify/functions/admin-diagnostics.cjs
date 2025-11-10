@@ -257,6 +257,30 @@ async function safeJson(response) {
     }
 }
 
+async function safeTest(log, testName, testFn) {
+    try {
+        const result = await testFn();
+        if (!result || typeof result !== 'object' || !result.status) {
+            log.warn('Diagnostic test returned unexpected payload.', { testName, resultType: typeof result });
+            return {
+                status: 'Failure',
+                message: 'Test completed without providing a status payload.'
+            };
+        }
+        return result;
+    } catch (error) {
+        log.error('Diagnostic test threw an unhandled error.', {
+            testName,
+            error: error.message,
+            stack: error.stack
+        });
+        return {
+            status: 'Failure',
+            message: error.message || 'Unexpected error during diagnostics.'
+        };
+    }
+}
+
 async function testGeminiHealth(log) {
     log.info('Running diagnostic: Testing Gemini API Health...');
     try {
@@ -1547,94 +1571,94 @@ exports.handler = async (event, context) => {
                 switch (testName) {
                     // Infrastructure Tests
                     case 'database':
-                        results.database = await testDatabaseConnection(log);
+                        results.database = await safeTest(log, 'database', () => testDatabaseConnection(log));
                         break;
                     case 'gemini':
-                        results.gemini = await testGeminiHealth(log);
+                        results.gemini = await safeTest(log, 'gemini', () => testGeminiHealth(log));
                         break;
 
                     // Core Analysis Functions
                     case 'analyze':
-                        results.analyze = await testAnalyzeEndpoint(log);
+                        results.analyze = await safeTest(log, 'analyze', () => testAnalyzeEndpoint(log));
                         break;
                     case 'syncAnalysis':
-                        results.syncAnalysis = await testSyncAnalysis(log, context);
+                        results.syncAnalysis = await safeTest(log, 'syncAnalysis', () => testSyncAnalysis(log, context));
                         break;
                     case 'asyncAnalysis':
-                        results.asyncAnalysis = await testAsyncAnalysis(log);
+                        results.asyncAnalysis = await safeTest(log, 'asyncAnalysis', () => testAsyncAnalysis(log));
                         break;
                     case 'processAnalysis':
-                        results.processAnalysis = await testProcessAnalysisEndpoint(log);
+                        results.processAnalysis = await safeTest(log, 'processAnalysis', () => testProcessAnalysisEndpoint(log));
                         break;
                     case 'extractDL':
-                        results.extractDL = await testExtractDLEndpoint(log);
+                        results.extractDL = await safeTest(log, 'extractDL', () => testExtractDLEndpoint(log));
                         break;
 
                     // Insights Generation
                     case 'generateInsights':
-                        results.generateInsights = await testGenerateInsightsEndpoint(log);
+                        results.generateInsights = await safeTest(log, 'generateInsights', () => testGenerateInsightsEndpoint(log));
                         break;
                     case 'insightsWithTools':
-                        results.insightsWithTools = await testInsightsWithTools(log);
+                        results.insightsWithTools = await safeTest(log, 'insightsWithTools', () => testInsightsWithTools(log));
                         break;
                     case 'debugInsights':
-                        results.debugInsights = await testDebugInsightsEndpoint(log);
+                        results.debugInsights = await safeTest(log, 'debugInsights', () => testDebugInsightsEndpoint(log));
                         break;
 
                     // Data Management
                     case 'history':
-                        results.history = await testHistoryEndpoint(log);
+                        results.history = await safeTest(log, 'history', () => testHistoryEndpoint(log));
                         break;
                     case 'systems':
-                        results.systems = await testSystemsEndpoint(log);
+                        results.systems = await safeTest(log, 'systems', () => testSystemsEndpoint(log));
                         break;
                     case 'data':
-                        results.data = await testDataEndpoint(log);
+                        results.data = await safeTest(log, 'data', () => testDataEndpoint(log));
                         break;
                     case 'exportData':
-                        results.exportData = await testExportDataEndpoint(log);
+                        results.exportData = await safeTest(log, 'exportData', () => testExportDataEndpoint(log));
                         break;
 
                     // Job Management
                     case 'getJobStatus':
-                        results.getJobStatus = await testGetJobStatusEndpoint(log);
+                        results.getJobStatus = await safeTest(log, 'getJobStatus', () => testGetJobStatusEndpoint(log));
                         break;
                     case 'jobShepherd':
-                        results.jobShepherd = await testJobShepherdEndpoint(log);
+                        results.jobShepherd = await safeTest(log, 'jobShepherd', () => testJobShepherdEndpoint(log));
                         break;
 
                     // External Services
                     case 'weather':
-                        results.weatherService = await testWeatherService(log);
+                        results.weatherService = await safeTest(log, 'weatherService', () => testWeatherService(log));
                         break;
                     case 'solar':
-                        results.solarService = await testSolarService(log);
+                        results.solarService = await safeTest(log, 'solarService', () => testSolarService(log));
                         break;
                     case 'systemAnalytics':
-                        results.systemAnalytics = await testSystemAnalytics(log);
+                        results.systemAnalytics = await safeTest(log, 'systemAnalytics', () => testSystemAnalytics(log));
                         break;
 
                     // Utility & Admin
                     case 'contact':
-                        results.contact = await testContactEndpoint(log);
+                        results.contact = await safeTest(log, 'contact', () => testContactEndpoint(log));
                         break;
                     case 'getIP':
-                        results.getIP = await testGetIPEndpoint(log);
+                        results.getIP = await safeTest(log, 'getIP', () => testGetIPEndpoint(log));
                         break;
                     case 'upload':
-                        results.upload = await testUploadEndpoint(log);
+                        results.upload = await safeTest(log, 'upload', () => testUploadEndpoint(log));
                         break;
                     case 'security':
-                        results.security = await testSecurityEndpoint(log);
+                        results.security = await safeTest(log, 'security', () => testSecurityEndpoint(log));
                         break;
                     case 'predictiveMaintenance':
-                        results.predictiveMaintenance = await testPredictiveMaintenanceEndpoint(log);
+                        results.predictiveMaintenance = await safeTest(log, 'predictiveMaintenance', () => testPredictiveMaintenanceEndpoint(log));
                         break;
                     case 'ipAdmin':
-                        results.ipAdmin = await testIPAdminEndpoint(log);
+                        results.ipAdmin = await safeTest(log, 'ipAdmin', () => testIPAdminEndpoint(log));
                         break;
                     case 'adminSystems':
-                        results.adminSystems = await testAdminSystemsEndpoint(log);
+                        results.adminSystems = await safeTest(log, 'adminSystems', () => testAdminSystemsEndpoint(log));
                         break;
 
                     default:
@@ -1654,94 +1678,94 @@ exports.handler = async (event, context) => {
                     switch (testName) {
                         // Infrastructure Tests
                         case 'database':
-                            results.database = await testDatabaseConnection(log);
+                            results.database = await safeTest(log, 'database', () => testDatabaseConnection(log));
                             break;
                         case 'gemini':
-                            results.gemini = await testGeminiHealth(log);
+                            results.gemini = await safeTest(log, 'gemini', () => testGeminiHealth(log));
                             break;
 
                         // Core Analysis Functions
                         case 'analyze':
-                            results.analyze = await testAnalyzeEndpoint(log);
+                            results.analyze = await safeTest(log, 'analyze', () => testAnalyzeEndpoint(log));
                             break;
                         case 'syncAnalysis':
-                            results.syncAnalysis = await testSyncAnalysis(log, context);
+                            results.syncAnalysis = await safeTest(log, 'syncAnalysis', () => testSyncAnalysis(log, context));
                             break;
                         case 'asyncAnalysis':
-                            results.asyncAnalysis = await testAsyncAnalysis(log);
+                            results.asyncAnalysis = await safeTest(log, 'asyncAnalysis', () => testAsyncAnalysis(log));
                             break;
                         case 'processAnalysis':
-                            results.processAnalysis = await testProcessAnalysisEndpoint(log);
+                            results.processAnalysis = await safeTest(log, 'processAnalysis', () => testProcessAnalysisEndpoint(log));
                             break;
                         case 'extractDL':
-                            results.extractDL = await testExtractDLEndpoint(log);
+                            results.extractDL = await safeTest(log, 'extractDL', () => testExtractDLEndpoint(log));
                             break;
 
                         // Insights Generation
                         case 'generateInsights':
-                            results.generateInsights = await testGenerateInsightsEndpoint(log);
+                            results.generateInsights = await safeTest(log, 'generateInsights', () => testGenerateInsightsEndpoint(log));
                             break;
                         case 'insightsWithTools':
-                            results.insightsWithTools = await testInsightsWithTools(log);
+                            results.insightsWithTools = await safeTest(log, 'insightsWithTools', () => testInsightsWithTools(log));
                             break;
                         case 'debugInsights':
-                            results.debugInsights = await testDebugInsightsEndpoint(log);
+                            results.debugInsights = await safeTest(log, 'debugInsights', () => testDebugInsightsEndpoint(log));
                             break;
 
                         // Data Management
                         case 'history':
-                            results.history = await testHistoryEndpoint(log);
+                            results.history = await safeTest(log, 'history', () => testHistoryEndpoint(log));
                             break;
                         case 'systems':
-                            results.systems = await testSystemsEndpoint(log);
+                            results.systems = await safeTest(log, 'systems', () => testSystemsEndpoint(log));
                             break;
                         case 'data':
-                            results.data = await testDataEndpoint(log);
+                            results.data = await safeTest(log, 'data', () => testDataEndpoint(log));
                             break;
                         case 'exportData':
-                            results.exportData = await testExportDataEndpoint(log);
+                            results.exportData = await safeTest(log, 'exportData', () => testExportDataEndpoint(log));
                             break;
 
                         // Job Management
                         case 'getJobStatus':
-                            results.getJobStatus = await testGetJobStatusEndpoint(log);
+                            results.getJobStatus = await safeTest(log, 'getJobStatus', () => testGetJobStatusEndpoint(log));
                             break;
                         case 'jobShepherd':
-                            results.jobShepherd = await testJobShepherdEndpoint(log);
+                            results.jobShepherd = await safeTest(log, 'jobShepherd', () => testJobShepherdEndpoint(log));
                             break;
 
                         // External Services
                         case 'weather':
-                            results.weatherService = await testWeatherService(log);
+                            results.weatherService = await safeTest(log, 'weatherService', () => testWeatherService(log));
                             break;
                         case 'solar':
-                            results.solarService = await testSolarService(log);
+                            results.solarService = await safeTest(log, 'solarService', () => testSolarService(log));
                             break;
                         case 'systemAnalytics':
-                            results.systemAnalytics = await testSystemAnalytics(log);
+                            results.systemAnalytics = await safeTest(log, 'systemAnalytics', () => testSystemAnalytics(log));
                             break;
 
                         // Utility & Admin
                         case 'contact':
-                            results.contact = await testContactEndpoint(log);
+                            results.contact = await safeTest(log, 'contact', () => testContactEndpoint(log));
                             break;
                         case 'getIP':
-                            results.getIP = await testGetIPEndpoint(log);
+                            results.getIP = await safeTest(log, 'getIP', () => testGetIPEndpoint(log));
                             break;
                         case 'upload':
-                            results.upload = await testUploadEndpoint(log);
+                            results.upload = await safeTest(log, 'upload', () => testUploadEndpoint(log));
                             break;
                         case 'security':
-                            results.security = await testSecurityEndpoint(log);
+                            results.security = await safeTest(log, 'security', () => testSecurityEndpoint(log));
                             break;
                         case 'predictiveMaintenance':
-                            results.predictiveMaintenance = await testPredictiveMaintenanceEndpoint(log);
+                            results.predictiveMaintenance = await safeTest(log, 'predictiveMaintenance', () => testPredictiveMaintenanceEndpoint(log));
                             break;
                         case 'ipAdmin':
-                            results.ipAdmin = await testIPAdminEndpoint(log);
+                            results.ipAdmin = await safeTest(log, 'ipAdmin', () => testIPAdminEndpoint(log));
                             break;
                         case 'adminSystems':
-                            results.adminSystems = await testAdminSystemsEndpoint(log);
+                            results.adminSystems = await safeTest(log, 'adminSystems', () => testAdminSystemsEndpoint(log));
                             break;
 
                         default:
@@ -1754,126 +1778,126 @@ exports.handler = async (event, context) => {
                 switch (testType) {
                     // Infrastructure Tests
                     case 'database':
-                        results.database = await testDatabaseConnection(log);
+                        results.database = await safeTest(log, 'database', () => testDatabaseConnection(log));
                         break;
                     case 'gemini':
-                        results.gemini = await testGeminiHealth(log);
+                        results.gemini = await safeTest(log, 'gemini', () => testGeminiHealth(log));
                         break;
 
                     // Core Analysis Functions
                     case 'analyze':
-                        results.analyze = await testAnalyzeEndpoint(log);
+                        results.analyze = await safeTest(log, 'analyze', () => testAnalyzeEndpoint(log));
                         break;
                     case 'syncAnalysis':
-                        results.syncAnalysis = await testSyncAnalysis(log, context);
+                        results.syncAnalysis = await safeTest(log, 'syncAnalysis', () => testSyncAnalysis(log, context));
                         break;
                     case 'asyncAnalysis':
-                        results.asyncAnalysis = await testAsyncAnalysis(log);
+                        results.asyncAnalysis = await safeTest(log, 'asyncAnalysis', () => testAsyncAnalysis(log));
                         break;
                     case 'processAnalysis':
-                        results.processAnalysis = await testProcessAnalysisEndpoint(log);
+                        results.processAnalysis = await safeTest(log, 'processAnalysis', () => testProcessAnalysisEndpoint(log));
                         break;
                     case 'extractDL':
-                        results.extractDL = await testExtractDLEndpoint(log);
+                        results.extractDL = await safeTest(log, 'extractDL', () => testExtractDLEndpoint(log));
                         break;
 
                     // Insights Generation
                     case 'generateInsights':
-                        results.generateInsights = await testGenerateInsightsEndpoint(log);
+                        results.generateInsights = await safeTest(log, 'generateInsights', () => testGenerateInsightsEndpoint(log));
                         break;
                     case 'insightsWithTools':
-                        results.insightsWithTools = await testInsightsWithTools(log);
+                        results.insightsWithTools = await safeTest(log, 'insightsWithTools', () => testInsightsWithTools(log));
                         break;
                     case 'debugInsights':
-                        results.debugInsights = await testDebugInsightsEndpoint(log);
+                        results.debugInsights = await safeTest(log, 'debugInsights', () => testDebugInsightsEndpoint(log));
                         break;
 
                     // Data Management
                     case 'history':
-                        results.history = await testHistoryEndpoint(log);
+                        results.history = await safeTest(log, 'history', () => testHistoryEndpoint(log));
                         break;
                     case 'systems':
-                        results.systems = await testSystemsEndpoint(log);
+                        results.systems = await safeTest(log, 'systems', () => testSystemsEndpoint(log));
                         break;
                     case 'data':
-                        results.data = await testDataEndpoint(log);
+                        results.data = await safeTest(log, 'data', () => testDataEndpoint(log));
                         break;
                     case 'exportData':
-                        results.exportData = await testExportDataEndpoint(log);
+                        results.exportData = await safeTest(log, 'exportData', () => testExportDataEndpoint(log));
                         break;
 
                     // Job Management
                     case 'getJobStatus':
-                        results.getJobStatus = await testGetJobStatusEndpoint(log);
+                        results.getJobStatus = await safeTest(log, 'getJobStatus', () => testGetJobStatusEndpoint(log));
                         break;
                     case 'jobShepherd':
-                        results.jobShepherd = await testJobShepherdEndpoint(log);
+                        results.jobShepherd = await safeTest(log, 'jobShepherd', () => testJobShepherdEndpoint(log));
                         break;
 
                     // External Services
                     case 'weather':
-                        results.weatherService = await testWeatherService(log);
+                        results.weatherService = await safeTest(log, 'weatherService', () => testWeatherService(log));
                         break;
                     case 'solar':
-                        results.solarService = await testSolarService(log);
+                        results.solarService = await safeTest(log, 'solarService', () => testSolarService(log));
                         break;
                     case 'systemAnalytics':
-                        results.systemAnalytics = await testSystemAnalytics(log);
+                        results.systemAnalytics = await safeTest(log, 'systemAnalytics', () => testSystemAnalytics(log));
                         break;
 
                     // Utility & Admin
                     case 'contact':
-                        results.contact = await testContactEndpoint(log);
+                        results.contact = await safeTest(log, 'contact', () => testContactEndpoint(log));
                         break;
                     case 'getIP':
-                        results.getIP = await testGetIPEndpoint(log);
+                        results.getIP = await safeTest(log, 'getIP', () => testGetIPEndpoint(log));
                         break;
                     case 'upload':
-                        results.upload = await testUploadEndpoint(log);
+                        results.upload = await safeTest(log, 'upload', () => testUploadEndpoint(log));
                         break;
                     case 'security':
-                        results.security = await testSecurityEndpoint(log);
+                        results.security = await safeTest(log, 'security', () => testSecurityEndpoint(log));
                         break;
                     case 'predictiveMaintenance':
-                        results.predictiveMaintenance = await testPredictiveMaintenanceEndpoint(log);
+                        results.predictiveMaintenance = await safeTest(log, 'predictiveMaintenance', () => testPredictiveMaintenanceEndpoint(log));
                         break;
                     case 'ipAdmin':
-                        results.ipAdmin = await testIPAdminEndpoint(log);
+                        results.ipAdmin = await safeTest(log, 'ipAdmin', () => testIPAdminEndpoint(log));
                         break;
                     case 'adminSystems':
-                        results.adminSystems = await testAdminSystemsEndpoint(log);
+                        results.adminSystems = await safeTest(log, 'adminSystems', () => testAdminSystemsEndpoint(log));
                         break;
                     case 'comprehensive':
-                        results.comprehensive = await runComprehensiveTests(log, requestBody.selectedTests);
+                        results.comprehensive = await safeTest(log, 'comprehensive', () => runComprehensiveTests(log, requestBody.selectedTests));
                         break;
                     default:
                         // Run all basic tests
-                        results.database = await testDatabaseConnection(log);
-                        results.gemini = await testGeminiHealth(log);
-                        results.analyze = await testAnalyzeEndpoint(log);
-                        results.syncAnalysis = await testSyncAnalysis(log, context);
-                        results.asyncAnalysis = await testAsyncAnalysis(log);
-                        results.processAnalysis = await testProcessAnalysisEndpoint(log);
-                        results.extractDL = await testExtractDLEndpoint(log);
-                        results.generateInsights = await testGenerateInsightsEndpoint(log);
-                        results.insightsWithTools = await testInsightsWithTools(log);
-                        results.debugInsights = await testDebugInsightsEndpoint(log);
-                        results.history = await testHistoryEndpoint(log);
-                        results.systems = await testSystemsEndpoint(log);
-                        results.data = await testDataEndpoint(log);
-                        results.exportData = await testExportDataEndpoint(log);
-                        results.getJobStatus = await testGetJobStatusEndpoint(log);
-                        results.jobShepherd = await testJobShepherdEndpoint(log);
-                        results.weatherService = await testWeatherService(log);
-                        results.solarService = await testSolarService(log);
-                        results.systemAnalytics = await testSystemAnalytics(log);
-                        results.contact = await testContactEndpoint(log);
-                        results.getIP = await testGetIPEndpoint(log);
-                        results.upload = await testUploadEndpoint(log);
-                        results.security = await testSecurityEndpoint(log);
-                        results.predictiveMaintenance = await testPredictiveMaintenanceEndpoint(log);
-                        results.ipAdmin = await testIPAdminEndpoint(log);
-                        results.adminSystems = await testAdminSystemsEndpoint(log);
+                        results.database = await safeTest(log, 'database', () => testDatabaseConnection(log));
+                        results.gemini = await safeTest(log, 'gemini', () => testGeminiHealth(log));
+                        results.analyze = await safeTest(log, 'analyze', () => testAnalyzeEndpoint(log));
+                        results.syncAnalysis = await safeTest(log, 'syncAnalysis', () => testSyncAnalysis(log, context));
+                        results.asyncAnalysis = await safeTest(log, 'asyncAnalysis', () => testAsyncAnalysis(log));
+                        results.processAnalysis = await safeTest(log, 'processAnalysis', () => testProcessAnalysisEndpoint(log));
+                        results.extractDL = await safeTest(log, 'extractDL', () => testExtractDLEndpoint(log));
+                        results.generateInsights = await safeTest(log, 'generateInsights', () => testGenerateInsightsEndpoint(log));
+                        results.insightsWithTools = await safeTest(log, 'insightsWithTools', () => testInsightsWithTools(log));
+                        results.debugInsights = await safeTest(log, 'debugInsights', () => testDebugInsightsEndpoint(log));
+                        results.history = await safeTest(log, 'history', () => testHistoryEndpoint(log));
+                        results.systems = await safeTest(log, 'systems', () => testSystemsEndpoint(log));
+                        results.data = await safeTest(log, 'data', () => testDataEndpoint(log));
+                        results.exportData = await safeTest(log, 'exportData', () => testExportDataEndpoint(log));
+                        results.getJobStatus = await safeTest(log, 'getJobStatus', () => testGetJobStatusEndpoint(log));
+                        results.jobShepherd = await safeTest(log, 'jobShepherd', () => testJobShepherdEndpoint(log));
+                        results.weatherService = await safeTest(log, 'weatherService', () => testWeatherService(log));
+                        results.solarService = await safeTest(log, 'solarService', () => testSolarService(log));
+                        results.systemAnalytics = await safeTest(log, 'systemAnalytics', () => testSystemAnalytics(log));
+                        results.contact = await safeTest(log, 'contact', () => testContactEndpoint(log));
+                        results.getIP = await safeTest(log, 'getIP', () => testGetIPEndpoint(log));
+                        results.upload = await safeTest(log, 'upload', () => testUploadEndpoint(log));
+                        results.security = await safeTest(log, 'security', () => testSecurityEndpoint(log));
+                        results.predictiveMaintenance = await safeTest(log, 'predictiveMaintenance', () => testPredictiveMaintenanceEndpoint(log));
+                        results.ipAdmin = await safeTest(log, 'ipAdmin', () => testIPAdminEndpoint(log));
+                        results.adminSystems = await safeTest(log, 'adminSystems', () => testAdminSystemsEndpoint(log));
                         break;
                 }
             }
@@ -1882,59 +1906,56 @@ exports.handler = async (event, context) => {
             log.info('Running all diagnostic tests (comprehensive mode)');
 
             // Infrastructure Tests
-            results.database = await testDatabaseConnection(log);
-            results.gemini = await testGeminiHealth(log);
+            results.database = await safeTest(log, 'database', () => testDatabaseConnection(log));
+            results.gemini = await safeTest(log, 'gemini', () => testGeminiHealth(log));
 
             // Core Analysis Functions
-            results.analyze = await testAnalyzeEndpoint(log);
-            const sync = await testSyncAnalysis(log, context);
+            results.analyze = await safeTest(log, 'analyze', () => testAnalyzeEndpoint(log));
+            const sync = await safeTest(log, 'syncAnalysis', () => testSyncAnalysis(log, context));
             results.syncAnalysis = sync;
             if (sync && sync.recordId) {
-                results.deleteCheck = await testDeleteEndpoint(log, sync.recordId).catch(e => ({
-                    status: 'Failure',
-                    message: e.message
-                }));
+                results.deleteCheck = await safeTest(log, 'deleteCheck', () => testDeleteEndpoint(log, sync.recordId));
             } else {
                 results.deleteCheck = {
                     status: 'Skipped',
                     message: 'Sync analysis did not create a record to test delete.'
                 };
             }
-            results.asyncAnalysis = await testAsyncAnalysis(log);
-            results.processAnalysis = await testProcessAnalysisEndpoint(log);
-            results.extractDL = await testExtractDLEndpoint(log);
+            results.asyncAnalysis = await safeTest(log, 'asyncAnalysis', () => testAsyncAnalysis(log));
+            results.processAnalysis = await safeTest(log, 'processAnalysis', () => testProcessAnalysisEndpoint(log));
+            results.extractDL = await safeTest(log, 'extractDL', () => testExtractDLEndpoint(log));
 
             // Insights Generation
-            results.generateInsights = await testGenerateInsightsEndpoint(log);
-            results.insightsWithTools = await testInsightsWithTools(log);
-            results.debugInsights = await testDebugInsightsEndpoint(log);
+            results.generateInsights = await safeTest(log, 'generateInsights', () => testGenerateInsightsEndpoint(log));
+            results.insightsWithTools = await safeTest(log, 'insightsWithTools', () => testInsightsWithTools(log));
+            results.debugInsights = await safeTest(log, 'debugInsights', () => testDebugInsightsEndpoint(log));
 
             // Data Management
-            results.history = await testHistoryEndpoint(log);
-            results.systems = await testSystemsEndpoint(log);
-            results.data = await testDataEndpoint(log);
-            results.exportData = await testExportDataEndpoint(log);
+            results.history = await safeTest(log, 'history', () => testHistoryEndpoint(log));
+            results.systems = await safeTest(log, 'systems', () => testSystemsEndpoint(log));
+            results.data = await safeTest(log, 'data', () => testDataEndpoint(log));
+            results.exportData = await safeTest(log, 'exportData', () => testExportDataEndpoint(log));
 
             // Job Management
-            results.getJobStatus = await testGetJobStatusEndpoint(log);
-            results.jobShepherd = await testJobShepherdEndpoint(log);
+            results.getJobStatus = await safeTest(log, 'getJobStatus', () => testGetJobStatusEndpoint(log));
+            results.jobShepherd = await safeTest(log, 'jobShepherd', () => testJobShepherdEndpoint(log));
 
             // External Services
-            results.weatherService = await testWeatherService(log);
-            results.solarService = await testSolarService(log);
-            results.systemAnalytics = await testSystemAnalytics(log);
+            results.weatherService = await safeTest(log, 'weatherService', () => testWeatherService(log));
+            results.solarService = await safeTest(log, 'solarService', () => testSolarService(log));
+            results.systemAnalytics = await safeTest(log, 'systemAnalytics', () => testSystemAnalytics(log));
 
             // Utility & Admin
-            results.contact = await testContactEndpoint(log);
-            results.getIP = await testGetIPEndpoint(log);
-            results.upload = await testUploadEndpoint(log);
-            results.security = await testSecurityEndpoint(log);
-            results.predictiveMaintenance = await testPredictiveMaintenanceEndpoint(log);
-            results.ipAdmin = await testIPAdminEndpoint(log);
-            results.adminSystems = await testAdminSystemsEndpoint(log);
+            results.contact = await safeTest(log, 'contact', () => testContactEndpoint(log));
+            results.getIP = await safeTest(log, 'getIP', () => testGetIPEndpoint(log));
+            results.upload = await safeTest(log, 'upload', () => testUploadEndpoint(log));
+            results.security = await safeTest(log, 'security', () => testSecurityEndpoint(log));
+            results.predictiveMaintenance = await safeTest(log, 'predictiveMaintenance', () => testPredictiveMaintenanceEndpoint(log));
+            results.ipAdmin = await safeTest(log, 'ipAdmin', () => testIPAdminEndpoint(log));
+            results.adminSystems = await safeTest(log, 'adminSystems', () => testAdminSystemsEndpoint(log));
 
             // Comprehensive Test Suite
-            results.comprehensive = await runComprehensiveTests(log);
+            results.comprehensive = await safeTest(log, 'comprehensive', () => runComprehensiveTests(log));
         }
 
         // Add suggestions for failures

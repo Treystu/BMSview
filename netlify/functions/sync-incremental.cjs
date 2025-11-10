@@ -75,7 +75,8 @@ function normalizeToIsoString(value) {
 
 function buildIncrementalFilter(sinceIso, sinceDate, fallbackFields) {
     const orClauses = [
-        { updatedAt: { $exists: true, $gte: sinceIso } }
+        { updatedAt: { $exists: true, $gte: sinceIso } },
+        { updatedAt: { $exists: true, $gte: sinceDate } }
     ];
 
     for (const field of fallbackFields) {
@@ -90,6 +91,50 @@ function buildIncrementalFilter(sinceIso, sinceDate, fallbackFields) {
     orClauses.push({ updatedAt: { $exists: false } });
 
     return { $or: orClauses };
+}
+
+function normalizeRecordTimestamps(records, fallbackFields, serverTime, log, collectionKey) {
+    let missingCount = 0;
+    const missingIds = [];
+
+    const normalizedRecords = records.map(record => {
+        const normalized = { ...record };
+        let updatedAtIso = normalizeToIsoString(record.updatedAt);
+
+        if (!updatedAtIso) {
+            for (const field of fallbackFields) {
+                const fallbackValue = record[field.name];
+                const candidate = normalizeToIsoString(fallbackValue);
+                if (candidate) {
+                    updatedAtIso = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (!updatedAtIso) {
+            updatedAtIso = serverTime;
+            missingCount += 1;
+            if (missingIds.length < 5) {
+                const sampleId = record.id || record._id || 'unknown';
+                missingIds.push(typeof sampleId === 'object' && sampleId !== null ? String(sampleId) : sampleId);
+            }
+        }
+
+        normalized.updatedAt = updatedAtIso;
+        return normalized;
+    });
+
+    if (missingCount > 0) {
+        log.warn("Records lacked updatedAt; applied serverTime fallback", {
+            collection: collectionKey,
+            missingCount,
+            sampleIds: missingIds,
+            inspectedFields: fallbackFields.map(field => field.name)
+        });
+    }
+
+    return normalizedRecords;
 }
 
 exports.handler = async function (event, context) {
@@ -158,29 +203,30 @@ exports.handler = async function (event, context) {
         }
 
         const serverTime = new Date().toISOString();
+        const normalizedItems = normalizeRecordTimestamps(items, fallbackFields, serverTime, log, collectionKey);
 
         log.debug("Incremental sync query metrics", {
             collection: collectionKey,
             itemsQueryDurationMs,
             deletedQueryDurationMs,
-            itemsReturned: items.length,
+            itemsReturned: normalizedItems.length,
             deletedCandidates: deletedRecords.length
         });
 
         log.info("Incremental sync complete", {
             collection: collectionKey,
-            returnedItems: items.length,
+            returnedItems: normalizedItems.length,
             deletedCount: deletedIds.length,
             since,
             durationMs: Date.now() - requestStartedAt
         });
-        log.exit(200, { collection: collectionKey, returnedItems: items.length });
+        log.exit(200, { collection: collectionKey, returnedItems: normalizedItems.length });
 
         return jsonResponse(200, {
             collection: collectionKey,
             since,
             serverTime,
-            items,
+            items: normalizedItems,
             deletedIds
         });
     } catch (error) {

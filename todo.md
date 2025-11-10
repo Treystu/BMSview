@@ -8,9 +8,9 @@ _Last synced: 2025-11-09_
 	- [ ] Capture fresh Atlas metrics and archive screenshots/logs
 	- [x] Add temporary query counters + timing logs in `sync-metadata.cjs`, `sync-incremental.cjs`, `sync-push.cjs`
 	- [x] Stop history cache builder from paging endlessly (streamAllHistory fix)
-	- [ ] Verify client services consult `localCache` before network
+	- [x] Verify client services consult `localCache` before network
 	- [ ] Compare request volume with IndexedDB enabled vs disabled in `netlify dev`
-	- [ ] Inspect incremental sync filters for missing `updatedAt` normalization
+	- [x] Inspect incremental sync filters for missing `updatedAt` normalization
 	- [ ] Document remediation plan with expected metrics
 - [ ] Weather Function GET/HEAD Body Error
 	- [ ] Reproduce via `analysis-pipeline` in `netlify dev`
@@ -27,7 +27,7 @@ _Last synced: 2025-11-09_
 - [ ] Admin Diagnostics Fatal Error
 	- [ ] Pull failing `admin-diagnostics.cjs` logs with test IDs
 	- [ ] Identify dependent endpoint failures and seed dev data if needed
-	- [ ] Wrap diagnostics runner so single failure does not crash suite
+	- [x] Wrap diagnostics runner so single failure does not crash suite
 	- [ ] Verify UI handles partial failures with actionable messaging
 	- [ ] Update diagnostics documentation with troubleshooting steps
 
