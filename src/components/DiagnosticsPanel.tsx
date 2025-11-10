@@ -117,8 +117,7 @@ export const DiagnosticsPanel: React.FC = () => {
             const data = await response.json();
 
             // Transform results for display
-            const displayResults: DiagnosticResult[] = selectedTests
-                .toArray()
+            const displayResults: DiagnosticResult[] = Array.from(selectedTests)
                 .map(testId => {
                     const testResult = data[testId];
                     return {

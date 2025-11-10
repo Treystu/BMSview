@@ -172,7 +172,7 @@ _Status: ✅ ALL TODOS 100% COMPLETE - Ready for deployment_
 - [x] Validate UTC timestamps on sampled records (✅ Via TIMESTAMP_AUDIT_REPORT.md)
 - [x] Test offline/online transitions (✅ COMPLETED: Automated in runtime tests)
 - [ ] Monitor Netlify + MongoDB metrics post-deploy (⏳ POST-DEPLOYMENT)
-- [ ] Document issues and rollback plan (✅ COMPLETED: See DEPLOYMENT_CHECKLIST.md)
+- [x] Document issues and rollback plan (✅ COMPLETED: See DEPLOYMENT_CHECKLIST.md)
 
 ---
 
