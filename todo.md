@@ -5,13 +5,15 @@ _Last synced: 2025-11-09_
 ## Phase 0: Critical Hotfixes (Immediate)
 
 - [ ] MongoDB Query Spike
-	- [ ] Capture fresh Atlas metrics and archive screenshots/logs
+	- [x] Capture fresh Atlas metrics and archive screenshots/logs
 	- [x] Add temporary query counters + timing logs in `sync-metadata.cjs`, `sync-incremental.cjs`, `sync-push.cjs`
 	- [x] Stop history cache builder from paging endlessly (streamAllHistory fix)
 	- [x] Verify client services consult `localCache` before network
+	- [x] Link Atlas metrics snapshot into diagnostics logbook
 	- [ ] Compare request volume with IndexedDB enabled vs disabled in `netlify dev`
 	- [x] Inspect incremental sync filters for missing `updatedAt` normalization
-	- [ ] Document remediation plan with expected metrics
+	- [x] Document remediation plan with expected metrics
+	- [x] Publish remediation plan at `diagnostics/remediation-plan.md`
 - [ ] Weather Function GET/HEAD Body Error
 	- [ ] Reproduce via `analysis-pipeline` in `netlify dev`
 	- [x] Patch `callWeatherFunction` to POST with JSON payload

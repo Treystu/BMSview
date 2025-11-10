@@ -17,8 +17,8 @@
 - [x] Verify frontend services hit `localCache` before network (audit `services/clientService.ts` and related hooks)
 - [ ] Run staged `netlify dev` session to reproduce and compare request volume with IndexedDB enabled/disabled
 - [x] Inspect incremental sync filters for missing `updatedAt` normalization that could force full scans
-- [ ] Document remediation plan and expected post-fix metrics
-- [ ] Support diagnostics logbook entry for Atlas metrics
+- [x] Document remediation plan and expected post-fix metrics
+- [x] Support diagnostics logbook entry for Atlas metrics
 
 #### Weather Function GET/HEAD Body Error
 - [ ] Reproduce from `analysis-pipeline` path in `netlify dev` (ensure systems with lat/lon)
