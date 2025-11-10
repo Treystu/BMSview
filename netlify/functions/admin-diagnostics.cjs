@@ -2,9 +2,8 @@ const { getMongoDb } = require('./utils/mongodb.cjs');
 const { createLogger } = require('./utils/logger.cjs');
 const { analyzeImage } = require('./utils/analysis-pipeline.cjs');
 const { getWeather } = require('./utils/weather.cjs');
-const { getSolarData } = require('./utils/solar.cjs');
-const { runGuruConversation } = require('./utils/insights-guru-runner.cjs');
-const { getAIModelWithTools } = require('./utils/insights-processor.cjs');
+let getSolarData; try { ({ getSolarData } = require('./utils/solar.cjs')); } catch (e) { getSolarData = async () => ({ sunrise: null, sunset: null, source: 'fallback', error: 'solar util missing' }); }
+const { generateInsightsWithTools } = require('./utils/insights-tools.cjs');
 const crypto = require('crypto');
 
 const logger = createLogger('admin-diagnostics');
