@@ -1748,7 +1748,29 @@ export const getHourlyWeather = async (lat: number, lon: number, date: string): 
     });
 };
 
-export const runDiagnostics = async (selectedTests?: string[]): Promise<Record<string, { status: string; message: string }>> => {
+export interface DiagnosticTestResult {
+    name: string;
+    status: 'success' | 'warning' | 'error';
+    duration: number;
+    details?: Record<string, any>;
+    error?: string;
+}
+
+export interface DiagnosticsResponse {
+    status: 'success' | 'partial' | 'warning' | 'error';
+    timestamp: string;
+    duration: number;
+    results: DiagnosticTestResult[];
+    summary?: {
+        total: number;
+        success: number;
+        warnings: number;
+        errors: number;
+    };
+    error?: string;
+}
+
+export const runDiagnostics = async (selectedTests?: string[]): Promise<DiagnosticsResponse> => {
     log('info', 'Running system diagnostics.', { selectedTests });
 
     // Diagnostics can take 30+ seconds, so we need a custom timeout
@@ -1780,21 +1802,42 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Record<s
             const errorData = await response.json().catch(() => ({ error: 'An unexpected error occurred.' }));
             const error = (errorData as any).error || `Server responded with status: ${response.status}`;
             log('error', 'Diagnostics API fetch failed.', { status: response.status, error });
-            throw new Error(error);
+            
+            // Return structured error response
+            return {
+                status: 'error',
+                timestamp: new Date().toISOString(),
+                duration: 0,
+                results: [],
+                error
+            };
         }
 
         const data = await response.json();
-        log('info', 'Diagnostics API fetch successful.', { status: response.status });
-        return data as Record<string, { status: string; message: string }>;
+        log('info', 'Diagnostics API fetch successful.', { status: response.status, data });
+        return data as DiagnosticsResponse;
     } catch (error) {
         // Provide a more helpful error message for timeout
         if (error instanceof Error) {
             if (error.name === 'AbortError') {
                 const timeoutError = 'Diagnostics request timed out after 60 seconds. The tests may still be running on the server.';
                 log('error', 'Diagnostics timed out.', { error: timeoutError });
-                throw new Error(timeoutError);
+                return {
+                    status: 'error',
+                    timestamp: new Date().toISOString(),
+                    duration: 60000,
+                    results: [],
+                    error: timeoutError
+                };
             }
             log('error', 'Diagnostics encountered an error.', { error: error.message });
+            return {
+                status: 'error',
+                timestamp: new Date().toISOString(),
+                duration: 0,
+                results: [],
+                error: error.message
+            };
         }
         throw error as Error;
     } finally {
