@@ -142,7 +142,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
         recordId: existingAnalysis._id?.toString?.() || existingAnalysis.id,
         fileName: existingAnalysis.fileName,
         timestamp: existingAnalysis.timestamp,
-        dedupeHit: true
+        isDuplicate: true
       };
 
       await storeIdempotentResponse(idemKey, responseBody, 'dedupe_hit');

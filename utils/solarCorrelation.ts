@@ -9,6 +9,9 @@ import type { AnalysisRecord } from '../types';
 
 /**
  * Converts Amp-hours to Watt-hours
+ * @param ah - Amp-hours to convert
+ * @param voltage - System voltage
+ * @returns Energy in Watt-hours
  */
 export function ahToWh(ah: number, voltage: number): number {
   return ah * voltage;
@@ -16,6 +19,9 @@ export function ahToWh(ah: number, voltage: number): number {
 
 /**
  * Converts Watt-hours to Amp-hours
+ * @param wh - Watt-hours to convert
+ * @param voltage - System voltage
+ * @returns Capacity in Amp-hours
  */
 export function whToAh(wh: number, voltage: number): number {
   if (voltage === 0) return 0;
@@ -24,6 +30,9 @@ export function whToAh(wh: number, voltage: number): number {
 
 /**
  * Calculates maximum theoretical solar input in Watts
+ * @param nominalVoltage - System nominal voltage
+ * @param maxSolarAmps - Maximum solar charge current
+ * @returns Maximum solar input power in Watts
  */
 export function calculateMaxSolarInput(
   nominalVoltage: number,
@@ -34,6 +43,10 @@ export function calculateMaxSolarInput(
 
 /**
  * Extracts battery energy data from BMS analysis records
+ * Filters for charging events (positive capacity changes)
+ * @param records - Array of BMS analysis records
+ * @param nominalVoltage - System nominal voltage for energy calculations
+ * @returns Array of battery energy data points
  */
 export function extractBatteryEnergyData(
   records: AnalysisRecord[],
@@ -69,6 +82,11 @@ export function extractBatteryEnergyData(
 
 /**
  * Correlates solar estimates with battery charging data
+ * Compares expected solar generation with actual battery charging
+ * @param solarData - Solar generation estimate response
+ * @param batteryData - Actual battery energy changes
+ * @param efficiencyThreshold - Minimum acceptable efficiency percentage (default: 70)
+ * @returns Array of correlations with efficiency analysis
  */
 export function correlateSolarWithBattery(
   solarData: SolarEstimateResponse,
@@ -109,6 +127,8 @@ export function correlateSolarWithBattery(
 
 /**
  * Analyzes efficiency across all correlations
+ * @param correlations - Array of solar/battery correlations
+ * @returns Aggregate efficiency analysis with statistics
  */
 export function analyzeEfficiency(
   correlations: SolarCorrelation[]
@@ -143,6 +163,10 @@ export function analyzeEfficiency(
 
 /**
  * Matches hourly solar data with BMS records
+ * Finds BMS records closest in time to each hourly solar measurement
+ * @param hourlyData - Solar generation data by hour
+ * @param bmsRecords - BMS analysis records
+ * @returns Array of matched hourly data with corresponding BMS records
  */
 export function matchHourlyData(
   hourlyData: HourlyBreakdown[],
@@ -178,6 +202,11 @@ export function matchHourlyData(
 
 /**
  * Detects charging anomalies based on solar availability
+ * Identifies cases where charging behavior doesn't match solar conditions
+ * @param solarData - Solar generation estimate
+ * @param bmsRecords - BMS analysis records
+ * @param minIrradiance - Minimum irradiance threshold for "high solar" (default: 200 W/m²)
+ * @returns Array of detected anomalies with timestamps and details
  */
 export function detectChargingAnomalies(
   solarData: SolarEstimateResponse,
@@ -230,6 +259,9 @@ export function detectChargingAnomalies(
 
 /**
  * Calculates expected runtime based on solar charging
+ * @param dailySolarWh - Daily solar generation in Watt-hours
+ * @param averageLoadWatts - Average load in Watts
+ * @returns Expected runtime in hours
  */
 export function calculateExpectedRuntime(
   dailySolarWh: number,
@@ -241,6 +273,11 @@ export function calculateExpectedRuntime(
 
 /**
  * Estimates days until battery full based on solar input
+ * @param currentCapacityAh - Current battery capacity in Amp-hours
+ * @param fullCapacityAh - Full battery capacity in Amp-hours
+ * @param dailySolarWh - Daily solar generation in Watt-hours
+ * @param nominalVoltage - System nominal voltage
+ * @returns Estimated days to full charge
  */
 export function estimateDaysToFullCharge(
   currentCapacityAh: number,
@@ -258,6 +295,8 @@ export function estimateDaysToFullCharge(
 
 /**
  * Formats efficiency as a percentage string
+ * @param efficiency - Efficiency value (0-100)
+ * @returns Formatted string (e.g., "85.3%")
  */
 export function formatEfficiency(efficiency: number): string {
   return `${efficiency.toFixed(1)}%`;
@@ -265,6 +304,8 @@ export function formatEfficiency(efficiency: number): string {
 
 /**
  * Determines efficiency status (good, warning, critical)
+ * @param efficiency - Efficiency percentage (0-100)
+ * @returns Status classification
  */
 export function getEfficiencyStatus(efficiency: number): 'good' | 'warning' | 'critical' {
   if (efficiency >= 80) return 'good';
@@ -274,6 +315,9 @@ export function getEfficiencyStatus(efficiency: number): 'good' | 'warning' | 'c
 
 /**
  * Generates efficiency recommendations
+ * Provides actionable suggestions based on efficiency analysis
+ * @param analysis - Efficiency analysis results
+ * @returns Array of recommendation strings
  */
 export function generateEfficiencyRecommendations(
   analysis: EfficiencyAnalysis
