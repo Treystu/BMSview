@@ -134,11 +134,38 @@ BMSview/
 
 ## Deployment
 
+See [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md) for detailed deployment procedures.
+
 The application is automatically deployed via Netlify:
 
 1. Push changes to GitHub
 2. Netlify automatically builds and deploys
 3. Environment variables are configured in Netlify dashboard
+
+## Documentation
+
+### Core Documentation
+- **[README.md](README.md)** - This file, project overview and quick start
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design patterns
+- **[CODEBASE.md](CODEBASE.md)** - Code structure, patterns, and best practices
+- **[CHANGELOG.md](CHANGELOG.md)** - History of major changes and migrations
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
+
+### Feature Guides
+- **[REACT_LOOP_README.md](REACT_LOOP_README.md)** - ReAct loop for AI insights
+- **[SOLAR_INTEGRATION_GUIDE.md](SOLAR_INTEGRATION_GUIDE.md)** - Solar correlation features
+- **[STATE_MANAGEMENT_GUIDE.md](STATE_MANAGEMENT_GUIDE.md)** - State management patterns
+- **[SYNC_INTEGRATION_GUIDE.md](SYNC_INTEGRATION_GUIDE.md)** - Local-first sync implementation
+- **[ADMIN_DIAGNOSTICS_GUIDE.md](ADMIN_DIAGNOSTICS_GUIDE.md)** - Admin panel and diagnostics
+
+### Technical References
+- **[MONGODB_INDEXES.md](MONGODB_INDEXES.md)** - Database schema and indexes
+- **[LOGGING_GUIDE.md](LOGGING_GUIDE.md)** - Structured logging practices
+- **[DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** - Deployment procedures
+- **[GEMINI.md](GEMINI.md)** - Gemini AI integration details
+
+### Archived Documentation
+Historical documentation has been moved to `docs/archive/` for reference.
 
 ## Local-First Sync Migration
 

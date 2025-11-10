@@ -1,9 +1,8 @@
-const { getMongoDb } = require('./utils/mongodb.cjs');
+const { getDb } = require('./utils/mongodb.cjs');
 const { createLogger } = require('./utils/logger.cjs');
-const { analyzeImage } = require('./utils/analysis-pipeline.cjs');
-let getWeather; try { ({ getWeather } = require('./utils/weather.cjs')); } catch (e) { getWeather = async () => ({ temp: null, clouds: null, uvi: null, source: 'fallback', error: 'weather util missing' }); }
-let getSolarData; try { ({ getSolarData } = require('./utils/solar.cjs')); } catch (e) { getSolarData = async () => ({ sunrise: null, sunset: null, source: 'fallback', error: 'solar util missing' }); }
-let generateInsightsWithTools; try { ({ generateInsightsWithTools } = require('./utils/insights-tools.cjs')); } catch (e) { generateInsightsWithTools = async () => ({ success: false, error: 'insights tools missing' }); }
+const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
+const { getAIModelWithTools } = require('./utils/insights-processor.cjs');
+const { runGuruConversation } = require('./utils/insights-guru-runner.cjs');
 const crypto = require('crypto');
 
 const logger = createLogger('admin-diagnostics');
@@ -18,7 +17,7 @@ const diagnosticTests = {
     const startTime = Date.now();
     try {
       logger.info('Testing Database Connection...');
-      const db = await getMongoDb();
+      const db = await getDb();
       const collections = await db.listCollections().toArray();
       const duration = Date.now() - startTime;
       
@@ -49,10 +48,11 @@ const diagnosticTests = {
     const startTime = Date.now();
     try {
       logger.info('Testing Synchronous Analysis...');
-      const result = await analyzeImage(
+      const result = await performAnalysisPipeline(
         TEST_IMAGE_BASE64,
         'diagnostic-sync-test.png',
-        { forceReanalyze: true }
+        { forceReanalyze: true },
+        logger
       );
       const duration = Date.now() - startTime;
       
@@ -89,7 +89,7 @@ const diagnosticTests = {
     
     try {
       logger.info('Testing Asynchronous Insights Generation (Background Mode)...');
-      const db = await getMongoDb();
+      const db = await getDb();
       
       // Create minimal test data for insights
       const testAnalysis = {
@@ -222,8 +222,28 @@ const diagnosticTests = {
     const startTime = Date.now();
     try {
       logger.info('Testing Weather Service...');
-      const weather = await getWeather(37.7749, -122.4194); // San Francisco
+      
+      // Call weather API via HTTP (same as production)
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const weatherUrl = `${baseUrl}/.netlify/functions/weather`;
+      
+      const response = await fetch(weatherUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lat: 37.7749,  // San Francisco
+          lon: -122.4194,
+          timestamp: new Date().toISOString()
+        })
+      });
+      
       const duration = Date.now() - startTime;
+      
+      if (!response.ok) {
+        throw new Error(`Weather API returned ${response.status}`);
+      }
+      
+      const weatherData = await response.json();
       
       return {
         name: 'Weather Service',
@@ -231,8 +251,9 @@ const diagnosticTests = {
         duration,
         details: {
           location: 'San Francisco, CA',
-          temperature: weather?.temperature,
-          conditions: weather?.conditions
+          temperature: weatherData?.temp || weatherData?.temperature,
+          clouds: weatherData?.clouds,
+          hasData: !!weatherData
         }
       };
     } catch (error) {
@@ -252,8 +273,30 @@ const diagnosticTests = {
     const startTime = Date.now();
     try {
       logger.info('Testing Solar Service...');
-      const solarData = await getSolarData(37.7749, -122.4194);
+      
+      // Call solar estimate API via HTTP
+      const baseUrl = process.env.URL || 'http://localhost:8888';
+      const solarUrl = `${baseUrl}/.netlify/functions/solar-estimate`;
+      
+      const response = await fetch(solarUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          latitude: 37.7749,  // San Francisco
+          longitude: -122.4194,
+          date: new Date().toISOString().split('T')[0],
+          batteryVoltage: 51.2,
+          maxChargingAmps: 60
+        })
+      });
+      
       const duration = Date.now() - startTime;
+      
+      if (!response.ok) {
+        throw new Error(`Solar API returned ${response.status}`);
+      }
+      
+      const solarData = await response.json();
       
       return {
         name: 'Solar Service',
@@ -261,8 +304,8 @@ const diagnosticTests = {
         duration,
         details: {
           location: 'San Francisco, CA',
-          sunrise: solarData?.sunrise,
-          sunset: solarData?.sunset
+          expectedCharge: solarData?.expectedCharge,
+          hasData: !!solarData
         }
       };
     } catch (error) {
@@ -282,7 +325,7 @@ const diagnosticTests = {
     const startTime = Date.now();
     try {
       logger.info('Testing System Analytics...');
-      const db = await getMongoDb();
+      const db = await getDb();
       
       // Get basic analytics
       const [analysisCount, systemCount, recentAnalyses] = await Promise.all([
@@ -396,7 +439,12 @@ const diagnosticTests = {
       }
       
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      
+      // Use environment variable with proper fallback chain
+      const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      logger.info('Using Gemini model', { modelName });
+      
+      const model = genAI.getGenerativeModel({ model: modelName });
       
       const result = await model.generateContent('Respond with "OK" if you can read this.');
       const response = await result.response;
@@ -409,7 +457,7 @@ const diagnosticTests = {
         status: text.includes('OK') ? 'success' : 'warning',
         duration,
         details: {
-          model: 'gemini-1.5-flash',
+          model: modelName,
           responseReceived: true,
           responsePreview: text.substring(0, 50)
         }
