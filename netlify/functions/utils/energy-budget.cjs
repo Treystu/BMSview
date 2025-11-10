@@ -128,6 +128,37 @@ async function calculateCurrentBudget(systemId, timeframe = '30d', includeWeathe
       effectiveDeficit: Math.round(effectiveDeficit)
     });
 
+    // NEW: Calculate generator runtime recommendations if there's a deficit
+    let generatorRecommendation = null;
+    if (hasTrueDeficit && effectiveDeficit > 0) {
+      // Get system info for generator capacity
+      try {
+        const systemsCollection = await getCollection('systems');
+        const system = await systemsCollection.findOne({ id: systemId });
+        
+        if (system && system.maxAmpsGeneratorCharging) {
+          const genChargeAmps = system.maxAmpsGeneratorCharging;
+          const deficitAh = effectiveDeficit / nominalVoltage; // Convert Wh to Ah
+          const runtimeHours = deficitAh / genChargeAmps;
+          const runtimeMinutes = Math.round(runtimeHours * 60);
+          
+          generatorRecommendation = {
+            dailyDeficitAh: Math.round(deficitAh * 10) / 10,
+            dailyDeficitWh: Math.round(effectiveDeficit),
+            generatorMaxAmps: genChargeAmps,
+            recommendedRuntimeHours: Math.round(runtimeHours * 10) / 10,
+            recommendedRuntimeMinutes: runtimeMinutes,
+            estimatedFuelLiters: Math.round((effectiveDeficit / 1000) * GENERATOR_FUEL_CONSUMPTION_L_PER_KWH * 10) / 10,
+            note: `To compensate for daily deficit, run generator at ${genChargeAmps}A for approximately ${runtimeMinutes} minutes per day (${Math.round(runtimeHours * 10) / 10} hours).`
+          };
+          
+          log.info('Generator recommendation calculated', generatorRecommendation);
+        }
+      } catch (err) {
+        log.warn('Failed to calculate generator recommendation', { error: err.message });
+      }
+    }
+
     return {
       systemId,
       scenario: 'current',
@@ -157,7 +188,8 @@ async function calculateCurrentBudget(systemId, timeframe = '30d', includeWeathe
         daysOfAutonomy,
         peakPower: Math.round(peakPower)
       },
-      recommendations: generateBudgetRecommendations(solarSufficiency, netDaily, daysOfAutonomy)
+      generatorRecommendation,
+      recommendations: generateBudgetRecommendations(solarSufficiency, netDaily, daysOfAutonomy, generatorRecommendation)
     };
 
   } catch (error) {
@@ -363,11 +395,16 @@ async function calculateEmergencyBackup(systemId, timeframe = '30d', log) {
 /**
  * Generate recommendations based on budget analysis
  */
-function generateBudgetRecommendations(solarSufficiency, netDaily, daysOfAutonomy) {
+function generateBudgetRecommendations(solarSufficiency, netDaily, daysOfAutonomy, generatorRecommendation = null) {
   const recommendations = [];
 
   if (solarSufficiency < 80) {
     recommendations.push(`Solar generation covers only ${solarSufficiency}% of consumption. Consider adding solar panels or reducing loads.`);
+    
+    // Add generator recommendation if available
+    if (generatorRecommendation) {
+      recommendations.push(generatorRecommendation.note);
+    }
   } else if (solarSufficiency >= 100) {
     recommendations.push(`Excellent: Solar generation exceeds consumption by ${Math.round((solarSufficiency - 100) * 10) / 10}%. System is sustainable.`);
   } else {

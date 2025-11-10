@@ -197,6 +197,17 @@ async function requestBmsData(params, log) {
             throw new Error(`Unknown granularity: ${granularity}`);
         }
 
+        // Add explanatory note based on granularity
+        let note = null;
+        if (records.length > processedData.length) {
+            note = `Data aggregated from ${records.length} raw records to ${processedData.length} ${granularity === 'daily_avg' ? 'daily' : 'hourly'} points`;
+        }
+        if (granularity === 'daily_avg') {
+            note = note 
+                ? `${note}. Each day includes hourly breakdown (up to 24 hours) for detailed analysis.`
+                : 'Each daily record includes hourly breakdown data (up to 24 hours) for detailed analysis.';
+        }
+
         return {
             systemId,
             metric,
@@ -204,9 +215,7 @@ async function requestBmsData(params, log) {
             granularity,
             dataPoints: processedData.length,
             data: processedData,
-            ...(records.length > processedData.length && {
-                note: `Data aggregated from ${records.length} raw records to ${processedData.length} points`
-            })
+            ...(note && { note })
         };
     } catch (error) {
         log.error('requestBmsData failed', { error: error.message, params });
@@ -283,37 +292,63 @@ function aggregateByHour(records, metric, log) {
 }
 
 /**
- * Aggregate records by day
+ * Aggregate records by day with optional hourly breakdown
+ * Provides 90-day rollups with up to 24 hourly events per day
  */
 function aggregateByDay(records, metric, log) {
-    const buckets = new Map();
+    const dayBuckets = new Map();
 
+    // First, group all records by day
     for (const record of records) {
         if (!record.timestamp || !record.analysis) continue;
 
         const date = new Date(record.timestamp);
-        const bucket = new Date(date);
-        bucket.setHours(0, 0, 0, 0);
-        const bucketKey = bucket.toISOString().split('T')[0];
+        const dayKey = date.toISOString().split('T')[0];
 
-        if (!buckets.has(bucketKey)) {
-            buckets.set(bucketKey, []);
+        if (!dayBuckets.has(dayKey)) {
+            dayBuckets.set(dayKey, []);
         }
-        buckets.get(bucketKey).push(record);
+        dayBuckets.get(dayKey).push(record);
     }
 
-    log.debug('Records grouped by day', { bucketCount: buckets.size });
+    log.debug('Records grouped by day', { bucketCount: dayBuckets.size });
 
-    const dailyData = Array.from(buckets.entries()).map(([bucket, recs]) => {
-        const metrics = computeAggregateMetrics(recs, metric);
+    const dailyData = Array.from(dayBuckets.entries()).map(([dayKey, dayRecords]) => {
+        // Calculate daily aggregates
+        const dailyMetrics = computeAggregateMetrics(dayRecords, metric);
+
+        // Also create hourly breakdown for this day
+        const hourBuckets = new Map();
+        for (const record of dayRecords) {
+            const date = new Date(record.timestamp);
+            const hour = date.getHours();
+
+            if (!hourBuckets.has(hour)) {
+                hourBuckets.set(hour, []);
+            }
+            hourBuckets.get(hour).push(record);
+        }
+
+        const hourlyBreakdown = Array.from(hourBuckets.entries())
+            .map(([hour, hourRecords]) => {
+                const hourMetrics = computeAggregateMetrics(hourRecords, metric);
+                return {
+                    hour,
+                    dataPoints: hourRecords.length,
+                    ...hourMetrics
+                };
+            })
+            .sort((a, b) => a.hour - b.hour);
+
         return {
-            timestamp: bucket,
-            dataPoints: recs.length,
-            ...metrics
+            date: dayKey,
+            dataPoints: dayRecords.length,
+            ...dailyMetrics,
+            hourlyData: hourlyBreakdown
         };
     });
 
-    return dailyData.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    return dailyData.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**

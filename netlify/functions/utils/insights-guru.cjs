@@ -579,6 +579,12 @@ function formatEnergyBudgetsSection(energyBudgets) {
             if (isFiniteNumber(current.batteryMetrics?.daysOfAutonomy)) {
                 lines.push(`- Battery autonomy at current load: ${formatNumber(current.batteryMetrics.daysOfAutonomy, " days", 1)}.`);
             }
+
+            // NEW: Generator runtime recommendation
+            if (current.generatorRecommendation) {
+                const gen = current.generatorRecommendation;
+                lines.push(`- Generator recommendation: Run at ${formatNumber(gen.generatorMaxAmps, " A", 0)} for ${gen.recommendedRuntimeMinutes} min/day to compensate ${formatNumber(gen.dailyDeficitAh, " Ah", 1)} deficit (est. ${formatNumber(gen.estimatedFuelLiters, " L/day", 1)} fuel).`);
+            }
         }
     }
     const worstCase = energyBudgets.worstCase;
