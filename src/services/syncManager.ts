@@ -247,21 +247,42 @@ export class SyncManager {
         log('info', 'Starting intelligent sync', { collection });
 
         try {
-            // Get local metadata
-            const localMeta: LocalMetadata = {
+            // Load local cache lazily to avoid SSR/indexedDB issues
+            const localCache = await this.loadLocalCache();
+
+            // Get local metadata from IndexedDB if available
+            let localMeta: LocalMetadata = {
                 collection,
-                lastModified: this.lastSyncTime[collection] ? new Date(this.lastSyncTime[collection]).toISOString() : undefined,
-                recordCount: 0, // Would fetch from localCache in real implementation
+                lastModified: this.lastSyncTime[collection]
+                    ? new Date(this.lastSyncTime[collection]).toISOString()
+                    : undefined,
+                recordCount: 0,
                 checksum: undefined
             };
 
-            // Get server metadata (mock - would call /.netlify/functions/sync-metadata)
-            const serverMeta: SyncMetadata = {
-                collection,
-                lastModified: new Date().toISOString(),
-                recordCount: 0,
-                serverTime: new Date().toISOString()
-            };
+            if (localCache) {
+                try {
+                    const meta = await localCache.getMetadata(collection as any);
+                    localMeta = {
+                        collection,
+                        lastModified: meta.lastModified || localMeta.lastModified,
+                        recordCount: meta.recordCount,
+                        checksum: meta.checksum || undefined
+                    };
+                } catch (e) {
+                    log('warn', 'Failed to read local metadata, falling back to empty', { collection, error: (e as Error).message });
+                }
+            }
+
+            // Fetch server metadata
+            const resp = await fetch(`/.netlify/functions/sync-metadata?collection=${encodeURIComponent(collection)}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (!resp.ok) {
+                throw new Error(`sync-metadata failed with ${resp.status}`);
+            }
+            const serverMeta = (await resp.json()) as SyncMetadata;
 
             const decision = intelligentSync(localMeta, serverMeta);
             log('info', 'Intelligent sync decision made', { collection, decision: decision.action });
@@ -339,11 +360,38 @@ export class SyncManager {
         try {
             log('info', 'Performing periodic sync');
 
-            // In real implementation:
+            const localCache = await this.loadLocalCache();
+
+            // If local cache unavailable (SSR or disabled), skip gracefully
+            if (!localCache) {
+                log('warn', 'Local cache unavailable, skipping periodic sync');
+                return;
+            }
+
             // 1. Find all pending items in localCache
-            // 2. Batch push via sync-push endpoint
-            // 3. Mark as synced
-            // 4. Pull incremental updates
+            const pending = await localCache.getPendingItems();
+            const pendingSystems = pending.systems;
+            const pendingHistory = pending.history;
+
+            // 2. Batch push via sync-push endpoint (systems)
+            if (pendingSystems.length > 0) {
+                await this.pushBatch('systems', pendingSystems.map(({ _syncStatus, ...rest }) => rest));
+                for (const item of pendingSystems) {
+                    await localCache.systems.markAsSynced(item.id, new Date().toISOString());
+                }
+            }
+
+            // 2b. Batch push via sync-push endpoint (history)
+            if (pendingHistory.length > 0) {
+                await this.pushBatch('history', pendingHistory.map(({ _syncStatus, ...rest }) => rest));
+                for (const item of pendingHistory) {
+                    await localCache.history.markAsSynced(item.id, new Date().toISOString());
+                }
+            }
+
+            // 3. Pull incremental updates for both collections
+            await this.pullIncremental('systems', localCache);
+            await this.pullIncremental('history', localCache);
 
             this.lastSyncTime['all'] = Date.now();
             this.syncError = null;
@@ -396,6 +444,83 @@ export class SyncManager {
     destroy(): void {
         this.stopPeriodicSync();
         log('info', 'SyncManager destroyed');
+    }
+
+    // ===========================
+    // Internal helpers
+    // ===========================
+    private async loadLocalCache(): Promise<null | {
+        getMetadata: (collection: 'systems' | 'history' | 'analytics' | 'weather') => Promise<{ lastModified: string | null; recordCount: number; checksum: string | null }>;
+        getPendingItems: () => Promise<{ systems: any[]; history: any[]; analytics: any[] }>;
+        systems: { markAsSynced: (id: string, serverTimestamp?: string) => Promise<void> };
+        history: { markAsSynced: (id: string, serverTimestamp?: string) => Promise<void> };
+        // Minimal writes for pull
+        systemsCache?: { put: (item: any) => Promise<void>; bulkPut?: (items: any[]) => Promise<void> };
+        historyCache?: { put: (item: any) => Promise<void>; bulkPut?: (items: any[]) => Promise<void> };
+    }> {
+        try {
+            // Dynamic import to respect ESM and alias
+            const mod = await import('@/services/localCache');
+            return mod as any;
+        } catch (e) {
+            log('warn', 'Failed to load local cache module', { error: (e as Error).message });
+            return null;
+        }
+    }
+
+    private async pushBatch(collection: 'systems' | 'history', items: any[]): Promise<void> {
+        if (!items.length) return;
+        const resp = await fetch('/.netlify/functions/sync-push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ collection, items })
+        });
+        if (!resp.ok) {
+            const text = await resp.text();
+            throw new Error(`sync-push ${collection} failed: ${resp.status} ${text}`);
+        }
+        log('info', 'Pushed batch to server', { collection, count: items.length });
+    }
+
+    private async pullIncremental(collection: 'systems' | 'history', localCache: any): Promise<void> {
+        const since = this.lastSyncTime[collection]
+            ? new Date(this.lastSyncTime[collection]).toISOString()
+            : new Date(0).toISOString();
+        const url = `/.netlify/functions/sync-incremental?collection=${encodeURIComponent(collection)}&since=${encodeURIComponent(since)}`;
+        const resp = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+        if (!resp.ok) {
+            const text = await resp.text();
+            throw new Error(`sync-incremental ${collection} failed: ${resp.status} ${text}`);
+        }
+        const data = await resp.json();
+        const updates: any[] = data.items || [];
+        const deletedIds: string[] = data.deletedIds || [];
+
+        // Apply updates to local cache
+        if (updates.length) {
+            try {
+                if (localCache[`${collection}Cache`]?.bulkPut) {
+                    await localCache[`${collection}Cache`].bulkPut(updates);
+                } else if (localCache[`${collection}Cache`]?.put) {
+                    for (const u of updates) await localCache[`${collection}Cache`].put(u);
+                }
+            } catch (e) {
+                log('warn', 'Failed to write updates to local cache', { collection, error: (e as Error).message });
+            }
+        }
+
+        // Apply deletions to local cache if API exists
+        if (deletedIds.length && localCache[`${collection}Cache`]?.delete) {
+            try {
+                for (const id of deletedIds) await localCache[`${collection}Cache`].delete(id);
+            } catch (e) {
+                log('warn', 'Failed to delete records from local cache', { collection, error: (e as Error).message });
+            }
+        }
+
+        // Update last sync time
+        this.lastSyncTime[collection] = Date.now();
+        log('info', 'Pulled incremental updates', { collection, updates: updates.length, deleted: deletedIds.length });
     }
 }
 

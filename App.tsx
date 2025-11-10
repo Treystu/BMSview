@@ -5,6 +5,7 @@ import Header from './components/Header';
 import RegisterBms from './components/RegisterBms';
 import UploadSection from './components/UploadSection';
 // ***MODIFIED***: Import the new *synchronous* service
+import syncManager from '@/services/syncManager';
 import {
   associateDlToSystem,
   getAnalysisHistory,
@@ -55,6 +56,13 @@ function App() {
 
   useEffect(() => {
     fetchAppData();
+    // Start periodic sync on mount
+    syncManager.startPeriodicSync();
+
+    // Cleanup on unmount
+    return () => {
+      syncManager.stopPeriodicSync();
+    };
   }, [fetchAppData]);
 
   const handleLinkRecordToSystem = async (recordId: string, systemId: string, dlNumber?: string | null) => {

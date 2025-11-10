@@ -7,6 +7,19 @@ interface PaginatedResponse<T> {
 
 interface FetchListOptions {
     forceRefresh?: boolean;
+    strategy?: FetchStrategy;
+}
+
+/**
+ * FetchStrategy enum for controlling cache behavior
+ * - CACHE_FIRST: Try cache first, fall back to network (default for reads)
+ * - CACHE_AND_SYNC: Use cache immediately, sync in background
+ * - FORCE_FRESH: Always fetch from server, skip cache
+ */
+export enum FetchStrategy {
+    CACHE_FIRST = 'cache-first',
+    CACHE_AND_SYNC = 'cache-and-sync',
+    FORCE_FRESH = 'force-fresh'
 }
 
 type CacheMode = 'enabled' | 'disabled-via-override' | 'unavailable';
@@ -453,17 +466,18 @@ export function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T>
 }
 
 export const getRegisteredSystems = async (page = 1, limit = 25, options: FetchListOptions = {}): Promise<PaginatedResponse<BmsSystem>> => {
-    const { forceRefresh = false } = options;
-    log('info', 'Fetching paginated registered BMS systems.', { page, limit, forceRefresh });
+    const { forceRefresh = false, strategy = FetchStrategy.CACHE_FIRST } = options;
+    const isForceRefresh = forceRefresh || strategy === FetchStrategy.FORCE_FRESH;
+    log('info', 'Fetching paginated registered BMS systems.', { page, limit, strategy });
 
-    if (!forceRefresh) {
+    if (!isForceRefresh) {
         const cached = await getCachedSystemsPage(page, limit);
         if (cached) {
             return cached;
         }
     }
 
-    const response = forceRefresh
+    const response = isForceRefresh
         ? await apiFetch<any>(`systems?page=${page}&limit=${limit}`)
         : await fetchWithCache<any>(`systems?page=${page}&limit=${limit}`, 10_000);
 
@@ -514,17 +528,18 @@ export const getRegisteredSystems = async (page = 1, limit = 25, options: FetchL
 };
 
 export const getAnalysisHistory = async (page = 1, limit = 25, options: FetchListOptions = {}): Promise<PaginatedResponse<AnalysisRecord>> => {
-    const { forceRefresh = false } = options;
-    log('info', 'Fetching paginated analysis history.', { page, limit, forceRefresh });
+    const { forceRefresh = false, strategy = FetchStrategy.CACHE_FIRST } = options;
+    const isForceRefresh = forceRefresh || strategy === FetchStrategy.FORCE_FRESH;
+    log('info', 'Fetching paginated analysis history.', { page, limit, strategy });
 
-    if (!forceRefresh) {
+    if (!isForceRefresh) {
         const cached = await getCachedHistoryPage(page, limit);
         if (cached) {
             return cached;
         }
     }
 
-    const response = forceRefresh
+    const response = isForceRefresh
         ? await apiFetch<any>(`history?page=${page}&limit=${limit}`)
         : await fetchWithCache<any>(`history?page=${page}&limit=${limit}`, 5_000);
 
