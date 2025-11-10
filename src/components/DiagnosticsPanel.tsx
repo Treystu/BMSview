@@ -3,7 +3,7 @@
  * Displays production diagnostic tests and results
  */
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 
 export interface DiagnosticTest {
     id: string;
@@ -27,6 +27,7 @@ export const DiagnosticsPanel: React.FC = () => {
     const [results, setResults] = useState<DiagnosticResult[]>([]);
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set());
+    const suggestionsRef = useRef<HTMLDivElement | null>(null);
 
     // Available diagnostic tests
     const availableTests: DiagnosticTest[] = [
@@ -140,6 +141,27 @@ export const DiagnosticsPanel: React.FC = () => {
                 });
 
             setResults(displayResults);
+
+            // Auto-expand failed tests so admins immediately see details
+            try {
+                const failedIds = displayResults.filter(r => r.status === 'Failure').map(r => r.id);
+                if (failedIds.length > 0) {
+                    setExpandedResults(new Set(failedIds));
+                }
+
+                // Scroll suggestions into view if present
+                if (Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+                    setTimeout(() => {
+                        try {
+                            suggestionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        } catch (e) {
+                            // ignore scrolling errors
+                        }
+                    }, 150);
+                }
+            } catch (e) {
+                // non-fatal UI enhancement error
+            }
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             alert(`Failed to run diagnostics: ${message}`);
@@ -252,7 +274,7 @@ export const DiagnosticsPanel: React.FC = () => {
 
             {/* Suggestions (top-level guidance from diagnostics) */}
             {suggestions.length > 0 && (
-                <div className="space-y-2 border-t border-gray-200 pt-6">
+                <div className="space-y-2 border-t border-gray-200 pt-6" ref={suggestionsRef}>
                     <h3 className="text-lg font-semibold text-gray-700">Suggestions</h3>
                     <div className="bg-yellow-50 border-l-4 border-yellow-300 p-3 rounded text-sm text-yellow-800">
                         <ul className="list-disc list-inside space-y-1">
@@ -273,7 +295,7 @@ export const DiagnosticsPanel: React.FC = () => {
                         {results.map(result => (
                             <div
                                 key={result.id}
-                                className={`border-l-4 p-4 rounded ${getStatusColor(result.status)} cursor-pointer`}
+                                className={`border-l-4 p-4 rounded ${getStatusColor(result.status)} cursor-pointer ${result.status === 'Failure' ? 'ring-2 ring-red-200 shadow-sm' : ''}`}
                                 onClick={() => toggleExpanded(result.id)}
                             >
                                 <div className="flex items-center justify-between">
