@@ -637,12 +637,16 @@ export const streamInsights = async (
         dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
     });
 
-    // Add timeout for insights request (60 seconds to allow for function calling iterations)
+    // Add timeout for insights request (90 seconds to allow for background job creation + startup)
+    // Background mode is now the default, which requires time to:
+    // - Create job in MongoDB
+    // - Dispatch to background function
+    // - Background function to start processing
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
         controller.abort();
-        log('warn', 'Insights request timed out after 60 seconds.');
-    }, 60000);
+        log('warn', 'Insights request timed out after 90 seconds.');
+    }, 90000);
 
     try {
         const response = await fetch(endpoint, {
@@ -836,11 +840,11 @@ export const streamInsights = async (
         // Provide user-friendly message for timeout/abort
         if (error.name === 'AbortError') {
             const timeoutError = new Error(
-                'Request timed out after 60 seconds. The AI is taking too long to process your query.\n\n' +
-                'Suggestions:\n' +
-                '• Try a simpler question\n' +
-                '• Request a smaller time range (e.g., "past 7 days" instead of "past 30 days")\n' +
-                '• Break complex queries into multiple questions'
+                'Request timed out after 90 seconds. The server is taking too long to start processing.\n\n' +
+                'This usually means:\n' +
+                '• The background processing service is busy\n' +
+                '• There may be a temporary service issue\n\n' +
+                'Please try again in a few moments.'
             );
             log('error', 'Insights request aborted due to timeout', { originalError: error.message });
             onError(timeoutError);
