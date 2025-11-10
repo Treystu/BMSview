@@ -84,46 +84,67 @@ const diagnosticTests = {
     }
   },
 
-  // Test asynchronous analysis with improved timeout handling
+  // Test asynchronous insights generation (background mode)
   asyncAnalysis: async () => {
     const startTime = Date.now();
-    const jobId = 'diagnostic-test-job-' + crypto.randomBytes(8).toString('hex');
-    const maxWaitTime = 10000; // 10 seconds max wait
-    const pollInterval = 500; // Check every 500ms
     
     try {
-      logger.info('Testing Asynchronous Analysis...');
+      logger.info('Testing Asynchronous Insights Generation (Background Mode)...');
       const db = await getMongoDb();
       
-      // Insert test job
-      await db.collection('analysisJobs').insertOne({
+      // Create minimal test data for insights
+      const testAnalysis = {
+        id: 'async-test-' + Date.now(),
+        stateOfCharge: 75,
+        overallVoltage: 52.1,
+        current: -5.2,
+        power: -270.92,
+        highestCellVoltage: 3.35,
+        lowestCellVoltage: 3.28,
+        cellVoltageDifference: 0.07,
+        temperatures: [25, 26],
+        status: 'Normal',
+        timestamp: new Date()
+      };
+      
+      // Create an insights job directly (simulating background mode)
+      const jobId = `diagnostic_test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const testJob = {
         id: jobId,
-        status: 'pending',
-        imageUrl: TEST_IMAGE_BASE64,
-        fileName: 'diagnostic-async-test.png',
+        status: 'queued',
+        analysisData: testAnalysis,
+        systemId: null,
+        customPrompt: 'Provide a brief status.',
+        initialSummary: { message: 'Test summary' },
+        progress: [],
+        partialInsights: null,
+        finalInsights: null,
+        error: null,
         createdAt: new Date(),
-        type: 'diagnostic-test'
-      });
+        updatedAt: new Date()
+      };
       
-      logger.info('Test job inserted for async analysis.', { jobId });
+      await db.collection('insights-jobs').insertOne(testJob);
+      logger.info('Test insights job created for async test.', { jobId });
       
-      // Poll for job completion with timeout
+      // Poll for job status changes (simulating background processing)
+      const maxWaitTime = 3000; // 3 seconds max wait for test
+      const pollInterval = 500;
       let elapsedTime = 0;
-      let jobStatus = null;
+      let finalJob = null;
       
       while (elapsedTime < maxWaitTime) {
-        const job = await db.collection('analysisJobs').findOne({ id: jobId });
+        const job = await db.collection('insights-jobs').findOne({ id: jobId });
         
         if (job && (job.status === 'completed' || job.status === 'failed')) {
-          jobStatus = job;
+          finalJob = job;
           break;
         }
         
-        // For diagnostic tests, we'll consider the job creation as success
-        // since we can't guarantee a worker is processing jobs
-        if (elapsedTime >= 2000) {
-          // After 2 seconds, consider it a warning but not a failure
-          jobStatus = { status: 'pending', warning: 'No worker processing detected' };
+        // For diagnostic tests, we consider job creation + queuing as success
+        // since we can't guarantee a background worker is running
+        if (elapsedTime >= 1000) {
+          finalJob = job;
           break;
         }
         
@@ -134,67 +155,62 @@ const diagnosticTests = {
       const duration = Date.now() - startTime;
       
       // Clean up test job
-      await db.collection('analysisJobs').deleteOne({ id: jobId });
+      await db.collection('insights-jobs').deleteOne({ id: jobId });
       
-      if (jobStatus?.warning) {
-        logger.warn('Asynchronous analysis test completed with warning.', { 
-          jobId,
-          duration,
-          warning: jobStatus.warning 
-        });
-        
-        return {
-          name: 'Asynchronous Analysis',
-          status: 'warning',
-          duration,
-          details: {
+      // Evaluate results
+      if (finalJob) {
+        if (finalJob.status === 'completed') {
+          logger.info('Asynchronous insights test completed successfully.', { 
             jobId,
-            message: 'Job created successfully but no worker detected',
-            recommendation: 'Ensure background job processor is running'
-          }
-        };
-      }
-      
-      if (jobStatus?.status === 'completed') {
-        logger.info('Asynchronous analysis test completed successfully.', { 
-          jobId,
-          duration 
-        });
-        
-        return {
-          name: 'Asynchronous Analysis',
-          status: 'success',
-          duration,
-          details: {
+            duration 
+          });
+          
+          return {
+            name: 'Asynchronous Insights Generation',
+            status: 'success',
+            duration,
+            details: {
+              jobId,
+              finalStatus: finalJob.status,
+              message: 'Background job processing verified'
+            }
+          };
+        } else if (finalJob.status === 'queued' || finalJob.status === 'processing') {
+          // Job created successfully but no worker processed it yet
+          logger.warn('Asynchronous insights test completed with warning.', { 
             jobId,
-            resultId: jobStatus.resultId
-          }
-        };
+            duration,
+            status: finalJob.status
+          });
+          
+          return {
+            name: 'Asynchronous Insights Generation',
+            status: 'warning',
+            duration,
+            details: {
+              jobId,
+              finalStatus: finalJob.status,
+              message: 'Job created successfully but no background worker detected',
+              recommendation: 'Ensure generate-insights-background function is deployed and accessible'
+            }
+          };
+        } else {
+          throw new Error(`Job ended with status: ${finalJob.status}`);
+        }
+      } else {
+        throw new Error('Job not found after creation');
       }
-      
-      throw new Error(`Job ${jobId} timed out or failed`);
       
     } catch (error) {
       const duration = Date.now() - startTime;
       
-      // Clean up test job on error
-      try {
-        const db = await getMongoDb();
-        await db.collection('analysisJobs').deleteOne({ id: jobId });
-      } catch (cleanupError) {
-        logger.error('Failed to clean up test job.', { 
-          jobId,
-          error: cleanupError.message 
-        });
-      }
-      
-      logger.error('Asynchronous analysis test failed.', { 
+      logger.error('Asynchronous insights test failed.', { 
         error: error.message,
         duration 
       });
       
       return {
-        name: 'Asynchronous Analysis',
+        name: 'Asynchronous Insights Generation',
         status: 'error',
         duration,
         error: error.message
