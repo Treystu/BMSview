@@ -3,7 +3,8 @@ const { createLogger } = require('./utils/logger.cjs');
 const { analyzeImage } = require('./utils/analysis-pipeline.cjs');
 const { getWeather } = require('./utils/weather.cjs');
 const { getSolarData } = require('./utils/solar.cjs');
-const { generateInsightsWithTools } = require('./utils/insights-tools.cjs');
+const { runGuruConversation } = require('./utils/insights-guru-runner.cjs');
+const { getAIModelWithTools } = require('./utils/insights-processor.cjs');
 const crypto = require('crypto');
 
 const logger = createLogger('admin-diagnostics');
@@ -309,6 +310,12 @@ const diagnosticTests = {
     try {
       logger.info('Testing Enhanced Insights with Function Calling...');
       
+      // Get AI model
+      const model = await getAIModelWithTools(logger);
+      if (!model) {
+        throw new Error('AI model not available');
+      }
+      
       // Create minimal test data
       const testAnalysis = {
         id: 'test-' + Date.now(),
@@ -324,11 +331,18 @@ const diagnosticTests = {
         timestamp: new Date()
       };
       
-      const insights = await generateInsightsWithTools(
-        testAnalysis,
-        [],
-        { mode: 'test', timeout: 5000 }
-      );
+      // Run insights generation with a short timeout for testing
+      const result = await runGuruConversation({
+        model,
+        analysisData: testAnalysis,
+        systemId: null,
+        customPrompt: 'Provide a brief status summary.',
+        log: logger,
+        mode: 'sync',
+        maxIterations: 3,
+        iterationTimeoutMs: 10000,
+        totalTimeoutMs: 15000
+      });
       
       const duration = Date.now() - startTime;
       
@@ -337,9 +351,10 @@ const diagnosticTests = {
         status: 'success',
         duration,
         details: {
-          insightGenerated: !!insights,
-          hasRecommendations: !!insights?.recommendations,
-          hasSolarData: !!insights?.solarData
+          insightGenerated: !!result?.insights,
+          iterations: result?.iterations || 0,
+          toolCallsUsed: result?.toolCalls?.length || 0,
+          usedFunctionCalling: result?.usedFunctionCalling || false
         }
       };
     } catch (error) {
