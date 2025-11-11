@@ -221,9 +221,17 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
 
     const executionGuidance = buildExecutionGuidance(mode, contextData);
     const missionStatement = customPrompt ? buildCustomMission(customPrompt) : buildDefaultMission();
+    
+    // Build data availability summary
+    const dataAvailability = await buildDataAvailabilitySummary(systemId, contextData, log);
 
     let prompt = "You are the Ultimate AI Battery Guru for off-grid energy systems. You ingest structured context, request targeted data through function calls, and deliver deeply analytical recommendations grounded in the evidence provided.\n";
     prompt += "Your goals: preserve battery health, guarantee energy sufficiency, and surface proactive maintenance or expansion actions.\n";
+
+    // Add data availability info FIRST so Gemini knows what it can query
+    if (dataAvailability) {
+        prompt += `\n${dataAvailability}\n`;
+    }
 
     prompt += `\n${executionGuidance}\n`;
     prompt += `\n**AVAILABLE TOOLS**\n${toolCatalog}\n`;
@@ -253,25 +261,53 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         }
     }
 
-    prompt += "\n**CRITICAL RESPONSE RULES**\n";
+    prompt += "\n**CRITICAL RESPONSE RULES - READ CAREFULLY**\n\n";
+    
+    prompt += "RESPONSE FORMAT REQUIREMENTS (STRICTLY ENFORCE):\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    prompt += "You MUST respond with valid JSON only. NO other text, NO markdown, NO explanations.\n\n";
+    prompt += "Option 1 - Request additional data (use tool_call):\n";
+    prompt += "{\n";
+    prompt += "  \"tool_call\": \"request_bms_data\",\n";
+    prompt += "  \"parameters\": {\n";
+    prompt += "    \"systemId\": \"<the system ID>\",\n";
+    prompt += "    \"metric\": \"voltage\",\n";
+    prompt += "    \"time_range_start\": \"2025-11-01T00:00:00Z\",\n";
+    prompt += "    \"time_range_end\": \"2025-11-08T00:00:00Z\",\n";
+    prompt += "    \"granularity\": \"daily_avg\"\n";
+    prompt += "  }\n";
+    prompt += "}\n\n";
+    prompt += "Option 2 - Provide your final analysis (use final_answer):\n";
+    prompt += "{\n";
+    prompt += "  \"final_answer\": \"## KEY FINDINGS\\n\\n**Battery Health:** Good condition...\\n\\n## RECOMMENDATIONS\\n\\n1. 🟢 Continue monitoring...\"\n";
+    prompt += "}\n\n";
+    prompt += "⚠️ CRITICAL: If you respond with anything other than valid JSON in one of these two formats, the system will FAIL.\n";
+    prompt += "⚠️ DO NOT wrap JSON in markdown code blocks (no ```json).\n";
+    prompt += "⚠️ DO NOT add explanatory text before or after the JSON.\n";
+    prompt += "⚠️ DO NOT respond with empty text or whitespace.\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
     
     // Mode-specific guidance on tool usage
     if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
-        prompt += "1. DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. You likely have ALL the data needed already. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range). IMPORTANT: Prefer to analyze with existing data rather than requesting more.\n";
+        prompt += "DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. You likely have ALL the data needed already. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range). IMPORTANT: Prefer to analyze with existing data rather than requesting more.\n\n";
     } else {
-        prompt += "1. DATA GATHERING: If you need data beyond what's provided, use tools to gather it. Don't suggest tools - USE them. Keep tool calls focused on the specific data needed to answer the question. Maximum 2-3 tool calls recommended.\n";
+        prompt += "DATA GATHERING: If you need data beyond what's provided, use tools to gather it. Don't suggest tools - USE them. Keep tool calls focused on the specific data needed to answer the question. Maximum 2-3 tool calls recommended.\n\n";
     }
     
-    prompt += "2. ITERATION BUDGET: You have a MAXIMUM of 8 iterations. Each tool call uses one iteration. Plan carefully. After 2-3 tool calls (or if comprehensive data is already provided), you MUST provide your final_answer.\n";
-    prompt += "3. RESPONSE FORMAT:\n   - To request data: { \"tool_call\": \"tool_name\", \"parameters\": {...} }\n   - To provide analysis: { \"final_answer\": \"your complete analysis here\" }\n   - NEVER respond with plain text or explanations outside JSON.\n";
-    prompt += "4. Keep tool requests scoped (specific metric + precise window). Prefer hourly or daily granularity unless raw samples are essential.\n";
-    prompt += "5. WRITING STYLE: Terse, highlight-driven bullets. Lead with KEY FINDINGS in bold. Skip verbose explanations - operators need actionable intel, not essays.\n";
-    prompt += "6. Structure: ## KEY FINDINGS (2-4 critical bullets with bold labels) → ## RECOMMENDATIONS (numbered actions with urgency flags). DO NOT include OPERATIONAL STATUS section - current metrics are already visible in the UI.\n";
-    prompt += "7. Cite data sources in parentheticals, not separate sections: 'Solar deficit 15Ah (weather data + BMS logs)' not 'Data sources: weather, BMS'.\n";
-    prompt += "8. TERMINOLOGY: 'Battery autonomy' or 'days of autonomy' = RUNTIME until discharge at current load (Energy Budget). 'Service life' or 'lifetime' = YEARS/MONTHS until replacement due to degradation (Predictive Outlook). Never confuse these.\n";
-    prompt += "9. DATA QUALITY: Sporadic screenshot-based monitoring has gaps. Use ±10% tolerance for energy deficits, ±15% for solar variance. Only flag issues beyond tolerance with reliable data (>60% coverage). Acknowledge data sparsity when relevant.\n";
-    prompt += "10. SOLAR VARIANCE: Remember that delta between expected and actual charge often represents DAYTIME LOAD CONSUMPTION, not solar underperformance. Example: 220Ah expected, 58Ah recovered = 162Ah consumed by loads during charging hours. Only flag solar issues when variance exceeds ±15% tolerance AND weather was favorable.\n";
-    prompt += "11. ALERT EVENTS: Group consecutive alerts into time-based events. Multiple screenshots showing same alert = ONE event until threshold recovery. Estimate duration using time-of-day context (e.g., low battery at night likely clears when sun comes up).\n";
+    prompt += "ITERATION BUDGET: You have a MAXIMUM of 8 iterations. Each tool call uses one iteration. Plan carefully:\n";
+    prompt += "- With preloaded comprehensive data: Provide final_answer immediately (iteration 1)\n";
+    prompt += "- Need 1-2 data points: Request them (iterations 1-2), then final_answer (iteration 3)\n";
+    prompt += "- Never use more than 3-4 iterations total\n\n";
+    
+    prompt += "CONTENT GUIDELINES:\n";
+    prompt += "• WRITING STYLE: Terse, highlight-driven bullets. Lead with KEY FINDINGS in bold. Skip verbose explanations.\n";
+    prompt += "• STRUCTURE: ## KEY FINDINGS (2-4 critical bullets with **bold labels**) → ## RECOMMENDATIONS (numbered actions with urgency flags 🔴🟡🟢)\n";
+    prompt += "• DO NOT include OPERATIONAL STATUS section - current voltage/SOC/current/temperature already displayed in UI\n";
+    prompt += "• Cite sources inline: 'Solar deficit 15Ah (weather data + BMS logs)' not separate attribution\n";
+    prompt += "• TERMINOLOGY: 'Battery autonomy'/'days of autonomy' = RUNTIME until discharge (Energy Budget). 'Service life'/'lifetime' = MONTHS/YEARS until replacement (Predictive Outlook). Never confuse.\n";
+    prompt += "• DATA QUALITY: Screenshot-based monitoring has gaps. Use ±10% tolerance for energy deficits, ±15% for solar variance.\n";
+    prompt += "• SOLAR VARIANCE: Delta between expected and actual = DAYTIME LOAD CONSUMPTION (not solar underperformance). Only flag solar issues when variance exceeds ±15% AND weather was favorable.\n";
+    prompt += "• ALERT EVENTS: Group consecutive alerts into time-based events. Multiple screenshots showing same alert = ONE event until threshold recovery.\n";
 
     return {
         prompt,
@@ -1568,6 +1604,118 @@ function formatNumber(value, unit = "", digits = 1) {
 function formatPercent(value, digits = 0) {
     if (!isFiniteNumber(value)) return "n/a";
     return `${Number(value).toFixed(digits)}%`;
+}
+
+/**
+ * Build a summary of what data is available for Gemini to query
+ */
+async function buildDataAvailabilitySummary(systemId, contextData, log) {
+    if (!systemId) {
+        return "**DATA AVAILABILITY**\n- System: No system ID provided - limited data available\n- You can only analyze the current snapshot provided";
+    }
+
+    const lines = ["**DATA AVAILABILITY - What You Can Query**"];
+    lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    
+    // Get date range from recent snapshots or dailyRollup
+    let minDate = null;
+    let maxDate = null;
+    let totalRecords = 0;
+    
+    if (contextData?.recentSnapshots && contextData.recentSnapshots.length > 0) {
+        const timestamps = contextData.recentSnapshots
+            .map(s => s.timestamp)
+            .filter(t => t)
+            .sort();
+        
+        if (timestamps.length > 0) {
+            minDate = timestamps[0];
+            maxDate = timestamps[timestamps.length - 1];
+            totalRecords = timestamps.length;
+        }
+    }
+    
+    if (contextData?.dailyRollup90d?.daily && contextData.dailyRollup90d.daily.length > 0) {
+        const dailyTimestamps = contextData.dailyRollup90d.daily
+            .map(d => d.date)
+            .filter(t => t)
+            .sort();
+        
+        if (dailyTimestamps.length > 0 && (!minDate || dailyTimestamps[0] < minDate)) {
+            minDate = dailyTimestamps[0];
+        }
+        if (dailyTimestamps.length > 0 && (!maxDate || dailyTimestamps[dailyTimestamps.length - 1] > maxDate)) {
+            maxDate = dailyTimestamps[dailyTimestamps.length - 1];
+        }
+    }
+    
+    // System info
+    if (contextData?.systemProfile) {
+        const profile = contextData.systemProfile;
+        lines.push(`\n📋 SYSTEM: ${profile.name || systemId}`);
+        if (profile.chemistry) lines.push(`   Chemistry: ${profile.chemistry}`);
+        if (profile.nominalVoltage) lines.push(`   Voltage: ${profile.nominalVoltage}V`);
+        if (profile.capacity) lines.push(`   Capacity: ${profile.capacity}Ah`);
+    } else {
+        lines.push(`\n📋 SYSTEM: ${systemId}`);
+    }
+    
+    // Date range
+    if (minDate && maxDate) {
+        const minDateStr = new Date(minDate).toISOString().split('T')[0];
+        const maxDateStr = new Date(maxDate).toISOString().split('T')[0];
+        const daysDiff = Math.floor((new Date(maxDate) - new Date(minDate)) / (1000 * 60 * 60 * 24));
+        
+        lines.push(`\n📅 DATA RANGE: ${minDateStr} to ${maxDateStr} (${daysDiff} days)`);
+        lines.push(`   Total Records: ${totalRecords} BMS snapshots`);
+        lines.push(`   Use these dates when calling request_bms_data tool`);
+    } else {
+        lines.push(`\n📅 DATA RANGE: Current snapshot only`);
+        lines.push(`   No historical data available for this system`);
+    }
+    
+    // Available metrics
+    lines.push(`\n🔍 QUERYABLE METRICS (via request_bms_data):`);
+    lines.push(`   • voltage - Battery pack voltage over time`);
+    lines.push(`   • current - Charge/discharge current (+ charging, - discharging)`);
+    lines.push(`   • power - Instantaneous power (watts)`);
+    lines.push(`   • soc - State of charge (0-100%)`);
+    lines.push(`   • capacity - Remaining capacity (Ah)`);
+    lines.push(`   • temperature - Battery temperature`);
+    lines.push(`   • cell_voltage_difference - Cell imbalance (mV)`);
+    lines.push(`   • all - All metrics (use sparingly - large dataset)`);
+    
+    // Available tools
+    lines.push(`\n🛠️ ANALYSIS TOOLS AVAILABLE:`);
+    lines.push(`   • getSystemAnalytics - Comprehensive stats, trends, degradation`);
+    lines.push(`   • analyze_usage_patterns - Daily patterns, anomalies`);
+    lines.push(`   • calculate_energy_budget - Solar contribution, autonomy days`);
+    lines.push(`   • predict_battery_trends - Capacity forecasts, lifetime estimates`);
+    lines.push(`   • getWeatherData - Historical weather correlation`);
+    
+    // Data that's already pre-loaded
+    if (contextData?.analytics && !contextData.analytics.error) {
+        lines.push(`\n✓ PRE-LOADED: System analytics (no need to request)`);
+    }
+    if (contextData?.energyBudgets?.current && !contextData.energyBudgets.current.error) {
+        lines.push(`✓ PRE-LOADED: Energy budget analysis`);
+    }
+    if (contextData?.predictions?.capacity && !contextData.predictions.capacity.error) {
+        lines.push(`✓ PRE-LOADED: Capacity predictions`);
+    }
+    if (contextData?.predictions?.lifetime && !contextData.predictions.lifetime.error) {
+        lines.push(`✓ PRE-LOADED: Lifetime predictions`);
+    }
+    if (contextData?.usagePatterns?.daily && !contextData.usagePatterns.daily.error) {
+        lines.push(`✓ PRE-LOADED: Daily usage patterns`);
+    }
+    if (contextData?.dailyRollup90d?.daily && contextData.dailyRollup90d.daily.length > 0) {
+        lines.push(`✓ PRE-LOADED: 90-day daily rollup (${contextData.dailyRollup90d.daily.length} days)`);
+    }
+    
+    lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    
+    return lines.join("\n");
 }
 
 function truncate(text, maxLength) {
