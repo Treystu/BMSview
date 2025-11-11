@@ -1,6 +1,6 @@
 const { connectDB } = require('./utils/mongodb.cjs');
 const { logger } = require('./utils/logger.cjs');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenAI } = require('@google/genai');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 const { generateInsightsWithTools } = require('./utils/insights-tools.cjs');
 const { createInsightsJob, getJobById, updateJobProgress } = require('./utils/insights-jobs.cjs');
@@ -134,7 +134,7 @@ const getGeminiClient = () => {
       keyLength: apiKey.length,
       keyPrefix: apiKey.substring(0, 6) + '...'
     });
-    genAI = new GoogleGenerativeAI(apiKey);
+    genAI = new GoogleGenAI({ apiKey });
   }
   return genAI;
 };
