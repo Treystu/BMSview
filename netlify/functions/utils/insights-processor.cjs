@@ -18,7 +18,7 @@ const {
 const { runGuruConversation, DEFAULT_CONVERSATION_TOKEN_LIMIT, TOKENS_PER_CHAR } = require('./insights-guru-runner.cjs');
 
 // Processing constants
-const MAX_TOOL_ITERATIONS = 15;
+const MAX_TOOL_ITERATIONS = 8; // Reduced from 15 to match sync mode and prevent excessive tool calls
 const ITERATION_TIMEOUT_MS = 30000; // 30 seconds
 const TOTAL_TIMEOUT_MS = 14 * 60 * 1000; // 14 minutes
 

@@ -254,8 +254,15 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     }
 
     prompt += "\n**CRITICAL RESPONSE RULES**\n";
-    prompt += "1. PROACTIVELY gather data using tools before answering. Don't suggest tools - USE them. If solar correlation would strengthen your analysis, call request_bms_data for solar current over recent days NOW.\n";
-    prompt += "2. After gathering necessary data, respond with JSON: {\n   \"final_answer\": \"analysis...\"\n}.\n";
+    
+    // Mode-specific guidance on tool usage
+    if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
+        prompt += "1. DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range).\n";
+    } else {
+        prompt += "1. DATA GATHERING: If you need data beyond what's provided, use tools to gather it. Don't suggest tools - USE them. Keep tool calls focused on the specific data needed to answer the question.\n";
+    }
+    
+    prompt += "2. After gathering necessary data (if any), respond with JSON: {\n   \"final_answer\": \"analysis...\"\n}.\n";
     prompt += "3. To request data, respond ONLY with JSON: {\n   \"tool_call\": \"tool_name\",\n   \"parameters\": { ... }\n}. Never include explanatory text with tool calls.\n";
     prompt += "4. Keep tool requests scoped (specific metric + precise window). Prefer hourly or daily granularity unless raw samples are essential.\n";
     prompt += "5. WRITING STYLE: Terse, highlight-driven bullets. Lead with KEY FINDINGS in bold. Skip verbose explanations - operators need actionable intel, not essays.\n";

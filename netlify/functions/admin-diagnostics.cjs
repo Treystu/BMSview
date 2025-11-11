@@ -449,7 +449,8 @@ const diagnosticTests = {
         contents: 'Respond with "OK" if you can read this.'
       });
       
-      const text = response.text || '';
+      // Extract text from response (text is a function in new SDK)
+      const text = (response.response?.text?.() || response.text?.() || '').toString();
       
       const duration = Date.now() - startTime;
       
