@@ -771,3 +771,5 @@ async function generateInsightsWithTools(analysisData, options = {}) {
 
 // Export both the handler and the programmatic function
 exports.generateInsightsWithTools = generateInsightsWithTools;
+// Backward compatibility alias for tests
+exports.generateHandler = exports.handler;
