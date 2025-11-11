@@ -31,10 +31,11 @@ const { runGuruConversation } = require('./utils/insights-guru-runner.cjs');
 const { getAIModelWithTools } = require('./utils/insights-processor.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
-// Constants for function calling
-const MAX_TOOL_ITERATIONS = 10; // Maximum number of tool call rounds to prevent infinite loops
-const ITERATION_TIMEOUT_MS = 25000; // 25 seconds per iteration (increased from 20)
-const TOTAL_TIMEOUT_MS = 58000; // 58 seconds total (increased, leaving 2s buffer for Netlify's 60s limit)
+// Constants for function calling - OPTIMIZED FOR PERFORMANCE
+const MAX_TOOL_ITERATIONS = 8; // Reduced from 10 - with longer per-iteration timeout
+const ITERATION_TIMEOUT_MS = 30000; // Increased from 25s - gives Gemini + tools more time
+const SYNC_MODE_TOTAL_TIMEOUT_MS = 52000; // 52s for conversation (accounts for 8s context preload budget)
+const BACKGROUND_MODE_TOTAL_TIMEOUT_MS = 14 * 60 * 1000; // 14 minutes for background mode
 const MAX_CONVERSATION_TOKENS = 60000; // Maximum tokens for conversation history (rough estimate)
 const TOKENS_PER_CHAR = 0.25; // Rough estimate: 1 token ≈ 4 characters
 const BACKGROUND_FUNCTION_NAME = 'generate-insights-background';
@@ -192,6 +193,9 @@ async function handler(event = {}, context = {}) {
     let conversationResult;
     const conversationStartedAt = Date.now();
     try {
+      // Use mode-specific timeout budgets
+      const totalTimeoutMs = runMode === 'sync' ? SYNC_MODE_TOTAL_TIMEOUT_MS : BACKGROUND_MODE_TOTAL_TIMEOUT_MS;
+      
       conversationResult = await runGuruConversation({
         model,
         analysisData,
@@ -201,7 +205,7 @@ async function handler(event = {}, context = {}) {
         mode: runMode,
         maxIterations: MAX_TOOL_ITERATIONS,
         iterationTimeoutMs: ITERATION_TIMEOUT_MS,
-        totalTimeoutMs: TOTAL_TIMEOUT_MS,
+        totalTimeoutMs,
         conversationTokenLimit: MAX_CONVERSATION_TOKENS
       });
       const conversationDurationMs = Date.now() - conversationStartedAt;
