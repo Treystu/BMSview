@@ -1,4 +1,4 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { GoogleGenAI } = require("@google/genai");
 const { connectDB } = require('./utils/mongodb.cjs');
 const { logger } = require('./utils/logger.cjs');
 const { validateObjectId, validateRequest } = require('./utils/validation.cjs');
@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 
 // Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // Constants
 const MAX_SYNC_DURATION = 55000; // 55s for Netlify function timeout
@@ -329,12 +329,14 @@ ${JSON.stringify(this.analysisData, null, 2)}`];
     try {
       return await tool.execute(toolCall.params);
     } catch (error) {
+      const errorMessage = error && error.message ? error.message : 'Unknown error';
+      
       logger.error('Tool execution error', { 
         tool: toolCall.tool, 
         params: toolCall.params, 
-        error: error.message 
+        error: errorMessage 
       });
-      return { error: `Tool execution failed: ${error.message}` };
+      return { error: `Tool execution failed: ${errorMessage}` };
     }
   }
 
@@ -501,7 +503,7 @@ exports.handler = async (event, context) => {
       };
       
     } catch (timeoutError) {
-      if (timeoutError.message === 'Timeout') {
+      if (timeoutError && timeoutError.message === 'Timeout') {
         // Switch to async mode
         logger.info('Switching to async mode due to timeout', { requestId });
         return await handleAsyncMode(db, analysisData, customQuery, requestId);
@@ -510,10 +512,15 @@ exports.handler = async (event, context) => {
     }
     
   } catch (error) {
+    // Safely handle error object that might be undefined or not a proper Error
+    const errorMessage = error && error.message ? error.message : 'Unknown error';
+    const errorStack = error && error.stack ? error.stack : '';
+    
     logger.error('Generate insights error', {
       requestId,
-      error: error.message,
-      stack: error.stack
+      error: errorMessage,
+      stack: errorStack,
+      errorType: error ? error.constructor.name : 'undefined'
     });
 
     return {
@@ -521,7 +528,7 @@ exports.handler = async (event, context) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         error: 'Failed to generate insights',
-        message: error.message,
+        message: errorMessage,
         requestId
       })
     };
@@ -632,23 +639,32 @@ async function processInBackground(jobId, analysisData, customQuery, requestId) 
     });
     
   } catch (error) {
+    const errorMessage = error && error.message ? error.message : 'Unknown error';
+    
     logger.error('Background processing error', {
       jobId,
       requestId,
-      error: error.message
+      error: errorMessage
     });
     
-    const db = await connectDB();
-    await db.collection('jobs').updateOne(
-      { _id: jobId },
-      { 
-        $set: { 
-          status: 'failed',
-          failedAt: new Date(),
-          error: error.message
-        } 
-      }
-    );
+    try {
+      const db = await connectDB();
+      await db.collection('jobs').updateOne(
+        { _id: jobId },
+        { 
+          $set: { 
+            status: 'failed',
+            failedAt: new Date(),
+            error: errorMessage
+          } 
+        }
+      );
+    } catch (updateError) {
+      logger.error('Failed to update job status', {
+        jobId,
+        error: updateError && updateError.message ? updateError.message : 'Unknown error'
+      });
+    }
   }
 }
 
@@ -691,7 +707,9 @@ async function handleJobStatus(jobId) {
     };
     
   } catch (error) {
-    logger.error('Job status check error', { jobId, error: error.message });
+    const errorMessage = error && error.message ? error.message : 'Unknown error';
+    
+    logger.error('Job status check error', { jobId, error: errorMessage });
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },
@@ -699,3 +717,50 @@ async function handleJobStatus(jobId) {
     };
   }
 }
+
+/**
+ * Programmatic function to generate insights with tools (for use by other functions)
+ * This is exported for admin-diagnostics and other internal callers
+ */
+async function generateInsightsWithTools(analysisData, options = {}) {
+  const {
+    testId,
+    mode = 'comprehensive',
+    requestedTools = [],
+    maxIterations = 3,
+    timeoutMs = 30000,
+    customPrompt
+  } = options;
+
+  try {
+    const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-1.5-flash' });
+    const agent = new ReActAgent(model, analysisData, customPrompt);
+    
+    const insights = await Promise.race([
+      agent.execute(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Insights generation timeout')), timeoutMs)
+      )
+    ]);
+
+    return {
+      summary: insights,
+      toolCallsExecuted: agent.toolCallHistory.length,
+      iterations: agent.iterations,
+      thoughtHistory: agent.thoughtHistory,
+      mode
+    };
+  } catch (error) {
+    const errorMessage = error && error.message ? error.message : 'Unknown error';
+    
+    logger.error('generateInsightsWithTools error', { 
+      testId, 
+      error: errorMessage,
+      mode 
+    });
+    throw error;
+  }
+}
+
+// Export both the handler and the programmatic function
+exports.generateInsightsWithTools = generateInsightsWithTools;
