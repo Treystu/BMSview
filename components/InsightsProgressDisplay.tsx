@@ -3,9 +3,10 @@
  * 
  * Displays real-time progress for background insights generation.
  * Shows initial summary, tool calls, data fetches, and streaming results.
+ * Features collapsible "AI thinking" section that auto-collapses when complete.
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { InsightsProgress, InsightsJobStatus } from '../hooks/useInsightsPolling';
 
 interface InsightsProgressDisplayProps {
@@ -15,37 +16,67 @@ interface InsightsProgressDisplayProps {
 }
 
 export function InsightsProgressDisplay({ status, isPolling, error }: InsightsProgressDisplayProps) {
+  const [showThinking, setShowThinking] = useState(true);
+  
+  // Auto-collapse thinking section when analysis completes
+  useEffect(() => {
+    if (status?.status === 'completed' && status?.finalInsights) {
+      setShowThinking(false);
+    }
+  }, [status?.status, status?.finalInsights]);
+
   if (!status && !error) {
     return null;
   }
+
+  const isComplete = status?.status === 'completed';
+  const hasProgress = status?.progress && status.progress.length > 0;
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6 mb-6">
       <div className="mb-4">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          🤖 AI Insights Generation
+          🤖 {isComplete ? 'AI Analysis Complete' : 'AI Working...'}
         </h3>
         <StatusBadge status={status?.status} isPolling={isPolling} error={error} />
       </div>
 
-      {/* Initial Summary */}
-      {status?.initialSummary && (
-        <InitialSummaryDisplay summary={status.initialSummary} />
-      )}
-
-      {/* Progress Events */}
-      {status?.progress && status.progress.length > 0 && (
-        <ProgressEventsDisplay progress={status.progress} />
-      )}
-
-      {/* Partial Insights */}
-      {status?.partialInsights && (
-        <PartialInsightsDisplay insights={status.partialInsights} />
-      )}
-
-      {/* Final Insights */}
+      {/* Final Insights - Show prominently when complete */}
       {status?.finalInsights && (
         <FinalInsightsDisplay insights={status.finalInsights} />
+      )}
+
+      {/* Collapsible "AI Thinking" Section */}
+      {hasProgress && (
+        <div className="mt-4">
+          <button
+            onClick={() => setShowThinking(!showThinking)}
+            className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
+          >
+            <span className="transform transition-transform duration-200" style={{ display: 'inline-block', transform: showThinking ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+              ▶
+            </span>
+            {showThinking ? 'Hide' : 'Show'} AI Thinking Process
+            <span className="text-gray-500">({status.progress.length} steps)</span>
+          </button>
+          
+          {showThinking && (
+            <div className="mt-3">
+              {/* Initial Summary */}
+              {status?.initialSummary && (
+                <InitialSummaryDisplay summary={status.initialSummary} />
+              )}
+
+              {/* Progress Events */}
+              <ProgressEventsDisplay progress={status.progress} isLive={!isComplete} />
+
+              {/* Partial Insights */}
+              {status?.partialInsights && !status?.finalInsights && (
+                <PartialInsightsDisplay insights={status.partialInsights} />
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Error Display */}
@@ -160,28 +191,37 @@ function InitialSummaryDisplay({ summary }: { summary: any }) {
   );
 }
 
-function ProgressEventsDisplay({ progress }: { progress: InsightsProgress[] }) {
+function ProgressEventsDisplay({ progress, isLive }: { progress: InsightsProgress[]; isLive: boolean }) {
   // Show last 15 events, most recent first - increased to show more context
   const recentEvents = [...progress].reverse().slice(0, 15);
 
   return (
-    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-      <h4 className="text-sm font-semibold text-gray-900 mb-3">🔄 AI Conversation Flow</h4>
+    <div className="mt-4 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-sm font-semibold text-blue-900 flex items-center gap-2">
+          {isLive && <span className="animate-pulse">🧠</span>}
+          {!isLive && <span>🧠</span>}
+          <span>{isLive ? 'Gemini Thinking...' : 'Gemini\'s Thought Process'}</span>
+        </h4>
+        {isLive && (
+          <span className="text-xs text-blue-600 font-medium animate-pulse">● LIVE</span>
+        )}
+      </div>
       <div className="space-y-3 max-h-96 overflow-y-auto">
         {recentEvents.map((event, index) => (
-          <ProgressEventItem key={index} event={event} />
+          <ProgressEventItem key={index} event={event} isLatest={index === 0 && isLive} />
         ))}
       </div>
       {progress.length > 15 && (
-        <p className="text-xs text-gray-500 mt-2">
-          Showing last 15 of {progress.length} events
+        <p className="text-xs text-blue-600 mt-2">
+          Showing last 15 of {progress.length} steps
         </p>
       )}
     </div>
   );
 }
 
-function ProgressEventItem({ event }: { event: InsightsProgress }) {
+function ProgressEventItem({ event, isLatest }: { event: InsightsProgress; isLatest?: boolean }) {
   const getIcon = () => {
     switch (event.type) {
       case 'context_built':
@@ -268,7 +308,11 @@ function ProgressEventItem({ event }: { event: InsightsProgress }) {
   };
 
   return (
-    <div className="flex items-start gap-2 text-xs">
+    <div className={`flex items-start gap-2 text-xs p-3 rounded-lg transition-all duration-300 ${
+      isLatest 
+        ? 'bg-white border-2 border-blue-300 shadow-md animate-pulse-subtle' 
+        : 'bg-white bg-opacity-60 border border-blue-100'
+    }`}>
       <span className="text-lg flex-shrink-0">{getIcon()}</span>
       <div className="flex-1 min-w-0">
         <div className="text-gray-700 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">

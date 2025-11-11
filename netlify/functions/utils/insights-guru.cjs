@@ -221,9 +221,17 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
 
     const executionGuidance = buildExecutionGuidance(mode, contextData);
     const missionStatement = customPrompt ? buildCustomMission(customPrompt) : buildDefaultMission();
+    
+    // Build data availability summary
+    const dataAvailability = await buildDataAvailabilitySummary(systemId, contextData, log);
 
     let prompt = "You are the Ultimate AI Battery Guru for off-grid energy systems. You ingest structured context, request targeted data through function calls, and deliver deeply analytical recommendations grounded in the evidence provided.\n";
     prompt += "Your goals: preserve battery health, guarantee energy sufficiency, and surface proactive maintenance or expansion actions.\n";
+
+    // Add data availability info FIRST so Gemini knows what it can query
+    if (dataAvailability) {
+        prompt += `\n${dataAvailability}\n`;
+    }
 
     prompt += `\n${executionGuidance}\n`;
     prompt += `\n**AVAILABLE TOOLS**\n${toolCatalog}\n`;
@@ -1596,6 +1604,118 @@ function formatNumber(value, unit = "", digits = 1) {
 function formatPercent(value, digits = 0) {
     if (!isFiniteNumber(value)) return "n/a";
     return `${Number(value).toFixed(digits)}%`;
+}
+
+/**
+ * Build a summary of what data is available for Gemini to query
+ */
+async function buildDataAvailabilitySummary(systemId, contextData, log) {
+    if (!systemId) {
+        return "**DATA AVAILABILITY**\n- System: No system ID provided - limited data available\n- You can only analyze the current snapshot provided";
+    }
+
+    const lines = ["**DATA AVAILABILITY - What You Can Query**"];
+    lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    
+    // Get date range from recent snapshots or dailyRollup
+    let minDate = null;
+    let maxDate = null;
+    let totalRecords = 0;
+    
+    if (contextData?.recentSnapshots && contextData.recentSnapshots.length > 0) {
+        const timestamps = contextData.recentSnapshots
+            .map(s => s.timestamp)
+            .filter(t => t)
+            .sort();
+        
+        if (timestamps.length > 0) {
+            minDate = timestamps[0];
+            maxDate = timestamps[timestamps.length - 1];
+            totalRecords = timestamps.length;
+        }
+    }
+    
+    if (contextData?.dailyRollup90d?.daily && contextData.dailyRollup90d.daily.length > 0) {
+        const dailyTimestamps = contextData.dailyRollup90d.daily
+            .map(d => d.date)
+            .filter(t => t)
+            .sort();
+        
+        if (dailyTimestamps.length > 0 && (!minDate || dailyTimestamps[0] < minDate)) {
+            minDate = dailyTimestamps[0];
+        }
+        if (dailyTimestamps.length > 0 && (!maxDate || dailyTimestamps[dailyTimestamps.length - 1] > maxDate)) {
+            maxDate = dailyTimestamps[dailyTimestamps.length - 1];
+        }
+    }
+    
+    // System info
+    if (contextData?.systemProfile) {
+        const profile = contextData.systemProfile;
+        lines.push(`\n📋 SYSTEM: ${profile.name || systemId}`);
+        if (profile.chemistry) lines.push(`   Chemistry: ${profile.chemistry}`);
+        if (profile.nominalVoltage) lines.push(`   Voltage: ${profile.nominalVoltage}V`);
+        if (profile.capacity) lines.push(`   Capacity: ${profile.capacity}Ah`);
+    } else {
+        lines.push(`\n📋 SYSTEM: ${systemId}`);
+    }
+    
+    // Date range
+    if (minDate && maxDate) {
+        const minDateStr = new Date(minDate).toISOString().split('T')[0];
+        const maxDateStr = new Date(maxDate).toISOString().split('T')[0];
+        const daysDiff = Math.floor((new Date(maxDate) - new Date(minDate)) / (1000 * 60 * 60 * 24));
+        
+        lines.push(`\n📅 DATA RANGE: ${minDateStr} to ${maxDateStr} (${daysDiff} days)`);
+        lines.push(`   Total Records: ${totalRecords} BMS snapshots`);
+        lines.push(`   Use these dates when calling request_bms_data tool`);
+    } else {
+        lines.push(`\n📅 DATA RANGE: Current snapshot only`);
+        lines.push(`   No historical data available for this system`);
+    }
+    
+    // Available metrics
+    lines.push(`\n🔍 QUERYABLE METRICS (via request_bms_data):`);
+    lines.push(`   • voltage - Battery pack voltage over time`);
+    lines.push(`   • current - Charge/discharge current (+ charging, - discharging)`);
+    lines.push(`   • power - Instantaneous power (watts)`);
+    lines.push(`   • soc - State of charge (0-100%)`);
+    lines.push(`   • capacity - Remaining capacity (Ah)`);
+    lines.push(`   • temperature - Battery temperature`);
+    lines.push(`   • cell_voltage_difference - Cell imbalance (mV)`);
+    lines.push(`   • all - All metrics (use sparingly - large dataset)`);
+    
+    // Available tools
+    lines.push(`\n🛠️ ANALYSIS TOOLS AVAILABLE:`);
+    lines.push(`   • getSystemAnalytics - Comprehensive stats, trends, degradation`);
+    lines.push(`   • analyze_usage_patterns - Daily patterns, anomalies`);
+    lines.push(`   • calculate_energy_budget - Solar contribution, autonomy days`);
+    lines.push(`   • predict_battery_trends - Capacity forecasts, lifetime estimates`);
+    lines.push(`   • getWeatherData - Historical weather correlation`);
+    
+    // Data that's already pre-loaded
+    if (contextData?.analytics && !contextData.analytics.error) {
+        lines.push(`\n✓ PRE-LOADED: System analytics (no need to request)`);
+    }
+    if (contextData?.energyBudgets?.current && !contextData.energyBudgets.current.error) {
+        lines.push(`✓ PRE-LOADED: Energy budget analysis`);
+    }
+    if (contextData?.predictions?.capacity && !contextData.predictions.capacity.error) {
+        lines.push(`✓ PRE-LOADED: Capacity predictions`);
+    }
+    if (contextData?.predictions?.lifetime && !contextData.predictions.lifetime.error) {
+        lines.push(`✓ PRE-LOADED: Lifetime predictions`);
+    }
+    if (contextData?.usagePatterns?.daily && !contextData.usagePatterns.daily.error) {
+        lines.push(`✓ PRE-LOADED: Daily usage patterns`);
+    }
+    if (contextData?.dailyRollup90d?.daily && contextData.dailyRollup90d.daily.length > 0) {
+        lines.push(`✓ PRE-LOADED: 90-day daily rollup (${contextData.dailyRollup90d.daily.length} days)`);
+    }
+    
+    lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    
+    return lines.join("\n");
 }
 
 function truncate(text, maxLength) {
