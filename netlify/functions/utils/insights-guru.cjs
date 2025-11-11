@@ -253,25 +253,53 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         }
     }
 
-    prompt += "\n**CRITICAL RESPONSE RULES**\n";
+    prompt += "\n**CRITICAL RESPONSE RULES - READ CAREFULLY**\n\n";
+    
+    prompt += "RESPONSE FORMAT REQUIREMENTS (STRICTLY ENFORCE):\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    prompt += "You MUST respond with valid JSON only. NO other text, NO markdown, NO explanations.\n\n";
+    prompt += "Option 1 - Request additional data (use tool_call):\n";
+    prompt += "{\n";
+    prompt += "  \"tool_call\": \"request_bms_data\",\n";
+    prompt += "  \"parameters\": {\n";
+    prompt += "    \"systemId\": \"<the system ID>\",\n";
+    prompt += "    \"metric\": \"voltage\",\n";
+    prompt += "    \"time_range_start\": \"2025-11-01T00:00:00Z\",\n";
+    prompt += "    \"time_range_end\": \"2025-11-08T00:00:00Z\",\n";
+    prompt += "    \"granularity\": \"daily_avg\"\n";
+    prompt += "  }\n";
+    prompt += "}\n\n";
+    prompt += "Option 2 - Provide your final analysis (use final_answer):\n";
+    prompt += "{\n";
+    prompt += "  \"final_answer\": \"## KEY FINDINGS\\n\\n**Battery Health:** Good condition...\\n\\n## RECOMMENDATIONS\\n\\n1. 🟢 Continue monitoring...\"\n";
+    prompt += "}\n\n";
+    prompt += "⚠️ CRITICAL: If you respond with anything other than valid JSON in one of these two formats, the system will FAIL.\n";
+    prompt += "⚠️ DO NOT wrap JSON in markdown code blocks (no ```json).\n";
+    prompt += "⚠️ DO NOT add explanatory text before or after the JSON.\n";
+    prompt += "⚠️ DO NOT respond with empty text or whitespace.\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
     
     // Mode-specific guidance on tool usage
     if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
-        prompt += "1. DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. You likely have ALL the data needed already. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range). IMPORTANT: Prefer to analyze with existing data rather than requesting more.\n";
+        prompt += "DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. You likely have ALL the data needed already. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range). IMPORTANT: Prefer to analyze with existing data rather than requesting more.\n\n";
     } else {
-        prompt += "1. DATA GATHERING: If you need data beyond what's provided, use tools to gather it. Don't suggest tools - USE them. Keep tool calls focused on the specific data needed to answer the question. Maximum 2-3 tool calls recommended.\n";
+        prompt += "DATA GATHERING: If you need data beyond what's provided, use tools to gather it. Don't suggest tools - USE them. Keep tool calls focused on the specific data needed to answer the question. Maximum 2-3 tool calls recommended.\n\n";
     }
     
-    prompt += "2. ITERATION BUDGET: You have a MAXIMUM of 8 iterations. Each tool call uses one iteration. Plan carefully. After 2-3 tool calls (or if comprehensive data is already provided), you MUST provide your final_answer.\n";
-    prompt += "3. RESPONSE FORMAT:\n   - To request data: { \"tool_call\": \"tool_name\", \"parameters\": {...} }\n   - To provide analysis: { \"final_answer\": \"your complete analysis here\" }\n   - NEVER respond with plain text or explanations outside JSON.\n";
-    prompt += "4. Keep tool requests scoped (specific metric + precise window). Prefer hourly or daily granularity unless raw samples are essential.\n";
-    prompt += "5. WRITING STYLE: Terse, highlight-driven bullets. Lead with KEY FINDINGS in bold. Skip verbose explanations - operators need actionable intel, not essays.\n";
-    prompt += "6. Structure: ## KEY FINDINGS (2-4 critical bullets with bold labels) → ## RECOMMENDATIONS (numbered actions with urgency flags). DO NOT include OPERATIONAL STATUS section - current metrics are already visible in the UI.\n";
-    prompt += "7. Cite data sources in parentheticals, not separate sections: 'Solar deficit 15Ah (weather data + BMS logs)' not 'Data sources: weather, BMS'.\n";
-    prompt += "8. TERMINOLOGY: 'Battery autonomy' or 'days of autonomy' = RUNTIME until discharge at current load (Energy Budget). 'Service life' or 'lifetime' = YEARS/MONTHS until replacement due to degradation (Predictive Outlook). Never confuse these.\n";
-    prompt += "9. DATA QUALITY: Sporadic screenshot-based monitoring has gaps. Use ±10% tolerance for energy deficits, ±15% for solar variance. Only flag issues beyond tolerance with reliable data (>60% coverage). Acknowledge data sparsity when relevant.\n";
-    prompt += "10. SOLAR VARIANCE: Remember that delta between expected and actual charge often represents DAYTIME LOAD CONSUMPTION, not solar underperformance. Example: 220Ah expected, 58Ah recovered = 162Ah consumed by loads during charging hours. Only flag solar issues when variance exceeds ±15% tolerance AND weather was favorable.\n";
-    prompt += "11. ALERT EVENTS: Group consecutive alerts into time-based events. Multiple screenshots showing same alert = ONE event until threshold recovery. Estimate duration using time-of-day context (e.g., low battery at night likely clears when sun comes up).\n";
+    prompt += "ITERATION BUDGET: You have a MAXIMUM of 8 iterations. Each tool call uses one iteration. Plan carefully:\n";
+    prompt += "- With preloaded comprehensive data: Provide final_answer immediately (iteration 1)\n";
+    prompt += "- Need 1-2 data points: Request them (iterations 1-2), then final_answer (iteration 3)\n";
+    prompt += "- Never use more than 3-4 iterations total\n\n";
+    
+    prompt += "CONTENT GUIDELINES:\n";
+    prompt += "• WRITING STYLE: Terse, highlight-driven bullets. Lead with KEY FINDINGS in bold. Skip verbose explanations.\n";
+    prompt += "• STRUCTURE: ## KEY FINDINGS (2-4 critical bullets with **bold labels**) → ## RECOMMENDATIONS (numbered actions with urgency flags 🔴🟡🟢)\n";
+    prompt += "• DO NOT include OPERATIONAL STATUS section - current voltage/SOC/current/temperature already displayed in UI\n";
+    prompt += "• Cite sources inline: 'Solar deficit 15Ah (weather data + BMS logs)' not separate attribution\n";
+    prompt += "• TERMINOLOGY: 'Battery autonomy'/'days of autonomy' = RUNTIME until discharge (Energy Budget). 'Service life'/'lifetime' = MONTHS/YEARS until replacement (Predictive Outlook). Never confuse.\n";
+    prompt += "• DATA QUALITY: Screenshot-based monitoring has gaps. Use ±10% tolerance for energy deficits, ±15% for solar variance.\n";
+    prompt += "• SOLAR VARIANCE: Delta between expected and actual = DAYTIME LOAD CONSUMPTION (not solar underperformance). Only flag solar issues when variance exceeds ±15% AND weather was favorable.\n";
+    prompt += "• ALERT EVENTS: Group consecutive alerts into time-based events. Multiple screenshots showing same alert = ONE event until threshold recovery.\n";
 
     return {
         prompt,

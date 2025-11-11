@@ -316,6 +316,14 @@ async function runGuruConversation(options) {
             estimatedTokens: Math.round(conversationText.length * tokensPerChar),
             promptPreview
         });
+        
+        // Hook for tracking what we're sending to Gemini
+        await callHook(hooks.onPromptSent, {
+            iteration,
+            promptLength: conversationText.length,
+            messageCount: prunedHistory.length,
+            promptPreview
+        }, log, 'onPromptSent');
 
         let response;
         try {
@@ -362,18 +370,62 @@ async function runGuruConversation(options) {
             responseLength: responseText.length,
             responsePreview
         });
+        
+        // Hook for tracking what we received from Gemini
+        await callHook(hooks.onResponseReceived, {
+            iteration,
+            responseLength: responseText.length,
+            responsePreview,
+            isEmpty: !responseText || responseText.trim().length === 0
+        }, log, 'onResponseReceived');
 
-        // Safety check: If response is empty, warn and continue
+        // Safety check: If response is empty, warn and try to recover
         if (!responseText || responseText.trim().length === 0) {
-            log.warn('⚠️ Empty response from Gemini', { 
+            log.error('❌ EMPTY RESPONSE from Gemini - This is a critical error', { 
                 iteration,
-                toolCallsSoFar: toolCallsExecuted.length 
+                toolCallsSoFar: toolCallsExecuted.length,
+                conversationLength: conversationHistory.length
             });
             
-            // Add a user message to guide Gemini
+            // If we've had 2+ empty responses in a row, give up
+            const recentMessages = conversationHistory.slice(-3);
+            const emptyResponseCount = recentMessages.filter(msg => 
+                msg.role === 'user' && msg.content.includes('Your last response was empty')
+            ).length;
+            
+            if (emptyResponseCount >= 2) {
+                log.error('Multiple consecutive empty responses - aborting to prevent infinite loop', { 
+                    iteration,
+                    emptyResponseCount 
+                });
+                throw new Error('Gemini is not responding properly after multiple attempts. This may be a temporary API issue. Please try again in a moment.');
+            }
+            
+            // Add a VERY FORCEFUL user message demanding a valid JSON response
             conversationHistory.push({ 
                 role: 'user', 
-                content: `Your last response was empty. Please provide either:\n1. A tool_call JSON to request specific data, OR\n2. A final_answer JSON with your complete analysis.\n\nReminder: You are on iteration ${iteration} of ${maxIterations}. ${maxIterations - iteration} iterations remaining.` 
+                content: `🚨 CRITICAL ERROR: Your last response was EMPTY. This is iteration ${iteration}/${maxIterations}.
+
+You MUST respond with valid JSON. Choose ONE:
+
+1. If you need data, respond EXACTLY like this:
+{
+  "tool_call": "request_bms_data",
+  "parameters": {
+    "systemId": "use the system ID from context",
+    "metric": "voltage",
+    "time_range_start": "2025-11-01T00:00:00Z",
+    "time_range_end": "2025-11-08T00:00:00Z",
+    "granularity": "daily_avg"
+  }
+}
+
+2. If you can analyze with existing data, respond EXACTLY like this:
+{
+  "final_answer": "## KEY FINDINGS\\n\\n**Battery Status:** Based on the data provided...\\n\\n## RECOMMENDATIONS\\n\\n1. 🟢 Monitor..."
+}
+
+DO NOT respond with anything else. DO NOT use markdown. DO NOT explain. ONLY valid JSON.` 
             });
             continue;
         }
@@ -413,11 +465,66 @@ async function runGuruConversation(options) {
                 responseKeys: Object.keys(parsedResponse)
             });
         } else if (responseText) {
-            log.warn('⚠️ Non-JSON response from Gemini', {
+            log.error('❌ NON-JSON response from Gemini - attempting recovery', {
                 iteration,
                 responseLength: responseText.length,
-                willTreatAsPlainText: true
+                responsePreview: responseText.substring(0, 300)
             });
+            
+            // Check if Gemini is trying to be helpful with explanatory text
+            // Sometimes it says things like "I need more data" or "Let me analyze"
+            const needsDataPhrases = [
+                'need more data', 'need additional', 'require more', 'insufficient',
+                'let me request', 'let me query', 'I should request'
+            ];
+            const hasDataRequest = needsDataPhrases.some(phrase => 
+                responseText.toLowerCase().includes(phrase)
+            );
+            
+            if (hasDataRequest && iteration < maxIterations - 1) {
+                // Gemini is indicating it needs data but didn't format properly
+                conversationHistory.push({
+                    role: 'user',
+                    content: `You indicated you need data, but your response was not valid JSON. Please respond with ONLY a tool_call JSON object like this example:
+
+{
+  "tool_call": "request_bms_data",
+  "parameters": {
+    "systemId": "use the system ID from context",
+    "metric": "voltage",
+    "time_range_start": "2025-11-01T00:00:00Z",
+    "time_range_end": "2025-11-08T00:00:00Z",
+    "granularity": "daily_avg"
+  }
+}
+
+NO other text. ONLY the JSON object.`
+                });
+                continue;
+            }
+            
+            // If it's a meaningful response but not JSON, try to use it as final answer
+            if (responseText.length > 100) {
+                log.warn('Treating non-JSON response as final answer text', { iteration });
+                // This will fall through to the responseText handler below
+            } else {
+                // Short non-JSON response is likely gibberish - demand proper format
+                conversationHistory.push({
+                    role: 'user',
+                    content: `Your response was not valid JSON and too short to be useful. You are on iteration ${iteration}/${maxIterations}.
+
+You MUST respond with valid JSON in ONE of these formats:
+
+Tool call:
+{ "tool_call": "tool_name", "parameters": {...} }
+
+Final answer:
+{ "final_answer": "## KEY FINDINGS\\n\\n**Finding:** ...\\n\\n## RECOMMENDATIONS\\n\\n1. ..." }
+
+Respond NOW with valid JSON ONLY.`
+                });
+                continue;
+            }
         }
 
         if (parsedResponse && parsedResponse.tool_call) {
