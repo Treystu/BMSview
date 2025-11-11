@@ -2,8 +2,13 @@ const { GoogleGenAI } = require('@google/genai');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLogger, createTimer } = require('./utils/logger.cjs');
 
-// Initialize Gemini AI
-const genAI = new GoogleGenAI(process.env.GEMINI_API_KEY);
+// Initialize Gemini AI (will be called per request with proper config)
+function getGenAI() {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+  return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+}
 
 exports.handler = async (event, context) => {
   const log = createLogger('predictive-maintenance', context);
@@ -410,7 +415,10 @@ function generateOptimalSchedule(measurements, maintenanceHistory, timeHorizon) 
 async function generateAIInsights(systemData, timeHorizon, log) {
   try {
     log.debug('Calling Gemini API for AI insights', { systemName: systemData.system?.name, timeHorizon });
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const genAI = getGenAI();
+    
+    // Use environment variable with fallback
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
     const prompt = `
       Analyze this battery system data and provide predictive maintenance insights:
@@ -436,9 +444,12 @@ async function generateAIInsights(systemData, timeHorizon, log) {
       5. Optimization suggestions
     `;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const insights = response.text();
+    const response = await genAI.models.generateContent({
+      model: modelName,
+      contents: prompt
+    });
+    
+    const insights = response.text || '';
     log.debug('Received AI insights from Gemini', { insightsLength: insights.length });
 
     return {

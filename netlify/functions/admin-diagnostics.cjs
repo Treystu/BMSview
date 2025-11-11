@@ -437,17 +437,19 @@ const diagnosticTests = {
         throw new Error('GEMINI_API_KEY not configured');
       }
       
-      const genAI = new GoogleGenAI(process.env.GEMINI_API_KEY);
+      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
       // Use environment variable with proper fallback chain
       const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
       logger.info('Using Gemini model', { modelName });
       
-      const model = genAI.getGenerativeModel({ model: modelName });
+      // Use the new SDK API: ai.models.generateContent()
+      const response = await genAI.models.generateContent({
+        model: modelName,
+        contents: 'Respond with "OK" if you can read this.'
+      });
       
-      const result = await model.generateContent('Respond with "OK" if you can read this.');
-      const response = await result.response;
-      const text = response.text();
+      const text = response.text || '';
       
       const duration = Date.now() - startTime;
       
