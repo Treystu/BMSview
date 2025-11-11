@@ -212,40 +212,38 @@ async function getAIModelWithTools(log) {
     return null;
   }
 
-  const genAI = new GoogleGenAI(apiKey);
+  try {
+    const genAI = new GoogleGenAI({ apiKey });
 
-  // Try models in order of preference - PRODUCTION MODELS ONLY
-  const modelsToTry = [
-    { name: 'gemini-2.5-flash', description: 'latest stable model with function calling' },
-    { name: 'gemini-1.5-flash', description: 'stable fallback model' },
-    { name: 'gemini-1.5-pro', description: 'advanced fallback model' }
-  ];
+    // Use environment variable for model with fallback
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    log.info(`Initializing Gemini model: ${modelName}`);
 
-  for (const { name, description } of modelsToTry) {
-    try {
-      log.info(`Attempting to use ${name} (${description})`);
+    // Create a wrapper object that matches the old model API
+    // The new @google/genai SDK uses ai.models.generateContent() directly
+    const modelWrapper = {
+      generateContent: async (prompt) => {
+        const response = await genAI.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            temperature: 0.7,
+            topP: 0.95,
+            topK: 40,
+            maxOutputTokens: 8192,
+          }
+        });
+        return response;
+      }
+    };
 
-      const model = genAI.getGenerativeModel({
-        model: name,
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.95,
-          topK: 40,
-          maxOutputTokens: 8192,
-        }
-      });
-
-      log.info(`Model ${name} initialized successfully`);
-      return model;
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      log.warn(`Failed to initialize ${name}`, { error: error.message });
-    }
+    log.info(`Model ${modelName} initialized successfully`);
+    return modelWrapper;
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    log.error('Failed to initialize AI model', { error: error.message });
+    return null;
   }
-
-  // All models failed
-  log.error('All AI models unavailable');
-  return null;
 }
 
 module.exports = {
