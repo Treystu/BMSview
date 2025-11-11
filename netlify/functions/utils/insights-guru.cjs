@@ -257,13 +257,13 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     
     // Mode-specific guidance on tool usage
     if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
-        prompt += "1. DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range).\n";
+        prompt += "1. DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. You likely have ALL the data needed already. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range). IMPORTANT: Prefer to analyze with existing data rather than requesting more.\n";
     } else {
-        prompt += "1. DATA GATHERING: If you need data beyond what's provided, use tools to gather it. Don't suggest tools - USE them. Keep tool calls focused on the specific data needed to answer the question.\n";
+        prompt += "1. DATA GATHERING: If you need data beyond what's provided, use tools to gather it. Don't suggest tools - USE them. Keep tool calls focused on the specific data needed to answer the question. Maximum 2-3 tool calls recommended.\n";
     }
     
-    prompt += "2. After gathering necessary data (if any), respond with JSON: {\n   \"final_answer\": \"analysis...\"\n}.\n";
-    prompt += "3. To request data, respond ONLY with JSON: {\n   \"tool_call\": \"tool_name\",\n   \"parameters\": { ... }\n}. Never include explanatory text with tool calls.\n";
+    prompt += "2. ITERATION BUDGET: You have a MAXIMUM of 8 iterations. Each tool call uses one iteration. Plan carefully. After 2-3 tool calls (or if comprehensive data is already provided), you MUST provide your final_answer.\n";
+    prompt += "3. RESPONSE FORMAT:\n   - To request data: { \"tool_call\": \"tool_name\", \"parameters\": {...} }\n   - To provide analysis: { \"final_answer\": \"your complete analysis here\" }\n   - NEVER respond with plain text or explanations outside JSON.\n";
     prompt += "4. Keep tool requests scoped (specific metric + precise window). Prefer hourly or daily granularity unless raw samples are essential.\n";
     prompt += "5. WRITING STYLE: Terse, highlight-driven bullets. Lead with KEY FINDINGS in bold. Skip verbose explanations - operators need actionable intel, not essays.\n";
     prompt += "6. Structure: ## KEY FINDINGS (2-4 critical bullets with bold labels) → ## RECOMMENDATIONS (numbered actions with urgency flags). DO NOT include OPERATIONAL STATUS section - current metrics are already visible in the UI.\n";

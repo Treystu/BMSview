@@ -305,6 +305,18 @@ async function runGuruConversation(options) {
             `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
         ).join('\n\n');
 
+        // VERBOSE LOGGING: Log the full prompt being sent to Gemini
+        const promptPreview = conversationText.length > 2000 
+            ? `${conversationText.substring(0, 2000)}... [truncated ${conversationText.length - 2000} chars]`
+            : conversationText;
+        log.info('📤 GEMINI REQUEST - Sending prompt to Gemini', {
+            iteration,
+            conversationMessages: prunedHistory.length,
+            totalChars: conversationText.length,
+            estimatedTokens: Math.round(conversationText.length * tokensPerChar),
+            promptPreview
+        });
+
         let response;
         try {
             const iterationStart = Date.now();
@@ -340,10 +352,31 @@ async function runGuruConversation(options) {
         }
 
         const responseText = response.response?.text?.() || '';
-        log.debug('Gemini response received', {
+        
+        // VERBOSE LOGGING: Log the full response from Gemini
+        const responsePreview = responseText.length > 1000
+            ? `${responseText.substring(0, 1000)}... [truncated ${responseText.length - 1000} chars]`
+            : responseText;
+        log.info('📥 GEMINI RESPONSE - Received from Gemini', {
             iteration,
-            responseLength: responseText.length
+            responseLength: responseText.length,
+            responsePreview
         });
+
+        // Safety check: If response is empty, warn and continue
+        if (!responseText || responseText.trim().length === 0) {
+            log.warn('⚠️ Empty response from Gemini', { 
+                iteration,
+                toolCallsSoFar: toolCallsExecuted.length 
+            });
+            
+            // Add a user message to guide Gemini
+            conversationHistory.push({ 
+                role: 'user', 
+                content: `Your last response was empty. Please provide either:\n1. A tool_call JSON to request specific data, OR\n2. A final_answer JSON with your complete analysis.\n\nReminder: You are on iteration ${iteration} of ${maxIterations}. ${maxIterations - iteration} iterations remaining.` 
+            });
+            continue;
+        }
 
         let parsedResponse;
         try {
@@ -370,17 +403,53 @@ async function runGuruConversation(options) {
             }
         }
 
+        // VERBOSE LOGGING: Log what we parsed
+        if (parsedResponse) {
+            log.info('📋 Parsed JSON response', {
+                iteration,
+                hasToolCall: !!parsedResponse.tool_call,
+                hasFinalAnswer: !!parsedResponse.final_answer,
+                toolName: parsedResponse.tool_call,
+                responseKeys: Object.keys(parsedResponse)
+            });
+        } else if (responseText) {
+            log.warn('⚠️ Non-JSON response from Gemini', {
+                iteration,
+                responseLength: responseText.length,
+                willTreatAsPlainText: true
+            });
+        }
+
         if (parsedResponse && parsedResponse.tool_call) {
             const { tool_call: toolName, parameters = {} } = parsedResponse;
-            await callHook(hooks.onToolCall, { iteration, name: toolName, parameters }, log, 'onToolCall');
-
-            log.info('Gemini requested tool call', { iteration, toolName, parameters });
+            
+            // VERBOSE LOGGING: Log full tool call details
+            log.info('🔧 TOOL CALL REQUESTED by Gemini', { 
+                iteration, 
+                toolName, 
+                parameters,
+                fullRequest: JSON.stringify(parsedResponse, null, 2)
+            });
+            
+            await callHook(hooks.onToolCall, { iteration, name: toolName, parameters, rawRequest: parsedResponse }, log, 'onToolCall');
 
             const toolStart = Date.now();
             const toolResult = await executeToolCall(toolName, parameters, log);
             const toolDuration = Date.now() - toolStart;
 
             const compactResult = compactifyToolResult(toolResult, toolName, log);
+
+            // VERBOSE LOGGING: Log full tool result
+            const resultPreview = JSON.stringify(compactResult).length > 500
+                ? `${JSON.stringify(compactResult).substring(0, 500)}... [truncated]`
+                : JSON.stringify(compactResult);
+            log.info('📊 TOOL RESULT returned', {
+                iteration,
+                toolName,
+                durationMs: toolDuration,
+                success: !(toolResult && toolResult.error),
+                resultPreview
+            });
 
             const toolCallRecord = {
                 name: toolName,
@@ -395,7 +464,8 @@ async function runGuruConversation(options) {
                 name: toolName,
                 durationMs: toolDuration,
                 result: compactResult,
-                error: toolResult && toolResult.error ? toolResult.message || 'Unknown error' : null
+                error: toolResult && toolResult.error ? toolResult.message || 'Unknown error' : null,
+                parameters  // Include parameters in the hook so UI can show what was requested
             }, log, 'onToolResult');
 
             if (toolResult && toolResult.error) {
@@ -411,7 +481,7 @@ async function runGuruConversation(options) {
             conversationHistory.push({ role: 'assistant', content: JSON.stringify(parsedResponse) });
             conversationHistory.push({
                 role: 'user',
-                content: `Tool response from ${toolName}:\n${JSON.stringify(compactResult, null, 2)}`
+                content: `Tool response from ${toolName}:\n${JSON.stringify(compactResult, null, 2)}\n\n⚠️ ITERATION ${iteration + 1}/${maxIterations} - You have ${maxIterations - iteration} iterations left. Review the data and either:\n1. Request ONE MORE specific data point if absolutely needed (tool_call JSON), OR\n2. Provide your final analysis NOW (final_answer JSON).\n\nPrefer option 2 unless you genuinely lack critical data.`
             });
             continue;
         }
