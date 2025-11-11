@@ -161,20 +161,20 @@ function InitialSummaryDisplay({ summary }: { summary: any }) {
 }
 
 function ProgressEventsDisplay({ progress }: { progress: InsightsProgress[] }) {
-  // Show last 10 events, most recent first
-  const recentEvents = [...progress].reverse().slice(0, 10);
+  // Show last 15 events, most recent first - increased to show more context
+  const recentEvents = [...progress].reverse().slice(0, 15);
 
   return (
     <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-      <h4 className="text-sm font-semibold text-gray-900 mb-3">🔄 Processing Activity</h4>
-      <div className="space-y-2 max-h-64 overflow-y-auto">
+      <h4 className="text-sm font-semibold text-gray-900 mb-3">🔄 AI Conversation Flow</h4>
+      <div className="space-y-3 max-h-96 overflow-y-auto">
         {recentEvents.map((event, index) => (
           <ProgressEventItem key={index} event={event} />
         ))}
       </div>
-      {progress.length > 10 && (
+      {progress.length > 15 && (
         <p className="text-xs text-gray-500 mt-2">
-          Showing last 10 of {progress.length} events
+          Showing last 15 of {progress.length} events
         </p>
       )}
     </div>
@@ -184,6 +184,8 @@ function ProgressEventsDisplay({ progress }: { progress: InsightsProgress[] }) {
 function ProgressEventItem({ event }: { event: InsightsProgress }) {
   const getIcon = () => {
     switch (event.type) {
+      case 'context_built':
+        return '🧠';
       case 'tool_call':
         return '🔧';
       case 'tool_response':
@@ -213,6 +215,8 @@ function ProgressEventItem({ event }: { event: InsightsProgress }) {
     
     // Fallback to old formatting
     switch (event.type) {
+      case 'context_built':
+        return `🧠 Context built for AI (${Math.round((event.data.promptLength || 0) / 1000)}KB prompt)`;
       case 'tool_call':
         const params = event.data.parameters || {};
         const paramSummary = Object.entries(params)
@@ -265,6 +269,19 @@ function ProgressEventItem({ event }: { event: InsightsProgress }) {
 
   return (
     <div className="flex items-start gap-2 text-xs">
+      <span className="text-lg flex-shrink-0">{getIcon()}</span>
+      <div className="flex-1 min-w-0">
+        <div className="text-gray-700 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
+          {getMessage()}
+        </div>
+        {event.timestamp && (
+          <div className="text-gray-400 text-xs mt-1">
+            {new Date(event.timestamp).toLocaleTimeString()}
+          </div>
+        )}
+      </div>
+    </div>
+  );
       <span className="flex-shrink-0">{getIcon()}</span>
       <div className="flex-1">
         <div className="text-gray-700">{getMessage()}</div>

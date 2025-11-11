@@ -276,6 +276,13 @@ async function runGuruConversation(options) {
         mode
     });
 
+    // Notify about context that was built
+    await callHook(hooks.onContextBuilt, {
+        contextSummary,
+        promptLength: initialPrompt.length,
+        mode
+    }, log, 'onContextBuilt');
+
     const conversationHistory = [{ role: 'user', content: initialPrompt }];
     const toolCallsExecuted = [];
     const startTime = Date.now();
@@ -317,12 +324,13 @@ async function runGuruConversation(options) {
             promptPreview
         });
         
-        // Hook for tracking what we're sending to Gemini
+        // Hook for tracking what we're sending to Gemini - VERBOSE
         await callHook(hooks.onPromptSent, {
             iteration,
             promptLength: conversationText.length,
             messageCount: prunedHistory.length,
-            promptPreview
+            promptPreview,
+            fullPrompt: conversationText  // Send full prompt for display
         }, log, 'onPromptSent');
 
         let response;
@@ -371,11 +379,12 @@ async function runGuruConversation(options) {
             responsePreview
         });
         
-        // Hook for tracking what we received from Gemini
+        // Hook for tracking what we received from Gemini - VERBOSE
         await callHook(hooks.onResponseReceived, {
             iteration,
             responseLength: responseText.length,
             responsePreview,
+            fullResponse: responseText,  // Send full response for display
             isEmpty: !responseText || responseText.trim().length === 0
         }, log, 'onResponseReceived');
 
@@ -483,6 +492,8 @@ DO NOT respond with anything else. DO NOT use markdown. DO NOT explain. ONLY val
             
             if (hasDataRequest && iteration < maxIterations - 1) {
                 // Gemini is indicating it needs data but didn't format properly
+                // Add its malformed response to history so it sees its mistake
+                conversationHistory.push({ role: 'assistant', content: responseText });
                 conversationHistory.push({
                     role: 'user',
                     content: `You indicated you need data, but your response was not valid JSON. Please respond with ONLY a tool_call JSON object like this example:
@@ -509,6 +520,8 @@ NO other text. ONLY the JSON object.`
                 // This will fall through to the responseText handler below
             } else {
                 // Short non-JSON response is likely gibberish - demand proper format
+                // Add its malformed response to history so it sees its mistake
+                conversationHistory.push({ role: 'assistant', content: responseText });
                 conversationHistory.push({
                     role: 'user',
                     content: `Your response was not valid JSON and too short to be useful. You are on iteration ${iteration}/${maxIterations}.
@@ -538,7 +551,13 @@ Respond NOW with valid JSON ONLY.`
                 fullRequest: JSON.stringify(parsedResponse, null, 2)
             });
             
-            await callHook(hooks.onToolCall, { iteration, name: toolName, parameters, rawRequest: parsedResponse }, log, 'onToolCall');
+            await callHook(hooks.onToolCall, { 
+                iteration, 
+                name: toolName, 
+                parameters, 
+                rawRequest: parsedResponse,
+                fullRequest: JSON.stringify(parsedResponse, null, 2)  // Full formatted request
+            }, log, 'onToolCall');
 
             const toolStart = Date.now();
             const toolResult = await executeToolCall(toolName, parameters, log);
@@ -571,6 +590,7 @@ Respond NOW with valid JSON ONLY.`
                 name: toolName,
                 durationMs: toolDuration,
                 result: compactResult,
+                fullResult: JSON.stringify(compactResult, null, 2),  // Full formatted result
                 error: toolResult && toolResult.error ? toolResult.message || 'Unknown error' : null,
                 parameters  // Include parameters in the hook so UI can show what was requested
             }, log, 'onToolResult');

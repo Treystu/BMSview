@@ -71,6 +71,87 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
       conversationTokenLimit: DEFAULT_CONVERSATION_TOKEN_LIMIT,
       tokensPerChar: TOKENS_PER_CHAR,
       hooks: {
+        onContextBuilt: async ({ contextSummary, promptLength, mode }) => {
+          console.log(JSON.stringify({
+            level: 'INFO',
+            timestamp: new Date().toISOString(),
+            message: 'Guru context built',
+            context: { jobId, promptLength, mode }
+          }));
+          
+          // Build a human-readable summary of what's pre-loaded
+          const contextParts = [];
+          if (contextSummary) {
+            if (contextSummary.systemProfile) {
+              contextParts.push(`System: ${contextSummary.systemProfile.name || 'Unknown'}`);
+              if (contextSummary.systemProfile.chemistry) {
+                contextParts.push(`${contextSummary.systemProfile.chemistry}`);
+              }
+              if (contextSummary.systemProfile.nominalVoltage) {
+                contextParts.push(`${contextSummary.systemProfile.nominalVoltage}V`);
+              }
+            }
+            if (contextSummary.snapshot) {
+              contextParts.push(`Live snapshot: ${contextSummary.snapshot.voltage?.toFixed(2) || '?'}V`);
+              if (contextSummary.snapshot.current !== null) {
+                contextParts.push(`${contextSummary.snapshot.current?.toFixed(1) || '?'}A`);
+              }
+              if (contextSummary.snapshot.soc !== null) {
+                contextParts.push(`${contextSummary.snapshot.soc?.toFixed(1) || '?'}% SOC`);
+              }
+            }
+            if (contextSummary.energyBudgets?.autonomyDays) {
+              contextParts.push(`Energy budget: ${contextSummary.energyBudgets.solarPercentage || 0}% Solar`);
+              contextParts.push(`${contextSummary.energyBudgets.autonomyDays?.toFixed(1) || '?'} days autonomy`);
+            }
+            if (contextSummary.analytics?.anomalyCount) {
+              contextParts.push(`${contextSummary.analytics.anomalyCount} anomalies`);
+              if (contextSummary.analytics.highSeverityCount) {
+                contextParts.push(`${contextSummary.analytics.highSeverityCount} high severity`);
+              }
+            }
+            if (contextSummary.weather) {
+              contextParts.push(`Weather: ${contextSummary.weather.temp?.toFixed(1) || '?'}°C`);
+              contextParts.push(`${contextSummary.weather.clouds || '?'}% clouds`);
+              if (contextSummary.weather.uvi !== null) {
+                contextParts.push(`UVI ${contextSummary.weather.uvi?.toFixed(1) || '?'}`);
+              }
+            }
+            if (contextSummary.recentSnapshots?.count) {
+              contextParts.push(`Recent logs: ${contextSummary.recentSnapshots.count} samples`);
+              if (contextSummary.recentSnapshots.netSocDelta !== null) {
+                const delta = contextSummary.recentSnapshots.netSocDelta;
+                contextParts.push(`ΔSOC ${delta > 0 ? '+' : ''}${delta?.toFixed(1) || '?'}%`);
+              }
+              if (contextSummary.recentSnapshots.netAhDelta !== null) {
+                const delta = contextSummary.recentSnapshots.netAhDelta;
+                contextParts.push(`ΔAh ${delta > 0 ? '+' : ''}${delta?.toFixed(2) || '?'}`);
+              }
+            }
+            if (contextSummary.meta?.contextBuildMs) {
+              contextParts.push(`Context build time: ${contextSummary.meta.contextBuildMs} ms`);
+            }
+          }
+          
+          const contextMessage = contextParts.length > 0 
+            ? `🧠 Guru Context Primer:\n\n${contextParts.map(p => `• ${p}`).join('\n')}`
+            : '🧠 Guru Context Primer: Basic snapshot data loaded';
+          
+          try {
+            await addProgressEvent(jobId, {
+              type: 'context_built',
+              data: {
+                contextSummary,
+                promptLength,
+                mode,
+                message: contextMessage
+              }
+            }, log);
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            log.warn('Failed to record context built', { jobId, error: err.message });
+          }
+        },
         onIterationStart: async ({ iteration, elapsedMs }) => {
           console.log(JSON.stringify({
             level: 'INFO',
@@ -92,13 +173,20 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
             log.warn('Failed to record iteration progress', { jobId, error: err.message });
           }
         },
-        onPromptSent: async ({ iteration, promptLength, messageCount, promptPreview }) => {
+        onPromptSent: async ({ iteration, promptLength, messageCount, promptPreview, fullPrompt }) => {
           console.log(JSON.stringify({
             level: 'DEBUG',
             timestamp: new Date().toISOString(),
             message: 'Prompt sent to Gemini',
             context: { jobId, iteration, promptLength, messageCount }
           }));
+          
+          // Create a truncated version for UI display (last 800 chars of last message)
+          const lastMessage = fullPrompt ? fullPrompt.split('\n\n').slice(-1)[0] : '';
+          const displayText = lastMessage.length > 800 
+            ? `...${lastMessage.substring(lastMessage.length - 800)}`
+            : lastMessage;
+          
           try {
             await addProgressEvent(jobId, {
               type: 'prompt_sent',
@@ -106,8 +194,8 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
                 iteration,
                 promptLength,
                 messageCount,
-                promptPreview: promptPreview?.substring(0, 500) || '',
-                message: `📤 Sending request to AI (${messageCount} messages, ${Math.round(promptLength / 1000)}KB)`
+                promptPreview: displayText,
+                message: `📤 Iteration ${iteration} sent - waiting for reply...\n\n📝 Request Preview:\n${displayText}`
               }
             }, log);
           } catch (error) {
@@ -115,13 +203,19 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
             log.warn('Failed to record prompt sent', { jobId, error: err.message });
           }
         },
-        onResponseReceived: async ({ iteration, responseLength, responsePreview, isEmpty }) => {
+        onResponseReceived: async ({ iteration, responseLength, responsePreview, fullResponse, isEmpty }) => {
           console.log(JSON.stringify({
             level: isEmpty ? 'WARN' : 'DEBUG',
             timestamp: new Date().toISOString(),
             message: 'Response received from Gemini',
             context: { jobId, iteration, responseLength, isEmpty }
           }));
+          
+          // Show the actual response
+          const displayResponse = fullResponse && fullResponse.length > 1500
+            ? `${fullResponse.substring(0, 1500)}...\n\n[Response truncated - ${fullResponse.length} total chars]`
+            : fullResponse || '(empty)';
+          
           try {
             await addProgressEvent(jobId, {
               type: 'response_received',
@@ -129,10 +223,10 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
                 iteration,
                 responseLength,
                 isEmpty,
-                responsePreview: responsePreview?.substring(0, 500) || '',
+                responsePreview: displayResponse,
                 message: isEmpty 
-                  ? `⚠️ Received empty response from AI`
-                  : `📥 Received response from AI (${Math.round(responseLength / 1000)}KB)`
+                  ? `⚠️ Reply received - EMPTY RESPONSE`
+                  : `📥 Reply received (${Math.round(responseLength / 1000)}KB):\n\n${displayResponse}`
               }
             }, log);
           } catch (error) {
@@ -140,7 +234,7 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
             log.warn('Failed to record response received', { jobId, error: err.message });
           }
         },
-        onToolCall: async ({ iteration, name, parameters }) => {
+        onToolCall: async ({ iteration, name, parameters, fullRequest }) => {
           console.log(JSON.stringify({
             level: 'INFO',
             timestamp: new Date().toISOString(),
@@ -152,11 +246,13 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
             const paramsSummary = Object.entries(parameters || {})
               .map(([key, value]) => {
                 if (typeof value === 'string' && value.length > 30) {
-                  return `${key}: ${value.substring(0, 30)}...`;
+                  return `  ${key}: ${value.substring(0, 30)}...`;
                 }
-                return `${key}: ${value}`;
+                return `  ${key}: ${JSON.stringify(value)}`;
               })
-              .join(', ');
+              .join('\n');
+            
+            const requestDisplay = fullRequest || JSON.stringify({ tool_call: name, parameters }, null, 2);
             
             await addProgressEvent(jobId, {
               type: 'tool_call',
@@ -164,7 +260,8 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
                 tool: name,
                 parameters,
                 iteration,
-                message: `🔧 AI requesting data: ${name}(${paramsSummary})`
+                fullRequest: requestDisplay,
+                message: `🔧 AI requesting more information:\n\n${requestDisplay}\n\nExecuting tool...`
               }
             }, log);
           } catch (error) {
@@ -172,7 +269,7 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
             log.warn('Failed to record tool call', { jobId, error: err.message });
           }
         },
-        onToolResult: async ({ iteration, name, durationMs, result, error, parameters }) => {
+        onToolResult: async ({ iteration, name, durationMs, result, fullResult, error, parameters }) => {
           console.log(JSON.stringify({
             level: error ? 'WARN' : 'INFO',
             timestamp: new Date().toISOString(),
@@ -181,9 +278,9 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
           }));
           try {
             const dataSize = result ? JSON.stringify(result).length : 0;
-            const resultPreview = result && !error 
-              ? JSON.stringify(result).substring(0, 200)
-              : '';
+            const resultDisplay = fullResult && fullResult.length > 2000
+              ? `${fullResult.substring(0, 2000)}...\n\n[Result truncated - ${fullResult.length} total chars]`
+              : fullResult || JSON.stringify(result, null, 2);
             
             await addProgressEvent(jobId, {
               type: 'tool_response',
@@ -193,10 +290,10 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
                 dataSize,
                 durationMs,
                 iteration,
-                resultPreview,
+                fullResult: resultDisplay,
                 message: error
                   ? `❌ Tool ${name} failed: ${error}`
-                  : `📊 Data received: ${Math.round(dataSize / 1000)}KB in ${(durationMs / 1000).toFixed(1)}s`
+                  : `📊 Bundled information received (${(durationMs / 1000).toFixed(1)}s):\n\n${resultDisplay}\n\nSending to AI for analysis...`
               }
             }, log);
           } catch (errLike) {
