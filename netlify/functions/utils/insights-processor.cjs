@@ -83,12 +83,61 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
               type: 'iteration',
               data: {
                 iteration,
-                elapsedSeconds: Math.floor(elapsedMs / 1000)
+                elapsedSeconds: Math.floor(elapsedMs / 1000),
+                message: `📈 Iteration ${iteration} of ?`
               }
             }, log);
           } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
             log.warn('Failed to record iteration progress', { jobId, error: err.message });
+          }
+        },
+        onPromptSent: async ({ iteration, promptLength, messageCount, promptPreview }) => {
+          console.log(JSON.stringify({
+            level: 'DEBUG',
+            timestamp: new Date().toISOString(),
+            message: 'Prompt sent to Gemini',
+            context: { jobId, iteration, promptLength, messageCount }
+          }));
+          try {
+            await addProgressEvent(jobId, {
+              type: 'prompt_sent',
+              data: {
+                iteration,
+                promptLength,
+                messageCount,
+                promptPreview: promptPreview?.substring(0, 500) || '',
+                message: `📤 Sending request to AI (${messageCount} messages, ${Math.round(promptLength / 1000)}KB)`
+              }
+            }, log);
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            log.warn('Failed to record prompt sent', { jobId, error: err.message });
+          }
+        },
+        onResponseReceived: async ({ iteration, responseLength, responsePreview, isEmpty }) => {
+          console.log(JSON.stringify({
+            level: isEmpty ? 'WARN' : 'DEBUG',
+            timestamp: new Date().toISOString(),
+            message: 'Response received from Gemini',
+            context: { jobId, iteration, responseLength, isEmpty }
+          }));
+          try {
+            await addProgressEvent(jobId, {
+              type: 'response_received',
+              data: {
+                iteration,
+                responseLength,
+                isEmpty,
+                responsePreview: responsePreview?.substring(0, 500) || '',
+                message: isEmpty 
+                  ? `⚠️ Received empty response from AI`
+                  : `📥 Received response from AI (${Math.round(responseLength / 1000)}KB)`
+              }
+            }, log);
+          } catch (error) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            log.warn('Failed to record response received', { jobId, error: err.message });
           }
         },
         onToolCall: async ({ iteration, name, parameters }) => {
@@ -99,12 +148,23 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
             context: { jobId, iteration, tool: name }
           }));
           try {
+            // Format parameters for display
+            const paramsSummary = Object.entries(parameters || {})
+              .map(([key, value]) => {
+                if (typeof value === 'string' && value.length > 30) {
+                  return `${key}: ${value.substring(0, 30)}...`;
+                }
+                return `${key}: ${value}`;
+              })
+              .join(', ');
+            
             await addProgressEvent(jobId, {
               type: 'tool_call',
               data: {
                 tool: name,
                 parameters,
-                iteration
+                iteration,
+                message: `🔧 AI requesting data: ${name}(${paramsSummary})`
               }
             }, log);
           } catch (error) {
@@ -112,7 +172,7 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
             log.warn('Failed to record tool call', { jobId, error: err.message });
           }
         },
-        onToolResult: async ({ iteration, name, durationMs, result, error }) => {
+        onToolResult: async ({ iteration, name, durationMs, result, error, parameters }) => {
           console.log(JSON.stringify({
             level: error ? 'WARN' : 'INFO',
             timestamp: new Date().toISOString(),
@@ -120,14 +180,23 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
             context: { jobId, iteration, tool: name, success: !error, durationMs }
           }));
           try {
+            const dataSize = result ? JSON.stringify(result).length : 0;
+            const resultPreview = result && !error 
+              ? JSON.stringify(result).substring(0, 200)
+              : '';
+            
             await addProgressEvent(jobId, {
               type: 'tool_response',
               data: {
                 tool: name,
                 success: !error,
-                dataSize: result ? JSON.stringify(result).length : 0,
+                dataSize,
                 durationMs,
-                iteration
+                iteration,
+                resultPreview,
+                message: error
+                  ? `❌ Tool ${name} failed: ${error}`
+                  : `📊 Data received: ${Math.round(dataSize / 1000)}KB in ${(durationMs / 1000).toFixed(1)}s`
               }
             }, log);
           } catch (errLike) {

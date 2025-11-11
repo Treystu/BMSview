@@ -191,7 +191,11 @@ function ProgressEventItem({ event }: { event: InsightsProgress }) {
       case 'ai_response':
         return '🤖';
       case 'iteration':
-        return '🔄';
+        return '📈';
+      case 'prompt_sent':
+        return '📤';
+      case 'response_received':
+        return '📥';
       case 'status':
         return 'ℹ️';
       case 'error':
@@ -202,6 +206,12 @@ function ProgressEventItem({ event }: { event: InsightsProgress }) {
   };
 
   const getMessage = () => {
+    // Use event.data.message if it exists (our new formatted messages)
+    if (event.data.message) {
+      return event.data.message;
+    }
+    
+    // Fallback to old formatting
     switch (event.type) {
       case 'tool_call':
         const params = event.data.parameters || {};
@@ -233,10 +243,17 @@ function ProgressEventItem({ event }: { event: InsightsProgress }) {
             )}
           </div>
         );
+      case 'prompt_sent':
+        return `📤 Sending prompt to AI (${event.data.messageCount} messages, ${Math.round((event.data.promptLength || 0) / 1000)}KB)`;
+      case 'response_received':
+        if (event.data.isEmpty) {
+          return '⚠️ Received empty response from AI';
+        }
+        return `📥 Received response from AI (${Math.round((event.data.responseLength || 0) / 1000)}KB)`;
       case 'ai_response':
         return 'AI generated response';
       case 'iteration':
-        return `Iteration ${event.data.iteration} (${event.data.elapsedSeconds}s elapsed)`;
+        return `📈 Iteration ${event.data.iteration} of ?`;
       case 'status':
         return event.data.message;
       case 'error':
