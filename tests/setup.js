@@ -28,25 +28,17 @@ jest.mock('mongodb', () => {
   return { MongoClient: MockMongoClient };
 });
 
-// Mock Gemini API (mocking gemini-2.5-flash model)
-jest.mock('@google/generative-ai', () => ({
-  GoogleGenerativeAI: jest.fn().mockImplementation(() => ({
-    getGenerativeModel: jest.fn().mockReturnValue({
+// Mock new Gemini SDK (@google/genai)
+jest.mock('@google/genai', () => ({
+  GoogleGenAI: jest.fn().mockImplementation(() => ({
+    models: {
       generateContent: jest.fn().mockResolvedValue({
         response: {
-          text: () => JSON.stringify({
-            healthStatus: 'Good',
-            performance: {
-              trend: 'stable',
-              capacityRetention: 95,
-              degradationRate: 0.01
-            },
-            recommendations: ['Routine monitoring recommended'],
-            confidence: 'high'
-          })
-        }
+          text: () => 'OK - Test response from Gemini API'
+        },
+        text: () => 'OK - Test response from Gemini API'
       })
-    })
+    }
   }))
 }));
 
