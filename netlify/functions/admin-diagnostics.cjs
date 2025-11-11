@@ -5,7 +5,6 @@ const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 const { generateInsightsWithTools } = require('./utils/insights-tools.cjs');
 const { createInsightsJob, getJobById, updateJobProgress } = require('./utils/insights-jobs.cjs');
 const { GeminiClient } = require('./utils/geminiClient.cjs');
-const axios = require('axios');
 const crypto = require('crypto');
 
 // Test data based on actual BMS screenshot
