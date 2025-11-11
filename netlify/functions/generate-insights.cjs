@@ -699,3 +699,48 @@ async function handleJobStatus(jobId) {
     };
   }
 }
+
+/**
+ * Programmatic function to generate insights with tools (for use by other functions)
+ * This is exported for admin-diagnostics and other internal callers
+ */
+async function generateInsightsWithTools(analysisData, options = {}) {
+  const {
+    testId,
+    mode = 'comprehensive',
+    requestedTools = [],
+    maxIterations = 3,
+    timeoutMs = 30000,
+    customPrompt
+  } = options;
+
+  try {
+    const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-1.5-flash' });
+    const agent = new ReActAgent(model, analysisData, customPrompt);
+    
+    const insights = await Promise.race([
+      agent.execute(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Insights generation timeout')), timeoutMs)
+      )
+    ]);
+
+    return {
+      summary: insights,
+      toolCallsExecuted: agent.toolCallHistory.length,
+      iterations: agent.iterations,
+      thoughtHistory: agent.thoughtHistory,
+      mode
+    };
+  } catch (error) {
+    logger.error('generateInsightsWithTools error', { 
+      testId, 
+      error: error.message,
+      mode 
+    });
+    throw error;
+  }
+}
+
+// Export both the handler and the programmatic function
+exports.generateInsightsWithTools = generateInsightsWithTools;
