@@ -1,6 +1,6 @@
 const { GoogleGenAI } = require("@google/genai");
 const { connectDB } = require('./utils/mongodb.cjs');
-const { logger } = require('./utils/logger.cjs');
+const { createLogger } = require('./utils/logger.cjs');
 const { validateObjectId, validateRequest } = require('./utils/validation.cjs');
 const crypto = require('crypto');
 const axios = require('axios');
@@ -188,10 +188,11 @@ const AVAILABLE_TOOLS = {
 
 // ReAct Loop Implementation
 class ReActAgent {
-  constructor(model, analysisData, customQuery = null) {
+  constructor(model, analysisData, customQuery = null, logger = null) {
     this.model = model;
     this.analysisData = analysisData;
     this.customQuery = customQuery;
+    this.logger = logger;
     this.thoughtHistory = [];
     this.toolCallHistory = [];
     this.iterations = 0;
@@ -331,11 +332,13 @@ ${JSON.stringify(this.analysisData, null, 2)}`];
     } catch (error) {
       const errorMessage = error && error.message ? error.message : 'Unknown error';
       
-      logger.error('Tool execution error', { 
-        tool: toolCall.tool, 
-        params: toolCall.params, 
-        error: errorMessage 
-      });
+      if (this.logger) {
+        this.logger.error('Tool execution error', { 
+          tool: toolCall.tool, 
+          params: toolCall.params, 
+          error: errorMessage 
+        });
+      }
       return { error: `Tool execution failed: ${errorMessage}` };
     }
   }
@@ -372,6 +375,7 @@ Format your response in clear sections with specific, actionable advice.`;
 exports.handler = async (event, context) => {
   const requestId = crypto.randomUUID();
   const startTime = Date.now();
+  const log = createLogger('generate-insights', context);
   
   try {
     // Parse request
@@ -380,7 +384,7 @@ exports.handler = async (event, context) => {
     
     // Handle job status check
     if (mode === 'status' && jobId) {
-      return await handleJobStatus(jobId);
+      return await handleJobStatus(jobId, log);
     }
     
     // Validate input
@@ -437,7 +441,7 @@ exports.handler = async (event, context) => {
 
     // Handle async mode
     if (mode === 'async') {
-      return await handleAsyncMode(db, analysisData, customQuery, requestId);
+      return await handleAsyncMode(db, analysisData, customQuery, requestId, log);
     }
 
     // Execute ReAct loop (sync mode)
@@ -451,7 +455,7 @@ exports.handler = async (event, context) => {
       }
     });
 
-    const agent = new ReActAgent(model, analysisData, customQuery);
+    const agent = new ReActAgent(model, analysisData, customQuery, log);
     
     // Set timeout for sync execution
     const timeoutPromise = new Promise((_, reject) => 
@@ -480,7 +484,7 @@ exports.handler = async (event, context) => {
       
       await db.collection('insights').insertOne(insightDoc);
 
-      logger.info('Insights generated successfully', {
+      log.info('Insights generated successfully', {
         requestId,
         analysisId: analysisData._id,
         iterations: agent.iterations,
@@ -505,8 +509,8 @@ exports.handler = async (event, context) => {
     } catch (timeoutError) {
       if (timeoutError && timeoutError.message === 'Timeout') {
         // Switch to async mode
-        logger.info('Switching to async mode due to timeout', { requestId });
-        return await handleAsyncMode(db, analysisData, customQuery, requestId);
+        log.info('Switching to async mode due to timeout', { requestId });
+        return await handleAsyncMode(db, analysisData, customQuery, requestId, log);
       }
       throw timeoutError;
     }
@@ -516,7 +520,7 @@ exports.handler = async (event, context) => {
     const errorMessage = error && error.message ? error.message : 'Unknown error';
     const errorStack = error && error.stack ? error.stack : '';
     
-    logger.error('Generate insights error', {
+    log.error('Generate insights error', {
       requestId,
       error: errorMessage,
       stack: errorStack,
@@ -536,7 +540,7 @@ exports.handler = async (event, context) => {
 };
 
 // Handle async mode
-async function handleAsyncMode(db, analysisData, customQuery, requestId) {
+async function handleAsyncMode(db, analysisData, customQuery, requestId, log) {
   const jobId = crypto.randomUUID();
   
   // Create job record
@@ -572,6 +576,7 @@ async function handleAsyncMode(db, analysisData, customQuery, requestId) {
 // Background processing
 async function processInBackground(jobId, analysisData, customQuery, requestId) {
   const startTime = Date.now();
+  const log = createLogger('generate-insights-background', { requestId });
   
   try {
     const db = await connectDB();
@@ -593,7 +598,7 @@ async function processInBackground(jobId, analysisData, customQuery, requestId) 
       }
     });
 
-    const agent = new ReActAgent(model, analysisData, customQuery);
+    const agent = new ReActAgent(model, analysisData, customQuery, log);
     const insights = await agent.execute();
     
     // Store results
@@ -632,7 +637,7 @@ async function processInBackground(jobId, analysisData, customQuery, requestId) 
       }
     );
     
-    logger.info('Background insights completed', {
+    log.info('Background insights completed', {
       jobId,
       requestId,
       duration: Date.now() - startTime
@@ -641,7 +646,7 @@ async function processInBackground(jobId, analysisData, customQuery, requestId) 
   } catch (error) {
     const errorMessage = error && error.message ? error.message : 'Unknown error';
     
-    logger.error('Background processing error', {
+    log.error('Background processing error', {
       jobId,
       requestId,
       error: errorMessage
@@ -660,7 +665,7 @@ async function processInBackground(jobId, analysisData, customQuery, requestId) 
         }
       );
     } catch (updateError) {
-      logger.error('Failed to update job status', {
+      log.error('Failed to update job status', {
         jobId,
         error: updateError && updateError.message ? updateError.message : 'Unknown error'
       });
@@ -669,7 +674,7 @@ async function processInBackground(jobId, analysisData, customQuery, requestId) 
 }
 
 // Handle job status check
-async function handleJobStatus(jobId) {
+async function handleJobStatus(jobId, log) {
   try {
     const db = await connectDB();
     const job = await db.collection('jobs').findOne({ _id: jobId });
@@ -709,7 +714,7 @@ async function handleJobStatus(jobId) {
   } catch (error) {
     const errorMessage = error && error.message ? error.message : 'Unknown error';
     
-    logger.error('Job status check error', { jobId, error: errorMessage });
+    log.error('Job status check error', { jobId, error: errorMessage });
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },
@@ -732,9 +737,11 @@ async function generateInsightsWithTools(analysisData, options = {}) {
     customPrompt
   } = options;
 
+  const log = createLogger('generateInsightsWithTools', { testId });
+
   try {
     const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-1.5-flash' });
-    const agent = new ReActAgent(model, analysisData, customPrompt);
+    const agent = new ReActAgent(model, analysisData, customPrompt, log);
     
     const insights = await Promise.race([
       agent.execute(),
@@ -753,7 +760,7 @@ async function generateInsightsWithTools(analysisData, options = {}) {
   } catch (error) {
     const errorMessage = error && error.message ? error.message : 'Unknown error';
     
-    logger.error('generateInsightsWithTools error', { 
+    log.error('generateInsightsWithTools error', { 
       testId, 
       error: errorMessage,
       mode 
