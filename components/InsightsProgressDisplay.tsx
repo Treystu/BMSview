@@ -204,9 +204,35 @@ function ProgressEventItem({ event }: { event: InsightsProgress }) {
   const getMessage = () => {
     switch (event.type) {
       case 'tool_call':
-        return `Requesting ${event.data.tool} with ${Object.keys(event.data.parameters || {}).length} parameters`;
+        const params = event.data.parameters || {};
+        const paramSummary = Object.entries(params)
+          .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+          .join(', ');
+        return (
+          <div>
+            <div className="font-medium">Requesting data: {event.data.tool}</div>
+            {paramSummary && (
+              <div className="text-xs text-gray-500 mt-1 font-mono">
+                {paramSummary}
+              </div>
+            )}
+          </div>
+        );
       case 'tool_response':
-        return `Received ${event.data.tool} response (${event.data.dataSize} bytes)`;
+        const success = event.data.success !== false;
+        return (
+          <div>
+            <div className={success ? 'text-green-700' : 'text-red-700'}>
+              {success ? '✓' : '✗'} {event.data.tool} response received ({(event.data.dataSize || 0).toLocaleString()} bytes)
+            </div>
+            {event.data.parameters && (
+              <div className="text-xs text-gray-500 mt-1">
+                Query: {JSON.stringify(event.data.parameters).substring(0, 100)}
+                {JSON.stringify(event.data.parameters).length > 100 && '...'}
+              </div>
+            )}
+          </div>
+        );
       case 'ai_response':
         return 'AI generated response';
       case 'iteration':
@@ -224,8 +250,8 @@ function ProgressEventItem({ event }: { event: InsightsProgress }) {
     <div className="flex items-start gap-2 text-xs">
       <span className="flex-shrink-0">{getIcon()}</span>
       <div className="flex-1">
-        <p className="text-gray-700">{getMessage()}</p>
-        <p className="text-gray-400 text-xs">
+        <div className="text-gray-700">{getMessage()}</div>
+        <p className="text-gray-400 text-xs mt-1">
           {new Date(event.timestamp).toLocaleTimeString()}
         </p>
       </div>
