@@ -329,12 +329,14 @@ ${JSON.stringify(this.analysisData, null, 2)}`];
     try {
       return await tool.execute(toolCall.params);
     } catch (error) {
+      const errorMessage = error && error.message ? error.message : 'Unknown error';
+      
       logger.error('Tool execution error', { 
         tool: toolCall.tool, 
         params: toolCall.params, 
-        error: error.message 
+        error: errorMessage 
       });
-      return { error: `Tool execution failed: ${error.message}` };
+      return { error: `Tool execution failed: ${errorMessage}` };
     }
   }
 
