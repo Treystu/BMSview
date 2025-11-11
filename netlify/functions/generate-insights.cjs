@@ -501,7 +501,7 @@ exports.handler = async (event, context) => {
       };
       
     } catch (timeoutError) {
-      if (timeoutError.message === 'Timeout') {
+      if (timeoutError && timeoutError.message === 'Timeout') {
         // Switch to async mode
         logger.info('Switching to async mode due to timeout', { requestId });
         return await handleAsyncMode(db, analysisData, customQuery, requestId);
@@ -510,10 +510,15 @@ exports.handler = async (event, context) => {
     }
     
   } catch (error) {
+    // Safely handle error object that might be undefined or not a proper Error
+    const errorMessage = error && error.message ? error.message : 'Unknown error';
+    const errorStack = error && error.stack ? error.stack : '';
+    
     logger.error('Generate insights error', {
       requestId,
-      error: error.message,
-      stack: error.stack
+      error: errorMessage,
+      stack: errorStack,
+      errorType: error ? error.constructor.name : 'undefined'
     });
 
     return {
@@ -521,7 +526,7 @@ exports.handler = async (event, context) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         error: 'Failed to generate insights',
-        message: error.message,
+        message: errorMessage,
         requestId
       })
     };
@@ -632,23 +637,32 @@ async function processInBackground(jobId, analysisData, customQuery, requestId) 
     });
     
   } catch (error) {
+    const errorMessage = error && error.message ? error.message : 'Unknown error';
+    
     logger.error('Background processing error', {
       jobId,
       requestId,
-      error: error.message
+      error: errorMessage
     });
     
-    const db = await connectDB();
-    await db.collection('jobs').updateOne(
-      { _id: jobId },
-      { 
-        $set: { 
-          status: 'failed',
-          failedAt: new Date(),
-          error: error.message
-        } 
-      }
-    );
+    try {
+      const db = await connectDB();
+      await db.collection('jobs').updateOne(
+        { _id: jobId },
+        { 
+          $set: { 
+            status: 'failed',
+            failedAt: new Date(),
+            error: errorMessage
+          } 
+        }
+      );
+    } catch (updateError) {
+      logger.error('Failed to update job status', {
+        jobId,
+        error: updateError && updateError.message ? updateError.message : 'Unknown error'
+      });
+    }
   }
 }
 
@@ -691,7 +705,9 @@ async function handleJobStatus(jobId) {
     };
     
   } catch (error) {
-    logger.error('Job status check error', { jobId, error: error.message });
+    const errorMessage = error && error.message ? error.message : 'Unknown error';
+    
+    logger.error('Job status check error', { jobId, error: errorMessage });
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },
@@ -733,9 +749,11 @@ async function generateInsightsWithTools(analysisData, options = {}) {
       mode
     };
   } catch (error) {
+    const errorMessage = error && error.message ? error.message : 'Unknown error';
+    
     logger.error('generateInsightsWithTools error', { 
       testId, 
-      error: error.message,
+      error: errorMessage,
       mode 
     });
     throw error;
