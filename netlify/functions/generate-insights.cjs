@@ -1,4 +1,4 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { GoogleGenAI } = require("@google/genai");
 const { connectDB } = require('./utils/mongodb.cjs');
 const { logger } = require('./utils/logger.cjs');
 const { validateObjectId, validateRequest } = require('./utils/validation.cjs');
@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 
 // Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // Constants
 const MAX_SYNC_DURATION = 55000; // 55s for Netlify function timeout
