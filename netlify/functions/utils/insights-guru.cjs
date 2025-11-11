@@ -15,7 +15,7 @@ const { toolDefinitions, executeToolCall } = require("./gemini-tools.cjs");
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const RECENT_SNAPSHOT_LIMIT = 24;
-const SYNC_CONTEXT_BUDGET_MS = 8000; // Reduced from 22000 - sync mode should be fast with minimal preload
+const SYNC_CONTEXT_BUDGET_MS = 5000; // Further reduced - sync mode delegates to ReAct loop
 const ASYNC_CONTEXT_BUDGET_MS = 45000;
 
 /**
@@ -31,6 +31,13 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
     
     // In sync mode, skip expensive analytics and rely on ReAct loop instead
     const skipExpensiveOps = options.skipExpensiveOps !== undefined ? options.skipExpensiveOps : (options.mode === "sync");
+    
+    log.info('Starting context collection', { 
+        mode: options.mode, 
+        maxMs, 
+        skipExpensiveOps,
+        hasSystemId: !!systemId
+    });
 
     /** @type {any} */
     const context = {
@@ -183,6 +190,17 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
     );
 
     context.meta.durationMs = Date.now() - start;
+    
+    log.info('Context collection complete', {
+        durationMs: context.meta.durationMs,
+        durationSec: (context.meta.durationMs / 1000).toFixed(1),
+        maxMs,
+        truncated: context.meta.truncated,
+        stepsCompleted: context.meta.steps.length,
+        stepsSucceeded: context.meta.steps.filter(s => s.success).length,
+        stepsFailed: context.meta.steps.filter(s => !s.success).length
+    });
+    
     return context;
 }
 
@@ -763,6 +781,7 @@ function formatSolarVarianceSection(variance) {
 /**
  * Format 90-day daily rollup section for AI context
  * Provides comprehensive historical trend data with hourly granularity
+ * OPTIMIZED: More aggressive sampling to prevent token overflow
  */
 function formatDailyRollupSection(dailyRollup) {
     if (!Array.isArray(dailyRollup) || dailyRollup.length === 0) return null;
@@ -813,10 +832,10 @@ function formatDailyRollupSection(dailyRollup) {
         }
     }
     
-    // Include sample of recent daily data (last 7 days with hourly detail)
+    // OPTIMIZATION: Only include recent 7 days with SAMPLED hourly detail (not all hours)
     const recentDays = dailyRollup.slice(-7);
     if (recentDays.length > 0) {
-        lines.push("\n- **Recent 7-day hourly detail:**");
+        lines.push("\n- **Recent 7-day summary (use request_bms_data for hourly detail):**");
         for (const day of recentDays) {
             const summary = day.dailySummary;
             if (!summary) continue;
@@ -827,22 +846,12 @@ function formatDailyRollupSection(dailyRollup) {
             
             lines.push(`  - ${day.date}: ${day.hours}h coverage (${day.dataPoints} points), SOC ${socRange}, ${summary.totalAlerts || 0} alerts`);
             
-            // Include hourly averages for this day (compact format)
-            if (Array.isArray(day.hourlyAverages) && day.hourlyAverages.length > 0) {
-                const hourlyCompact = day.hourlyAverages
-                    .map(h => {
-                        const hour = new Date(h.timestamp).getHours();
-                        const soc = isFiniteNumber(h.soc) ? formatPercent(h.soc, 0) : '--';
-                        const current = isFiniteNumber(h.current) ? formatNumber(h.current, "A", 1) : '--';
-                        return `${hour}h:${soc}@${current}`;
-                    })
-                    .join(', ');
-                lines.push(`    Hours: ${hourlyCompact}`);
-            }
+            // REMOVED: Hourly compact format - too verbose, causes token overflow
+            // AI should use request_bms_data tool if it needs hourly data
         }
     }
     
-    lines.push("\n- **Usage notes:** This dataset provides comprehensive context for trend analysis. Use request_bms_data tool to query specific metrics or time ranges for deeper analysis.");
+    lines.push("\n- **Usage notes:** For detailed hourly data, use request_bms_data tool with specific metrics and time ranges. This summary provides high-level context only.");
     
     return lines.join("\n");
 }

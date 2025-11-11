@@ -87,19 +87,43 @@ function compactifyToolResult(result, toolName, log) {
         return result;
     }
 
-    if (result.data && Array.isArray(result.data) && result.data.length > 100) {
-        log.info('Compactifying large tool result', {
-            toolName,
-            originalSize: result.data.length
-        });
+    // More aggressive compaction for large datasets
+    if (result.data && Array.isArray(result.data)) {
+        const dataSize = result.data.length;
+        
+        if (dataSize > 150) {
+            log.info('Compactifying large tool result', {
+                toolName,
+                originalSize: dataSize
+            });
 
-        if (result.data.length > 200) {
-            const step = Math.ceil(result.data.length / 100);
+            // Aggressive sampling for very large datasets (>200 points)
+            if (dataSize > 200) {
+                const targetSize = 80; // Reduced from 100
+                const step = Math.ceil(dataSize / targetSize);
+                const compactData = result.data.filter((_, index) => index % step === 0);
+                
+                // Always include last point
+                if (compactData[compactData.length - 1] !== result.data[dataSize - 1]) {
+                    compactData.push(result.data[dataSize - 1]);
+                }
+                
+                return {
+                    ...result,
+                    data: compactData,
+                    note: `Dataset sampled from ${dataSize} to ${compactData.length} points for optimization. Use more specific time ranges or metrics if you need more detail.`
+                };
+            }
+            
+            // Moderate sampling for medium datasets (150-200 points)
+            const targetSize = 100;
+            const step = Math.ceil(dataSize / targetSize);
             const compactData = result.data.filter((_, index) => index % step === 0);
+            
             return {
                 ...result,
                 data: compactData,
-                note: `Dataset sampled from ${result.data.length} to ${compactData.length} points for optimization. Use more specific time ranges or metrics if you need more detail.`
+                note: `Dataset sampled from ${dataSize} to ${compactData.length} points. Request specific time ranges for full resolution.`
             };
         }
     }
@@ -258,6 +282,8 @@ async function runGuruConversation(options) {
 
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
         const elapsedMs = Date.now() - startTime;
+        const remainingMs = totalTimeoutMs - elapsedMs;
+        
         if (elapsedMs > totalTimeoutMs) {
             const error = new Error(`Analysis exceeded time limit (${Math.floor(totalTimeoutMs / 1000)}s). Try a simpler question or smaller time range.`);
             await callHook(hooks.onError, { error, iteration, toolCalls: toolCallsExecuted }, log, 'onError');
@@ -266,7 +292,13 @@ async function runGuruConversation(options) {
 
         await callHook(hooks.onIterationStart, { iteration, elapsedMs }, log, 'onIterationStart');
 
-        log.info('Function calling iteration started', { iteration, elapsedMs });
+        log.info('Function calling iteration started', { 
+            iteration, 
+            elapsedMs, 
+            remainingMs,
+            remainingSec: Math.floor(remainingMs / 1000),
+            toolCallsSoFar: toolCallsExecuted.length
+        });
 
         const prunedHistory = pruneConversationHistory(conversationHistory, conversationTokenLimit, tokensPerChar, log);
         const conversationText = prunedHistory.map(msg =>
@@ -275,15 +307,31 @@ async function runGuruConversation(options) {
 
         let response;
         try {
+            const iterationStart = Date.now();
             const responsePromise = model.generateContent(conversationText);
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Iteration timeout')), iterationTimeoutMs)
             );
             response = await Promise.race([responsePromise, timeoutPromise]);
+            
+            const iterationDuration = Date.now() - iterationStart;
+            log.info('Gemini API response received', {
+                iteration,
+                durationMs: iterationDuration,
+                durationSec: (iterationDuration / 1000).toFixed(1)
+            });
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
             if (err.message === 'Iteration timeout') {
-                const timeoutError = new Error('AI processing took too long. Try simplifying your question.');
+                const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
+                const timeoutError = new Error(`AI processing took too long at iteration ${iteration}/${maxIterations} (${elapsedSec}s elapsed). Try simplifying your question or using a smaller time range.`);
+                log.error('Iteration timeout', {
+                    iteration,
+                    maxIterations,
+                    elapsedSec,
+                    iterationTimeoutSec: iterationTimeoutMs / 1000,
+                    toolCallsSoFar: toolCallsExecuted.length
+                });
                 await callHook(hooks.onError, { error: timeoutError, iteration, toolCalls: toolCallsExecuted }, log, 'onError');
                 throw timeoutError;
             }
