@@ -301,13 +301,21 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     
     prompt += "CONTENT GUIDELINES:\n";
     prompt += "• WRITING STYLE: Terse, highlight-driven bullets. Lead with KEY FINDINGS in bold. Skip verbose explanations.\n";
-    prompt += "• STRUCTURE: ## KEY FINDINGS (2-4 critical bullets with **bold labels**) → ## RECOMMENDATIONS (numbered actions with urgency flags 🔴🟡🟢)\n";
+    prompt += "• STRUCTURE: ## KEY FINDINGS (2-4 critical bullets with **bold labels**) → ## TREND ANALYSIS (statistical patterns) → ## RECOMMENDATIONS (numbered actions with urgency flags 🔴🟡🟢 and SPECIFIC numeric targets)\n";
     prompt += "• DO NOT include OPERATIONAL STATUS section - current voltage/SOC/current/temperature already displayed in UI\n";
     prompt += "• Cite sources inline: 'Solar deficit 15Ah (weather data + BMS logs)' not separate attribution\n";
     prompt += "• TERMINOLOGY: 'Battery autonomy'/'days of autonomy' = RUNTIME until discharge (Energy Budget). 'Service life'/'lifetime' = MONTHS/YEARS until replacement (Predictive Outlook). Never confuse.\n";
     prompt += "• DATA QUALITY: Screenshot-based monitoring has gaps. Use ±10% tolerance for energy deficits, ±15% for solar variance.\n";
     prompt += "• SOLAR VARIANCE: Delta between expected and actual = DAYTIME LOAD CONSUMPTION (not solar underperformance). Only flag solar issues when variance exceeds ±15% AND weather was favorable.\n";
     prompt += "• ALERT EVENTS: Group consecutive alerts into time-based events. Multiple screenshots showing same alert = ONE event until threshold recovery.\n";
+    prompt += "\nENHANCED ANALYSIS REQUIREMENTS:\n";
+    prompt += "• TREND ANALYSIS: Calculate and report trend directions (improving/degrading), rates of change (per day/week), and statistical confidence\n";
+    prompt += "• NUMERIC SPECIFICITY: Every recommendation MUST include specific numbers (e.g., 'Add 200Ah capacity' not 'increase capacity', 'Reduce load by 5A' not 'reduce consumption')\n";
+    prompt += "• COMPARATIVE ANALYSIS: Compare current metrics to historical averages/baselines. Report % deviation and whether it's significant\n";
+    prompt += "• PREDICTIVE INSIGHTS: Project future states (e.g., 'At current degradation rate, reach 80% retention in 245 days', 'SOC will drop to 20% in 6.5 hours at current load')\n";
+    prompt += "• ROOT CAUSE ANALYSIS: When identifying issues, explain the likely causes with evidence (correlate temp spikes with high current, SOC drops with load patterns)\n";
+    prompt += "• PRIORITIZATION: Rank recommendations by impact and urgency. Use severity scoring (Critical/High/Medium/Low) with justification\n";
+    prompt += "• ACTIONABILITY: Each recommendation should be concrete, measurable, and achievable. Include expected outcomes and validation criteria\n";
 
     return {
         prompt,
@@ -413,7 +421,7 @@ function summarizePreloadedContext(context) {
 }
 
 function buildDefaultMission() {
-    return "**PRIMARY MISSION:** Deliver a terse, actionable off-grid readiness brief.\n\n**FORMAT REQUIREMENTS:**\n- Use markdown headers (##) for sections\n- Lead with ## KEY FINDINGS - 2-4 critical bullets with **bold labels**\n- Close with ## RECOMMENDATIONS - numbered actions with urgency indicators (🔴 Critical / 🟡 Soon / 🟢 Monitor)\n- DO NOT include OPERATIONAL STATUS section - current voltage/SOC/current/temperature are already displayed in the UI\n- NO verbose narratives - operators need fast intel\n- Cite sources inline: 'metric (source)' not separate attribution sections\n\n**CRITICAL TERMINOLOGY:**\n- 'Battery autonomy' / 'days of autonomy' / 'runtime' = How many DAYS/HOURS the battery will power loads at current discharge rate before complete depletion (found in Energy Budget section).\n- 'Service life' / 'lifetime' / 'replacement timeline' = How many MONTHS/YEARS until the battery reaches end-of-life replacement threshold (70% capacity) based on degradation trends (found in Predictive Outlook section).\n- NEVER confuse these two concepts. They measure completely different things.\n\n**SOLAR VARIANCE INTERPRETATION:**\n- Delta between expected and actual solar charge often represents DAYTIME LOAD CONSUMPTION, not solar underperformance\n- Example: 220Ah expected, 58Ah recovered = 162Ah consumed by loads during charging hours (not a solar deficit)\n- Only flag solar issues when variance exceeds ±15% tolerance AND weather conditions were favorable (low clouds, high irradiance)\n\n**ALERT EVENT HANDLING:**\n- Group consecutive alerts showing same threshold into single events with duration estimates\n- Multiple screenshots with same alert ≠ multiple events - count as ONE event until threshold recovery\n- Use time-of-day context to infer when alerts likely cleared (e.g., low battery at night → sun comes up → likely recovered by noon)";
+    return "**PRIMARY MISSION:** Deliver an insightful, data-driven off-grid energy system analysis with actionable intelligence.\n\n**FORMAT REQUIREMENTS:**\n- Use markdown headers (##) for sections\n- Lead with ## KEY FINDINGS - 2-4 critical insights with **bold labels** and supporting data\n- Follow with ## TREND ANALYSIS - Statistical patterns, rates of change, and trajectory (improving/stable/degrading)\n- Close with ## RECOMMENDATIONS - Prioritized actions with:\n  * Urgency indicators (🔴 Critical / 🟡 Soon / 🟢 Monitor)\n  * SPECIFIC numeric targets (e.g., 'Add 200Ah', 'Reduce load by 5A', 'Replace in 245 days')\n  * Expected outcomes and validation criteria\n  * Cost-benefit rationale where applicable\n- DO NOT include OPERATIONAL STATUS section - current voltage/SOC/current/temperature are already displayed in the UI\n- Cite sources inline: 'metric (source)' not separate attribution sections\n\n**CRITICAL TERMINOLOGY:**\n- 'Battery autonomy' / 'days of autonomy' / 'runtime' = How many DAYS/HOURS the battery will power loads at current discharge rate before complete depletion (found in Energy Budget section).\n- 'Service life' / 'lifetime' / 'replacement timeline' = How many MONTHS/YEARS until the battery reaches end-of-life replacement threshold (70% capacity) based on degradation trends (found in Predictive Outlook section).\n- NEVER confuse these two concepts. They measure completely different things.\n\n**ENHANCED ANALYSIS APPROACH:**\n1. **Compare to Baselines**: Always compare current metrics to historical averages. Report % deviation and significance.\n2. **Calculate Trends**: Determine direction (up/down/stable) and rate of change (per day/week/month).\n3. **Identify Correlations**: Connect patterns (e.g., temp spikes during high current, SOC drops correlated with load increases).\n4. **Project Future States**: Use trends to forecast when thresholds will be reached (replacement, capacity limits, autonomy changes).\n5. **Quantify Everything**: Convert observations into numbers (Ah, W, days, %, etc.).\n6. **Prioritize by Impact**: Rank issues/recommendations by potential impact on system reliability and lifespan.\n\n**SOLAR VARIANCE INTERPRETATION:**\n- Delta between expected and actual solar charge often represents DAYTIME LOAD CONSUMPTION, not solar underperformance\n- Example: 220Ah expected, 58Ah recovered = 162Ah consumed by loads during charging hours (not a solar deficit)\n- Only flag solar issues when variance exceeds ±15% tolerance AND weather conditions were favorable (low clouds, high irradiance)\n- Calculate daytime load consumption and compare to nighttime consumption for load profiling\n\n**ALERT EVENT HANDLING:**\n- Group consecutive alerts showing same threshold into single events with duration estimates\n- Multiple screenshots with same alert ≠ multiple events - count as ONE event until threshold recovery\n- Use time-of-day context to infer when alerts likely cleared (e.g., low battery at night → sun comes up → likely recovered by noon)\n- Correlate alert frequency with environmental factors (temperature, load patterns, SOC levels)\n\n**STATISTICAL RIGOR:**\n- Report confidence levels for predictions (high/medium/low based on data quality and sample size)\n- Flag data gaps that may affect accuracy\n- Use moving averages to smooth noisy data\n- Identify outliers and determine if they're anomalies or emerging patterns";
 }
 
 /**
@@ -825,6 +833,7 @@ function formatSolarVarianceSection(variance) {
  * Format 90-day daily rollup section for AI context
  * Provides comprehensive historical trend data with hourly granularity
  * OPTIMIZED: More aggressive sampling to prevent token overflow
+ * ENHANCED: Now includes statistical trend analysis
  */
 function formatDailyRollupSection(dailyRollup) {
     if (!Array.isArray(dailyRollup) || dailyRollup.length === 0) return null;
@@ -855,12 +864,28 @@ function formatDailyRollupSection(dailyRollup) {
             const overallAvgSoc = average(avgSocValues);
             const minSoc = Math.min(...avgSocValues);
             const maxSoc = Math.max(...avgSocValues);
-            lines.push(`- SOC range: ${formatPercent(minSoc, 0)} to ${formatPercent(maxSoc, 0)} (avg ${formatPercent(overallAvgSoc, 0)})`);
+            const socStdDev = standardDeviation(avgSocValues);
+            lines.push(`- SOC range: ${formatPercent(minSoc, 0)} to ${formatPercent(maxSoc, 0)} (avg ${formatPercent(overallAvgSoc, 0)}, σ ${formatPercent(socStdDev, 1)})`);
+            
+            // Calculate SOC trend (linear regression)
+            const socTrend = calculateLinearTrend(avgSocValues);
+            if (socTrend) {
+                const direction = socTrend.slope > 0.01 ? '📈 Improving' : socTrend.slope < -0.01 ? '📉 Declining' : '➡️ Stable';
+                lines.push(`- SOC trend: ${direction} (${formatSigned(socTrend.slope * totalDays, '%', 1)} over period, R²=${formatNumber(socTrend.rSquared, '', 2)})`);
+            }
         }
         
         if (avgVoltageValues.length > 0) {
             const overallAvgVoltage = average(avgVoltageValues);
-            lines.push(`- Average voltage: ${formatNumber(overallAvgVoltage, " V", 2)}`);
+            const voltageStdDev = standardDeviation(avgVoltageValues);
+            lines.push(`- Average voltage: ${formatNumber(overallAvgVoltage, " V", 2)} (σ ${formatNumber(voltageStdDev, 'V', 2)})`);
+            
+            // Calculate voltage trend
+            const voltageTrend = calculateLinearTrend(avgVoltageValues);
+            if (voltageTrend) {
+                const direction = voltageTrend.slope > 0.01 ? '📈 Rising' : voltageTrend.slope < -0.01 ? '📉 Falling' : '➡️ Stable';
+                lines.push(`- Voltage trend: ${direction} (${formatSigned(voltageTrend.slope * totalDays, 'V', 2)} over period, R²=${formatNumber(voltageTrend.rSquared, '', 2)})`);
+            }
         }
         
         if (avgCurrentValues.length > 0) {
@@ -868,10 +893,26 @@ function formatDailyRollupSection(dailyRollup) {
             const chargingDays = avgCurrentValues.filter(c => c > 0.5).length;
             const dischargingDays = avgCurrentValues.filter(c => c < -0.5).length;
             lines.push(`- Average current: ${formatNumber(overallAvgCurrent, " A", 1)} (${chargingDays} charging days, ${dischargingDays} discharging days)`);
+            
+            // Calculate energy balance trend
+            const netEnergyTrend = calculateLinearTrend(avgCurrentValues);
+            if (netEnergyTrend) {
+                const balanceStatus = netEnergyTrend.slope > 0.01 ? '📈 Improving balance' : netEnergyTrend.slope < -0.01 ? '📉 Worsening deficit' : '➡️ Stable balance';
+                lines.push(`- Energy balance trend: ${balanceStatus} (${formatSigned(netEnergyTrend.slope * totalDays, 'A', 2)} over period)`);
+            }
         }
         
         if (totalAlertsCount > 0) {
-            lines.push(`- Total alerts across period: ${totalAlertsCount}`);
+            const alertsPerDay = totalAlertsCount / totalDays;
+            lines.push(`- Total alerts across period: ${totalAlertsCount} (avg ${formatNumber(alertsPerDay, '/day', 1)})`);
+            
+            // Calculate alert frequency trend
+            const dailyAlertCounts = allDailySummaries.map(d => d.totalAlerts || 0);
+            const alertTrend = calculateLinearTrend(dailyAlertCounts);
+            if (alertTrend) {
+                const alertDirection = alertTrend.slope > 0.1 ? '⚠️ Increasing' : alertTrend.slope < -0.1 ? '✅ Decreasing' : '➡️ Stable';
+                lines.push(`- Alert frequency trend: ${alertDirection} (${formatSigned(alertTrend.slope * totalDays, ' alerts', 0)} over period)`);
+            }
         }
     }
     
@@ -897,6 +938,56 @@ function formatDailyRollupSection(dailyRollup) {
     lines.push("\n- **Usage notes:** For detailed hourly data, use request_bms_data tool with specific metrics and time ranges. This summary provides high-level context only.");
     
     return lines.join("\n");
+}
+
+/**
+ * Calculate linear trend using least squares regression
+ * Returns slope, intercept, and R² value
+ */
+function calculateLinearTrend(values) {
+    const filtered = values.filter(v => isFiniteNumber(v));
+    if (filtered.length < 3) return null; // Need at least 3 points for meaningful trend
+    
+    const n = filtered.length;
+    const indices = Array.from({length: n}, (_, i) => i);
+    
+    // Calculate means
+    const xMean = (n - 1) / 2; // indices are 0, 1, 2, ..., n-1
+    const yMean = filtered.reduce((sum, v) => sum + v, 0) / n;
+    
+    // Calculate slope and intercept
+    let numerator = 0;
+    let denominator = 0;
+    
+    for (let i = 0; i < n; i++) {
+        const xDiff = i - xMean;
+        const yDiff = filtered[i] - yMean;
+        numerator += xDiff * yDiff;
+        denominator += xDiff * xDiff;
+    }
+    
+    if (denominator === 0) return null;
+    
+    const slope = numerator / denominator;
+    const intercept = yMean - slope * xMean;
+    
+    // Calculate R² (coefficient of determination)
+    let ssTotal = 0;
+    let ssResidual = 0;
+    
+    for (let i = 0; i < n; i++) {
+        const predicted = slope * i + intercept;
+        ssTotal += Math.pow(filtered[i] - yMean, 2);
+        ssResidual += Math.pow(filtered[i] - predicted, 2);
+    }
+    
+    const rSquared = ssTotal > 0 ? 1 - (ssResidual / ssTotal) : 0;
+    
+    return {
+        slope: roundNumber(slope, 4),
+        intercept: roundNumber(intercept, 2),
+        rSquared: roundNumber(Math.max(0, Math.min(1, rSquared)), 3) // Clamp between 0 and 1
+    };
 }
 
 function formatRecentSnapshotsSection(recentSnapshots) {
@@ -1147,8 +1238,25 @@ function computeHourlyMetrics(records) {
         soc: average(metrics.soc),
         capacity: average(metrics.capacity),
         temperature: average(metrics.temperature),
-        alertCount: metrics.alertCount
+        alertCount: metrics.alertCount,
+        // Add statistical measures for better insights
+        voltageStdDev: standardDeviation(metrics.voltage),
+        currentStdDev: standardDeviation(metrics.current),
+        socStdDev: standardDeviation(metrics.soc)
     };
+}
+
+/**
+ * Calculate standard deviation for a set of values
+ */
+function standardDeviation(values) {
+    const filtered = values.filter(v => isFiniteNumber(v));
+    if (filtered.length < 2) return null;
+    
+    const avg = filtered.reduce((sum, v) => sum + v, 0) / filtered.length;
+    const squaredDiffs = filtered.map(v => Math.pow(v - avg, 2));
+    const variance = squaredDiffs.reduce((sum, v) => sum + v, 0) / filtered.length;
+    return Math.sqrt(variance);
 }
 
 /**
