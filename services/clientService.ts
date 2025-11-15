@@ -624,9 +624,8 @@ export const streamInsights = async (
     onComplete: () => void,
     onError: (error: Error) => void
 ) => {
-    const endpoint = payload.useEnhancedMode
-        ? '/.netlify/functions/generate-insights'
-        : '/.netlify/functions/generate-insights';
+    // Always use the fully-featured ReAct loop implementation
+    const endpoint = '/.netlify/functions/generate-insights-with-tools';
 
     let contextSummarySent = false;
 
@@ -1170,9 +1169,8 @@ export const generateInsightsBackground = async (
         useEnhancedMode?: boolean;
     }
 ): Promise<{ jobId: string; initialSummary: any; status: string }> => {
-    const endpoint = payload.useEnhancedMode
-        ? '/.netlify/functions/generate-insights'
-        : '/.netlify/functions/generate-insights';
+    // Always use the fully-featured ReAct loop implementation
+    const endpoint = '/.netlify/functions/generate-insights-with-tools';
 
     log('info', 'Starting background insights generation.', {
         systemId: payload.systemId,
