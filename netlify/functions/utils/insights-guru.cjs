@@ -297,6 +297,14 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     // Mode-specific guidance on tool usage
     if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
         prompt += "DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. You likely have ALL the data needed already. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range). IMPORTANT: Prefer to analyze with existing data rather than requesting more.\n\n";
+    } else if (customPrompt) {
+        // For custom queries in sync mode, encourage tool usage
+        prompt += "CUSTOM QUERY MODE: You are answering a specific user question. The preloaded context gives you baseline information, but you may need to request additional specific data using tools. Don't hesitate to call request_bms_data if the question involves:\n";
+        prompt += "   • Comparing specific dates or time periods\n";
+        prompt += "   • Analyzing metrics over custom date ranges\n";
+        prompt += "   • Looking at data from the past (yesterday, last week, last month, specific dates)\n";
+        prompt += "   • Detailed hour-by-hour or day-by-day analysis\n";
+        prompt += "REMEMBER: The systemId is provided in the DATA AVAILABILITY section above. Use it EXACTLY as shown.\n\n";
     } else {
         prompt += "DATA GATHERING: If you need data beyond what's provided, use tools to gather it. Don't suggest tools - USE them. Keep tool calls focused on the specific data needed to answer the question. Maximum 2-3 tool calls recommended.\n\n";
     }
@@ -438,7 +446,31 @@ function buildDefaultMission() {
  * @param {string} customPrompt
  */
 function buildCustomMission(customPrompt) {
-    return `**USER QUESTION:**\n${customPrompt}\n\n**APPROACH:**\n1. Identify what data would definitively answer this question\n2. CALL the necessary tools NOW (don't suggest them)\n3. Analyze results and deliver terse, highlight-driven answer\n4. Format: ## KEY FINDINGS → ## ANALYSIS → ## NEXT STEPS\n5. Use bold labels, cite sources inline, skip fluff`;
+    // Detect if the query involves date comparisons or specific time periods
+    const hasDateReference = /\b(yesterday|last (week|month|tuesday|wednesday|thursday|friday|saturday|sunday|monday)|compare.*to|vs\.|versus|october|november|december|january|february|march|april|may|june|july|august|september|\d{1,2}\/\d{1,2}|on the \d+)/i.test(customPrompt);
+    
+    let approach = `**USER QUESTION:**\n${customPrompt}\n\n`;
+    
+    if (hasDateReference) {
+        approach += `**🔍 DETECTED:** This question requires historical data comparison.\n\n`;
+        approach += `**MANDATORY STEPS:**\n`;
+        approach += `1. **IMMEDIATELY** call request_bms_data tool to fetch the specific historical data mentioned in the question\n`;
+        approach += `2. Use the EXACT systemId provided in the DATA AVAILABILITY section above\n`;
+        approach += `3. Convert relative dates (e.g., "last Tuesday") to ISO format dates within the available data range\n`;
+        approach += `4. Request ONLY the specific metrics needed (don't use "all" unless necessary)\n`;
+        approach += `5. After receiving data, compare the periods and deliver findings\n`;
+        approach += `6. Format: ## KEY FINDINGS → ## COMPARATIVE ANALYSIS → ## RECOMMENDATIONS\n\n`;
+        approach += `⚠️ **CRITICAL:** DO NOT respond with "data unavailable" if the date is within the queryable range shown above. USE the tool!\n`;
+    } else {
+        approach += `**APPROACH:**\n`;
+        approach += `1. Review preloaded context data first - you may already have everything needed\n`;
+        approach += `2. If specific data is missing, CALL the necessary tools NOW (don't suggest them)\n`;
+        approach += `3. Analyze results and deliver terse, highlight-driven answer\n`;
+        approach += `4. Format: ## KEY FINDINGS → ## ANALYSIS → ## RECOMMENDATIONS\n`;
+        approach += `5. Use bold labels, cite sources inline, skip fluff\n`;
+    }
+    
+    return approach;
 }
 
 /**
@@ -1899,15 +1931,52 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push("   • calculate_energy_budget: Solar sufficiency, autonomy, worst-case scenarios");
     lines.push("   • getSolarEstimate: Expected solar production for location/date range");
     
-    lines.push("\n🎯 HOW TO REQUEST DATA:");
-    lines.push("Use request_bms_data tool with these parameters:");
-    lines.push("   • systemId: (required) The battery system ID");
+    lines.push("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    lines.push("🎯 HOW TO REQUEST HISTORICAL DATA (CRITICAL FOR COMPARISONS):");
+    lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    lines.push(`\n**YOUR SYSTEM ID:** "${systemId}"`);
+    lines.push("👆 USE THIS EXACT STRING IN ALL TOOL CALLS");
+    lines.push("\n**request_bms_data Tool Parameters:**");
+    lines.push("   • systemId: (required) USE THE EXACT ID ABOVE");
     lines.push("   • metric: (required) 'voltage', 'current', 'power', 'soc', 'capacity', 'temperature', 'cell_voltage_difference', or 'all'");
     lines.push("   • time_range_start: (required) ISO timestamp e.g. '2025-10-01T00:00:00Z'");
     lines.push("   • time_range_end: (required) ISO timestamp e.g. '2025-11-15T23:59:59Z'");
     lines.push("   • granularity: (optional) 'hourly_avg' (default), 'daily_avg', or 'raw'");
-    lines.push("\nExample tool call:");
-    lines.push('{ "tool_call": "request_bms_data", "parameters": { "systemId": "sys123", "metric": "soc", "time_range_start": "2025-11-01T00:00:00Z", "time_range_end": "2025-11-15T23:59:59Z", "granularity": "daily_avg" } }');
+    
+    if (minDate && maxDate) {
+        const minDateStr = new Date(minDate).toISOString().split('T')[0];
+        const maxDateStr = new Date(maxDate).toISOString().split('T')[0];
+        lines.push(`\n⚠️ **YOUR DATA RANGE:** ${minDateStr} to ${maxDateStr}`);
+        lines.push("👆 ONLY REQUEST DATES WITHIN THIS RANGE");
+    }
+    
+    lines.push("\n**EXAMPLE TOOL CALLS YOU CAN USE RIGHT NOW:**");
+    
+    if (minDate && maxDate) {
+        // Generate practical examples based on actual data range
+        const recentDate = new Date(maxDate);
+        const weekAgoDate = new Date(recentDate);
+        weekAgoDate.setDate(weekAgoDate.getDate() - 7);
+        const monthAgoDate = new Date(recentDate);
+        monthAgoDate.setDate(monthAgoDate.getDate() - 30);
+        
+        lines.push(`\n1. Get SOC data for last 7 days:`);
+        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "soc", "time_range_start": "${weekAgoDate.toISOString()}", "time_range_end": "${recentDate.toISOString()}", "granularity": "hourly_avg" } }`);
+        
+        lines.push(`\n2. Compare voltage this month vs last month:`);
+        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "voltage", "time_range_start": "${monthAgoDate.toISOString()}", "time_range_end": "${recentDate.toISOString()}", "granularity": "daily_avg" } }`);
+        
+        lines.push(`\n3. Get specific date data (e.g., October 5th):`);
+        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "all", "time_range_start": "2025-10-05T00:00:00Z", "time_range_end": "2025-10-06T00:00:00Z", "granularity": "hourly_avg" } }`);
+    } else {
+        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "soc", "time_range_start": "2025-11-01T00:00:00Z", "time_range_end": "2025-11-15T23:59:59Z", "granularity": "daily_avg" } }`);
+    }
+    
+    lines.push("\n⛔ NEVER RESPOND WITH 'DATA UNAVAILABLE' IF:");
+    lines.push("   • The requested date is within your queryable range shown above");
+    lines.push("   • You haven't tried calling request_bms_data yet");
+    lines.push("   • You're being asked to compare dates or time periods");
+    lines.push("\n✅ ALWAYS CALL THE TOOL FIRST, THEN analyze the results!");
     
     lines.push("\n📝 REQUIRED INSIGHT FORMAT:");
     lines.push("Your final_answer MUST follow this exact structure:");
