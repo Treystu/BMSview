@@ -114,6 +114,13 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
         // Load 90-day daily rollup for comprehensive trend analysis
         context.dailyRollup90d = await runStep("dailyRollup90d", () => load90DayDailyRollup(systemId, log));
         
+        // NEW: Add comparative periods for week-over-week and month-over-month analysis
+        if (context.dailyRollup90d && context.dailyRollup90d.length > 0) {
+            context.comparativePeriods = await runStep("comparativePeriods", () => 
+                calculateComparativePeriods(context.dailyRollup90d, log)
+            );
+        }
+        
         context.analytics = await runStep("analytics", async () => {
             const result = await executeToolCall("getSystemAnalytics", { systemId }, log);
             return normalizeToolResult(result);
@@ -366,6 +373,9 @@ function buildContextSections(context, analysisData) {
 
     const dailyRollupSection = formatDailyRollupSection(context.dailyRollup90d);
     if (dailyRollupSection) sections.push(dailyRollupSection);
+    
+    const comparativePeriodsSection = formatComparativePeriodsSection(context.comparativePeriods);
+    if (comparativePeriodsSection) sections.push(comparativePeriodsSection);
 
     const nightDischargeSection = formatNightDischargeSection(context.nightDischarge, context.systemProfile);
     if (nightDischargeSection) sections.push(nightDischargeSection);
@@ -1849,6 +1859,195 @@ function isFiniteNumber(value) {
 
 function toNullableNumber(value) {
     return isFiniteNumber(value) ? Number(value) : null;
+}
+
+/**
+ * Calculate comparative periods for week-over-week and month-over-month analysis
+ * This enables the AI to provide relative performance insights
+ */
+function calculateComparativePeriods(dailyRollup, log) {
+    if (!Array.isArray(dailyRollup) || dailyRollup.length < 14) {
+        log.debug('Insufficient data for comparative periods', { days: dailyRollup?.length });
+        return null;
+    }
+    
+    try {
+        // Get most recent data points
+        const allDays = dailyRollup.map(d => d.dailySummary).filter(Boolean);
+        
+        // Last 7 days
+        const last7Days = allDays.slice(-7);
+        // Previous 7 days (8-14 days ago)
+        const previous7Days = allDays.slice(-14, -7);
+        
+        // Last 30 days
+        const last30Days = allDays.slice(-30);
+        // Previous 30 days (31-60 days ago)
+        const previous30Days = allDays.slice(-60, -30);
+        
+        const comparisons = {};
+        
+        // Week-over-week comparison
+        if (last7Days.length >= 7 && previous7Days.length >= 7) {
+            comparisons.weekOverWeek = calculatePeriodComparison(
+                previous7Days,
+                last7Days,
+                'Week-over-Week'
+            );
+        }
+        
+        // Month-over-month comparison
+        if (last30Days.length >= 28 && previous30Days.length >= 28) {
+            comparisons.monthOverMonth = calculatePeriodComparison(
+                previous30Days,
+                last30Days,
+                'Month-over-Month'
+            );
+        }
+        
+        return comparisons;
+    } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        log.warn('Failed to calculate comparative periods', { error: err.message });
+        return null;
+    }
+}
+
+/**
+ * Compare two periods and return delta statistics
+ */
+function calculatePeriodComparison(previousPeriod, currentPeriod, label) {
+    const metrics = {
+        soc: { previous: [], current: [] },
+        voltage: { previous: [], current: [] },
+        current: { previous: [], current: [] },
+        alerts: { previous: 0, current: 0 }
+    };
+    
+    // Extract metrics from previous period
+    for (const day of previousPeriod) {
+        if (isFiniteNumber(day.avgSoc)) metrics.soc.previous.push(day.avgSoc);
+        if (isFiniteNumber(day.avgVoltage)) metrics.voltage.previous.push(day.avgVoltage);
+        if (isFiniteNumber(day.avgCurrent)) metrics.current.previous.push(day.avgCurrent);
+        metrics.alerts.previous += day.totalAlerts || 0;
+    }
+    
+    // Extract metrics from current period
+    for (const day of currentPeriod) {
+        if (isFiniteNumber(day.avgSoc)) metrics.soc.current.push(day.avgSoc);
+        if (isFiniteNumber(day.avgVoltage)) metrics.voltage.current.push(day.avgVoltage);
+        if (isFiniteNumber(day.avgCurrent)) metrics.current.current.push(day.avgCurrent);
+        metrics.alerts.current += day.totalAlerts || 0;
+    }
+    
+    // Calculate averages and deltas
+    const result = {
+        label,
+        periodDays: currentPeriod.length,
+        soc: calculateMetricDelta(metrics.soc.previous, metrics.soc.current, '%'),
+        voltage: calculateMetricDelta(metrics.voltage.previous, metrics.voltage.current, 'V'),
+        current: calculateMetricDelta(metrics.current.previous, metrics.current.current, 'A'),
+        alerts: {
+            previous: metrics.alerts.previous,
+            current: metrics.alerts.current,
+            delta: metrics.alerts.current - metrics.alerts.previous,
+            percentChange: metrics.alerts.previous > 0 
+                ? ((metrics.alerts.current - metrics.alerts.previous) / metrics.alerts.previous) * 100
+                : null
+        }
+    };
+    
+    return result;
+}
+
+/**
+ * Calculate metric delta with percent change
+ */
+function calculateMetricDelta(previousValues, currentValues, unit) {
+    const prevAvg = average(previousValues);
+    const currAvg = average(currentValues);
+    
+    if (prevAvg === null || currAvg === null) {
+        return null;
+    }
+    
+    const delta = currAvg - prevAvg;
+    const percentChange = prevAvg !== 0 ? (delta / prevAvg) * 100 : null;
+    
+    return {
+        previous: roundNumber(prevAvg, 2),
+        current: roundNumber(currAvg, 2),
+        delta: roundNumber(delta, 2),
+        percentChange: percentChange !== null ? roundNumber(percentChange, 1) : null,
+        unit,
+        improving: delta > 0 && unit === '%' || delta < 0 && unit === 'A', // Higher SOC/voltage is better, lower current draw is better
+        significant: percentChange !== null ? Math.abs(percentChange) > 5 : false // >5% change is significant
+    };
+}
+
+/**
+ * Format comparative periods section for AI context
+ */
+function formatComparativePeriodsSection(comparativePeriods) {
+    if (!comparativePeriods) return null;
+    
+    const lines = ["**COMPARATIVE PERIOD ANALYSIS**"];
+    
+    const formatComparison = (comparison) => {
+        if (!comparison) return [];
+        
+        const compLines = [`\n- **${comparison.label}** (${comparison.periodDays} days each):`];
+        
+        // SOC comparison
+        if (comparison.soc) {
+            const c = comparison.soc;
+            const arrow = c.improving ? '📈' : c.delta < 0 ? '📉' : '➡️';
+            const significance = c.significant ? ' (SIGNIFICANT)' : '';
+            compLines.push(`  - SOC: ${formatNumber(c.previous, c.unit, 1)} → ${formatNumber(c.current, c.unit, 1)} ${arrow} ${formatSigned(c.delta, c.unit, 1)} (${formatSigned(c.percentChange, '%', 1)} change${significance})`);
+        }
+        
+        // Voltage comparison
+        if (comparison.voltage) {
+            const c = comparison.voltage;
+            const arrow = c.improving ? '📈' : c.delta < 0 ? '📉' : '➡️';
+            const significance = c.significant ? ' (SIGNIFICANT)' : '';
+            compLines.push(`  - Voltage: ${formatNumber(c.previous, c.unit, 2)} → ${formatNumber(c.current, c.unit, 2)} ${arrow} ${formatSigned(c.delta, c.unit, 2)} (${formatSigned(c.percentChange, '%', 1)} change${significance})`);
+        }
+        
+        // Current comparison
+        if (comparison.current) {
+            const c = comparison.current;
+            const arrow = c.improving ? '✅' : c.delta > 0 ? '⚠️' : '➡️';
+            const significance = c.significant ? ' (SIGNIFICANT)' : '';
+            compLines.push(`  - Avg Current: ${formatNumber(c.previous, c.unit, 1)} → ${formatNumber(c.current, c.unit, 1)} ${arrow} ${formatSigned(c.delta, c.unit, 1)} (${formatSigned(c.percentChange, '%', 1)} change${significance})`);
+        }
+        
+        // Alert comparison
+        if (comparison.alerts) {
+            const a = comparison.alerts;
+            const arrow = a.delta < 0 ? '✅ Improving' : a.delta > 0 ? '⚠️ Worsening' : '➡️ Stable';
+            const significance = Math.abs(a.delta) > 5 ? ' (SIGNIFICANT)' : '';
+            compLines.push(`  - Alerts: ${a.previous} → ${a.current} ${arrow} ${formatSigned(a.delta, '', 0)} (${formatSigned(a.percentChange, '%', 0)} change${significance})`);
+        }
+        
+        return compLines;
+    };
+    
+    if (comparativePeriods.weekOverWeek) {
+        lines.push(...formatComparison(comparativePeriods.weekOverWeek));
+    }
+    
+    if (comparativePeriods.monthOverMonth) {
+        lines.push(...formatComparison(comparativePeriods.monthOverMonth));
+    }
+    
+    lines.push("\n- **Analysis Notes:**");
+    lines.push("  - Changes >5% are flagged as SIGNIFICANT");
+    lines.push("  - For SOC/Voltage: higher is better (📈 improving)");
+    lines.push("  - For Current: lower absolute value suggests less load or better charging (✅ improving)");
+    lines.push("  - Use these comparisons to identify emerging trends and validate observations");
+    
+    return lines.join("\n");
 }
 
 module.exports = {
