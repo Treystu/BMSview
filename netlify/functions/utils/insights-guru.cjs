@@ -1830,6 +1830,118 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     if (contextData?.dailyRollup90d?.daily && contextData.dailyRollup90d.daily.length > 0) {
         lines.push(`✓ PRE-LOADED: 90-day daily rollup (${contextData.dailyRollup90d.daily.length} days)`);
     }
+    if (contextData?.comparativePeriods) {
+        lines.push(`✓ PRE-LOADED: Comparative period analysis (week-over-week, month-over-month)`);
+    }
+    if (contextData?.nightDischarge?.aggregate) {
+        lines.push(`✓ PRE-LOADED: Nighttime load analysis`);
+    }
+    if (contextData?.solarVariance) {
+        lines.push(`✓ PRE-LOADED: Solar variance analysis with daytime load calculations`);
+    }
+    if (contextData?.weather) {
+        lines.push(`✓ PRE-LOADED: Current weather data`);
+    }
+    
+    // Comprehensive data source catalog
+    lines.push("\n📊 COMPLETE DATA SOURCE CATALOG:");
+    lines.push("\n1️⃣ **BMS Screenshot Data** (from user uploads):");
+    lines.push("   Available fields per snapshot:");
+    lines.push("   • overallVoltage (V) - Pack voltage");
+    lines.push("   • current (A) - Charge/discharge current");
+    lines.push("   • power (W) - Instantaneous power");
+    lines.push("   • stateOfCharge (%) - SOC 0-100%");
+    lines.push("   • remainingCapacity (Ah) - Available capacity");
+    lines.push("   • fullCapacity (Ah) - Rated/nominal capacity");
+    lines.push("   • cycleCount - Battery cycle count");
+    lines.push("   • temperature (°C) - Primary temperature sensor");
+    lines.push("   • temperatures[] - All temp sensors (T1, T2, etc.)");
+    lines.push("   • mosTemperature (°C) - MOSFET temperature");
+    lines.push("   • cellVoltages[] - Individual cell voltages (V)");
+    lines.push("   • cellVoltageDifference (V) - Cell imbalance");
+    lines.push("   • alerts[] - Active BMS alerts/warnings");
+    lines.push("   • timestamp - Screenshot timestamp (ISO 8601)");
+    lines.push("   • dlNumber - Data logger identifier");
+    
+    lines.push("\n2️⃣ **Weather Data** (OpenWeather API):");
+    lines.push("   • temp (°C) - Ambient temperature");
+    lines.push("   • clouds (%) - Cloud cover percentage");
+    lines.push("   • uvi - UV index (solar intensity)");
+    lines.push("   • weather_main - Weather condition (Clear, Clouds, Rain, etc.)");
+    lines.push("   • Historical weather correlations available via getWeatherData tool");
+    
+    lines.push("\n3️⃣ **Calculated/Derived Metrics** (computed from BMS data):");
+    lines.push("   • Linear trends: SOC, voltage, current, alerts (with R² confidence)");
+    lines.push("   • Standard deviation: All metrics for variability analysis");
+    lines.push("   • Week-over-week deltas: SOC, voltage, current, alert frequency");
+    lines.push("   • Month-over-month deltas: Same metrics with significance flags");
+    lines.push("   • Nighttime load baseline: Average overnight current draw");
+    lines.push("   • Daytime load consumption: Solar charge delta analysis");
+    lines.push("   • Solar variance: Expected vs actual with weather correlation");
+    lines.push("   • Energy balance: Daily net charge/discharge");
+    lines.push("   • Degradation rate: Capacity loss per day (Ah/day)");
+    lines.push("   • Autonomy days: Runtime at current load before depletion");
+    lines.push("   • Service life estimate: Months/years until 80% retention");
+    
+    lines.push("\n4️⃣ **Time-Based Calculations Available:**");
+    lines.push("   • Hourly averages: All metrics aggregated by hour");
+    lines.push("   • Daily averages: All metrics aggregated by day");
+    lines.push("   • 90-day rollup: Daily summaries with hourly breakdowns");
+    lines.push("   • Capacity retention trends: Historical capacity vs time");
+    lines.push("   • Cycle count correlation: Performance vs cycle count");
+    lines.push("   • Temperature impact: Metrics vs temperature correlation");
+    lines.push("   • Seasonal patterns: Month-over-month variations");
+    
+    lines.push("\n5️⃣ **Advanced Analytics Available via Tools:**");
+    lines.push("   • getSystemAnalytics: Hourly patterns, sunny-day baselines, alert grouping");
+    lines.push("   • predict_battery_trends: Regression forecasts for capacity, efficiency, lifetime");
+    lines.push("   • analyze_usage_patterns: Daily/weekly/seasonal patterns, anomaly detection");
+    lines.push("   • calculate_energy_budget: Solar sufficiency, autonomy, worst-case scenarios");
+    lines.push("   • getSolarEstimate: Expected solar production for location/date range");
+    
+    lines.push("\n🎯 HOW TO REQUEST DATA:");
+    lines.push("Use request_bms_data tool with these parameters:");
+    lines.push("   • systemId: (required) The battery system ID");
+    lines.push("   • metric: (required) 'voltage', 'current', 'power', 'soc', 'capacity', 'temperature', 'cell_voltage_difference', or 'all'");
+    lines.push("   • time_range_start: (required) ISO timestamp e.g. '2025-10-01T00:00:00Z'");
+    lines.push("   • time_range_end: (required) ISO timestamp e.g. '2025-11-15T23:59:59Z'");
+    lines.push("   • granularity: (optional) 'hourly_avg' (default), 'daily_avg', or 'raw'");
+    lines.push("\nExample tool call:");
+    lines.push('{ "tool_call": "request_bms_data", "parameters": { "systemId": "sys123", "metric": "soc", "time_range_start": "2025-11-01T00:00:00Z", "time_range_end": "2025-11-15T23:59:59Z", "granularity": "daily_avg" } }');
+    
+    lines.push("\n📝 REQUIRED INSIGHT FORMAT:");
+    lines.push("Your final_answer MUST follow this exact structure:");
+    lines.push("\n## KEY FINDINGS");
+    lines.push("2-4 critical insights with **bold labels** and supporting data:");
+    lines.push("• Include trend directions (📈📉➡️) and statistical confidence (R²)");
+    lines.push("• Cite data sources inline: 'metric (source + evidence)'");
+    lines.push("• Compare to baselines: 'X% deviation from 30-day average'");
+    lines.push("• Week/month-over-month context when available");
+    
+    lines.push("\n## TREND ANALYSIS");
+    lines.push("Statistical patterns and trajectory:");
+    lines.push("• SOC/voltage/current trends with R² confidence");
+    lines.push("• Rate of change (per day/week/month)");
+    lines.push("• Significance assessment (is change meaningful?)");
+    lines.push("• Correlations (temp vs performance, weather vs solar, etc.)");
+    
+    lines.push("\n## RECOMMENDATIONS");
+    lines.push("Prioritized actions with complete details:");
+    lines.push("• Format: 🔴/🟡/🟢 **ACTION** (Priority: X, Impact: Y, Timeline: Z days)");
+    lines.push("• Action: Specific, measurable change (e.g., 'Add 200Ah capacity')");
+    lines.push("• Rationale: Why needed, backed by data and trends");
+    lines.push("• Cost-Benefit: Estimated costs vs benefits (ROI, payback period)");
+    lines.push("• Expected Outcome: Quantified results (e.g., '+0.5 days autonomy')");
+    lines.push("• Implementation: Step-by-step or options (A/B/C)");
+    lines.push("• Validation Criteria: How to verify success (e.g., 'SOC >40% for 7 days')");
+    
+    lines.push("\n⚠️ CRITICAL REQUIREMENTS:");
+    lines.push("• NO OPERATIONAL STATUS section (current readings shown in UI)");
+    lines.push("• ALL recommendations must have specific numbers, not vague suggestions");
+    lines.push("• ALWAYS distinguish 'battery autonomy' (runtime) from 'service life' (replacement timeline)");
+    lines.push("• Solar variance = daytime load consumption (NOT solar underperformance) unless weather was favorable");
+    lines.push("• Group consecutive alerts into time-based events (multiple screenshots ≠ multiple events)");
+    lines.push("• Include confidence levels (high/medium/low based on R², sample size, data quality)");
     
     lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     
