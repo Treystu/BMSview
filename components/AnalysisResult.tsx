@@ -6,6 +6,7 @@ import CloudIcon from './icons/CloudIcon';
 import SpinnerIcon from './icons/SpinnerIcon';
 import SunIcon from './icons/SunIcon';
 import ThermometerIcon from './icons/ThermometerIcon';
+import TypewriterMarkdown from './TypewriterMarkdown';
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
   console.log(JSON.stringify({
@@ -56,17 +57,48 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
 
   return (
     <div className="mb-8">
-      <h4 className="text-xl font-semibold text-neutral-dark mb-4">🔋 Battery System Insights</h4>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg">
+          <span className="text-2xl">🔋</span>
+        </div>
+        <h4 className="text-2xl font-bold text-gray-900">Battery Guru Insights</h4>
+      </div>
+      
       {insights && (
-        <div className="mb-4 p-6 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg shadow-md">
-          {/* Using a <pre> tag with monospace font for formatted insights */}
-          <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono bg-white bg-opacity-60 p-4 rounded border border-blue-100 overflow-x-auto">{insights}</pre>
+        <div className="mb-6 p-8 bg-white rounded-2xl shadow-xl border border-gray-100 transition-all duration-300 hover:shadow-2xl">
+          <div className="mb-4 flex items-center gap-2">
+            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+              <span className="text-green-600 text-lg">✓</span>
+            </div>
+            <h5 className="text-lg font-semibold text-gray-800">Analysis Complete</h5>
+          </div>
+          <TypewriterMarkdown 
+            content={insights}
+            speed={30}
+            interval={40}
+            className="insights-content"
+          />
         </div>
       )}
+      
       {isLoading && (
-        <div className="flex items-center justify-center p-8 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-lg shadow-inner">
-          <SpinnerIcon className="h-6 w-6 text-secondary animate-spin" />
-          <span className="ml-3 text-neutral-dark font-medium">🤖 AI is analyzing your battery data with intelligent data querying...</span>
+        <div className="relative overflow-hidden p-8 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-2xl shadow-lg border border-blue-100">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 animate-pulse"></div>
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <div className="relative">
+              <div className="absolute inset-0 bg-blue-500 rounded-full animate-ping opacity-20"></div>
+              <div className="relative flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg">
+                <SpinnerIcon className="h-8 w-8 text-white animate-spin" />
+              </div>
+            </div>
+            <div className="text-center space-y-2">
+              <h5 className="text-lg font-bold text-gray-900">🤖 AI Battery Guru Thinking...</h5>
+              <p className="text-sm text-gray-600 max-w-md">
+                Analyzing your battery data with intelligent querying. 
+                The AI can request specific historical data on-demand to answer your questions.
+              </p>
+            </div>
+          </div>
         </div>
       )}
       {error && (
