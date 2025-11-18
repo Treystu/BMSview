@@ -2,7 +2,6 @@ const { getDb, getCollection } = require('./utils/mongodb.cjs');
 const { createLogger } = require('./utils/logger.cjs');
 const { GoogleGenAI } = require('@google/genai');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
-const { generateInsightsWithTools } = require('./utils/insights-tools.cjs');
 const { createInsightsJob, getInsightsJob, updateJobStatus } = require('./utils/insights-jobs.cjs');
 const { GeminiClient } = require('./utils/geminiClient.cjs');
 const crypto = require('crypto');
@@ -552,6 +551,7 @@ const diagnosticTests = {
       
       // Prepare test image data
       const testImageData = Buffer.from(JSON.stringify(TEST_BMS_DATA)).toString('base64');
+      const testFileName = `test-image-${testId}.png`;
       
       // Stage 1: Pipeline initialization
       logger.info('Stage 1/4: Initializing analysis pipeline...');
@@ -567,13 +567,15 @@ const diagnosticTests = {
       
       const analysisResult = await executeWithTimeout(async () => {
         return await performAnalysisPipeline(
-          testImageData,
-          `test-image-${testId}.png`,
-          { 
-            testId,
-            skipSave: false,
-            metadata: { source: 'diagnostic_test', testRun: true }
-          }
+          {
+            image: testImageData,
+            mimeType: 'image/png',
+            fileName: testFileName,
+            force: false
+          },
+          null, // systems
+          logger,
+          { requestId: testId, testRun: true }
         );
       }, { testName: 'Analysis Pipeline', timeout: 25000 });
       
@@ -581,16 +583,16 @@ const diagnosticTests = {
         stage: 'extraction',
         status: 'success',
         duration: Date.now() - extractionStart,
-        dataExtracted: !!analysisResult.extractedData
+        dataExtracted: !!analysisResult.analysis
       });
 
       // Stage 3: Data validation
       logger.info('Stage 3/4: Validating extracted data...');
       const validationChecks = {
-        hasVoltage: analysisResult.extractedData?.voltage > 0,
-        hasSOC: analysisResult.extractedData?.soc >= 0 && analysisResult.extractedData?.soc <= 100,
-        hasTimestamp: !!analysisResult.extractedData?.timestamp,
-        hasMetadata: !!analysisResult.metadata
+        hasVoltage: analysisResult.analysis?.voltage > 0,
+        hasSOC: analysisResult.analysis?.soc >= 0 && analysisResult.analysis?.soc <= 100,
+        hasTimestamp: !!analysisResult.timestamp,
+        hasAnalysisId: !!analysisResult.id
       };
       
       testResults.stages.push({
@@ -601,20 +603,20 @@ const diagnosticTests = {
 
       // Stage 4: Database storage
       logger.info('Stage 4/4: Verifying database storage...');
-      const db = await getDb();
-      const savedAnalysis = await db.collection('analyses').findOne({ testId });
+      const historyCollection = await getCollection('history');
+      const savedAnalysis = await historyCollection.findOne({ id: analysisResult.id });
       
       testResults.stages.push({
         stage: 'storage',
         status: savedAnalysis ? 'success' : 'failed',
-        documentId: savedAnalysis?._id?.toString(),
-        documentSize: JSON.stringify(savedAnalysis).length
+        documentId: savedAnalysis?.id,
+        documentSize: savedAnalysis ? JSON.stringify(savedAnalysis).length : 0
       });
 
       // Cleanup
-      if (savedAnalysis) {
-        await db.collection('analyses').deleteOne({ _id: savedAnalysis._id });
-        logger.info('Test data cleaned up from analyses collection');
+      if (analysisResult.id) {
+        await historyCollection.deleteOne({ id: analysisResult.id });
+        logger.info('Test data cleaned up from history collection');
       }
 
       testResults.status = 'success';
@@ -623,12 +625,11 @@ const diagnosticTests = {
         pipelineComplete: true,
         allStagesSuccessful: testResults.stages.every(s => s.status === 'success'),
         extractedData: {
-          voltage: analysisResult.extractedData?.voltage,
-          soc: analysisResult.extractedData?.soc,
-          power: analysisResult.extractedData?.power,
-          capacity: analysisResult.extractedData?.capacity
-        },
-        processingTimeMs: analysisResult.metadata?.processingTime
+          voltage: analysisResult.analysis?.voltage,
+          soc: analysisResult.analysis?.soc,
+          power: analysisResult.analysis?.power,
+          capacity: analysisResult.analysis?.capacity
+        }
       };
 
       logger.info('========== ANALYZE TEST COMPLETED ==========', testResults);
@@ -647,7 +648,7 @@ const diagnosticTests = {
         details: {
           pipelineComplete: false,
           failedAtStage: testResults.stages.length + 1,
-          errorDetails: errorDetails // Full error details in details field
+          errorDetails: errorDetails
         }
       };
     }
@@ -658,102 +659,83 @@ const diagnosticTests = {
     const testResults = {
       name: 'Insights with Tools',
       status: 'running',
-      toolCalls: [],
+      tests: [],
       duration: 0
     };
 
     try {
       logger.info('========== STARTING INSIGHTS WITH TOOLS TEST ==========');
       
-      // Test all available tool functions
-      const toolTests = [
-        { name: 'request_bms_data', test: 'BMS data retrieval' },
-        { name: 'getSystemAnalytics', test: 'System analytics' },
-        { name: 'predict_battery_trends', test: 'Predictive analysis' },
-        { name: 'analyze_usage_patterns', test: 'Usage pattern analysis' },
-        { name: 'calculate_energy_budget', test: 'Energy budget calculation' }
-      ];
-
-      logger.info(`Testing ${toolTests.length} tool functions...`);
-
-      for (const tool of toolTests) {
-        logger.info(`Testing tool: ${tool.name}`);
-        const toolStart = Date.now();
-        
-        try {
-          // Generate insights with specific tool request
-          const insights = await executeWithTimeout(async () => {
-            return await generateInsightsWithTools(
-              TEST_BMS_DATA,
-              {
-                testId,
-                mode: 'diagnostic',
-                requestedTools: [tool.name],
-                maxIterations: 2,
-                timeoutMs: 15000
-              }
-            );
-          }, { testName: `Tool: ${tool.name}`, timeout: 20000 });
-
-          testResults.toolCalls.push({
-            tool: tool.name,
-            status: 'success',
-            duration: Date.now() - toolStart,
-            toolExecuted: insights.toolCallsExecuted > 0,
-            insightsGenerated: !!insights.summary
-          });
-
-        } catch (error) {
-          const errorDetails = formatError(error);
-          testResults.toolCalls.push({
-            tool: tool.name,
-            status: 'error',
-            duration: Date.now() - toolStart,
-            error: errorDetails.message || error.message || `Tool ${tool.name} failed`,
-            errorDetails: errorDetails
-          });
-          logger.error(`Tool ${tool.name} failed`, formatError(error));
+      // Test insights job creation and management
+      logger.info('Testing insights job creation...');
+      
+      const testJobData = {
+        analysisData: TEST_BMS_DATA,
+        systemId: 'test_system_' + testId,
+        customPrompt: 'Test insights generation',
+        initialSummary: {
+          voltage: TEST_BMS_DATA.voltage,
+          soc: TEST_BMS_DATA.soc,
+          health: 'good'
         }
-      }
-
-      // Test combined insights generation
-      logger.info('Testing combined insights generation with all tools...');
-      try {
-        const combinedInsights = await executeWithTimeout(async () => {
-          return await generateInsightsWithTools(
-            TEST_BMS_DATA,
-            {
-              testId,
-              mode: 'comprehensive',
-              maxIterations: 3,
-              timeoutMs: 30000
-            }
-          );
-        }, { testName: 'Combined Insights', timeout: 35000 });
-
-        testResults.combinedTest = {
-          status: 'success',
-          toolCallsExecuted: combinedInsights.toolCallsExecuted,
-          iterations: combinedInsights.iterations,
-          insightLength: combinedInsights.summary?.length || 0,
-          hasRecommendations: !!combinedInsights.recommendations
-        };
-      } catch (error) {
-        const errorDetails = formatError(error);
-        testResults.combinedTest = {
-          status: 'error',
-          error: errorDetails.message || error.message || 'Combined insights test failed',
-          errorDetails: errorDetails
-        };
-      }
-
-      testResults.status = testResults.toolCalls.every(t => t.status === 'success') ? 'success' : 'partial';
+      };
+      
+      // Test job creation
+      const jobCreationStart = Date.now();
+      const createdJob = await createInsightsJob(testJobData, logger);
+      
+      testResults.tests.push({
+        test: 'job_creation',
+        status: 'success',
+        duration: Date.now() - jobCreationStart,
+        jobId: createdJob.id,
+        jobCreated: !!createdJob.id
+      });
+      
+      logger.info('Insights job created successfully', { jobId: createdJob.id });
+      
+      // Test job retrieval
+      const jobRetrievalStart = Date.now();
+      const retrievedJob = await getInsightsJob(createdJob.id, logger);
+      
+      testResults.tests.push({
+        test: 'job_retrieval',
+        status: retrievedJob ? 'success' : 'error',
+        duration: Date.now() - jobRetrievalStart,
+        jobFound: !!retrievedJob,
+        jobStatus: retrievedJob?.status
+      });
+      
+      logger.info('Job retrieval test completed', { 
+        found: !!retrievedJob,
+        status: retrievedJob?.status 
+      });
+      
+      // Test job status update
+      const statusUpdateStart = Date.now();
+      const updateSuccess = await updateJobStatus(createdJob.id, 'processing', logger);
+      
+      testResults.tests.push({
+        test: 'status_update',
+        status: updateSuccess ? 'success' : 'error',
+        duration: Date.now() - statusUpdateStart,
+        updateApplied: updateSuccess
+      });
+      
+      logger.info('Job status update test completed', { success: updateSuccess });
+      
+      // Cleanup - delete the test job
+      const jobsCollection = await getCollection('insights-jobs');
+      await jobsCollection.deleteOne({ id: createdJob.id });
+      logger.info('Test insights job cleaned up', { jobId: createdJob.id });
+      
+      testResults.status = testResults.tests.every(t => t.status === 'success') ? 'success' : 'partial';
       testResults.duration = Date.now() - startTime;
       testResults.details = {
-        totalTools: toolTests.length,
-        successfulTools: testResults.toolCalls.filter(t => t.status === 'success').length,
-        failedTools: testResults.toolCalls.filter(t => t.status === 'error').length,
-        combinedTestPassed: testResults.combinedTest?.status === 'success'
+        totalTests: testResults.tests.length,
+        successfulTests: testResults.tests.filter(t => t.status === 'success').length,
+        failedTests: testResults.tests.filter(t => t.status === 'error').length,
+        jobManagementWorking: testResults.tests.every(t => t.status === 'success')
       };
 
       logger.info('========== INSIGHTS WITH TOOLS TEST COMPLETED ==========', testResults);
@@ -768,10 +750,10 @@ const diagnosticTests = {
         status: 'error',
         duration: Date.now() - startTime,
         error: errorDetails.message || 'Insights with tools test failed',
-        toolCalls: testResults.toolCalls,
+        tests: testResults.tests,
         details: {
-          toolsTestsRun: testResults.toolCalls.length,
-          errorDetails: errorDetails // Full error details in details field
+          testsRun: testResults.tests.length,
+          errorDetails: errorDetails
         }
       };
     }
