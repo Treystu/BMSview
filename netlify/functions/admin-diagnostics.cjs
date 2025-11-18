@@ -1,11 +1,15 @@
 const { getDb, getCollection } = require('./utils/mongodb.cjs');
-const { logger } = require('./utils/logger.cjs');
+const { createLogger } = require('./utils/logger.cjs');
 const { GoogleGenAI } = require('@google/genai');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 const { generateInsightsWithTools } = require('./utils/insights-tools.cjs');
 const { createInsightsJob, getJobById, updateJobProgress } = require('./utils/insights-jobs.cjs');
 const { GeminiClient } = require('./utils/geminiClient.cjs');
 const crypto = require('crypto');
+
+// Initialize module-level logger with default context
+// Will be updated with actual context in the handler
+let logger = createLogger('admin-diagnostics', {});
 
 // Test data based on actual BMS screenshot
 const TEST_BMS_DATA = {
@@ -956,6 +960,9 @@ const diagnosticTests = {
 exports.handler = async (event, context) => {
   const requestStartTime = Date.now();
   const testId = generateTestId();
+  
+  // Update logger with actual request context
+  logger = createLogger('admin-diagnostics', context);
   
   logger.info('========================================');
   logger.info('ADMIN DIAGNOSTICS STARTED');
