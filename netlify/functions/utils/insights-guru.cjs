@@ -253,14 +253,20 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     // Battery condition can be determined from analytics if needed
     
     prompt += "\n**RESPONSE FORMAT**\n\n";
-    prompt += "When you have gathered enough information, provide your analysis in MARKDOWN format.\n\n";
-    prompt += "Use this structure:\n";
+    prompt += "When you have gathered enough information, provide your analysis in clean, well-formatted MARKDOWN.\n\n";
+    prompt += "Required structure with proper spacing:\n\n";
     prompt += "## KEY FINDINGS\n\n";
-    prompt += "**Finding 1:** Brief description with data citation\n";
+    prompt += "**Finding 1:** Brief description with data citation\n\n";
     prompt += "**Finding 2:** Brief description with data citation\n\n";
     prompt += "## RECOMMENDATIONS\n\n";
-    prompt += "1. 🟢/🟡/🔴 Action with specific targets\n";
-    prompt += "2. 🟢/🟡/🔴 Action with specific targets\n\n";
+    prompt += "1. 🟢/🟡/🔴 **Action Title** - Specific details with numeric targets\n\n";
+    prompt += "2. 🟢/🟡/🔴 **Action Title** - Specific details with numeric targets\n\n";
+    prompt += "FORMATTING RULES:\n";
+    prompt += "• Use blank lines between sections for readability\n";
+    prompt += "• Keep lines under 100 characters when possible\n";
+    prompt += "• Use bullet points for lists\n";
+    prompt += "• Bold important values and metrics\n";
+    prompt += "• Include specific numbers, not vague statements\n\n";
     
     // Mode-specific guidance on tool usage
     if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
@@ -283,7 +289,9 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "- Never use more than 3-4 iterations total\n\n";
     
     prompt += "CONTENT GUIDELINES:\n";
-    prompt += "• WRITING STYLE: Terse, highlight-driven bullets. Lead with KEY FINDINGS in bold. Skip verbose explanations.\n";
+    prompt += "• WRITING STYLE: Concise, data-driven analysis. Lead with KEY FINDINGS in bold. Avoid verbose explanations.\n";
+    prompt += "• FORMATTING: Use blank lines between sections. Keep paragraphs short (2-3 sentences). Break long text with bullets.\n";
+    prompt += "• LINE LENGTH: Aim for 80-100 characters per line maximum. Use bullets or multiple paragraphs for long content.\n";
     prompt += "• STRUCTURE: ## KEY FINDINGS (2-4 critical bullets with **bold labels**) → ## TREND ANALYSIS (statistical patterns) → ## RECOMMENDATIONS (numbered actions with urgency flags 🔴🟡🟢 and SPECIFIC numeric targets)\n";
     prompt += "• DO NOT include OPERATIONAL STATUS section - current voltage/SOC/current/temperature already displayed in UI\n";
     prompt += "• Cite sources inline: 'Solar deficit 15Ah (weather data + BMS logs)' not separate attribution\n";
