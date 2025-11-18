@@ -233,7 +233,9 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     const dataAvailability = await buildDataAvailabilitySummary(systemId, contextData, log);
 
     let prompt = "You are the Ultimate AI Battery Guru for off-grid energy systems. You ingest structured context, request targeted data through function calls, and deliver deeply analytical recommendations grounded in the evidence provided.\n";
-    prompt += "Your goals: preserve battery health, guarantee energy sufficiency, and surface proactive maintenance or expansion actions.\n";
+    prompt += "Your goals: preserve battery health, guarantee energy sufficiency, and surface proactive maintenance or expansion actions.\n\n";
+    prompt += "🔑 CRITICAL: You have FULL ACCESS to ALL historical data for this system. The complete date range and all available tools are detailed below.\n";
+    prompt += "DO NOT limit yourself or claim 'data unavailable' - if it's within the queryable range, USE THE TOOLS to retrieve it!\n";
 
     // Add data availability info FIRST so Gemini knows what it can query
     if (dataAvailability) {
@@ -273,12 +275,20 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. You likely have ALL the data needed already. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range). IMPORTANT: Prefer to analyze with existing data rather than requesting more.\n\n";
     } else if (customPrompt) {
         // For custom queries in sync mode, encourage tool usage
-        prompt += "CUSTOM QUERY MODE: You are answering a specific user question. Use the available function calling tools to request data as needed. Don't hesitate to call request_bms_data or other tools if the question involves:\n";
-        prompt += "   • Comparing specific dates or time periods\n";
-        prompt += "   • Analyzing metrics over custom date ranges\n";
-        prompt += "   • Looking at data from the past (yesterday, last week, last month, specific dates)\n";
-        prompt += "   • Detailed hour-by-hour or day-by-day analysis\n";
-        prompt += "REMEMBER: The systemId is provided in the DATA AVAILABILITY section above. Use it EXACTLY as shown.\n\n";
+        prompt += "🎯 CUSTOM QUERY MODE - FULL DATA ACCESS ENABLED:\n";
+        prompt += "You are answering a specific user question with COMPLETE access to all historical data.\n\n";
+        prompt += "MANDATORY TOOL USAGE for questions involving:\n";
+        prompt += "   • ANY date comparisons (yesterday vs today, last week vs this week, etc.)\n";
+        prompt += "   • ANY time period analysis ('past 14 days', 'last month', 'last Tuesday', etc.)\n";
+        prompt += "   • ANY historical trends or patterns over time\n";
+        prompt += "   • Detailed hour-by-hour or day-by-day breakdowns\n";
+        prompt += "   • Correlations with weather, temperature, or solar conditions\n\n";
+        prompt += "⚠️ CRITICAL INSTRUCTIONS:\n";
+        prompt += "   1. The systemId is in the DATA AVAILABILITY section - use it EXACTLY as shown\n";
+        prompt += "   2. Check the full queryable date range - you have access to ALL of it\n";
+        prompt += "   3. ALWAYS call request_bms_data for any historical data requests\n";
+        prompt += "   4. NEVER claim 'data not available' without trying the tool first\n";
+        prompt += "   5. You have ALL the tools needed - use them confidently!\n\n";
     } else {
         prompt += "DATA GATHERING: Use the available function calling tools to gather any data you need beyond what's provided. Keep tool calls focused on the specific data needed to answer the question. Maximum 2-3 tool calls recommended.\n\n";
     }
@@ -1721,6 +1731,60 @@ function formatPercent(value, digits = 0) {
 }
 
 /**
+ * Query the database to get the actual full date range of available data for a system
+ * This ensures Gemini knows the complete queryable range, not just recent snapshots
+ */
+async function getActualDataRange(systemId, log) {
+    try {
+        const collection = await getCollection("history");
+        
+        // Get the earliest and latest timestamps for this system
+        const [oldestRecord] = await collection
+            .find({ systemId })
+            .sort({ timestamp: 1 })
+            .limit(1)
+            .project({ timestamp: 1, _id: 0 })
+            .toArray();
+        
+        const [newestRecord] = await collection
+            .find({ systemId })
+            .sort({ timestamp: -1 })
+            .limit(1)
+            .project({ timestamp: 1, _id: 0 })
+            .toArray();
+        
+        // Count total records
+        const totalRecords = await collection.countDocuments({ systemId });
+        
+        if (oldestRecord && newestRecord) {
+            log.info('Retrieved actual data range from database', {
+                systemId,
+                minDate: oldestRecord.timestamp,
+                maxDate: newestRecord.timestamp,
+                totalRecords
+            });
+            
+            return {
+                minDate: oldestRecord.timestamp,
+                maxDate: newestRecord.timestamp,
+                totalRecords
+            };
+        }
+        
+        log.warn('No data found for system', { systemId });
+        return null;
+    } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        log.error('Failed to query actual data range', {
+            systemId,
+            error: err.message,
+            stack: err.stack
+        });
+        return null;
+    }
+}
+
+/**
  * Build a summary of what data is available for Gemini to query
  */
 async function buildDataAvailabilitySummary(systemId, contextData, log) {
@@ -1731,35 +1795,55 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     const lines = ["**DATA AVAILABILITY - What You Can Query**"];
     lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     
-    // Get date range from recent snapshots or dailyRollup
+    // Query the database for the ACTUAL full date range of available data
+    const actualRange = await getActualDataRange(systemId, log);
+    
     let minDate = null;
     let maxDate = null;
     let totalRecords = 0;
     
-    if (contextData?.recentSnapshots && contextData.recentSnapshots.length > 0) {
-        const timestamps = contextData.recentSnapshots
-            .map(s => s.timestamp)
-            .filter(t => t)
-            .sort();
+    if (actualRange) {
+        // Use the actual database range
+        minDate = actualRange.minDate;
+        maxDate = actualRange.maxDate;
+        totalRecords = actualRange.totalRecords;
         
-        if (timestamps.length > 0) {
-            minDate = timestamps[0];
-            maxDate = timestamps[timestamps.length - 1];
-            totalRecords = timestamps.length;
-        }
-    }
-    
-    if (contextData?.dailyRollup90d?.daily && contextData.dailyRollup90d.daily.length > 0) {
-        const dailyTimestamps = contextData.dailyRollup90d.daily
-            .map(d => d.date)
-            .filter(t => t)
-            .sort();
+        log.info('Using actual database date range for data availability', {
+            systemId,
+            minDate,
+            maxDate,
+            totalRecords,
+            daysSpan: Math.floor((new Date(maxDate) - new Date(minDate)) / (1000 * 60 * 60 * 24))
+        });
+    } else {
+        // Fallback to recent snapshots/daily rollup if database query fails
+        log.warn('Falling back to context data for date range', { systemId });
         
-        if (dailyTimestamps.length > 0 && (!minDate || dailyTimestamps[0] < minDate)) {
-            minDate = dailyTimestamps[0];
+        if (contextData?.recentSnapshots && contextData.recentSnapshots.length > 0) {
+            const timestamps = contextData.recentSnapshots
+                .map(s => s.timestamp)
+                .filter(t => t)
+                .sort();
+            
+            if (timestamps.length > 0) {
+                minDate = timestamps[0];
+                maxDate = timestamps[timestamps.length - 1];
+                totalRecords = timestamps.length;
+            }
         }
-        if (dailyTimestamps.length > 0 && (!maxDate || dailyTimestamps[dailyTimestamps.length - 1] > maxDate)) {
-            maxDate = dailyTimestamps[dailyTimestamps.length - 1];
+        
+        if (contextData?.dailyRollup90d?.daily && contextData.dailyRollup90d.daily.length > 0) {
+            const dailyTimestamps = contextData.dailyRollup90d.daily
+                .map(d => d.date)
+                .filter(t => t)
+                .sort();
+            
+            if (dailyTimestamps.length > 0 && (!minDate || dailyTimestamps[0] < minDate)) {
+                minDate = dailyTimestamps[0];
+            }
+            if (dailyTimestamps.length > 0 && (!maxDate || dailyTimestamps[dailyTimestamps.length - 1] > maxDate)) {
+                maxDate = dailyTimestamps[dailyTimestamps.length - 1];
+            }
         }
     }
     
@@ -1774,15 +1858,17 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
         lines.push(`\n📋 SYSTEM: ${systemId}`);
     }
     
-    // Date range
+    // Date range - emphasize FULL data access
     if (minDate && maxDate) {
         const minDateStr = new Date(minDate).toISOString().split('T')[0];
         const maxDateStr = new Date(maxDate).toISOString().split('T')[0];
         const daysDiff = Math.floor((new Date(maxDate) - new Date(minDate)) / (1000 * 60 * 60 * 24));
         
-        lines.push(`\n📅 DATA RANGE: ${minDateStr} to ${maxDateStr} (${daysDiff} days)`);
-        lines.push(`   Total Records: ${totalRecords} BMS snapshots`);
-        lines.push(`   Use these dates when calling request_bms_data tool`);
+        lines.push(`\n📅 FULL DATA RANGE AVAILABLE: ${minDateStr} to ${maxDateStr} (${daysDiff} days)`);
+        lines.push(`   ✅ Total Records: ${totalRecords} BMS snapshots queryable`);
+        lines.push(`   ✅ ALL historical data accessible via request_bms_data tool`);
+        lines.push(`   ✅ Weather data available for entire range via getWeatherData tool`);
+        lines.push(`   ✅ You have COMPLETE access to all ${daysDiff} days of data - use it!`);
     } else {
         lines.push(`\n📅 DATA RANGE: Current snapshot only`);
         lines.push(`   No historical data available for this system`);
@@ -1910,8 +1996,13 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     if (minDate && maxDate) {
         const minDateStr = new Date(minDate).toISOString().split('T')[0];
         const maxDateStr = new Date(maxDate).toISOString().split('T')[0];
-        lines.push(`\n⚠️ **YOUR DATA RANGE:** ${minDateStr} to ${maxDateStr}`);
-        lines.push("👆 ONLY REQUEST DATES WITHIN THIS RANGE");
+        const daysDiff = Math.floor((new Date(maxDate) - new Date(minDate)) / (1000 * 60 * 60 * 24));
+        lines.push(`\n🎯 **YOUR COMPLETE QUERYABLE RANGE:** ${minDateStr} to ${maxDateStr} (${daysDiff} days, ${totalRecords} snapshots)`);
+        lines.push("👆 YOU HAVE FULL ACCESS TO ALL DATA IN THIS RANGE - USE IT!");
+        lines.push(`\n✅ ANY date from ${minDateStr} to ${maxDateStr} is queryable`);
+        lines.push(`✅ You can request data for ANY time period within this ${daysDiff}-day range`);
+        lines.push(`✅ ALL ${totalRecords} BMS snapshots are accessible via request_bms_data`);
+        lines.push(`✅ Historical comparisons, trend analysis, and multi-day queries are FULLY SUPPORTED`);
     }
     
     lines.push("\n**EXAMPLE: How to use request_bms_data tool**");
@@ -1922,11 +2013,14 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push("   • time_range_end: ISO timestamp like '2025-11-15T23:59:59Z'");
     lines.push("   • granularity: 'hourly_avg', 'daily_avg', or 'raw'");
     
-    lines.push("\n⛔ NEVER RESPOND WITH 'DATA UNAVAILABLE' IF:");
+    lines.push("\n⛔ NEVER RESPOND WITH 'DATA UNAVAILABLE' OR 'LIMITED TO X DAYS' IF:");
     lines.push("   • The requested date is within your queryable range shown above");
     lines.push("   • You haven't tried calling request_bms_data yet");
     lines.push("   • You're being asked to compare dates or time periods");
-    lines.push("\n✅ ALWAYS CALL THE TOOL FIRST, THEN analyze the results!");
+    lines.push("   • User asks about 'past 14 days', 'last week', 'last month', etc.");
+    lines.push("\n✅ YOU HAVE FULL ACCESS TO ALL HISTORICAL DATA - ALWAYS CALL THE TOOLS!");
+    lines.push("✅ The data exists and is queryable - use request_bms_data to retrieve it!");
+    lines.push("✅ Don't make assumptions about data availability - query and verify!");
     
     lines.push("\n📝 REQUIRED INSIGHT FORMAT:");
     lines.push("Your final_answer MUST follow this exact structure:");
