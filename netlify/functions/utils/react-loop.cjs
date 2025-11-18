@@ -141,16 +141,55 @@ async function executeReActLoop(params) {
                 throw err;
             }
 
-            // Extract response content
-            const responseContent = geminiResponse.candidates?.[0]?.content;
-            if (!responseContent || !responseContent.parts) {
-                throw new Error('Invalid Gemini response structure');
+            // Extract response content with detailed validation
+            if (!geminiResponse || !geminiResponse.candidates) {
+                log.error('Gemini response missing candidates array', {
+                    turn: turnCount,
+                    response: JSON.stringify(geminiResponse).substring(0, 500)
+                });
+                throw new Error('Invalid Gemini response structure: missing candidates array');
+            }
+
+            if (geminiResponse.candidates.length === 0) {
+                log.error('Gemini response has empty candidates array', {
+                    turn: turnCount,
+                    response: JSON.stringify(geminiResponse).substring(0, 500)
+                });
+                throw new Error('Invalid Gemini response structure: empty candidates array');
+            }
+
+            const responseContent = geminiResponse.candidates[0]?.content;
+            if (!responseContent) {
+                log.error('Gemini response candidate missing content', {
+                    turn: turnCount,
+                    candidate: JSON.stringify(geminiResponse.candidates[0]).substring(0, 500)
+                });
+                throw new Error('Invalid Gemini response structure: missing content in candidate');
+            }
+
+            if (!responseContent.parts || !Array.isArray(responseContent.parts)) {
+                log.error('Gemini response content missing or invalid parts array', {
+                    turn: turnCount,
+                    content: JSON.stringify(responseContent).substring(0, 500),
+                    partsType: typeof responseContent.parts
+                });
+                throw new Error('Invalid Gemini response structure: missing or invalid parts array');
+            }
+
+            if (responseContent.parts.length === 0) {
+                log.warn('Gemini response has empty parts array', {
+                    turn: turnCount,
+                    content: JSON.stringify(responseContent).substring(0, 500)
+                });
+                // Continue anyway - will be caught below when looking for text/tool calls
             }
 
             log.debug('Gemini response received', {
                 turn: turnCount,
                 partCount: responseContent.parts.length,
-                roles: responseContent.parts.map(p => Object.keys(p)[0])
+                partTypes: responseContent.parts.map(p => Object.keys(p)[0]),
+                hasText: responseContent.parts.some(p => p.text),
+                hasFunctionCall: responseContent.parts.some(p => p.functionCall)
             });
 
             // Add model response to conversation history

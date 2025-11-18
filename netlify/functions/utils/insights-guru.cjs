@@ -249,73 +249,49 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
 
     prompt += `\n${missionStatement}\n`;
 
-    if (contextData?.batteryFacts?.brandNewLikely) {
-        prompt += "\n**BATTERY CONDITION NOTE**\n- Pack is recently installed (<50 cycles). Do not declare severe capacity decline unless analytics tools corroborate with recent trend data. Prefer to frame concerns as monitoring items.\n";
-    }
-
-    if (contextData?.nightDischarge?.aggregate?.totalAh) {
-        prompt += `\n**LOAD BASELINE NOTE**\n- Overnight draw baseline is ${formatNumber(contextData.nightDischarge.aggregate.avgCurrent, " A", 1)} consuming ~${formatNumber(contextData.nightDischarge.aggregate.totalAh, " Ah", 1)} before sunrise. Use this to explain SOC dips and distinguish from battery wear.\n`;
-    }
-
-    if (contextData?.solarVariance) {
-        if (contextData.solarVariance.withinTolerance) {
-            prompt += `\n**SOLAR MODEL NOTE**\n- Solar charging within expected range (±15% tolerance). No significant variance detected. Use baseline expectations for recommendations.\n`;
-        } else if (isFiniteNumber(contextData.solarVariance.significantVarianceAh)) {
-            const varianceText = contextData.solarVariance.significantVarianceAh > 0
-                ? `Charging exceeded expectation by ${formatNumber(contextData.solarVariance.significantVarianceAh, " Ah", 1)} (beyond ±15% tolerance).`
-                : `Charging lagged expectation by ${formatNumber(Math.abs(contextData.solarVariance.significantVarianceAh), " Ah", 1)} (beyond ±15% tolerance).`;
-            prompt += `\n**SOLAR MODEL NOTE**\n- ${varianceText} Calibrate recommendations based on this significant variance.\n`;
-        }
-    }
-
-    prompt += "\n**CRITICAL RESPONSE RULES - READ CAREFULLY**\n\n";
+    // Remove hard-coded context - let Gemini query data dynamically
+    // Battery condition can be determined from analytics if needed
     
-    prompt += "RESPONSE FORMAT REQUIREMENTS (STRICTLY ENFORCE):\n";
-    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-    prompt += "You MUST respond with valid JSON only. NO other text, NO markdown, NO explanations.\n\n";
-    prompt += "Option 1 - Request additional data (use tool_call):\n";
-    prompt += "{\n";
-    prompt += "  \"tool_call\": \"request_bms_data\",\n";
-    prompt += "  \"parameters\": {\n";
-    prompt += "    \"systemId\": \"<the system ID>\",\n";
-    prompt += "    \"metric\": \"voltage\",\n";
-    prompt += "    \"time_range_start\": \"2025-11-01T00:00:00Z\",\n";
-    prompt += "    \"time_range_end\": \"2025-11-08T00:00:00Z\",\n";
-    prompt += "    \"granularity\": \"daily_avg\"\n";
-    prompt += "  }\n";
-    prompt += "}\n\n";
-    prompt += "Option 2 - Provide your final analysis (use final_answer):\n";
-    prompt += "{\n";
-    prompt += "  \"final_answer\": \"## KEY FINDINGS\\n\\n**Battery Health:** Good condition...\\n\\n## RECOMMENDATIONS\\n\\n1. 🟢 Continue monitoring...\"\n";
-    prompt += "}\n\n";
-    prompt += "⚠️ CRITICAL: If you respond with anything other than valid JSON in one of these two formats, the system will FAIL.\n";
-    prompt += "⚠️ DO NOT wrap JSON in markdown code blocks (no ```json).\n";
-    prompt += "⚠️ DO NOT add explanatory text before or after the JSON.\n";
-    prompt += "⚠️ DO NOT respond with empty text or whitespace.\n";
-    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    prompt += "\n**RESPONSE FORMAT**\n\n";
+    prompt += "When you have gathered enough information, provide your analysis in clean, well-formatted MARKDOWN.\n\n";
+    prompt += "Required structure with proper spacing:\n\n";
+    prompt += "## KEY FINDINGS\n\n";
+    prompt += "**Finding 1:** Brief description with data citation\n\n";
+    prompt += "**Finding 2:** Brief description with data citation\n\n";
+    prompt += "## RECOMMENDATIONS\n\n";
+    prompt += "1. 🟢/🟡/🔴 **Action Title** - Specific details with numeric targets\n\n";
+    prompt += "2. 🟢/🟡/🔴 **Action Title** - Specific details with numeric targets\n\n";
+    prompt += "FORMATTING RULES:\n";
+    prompt += "• Use blank lines between sections for readability\n";
+    prompt += "• Keep lines under 100 characters when possible\n";
+    prompt += "• Use bullet points for lists\n";
+    prompt += "• Bold important values and metrics\n";
+    prompt += "• Include specific numbers, not vague statements\n\n";
     
     // Mode-specific guidance on tool usage
     if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
         prompt += "DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. You likely have ALL the data needed already. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range). IMPORTANT: Prefer to analyze with existing data rather than requesting more.\n\n";
     } else if (customPrompt) {
         // For custom queries in sync mode, encourage tool usage
-        prompt += "CUSTOM QUERY MODE: You are answering a specific user question. The preloaded context gives you baseline information, but you may need to request additional specific data using tools. Don't hesitate to call request_bms_data if the question involves:\n";
+        prompt += "CUSTOM QUERY MODE: You are answering a specific user question. Use the available function calling tools to request data as needed. Don't hesitate to call request_bms_data or other tools if the question involves:\n";
         prompt += "   • Comparing specific dates or time periods\n";
         prompt += "   • Analyzing metrics over custom date ranges\n";
         prompt += "   • Looking at data from the past (yesterday, last week, last month, specific dates)\n";
         prompt += "   • Detailed hour-by-hour or day-by-day analysis\n";
         prompt += "REMEMBER: The systemId is provided in the DATA AVAILABILITY section above. Use it EXACTLY as shown.\n\n";
     } else {
-        prompt += "DATA GATHERING: If you need data beyond what's provided, use tools to gather it. Don't suggest tools - USE them. Keep tool calls focused on the specific data needed to answer the question. Maximum 2-3 tool calls recommended.\n\n";
+        prompt += "DATA GATHERING: Use the available function calling tools to gather any data you need beyond what's provided. Keep tool calls focused on the specific data needed to answer the question. Maximum 2-3 tool calls recommended.\n\n";
     }
     
-    prompt += "ITERATION BUDGET: You have a MAXIMUM of 8 iterations. Each tool call uses one iteration. Plan carefully:\n";
-    prompt += "- With preloaded comprehensive data: Provide final_answer immediately (iteration 1)\n";
-    prompt += "- Need 1-2 data points: Request them (iterations 1-2), then final_answer (iteration 3)\n";
+    prompt += "ITERATION BUDGET: You have a MAXIMUM of 5 function calling iterations. Each tool call uses one iteration. Plan carefully:\n";
+    prompt += "- With comprehensive preloaded data: Provide final answer immediately (no tools needed)\n";
+    prompt += "- Need 1-2 data points: Request them, then provide final answer\n";
     prompt += "- Never use more than 3-4 iterations total\n\n";
     
     prompt += "CONTENT GUIDELINES:\n";
-    prompt += "• WRITING STYLE: Terse, highlight-driven bullets. Lead with KEY FINDINGS in bold. Skip verbose explanations.\n";
+    prompt += "• WRITING STYLE: Concise, data-driven analysis. Lead with KEY FINDINGS in bold. Avoid verbose explanations.\n";
+    prompt += "• FORMATTING: Use blank lines between sections. Keep paragraphs short (2-3 sentences). Break long text with bullets.\n";
+    prompt += "• LINE LENGTH: Aim for 80-100 characters per line maximum. Use bullets or multiple paragraphs for long content.\n";
     prompt += "• STRUCTURE: ## KEY FINDINGS (2-4 critical bullets with **bold labels**) → ## TREND ANALYSIS (statistical patterns) → ## RECOMMENDATIONS (numbered actions with urgency flags 🔴🟡🟢 and SPECIFIC numeric targets)\n";
     prompt += "• DO NOT include OPERATIONAL STATUS section - current voltage/SOC/current/temperature already displayed in UI\n";
     prompt += "• Cite sources inline: 'Solar deficit 15Ah (weather data + BMS logs)' not separate attribution\n";
@@ -404,24 +380,12 @@ function buildContextSections(context, analysisData) {
 function buildExecutionGuidance(mode, context) {
     const lines = ["**EXECUTION GUIDANCE**"];
     lines.push(`- Current run mode: ${mode === "background" ? "background (async)" : "synchronous"}. Plan tool usage to stay within limits.`);
-    lines.push("- Synchronize only the data you need. If more than four tool calls or multi-week raw data seems necessary, recommend a background follow-up.");
+    lines.push("- Request only the data you need. If more than 3-4 tool calls or multi-week raw data seems necessary, recommend a background follow-up.");
     if (context?.meta) {
         lines.push(`- Preloaded context (${Math.round(context.meta.durationMs)} ms budget): ${summarizePreloadedContext(context)}`);
     }
-    if (context?.batteryFacts?.brandNewLikely) {
-        lines.push("- Pack flagged as low-cycle (<50). Treat capacity decline claims as provisional unless trend data confirms them.");
-    }
-    if (context?.nightDischarge?.aggregate?.avgCurrent) {
-        lines.push(`- Overnight load baseline ≈ ${formatNumber(context.nightDischarge.aggregate.avgCurrent, " A", 1)} (${formatNumber(context.nightDischarge.aggregate.totalAh, " Ah", 1)} consumed) – use this before attributing SOC drops to cell degradation.`);
-    }
-    if (context?.solarVariance && isFiniteNumber(context.solarVariance.varianceAh)) {
-        const variance = context.solarVariance.varianceAh;
-        const varianceText = variance > 0
-            ? `surplus charging of ${formatNumber(variance, " Ah", 1)}`
-            : `deficit of ${formatNumber(Math.abs(variance), " Ah", 1)}`;
-        lines.push(`- Solar comparison: ${varianceText} vs irradiance expectation. Adjust recommendations accordingly.`);
-    }
-    lines.push("- Use predictive, pattern, and budget tools to validate every recommendation against measured trends.");
+    lines.push("- Use the available analysis tools to validate recommendations against measured trends.");
+    lines.push("- Focus on actionable insights with specific numeric targets.");
     return lines.join("\n");
 }
 
@@ -1950,27 +1914,13 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
         lines.push("👆 ONLY REQUEST DATES WITHIN THIS RANGE");
     }
     
-    lines.push("\n**EXAMPLE TOOL CALLS YOU CAN USE RIGHT NOW:**");
-    
-    if (minDate && maxDate) {
-        // Generate practical examples based on actual data range
-        const recentDate = new Date(maxDate);
-        const weekAgoDate = new Date(recentDate);
-        weekAgoDate.setDate(weekAgoDate.getDate() - 7);
-        const monthAgoDate = new Date(recentDate);
-        monthAgoDate.setDate(monthAgoDate.getDate() - 30);
-        
-        lines.push(`\n1. Get SOC data for last 7 days:`);
-        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "soc", "time_range_start": "${weekAgoDate.toISOString()}", "time_range_end": "${recentDate.toISOString()}", "granularity": "hourly_avg" } }`);
-        
-        lines.push(`\n2. Compare voltage this month vs last month:`);
-        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "voltage", "time_range_start": "${monthAgoDate.toISOString()}", "time_range_end": "${recentDate.toISOString()}", "granularity": "daily_avg" } }`);
-        
-        lines.push(`\n3. Get specific date data (e.g., October 5th):`);
-        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "all", "time_range_start": "2025-10-05T00:00:00Z", "time_range_end": "2025-10-06T00:00:00Z", "granularity": "hourly_avg" } }`);
-    } else {
-        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "soc", "time_range_start": "2025-11-01T00:00:00Z", "time_range_end": "2025-11-15T23:59:59Z", "granularity": "daily_avg" } }`);
-    }
+    lines.push("\n**EXAMPLE: How to use request_bms_data tool**");
+    lines.push("You can call the request_bms_data function with these parameters:");
+    lines.push("   • systemId: (required) The exact system ID shown above");
+    lines.push("   • metric: 'voltage', 'current', 'soc', etc.");
+    lines.push("   • time_range_start: ISO timestamp like '2025-11-01T00:00:00Z'");
+    lines.push("   • time_range_end: ISO timestamp like '2025-11-15T23:59:59Z'");
+    lines.push("   • granularity: 'hourly_avg', 'daily_avg', or 'raw'");
     
     lines.push("\n⛔ NEVER RESPOND WITH 'DATA UNAVAILABLE' IF:");
     lines.push("   • The requested date is within your queryable range shown above");
