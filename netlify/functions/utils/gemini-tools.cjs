@@ -35,30 +35,30 @@ try {
 const toolDefinitions = [
   {
     name: 'request_bms_data',
-    description: 'Request specific BMS data when you need additional information to answer a query. This is the PRIMARY tool for data access. Returns hourly averaged or raw data based on your needs. IMPORTANT: Always request ONLY the specific metric needed (not "all") and use appropriate granularity to minimize data size.',
+    description: 'Request specific BMS data when you need additional information. Returns time-series data (timestamps with metric values). Use this as your PRIMARY data access tool. Choose granularity wisely: hourly_avg for detailed analysis (<30 days), daily_avg for trends (30-90 days), raw only for specific point lookups. ALWAYS request ONLY the specific metric needed (not "all") to minimize data size and processing time.',
     parameters: {
       type: 'object',
       properties: {
         systemId: {
           type: 'string',
-          description: 'The unique identifier of the battery system'
+          description: 'The unique identifier of the battery system (provided in DATA AVAILABILITY section)'
         },
         metric: {
           type: 'string',
-          description: 'The SPECIFIC data metric needed. For best performance, request ONE metric at a time. Options: "all" (use sparingly), "voltage", "current", "power", "soc", "capacity", "temperature", "cell_voltage_difference"',
+          description: 'The SPECIFIC data metric needed. Request ONE metric at a time for best performance. Options: "voltage" (battery pack voltage), "current" (charge/discharge current, positive=charging, negative=discharging), "power" (Watts), "soc" (state of charge percentage), "capacity" (remaining Ah), "temperature" (battery temp), "cell_voltage_difference" (voltage spread across cells), "all" (use sparingly - returns all metrics)',
           enum: ['all', 'voltage', 'current', 'power', 'soc', 'capacity', 'temperature', 'cell_voltage_difference']
         },
         time_range_start: {
           type: 'string',
-          description: 'Start of the time range in ISO 8601 format (e.g., "2025-08-01T00:00:00Z"). Be strategic: use smaller time ranges when possible.'
+          description: 'Start of time range in ISO 8601 format (e.g., "2025-11-01T00:00:00Z"). Use strategic date ranges - smaller is faster.'
         },
         time_range_end: {
           type: 'string',
-          description: 'End of the time range in ISO 8601 format (e.g., "2025-11-01T00:00:00Z")'
+          description: 'End of time range in ISO 8601 format (e.g., "2025-11-18T00:00:00Z")'
         },
         granularity: {
           type: 'string',
-          description: 'Time resolution: "hourly_avg" (recommended for most queries), "daily_avg" (best for long time ranges >30 days), or "raw" (use only for specific point lookups). Choose wisely to minimize data transfer.',
+          description: 'Data resolution: "hourly_avg" (hourly averages, recommended for most queries), "daily_avg" (daily averages, best for long ranges >30 days), "raw" (all data points, use only for specific timestamp lookups). Choose wisely to balance detail vs data size.',
           enum: ['hourly_avg', 'daily_avg', 'raw'],
           default: 'hourly_avg'
         }
@@ -95,26 +95,26 @@ const toolDefinitions = [
   },
   {
     name: 'getWeatherData',
-    description: 'Retrieves weather data for a specific location and time. Use this to correlate battery performance with environmental conditions like temperature, cloud cover, or UV index.',
+    description: 'Get weather data for a location and time. Returns temperature (°C), cloud cover (%), UV index, and other conditions. Use this to correlate battery performance with environmental factors (e.g., cold affecting capacity, clouds affecting solar). For historical data, specify timestamp.',
     parameters: {
       type: 'object',
       properties: {
         latitude: {
           type: 'number',
-          description: 'Latitude of the location'
+          description: 'Latitude of the location (e.g., 38.8)'
         },
         longitude: {
           type: 'number',
-          description: 'Longitude of the location'
+          description: 'Longitude of the location (e.g., -104.8)'
         },
         timestamp: {
           type: 'string',
-          description: 'ISO timestamp for historical weather data. Omit for current weather.'
+          description: 'ISO timestamp for historical weather (e.g., "2025-11-15T12:00:00Z"). Omit for current weather.'
         },
         type: {
           type: 'string',
           enum: ['current', 'historical', 'hourly'],
-          description: 'Type of weather data to retrieve',
+          description: 'Type of weather data: current (latest conditions), historical (specific past time), hourly (hourly forecast/history)',
           default: 'historical'
         }
       },
@@ -123,25 +123,25 @@ const toolDefinitions = [
   },
   {
     name: 'getSolarEstimate',
-    description: 'Retrieves solar energy production estimates for a location and date range. Use this to analyze solar charging potential, compare expected vs actual charging, or plan for future energy needs.',
+    description: 'Get solar energy production estimates for a location and date range. Returns daily expected solar generation in Wh based on panel wattage, location, and historical weather patterns. Use this to compare expected vs actual charging, assess solar system performance, or plan for energy needs. Location can be US zip code or lat,lon coordinates.',
     parameters: {
       type: 'object',
       properties: {
         location: {
           type: 'string',
-          description: 'US Zip Code or "lat,lon" format (e.g., "80942" or "38.8,-104.8")'
+          description: 'US Zip Code (e.g., "80942") or "lat,lon" format (e.g., "38.8,-104.8")'
         },
         panelWatts: {
           type: 'number',
-          description: 'Solar panel maximum power rating in Watts'
+          description: 'Solar panel maximum power rating in Watts (e.g., 400 for a 400W panel)'
         },
         startDate: {
           type: 'string',
-          description: 'Start date in YYYY-MM-DD format'
+          description: 'Start date in YYYY-MM-DD format (e.g., "2025-11-01")'
         },
         endDate: {
           type: 'string',
-          description: 'End date in YYYY-MM-DD format'
+          description: 'End date in YYYY-MM-DD format (e.g., "2025-11-18")'
         }
       },
       required: ['location', 'panelWatts', 'startDate', 'endDate']
@@ -149,7 +149,7 @@ const toolDefinitions = [
   },
   {
     name: 'getSystemAnalytics',
-    description: 'Retrieves comprehensive analytics for a battery system including hourly averages, performance baselines, and alert analysis. Use this to understand typical system behavior and identify anomalies.',
+    description: 'Get comprehensive analytics for a battery system. Returns hourly usage patterns, performance baselines, alert frequency analysis, and statistical summaries. Use this to understand typical system behavior, identify anomalies, and establish performance benchmarks. Returns aggregated analytics, not raw time-series data.',
     parameters: {
       type: 'object',
       properties: {

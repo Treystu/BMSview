@@ -7,6 +7,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { InsightsProgress, InsightsJobStatus } from '../hooks/useInsightsPolling';
 
 interface InsightsProgressDisplayProps {
@@ -315,7 +317,7 @@ function ProgressEventItem({ event, isLatest }: { event: InsightsProgress; isLat
     }`}>
       <span className="text-lg flex-shrink-0">{getIcon()}</span>
       <div className="flex-1 min-w-0">
-        <div className="text-gray-700 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
+        <div className="text-gray-700 whitespace-pre-wrap break-words text-xs leading-relaxed">
           {getMessage()}
         </div>
         {event.timestamp && (
@@ -323,15 +325,6 @@ function ProgressEventItem({ event, isLatest }: { event: InsightsProgress; isLat
             {new Date(event.timestamp).toLocaleTimeString()}
           </div>
         )}
-      </div>
-    </div>
-  );
-      <span className="flex-shrink-0">{getIcon()}</span>
-      <div className="flex-1">
-        <div className="text-gray-700">{getMessage()}</div>
-        <p className="text-gray-400 text-xs mt-1">
-          {new Date(event.timestamp).toLocaleTimeString()}
-        </p>
       </div>
     </div>
   );
@@ -352,10 +345,52 @@ function FinalInsightsDisplay({ insights }: { insights: any }) {
   const displayText = insights.formattedText || insights.rawText || JSON.stringify(insights);
 
   return (
-    <div className="mt-4 p-4 bg-green-50 rounded-lg">
-      <h4 className="text-sm font-semibold text-green-900 mb-3">✅ Final Analysis</h4>
-      <div className="text-sm text-gray-700 whitespace-pre-wrap font-mono">
-        {displayText}
+    <div className="mt-4 p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200 shadow-sm">
+      <h4 className="text-lg font-bold text-green-900 mb-4 flex items-center gap-2">
+        <span>✅</span>
+        <span>Final Analysis</span>
+      </h4>
+      <div className="prose prose-sm max-w-none">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            h1: ({ node, ...props }) => <h1 className="text-xl font-bold text-gray-900 mb-3 mt-4" {...props} />,
+            h2: ({ node, ...props }) => <h2 className="text-lg font-bold text-gray-900 mb-3 mt-4" {...props} />,
+            h3: ({ node, ...props }) => <h3 className="text-base font-semibold text-gray-800 mb-2 mt-3" {...props} />,
+            h4: ({ node, ...props }) => <h4 className="text-sm font-semibold text-gray-800 mb-2 mt-2" {...props} />,
+            p: ({ node, ...props }) => <p className="text-gray-700 mb-3 leading-relaxed break-words" {...props} />,
+            ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-3 space-y-1.5" {...props} />,
+            ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-3 space-y-1.5" {...props} />,
+            li: ({ node, ...props }) => <li className="text-gray-700 ml-2 leading-relaxed" {...props} />,
+            strong: ({ node, ...props }) => <strong className="font-bold text-gray-900" {...props} />,
+            em: ({ node, ...props }) => <em className="italic text-gray-700" {...props} />,
+            code: ({ node, inline, ...props }: any) =>
+              inline ? (
+                <code className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-sm break-words" {...props} />
+              ) : (
+                <code className="block bg-gray-900 text-green-400 p-3 rounded-lg text-sm overflow-x-auto mb-3" {...props} />
+              ),
+            blockquote: ({ node, ...props }) => (
+              <blockquote className="border-l-4 border-green-500 pl-4 py-2 mb-3 italic text-gray-600 bg-green-50 rounded-r" {...props} />
+            ),
+            a: ({ node, ...props }) => (
+              <a className="text-blue-600 hover:text-blue-800 underline break-words" {...props} />
+            ),
+            table: ({ node, ...props }) => (
+              <div className="overflow-x-auto mb-3">
+                <table className="min-w-full divide-y divide-gray-200 border border-gray-300 rounded" {...props} />
+              </div>
+            ),
+            th: ({ node, ...props }) => (
+              <th className="px-3 py-2 bg-gray-100 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b" {...props} />
+            ),
+            td: ({ node, ...props }) => (
+              <td className="px-3 py-2 text-sm text-gray-700 border-b break-words" {...props} />
+            ),
+          }}
+        >
+          {displayText}
+        </ReactMarkdown>
       </div>
     </div>
   );
