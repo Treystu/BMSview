@@ -390,6 +390,99 @@ const mergeAnalysisData = (oldAnalysis, newAnalysis, log) => {
     return merged;
 };
 
+/**
+ * Validate extraction quality and completeness
+ * Returns quality metrics and warnings about potentially missing or defaulted data
+ * @param {Object} extractedData - Raw data extracted from Gemini
+ * @param {Object} analysisData - Mapped analysis data
+ * @param {Object} log - Logger instance
+ * @returns {Object} Validation result with quality score and warnings
+ */
+const validateExtractionQuality = (extractedData, analysisData, log) => {
+    const warnings = [];
+    let qualityScore = 100; // Start at 100 and deduct points for issues
+    const criticalFields = ['dlNumber', 'stateOfCharge', 'overallVoltage', 'current', 'remainingCapacity'];
+    const importantFields = ['power', 'cycleCount', 'cellVoltageDifference'];
+    
+    // Check if critical fields have meaningful values (not defaults)
+    if (analysisData.dlNumber === 'UNKNOWN') {
+        warnings.push('DL Number not detected - defaulted to UNKNOWN');
+        qualityScore -= 15;
+    }
+    
+    if (analysisData.stateOfCharge === 0 && analysisData.overallVoltage > 0) {
+        warnings.push('State of Charge is 0% but voltage is present - possible extraction error');
+        qualityScore -= 20;
+    }
+    
+    if (analysisData.overallVoltage === 0) {
+        warnings.push('Overall voltage is 0V - likely extraction failure');
+        qualityScore -= 25;
+    }
+    
+    if (analysisData.remainingCapacity === 0 && analysisData.overallVoltage > 0) {
+        warnings.push('Remaining capacity is 0Ah - possible extraction error');
+        qualityScore -= 15;
+    }
+    
+    // Check for inconsistent data
+    if (analysisData.current !== 0 && analysisData.power === 0) {
+        warnings.push('Current present but power is 0W - possible calculation issue');
+        qualityScore -= 10;
+    }
+    
+    // Check if important fields are defaulted
+    if (analysisData.cycleCount === 0) {
+        warnings.push('Cycle count is 0 - may not have been detected');
+        qualityScore -= 5;
+    }
+    
+    // Check for cell voltage data quality
+    if (analysisData.cellVoltages && analysisData.cellVoltages.length > 0) {
+        const allSame = analysisData.cellVoltages.every(v => v === analysisData.cellVoltages[0]);
+        if (allSame) {
+            warnings.push('All cell voltages are identical - possible extraction error');
+            qualityScore -= 15;
+        }
+    } else if (analysisData.overallVoltage > 0) {
+        warnings.push('Individual cell voltages not detected - only aggregate data available');
+        qualityScore -= 5;
+    }
+    
+    // Temperature data quality
+    if (analysisData.temperatures && analysisData.temperatures.length === 0) {
+        warnings.push('No temperature sensors detected');
+        qualityScore -= 5;
+    }
+    
+    const result = {
+        qualityScore: Math.max(0, qualityScore), // Never go below 0
+        warnings,
+        isComplete: qualityScore >= 70, // Consider complete if score >= 70
+        hasCriticalIssues: qualityScore < 50,
+        fieldsCaptured: {
+            total: Object.keys(analysisData).length,
+            withValues: Object.keys(analysisData).filter(k => {
+                const val = analysisData[k];
+                return val !== null && val !== undefined && val !== 0 && val !== '' && val !== 'UNKNOWN';
+            }).length
+        }
+    };
+    
+    log('info', 'Data extraction quality validation complete.', {
+        qualityScore: result.qualityScore,
+        warningCount: warnings.length,
+        isComplete: result.isComplete,
+        fieldsCaptured: result.fieldsCaptured
+    });
+    
+    if (warnings.length > 0) {
+        log('warn', 'Data extraction quality warnings detected.', { warnings });
+    }
+    
+    return result;
+};
+
 module.exports = {
     getResponseSchema,
     getImageExtractionPrompt,
@@ -398,6 +491,7 @@ module.exports = {
     performPostAnalysis,
     parseTimestamp,
     generateAnalysisKey,
-    mergeAnalysisData
+    mergeAnalysisData,
+    validateExtractionQuality
 };
 

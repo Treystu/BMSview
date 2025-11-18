@@ -11,8 +11,17 @@ const respond = (statusCode, body) => ({
 
 // Helper function to call the weather Netlify function
 const callWeatherFunction = async (lat, lon, timestamp, log) => {
-    const weatherUrl = `${process.env.URL}/.netlify/functions/weather`;
-    const logContext = { lat, lon, timestamp, weatherUrl };
+    // Build weather URL with fallback for development
+    const baseUrl = process.env.URL || 'http://localhost:8888';
+    const weatherUrl = `${baseUrl}/.netlify/functions/weather`;
+    const logContext = { lat, lon, timestamp, weatherUrl, hasEnvUrl: !!process.env.URL };
+    
+    // Validate required parameters
+    if (!lat || !lon) {
+        log('warn', 'Missing required parameters for weather function.', logContext);
+        return null;
+    }
+    
     log('debug', 'Calling weather function.', logContext);
     try {
         const response = await fetch(weatherUrl, {
@@ -26,10 +35,10 @@ const callWeatherFunction = async (lat, lon, timestamp, log) => {
             return null;
         }
         const data = await response.json();
-        log('debug', 'Weather function call successful.', logContext);
+        log('debug', 'Weather function call successful.', { ...logContext, hasWeatherData: !!data });
         return data;
     } catch (error) {
-        log('error', 'Error calling weather function.', { ...logContext, errorMessage: error.message });
+        log('error', 'Error calling weather function.', { ...logContext, errorMessage: error.message, errorStack: error.stack });
         return null;
     }
 };
