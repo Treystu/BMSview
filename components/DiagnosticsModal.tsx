@@ -36,6 +36,18 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
 
   if (!isOpen) return null;
 
+  // Helper function to safely render error messages
+  const renderError = (error: any): string => {
+    if (typeof error === 'string') {
+      return error;
+    }
+    if (error && typeof error === 'object') {
+      // If it's an object, try to extract a message or stringify it
+      return error.message || JSON.stringify(error, null, 2);
+    }
+    return 'Unknown error occurred';
+  };
+
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'success':
@@ -101,7 +113,7 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
               <span className="mr-2 text-red-400">✖</span>
               Diagnostics Error
             </h3>
-            <p className="text-red-300 mt-2 pl-6">{results.error}</p>
+            <p className="text-red-300 mt-2 pl-6">{renderError(results.error)}</p>
           </div>
         ) : results ? (
           <>
@@ -185,7 +197,7 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                           </div>
                           
                           {result.error && !isExpanded && (
-                            <p className="text-sm text-red-300 mt-2 pl-7">{result.error}</p>
+                            <p className="text-sm text-red-300 mt-2 pl-7">{renderError(result.error)}</p>
                           )}
                         </div>
                         
@@ -209,8 +221,8 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                           {result.error && (
                             <div className="mb-3">
                               <div className="font-semibold text-red-300 text-sm mb-1">Error:</div>
-                              <div className="text-sm text-red-200 font-mono bg-red-900/20 p-2 rounded">
-                                {result.error}
+                              <div className="text-sm text-red-200 font-mono bg-red-900/20 p-2 rounded whitespace-pre-wrap break-words">
+                                {renderError(result.error)}
                               </div>
                             </div>
                           )}

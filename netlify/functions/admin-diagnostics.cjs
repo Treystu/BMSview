@@ -330,12 +330,13 @@ const diagnosticTests = {
         name: 'Database Connection',
         status: 'error',
         duration: Date.now() - startTime,
-        error: errorDetails,
+        error: errorDetails.message || 'Database connection failed',
         steps: testResults.steps,
         details: { 
           connected: false,
           failedAt: testResults.steps.length + 1,
-          errorType: error.constructor.name
+          errorType: error.constructor.name,
+          errorDetails: errorDetails // Full error details in details field
         }
       };
     }
@@ -379,10 +380,12 @@ const diagnosticTests = {
           response: simpleResult.substring(0, 50) 
         });
       } catch (error) {
+        const errorDetails = formatError(error);
         testResults.tests.push({
           test: 'simple_text',
           status: 'error',
-          error: formatError(error)
+          error: errorDetails.message || error.message || 'Simple text test failed',
+          errorDetails: errorDetails
         });
         throw error;
       }
@@ -433,10 +436,12 @@ const diagnosticTests = {
           responseLength: complexResult.length 
         });
       } catch (error) {
+        const errorDetails = formatError(error);
         testResults.tests.push({
           test: 'complex_analysis',
           status: 'error',
-          error: formatError(error)
+          error: errorDetails.message || error.message || 'Complex analysis test failed',
+          errorDetails: errorDetails
         });
         logger.error('Complex analysis failed but continuing tests', formatError(error));
       }
@@ -489,11 +494,13 @@ const diagnosticTests = {
           functionCallCount: functionCalls.length 
         });
       } catch (error) {
+        const errorDetails = formatError(error);
         testResults.tests.push({
           test: 'function_calling',
           status: 'warning',
           warning: 'Function calling not fully supported',
-          error: formatError(error)
+          error: errorDetails.message || error.message || 'Function calling test had issues',
+          errorDetails: errorDetails
         });
         logger.warn('Function calling test had issues', formatError(error));
       }
@@ -518,12 +525,13 @@ const diagnosticTests = {
         name: 'Gemini API',
         status: 'error',
         duration: Date.now() - startTime,
-        error: errorDetails,
+        error: errorDetails.message || 'Gemini API test failed',
         tests: testResults.tests,
         details: {
           model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
           apiKeyConfigured: !!process.env.GEMINI_API_KEY,
-          errorType: error.constructor.name
+          errorType: error.constructor.name,
+          errorDetails: errorDetails // Full error details in details field
         }
       };
     }
@@ -633,11 +641,12 @@ const diagnosticTests = {
         name: 'Analyze Endpoint',
         status: 'error',
         duration: Date.now() - startTime,
-        error: errorDetails,
+        error: errorDetails.message || 'Analysis endpoint test failed',
         stages: testResults.stages,
         details: {
           pipelineComplete: false,
-          failedAtStage: testResults.stages.length + 1
+          failedAtStage: testResults.stages.length + 1,
+          errorDetails: errorDetails // Full error details in details field
         }
       };
     }
@@ -694,11 +703,13 @@ const diagnosticTests = {
           });
 
         } catch (error) {
+          const errorDetails = formatError(error);
           testResults.toolCalls.push({
             tool: tool.name,
             status: 'error',
             duration: Date.now() - toolStart,
-            error: formatError(error)
+            error: errorDetails.message || error.message || `Tool ${tool.name} failed`,
+            errorDetails: errorDetails
           });
           logger.error(`Tool ${tool.name} failed`, formatError(error));
         }
@@ -727,9 +738,11 @@ const diagnosticTests = {
           hasRecommendations: !!combinedInsights.recommendations
         };
       } catch (error) {
+        const errorDetails = formatError(error);
         testResults.combinedTest = {
           status: 'error',
-          error: formatError(error)
+          error: errorDetails.message || error.message || 'Combined insights test failed',
+          errorDetails: errorDetails
         };
       }
 
@@ -753,10 +766,11 @@ const diagnosticTests = {
         name: 'Insights with Tools',
         status: 'error',
         duration: Date.now() - startTime,
-        error: errorDetails,
+        error: errorDetails.message || 'Insights with tools test failed',
         toolCalls: testResults.toolCalls,
         details: {
-          toolsTestsRun: testResults.toolCalls.length
+          toolsTestsRun: testResults.toolCalls.length,
+          errorDetails: errorDetails // Full error details in details field
         }
       };
     }
@@ -858,8 +872,11 @@ const diagnosticTests = {
         name: 'Asynchronous Insights (Background)',
         status: 'error',
         duration: Date.now() - startTime,
-        error: errorDetails,
-        jobLifecycle: testResults.jobLifecycle
+        error: errorDetails.message || 'Async insights test failed',
+        jobLifecycle: testResults.jobLifecycle,
+        details: {
+          errorDetails: errorDetails // Full error details in details field
+        }
       };
     }
   },
@@ -901,7 +918,10 @@ const diagnosticTests = {
         name: 'History Endpoint',
         status: 'error',
         duration: Date.now() - startTime,
-        error: formatError(error)
+        error: error.message || 'History endpoint test failed',
+        details: {
+          errorDetails: formatError(error) // Full error details in details field
+        }
       };
     }
   },
@@ -950,7 +970,10 @@ const diagnosticTests = {
         name: 'Systems Endpoint',
         status: 'error',
         duration: Date.now() - startTime,
-        error: formatError(error)
+        error: error.message || 'Systems endpoint test failed',
+        details: {
+          errorDetails: formatError(error) // Full error details in details field
+        }
       };
     }
   }
@@ -1021,11 +1044,15 @@ exports.handler = async (event, context) => {
           results.push(result);
           logger.info(`<<< Completed test: ${testName} (${result.status})`);
         } catch (testError) {
+          const errorDetails = formatError(testError, { testName });
           const errorResult = {
             name: testName,
             status: 'error',
-            error: formatError(testError),
-            duration: 0
+            error: errorDetails.message || testError.message || `${testName} test failed`,
+            duration: 0,
+            details: {
+              errorDetails: errorDetails
+            }
           };
           results.push(errorResult);
           testErrors.push({ test: testName, error: testError.message });
@@ -1113,11 +1140,14 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         status: 'system_failure',
         testId,
-        error: errorDetails,
+        error: errorDetails.message || error.message || 'Critical system failure',
         metadata: {
           timestamp: new Date().toISOString(),
           duration: Date.now() - requestStartTime,
           requestId: context.requestId
+        },
+        details: {
+          errorDetails: errorDetails
         }
       }, null, 2)
     };
