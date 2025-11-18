@@ -1,4 +1,4 @@
-const { connectDB } = require('./utils/mongodb.cjs');
+const { getDb, getCollection } = require('./utils/mongodb.cjs');
 const { logger } = require('./utils/logger.cjs');
 const { GoogleGenAI } = require('@google/genai');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
@@ -72,7 +72,7 @@ const cleanupTestData = async (testId) => {
   };
 
   try {
-    const db = await connectDB();
+    const db = await getDb();
     
     // List all collections to clean
     const collections = [
@@ -217,7 +217,7 @@ const diagnosticTests = {
       // Step 1: Connection
       logger.info('Step 1/6: Testing MongoDB connection...');
       const db = await executeWithTimeout(
-        () => connectDB(),
+        () => getDb(),
         { testName: 'MongoDB Connection', timeout: 5000, critical: true }
       );
       testResults.steps.push({ step: 'connection', status: 'success', time: Date.now() - startTime });
@@ -588,7 +588,7 @@ const diagnosticTests = {
 
       // Stage 4: Database storage
       logger.info('Stage 4/4: Verifying database storage...');
-      const db = await connectDB();
+      const db = await getDb();
       const savedAnalysis = await db.collection('analyses').findOne({ testId });
       
       testResults.stages.push({
@@ -825,7 +825,7 @@ const diagnosticTests = {
 
       // Clean up job
       if (jobId) {
-        const db = await connectDB();
+        const db = await getDb();
         await db.collection('jobs').deleteOne({ jobId });
         logger.info('Test job cleaned up');
       }
@@ -865,7 +865,7 @@ const diagnosticTests = {
     const startTime = Date.now();
     try {
       logger.info('Testing History Endpoint...');
-      const db = await connectDB();
+      const db = await getDb();
       
       // Insert test record
       const testRecord = {
@@ -906,7 +906,7 @@ const diagnosticTests = {
     const startTime = Date.now();
     try {
       logger.info('Testing Systems Endpoint...');
-      const db = await connectDB();
+      const db = await getDb();
       
       // Create test system
       const testSystem = {

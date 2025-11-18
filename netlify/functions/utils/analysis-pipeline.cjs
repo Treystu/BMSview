@@ -8,14 +8,23 @@ const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./mongodb.cjs");
 // ***FIX: Corrected import path. File is in the same directory.***
 const { createRetryWrapper } = require("./retry.cjs");
-const { getResponseSchema, getImageExtractionPrompt, cleanAndParseJson, mapExtractedToAnalysisData, performPostAnalysis, parseTimestamp, generateAnalysisKey, mergeAnalysisData } = require('./analysis-helpers.cjs');
+const { getResponseSchema, getImageExtractionPrompt, cleanAndParseJson, mapExtractedToAnalysisData, performPostAnalysis, parseTimestamp, generateAnalysisKey, mergeAnalysisData, validateExtractionQuality } = require('./analysis-helpers.cjs');
 
 const GEMINI_API_TIMEOUT_MS = 45000;
 
 const callWeatherFunction = async (lat, lon, timestamp, log) => {
     // ... existing code ...
-    const weatherUrl = `${process.env.URL}/.netlify/functions/weather`;
-    const logContext = { lat, lon, timestamp, weatherUrl };
+    // Build weather URL with fallback for development
+    const baseUrl = process.env.URL || 'http://localhost:8888';
+    const weatherUrl = `${baseUrl}/.netlify/functions/weather`;
+    const logContext = { lat, lon, timestamp, weatherUrl, hasEnvUrl: !!process.env.URL };
+    
+    // Validate required parameters
+    if (!lat || !lon) {
+        log('warn', 'Missing required parameters for weather function.', logContext);
+        return null;
+    }
+    
     // ... existing code ...
     log('debug', 'Calling weather function.', logContext);
     try {
@@ -32,11 +41,11 @@ const callWeatherFunction = async (lat, lon, timestamp, log) => {
         }
         const data = await response.json();
         // ... existing code ...
-        log('debug', 'Weather function call successful.', logContext);
+        log('debug', 'Weather function call successful.', { ...logContext, hasWeatherData: !!data });
         return data;
     } catch (error) {
         // ... existing code ...
-        log('error', 'Error calling weather function.', { ...logContext, errorMessage: error.message });
+        log('error', 'Error calling weather function.', { ...logContext, errorMessage: error.message, errorStack: error.stack });
         return null;
     }
 };
@@ -118,12 +127,31 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
     const analysisRaw = mapExtractedToAnalysisData(extractedData, log);
     // ... existing code ...
     if (!analysisRaw) throw new Error("Failed to map extracted data.");
+    
+    // Validate extraction quality
+    const validationResult = validateExtractionQuality(extractedData, analysisRaw, log);
+    
+    // Log warnings if quality is poor
+    if (validationResult.hasCriticalIssues) {
+        log('error', 'Critical data extraction issues detected.', {
+            qualityScore: validationResult.qualityScore,
+            warnings: validationResult.warnings
+        });
+    } else if (!validationResult.isComplete) {
+        log('warn', 'Data extraction quality is below optimal.', {
+            qualityScore: validationResult.qualityScore,
+            warnings: validationResult.warnings
+        });
+    }
 
     const allSystems = (systems && systems.items) ? systems.items : await withRetry(() => systemsCollection.find({}).toArray());
     // ... existing code ...
     const matchingSystem = analysisRaw.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysisRaw.dlNumber)) : null;
 
     const analysis = performPostAnalysis(analysisRaw, matchingSystem, log);
+    
+    // Add validation metadata to analysis
+    analysis._extractionQuality = validationResult;
 
     // ... existing code ...
     // 3. Timestamp and Weather
