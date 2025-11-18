@@ -372,24 +372,12 @@ function buildContextSections(context, analysisData) {
 function buildExecutionGuidance(mode, context) {
     const lines = ["**EXECUTION GUIDANCE**"];
     lines.push(`- Current run mode: ${mode === "background" ? "background (async)" : "synchronous"}. Plan tool usage to stay within limits.`);
-    lines.push("- Synchronize only the data you need. If more than four tool calls or multi-week raw data seems necessary, recommend a background follow-up.");
+    lines.push("- Request only the data you need. If more than 3-4 tool calls or multi-week raw data seems necessary, recommend a background follow-up.");
     if (context?.meta) {
         lines.push(`- Preloaded context (${Math.round(context.meta.durationMs)} ms budget): ${summarizePreloadedContext(context)}`);
     }
-    if (context?.batteryFacts?.brandNewLikely) {
-        lines.push("- Pack flagged as low-cycle (<50). Treat capacity decline claims as provisional unless trend data confirms them.");
-    }
-    if (context?.nightDischarge?.aggregate?.avgCurrent) {
-        lines.push(`- Overnight load baseline ≈ ${formatNumber(context.nightDischarge.aggregate.avgCurrent, " A", 1)} (${formatNumber(context.nightDischarge.aggregate.totalAh, " Ah", 1)} consumed) – use this before attributing SOC drops to cell degradation.`);
-    }
-    if (context?.solarVariance && isFiniteNumber(context.solarVariance.varianceAh)) {
-        const variance = context.solarVariance.varianceAh;
-        const varianceText = variance > 0
-            ? `surplus charging of ${formatNumber(variance, " Ah", 1)}`
-            : `deficit of ${formatNumber(Math.abs(variance), " Ah", 1)}`;
-        lines.push(`- Solar comparison: ${varianceText} vs irradiance expectation. Adjust recommendations accordingly.`);
-    }
-    lines.push("- Use predictive, pattern, and budget tools to validate every recommendation against measured trends.");
+    lines.push("- Use the available analysis tools to validate recommendations against measured trends.");
+    lines.push("- Focus on actionable insights with specific numeric targets.");
     return lines.join("\n");
 }
 
@@ -1918,27 +1906,13 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
         lines.push("👆 ONLY REQUEST DATES WITHIN THIS RANGE");
     }
     
-    lines.push("\n**EXAMPLE TOOL CALLS YOU CAN USE RIGHT NOW:**");
-    
-    if (minDate && maxDate) {
-        // Generate practical examples based on actual data range
-        const recentDate = new Date(maxDate);
-        const weekAgoDate = new Date(recentDate);
-        weekAgoDate.setDate(weekAgoDate.getDate() - 7);
-        const monthAgoDate = new Date(recentDate);
-        monthAgoDate.setDate(monthAgoDate.getDate() - 30);
-        
-        lines.push(`\n1. Get SOC data for last 7 days:`);
-        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "soc", "time_range_start": "${weekAgoDate.toISOString()}", "time_range_end": "${recentDate.toISOString()}", "granularity": "hourly_avg" } }`);
-        
-        lines.push(`\n2. Compare voltage this month vs last month:`);
-        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "voltage", "time_range_start": "${monthAgoDate.toISOString()}", "time_range_end": "${recentDate.toISOString()}", "granularity": "daily_avg" } }`);
-        
-        lines.push(`\n3. Get specific date data (e.g., October 5th):`);
-        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "all", "time_range_start": "2025-10-05T00:00:00Z", "time_range_end": "2025-10-06T00:00:00Z", "granularity": "hourly_avg" } }`);
-    } else {
-        lines.push(`{ "tool_call": "request_bms_data", "parameters": { "systemId": "${systemId}", "metric": "soc", "time_range_start": "2025-11-01T00:00:00Z", "time_range_end": "2025-11-15T23:59:59Z", "granularity": "daily_avg" } }`);
-    }
+    lines.push("\n**EXAMPLE: How to use request_bms_data tool**");
+    lines.push("You can call the request_bms_data function with these parameters:");
+    lines.push("   • systemId: (required) The exact system ID shown above");
+    lines.push("   • metric: 'voltage', 'current', 'soc', etc.");
+    lines.push("   • time_range_start: ISO timestamp like '2025-11-01T00:00:00Z'");
+    lines.push("   • time_range_end: ISO timestamp like '2025-11-15T23:59:59Z'");
+    lines.push("   • granularity: 'hourly_avg', 'daily_avg', or 'raw'");
     
     lines.push("\n⛔ NEVER RESPOND WITH 'DATA UNAVAILABLE' IF:");
     lines.push("   • The requested date is within your queryable range shown above");
