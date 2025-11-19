@@ -1,6 +1,5 @@
 const { getDb, getCollection } = require('./utils/mongodb.cjs');
 const { createLogger } = require('./utils/logger.cjs');
-const { GoogleGenAI } = require('@google/genai');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 const { executeReActLoop } = require('./utils/react-loop.cjs');
 const { createInsightsJob, getInsightsJob, updateJobStatus } = require('./utils/insights-jobs.cjs');
@@ -124,9 +123,9 @@ const cleanupTestData = async (testId) => {
 };
 
 // Initialize Gemini client with verbose logging
-let genAI;
+let geminiClient;
 const getGeminiClient = () => {
-  if (!genAI) {
+  if (!geminiClient) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       const error = new Error('GEMINI_API_KEY environment variable is not configured');
@@ -137,9 +136,9 @@ const getGeminiClient = () => {
       keyLength: apiKey.length,
       keyPrefix: apiKey.substring(0, 6) + '...'
     });
-    genAI = new GoogleGenAI({ apiKey });
+    geminiClient = new GeminiClient();
   }
-  return genAI;
+  return geminiClient;
 };
 
 // Helper to execute with timeout, retry, and verbose logging
@@ -362,10 +361,11 @@ const diagnosticTests = {
       logger.info('Test 1/3: Simple text generation...');
       try {
         const simpleResult = await executeWithTimeout(async () => {
-          const result = await client.models.generateContent({
-            model: modelName,
-            contents: 'Reply with exactly "OK" if you receive this message.'
-          });
+          const result = await client.callAPI(
+            'Reply with exactly "OK" if you receive this message.',
+            { model: modelName },
+            logger
+          );
           // Extract text from response
           const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
           return text;
@@ -419,10 +419,11 @@ const diagnosticTests = {
           4. Long-term maintenance suggestions`;
         
         const complexResult = await executeWithTimeout(async () => {
-          const result = await client.models.generateContent({
-            model: modelName,
-            contents: complexPrompt
-          });
+          const result = await client.callAPI(
+            complexPrompt,
+            { model: modelName },
+            logger
+          );
           // Extract text from response
           const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
           return text;
@@ -457,12 +458,12 @@ const diagnosticTests = {
       logger.info('Test 3/3: Function calling capabilities...');
       try {
         const functionResult = await executeWithTimeout(async () => {
-          const result = await client.models.generateContent({
-            model: modelName,
-            contents: `Analyze this battery: Voltage=${TEST_BMS_DATA.voltage}V, SOC=${TEST_BMS_DATA.soc}%. ` +
-              `Call the analyze_battery_health function with appropriate values.`,
-            tools: [{
-              functionDeclarations: [{
+          const result = await client.callAPI(
+            `Analyze this battery: Voltage=${TEST_BMS_DATA.voltage}V, SOC=${TEST_BMS_DATA.soc}%. ` +
+            `Call the analyze_battery_health function with appropriate values.`,
+            {
+              model: modelName,
+              tools: [{
                 name: 'analyze_battery_health',
                 description: 'Analyze battery health metrics',
                 parameters: {
@@ -479,8 +480,9 @@ const diagnosticTests = {
                   required: ['voltage', 'soc', 'health_status']
                 }
               }]
-            }]
-          });
+            },
+            logger
+          );
           return result;
         }, { testName: 'Gemini Function Calling', timeout: 10000 });
         
@@ -1560,9 +1562,9 @@ exports.handler = async (event, context) => {
       summary,
       results,
       cleanup: cleanupResults,
+      timestamp: new Date().toISOString(),
+      duration: Date.now() - requestStartTime,
       metadata: {
-        timestamp: new Date().toISOString(),
-        duration: Date.now() - requestStartTime,
         environment: process.env.NODE_ENV || 'production',
         requestId: context.requestId
       }
@@ -1606,20 +1608,21 @@ exports.handler = async (event, context) => {
     }
 
     return {
-      statusCode: 500,
+      statusCode: 200,  // Return 200 for handled errors so frontend can parse response
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'X-Diagnostic-Id': testId,
-        'X-Diagnostic-Status': 'system_failure'
+        'X-Diagnostic-Status': 'error'
       },
       body: JSON.stringify({
-        status: 'system_failure',
+        status: 'error',
         testId,
         error: errorDetails.message || error.message || 'Critical system failure',
+        timestamp: new Date().toISOString(),
+        duration: Date.now() - requestStartTime,
+        results: [],
         metadata: {
-          timestamp: new Date().toISOString(),
-          duration: Date.now() - requestStartTime,
           requestId: context.requestId
         },
         details: {
