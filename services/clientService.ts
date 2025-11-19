@@ -1817,11 +1817,24 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(async () => {
-                const text = await response.text().catch(() => '');
-                log('error', 'Failed to parse error response as JSON.', { text });
-                return { error: text || 'An unexpected error occurred.' };
+            // Clone response before reading so we can try multiple parse methods
+            const errorText = await response.text();
+            log('error', 'Diagnostics API returned error status.', { 
+                status: response.status, 
+                statusText: response.statusText,
+                bodyPreview: errorText.substring(0, 200)
             });
+            
+            let errorData: any;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch (parseError) {
+                log('error', 'Failed to parse error response as JSON.', { 
+                    text: errorText.substring(0, 200) 
+                });
+                errorData = { error: errorText || 'An unexpected error occurred.' };
+            }
+            
             const error = (errorData as any).error ? String((errorData as any).error) : `Server responded with status ${response.status}`;
             log('error', 'Diagnostics API fetch failed.', { status: response.status, error, errorData });
             
