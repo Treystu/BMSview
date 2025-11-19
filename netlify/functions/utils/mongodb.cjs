@@ -16,9 +16,8 @@ const MONGODB_URI = process.env.MONGODB_URI;
 // Support both MONGODB_DB_NAME and MONGODB_DB for backward compatibility
 const DB_NAME = process.env.MONGODB_DB_NAME || process.env.MONGODB_DB || "bmsview";
 
-if (!MONGODB_URI) {
-    throw new Error('Please define the MONGODB_URI environment variable');
-}
+// NOTE: Validation moved to getDb() function to prevent module-load-time errors
+// This allows the handler's try-catch to properly handle missing env vars
 
 /**
  * @type {import('mongodb').MongoClient}
@@ -97,6 +96,11 @@ async function connectToDatabase() {
     // Create new connection with OPTIMIZED pooling configuration
     connectionPromise = (async () => {
         try {
+            // Validate MONGODB_URI at connection time (not module load time)
+            if (!MONGODB_URI) {
+                throw new Error('Please define the MONGODB_URI environment variable');
+            }
+
             log.info('Attempting MongoDB connection', {
                 databaseName: DB_NAME,
                 uriPreview: MONGODB_URI.substring(0, 20) + '...',
