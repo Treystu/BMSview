@@ -4,10 +4,15 @@ import SpinnerIcon from './icons/SpinnerIcon';
 
 interface DiagnosticTestResult {
   name: string;
-  status: 'success' | 'warning' | 'error';
+  status: 'success' | 'warning' | 'error' | 'partial' | 'running';
   duration: number;
   details?: Record<string, any>;
   error?: string;
+  // Nested test structures
+  steps?: Array<{ step: string; status: string; time?: number; [key: string]: any }>;
+  tests?: Array<{ test: string; status: string; [key: string]: any }>;
+  stages?: Array<{ stage: string; status: string; duration?: number; [key: string]: any }>;
+  jobLifecycle?: Array<{ event: string; time?: number; [key: string]: any }>;
 }
 
 interface DiagnosticsResponse {
@@ -18,6 +23,7 @@ interface DiagnosticsResponse {
   summary?: {
     total: number;
     success: number;
+    partial?: number;
     warnings: number;
     errors: number;
   };
@@ -33,8 +39,19 @@ interface DiagnosticsModalProps {
 
 const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, results, isLoading }) => {
   const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
 
   if (!isOpen) return null;
+
+  const toggleSection = (sectionKey: string) => {
+    const newExpanded = new Set(expandedSections);
+    if (newExpanded.has(sectionKey)) {
+      newExpanded.delete(sectionKey);
+    } else {
+      newExpanded.add(sectionKey);
+    }
+    setExpandedSections(newExpanded);
+  };
 
   // Helper function to safely render error messages
   const renderError = (error: any): string => {
@@ -52,10 +69,15 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
     switch (status.toLowerCase()) {
       case 'success':
         return 'text-green-400';
+      case 'partial':
+        return 'text-yellow-400';
       case 'warning':
         return 'text-yellow-400';
       case 'error':
+      case 'failed':
         return 'text-red-400';
+      case 'running':
+        return 'text-blue-400';
       default:
         return 'text-gray-400';
     }
@@ -65,10 +87,15 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
     switch (status?.toLowerCase()) {
       case 'success':
         return '✔';
+      case 'partial':
+        return '◐';
       case 'warning':
         return '⚠';
       case 'error':
+      case 'failed':
         return '✖';
+      case 'running':
+        return '↻';
       default:
         return '?';
     }
@@ -87,6 +114,64 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
       default:
         return 'border-gray-500 bg-gray-900/20';
     }
+  };
+
+  // Render nested steps/stages/tests
+  const renderNestedItems = (items: any[], label: string, testName: string) => {
+    if (!items || items.length === 0) return null;
+    
+    const sectionKey = `${testName}-${label}`;
+    const isExpanded = expandedSections.has(sectionKey);
+
+    return (
+      <div className="mt-3 border-l-2 border-gray-600 pl-3">
+        <button
+          onClick={() => toggleSection(sectionKey)}
+          className="text-sm font-semibold text-gray-300 hover:text-white mb-2 flex items-center"
+        >
+          <span className="mr-2">{isExpanded ? '▼' : '▶'}</span>
+          {label} ({items.length})
+        </button>
+        {isExpanded && (
+          <div className="space-y-2">
+            {items.map((item, idx) => {
+              const itemName = item.step || item.test || item.stage || item.event || `Item ${idx + 1}`;
+              const itemStatus = item.status || 'unknown';
+              const duration = item.time || item.duration;
+
+              return (
+                <div key={idx} className="bg-gray-800/50 rounded p-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <span className={`mr-2 ${getStatusColor(itemStatus)}`}>
+                        {getStatusIcon(itemStatus)}
+                      </span>
+                      <span className="font-medium">{itemName}</span>
+                    </div>
+                    {duration !== undefined && (
+                      <span className="text-xs text-gray-400">
+                        {typeof duration === 'number' ? `${duration}ms` : duration}
+                      </span>
+                    )}
+                  </div>
+                  {Object.keys(item).length > 3 && (
+                    <div className="mt-1 pl-6 text-xs text-gray-400 space-y-0.5">
+                      {Object.entries(item)
+                        .filter(([key]) => !['step', 'test', 'stage', 'event', 'status', 'time', 'duration'].includes(key))
+                        .map(([key, value]) => (
+                          <div key={key}>
+                            <span className="font-semibold">{key}:</span> {JSON.stringify(value)}
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const hasGeneralError = results?.status === 'error' && results?.error && (!results.results || results.results.length === 0);
@@ -145,7 +230,7 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
             {summary && summary.total > 0 && (
               <div className="bg-gray-700 p-4 rounded-md mb-4">
                 <h3 className="font-semibold text-lg mb-3">Test Summary</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                   <div className="text-center">
                     <div className="text-2xl font-bold text-gray-300">{summary.total}</div>
                     <div className="text-sm text-gray-400">Total Tests</div>
@@ -154,7 +239,13 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                     <div className="text-2xl font-bold text-green-400">{summary.success}</div>
                     <div className="text-sm text-gray-400">Passed</div>
                   </div>
-                  {summary.warnings > 0 && (
+                  {(summary.partial && summary.partial > 0) && (
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-yellow-400">{summary.partial}</div>
+                      <div className="text-sm text-gray-400">Partial</div>
+                    </div>
+                  )}
+                  {(summary.warnings && summary.warnings > 0) && (
                     <div className="text-center">
                       <div className="text-2xl font-bold text-yellow-400">{summary.warnings}</div>
                       <div className="text-sm text-gray-400">Warnings</div>
@@ -175,13 +266,15 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                 {testResults.map((result, index) => {
                   const isExpanded = expandedTestId === result.name;
                   const hasDetails = result.details || result.error;
+                  const hasNestedItems = result.steps || result.tests || result.stages || result.jobLifecycle;
 
                   return (
                     <div 
                       key={index} 
                       className={`bg-gray-700 p-4 rounded-md transition-all ${
                         result.status === 'error' ? 'border border-red-500/30' : 
-                        result.status === 'warning' ? 'border border-yellow-500/30' : ''
+                        result.status === 'warning' ? 'border border-yellow-500/30' : 
+                        result.status === 'partial' ? 'border border-yellow-500/30' : ''
                       }`}
                     >
                       <div className="flex items-start justify-between">
@@ -199,12 +292,22 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                           {result.error && !isExpanded && (
                             <p className="text-sm text-red-300 mt-2 pl-7">{renderError(result.error)}</p>
                           )}
+
+                          {/* Show nested items inline when collapsed */}
+                          {hasNestedItems && !isExpanded && (
+                            <div className="mt-2 pl-7 text-sm text-gray-400">
+                              {result.steps && <span>• {result.steps.length} steps</span>}
+                              {result.tests && <span>• {result.tests.length} tests</span>}
+                              {result.stages && <span>• {result.stages.length} stages</span>}
+                              {result.jobLifecycle && <span>• {result.jobLifecycle.length} lifecycle events</span>}
+                            </div>
+                          )}
                         </div>
                         
-                        {hasDetails && (
+                        {(hasDetails || hasNestedItems) && (
                           <button
                             onClick={() => setExpandedTestId(isExpanded ? null : result.name)}
-                            className={`ml-2 text-xs px-3 py-1 rounded transition-colors ${
+                            className={`ml-2 text-xs px-3 py-1 rounded transition-colors whitespace-nowrap ${
                               result.status === 'error' 
                                 ? 'text-red-400 hover:text-red-300 bg-red-900/30 hover:bg-red-900/50' 
                                 : 'text-blue-400 hover:text-blue-300 bg-blue-900/30 hover:bg-blue-900/50'
@@ -216,7 +319,7 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                       </div>
 
                       {/* Expanded details */}
-                      {isExpanded && hasDetails && (
+                      {isExpanded && (hasDetails || hasNestedItems) && (
                         <div className="mt-4 p-3 bg-gray-800 rounded border border-gray-600">
                           {result.error && (
                             <div className="mb-3">
@@ -226,10 +329,16 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                               </div>
                             </div>
                           )}
+
+                          {/* Render nested structures */}
+                          {result.steps && renderNestedItems(result.steps, 'Steps', result.name)}
+                          {result.tests && renderNestedItems(result.tests, 'Tests', result.name)}
+                          {result.stages && renderNestedItems(result.stages, 'Stages', result.name)}
+                          {result.jobLifecycle && renderNestedItems(result.jobLifecycle, 'Job Lifecycle', result.name)}
                           
                           {result.details && Object.keys(result.details).length > 0 && (
-                            <div>
-                              <div className="font-semibold text-gray-300 text-sm mb-2">Details:</div>
+                            <div className="mt-3">
+                              <div className="font-semibold text-gray-300 text-sm mb-2">Additional Details:</div>
                               <div className="text-xs text-gray-300 font-mono bg-gray-900/50 p-3 rounded overflow-x-auto max-h-64 overflow-y-auto">
                                 <pre>{JSON.stringify(result.details, null, 2)}</pre>
                               </div>

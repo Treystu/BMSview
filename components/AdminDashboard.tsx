@@ -452,15 +452,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         'history'
     );
 
-    // All available diagnostic tests
+    // All available diagnostic tests (matching backend implementation)
     const ALL_DIAGNOSTIC_TESTS = [
         'database', 'gemini',
-        'analyze', 'syncAnalysis', 'asyncAnalysis',
-        'generateInsights', 'insightsWithTools',
+        'analyze', 'insightsWithTools', 'asyncAnalysis',
         'history', 'systems',
-        'weather', 'solar', 'systemAnalytics',
-        'getJobStatus',
-        'contact', 'getIP', 'security', 'predictiveMaintenance', 'adminSystems'
+        'weather', 'solarEstimate', 
+        'predictiveMaintenance', 'systemAnalytics',
+        'dataExport', 'idempotency', 'contentHashing',
+        'errorHandling', 'logging', 'retryMechanism', 'timeout'
     ];
 
     const handleTestToggle = (testId: string, checked: boolean) => {
@@ -643,29 +643,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                                             {[
                                                 { id: 'analyze', label: 'Analyze Endpoint' },
-                                                { id: 'syncAnalysis', label: 'Sync Analysis' },
+                                                { id: 'insightsWithTools', label: 'Insights with Tools' },
                                                 { id: 'asyncAnalysis', label: 'Async Analysis' },
-                                            ].map(test => (
-                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
-                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
-                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <span>{test.label}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Insights Tests */}
-                                    <div className="mb-3">
-                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Insights</h4>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {[
-                                                { id: 'generateInsights', label: 'Generate Insights' },
-                                                { id: 'insightsWithTools', label: 'Enhanced Insights' },
                                             ].map(test => (
                                                 <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
                                                     <input
@@ -687,6 +666,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                             {[
                                                 { id: 'history', label: 'History' },
                                                 { id: 'systems', label: 'Systems' },
+                                                { id: 'dataExport', label: 'Data Export' },
+                                                { id: 'idempotency', label: 'Idempotency' },
                                             ].map(test => (
                                                 <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
                                                     <input
@@ -707,52 +688,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                                             {[
                                                 { id: 'weather', label: 'Weather Service' },
-                                                { id: 'solar', label: 'Solar Service' },
+                                                { id: 'solarEstimate', label: 'Solar Estimate' },
                                                 { id: 'systemAnalytics', label: 'System Analytics' },
-                                            ].map(test => (
-                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
-                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
-                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <span>{test.label}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Job Management Tests */}
-                                    <div className="mb-3">
-                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Job Management</h4>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {[
-                                                { id: 'getJobStatus', label: 'Get Job Status' },
-                                            ].map(test => (
-                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
-                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
-                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <span>{test.label}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Utility/Admin Tests */}
-                                    <div className="mb-3">
-                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Utility/Admin</h4>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {[
-                                                { id: 'contact', label: 'Contact' },
-                                                { id: 'getIP', label: 'Get IP' },
-                                                { id: 'security', label: 'Security' },
                                                 { id: 'predictiveMaintenance', label: 'Predictive Maintenance' },
-                                                { id: 'adminSystems', label: 'Admin Systems' },
+                                            ].map(test => (
+                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
+                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
+                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                                    />
+                                                    <span>{test.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* System Utilities Tests */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">System Utilities</h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                            {[
+                                                { id: 'contentHashing', label: 'Content Hashing' },
+                                                { id: 'errorHandling', label: 'Error Handling' },
+                                                { id: 'logging', label: 'Logging System' },
+                                                { id: 'retryMechanism', label: 'Retry Mechanism' },
+                                                { id: 'timeout', label: 'Timeout Handling' },
                                             ].map(test => (
                                                 <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
                                                     <input
@@ -799,7 +761,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                                 <span>Running...</span>
                                             </div>
                                         ) : (
-                                            `Run ${state.selectedDiagnosticTests?.length || 8} Test${(state.selectedDiagnosticTests?.length || 8) !== 1 ? 's' : ''}`
+                                            `Run ${state.selectedDiagnosticTests?.length || ALL_DIAGNOSTIC_TESTS.length} Test${(state.selectedDiagnosticTests?.length || ALL_DIAGNOSTIC_TESTS.length) !== 1 ? 's' : ''}`
                                         )}
                                     </button>
                                 </div>

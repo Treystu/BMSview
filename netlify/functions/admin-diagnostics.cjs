@@ -355,7 +355,7 @@ const diagnosticTests = {
       logger.info('========== STARTING GEMINI API TEST ==========');
       
       const client = getGeminiClient();
-      const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+      const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
       logger.info(`Initializing Gemini model: ${modelName}`);
       
       // Test 1: Simple text generation
@@ -366,7 +366,9 @@ const diagnosticTests = {
             model: modelName,
             contents: 'Reply with exactly "OK" if you receive this message.'
           });
-          return result.text;
+          // Extract text from response
+          const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          return text;
         }, { testName: 'Gemini Simple Text', timeout: 8000 });
         
         testResults.tests.push({
@@ -421,7 +423,9 @@ const diagnosticTests = {
             model: modelName,
             contents: complexPrompt
           });
-          return result.text;
+          // Extract text from response
+          const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          return text;
         }, { testName: 'Gemini Complex Analysis', timeout: 15000 });
         
         testResults.tests.push({
@@ -481,18 +485,19 @@ const diagnosticTests = {
         }, { testName: 'Gemini Function Calling', timeout: 10000 });
         
         // Check for function calls in the response
-        const hasFunctionCalls = functionResult.functionCalls && functionResult.functionCalls.length > 0;
+        const hasFunctionCalls = functionResult.candidates?.[0]?.content?.parts?.some(part => part.functionCall);
+        const functionCalls = functionResult.candidates?.[0]?.content?.parts?.filter(part => part.functionCall) || [];
         
         testResults.tests.push({
           test: 'function_calling',
           status: 'success',
           passed: true,
           hasFunctionCalls: hasFunctionCalls,
-          functionCallCount: functionResult.functionCalls?.length || 0,
-          functionNames: functionResult.functionCalls?.map(fc => fc.name) || []
+          functionCallCount: functionCalls.length,
+          functionNames: functionCalls.map(fc => fc.functionCall?.name).filter(Boolean)
         });
         logger.info('Gemini function calling test completed', { 
-          functionCallCount: functionResult.functionCalls?.length || 0
+          functionCallCount: functionCalls.length
         });
       } catch (error) {
         const errorDetails = formatError(error);
@@ -529,7 +534,7 @@ const diagnosticTests = {
         error: errorDetails.message || 'Gemini API test failed',
         tests: testResults.tests,
         details: {
-          model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+          model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
           apiKeyConfigured: !!process.env.GEMINI_API_KEY,
           errorType: error.constructor.name,
           errorDetails: errorDetails // Full error details in details field
