@@ -28,6 +28,16 @@ interface DiagnosticsResponse {
     errors: number;
   };
   error?: string;
+  testId?: string;
+  cleanup?: {
+    success: string[];
+    failed: string[];
+  };
+  metadata?: {
+    environment?: string;
+    requestId?: string;
+  };
+  details?: Record<string, any>;
 }
 
 interface DiagnosticsModalProps {

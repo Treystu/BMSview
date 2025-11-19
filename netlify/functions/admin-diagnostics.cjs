@@ -1560,9 +1560,9 @@ exports.handler = async (event, context) => {
       summary,
       results,
       cleanup: cleanupResults,
+      timestamp: new Date().toISOString(),
+      duration: Date.now() - requestStartTime,
       metadata: {
-        timestamp: new Date().toISOString(),
-        duration: Date.now() - requestStartTime,
         environment: process.env.NODE_ENV || 'production',
         requestId: context.requestId
       }
@@ -1614,12 +1614,13 @@ exports.handler = async (event, context) => {
         'X-Diagnostic-Status': 'system_failure'
       },
       body: JSON.stringify({
-        status: 'system_failure',
+        status: 'error',
         testId,
         error: errorDetails.message || error.message || 'Critical system failure',
+        timestamp: new Date().toISOString(),
+        duration: Date.now() - requestStartTime,
+        results: [],
         metadata: {
-          timestamp: new Date().toISOString(),
-          duration: Date.now() - requestStartTime,
           requestId: context.requestId
         },
         details: {

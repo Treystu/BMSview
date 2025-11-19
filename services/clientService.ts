@@ -1763,10 +1763,21 @@ export interface DiagnosticsResponse {
     summary?: {
         total: number;
         success: number;
+        partial?: number;
         warnings: number;
         errors: number;
     };
     error?: string;
+    testId?: string;
+    cleanup?: {
+        success: string[];
+        failed: string[];
+    };
+    metadata?: {
+        environment?: string;
+        requestId?: string;
+    };
+    details?: Record<string, any>;
 }
 
 export const runDiagnostics = async (selectedTests?: string[]): Promise<DiagnosticsResponse> => {
