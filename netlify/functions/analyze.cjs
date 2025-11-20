@@ -30,6 +30,93 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
+/**
+ * Validate that required environment variables are set
+ * @param {Object} log - Logger instance
+ * @returns {Object} Validation result { ok: boolean, error?: string, details?: Object }
+ */
+function validateEnvironment(log) {
+  const missing = [];
+  const warnings = [];
+  
+  // Critical: Must have Gemini API key
+  if (!process.env.GEMINI_API_KEY) {
+    missing.push('GEMINI_API_KEY');
+  }
+  
+  // Critical: Must have MongoDB URI
+  if (!process.env.MONGODB_URI) {
+    missing.push('MONGODB_URI');
+  }
+  
+  // Warning: Should have database name
+  if (!process.env.MONGODB_DB_NAME && !process.env.MONGODB_DB) {
+    warnings.push('MONGODB_DB_NAME (will use default: bmsview)');
+  }
+  
+  if (missing.length > 0) {
+    const error = `Missing required environment variables: ${missing.join(', ')}`;
+    log.error('Environment validation failed', { missing, warnings });
+    return {
+      ok: false,
+      error,
+      details: {
+        missing,
+        warnings,
+        hasGeminiKey: !!process.env.GEMINI_API_KEY,
+        hasMongoUri: !!process.env.MONGODB_URI
+      }
+    };
+  }
+  
+  if (warnings.length > 0) {
+    log.warn('Environment has warnings', { warnings });
+  }
+  
+  return { ok: true };
+}
+
+/**
+ * Determine appropriate HTTP status code for an error
+ * @param {Error} error - The error object
+ * @returns {number} HTTP status code
+ */
+function getErrorStatusCode(error) {
+  const message = error.message || '';
+  
+  // Client errors (400-499)
+  if (message.includes('invalid') || message.includes('validation')) return 400;
+  if (message.includes('unauthorized') || message.includes('authentication')) return 401;
+  if (message.includes('forbidden')) return 403;
+  if (message.includes('not found')) return 404;
+  if (message.includes('timeout') || message.includes('TIMEOUT')) return 408;
+  if (message.includes('quota') || message.includes('rate limit')) return 429;
+  
+  // Service errors (500-599)
+  if (message.includes('service_unavailable') || message.includes('ECONNREFUSED')) return 503;
+  if (message.includes('circuit_open')) return 503;
+  
+  // Default to 500 for unknown errors
+  return 500;
+}
+
+/**
+ * Determine appropriate error code for an error
+ * @param {Error} error - The error object
+ * @returns {string} Error code
+ */
+function getErrorCode(error) {
+  const message = error.message || '';
+  
+  if (message.includes('timeout') || message.includes('TIMEOUT')) return 'analysis_timeout';
+  if (message.includes('quota') || message.includes('rate limit')) return 'quota_exceeded';
+  if (message.includes('ECONNREFUSED') || message.includes('connection')) return 'database_unavailable';
+  if (message.includes('circuit_open')) return 'service_degraded';
+  if (message.includes('Gemini')) return 'ai_service_error';
+  
+  return 'analysis_failed';
+}
+
 exports.handler = async (event, context) => {
   // Get CORS headers (strict mode in production, permissive in development)
   const headers = getCorsHeaders(event);
@@ -49,6 +136,14 @@ exports.handler = async (event, context) => {
   // Logger and request-scoped context
   const log = createLogger('analyze', context);
   log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+  
+  // Validate environment before processing
+  const envValidation = validateEnvironment(log);
+  if (!envValidation.ok) {
+    log.error('Environment validation failed', envValidation);
+    return errorResponse(503, 'service_unavailable', envValidation.error, envValidation.details, headers);
+  }
+  
   const isSync = (event.queryStringParameters && event.queryStringParameters.sync === 'true');
   const forceReanalysis = (event.queryStringParameters && event.queryStringParameters.force === 'true');
   const headersIn = event.headers || {};
@@ -65,8 +160,7 @@ exports.handler = async (event, context) => {
     }
 
     if (isSync) {
-      // Synchronous analysis path
-      // *** FIX: Removed the 'timer' variable which was not defined in this scope. ***
+      // Synchronous analysis path with comprehensive error handling
       return await handleSyncAnalysis(parsed.value, idemKey, forceReanalysis, headers, log, context);
     }
 
@@ -74,7 +168,11 @@ exports.handler = async (event, context) => {
     return await handleLegacyAnalysis(parsed.value, headers, log, requestContext);
 
   } catch (error) {
-    log.error('Analyze function failed.', { error: error && error.message ? error.message : String(error), stack: error.stack });
+    log.error('Analyze function failed.', { 
+      error: error && error.message ? error.message : String(error), 
+      stack: error.stack,
+      errorType: error.constructor?.name
+    });
 
     // Best-effort legacy progress event logging
     try {
@@ -85,10 +183,26 @@ exports.handler = async (event, context) => {
           message: `Analysis failed: ${error.message}`
         });
       }
-    } catch (_) { }
+    } catch (_) { 
+      // Swallow cleanup errors to avoid masking primary error
+    }
 
-    log.exit(500, { error: error.message });
-    return errorResponse(500, 'analysis_failed', 'Analysis failed', { message: error.message }, { ...headers, 'Content-Type': 'application/json' });
+    // Determine appropriate status code and error type
+    const statusCode = getErrorStatusCode(error);
+    const errorCode = getErrorCode(error);
+    
+    log.exit(statusCode, { error: error.message, errorCode });
+    return errorResponse(
+      statusCode, 
+      errorCode, 
+      'Analysis failed', 
+      { 
+        message: error.message,
+        type: error.constructor?.name,
+        recoverable: statusCode < 500
+      }, 
+      { ...headers, 'Content-Type': 'application/json' }
+    );
   }
 };
 
@@ -105,79 +219,129 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
   const timer = createTimer(log, 'sync-analysis');
   const imagePayload = requestBody && requestBody.image;
 
-  // Validate image payload
-  const imageValidation = validateImagePayload(imagePayload, log);
-  if (!imageValidation.ok) {
-    log.warn('Sync analyze image validation failed.', { reason: imageValidation.error });
-    log.exit(400);
-    return errorResponse(400, 'invalid_image', imageValidation.error, undefined, { ...headers, 'Content-Type': 'application/json' });
-  }
-
-  // Calculate content hash for deduplication
-  const contentHash = sha256HexFromBase64(imagePayload.image);
-
-  // Check idempotency cache (skip if force=true)
-  if (idemKey && !forceReanalysis) {
-    const idemResponse = await checkIdempotency(idemKey, log);
-    if (idemResponse) {
-      const durationMs = timer.end({ idempotent: true });
-      log.exit(200, { mode: 'sync', idempotent: true, durationMs });
-      return {
-        statusCode: 200,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(idemResponse)
-      };
+  try {
+    // Validate image payload
+    const imageValidation = validateImagePayload(imagePayload, log);
+    if (!imageValidation.ok) {
+      log.warn('Sync analyze image validation failed.', { reason: imageValidation.error });
+      log.exit(400);
+      return errorResponse(400, 'invalid_image', imageValidation.error, undefined, { ...headers, 'Content-Type': 'application/json' });
     }
-  }
 
-  // Check for existing analysis by content hash (skip if force=true)
-  if (!forceReanalysis) {
-    const existingAnalysis = await checkExistingAnalysis(contentHash, log);
-    if (existingAnalysis) {
-      const responseBody = {
-        analysis: existingAnalysis.analysis,
-        recordId: existingAnalysis._id?.toString?.() || existingAnalysis.id,
-        fileName: existingAnalysis.fileName,
-        timestamp: existingAnalysis.timestamp,
-        isDuplicate: true
-      };
+    // Calculate content hash for deduplication
+    const contentHash = sha256HexFromBase64(imagePayload.image);
 
-      await storeIdempotentResponse(idemKey, responseBody, 'dedupe_hit');
-      const durationMs = timer.end({ recordId: responseBody.recordId, dedupe: true });
-      log.exit(200, { mode: 'sync', dedupe: true, durationMs });
-      return {
-        statusCode: 200,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(responseBody)
-      };
+    // Check idempotency cache (skip if force=true)
+    if (idemKey && !forceReanalysis) {
+      try {
+        const idemResponse = await checkIdempotency(idemKey, log);
+        if (idemResponse) {
+          const durationMs = timer.end({ idempotent: true });
+          log.exit(200, { mode: 'sync', idempotent: true, durationMs });
+          return {
+            statusCode: 200,
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify(idemResponse)
+          };
+        }
+      } catch (idemError) {
+        // Log but continue - idempotency is not critical
+        log.warn('Idempotency check failed, continuing with analysis', { 
+          error: idemError.message,
+          idemKey 
+        });
+      }
     }
-  } else {
-    log.info('Force re-analysis requested, bypassing duplicate detection.', { contentHash, auditEvent: 'force_reanalysis', timestamp: new Date().toISOString() });
+
+    // Check for existing analysis by content hash (skip if force=true)
+    if (!forceReanalysis) {
+      try {
+        const existingAnalysis = await checkExistingAnalysis(contentHash, log);
+        if (existingAnalysis) {
+          const responseBody = {
+            analysis: existingAnalysis.analysis,
+            recordId: existingAnalysis._id?.toString?.() || existingAnalysis.id,
+            fileName: existingAnalysis.fileName,
+            timestamp: existingAnalysis.timestamp,
+            isDuplicate: true
+          };
+
+          await storeIdempotentResponse(idemKey, responseBody, 'dedupe_hit');
+          const durationMs = timer.end({ recordId: responseBody.recordId, dedupe: true });
+          log.exit(200, { mode: 'sync', dedupe: true, durationMs });
+          return {
+            statusCode: 200,
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify(responseBody)
+          };
+        }
+      } catch (dedupeError) {
+        // Log but continue - deduplication is not critical
+        log.warn('Duplicate check failed, continuing with analysis', { 
+          error: dedupeError.message,
+          contentHash: contentHash.substring(0, 16) + '...'
+        });
+      }
+    } else {
+      log.info('Force re-analysis requested, bypassing duplicate detection.', { 
+        contentHash: contentHash.substring(0, 16) + '...', 
+        auditEvent: 'force_reanalysis', 
+        timestamp: new Date().toISOString() 
+      });
+    }
+
+    // Perform new analysis (critical path - errors thrown here are caught by main handler)
+    log.info('Starting synchronous analysis via pipeline.', { 
+      fileName: imagePayload.fileName, 
+      mimeType: imagePayload.mimeType,
+      imageSize: imagePayload.image?.length || 0
+    });
+    
+    const record = await executeAnalysisPipeline(imagePayload, log, context);
+
+    // Validate analysis result
+    if (!record || !record.analysis) {
+      throw new Error('Analysis pipeline returned invalid result');
+    }
+
+    // Store results for future deduplication (best effort)
+    try {
+      await storeAnalysisResults(record, contentHash, log, forceReanalysis);
+    } catch (storageError) {
+      // Log but don't fail - storage is not critical for immediate response
+      log.warn('Failed to store analysis results for deduplication', { 
+        error: storageError.message,
+        recordId: record.id
+      });
+    }
+
+    const responseBody = {
+      analysis: record.analysis,
+      recordId: record.id,
+      fileName: record.fileName,
+      timestamp: record.timestamp
+    };
+
+    // Store idempotent response (best effort)
+    try {
+      await storeIdempotentResponse(idemKey, responseBody, forceReanalysis ? 'force_reanalysis' : 'new_analysis');
+    } catch (idemStoreError) {
+      // Log but don't fail
+      log.warn('Failed to store idempotent response', { error: idemStoreError.message });
+    }
+
+    const durationMs = timer.end({ recordId: record.id });
+    log.exit(200, { mode: 'sync', recordId: record.id, durationMs });
+    return {
+      statusCode: 200,
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(responseBody)
+    };
+  } catch (error) {
+    // Let main handler deal with the error
+    timer.end({ error: error.message });
+    throw error;
   }
-
-  // Perform new analysis
-  log.info('Starting synchronous analysis via pipeline.', { fileName: imagePayload.fileName, mimeType: imagePayload.mimeType });
-  const record = await executeAnalysisPipeline(imagePayload, log, context);
-
-  // Store results for future deduplication
-  await storeAnalysisResults(record, contentHash, log, forceReanalysis);
-
-  const responseBody = {
-    analysis: record.analysis,
-    recordId: record.id,
-    fileName: record.fileName,
-    timestamp: record.timestamp
-  };
-
-  await storeIdempotentResponse(idemKey, responseBody, forceReanalysis ? 'force_reanalysis' : 'new_analysis');
-
-  const durationMs = timer.end({ recordId: record.id });
-  log.exit(200, { mode: 'sync', recordId: record.id, durationMs });
-  return {
-    statusCode: 200,
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify(responseBody)
-  };
 }
 
 /**
@@ -216,13 +380,19 @@ async function handleLegacyAnalysis(requestBody, headers, log, requestContext) {
 async function checkIdempotency(idemKey, log) {
   if (!idemKey) return null;
 
-  const idemCol = await getCollection('idempotent-requests');
-  const existingIdem = await idemCol.findOne({ key: idemKey });
-  if (existingIdem && existingIdem.response) {
-    log.info('Idempotency hit: returning stored response.', { idemKey });
-    return existingIdem.response;
+  try {
+    const idemCol = await getCollection('idempotent-requests');
+    const existingIdem = await idemCol.findOne({ key: idemKey });
+    if (existingIdem && existingIdem.response) {
+      log.info('Idempotency hit: returning stored response.', { idemKey });
+      return existingIdem.response;
+    }
+    return null;
+  } catch (error) {
+    log.warn('Idempotency check failed', { error: error.message, idemKey });
+    // Re-throw to let caller decide how to handle
+    throw error;
   }
-  return null;
 }
 
 /**
@@ -232,13 +402,24 @@ async function checkIdempotency(idemKey, log) {
  * @returns {Object|null} Existing analysis if found
  */
 async function checkExistingAnalysis(contentHash, log) {
-  const resultsCol = await getCollection('analysis-results');
-  const existing = await resultsCol.findOne({ contentHash });
-  if (existing) {
-    log.info('Dedupe: existing analysis found for content hash.', { contentHash });
-    return existing;
+  try {
+    const resultsCol = await getCollection('analysis-results');
+    const existing = await resultsCol.findOne({ contentHash });
+    if (existing) {
+      log.info('Dedupe: existing analysis found for content hash.', { 
+        contentHash: contentHash.substring(0, 16) + '...' 
+      });
+      return existing;
+    }
+    return null;
+  } catch (error) {
+    log.warn('Duplicate check failed', { 
+      error: error.message, 
+      contentHash: contentHash.substring(0, 16) + '...' 
+    });
+    // Re-throw to let caller decide how to handle
+    throw error;
   }
-  return null;
 }
 
 /**
@@ -287,8 +468,8 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
  * @param {boolean} forceReanalysis - Whether this was a forced reanalysis
  */
 async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false) {
-  const resultsCol = await getCollection('analysis-results');
   try {
+    const resultsCol = await getCollection('analysis-results');
     await resultsCol.insertOne({
       id: record.id,
       fileName: record.fileName,
@@ -298,8 +479,16 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
       createdAt: new Date(),
       _forceReanalysis: forceReanalysis
     });
+    log.info('Analysis results stored for deduplication', { 
+      recordId: record.id,
+      contentHash: contentHash.substring(0, 16) + '...'
+    });
   } catch (e) {
-    log.warn('Failed to persist analysis-results record.', { error: e && e.message ? e.message : String(e) });
+    log.warn('Failed to persist analysis-results record.', { 
+      error: e && e.message ? e.message : String(e),
+      recordId: record.id
+    });
+    // Don't throw - this is best effort
   }
 }
 
@@ -319,7 +508,10 @@ async function storeIdempotentResponse(idemKey, response, reasonCode = 'new_anal
       { $set: { key: idemKey, response, reasonCode, createdAt: new Date() } },
       { upsert: true }
     );
-  } catch (_) { }
+    // Success - no logging needed (best effort operation)
+  } catch (e) {
+    // Silent fail - this is best effort and we don't want to break the response
+  }
 }
 
 /**

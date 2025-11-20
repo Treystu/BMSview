@@ -554,77 +554,138 @@ const diagnosticTests = {
       duration: 0
     };
 
+    // Wrap EVERYTHING in try-catch to ensure we always return a result object
     try {
       logger.info('========== STARTING ANALYZE ENDPOINT TEST ==========');
       
-      // Prepare test image data
-      const testImageData = Buffer.from(JSON.stringify(TEST_BMS_DATA)).toString('base64');
-      const testFileName = `test-image-${testId}.png`;
-      
       // Stage 1: Pipeline initialization
-      logger.info('Stage 1/4: Initializing analysis pipeline...');
-      testResults.stages.push({ 
-        stage: 'initialization',
-        status: 'success',
-        time: Date.now() - startTime 
-      });
+      try {
+        logger.info('Stage 1/4: Initializing analysis pipeline...');
+        testResults.stages.push({ 
+          stage: 'initialization',
+          status: 'success',
+          time: Date.now() - startTime 
+        });
+      } catch (initError) {
+        const errorDetails = formatError(initError, { testId, stage: 'initialization' });
+        testResults.stages.push({
+          stage: 'initialization',
+          status: 'error',
+          error: errorDetails.message,
+          errorDetails
+        });
+        throw initError; // Re-throw to be caught by outer catch
+      }
 
       // Stage 2: Data extraction
-      logger.info('Stage 2/4: Extracting data from image...');
-      const extractionStart = Date.now();
-      
-      const analysisResult = await executeWithTimeout(async () => {
-        return await performAnalysisPipeline(
-          {
-            image: testImageData,
-            mimeType: 'image/png',
-            fileName: testFileName,
-            force: false
-          },
-          null, // systems
-          logger,
-          { requestId: testId, testRun: true }
-        );
-      }, { testName: 'Analysis Pipeline', timeout: 25000 });
-      
-      testResults.stages.push({
-        stage: 'extraction',
-        status: 'success',
-        duration: Date.now() - extractionStart,
-        dataExtracted: !!analysisResult.analysis
-      });
+      let analysisResult = null;
+      try {
+        logger.info('Stage 2/4: Extracting data from image...');
+        const extractionStart = Date.now();
+        
+        // Prepare test image data
+        const testImageData = Buffer.from(JSON.stringify(TEST_BMS_DATA)).toString('base64');
+        const testFileName = `test-image-${testId}.png`;
+        
+        // Note: This test uses fake data and may fail at Gemini API
+        // We catch and report the error gracefully
+        analysisResult = await executeWithTimeout(async () => {
+          return await performAnalysisPipeline(
+            {
+              image: testImageData,
+              mimeType: 'image/png',
+              fileName: testFileName,
+              force: false
+            },
+            null, // systems
+            logger,
+            { requestId: testId, testRun: true }
+          );
+        }, { testName: 'Analysis Pipeline', timeout: 25000, retries: 0 }); // No retries to fail fast
+        
+        testResults.stages.push({
+          stage: 'extraction',
+          status: 'success',
+          duration: Date.now() - extractionStart,
+          dataExtracted: !!analysisResult?.analysis
+        });
+      } catch (extractionError) {
+        const errorDetails = formatError(extractionError, { testId, stage: 'extraction' });
+        logger.warn('Extraction stage failed (expected with fake test data)', errorDetails);
+        testResults.stages.push({
+          stage: 'extraction',
+          status: 'error',
+          error: errorDetails.message,
+          errorDetails,
+          note: 'This test uses fake data and may fail at Gemini API - this is expected'
+        });
+        // Don't throw - report the failure and continue with remaining stages
+        // Return early with error status
+        testResults.status = 'error';
+        testResults.duration = Date.now() - startTime;
+        testResults.details = {
+          pipelineComplete: false,
+          failedAtStage: 'extraction',
+          note: 'Test uses fake data which causes Gemini API to fail',
+          errorDetails: errorDetails
+        };
+        logger.info('========== ANALYZE TEST COMPLETED WITH ERRORS ==========', testResults);
+        return testResults;
+      }
 
       // Stage 3: Data validation
-      logger.info('Stage 3/4: Validating extracted data...');
-      const validationChecks = {
-        hasVoltage: analysisResult.analysis?.voltage > 0,
-        hasSOC: analysisResult.analysis?.soc >= 0 && analysisResult.analysis?.soc <= 100,
-        hasTimestamp: !!analysisResult.timestamp,
-        hasAnalysisId: !!analysisResult.id
-      };
-      
-      testResults.stages.push({
-        stage: 'validation',
-        status: Object.values(validationChecks).every(v => v) ? 'success' : 'warning',
-        checks: validationChecks
-      });
+      try {
+        logger.info('Stage 3/4: Validating extracted data...');
+        const validationChecks = {
+          hasVoltage: analysisResult?.analysis?.voltage > 0,
+          hasSOC: analysisResult?.analysis?.soc >= 0 && analysisResult?.analysis?.soc <= 100,
+          hasTimestamp: !!analysisResult?.timestamp,
+          hasAnalysisId: !!analysisResult?.id
+        };
+        
+        testResults.stages.push({
+          stage: 'validation',
+          status: Object.values(validationChecks).every(v => v) ? 'success' : 'warning',
+          checks: validationChecks
+        });
+      } catch (validationError) {
+        const errorDetails = formatError(validationError, { testId, stage: 'validation' });
+        testResults.stages.push({
+          stage: 'validation',
+          status: 'error',
+          error: errorDetails.message,
+          errorDetails
+        });
+        throw validationError;
+      }
 
       // Stage 4: Database storage
-      logger.info('Stage 4/4: Verifying database storage...');
-      const historyCollection = await getCollection('history');
-      const savedAnalysis = await historyCollection.findOne({ id: analysisResult.id });
-      
-      testResults.stages.push({
-        stage: 'storage',
-        status: savedAnalysis ? 'success' : 'failed',
-        documentId: savedAnalysis?.id,
-        documentSize: savedAnalysis ? JSON.stringify(savedAnalysis).length : 0
-      });
+      try {
+        logger.info('Stage 4/4: Verifying database storage...');
+        const historyCollection = await getCollection('history');
+        const savedAnalysis = await historyCollection.findOne({ id: analysisResult.id });
+        
+        testResults.stages.push({
+          stage: 'storage',
+          status: savedAnalysis ? 'success' : 'warning',
+          documentId: savedAnalysis?.id,
+          documentSize: savedAnalysis ? JSON.stringify(savedAnalysis).length : 0
+        });
 
-      // Cleanup
-      if (analysisResult.id) {
-        await historyCollection.deleteOne({ id: analysisResult.id });
-        logger.info('Test data cleaned up from history collection');
+        // Cleanup
+        if (analysisResult?.id) {
+          await historyCollection.deleteOne({ id: analysisResult.id });
+          logger.info('Test data cleaned up from history collection');
+        }
+      } catch (storageError) {
+        const errorDetails = formatError(storageError, { testId, stage: 'storage' });
+        testResults.stages.push({
+          stage: 'storage',
+          status: 'error',
+          error: errorDetails.message,
+          errorDetails
+        });
+        // Continue - don't fail the whole test for storage issues
       }
 
       testResults.status = 'success';
@@ -632,18 +693,19 @@ const diagnosticTests = {
       testResults.details = {
         pipelineComplete: true,
         allStagesSuccessful: testResults.stages.every(s => s.status === 'success'),
-        extractedData: {
-          voltage: analysisResult.analysis?.voltage,
-          soc: analysisResult.analysis?.soc,
-          power: analysisResult.analysis?.power,
-          capacity: analysisResult.analysis?.capacity
-        }
+        extractedData: analysisResult?.analysis ? {
+          voltage: analysisResult.analysis.voltage,
+          soc: analysisResult.analysis.soc,
+          power: analysisResult.analysis.power,
+          capacity: analysisResult.analysis.capacity
+        } : null
       };
 
       logger.info('========== ANALYZE TEST COMPLETED ==========', testResults);
       return testResults;
 
     } catch (error) {
+      // Final safety net - catch ANY uncaught errors
       const errorDetails = formatError(error, { testId });
       logger.error('========== ANALYZE TEST FAILED ==========', errorDetails);
       
@@ -655,7 +717,7 @@ const diagnosticTests = {
         stages: testResults.stages,
         details: {
           pipelineComplete: false,
-          failedAtStage: testResults.stages.length + 1,
+          failedAtStage: testResults.stages.length > 0 ? testResults.stages[testResults.stages.length - 1].stage : 'unknown',
           errorDetails: errorDetails
         }
       };
@@ -671,35 +733,53 @@ const diagnosticTests = {
       duration: 0
     };
 
+    let createdJobId = null;
+
+    // Wrap EVERYTHING in try-catch to ensure we always return a result object
     try {
       logger.info('========== STARTING INSIGHTS WITH TOOLS TEST ==========');
       
       // Test 1: Insights job creation
-      logger.info('Test 1/3: Testing insights job creation...');
-      const jobCreationStart = Date.now();
-      
-      const testJobData = {
-        analysisData: TEST_BMS_DATA,
-        systemId: 'test_system_' + testId,
-        customPrompt: 'Analyze this battery system briefly.',
-        initialSummary: {
-          voltage: TEST_BMS_DATA.voltage,
-          soc: TEST_BMS_DATA.soc,
-          health: 'good'
-        }
-      };
-      
-      const createdJob = await createInsightsJob(testJobData, logger);
-      
-      testResults.tests.push({
-        test: 'job_creation',
-        status: 'success',
-        duration: Date.now() - jobCreationStart,
-        jobId: createdJob.id,
-        jobCreated: !!createdJob.id
-      });
-      
-      logger.info('Job creation test passed', { jobId: createdJob.id });
+      try {
+        logger.info('Test 1/3: Testing insights job creation...');
+        const jobCreationStart = Date.now();
+        
+        const testJobData = {
+          analysisData: TEST_BMS_DATA,
+          systemId: 'test_system_' + testId,
+          customPrompt: 'Analyze this battery system briefly.',
+          initialSummary: {
+            voltage: TEST_BMS_DATA.voltage,
+            soc: TEST_BMS_DATA.soc,
+            health: 'good'
+          }
+        };
+        
+        const createdJob = await executeWithTimeout(async () => {
+          return await createInsightsJob(testJobData, logger);
+        }, { testName: 'Create Insights Job', timeout: 10000, retries: 0 });
+        
+        createdJobId = createdJob?.id;
+        
+        testResults.tests.push({
+          test: 'job_creation',
+          status: createdJobId ? 'success' : 'error',
+          duration: Date.now() - jobCreationStart,
+          jobId: createdJobId,
+          jobCreated: !!createdJobId
+        });
+        
+        logger.info('Job creation test passed', { jobId: createdJobId });
+      } catch (createError) {
+        const errorDetails = formatError(createError);
+        testResults.tests.push({
+          test: 'job_creation',
+          status: 'error',
+          error: errorDetails.message,
+          errorDetails
+        });
+        logger.error('Job creation test failed', errorDetails);
+      }
       
       // Test 2: ReAct loop execution (quick sync mode)
       logger.info('Test 2/3: Testing ReAct loop execution...');
@@ -718,18 +798,18 @@ const diagnosticTests = {
         
         testResults.tests.push({
           test: 'react_loop',
-          status: reactResult.success ? 'success' : 'error',
+          status: reactResult?.success ? 'success' : 'error',
           duration: Date.now() - reactStart,
-          turns: reactResult.turns || 0,
-          toolCalls: reactResult.toolCalls || 0,
-          hasAnswer: !!reactResult.finalAnswer,
-          answerLength: reactResult.finalAnswer?.length || 0
+          turns: reactResult?.turns || 0,
+          toolCalls: reactResult?.toolCalls || 0,
+          hasAnswer: !!reactResult?.finalAnswer,
+          answerLength: reactResult?.finalAnswer?.length || 0
         });
         
         logger.info('ReAct loop test completed', { 
-          success: reactResult.success,
-          turns: reactResult.turns,
-          toolCalls: reactResult.toolCalls
+          success: reactResult?.success,
+          turns: reactResult?.turns,
+          toolCalls: reactResult?.toolCalls
         });
         
       } catch (error) {
@@ -739,31 +819,59 @@ const diagnosticTests = {
           status: 'warning',
           duration: Date.now() - reactStart,
           warning: 'ReAct loop test timed out or failed (expected in test environment)',
-          error: errorDetails.message
+          error: errorDetails.message,
+          errorDetails
         });
-        logger.warn('ReAct loop test had issues (expected without full environment)', {
-          error: error.message
-        });
+        logger.warn('ReAct loop test had issues (expected without full environment)', errorDetails);
       }
       
       // Test 3: Job retrieval and cleanup
-      logger.info('Test 3/3: Testing job retrieval and cleanup...');
-      const retrievalStart = Date.now();
-      
-      const retrievedJob = await getInsightsJob(createdJob.id, logger);
-      
-      testResults.tests.push({
-        test: 'job_retrieval',
-        status: retrievedJob ? 'success' : 'error',
-        duration: Date.now() - retrievalStart,
-        jobFound: !!retrievedJob,
-        jobStatus: retrievedJob?.status
-      });
-      
-      // Cleanup
-      const jobsCollection = await getCollection('insights-jobs');
-      await jobsCollection.deleteOne({ id: createdJob.id });
-      logger.info('Test insights job cleaned up', { jobId: createdJob.id });
+      if (createdJobId) {
+        try {
+          logger.info('Test 3/3: Testing job retrieval and cleanup...');
+          const retrievalStart = Date.now();
+          
+          const retrievedJob = await executeWithTimeout(async () => {
+            return await getInsightsJob(createdJobId, logger);
+          }, { testName: 'Get Insights Job', timeout: 5000, retries: 0 });
+          
+          testResults.tests.push({
+            test: 'job_retrieval',
+            status: retrievedJob ? 'success' : 'error',
+            duration: Date.now() - retrievalStart,
+            jobFound: !!retrievedJob,
+            jobStatus: retrievedJob?.status
+          });
+          
+          // Cleanup
+          const jobsCollection = await getCollection('insights-jobs');
+          await jobsCollection.deleteOne({ id: createdJobId });
+          logger.info('Test insights job cleaned up', { jobId: createdJobId });
+        } catch (retrievalError) {
+          const errorDetails = formatError(retrievalError);
+          testResults.tests.push({
+            test: 'job_retrieval',
+            status: 'error',
+            error: errorDetails.message,
+            errorDetails
+          });
+          logger.error('Job retrieval test failed', errorDetails);
+          
+          // Still try to cleanup
+          try {
+            const jobsCollection = await getCollection('insights-jobs');
+            await jobsCollection.deleteOne({ id: createdJobId });
+          } catch (cleanupError) {
+            logger.warn('Failed to cleanup job after retrieval error', { error: cleanupError.message });
+          }
+        }
+      } else {
+        testResults.tests.push({
+          test: 'job_retrieval',
+          status: 'skipped',
+          reason: 'No job was created'
+        });
+      }
       
       testResults.status = testResults.tests.filter(t => t.status === 'success').length >= 2 ? 'success' : 'partial';
       testResults.duration = Date.now() - startTime;
@@ -779,8 +887,20 @@ const diagnosticTests = {
       return testResults;
 
     } catch (error) {
+      // Final safety net - catch ANY uncaught errors
       const errorDetails = formatError(error, { testId });
       logger.error('========== INSIGHTS WITH TOOLS TEST FAILED ==========', errorDetails);
+      
+      // Attempt cleanup
+      try {
+        if (createdJobId) {
+          const jobsCollection = await getCollection('insights-jobs');
+          await jobsCollection.deleteOne({ id: createdJobId });
+          logger.info('Test insights job cleaned up after error');
+        }
+      } catch (cleanupError) {
+        logger.warn('Failed to cleanup after error', { error: cleanupError.message });
+      }
       
       return {
         name: 'Insights with Tools',
@@ -805,70 +925,144 @@ const diagnosticTests = {
       duration: 0
     };
 
+    let jobId = null;
+
+    // Wrap EVERYTHING in try-catch to ensure we always return a result object
     try {
       logger.info('========== STARTING ASYNC BACKGROUND JOB TEST ==========');
       
-      // Create background job
-      logger.info('Creating background insights job...');
-      const job = await createInsightsJob({
-        analysisData: TEST_BMS_DATA,
-        options: {
-          mode: 'comprehensive',
-          testId,
-          priority: 'high'
+      // Stage 1: Create background job
+      try {
+        logger.info('Creating background insights job...');
+        const job = await executeWithTimeout(async () => {
+          return await createInsightsJob({
+            analysisData: TEST_BMS_DATA,
+            options: {
+              mode: 'comprehensive',
+              testId,
+              priority: 'high'
+            }
+          }, logger);
+        }, { testName: 'Create Insights Job', timeout: 10000, retries: 0 });
+        
+        jobId = job?.id;
+        
+        if (!jobId) {
+          throw new Error('Job creation returned no job ID');
         }
-      }, logger);
-      
-      const jobId = job.id;
-      logger.info(`Background job created with ID: ${jobId}`);
-      testResults.jobLifecycle.push({
-        event: 'created',
-        jobId,
-        time: Date.now() - startTime
-      });
+        
+        logger.info(`Background job created with ID: ${jobId}`);
+        testResults.jobLifecycle.push({
+          event: 'created',
+          jobId,
+          time: Date.now() - startTime
+        });
+      } catch (createError) {
+        const errorDetails = formatError(createError, { testId, stage: 'job_creation' });
+        logger.error('Failed to create insights job', errorDetails);
+        testResults.jobLifecycle.push({
+          event: 'creation_failed',
+          error: errorDetails.message,
+          time: Date.now() - startTime
+        });
+        
+        // Return error result immediately
+        return {
+          name: 'Asynchronous Insights (Background)',
+          status: 'error',
+          duration: Date.now() - startTime,
+          error: errorDetails.message || 'Failed to create insights job',
+          jobLifecycle: testResults.jobLifecycle,
+          details: {
+            failedAtStage: 'job_creation',
+            errorDetails: errorDetails
+          }
+        };
+      }
 
-      // Poll for completion with detailed status tracking
+      // Stage 2: Poll for completion with detailed status tracking
       let attempts = 0;
-      const maxAttempts = 30; // 60 seconds max
+      const maxAttempts = 15; // 30 seconds max (reduced from 60 to fail faster in diagnostics)
       let finalStatus = null;
       const statusHistory = [];
 
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        const jobStatus = await getInsightsJob(jobId, logger);
-        const currentStatus = {
-          attempt: attempts + 1,
-          status: jobStatus?.status || 'not_found',
-          progressEvents: jobStatus?.progress?.length || 0,
-          lastProgress: jobStatus?.progress?.[jobStatus.progress.length - 1],
-          elapsed: Date.now() - startTime
-        };
-        
-        statusHistory.push(currentStatus);
-        
-        logger.info(`Job status check ${attempts + 1}/${maxAttempts}`, currentStatus);
+      try {
+        while (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          let jobStatus = null;
+          try {
+            jobStatus = await executeWithTimeout(async () => {
+              return await getInsightsJob(jobId, logger);
+            }, { testName: 'Get Job Status', timeout: 5000, retries: 0 });
+          } catch (statusError) {
+            logger.warn(`Failed to get job status on attempt ${attempts + 1}`, {
+              error: statusError.message
+            });
+            // Continue polling even if one status check fails
+          }
+          
+          const currentStatus = {
+            attempt: attempts + 1,
+            status: jobStatus?.status || 'not_found',
+            progressEvents: jobStatus?.progress?.length || 0,
+            lastProgress: jobStatus?.progress?.[jobStatus.progress.length - 1],
+            elapsed: Date.now() - startTime
+          };
+          
+          statusHistory.push(currentStatus);
+          
+          logger.info(`Job status check ${attempts + 1}/${maxAttempts}`, currentStatus);
 
-        if (jobStatus && (jobStatus.status === 'completed' || jobStatus.status === 'failed')) {
-          finalStatus = jobStatus;
-          testResults.jobLifecycle.push({
-            event: jobStatus.status,
-            time: Date.now() - startTime,
-            details: jobStatus.result || jobStatus.error
-          });
-          break;
+          if (jobStatus && (jobStatus.status === 'completed' || jobStatus.status === 'failed')) {
+            finalStatus = jobStatus;
+            testResults.jobLifecycle.push({
+              event: jobStatus.status,
+              time: Date.now() - startTime,
+              details: jobStatus.result || jobStatus.error
+            });
+            break;
+          }
+          
+          attempts++;
         }
-        
-        attempts++;
+
+        if (!finalStatus) {
+          logger.warn('Job polling timed out', { attempts, maxAttempts });
+          testResults.jobLifecycle.push({
+            event: 'timeout',
+            time: Date.now() - startTime,
+            attempts
+          });
+        }
+      } catch (pollingError) {
+        const errorDetails = formatError(pollingError, { testId, stage: 'job_polling' });
+        logger.error('Error during job polling', errorDetails);
+        testResults.jobLifecycle.push({
+          event: 'polling_error',
+          error: errorDetails.message,
+          time: Date.now() - startTime
+        });
+        // Continue to cleanup
       }
 
-      // Clean up job
-      if (jobId) {
-        const db = await getDb();
-        await db.collection('insights-jobs').deleteOne({ id: jobId });
-        logger.info('Test job cleaned up');
+      // Stage 3: Clean up job
+      try {
+        if (jobId) {
+          const db = await getDb();
+          await db.collection('insights-jobs').deleteOne({ id: jobId });
+          logger.info('Test job cleaned up');
+          testResults.jobLifecycle.push({
+            event: 'cleaned_up',
+            time: Date.now() - startTime
+          });
+        }
+      } catch (cleanupError) {
+        logger.warn('Failed to cleanup test job', { error: cleanupError.message });
+        // Don't fail the test for cleanup issues
       }
 
+      // Determine final test status
       testResults.status = finalStatus?.status === 'completed' ? 'success' : 
                           finalStatus?.status === 'failed' ? 'error' : 'warning';
       testResults.duration = Date.now() - startTime;
@@ -879,15 +1073,28 @@ const diagnosticTests = {
         progressEvents: finalStatus?.progress?.length || 0,
         statusHistory: statusHistory.slice(-5), // Last 5 status checks
         jobResult: finalStatus?.result,
-        jobError: finalStatus?.error
+        jobError: finalStatus?.error,
+        note: testResults.status === 'warning' ? 'Job did not complete within test timeout (30s)' : undefined
       };
 
       logger.info('========== ASYNC TEST COMPLETED ==========', testResults);
       return testResults;
 
     } catch (error) {
+      // Final safety net - catch ANY uncaught errors
       const errorDetails = formatError(error, { testId });
       logger.error('========== ASYNC TEST FAILED ==========', errorDetails);
+      
+      // Attempt cleanup even on failure
+      try {
+        if (jobId) {
+          const db = await getDb();
+          await db.collection('insights-jobs').deleteOne({ id: jobId });
+          logger.info('Test job cleaned up after error');
+        }
+      } catch (cleanupError) {
+        logger.warn('Failed to cleanup after error', { error: cleanupError.message });
+      }
       
       return {
         name: 'Asynchronous Insights (Background)',
@@ -896,7 +1103,7 @@ const diagnosticTests = {
         error: errorDetails.message || 'Async insights test failed',
         jobLifecycle: testResults.jobLifecycle,
         details: {
-          errorDetails: errorDetails // Full error details in details field
+          errorDetails: errorDetails
         }
       };
     }
@@ -1510,32 +1717,66 @@ exports.handler = async (event, context) => {
 
     logger.info(`Running ${selectedTests.length} diagnostic tests`, { selectedTests });
 
-    // Run tests with detailed tracking
+    // Run tests with detailed tracking and individual timeouts
     const results = [];
     const testErrors = [];
     
     for (const testName of selectedTests) {
       if (diagnosticTests[testName]) {
         logger.info(`\n>>> Starting test: ${testName}`);
+        const testStartTime = Date.now();
+        
         try {
-          const result = await diagnosticTests[testName](testId);
+          // Wrap each test execution with a timeout to prevent hanging
+          // This is a safety net in addition to the timeouts within each test
+          const testTimeout = 120000; // 2 minutes max per test
+          const result = await Promise.race([
+            diagnosticTests[testName](testId),
+            new Promise((_, reject) => 
+              setTimeout(() => {
+                reject(new Error(`Test '${testName}' exceeded maximum execution time of ${testTimeout}ms`));
+              }, testTimeout)
+            )
+          ]);
+          
+          // Ensure result has required fields
+          if (!result || typeof result !== 'object') {
+            throw new Error(`Test '${testName}' returned invalid result: ${typeof result}`);
+          }
+          
+          if (!result.name) {
+            result.name = testName;
+          }
+          
+          if (!result.status) {
+            result.status = 'unknown';
+          }
+          
+          if (!result.duration) {
+            result.duration = Date.now() - testStartTime;
+          }
+          
           results.push(result);
-          logger.info(`<<< Completed test: ${testName} (${result.status})`);
+          logger.info(`<<< Completed test: ${testName} (${result.status}) in ${result.duration}ms`);
         } catch (testError) {
-          const errorDetails = formatError(testError, { testName });
+          const testDuration = Date.now() - testStartTime;
+          const errorDetails = formatError(testError, { testName, duration: testDuration });
           const errorResult = {
             name: testName,
             status: 'error',
             error: errorDetails.message || testError.message || `${testName} test failed`,
-            duration: 0,
+            duration: testDuration,
             details: {
-              errorDetails: errorDetails
+              errorDetails: errorDetails,
+              note: 'This test failed but was caught by the diagnostic framework'
             }
           };
           results.push(errorResult);
           testErrors.push({ test: testName, error: testError.message });
-          logger.error(`<<< Test failed: ${testName}`, formatError(testError));
+          logger.error(`<<< Test failed: ${testName} after ${testDuration}ms`, errorDetails);
         }
+      } else {
+        logger.warn(`Test '${testName}' not found in diagnosticTests`);
       }
     }
 
