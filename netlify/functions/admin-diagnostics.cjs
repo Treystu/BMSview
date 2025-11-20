@@ -1858,6 +1858,19 @@ exports.handler = async (event, context) => {
       errorDetails.stack ? `\n${errorDetails.stack.substring(0, 500)}` : null
     ].filter(Boolean).join('\n');
 
+    // Create a result entry for the system error so UI always has something to display
+    const systemErrorResult = {
+      name: 'System Initialization',
+      status: 'error',
+      error: detailedErrorMessage,
+      duration: Date.now() - requestStartTime,
+      details: {
+        errorDetails: errorDetails,
+        failureLocation: 'Handler level - critical system error before tests could run',
+        note: 'The diagnostic system failed to initialize. This usually indicates a configuration issue, missing dependencies, or a connectivity problem.'
+      }
+    };
+
     return {
       statusCode: 200,  // Return 200 for handled errors so frontend can parse response
       headers: {
@@ -1872,9 +1885,9 @@ exports.handler = async (event, context) => {
         error: detailedErrorMessage,
         timestamp: new Date().toISOString(),
         duration: Date.now() - requestStartTime,
-        results: [],
+        results: [systemErrorResult],  // ALWAYS include at least one result
         summary: {
-          total: 0,
+          total: 1,
           success: 0,
           partial: 0,
           warnings: 0,
