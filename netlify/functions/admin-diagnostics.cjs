@@ -1667,23 +1667,25 @@ const diagnosticTests = {
 // Main handler with comprehensive error handling and verbose logging
 exports.handler = async (event, context) => {
   const requestStartTime = Date.now();
-  const testId = generateTestId();
+  let testId = 'unknown';
   
-  // Update logger with actual request context
-  logger = createLogger('admin-diagnostics', context);
-  
-  logger.info('========================================');
-  logger.info('ADMIN DIAGNOSTICS STARTED');
-  logger.info('========================================');
-  logger.info('Diagnostic run initiated', {
-    testId,
-    timestamp: new Date().toISOString(),
-    method: event.httpMethod,
-    requestId: context.requestId,
-    environment: process.env.NODE_ENV || 'production'
-  });
-
   try {
+    // Wrap EVERYTHING in try-catch to prevent unhandled exceptions
+    testId = generateTestId();
+    
+    // Update logger with actual request context
+    logger = createLogger('admin-diagnostics', context);
+    
+    logger.info('========================================');
+    logger.info('ADMIN DIAGNOSTICS STARTED');
+    logger.info('========================================');
+    logger.info('Diagnostic run initiated', {
+      testId,
+      timestamp: new Date().toISOString(),
+      method: event.httpMethod,
+      requestId: context.requestId,
+      environment: process.env.NODE_ENV || 'production'
+    });
     // Handle CORS
     if (event.httpMethod === 'OPTIONS') {
       return {
@@ -1848,6 +1850,14 @@ exports.handler = async (event, context) => {
       logger.error('Cleanup failed after system error', formatError(cleanupError));
     }
 
+    // Even on critical failure, provide detailed error information
+    const detailedErrorMessage = [
+      errorDetails.message || error.message || 'Critical system failure',
+      errorDetails.type ? `Error Type: ${errorDetails.type}` : null,
+      errorDetails.code ? `Error Code: ${errorDetails.code}` : null,
+      errorDetails.stack ? `\n${errorDetails.stack.substring(0, 500)}` : null
+    ].filter(Boolean).join('\n');
+
     return {
       statusCode: 200,  // Return 200 for handled errors so frontend can parse response
       headers: {
@@ -1859,15 +1869,23 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         status: 'error',
         testId,
-        error: errorDetails.message || error.message || 'Critical system failure',
+        error: detailedErrorMessage,
         timestamp: new Date().toISOString(),
         duration: Date.now() - requestStartTime,
         results: [],
+        summary: {
+          total: 0,
+          success: 0,
+          partial: 0,
+          warnings: 0,
+          errors: 1
+        },
         metadata: {
           requestId: context.requestId
         },
         details: {
-          errorDetails: errorDetails
+          errorDetails: errorDetails,
+          failureLocation: 'Handler level - critical system error before tests could run'
         }
       }, null, 2)
     };
