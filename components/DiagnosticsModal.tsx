@@ -53,6 +53,55 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
 
   if (!isOpen) return null;
 
+  // Component to show live test status
+  const LiveTestStatus: React.FC<{ name: string; result?: DiagnosticTestResult }> = ({ name, result }) => {
+    const status = result?.status || 'pending';
+    const duration = result?.duration;
+    
+    return (
+      <div className="flex items-center justify-between bg-gray-800/50 rounded px-3 py-2 text-sm">
+        <div className="flex items-center flex-1">
+          {!result ? (
+            <>
+              <SpinnerIcon className="w-4 h-4 text-blue-400 mr-2" />
+              <span className="text-gray-400">{name}</span>
+              <span className="ml-2 text-xs text-blue-400">running...</span>
+            </>
+          ) : (
+            <>
+              <span className={`mr-2 ${getStatusColor(status)}`}>
+                {getStatusIcon(status)}
+              </span>
+              <span className={status === 'success' ? 'text-green-400' : status === 'error' ? 'text-red-400' : status === 'warning' ? 'text-yellow-400' : 'text-gray-300'}>
+                {name}
+              </span>
+              {duration !== undefined && (
+                <span className="ml-2 text-xs text-gray-500">
+                  {duration}ms
+                </span>
+              )}
+              {result.steps && result.steps.length > 0 && (
+                <span className="ml-2 text-xs text-gray-500">
+                  • {result.steps.length} steps
+                </span>
+              )}
+              {result.tests && result.tests.length > 0 && (
+                <span className="ml-2 text-xs text-gray-500">
+                  • {result.tests.length} tests
+                </span>
+              )}
+              {result.stages && result.stages.length > 0 && (
+                <span className="ml-2 text-xs text-gray-500">
+                  • {result.stages.length} stages
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const toggleSection = (sectionKey: string) => {
     const newExpanded = new Set(expandedSections);
     if (newExpanded.has(sectionKey)) {
@@ -203,97 +252,71 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
 
         {isLoading ? (
           <div className="space-y-4">
-            <div className="bg-gray-700 p-6 rounded-md">
-              <div className="flex items-center justify-center mb-4">
-                <SpinnerIcon className="w-8 h-8 text-secondary" />
-                <span className="ml-4 text-lg font-semibold">Running Diagnostic Tests...</span>
-              </div>
-              <div className="text-center text-sm text-gray-400 mb-4">
-                <p>All tests are running in parallel for maximum efficiency</p>
-                <p>Completes in 15-25 seconds (Netlify function timeout limit)</p>
-              </div>
-              
-              {/* Show what tests will run */}
-              <div className="mt-4">
-                <h4 className="text-sm font-semibold text-gray-300 mb-2">Tests in Progress:</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-                  {results?.summary ? (
-                    // If we have partial results, show them
-                    <>
-                      <div className="flex items-center text-green-400">
-                        <span className="mr-1">✔</span> Completed: {results.summary.success}
-                      </div>
-                      <div className="flex items-center text-red-400">
-                        <span className="mr-1">✖</span> Failed: {results.summary.errors}
-                      </div>
-                      <div className="flex items-center text-gray-400">
-                        <span className="mr-1">↻</span> Running: {results.summary.total - results.summary.success - results.summary.errors}
-                      </div>
-                    </>
-                  ) : (
-                    // Show expected test categories (counts match ALL_DIAGNOSTIC_TESTS in AdminDashboard.tsx)
-                    // Infrastructure: database, gemini (2)
-                    // Core Analysis: analyze, insightsWithTools, asyncAnalysis (3)
-                    // Data Management: history, systems, dataExport, idempotency (4)
-                    // External Services: weather, solarEstimate, predictiveMaintenance, systemAnalytics (4)
-                    // System Utilities: contentHashing, errorHandling, logging, retryMechanism, timeout (5)
-                    <>
-                      <div className="text-gray-400">• Infrastructure (2)</div>
-                      <div className="text-gray-400">• Core Analysis (3)</div>
-                      <div className="text-gray-400">• Data Management (4)</div>
-                      <div className="text-gray-400">• External Services (4)</div>
-                      <div className="text-gray-400">• System Utilities (5)</div>
-                    </>
-                  )}
+            {/* LIVE Test Status - Show each test as it runs */}
+            <div className="bg-gray-700 p-4 rounded-md">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center">
+                  <SpinnerIcon className="w-6 h-6 text-secondary" />
+                  <span className="ml-3 text-lg font-semibold">Running Diagnostic Tests</span>
                 </div>
+                <span className="text-sm text-gray-400">15-25 seconds</span>
               </div>
               
-              {/* Progress indication */}
-              <div className="mt-6">
+              {/* Live Test List - Shows each test with real-time status */}
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {/* Infrastructure Tests */}
+                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">Infrastructure (2)</div>
+                <LiveTestStatus name="Database Connection" result={results?.results?.find(r => r.name === 'Database Connection')} />
+                <LiveTestStatus name="Gemini API" result={results?.results?.find(r => r.name === 'Gemini API')} />
+                
+                {/* Core Analysis Tests */}
+                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">Core Analysis (3)</div>
+                <LiveTestStatus name="Analyze Endpoint" result={results?.results?.find(r => r.name === 'Analyze Endpoint')} />
+                <LiveTestStatus name="Insights with Tools" result={results?.results?.find(r => r.name === 'Insights with Tools')} />
+                <LiveTestStatus name="Asynchronous Insights (Background)" result={results?.results?.find(r => r.name === 'Asynchronous Insights (Background)')} />
+                
+                {/* Data Management Tests */}
+                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">Data Management (4)</div>
+                <LiveTestStatus name="History Endpoint" result={results?.results?.find(r => r.name === 'History Endpoint')} />
+                <LiveTestStatus name="Systems Endpoint" result={results?.results?.find(r => r.name === 'Systems Endpoint')} />
+                <LiveTestStatus name="Data Export" result={results?.results?.find(r => r.name === 'Data Export')} />
+                <LiveTestStatus name="Idempotency" result={results?.results?.find(r => r.name === 'Idempotency')} />
+                
+                {/* External Services Tests */}
+                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">External Services (4)</div>
+                <LiveTestStatus name="Weather Endpoint" result={results?.results?.find(r => r.name === 'Weather Endpoint')} />
+                <LiveTestStatus name="Solar Estimate Endpoint" result={results?.results?.find(r => r.name === 'Solar Estimate Endpoint')} />
+                <LiveTestStatus name="Predictive Maintenance" result={results?.results?.find(r => r.name === 'Predictive Maintenance')} />
+                <LiveTestStatus name="System Analytics" result={results?.results?.find(r => r.name === 'System Analytics')} />
+                
+                {/* System Utilities Tests */}
+                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">System Utilities (5)</div>
+                <LiveTestStatus name="Content Hashing" result={results?.results?.find(r => r.name === 'Content Hashing')} />
+                <LiveTestStatus name="Error Handling" result={results?.results?.find(r => r.name === 'Error Handling')} />
+                <LiveTestStatus name="Logging System" result={results?.results?.find(r => r.name === 'Logging System')} />
+                <LiveTestStatus name="Retry Mechanism" result={results?.results?.find(r => r.name === 'Retry Mechanism')} />
+                <LiveTestStatus name="Timeout Handling" result={results?.results?.find(r => r.name === 'Timeout Handling')} />
+              </div>
+              
+              {/* Overall Progress */}
+              <div className="mt-4 pt-4 border-t border-gray-600">
                 <div className="h-2 bg-gray-600 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-secondary transition-all duration-500 ease-out"
                     style={{ 
                       width: results?.summary 
-                        ? `${((results.summary.success + results.summary.errors) / results.summary.total * 100)}%`
-                        : '10%'
+                        ? `${((results.summary.success + results.summary.errors + (results.summary.warnings || 0)) / results.summary.total * 100)}%`
+                        : '5%'
                     }}
                   />
                 </div>
                 <div className="text-center text-xs text-gray-400 mt-2">
                   {results?.summary 
-                    ? `${results.summary.success + results.summary.errors} of ${results.summary.total} tests completed`
-                    : 'Initializing tests...'}
+                    ? `${results.summary.success + results.summary.errors + (results.summary.warnings || 0)} of ${results.summary.total} tests completed`
+                    : 'Starting tests...'}
                 </div>
               </div>
             </div>
-            
-            {/* Show any completed tests while others are running */}
-            {results?.results && results.results.length > 0 && (
-              <div className="bg-gray-700/50 p-4 rounded-md">
-                <h4 className="text-sm font-semibold text-gray-300 mb-3">Completed Tests:</h4>
-                <div className="space-y-2">
-                  {results.results.slice(0, 5).map((result, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-sm">
-                      <div className="flex items-center">
-                        <span className={`mr-2 ${getStatusColor(result.status)}`}>
-                          {getStatusIcon(result.status)}
-                        </span>
-                        <span>{result.name}</span>
-                      </div>
-                      <span className="text-xs text-gray-400">
-                        {result.duration ? `${result.duration}ms` : ''}
-                      </span>
-                    </div>
-                  ))}
-                  {results.results.length > 5 && (
-                    <div className="text-xs text-gray-400 text-center">
-                      + {results.results.length - 5} more...
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         ) : (
           <>
