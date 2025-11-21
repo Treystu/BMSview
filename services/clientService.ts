@@ -1794,11 +1794,10 @@ export interface DiagnosticsResponse {
 export const runDiagnostics = async (selectedTests?: string[]): Promise<DiagnosticsResponse> => {
     log('info', 'Running system diagnostics.', { selectedTests });
 
-    // Diagnostics can take 30+ seconds with parallel execution
-    // Use a 120-second timeout to ensure all tests can complete
-    // (Netlify Functions timeout is 10s default, 26s for paid plans, but we'll be generous)
+    // Netlify Functions have a hard timeout of 26 seconds (10s free tier, 26s paid)
+    // Set client timeout to 25 seconds to allow for response handling before Netlify cuts off
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     try {
         const headers = {

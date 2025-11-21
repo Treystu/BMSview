@@ -53,6 +53,55 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
 
   if (!isOpen) return null;
 
+  // Component to show live test status
+  const LiveTestStatus: React.FC<{ name: string; result?: DiagnosticTestResult }> = ({ name, result }) => {
+    const status = result?.status || 'pending';
+    const duration = result?.duration;
+    
+    return (
+      <div className="flex items-center justify-between bg-gray-800/50 rounded px-3 py-2 text-sm">
+        <div className="flex items-center flex-1">
+          {!result ? (
+            <>
+              <SpinnerIcon className="w-4 h-4 text-blue-400 mr-2" />
+              <span className="text-gray-400">{name}</span>
+              <span className="ml-2 text-xs text-blue-400">running...</span>
+            </>
+          ) : (
+            <>
+              <span className={`mr-2 ${getStatusColor(status)}`}>
+                {getStatusIcon(status)}
+              </span>
+              <span className={status === 'success' ? 'text-green-400' : status === 'error' ? 'text-red-400' : status === 'warning' ? 'text-yellow-400' : 'text-gray-300'}>
+                {name}
+              </span>
+              {duration !== undefined && (
+                <span className="ml-2 text-xs text-gray-500">
+                  {duration}ms
+                </span>
+              )}
+              {result.steps && result.steps.length > 0 && (
+                <span className="ml-2 text-xs text-gray-500">
+                  • {result.steps.length} steps
+                </span>
+              )}
+              {result.tests && result.tests.length > 0 && (
+                <span className="ml-2 text-xs text-gray-500">
+                  • {result.tests.length} tests
+                </span>
+              )}
+              {result.stages && result.stages.length > 0 && (
+                <span className="ml-2 text-xs text-gray-500">
+                  • {result.stages.length} stages
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const toggleSection = (sectionKey: string) => {
     const newExpanded = new Set(expandedSections);
     if (newExpanded.has(sectionKey)) {
@@ -202,9 +251,72 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
         </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <SpinnerIcon className="w-8 h-8 text-secondary" />
-            <span className="ml-4 text-lg">Running diagnostic tests... (this may take up to 60 seconds)</span>
+          <div className="space-y-4">
+            {/* LIVE Test Status - Show each test as it runs */}
+            <div className="bg-gray-700 p-4 rounded-md">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center">
+                  <SpinnerIcon className="w-6 h-6 text-secondary" />
+                  <span className="ml-3 text-lg font-semibold">Running Diagnostic Tests</span>
+                </div>
+                <span className="text-sm text-gray-400">15-25 seconds</span>
+              </div>
+              
+              {/* Live Test List - Shows each test with real-time status */}
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {/* Infrastructure Tests */}
+                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">Infrastructure (2)</div>
+                <LiveTestStatus name="Database Connection" result={results?.results?.find(r => r.name === 'Database Connection')} />
+                <LiveTestStatus name="Gemini API" result={results?.results?.find(r => r.name === 'Gemini API')} />
+                
+                {/* Core Analysis Tests */}
+                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">Core Analysis (3)</div>
+                <LiveTestStatus name="Analyze Endpoint" result={results?.results?.find(r => r.name === 'Analyze Endpoint')} />
+                <LiveTestStatus name="Insights with Tools" result={results?.results?.find(r => r.name === 'Insights with Tools')} />
+                <LiveTestStatus name="Asynchronous Insights (Background)" result={results?.results?.find(r => r.name === 'Asynchronous Insights (Background)')} />
+                
+                {/* Data Management Tests */}
+                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">Data Management (4)</div>
+                <LiveTestStatus name="History Endpoint" result={results?.results?.find(r => r.name === 'History Endpoint')} />
+                <LiveTestStatus name="Systems Endpoint" result={results?.results?.find(r => r.name === 'Systems Endpoint')} />
+                <LiveTestStatus name="Data Export" result={results?.results?.find(r => r.name === 'Data Export')} />
+                <LiveTestStatus name="Idempotency" result={results?.results?.find(r => r.name === 'Idempotency')} />
+                
+                {/* External Services Tests */}
+                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">External Services (4)</div>
+                <LiveTestStatus name="Weather Endpoint" result={results?.results?.find(r => r.name === 'Weather Endpoint')} />
+                <LiveTestStatus name="Solar Estimate Endpoint" result={results?.results?.find(r => r.name === 'Solar Estimate Endpoint')} />
+                <LiveTestStatus name="Predictive Maintenance" result={results?.results?.find(r => r.name === 'Predictive Maintenance')} />
+                <LiveTestStatus name="System Analytics" result={results?.results?.find(r => r.name === 'System Analytics')} />
+                
+                {/* System Utilities Tests */}
+                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">System Utilities (5)</div>
+                <LiveTestStatus name="Content Hashing" result={results?.results?.find(r => r.name === 'Content Hashing')} />
+                <LiveTestStatus name="Error Handling" result={results?.results?.find(r => r.name === 'Error Handling')} />
+                <LiveTestStatus name="Logging System" result={results?.results?.find(r => r.name === 'Logging System')} />
+                <LiveTestStatus name="Retry Mechanism" result={results?.results?.find(r => r.name === 'Retry Mechanism')} />
+                <LiveTestStatus name="Timeout Handling" result={results?.results?.find(r => r.name === 'Timeout Handling')} />
+              </div>
+              
+              {/* Overall Progress */}
+              <div className="mt-4 pt-4 border-t border-gray-600">
+                <div className="h-2 bg-gray-600 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-secondary transition-all duration-500 ease-out"
+                    style={{ 
+                      width: results?.summary 
+                        ? `${((results.summary.success + results.summary.errors + (results.summary.warnings || 0)) / results.summary.total * 100)}%`
+                        : '5%'
+                    }}
+                  />
+                </div>
+                <div className="text-center text-xs text-gray-400 mt-2">
+                  {results?.summary 
+                    ? `${results.summary.success + results.summary.errors + (results.summary.warnings || 0)} of ${results.summary.total} tests completed`
+                    : 'Starting tests...'}
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           <>
