@@ -498,6 +498,32 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
         </div>
       )}
 
+      {result.needsReview && result.validationWarnings && result.validationWarnings.length > 0 && (
+        <div className="mb-6 p-4 bg-orange-50 border-l-4 border-orange-500 rounded-r-lg">
+          <div className="flex items-start">
+            <svg className="h-6 w-6 text-orange-500 mr-3 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div className="flex-1">
+              <h4 className="text-lg font-semibold text-orange-800 mb-2">⚠️ Data Integrity Warning</h4>
+              <p className="text-orange-700 mb-3">
+                The AI may have misread some values from this screenshot. Please review the data below carefully and manually verify critical readings.
+              </p>
+              <details className="mt-2">
+                <summary className="cursor-pointer font-medium text-orange-800 hover:underline text-sm">
+                  Show validation warnings ({result.validationWarnings.length})
+                </summary>
+                <ul className="mt-2 list-disc list-inside space-y-1 text-orange-700 text-sm bg-orange-100 p-3 rounded-md">
+                  {result.validationWarnings.map((warning, index) => (
+                    <li key={index}>{warning}</li>
+                  ))}
+                </ul>
+              </details>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isActualError && !isDuplicate && (
         <div className="p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg">
           <div className="flex items-start">

@@ -94,6 +94,8 @@ export interface AnalysisRecord {
   weather?: WeatherData;
   dlNumber?: string | null;
   fileName?: string;
+  needsReview?: boolean;
+  validationWarnings?: string[];
 }
 
 export interface DisplayableAnalysisResult {
@@ -109,4 +111,6 @@ export interface DisplayableAnalysisResult {
   jobId?: string;
   forcedSystemId?: string;
   submittedAt?: number;
+  needsReview?: boolean;
+  validationWarnings?: string[];
 }
