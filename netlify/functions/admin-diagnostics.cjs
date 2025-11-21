@@ -1527,6 +1527,7 @@ const diagnosticTests = {
       // Stage 3: Analyze trends
       logger.info('Stage 3/4: Analyzing degradation trends...');
       const socTrend = trendData.map(r => r.data.soc);
+      // Calculate average SOC degradation per day across the trend period
       const avgDegradation = socTrend.length > 1 ? 
         (socTrend[0] - socTrend[socTrend.length - 1]) / (socTrend.length - 1) : 0;
       testResults.stages.push({ 
@@ -2280,6 +2281,11 @@ const diagnosticTests = {
       duration: 0
     };
 
+    // Test timeout constants
+    const SLOW_OPERATION_TIMEOUT = 10000; // 10 seconds (simulated slow operation)
+    const ENFORCED_TIMEOUT = 100; // 100ms (should trigger timeout)
+    const FAST_OPERATION_TIMEOUT = 5000; // 5 seconds (should complete immediately)
+
     try {
       logger.info('========== STARTING TIMEOUT HANDLING TEST ==========');
       
@@ -2290,8 +2296,8 @@ const diagnosticTests = {
       try {
         const timeoutStart = Date.now();
         await executeWithTimeout(
-          () => new Promise(resolve => setTimeout(resolve, 10000)),
-          { testName: 'Timeout Test', timeout: 100, retries: 0 }
+          () => new Promise(resolve => setTimeout(resolve, SLOW_OPERATION_TIMEOUT)),
+          { testName: 'Timeout Test', timeout: ENFORCED_TIMEOUT, retries: 0 }
         );
       } catch (error) {
         timeoutDuration = Date.now() - startTime;
@@ -2302,7 +2308,7 @@ const diagnosticTests = {
         status: timeoutCaught ? 'success' : 'error',
         timeoutDetected: timeoutCaught,
         actualDuration: timeoutDuration,
-        expectedMax: 100,
+        expectedMax: ENFORCED_TIMEOUT,
         time: Date.now() - startTime 
       });
       
@@ -2312,7 +2318,7 @@ const diagnosticTests = {
       try {
         await executeWithTimeout(
           () => Promise.resolve('success'),
-          { testName: 'Fast Op Test', timeout: 5000, retries: 0 }
+          { testName: 'Fast Op Test', timeout: FAST_OPERATION_TIMEOUT, retries: 0 }
         );
         fastOpCompleted = true;
       } catch (error) {
@@ -2344,7 +2350,7 @@ const diagnosticTests = {
       testResults.duration = Date.now() - startTime;
       testResults.details = {
         timeoutEnforced: timeoutCaught,
-        timeoutThreshold: 100,
+        timeoutThreshold: ENFORCED_TIMEOUT,
         fastOperationsAllowed: fastOpCompleted,
         customTimeoutsSupported: true,
         allTestsPassed: testResults.tests.every(t => t.status === 'success')

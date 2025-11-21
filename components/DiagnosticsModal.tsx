@@ -231,7 +231,12 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                       </div>
                     </>
                   ) : (
-                    // Show expected test categories
+                    // Show expected test categories (counts match ALL_DIAGNOSTIC_TESTS in AdminDashboard.tsx)
+                    // Infrastructure: database, gemini (2)
+                    // Core Analysis: analyze, insightsWithTools, asyncAnalysis (3)
+                    // Data Management: history, systems, dataExport, idempotency (4)
+                    // External Services: weather, solarEstimate, predictiveMaintenance, systemAnalytics (4)
+                    // System Utilities: contentHashing, errorHandling, logging, retryMechanism, timeout (5)
                     <>
                       <div className="text-gray-400">• Infrastructure (2)</div>
                       <div className="text-gray-400">• Core Analysis (3)</div>
