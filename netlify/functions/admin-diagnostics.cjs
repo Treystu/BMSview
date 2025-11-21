@@ -10,7 +10,65 @@ const crypto = require('crypto');
 // Will be updated with actual context in the handler
 let logger = createLogger('admin-diagnostics', {});
 
-// Test data based on actual BMS screenshot
+// Global variable to hold real production BMS data (populated at runtime)
+let REAL_BMS_DATA = null;
+
+// Helper function to get REAL production BMS data from the database
+// This replaces the fake TEST_BMS_DATA with actual production data
+const getRealProductionData = async () => {
+  try {
+    const db = await getDb();
+    
+    // Get the most recent real analysis record
+    const recentAnalysis = await db.collection('analysis-results')
+      .find({ 
+        'analysis.testData': { $ne: true }, // Exclude test data
+        'analysis.voltage': { $exists: true } // Must have actual BMS data
+      })
+      .sort({ timestamp: -1 })
+      .limit(1)
+      .toArray();
+    
+    if (recentAnalysis && recentAnalysis.length > 0 && recentAnalysis[0].analysis) {
+      logger.info('Using REAL production BMS data from database', {
+        recordId: recentAnalysis[0]._id,
+        timestamp: recentAnalysis[0].timestamp,
+        fileName: recentAnalysis[0].fileName
+      });
+      return {
+        ...recentAnalysis[0].analysis,
+        _sourceRecordId: recentAnalysis[0]._id,
+        _sourceTimestamp: recentAnalysis[0].timestamp,
+        _isRealProductionData: true
+      };
+    }
+    
+    // Fallback: If no real data exists yet, use realistic test data but mark it clearly
+    logger.warn('No real production data found in database - using fallback test data');
+    return {
+      ...TEST_BMS_DATA,
+      _isRealProductionData: false,
+      _note: 'No real BMS data available in database yet - upload a screenshot first'
+    };
+    
+  } catch (error) {
+    logger.error('Failed to retrieve real production data', formatError(error));
+    // Fallback to test data if database query fails
+    return {
+      ...TEST_BMS_DATA,
+      _isRealProductionData: false,
+      _note: 'Database query failed - using test data as fallback'
+    };
+  }
+};
+
+// Helper function to get BMS data for tests - uses REAL data when available
+const getBmsDataForTest = () => {
+  // Use real production data if available, otherwise fall back to test data
+  return REAL_BMS_DATA || TEST_BMS_DATA;
+};
+
+// Test data based on actual BMS screenshot - ONLY used as fallback if no real data exists
 const TEST_BMS_DATA = {
   voltage: 53.4,
   current: 1.7,
@@ -395,22 +453,23 @@ const diagnosticTests = {
       // Test 2: Complex BMS analysis
       logger.info('Test 2/3: Complex BMS data analysis...');
       try {
+        const bmsData = getBmsDataForTest(); // Use REAL production data
         const complexPrompt = `Analyze this battery management system data and provide a detailed health assessment:
           
-          System ID: ${TEST_BMS_DATA.deviceId}
-          Voltage: ${TEST_BMS_DATA.voltage}V
-          Current: ${TEST_BMS_DATA.current}A  
-          State of Charge: ${TEST_BMS_DATA.soc}%
-          Capacity: ${TEST_BMS_DATA.capacity}Ah
-          Power: ${TEST_BMS_DATA.power}W
-          Cycles: ${TEST_BMS_DATA.cycles}
-          Cell Voltage Delta: ${TEST_BMS_DATA.cellVoltageDelta}V
-          Max Cell: ${TEST_BMS_DATA.maxCellVoltage}V
-          Min Cell: ${TEST_BMS_DATA.minCellVoltage}V
-          Temperature: ${TEST_BMS_DATA.temperature}°C
-          Charge MOS: ${TEST_BMS_DATA.chargeMosStatus ? 'ON' : 'OFF'}
-          Discharge MOS: ${TEST_BMS_DATA.dischargeMosStatus ? 'ON' : 'OFF'}
-          Balance: ${TEST_BMS_DATA.balanceStatus ? 'ACTIVE' : 'INACTIVE'}
+          System ID: ${bmsData.deviceId}
+          Voltage: ${bmsData.voltage}V
+          Current: ${bmsData.current}A  
+          State of Charge: ${bmsData.soc}%
+          Capacity: ${bmsData.capacity}Ah
+          Power: ${bmsData.power}W
+          Cycles: ${bmsData.cycles}
+          Cell Voltage Delta: ${bmsData.cellVoltageDelta}V
+          Max Cell: ${bmsData.maxCellVoltage}V
+          Min Cell: ${bmsData.minCellVoltage}V
+          Temperature: ${bmsData.temperature}°C
+          Charge MOS: ${bmsData.chargeMosStatus ? 'ON' : 'OFF'}
+          Discharge MOS: ${bmsData.dischargeMosStatus ? 'ON' : 'OFF'}
+          Balance: ${bmsData.balanceStatus ? 'ACTIVE' : 'INACTIVE'}
           
           Provide:
           1. Overall health status (Good/Warning/Critical)
@@ -438,10 +497,12 @@ const diagnosticTests = {
                           complexResult.toLowerCase().includes('warning') ||
                           complexResult.toLowerCase().includes('critical'),
           hasRecommendations: complexResult.toLowerCase().includes('recommend'),
-          responsePreview: complexResult.substring(0, 200)
+          responsePreview: complexResult.substring(0, 200),
+          usingRealData: bmsData._isRealProductionData || false
         });
         logger.info('Gemini complex analysis test passed', { 
-          responseLength: complexResult.length 
+          responseLength: complexResult.length,
+          usingRealData: bmsData._isRealProductionData
         });
       } catch (error) {
         const errorDetails = formatError(error);
@@ -457,9 +518,10 @@ const diagnosticTests = {
       // Test 3: Function calling capabilities
       logger.info('Test 3/3: Function calling capabilities...');
       try {
+        const bmsData = getBmsDataForTest(); // Use REAL production data
         const functionResult = await executeWithTimeout(async () => {
           const result = await client.callAPI(
-            `Analyze this battery: Voltage=${TEST_BMS_DATA.voltage}V, SOC=${TEST_BMS_DATA.soc}%. ` +
+            `Analyze this battery: Voltage=${bmsData.voltage}V, SOC=${bmsData.soc}%. ` +
             `Call the analyze_battery_health function with appropriate values.`,
             {
               model: modelName,
@@ -2438,6 +2500,17 @@ exports.handler = async (event, context) => {
     }
 
     logger.info(`Running ${selectedTests.length} diagnostic tests IN PARALLEL`, { selectedTests });
+
+    // CRITICAL: Fetch REAL production BMS data before running tests
+    // This ensures all tests use actual production data instead of mock data
+    logger.info('Fetching REAL production BMS data from database...');
+    REAL_BMS_DATA = await getRealProductionData();
+    logger.info('Production data loaded', { 
+      isRealData: REAL_BMS_DATA._isRealProductionData,
+      voltage: REAL_BMS_DATA.voltage,
+      soc: REAL_BMS_DATA.soc,
+      note: REAL_BMS_DATA._note
+    });
 
     // Run ALL tests in PARALLEL for faster execution (like GitHub PR checks)
     // Each test is completely independent and reports its own result
