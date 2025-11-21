@@ -2,46 +2,13 @@ const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger } = require("./utils/logger.cjs");
 const { ObjectId } = require('mongodb'); // Needed for BulkWrite operations
+const { fetchHistoricalWeather, fetchHourlyWeather, getDaylightHours } = require("./utils/weather-fetcher.cjs");
 
 const respond = (statusCode, body) => ({
     statusCode,
     body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json' },
 });
-
-// Helper function to call the weather Netlify function
-const callWeatherFunction = async (lat, lon, timestamp, log) => {
-    // Build weather URL with fallback for development
-    const baseUrl = process.env.URL || 'http://localhost:8888';
-    const weatherUrl = `${baseUrl}/.netlify/functions/weather`;
-    const logContext = { lat, lon, timestamp, weatherUrl, hasEnvUrl: !!process.env.URL };
-    
-    // Validate required parameters
-    if (!lat || !lon) {
-        log('warn', 'Missing required parameters for weather function.', logContext);
-        return null;
-    }
-    
-    log('debug', 'Calling weather function.', logContext);
-    try {
-        const response = await fetch(weatherUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat, lon, timestamp }),
-        });
-        if (!response.ok) {
-            const errorBody = await response.text();
-            log('warn', 'Weather function call failed.', { ...logContext, status: response.status, errorBody });
-            return null;
-        }
-        const data = await response.json();
-        log('debug', 'Weather function call successful.', { ...logContext, hasWeatherData: !!data });
-        return data;
-    } catch (error) {
-        log('error', 'Error calling weather function.', { ...logContext, errorMessage: error.message, errorStack: error.stack });
-        return null;
-    }
-};
 
 
 exports.handler = async function(event, context) {
@@ -227,7 +194,7 @@ exports.handler = async function(event, context) {
                     const location = systemLocationMap.get(record.systemId);
                     if (location && record.timestamp) {
                         try {
-                            const weatherData = await callWeatherFunction(location.lat, location.lon, record.timestamp, log);
+                            const weatherData = await fetchHistoricalWeather(location.lat, location.lon, record.timestamp, log);
                             if (weatherData) {
                                 bulkOps.push({
                                     updateOne: {
@@ -278,6 +245,182 @@ exports.handler = async function(event, context) {
                 
                 log('info', 'Backfill-weather task complete.', { ...postLogContext, updatedCount, errorCount });
                 return respond(200, { success: true, updatedCount, errorCount });
+            }
+
+            // --- Hourly Cloud Backfill Action ---
+            if (action === 'hourly-cloud-backfill') {
+                log('info', 'Starting hourly-cloud-backfill task.', postLogContext);
+                
+                // Get systems with location data
+                const systemsWithLocation = await systemsCollection.find({ 
+                    latitude: { $ne: null }, 
+                    longitude: { $ne: null } 
+                }).toArray();
+                
+                if (systemsWithLocation.length === 0) {
+                    log('warn', 'No systems with location data found.', postLogContext);
+                    return respond(200, { success: true, message: 'No systems with location data.', processedDays: 0 });
+                }
+                
+                const hourlyWeatherCollection = await getCollection("hourly-weather");
+                let totalProcessedDays = 0;
+                let totalHoursInserted = 0;
+                let totalErrors = 0;
+                
+                // Process each system
+                for (const system of systemsWithLocation) {
+                    const systemLogContext = { 
+                        ...postLogContext, 
+                        systemId: system.id, 
+                        systemName: system.name 
+                    };
+                    log('info', 'Processing hourly cloud backfill for system.', systemLogContext);
+                    
+                    // Get min and max dates for this system's analysis records
+                    const dateRange = await historyCollection.aggregate([
+                        { $match: { systemId: system.id, timestamp: { $exists: true, $ne: null } } },
+                        { 
+                            $group: {
+                                _id: null,
+                                minDate: { $min: '$timestamp' },
+                                maxDate: { $max: '$timestamp' }
+                            }
+                        }
+                    ]).toArray();
+                    
+                    if (dateRange.length === 0 || !dateRange[0].minDate) {
+                        log('info', 'No analysis records with timestamps for system, skipping.', systemLogContext);
+                        continue;
+                    }
+                    
+                    const minDate = new Date(dateRange[0].minDate);
+                    const maxDate = new Date(dateRange[0].maxDate);
+                    log('info', 'Date range for system.', { 
+                        ...systemLogContext, 
+                        minDate: minDate.toISOString(), 
+                        maxDate: maxDate.toISOString() 
+                    });
+                    
+                    // Iterate through each date in the range
+                    const currentDate = new Date(minDate);
+                    currentDate.setHours(0, 0, 0, 0); // Start at beginning of day
+                    
+                    while (currentDate <= maxDate) {
+                        const dateStr = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD
+                        const dateLogContext = { ...systemLogContext, date: dateStr };
+                        
+                        // Check if we already have hourly data for this date/system
+                        const existingRecord = await hourlyWeatherCollection.findOne({
+                            systemId: system.id,
+                            date: dateStr
+                        });
+                        
+                        if (existingRecord) {
+                            log('debug', 'Hourly weather data already exists for date, skipping.', dateLogContext);
+                            currentDate.setDate(currentDate.getDate() + 1);
+                            continue;
+                        }
+                        
+                        try {
+                            // Get daylight hours for this date/location
+                            const daylightHours = getDaylightHours(system.latitude, system.longitude, currentDate);
+                            
+                            if (daylightHours.length === 0) {
+                                log('debug', 'No daylight hours for date (polar night?), skipping.', dateLogContext);
+                                currentDate.setDate(currentDate.getDate() + 1);
+                                continue;
+                            }
+                            
+                            // Fetch hourly weather data for the day
+                            const hourlyData = await fetchHourlyWeather(
+                                system.latitude, 
+                                system.longitude, 
+                                dateStr, 
+                                log
+                            );
+                            
+                            if (!hourlyData || hourlyData.length === 0) {
+                                log('warn', 'No hourly weather data returned.', dateLogContext);
+                                totalErrors++;
+                                currentDate.setDate(currentDate.getDate() + 1);
+                                await new Promise(resolve => setTimeout(resolve, 500)); // Small delay
+                                continue;
+                            }
+                            
+                            // Filter to daylight hours and extract relevant data
+                            const daylightHourSet = new Set(daylightHours);
+                            const processedHourlyData = hourlyData
+                                .map(hour => {
+                                    const hourTimestamp = new Date(hour.dt * 1000);
+                                    return {
+                                        hour: hourTimestamp.getHours(),
+                                        timestamp: hourTimestamp.toISOString(),
+                                        clouds: hour.clouds,
+                                        temp: hour.temp,
+                                        uvi: hour.uvi || null,
+                                        weather_main: hour.weather?.[0]?.main || 'Unknown',
+                                        // Include solar irradiance if available from the API
+                                        // Note: OpenWeather doesn't provide direct irradiance, but we can estimate from UVI
+                                        estimated_irradiance_w_m2: hour.uvi ? hour.uvi * 25 : null // Rough estimate
+                                    };
+                                })
+                                .filter(hour => daylightHourSet.has(hour.hour));
+                            
+                            // Store the hourly data
+                            const recordToInsert = {
+                                systemId: system.id,
+                                systemName: system.name,
+                                date: dateStr,
+                                latitude: system.latitude,
+                                longitude: system.longitude,
+                                daylightHours: daylightHours,
+                                hourlyData: processedHourlyData,
+                                createdAt: new Date().toISOString()
+                            };
+                            
+                            await hourlyWeatherCollection.insertOne(recordToInsert);
+                            totalHoursInserted += processedHourlyData.length;
+                            totalProcessedDays++;
+                            
+                            log('info', 'Stored hourly weather data for date.', {
+                                ...dateLogContext,
+                                hoursStored: processedHourlyData.length,
+                                daylightHoursCount: daylightHours.length
+                            });
+                            
+                            // Throttle to avoid rate limiting (OpenWeather free tier: 1000 calls/day)
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            
+                        } catch (error) {
+                            totalErrors++;
+                            log('error', 'Error processing hourly weather for date.', {
+                                ...dateLogContext,
+                                error: error.message,
+                                stack: error.stack
+                            });
+                            await new Promise(resolve => setTimeout(resolve, 2000)); // Longer delay after error
+                        }
+                        
+                        // Move to next day
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                }
+                
+                log('info', 'Hourly cloud backfill task complete.', { 
+                    ...postLogContext, 
+                    totalProcessedDays, 
+                    totalHoursInserted,
+                    totalErrors,
+                    systemsProcessed: systemsWithLocation.length
+                });
+                
+                return respond(200, { 
+                    success: true, 
+                    processedDays: totalProcessedDays,
+                    hoursInserted: totalHoursInserted,
+                    errors: totalErrors,
+                    systemsProcessed: systemsWithLocation.length
+                });
             }
 
 

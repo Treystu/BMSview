@@ -12,6 +12,7 @@ interface DataManagementProps {
     onClearAllData: () => void;
     onClearHistory: () => void;
     onBackfillWeather: () => void;
+    onHourlyCloudBackfill: () => void;
     onCleanupLinks: () => void;
     onAutoAssociate: () => void;
     cleanupProgress: string | null;
@@ -28,6 +29,7 @@ const DataManagement: React.FC<DataManagementProps> = ({
     onClearAllData,
     onClearHistory,
     onBackfillWeather,
+    onHourlyCloudBackfill,
     onCleanupLinks,
     onAutoAssociate,
     onFixPowerSigns
@@ -160,6 +162,14 @@ const DataManagement: React.FC<DataManagementProps> = ({
                                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-blue-900 disabled:cursor-not-allowed transition-colors"
                             >
                                 {actionStatus.isBackfilling ? 'Backfilling...' : 'Backfill Weather'}
+                            </button>
+                            <button 
+                                onClick={onHourlyCloudBackfill} 
+                                disabled={actionStatus.isBackfillingHourlyCloud} 
+                                className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-purple-900 disabled:cursor-not-allowed transition-colors"
+                                title="Fetch granular hourly weather data (cloud %, irradiance) for all daylight hours across your data history"
+                            >
+                                {actionStatus.isBackfillingHourlyCloud ? 'Backfilling Hourly...' : 'Backfill Hourly Cloud Data'}
                             </button>
                             <button 
                                 onClick={onCleanupLinks} 

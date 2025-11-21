@@ -1635,6 +1635,28 @@ export const backfillWeatherData = async (): Promise<{ success: boolean; updated
     });
 };
 
+export const backfillHourlyCloudData = async (): Promise<{ 
+    success: boolean; 
+    processedDays: number;
+    hoursInserted: number;
+    errors: number;
+    systemsProcessed: number;
+}> => {
+    log('info', 'Sending request to backfill hourly cloud data.');
+    return apiFetch<{ 
+        success: boolean; 
+        processedDays: number;
+        hoursInserted: number;
+        errors: number;
+        systemsProcessed: number;
+    }>('history', {
+        method: 'POST',
+        body: JSON.stringify({
+            action: 'hourly-cloud-backfill',
+        }),
+    });
+};
+
 export const countRecordsNeedingWeather = async (): Promise<{ count: number }> => {
     log('info', 'Sending request to count records needing weather backfill.');
     return apiFetch<{ count: number }>('history', {
