@@ -111,6 +111,8 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
           weather: record.weather,
           recordId: record.id,
           isDuplicate: isDuplicate || false,
+          needsReview: record.needsReview,
+          validationWarnings: record.validationWarnings,
           error: null,
         } : r
       );

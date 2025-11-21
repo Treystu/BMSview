@@ -9,6 +9,7 @@ const { getCollection } = require("./mongodb.cjs");
 // ***FIX: Corrected import path. File is in the same directory.***
 const { createRetryWrapper } = require("./retry.cjs");
 const { getResponseSchema, getImageExtractionPrompt, cleanAndParseJson, mapExtractedToAnalysisData, performPostAnalysis, parseTimestamp, generateAnalysisKey, mergeAnalysisData, validateExtractionQuality } = require('./analysis-helpers.cjs');
+const { validateAnalysisData } = require('./data-validation.cjs');
 
 const GEMINI_API_TIMEOUT_MS = 45000;
 
@@ -144,6 +145,27 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
         });
     }
 
+    // Perform data integrity validation
+    logContext.stage = 'validation';
+    log('info', 'Validating data integrity.', logContext);
+    const integrityValidation = validateAnalysisData(analysisRaw, log);
+    
+    // Log integrity validation results
+    if (!integrityValidation.isValid) {
+        log('warn', 'Data integrity validation failed - record will be flagged for review.', {
+            warningCount: integrityValidation.warnings.length,
+            flagCount: integrityValidation.flags.length,
+            warnings: integrityValidation.warnings
+        });
+    } else if (integrityValidation.warnings.length > 0) {
+        log('info', 'Data integrity validation passed with warnings.', {
+            warningCount: integrityValidation.warnings.length,
+            warnings: integrityValidation.warnings
+        });
+    } else {
+        log('info', 'Data integrity validation passed without warnings.', logContext);
+    }
+
     const allSystems = (systems && systems.items) ? systems.items : await withRetry(() => systemsCollection.find({}).toArray());
     // ... existing code ...
     const matchingSystem = analysisRaw.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysisRaw.dlNumber)) : null;
@@ -201,7 +223,9 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
                 timestamp, // Update timestamp to reflect re-analysis
                 weather: weather || existingRecord.weather, // Keep existing weather if new one fails
                 lastReanalyzed: new Date().toISOString(),
-                reanalysisCount: (existingRecord.reanalysisCount || 0) + 1
+                reanalysisCount: (existingRecord.reanalysisCount || 0) + 1,
+                needsReview: !integrityValidation.isValid,
+                validationWarnings: integrityValidation.warnings
             }
         };
 
@@ -223,7 +247,9 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
             timestamp,
             weather: weather || existingRecord.weather,
             lastReanalyzed: new Date().toISOString(),
-            reanalysisCount: (existingRecord.reanalysisCount || 0) + 1
+            reanalysisCount: (existingRecord.reanalysisCount || 0) + 1,
+            needsReview: !integrityValidation.isValid,
+            validationWarnings: integrityValidation.warnings
         };
     }
 
@@ -245,7 +271,10 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
         analysisKey,
         // ... existing code ...
         status: 'completed', // For sync, it's always completed
-        reanalysisCount: 0
+        reanalysisCount: 0,
+        // Add validation metadata
+        needsReview: !integrityValidation.isValid,
+        validationWarnings: integrityValidation.warnings
     };
 
     await withRetry(() => historyCollection.insertOne(newRecord));
