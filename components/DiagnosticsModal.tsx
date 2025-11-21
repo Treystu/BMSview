@@ -202,9 +202,93 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
         </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <SpinnerIcon className="w-8 h-8 text-secondary" />
-            <span className="ml-4 text-lg">Running diagnostic tests... (this may take up to 60 seconds)</span>
+          <div className="space-y-4">
+            <div className="bg-gray-700 p-6 rounded-md">
+              <div className="flex items-center justify-center mb-4">
+                <SpinnerIcon className="w-8 h-8 text-secondary" />
+                <span className="ml-4 text-lg font-semibold">Running Diagnostic Tests...</span>
+              </div>
+              <div className="text-center text-sm text-gray-400 mb-4">
+                <p>All tests are running in parallel for maximum efficiency</p>
+                <p>This typically completes in 10-30 seconds</p>
+              </div>
+              
+              {/* Show what tests will run */}
+              <div className="mt-4">
+                <h4 className="text-sm font-semibold text-gray-300 mb-2">Tests in Progress:</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                  {results?.summary ? (
+                    // If we have partial results, show them
+                    <>
+                      <div className="flex items-center text-green-400">
+                        <span className="mr-1">✔</span> Completed: {results.summary.success}
+                      </div>
+                      <div className="flex items-center text-red-400">
+                        <span className="mr-1">✖</span> Failed: {results.summary.errors}
+                      </div>
+                      <div className="flex items-center text-gray-400">
+                        <span className="mr-1">↻</span> Running: {results.summary.total - results.summary.success - results.summary.errors}
+                      </div>
+                    </>
+                  ) : (
+                    // Show expected test categories
+                    <>
+                      <div className="text-gray-400">• Infrastructure (2)</div>
+                      <div className="text-gray-400">• Core Analysis (3)</div>
+                      <div className="text-gray-400">• Data Management (4)</div>
+                      <div className="text-gray-400">• External Services (4)</div>
+                      <div className="text-gray-400">• System Utilities (5)</div>
+                    </>
+                  )}
+                </div>
+              </div>
+              
+              {/* Progress indication */}
+              <div className="mt-6">
+                <div className="h-2 bg-gray-600 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-secondary transition-all duration-500 ease-out"
+                    style={{ 
+                      width: results?.summary 
+                        ? `${((results.summary.success + results.summary.errors) / results.summary.total * 100)}%`
+                        : '10%'
+                    }}
+                  />
+                </div>
+                <div className="text-center text-xs text-gray-400 mt-2">
+                  {results?.summary 
+                    ? `${results.summary.success + results.summary.errors} of ${results.summary.total} tests completed`
+                    : 'Initializing tests...'}
+                </div>
+              </div>
+            </div>
+            
+            {/* Show any completed tests while others are running */}
+            {results?.results && results.results.length > 0 && (
+              <div className="bg-gray-700/50 p-4 rounded-md">
+                <h4 className="text-sm font-semibold text-gray-300 mb-3">Completed Tests:</h4>
+                <div className="space-y-2">
+                  {results.results.slice(0, 5).map((result, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center">
+                        <span className={`mr-2 ${getStatusColor(result.status)}`}>
+                          {getStatusIcon(result.status)}
+                        </span>
+                        <span>{result.name}</span>
+                      </div>
+                      <span className="text-xs text-gray-400">
+                        {result.duration ? `${result.duration}ms` : ''}
+                      </span>
+                    </div>
+                  ))}
+                  {results.results.length > 5 && (
+                    <div className="text-xs text-gray-400 text-center">
+                      + {results.results.length - 5} more...
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <>
