@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     autoAssociateRecords,
     backfillWeatherData,
+    backfillHourlyCloudData,
     cleanupLinks,
     clearAllData, clearHistoryStore,
     countRecordsNeedingWeather,
@@ -431,6 +432,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         }
     };
 
+    const handleHourlyCloudBackfill = () => handleGenericAction(
+        'isBackfillingHourlyCloud',
+        backfillHourlyCloudData,
+        'Hourly cloud backfill process started. This may take a while...',
+        'history',
+        { requiresConfirm: true, confirmMessage: 'This will fetch hourly weather data for all daylight hours across your entire data history. This may take significant time and API calls. Continue?' }
+    );
+
     const handleCleanupLinks = () => handleGenericAction(
         'isCleaningLinks',
         cleanupLinks,
@@ -605,6 +614,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             onClearAllData={handleClearAllData}
                             onClearHistory={handleClearHistory}
                             onBackfillWeather={handleBackfillWeather}
+                            onHourlyCloudBackfill={handleHourlyCloudBackfill}
                             onCleanupLinks={handleCleanupLinks}
                             onAutoAssociate={handleAutoAssociate}
                             onFixPowerSigns={handleFixPowerSigns}

@@ -57,6 +57,7 @@ export interface AdminState {
     isSaving: boolean;
     linkingRecordId: string | null;
     isBackfilling: boolean;
+    isBackfillingHourlyCloud: boolean;
     isCleaningLinks: boolean;
     isClearingAll: boolean;
     isScanning: boolean;
@@ -102,6 +103,7 @@ export const initialState: AdminState = {
   actionStatus: {
     isMerging: false, isDeletingUnlinked: false, deletingRecordId: null,
     isSaving: false, linkingRecordId: null, isBackfilling: false,
+    isBackfillingHourlyCloud: false,
     isCleaningLinks: false, isClearingAll: false, isScanning: false,
     isConfirmingDeletion: false, isBulkLoading: false, isCleaningJobs: false,
     isAutoAssociating: false, isClearingHistory: false, isFixingPowerSigns: false,
