@@ -427,7 +427,18 @@ const defaultApiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
         } as RequestInit);
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: 'An unexpected error occurred.' }));
+            const errorText = await response.text();
+            let errorData: any;
+            try {
+                errorData = JSON.parse(errorText);
+            } catch {
+                // If JSON parse fails, use the text or a detailed error message
+                errorData = { 
+                    error: errorText || `HTTP ${response.status} ${response.statusText}`,
+                    statusCode: response.status,
+                    statusText: response.statusText
+                };
+            }
             const error = (errorData as any).error || `Server responded with status: ${response.status}`;
             log('error', 'API fetch failed.', { ...logContext, status: response.status, error });
             throw new Error(error);
@@ -1783,10 +1794,11 @@ export interface DiagnosticsResponse {
 export const runDiagnostics = async (selectedTests?: string[]): Promise<DiagnosticsResponse> => {
     log('info', 'Running system diagnostics.', { selectedTests });
 
-    // Diagnostics can take 30+ seconds, so we need a custom timeout
-    // Use a 60-second timeout to allow comprehensive diagnostics to complete
+    // Diagnostics can take 30+ seconds with parallel execution
+    // Use a 120-second timeout to ensure all tests can complete
+    // (Netlify Functions timeout is 10s default, 26s for paid plans, but we'll be generous)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 65000);
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
 
     try {
         const headers = {
@@ -1822,7 +1834,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
             log('error', 'Diagnostics API returned error status.', { 
                 status: response.status, 
                 statusText: response.statusText,
-                bodyPreview: errorText.substring(0, 200)
+                bodyPreview: errorText.substring(0, 500)
             });
             
             let errorData: any;
@@ -1830,20 +1842,54 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
                 errorData = JSON.parse(errorText);
             } catch (parseError) {
                 log('error', 'Failed to parse error response as JSON.', { 
-                    text: errorText.substring(0, 200) 
+                    text: errorText.substring(0, 500) 
                 });
-                errorData = { error: errorText || 'An unexpected error occurred.' };
+                // Even if parse fails, create a detailed error message
+                const detailedError = `HTTP ${response.status} ${response.statusText}${errorText ? '\n\n' + errorText.substring(0, 500) : ''}`;
+                errorData = { 
+                    error: detailedError,
+                    statusCode: response.status,
+                    statusText: response.statusText
+                };
             }
             
-            const error = (errorData as any).error ? String((errorData as any).error) : `Server responded with status ${response.status}`;
+            // If the error response includes results, use them!
+            // The backend may return 200 with error status and results
+            if (errorData.results && Array.isArray(errorData.results) && errorData.results.length > 0) {
+                log('info', 'Error response includes results, returning them.', { 
+                    resultsCount: errorData.results.length 
+                });
+                return errorData as DiagnosticsResponse;
+            }
+            
+            const error = (errorData as any).error ? String((errorData as any).error) : `Server responded with HTTP ${response.status}: ${response.statusText}`;
             log('error', 'Diagnostics API fetch failed.', { status: response.status, error, errorData });
             
-            // Return structured error response
+            // Create a detailed error result instead of empty array
+            const errorResult = {
+                name: 'HTTP Request',
+                status: 'error',
+                error: error,
+                duration: 0,
+                details: {
+                    httpStatus: response.status,
+                    httpStatusText: response.statusText,
+                    errorData: errorData
+                }
+            };
+            
+            // Return structured error response WITH a result entry
             return {
                 status: 'error',
                 timestamp: new Date().toISOString(),
                 duration: 0,
-                results: [],
+                results: [errorResult],  // ALWAYS include at least one result
+                summary: {
+                    total: 1,
+                    success: 0,
+                    warnings: 0,
+                    errors: 1
+                },
                 error
             };
         }
@@ -1860,11 +1906,29 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
         } catch (parseError) {
             const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown JSON parse error';
             log('error', 'Failed to parse diagnostics response as JSON.', { error: errorMessage });
+            
+            // Create a detailed error result instead of empty array
+            const errorResult = {
+                name: 'Response Parsing',
+                status: 'error',
+                error: `Failed to parse response as JSON: ${errorMessage}`,
+                duration: 0,
+                details: {
+                    parseError: errorMessage
+                }
+            };
+            
             return {
                 status: 'error',
                 timestamp: new Date().toISOString(),
                 duration: 0,
-                results: [],
+                results: [errorResult],  // ALWAYS include at least one result
+                summary: {
+                    total: 1,
+                    success: 0,
+                    warnings: 0,
+                    errors: 1
+                },
                 error: `Failed to parse response: ${errorMessage}`
             };
         }
@@ -1874,22 +1938,62 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
         // Provide a more helpful error message for timeout
         if (error instanceof Error) {
             if (error.name === 'AbortError') {
-                const timeoutError = 'Diagnostics request timed out after 60 seconds. The tests may still be running on the server.';
+                const timeoutError = 'Diagnostics request timed out after 120 seconds. This may indicate the tests are taking too long or the server is unresponsive.';
                 log('error', 'Diagnostics timed out.', { error: timeoutError });
+                
+                // Create a detailed error result instead of empty array
+                const errorResult = {
+                    name: 'Request Timeout',
+                    status: 'error',
+                    error: timeoutError,
+                    duration: 120000,
+                    details: {
+                        timeoutMs: 120000,
+                        note: 'The request exceeded the maximum allowed time. Tests may still be running on the server.'
+                    }
+                };
+                
                 return {
                     status: 'error',
                     timestamp: new Date().toISOString(),
-                    duration: 60000,
-                    results: [],
+                    duration: 120000,
+                    results: [errorResult],  // ALWAYS include at least one result
+                    summary: {
+                        total: 1,
+                        success: 0,
+                        warnings: 0,
+                        errors: 1
+                    },
                     error: timeoutError
                 };
             }
-            log('error', 'Diagnostics encountered an error.', { error: error.message });
+            
+            log('error', 'Diagnostics encountered an error.', { error: error.message, stack: error.stack });
+            
+            // Create a detailed error result instead of empty array
+            const errorResult = {
+                name: 'Client Error',
+                status: 'error',
+                error: `${error.message}\n\nError Type: ${error.constructor.name}${error.stack ? '\n\nStack:\n' + error.stack.substring(0, 500) : ''}`,
+                duration: 0,
+                details: {
+                    errorType: error.constructor.name,
+                    errorMessage: error.message,
+                    stack: error.stack
+                }
+            };
+            
             return {
                 status: 'error',
                 timestamp: new Date().toISOString(),
                 duration: 0,
-                results: [],
+                results: [errorResult],  // ALWAYS include at least one result
+                summary: {
+                    total: 1,
+                    success: 0,
+                    warnings: 0,
+                    errors: 1
+                },
                 error: error.message
             };
         }
