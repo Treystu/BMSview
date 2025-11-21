@@ -1667,23 +1667,25 @@ const diagnosticTests = {
 // Main handler with comprehensive error handling and verbose logging
 exports.handler = async (event, context) => {
   const requestStartTime = Date.now();
-  const testId = generateTestId();
+  let testId = 'unknown';
   
-  // Update logger with actual request context
-  logger = createLogger('admin-diagnostics', context);
-  
-  logger.info('========================================');
-  logger.info('ADMIN DIAGNOSTICS STARTED');
-  logger.info('========================================');
-  logger.info('Diagnostic run initiated', {
-    testId,
-    timestamp: new Date().toISOString(),
-    method: event.httpMethod,
-    requestId: context.requestId,
-    environment: process.env.NODE_ENV || 'production'
-  });
-
   try {
+    // Wrap EVERYTHING in try-catch to prevent unhandled exceptions
+    testId = generateTestId();
+    
+    // Update logger with actual request context
+    logger = createLogger('admin-diagnostics', context);
+    
+    logger.info('========================================');
+    logger.info('ADMIN DIAGNOSTICS STARTED');
+    logger.info('========================================');
+    logger.info('Diagnostic run initiated', {
+      testId,
+      timestamp: new Date().toISOString(),
+      method: event.httpMethod,
+      requestId: context.requestId,
+      environment: process.env.NODE_ENV || 'production'
+    });
     // Handle CORS
     if (event.httpMethod === 'OPTIONS') {
       return {
@@ -1715,70 +1717,100 @@ exports.handler = async (event, context) => {
       }
     }
 
-    logger.info(`Running ${selectedTests.length} diagnostic tests`, { selectedTests });
+    logger.info(`Running ${selectedTests.length} diagnostic tests IN PARALLEL`, { selectedTests });
 
-    // Run tests with detailed tracking and individual timeouts
-    const results = [];
-    const testErrors = [];
-    
-    for (const testName of selectedTests) {
-      if (diagnosticTests[testName]) {
-        logger.info(`\n>>> Starting test: ${testName}`);
-        const testStartTime = Date.now();
-        
-        try {
-          // Wrap each test execution with a timeout to prevent hanging
-          // This is a safety net in addition to the timeouts within each test
-          const testTimeout = 120000; // 2 minutes max per test
-          const result = await Promise.race([
-            diagnosticTests[testName](testId),
-            new Promise((_, reject) => 
-              setTimeout(() => {
-                reject(new Error(`Test '${testName}' exceeded maximum execution time of ${testTimeout}ms`));
-              }, testTimeout)
-            )
-          ]);
-          
-          // Ensure result has required fields
-          if (!result || typeof result !== 'object') {
-            throw new Error(`Test '${testName}' returned invalid result: ${typeof result}`);
-          }
-          
-          if (!result.name) {
-            result.name = testName;
-          }
-          
-          if (!result.status) {
-            result.status = 'unknown';
-          }
-          
-          if (!result.duration) {
-            result.duration = Date.now() - testStartTime;
-          }
-          
-          results.push(result);
-          logger.info(`<<< Completed test: ${testName} (${result.status}) in ${result.duration}ms`);
-        } catch (testError) {
-          const testDuration = Date.now() - testStartTime;
-          const errorDetails = formatError(testError, { testName, duration: testDuration });
-          const errorResult = {
-            name: testName,
-            status: 'error',
-            error: errorDetails.message || testError.message || `${testName} test failed`,
-            duration: testDuration,
-            details: {
-              errorDetails: errorDetails,
-              note: 'This test failed but was caught by the diagnostic framework'
-            }
-          };
-          results.push(errorResult);
-          testErrors.push({ test: testName, error: testError.message });
-          logger.error(`<<< Test failed: ${testName} after ${testDuration}ms`, errorDetails);
-        }
-      } else {
+    // Run ALL tests in PARALLEL for faster execution (like GitHub PR checks)
+    // Each test is completely independent and reports its own result
+    const testPromises = selectedTests.map(async (testName) => {
+      const testStartTime = Date.now();
+      
+      // Check if test exists
+      if (!diagnosticTests[testName]) {
         logger.warn(`Test '${testName}' not found in diagnosticTests`);
+        return {
+          name: testName,
+          status: 'error',
+          error: `Test function '${testName}' not found`,
+          duration: 0,
+          details: { reason: 'Test not defined in diagnosticTests object' }
+        };
       }
-    }
+      
+      logger.info(`>>> Starting test IN PARALLEL: ${testName}`);
+      
+      try {
+        // Wrap each test execution with a timeout to prevent hanging
+        // This is a safety net in addition to the timeouts within each test
+        const testTimeout = 120000; // 2 minutes max per test
+        const result = await Promise.race([
+          diagnosticTests[testName](testId),
+          new Promise((_, reject) => 
+            setTimeout(() => {
+              reject(new Error(`Test '${testName}' exceeded maximum execution time of ${testTimeout}ms`));
+            }, testTimeout)
+          )
+        ]);
+        
+        // Ensure result has required fields - EVERY field must be populated
+        if (!result || typeof result !== 'object') {
+          throw new Error(`Test '${testName}' returned invalid result: ${typeof result}`);
+        }
+        
+        // Populate ALL required fields with defaults if missing
+        const finalResult = {
+          name: result.name || testName,
+          status: result.status || 'unknown',
+          duration: result.duration || (Date.now() - testStartTime),
+          error: result.error || null,
+          details: result.details || {},
+          steps: result.steps || [],
+          tests: result.tests || [],
+          stages: result.stages || [],
+          jobLifecycle: result.jobLifecycle || [],
+          // Preserve any additional fields from the test result
+          ...result
+        };
+        
+        logger.info(`<<< PARALLEL test completed: ${testName} (${finalResult.status}) in ${finalResult.duration}ms`);
+        return finalResult;
+        
+      } catch (testError) {
+        const testDuration = Date.now() - testStartTime;
+        const errorDetails = formatError(testError, { testName, duration: testDuration });
+        
+        // Create a COMPLETE error result with ALL fields populated
+        const errorResult = {
+          name: testName,
+          status: 'error',
+          error: `${errorDetails.message || testError.message || `${testName} test failed`}\n\nError Type: ${errorDetails.type}\nStack: ${errorDetails.stack || 'No stack trace'}`,
+          duration: testDuration,
+          details: {
+            errorDetails: errorDetails,
+            errorType: errorDetails.type,
+            errorCode: errorDetails.code,
+            timestamp: errorDetails.timestamp,
+            note: 'This test failed but was caught by the diagnostic framework',
+            fullError: testError.toString()
+          },
+          steps: [],
+          tests: [],
+          stages: [],
+          jobLifecycle: []
+        };
+        
+        logger.error(`<<< PARALLEL test FAILED: ${testName} after ${testDuration}ms`, errorDetails);
+        return errorResult;
+      }
+    });
+    
+    // Wait for ALL tests to complete (running in parallel)
+    logger.info('Waiting for all parallel tests to complete...');
+    const results = await Promise.all(testPromises);
+    logger.info('All parallel tests completed!', { 
+      total: results.length,
+      completed: results.filter(r => r.status === 'success').length,
+      failed: results.filter(r => r.status === 'error').length
+    });
 
     // Cleanup test data
     logger.info('\nCleaning up test data...');
@@ -1848,6 +1880,27 @@ exports.handler = async (event, context) => {
       logger.error('Cleanup failed after system error', formatError(cleanupError));
     }
 
+    // Even on critical failure, provide detailed error information
+    const detailedErrorMessage = [
+      errorDetails.message || error.message || 'Critical system failure',
+      errorDetails.type ? `Error Type: ${errorDetails.type}` : null,
+      errorDetails.code ? `Error Code: ${errorDetails.code}` : null,
+      errorDetails.stack ? `\n${errorDetails.stack.substring(0, 500)}` : null
+    ].filter(Boolean).join('\n');
+
+    // Create a result entry for the system error so UI always has something to display
+    const systemErrorResult = {
+      name: 'System Initialization',
+      status: 'error',
+      error: detailedErrorMessage,
+      duration: Date.now() - requestStartTime,
+      details: {
+        errorDetails: errorDetails,
+        failureLocation: 'Handler level - critical system error before tests could run',
+        note: 'The diagnostic system failed to initialize. This usually indicates a configuration issue, missing dependencies, or a connectivity problem.'
+      }
+    };
+
     return {
       statusCode: 200,  // Return 200 for handled errors so frontend can parse response
       headers: {
@@ -1859,15 +1912,23 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         status: 'error',
         testId,
-        error: errorDetails.message || error.message || 'Critical system failure',
+        error: detailedErrorMessage,
         timestamp: new Date().toISOString(),
         duration: Date.now() - requestStartTime,
-        results: [],
+        results: [systemErrorResult],  // ALWAYS include at least one result
+        summary: {
+          total: 1,
+          success: 0,
+          partial: 0,
+          warnings: 0,
+          errors: 1
+        },
         metadata: {
           requestId: context.requestId
         },
         details: {
-          errorDetails: errorDetails
+          errorDetails: errorDetails,
+          failureLocation: 'Handler level - critical system error before tests could run'
         }
       }, null, 2)
     };

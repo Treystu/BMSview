@@ -184,9 +184,14 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
     );
   };
 
+  // ALWAYS show results if they exist, even with errors
+  // Only show generic error banner if NO results are available
   const hasGeneralError = results?.status === 'error' && results?.error && (!results.results || results.results.length === 0);
   const summary = results?.summary;
   const testResults = results?.results || [];
+  
+  // If we have an error but also have results, show both
+  const hasResultsWithError = results?.status === 'error' && testResults.length > 0;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
@@ -201,16 +206,34 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
             <SpinnerIcon className="w-8 h-8 text-secondary" />
             <span className="ml-4 text-lg">Running diagnostic tests... (this may take up to 60 seconds)</span>
           </div>
-        ) : hasGeneralError ? (
-          // Display general error message prominently
-          <div className="bg-red-900/50 border border-red-500 rounded-md p-4 mb-4">
-            <h3 className="font-semibold text-lg flex items-center text-red-300">
-              <span className="mr-2 text-red-400">✖</span>
-              Diagnostics Error
-            </h3>
-            <p className="text-red-300 mt-2 pl-6">{renderError(results.error)}</p>
-          </div>
-        ) : results ? (
+        ) : (
+          <>
+            {/* Show error banner if there's an error with NO results */}
+            {hasGeneralError && (
+              <div className="bg-red-900/50 border border-red-500 rounded-md p-4 mb-4">
+                <h3 className="font-semibold text-lg flex items-center text-red-300">
+                  <span className="mr-2 text-red-400">✖</span>
+                  Diagnostics Error
+                </h3>
+                <p className="text-red-300 mt-2 pl-6">{renderError(results?.error)}</p>
+                <p className="text-red-200 text-sm mt-3 pl-6">
+                  The diagnostic system encountered a critical error before tests could run. 
+                  This usually indicates a configuration or connectivity issue.
+                </p>
+              </div>
+            )}
+            
+            {/* Show warning at top if we have results but overall status is error */}
+            {hasResultsWithError && results?.error && (
+              <div className="bg-yellow-900/50 border border-yellow-500 rounded-md p-3 mb-4">
+                <p className="text-yellow-200 text-sm">
+                  <span className="font-semibold">⚠️ Note:</span> Some tests encountered errors. Individual test results are shown below.
+                </p>
+              </div>
+            )}
+
+            {/* ALWAYS show results if available, even when overall status is error */}
+            {results ? (
           <>
             {/* Overall Status Banner */}
             {results.status && (
@@ -379,10 +402,12 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
               </div>
             )}
           </>
-        ) : (
-          <div className="text-center text-gray-400 py-8">
-            No diagnostic results available. Click "Run Tests" to start diagnostics.
-          </div>
+            ) : (
+              <div className="text-center text-gray-400 py-8">
+                No diagnostic results available. Click "Run Tests" to start diagnostics.
+              </div>
+            )}
+          </>
         )}
 
         <div className="mt-6 text-right">
