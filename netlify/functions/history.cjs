@@ -178,19 +178,44 @@ exports.handler = async function(event, context) {
             // --- Backfill Weather Action ---
              if (action === 'backfill-weather') {
                 log('info', 'Starting backfill-weather task.', postLogContext);
+                
+                const maxRecords = parseInt(parsedBody.maxRecords) || 50; // Default to 50 records per run
+                const startTime = Date.now();
+                const MAX_EXECUTION_TIME = 20000; // 20 seconds (leave 6 seconds buffer)
+                
                 const systemsWithLocation = await systemsCollection.find({ latitude: { $ne: null }, longitude: { $ne: null } }).toArray();
                 const systemLocationMap = new Map(systemsWithLocation.map(s => [s.id, { lat: s.latitude, lon: s.longitude }]));
 
-                const recordsNeedingWeatherCursor = historyCollection.find({ systemId: { $ne: null }, $or: [{ weather: null }, { 'weather.clouds': { $exists: false } }] });
+                const recordsNeedingWeatherCursor = historyCollection.find({ 
+                    systemId: { $ne: null }, 
+                    $or: [{ weather: null }, { 'weather.clouds': { $exists: false } }] 
+                }).limit(maxRecords); // Limit number of records to process
+                
                 let updatedCount = 0;
                 let errorCount = 0;
+                let processedCount = 0;
                 const bulkOps = [];
-                const BATCH_SIZE = 50; // Smaller batch for external API calls
-                const THROTTLE_DELAY_MS = 1000; // 1 second delay between batches
-                const RETRY_DELAY_MS = 2000; // 2 second delay after error
+                const BATCH_SIZE = 25; // Smaller batch for safer processing
+                const THROTTLE_DELAY_MS = 200; // Reduced delay for faster processing
+                const RETRY_DELAY_MS = 500; // Reduced delay after error
+                let timeoutReached = false;
 
                 for await (const record of recordsNeedingWeatherCursor) {
-                    log('debug', `Processing weather backfill for record: ${record.id}`);
+                    // Check if we're approaching timeout
+                    const elapsedTime = Date.now() - startTime;
+                    if (elapsedTime > MAX_EXECUTION_TIME) {
+                        log('warn', 'Approaching timeout limit, stopping early.', {
+                            ...postLogContext,
+                            elapsedTime,
+                            processedCount,
+                            updatedCount
+                        });
+                        timeoutReached = true;
+                        break;
+                    }
+                    
+                    processedCount++;
+                    log('debug', `Processing weather backfill for record: ${record.id}`, { processedCount, maxRecords });
                     const location = systemLocationMap.get(record.systemId);
                     if (location && record.timestamp) {
                         try {
@@ -243,13 +268,38 @@ exports.handler = async function(event, context) {
                     }
                 }
                 
-                log('info', 'Backfill-weather task complete.', { ...postLogContext, updatedCount, errorCount });
-                return respond(200, { success: true, updatedCount, errorCount });
+                const completed = !timeoutReached && processedCount < maxRecords;
+                const message = completed 
+                    ? 'Weather backfill completed successfully.'
+                    : `Processed ${processedCount} records before ${timeoutReached ? 'timeout' : 'limit'}. Run again to continue.`;
+                
+                log('info', 'Backfill-weather task finished.', { 
+                    ...postLogContext, 
+                    updatedCount, 
+                    errorCount,
+                    processedCount,
+                    completed,
+                    message
+                });
+                
+                return respond(200, { 
+                    success: true, 
+                    updatedCount, 
+                    errorCount,
+                    processedCount,
+                    completed,
+                    message
+                });
             }
 
             // --- Hourly Cloud Backfill Action ---
             if (action === 'hourly-cloud-backfill') {
                 log('info', 'Starting hourly-cloud-backfill task.', postLogContext);
+                
+                // Get maxDays parameter (default to 10 days per run to avoid timeout)
+                const maxDaysPerRun = parseInt(parsedBody.maxDays) || 10;
+                const startTime = Date.now();
+                const MAX_EXECUTION_TIME = 20000; // 20 seconds (leave 6 seconds buffer for Netlify's 26s limit)
                 
                 // Get systems with location data
                 const systemsWithLocation = await systemsCollection.find({ 
@@ -259,16 +309,22 @@ exports.handler = async function(event, context) {
                 
                 if (systemsWithLocation.length === 0) {
                     log('warn', 'No systems with location data found.', postLogContext);
-                    return respond(200, { success: true, message: 'No systems with location data.', processedDays: 0 });
+                    return respond(200, { 
+                        success: true, 
+                        message: 'No systems with location data.', 
+                        processedDays: 0,
+                        completed: true
+                    });
                 }
                 
                 const hourlyWeatherCollection = await getCollection("hourly-weather");
                 let totalProcessedDays = 0;
                 let totalHoursInserted = 0;
                 let totalErrors = 0;
+                let timeoutReached = false;
                 
                 // Process each system
-                for (const system of systemsWithLocation) {
+                systemLoop: for (const system of systemsWithLocation) {
                     const systemLogContext = { 
                         ...postLogContext, 
                         systemId: system.id, 
@@ -306,6 +362,30 @@ exports.handler = async function(event, context) {
                     currentDate.setHours(0, 0, 0, 0); // Start at beginning of day
                     
                     while (currentDate <= maxDate) {
+                        // Check if we're approaching timeout
+                        const elapsedTime = Date.now() - startTime;
+                        if (elapsedTime > MAX_EXECUTION_TIME) {
+                            log('warn', 'Approaching timeout limit, stopping early.', {
+                                ...postLogContext,
+                                elapsedTime,
+                                processedDays: totalProcessedDays,
+                                maxDaysPerRun
+                            });
+                            timeoutReached = true;
+                            break systemLoop;
+                        }
+                        
+                        // Check if we've hit the max days limit for this run
+                        if (totalProcessedDays >= maxDaysPerRun) {
+                            log('info', 'Reached max days limit for this run.', {
+                                ...postLogContext,
+                                processedDays: totalProcessedDays,
+                                maxDaysPerRun
+                            });
+                            timeoutReached = true;
+                            break systemLoop;
+                        }
+                        
                         const dateStr = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD
                         const dateLogContext = { ...systemLogContext, date: dateStr };
                         
@@ -343,7 +423,7 @@ exports.handler = async function(event, context) {
                                 log('warn', 'No hourly weather data returned.', dateLogContext);
                                 totalErrors++;
                                 currentDate.setDate(currentDate.getDate() + 1);
-                                await new Promise(resolve => setTimeout(resolve, 500)); // Small delay
+                                await new Promise(resolve => setTimeout(resolve, 200)); // Small delay
                                 continue;
                             }
                             
@@ -388,8 +468,8 @@ exports.handler = async function(event, context) {
                                 daylightHoursCount: daylightHours.length
                             });
                             
-                            // Throttle to avoid rate limiting (OpenWeather free tier: 1000 calls/day)
-                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            // Reduced throttle delay for faster processing (still respects API limits)
+                            await new Promise(resolve => setTimeout(resolve, 200));
                             
                         } catch (error) {
                             totalErrors++;
@@ -398,7 +478,7 @@ exports.handler = async function(event, context) {
                                 error: error.message,
                                 stack: error.stack
                             });
-                            await new Promise(resolve => setTimeout(resolve, 2000)); // Longer delay after error
+                            await new Promise(resolve => setTimeout(resolve, 500)); // Delay after error
                         }
                         
                         // Move to next day
@@ -406,12 +486,19 @@ exports.handler = async function(event, context) {
                     }
                 }
                 
-                log('info', 'Hourly cloud backfill task complete.', { 
+                const completed = !timeoutReached;
+                const message = completed 
+                    ? 'Hourly cloud backfill completed successfully.'
+                    : `Processed ${totalProcessedDays} days before timeout. Run again to continue.`;
+                
+                log('info', 'Hourly cloud backfill task finished.', { 
                     ...postLogContext, 
                     totalProcessedDays, 
                     totalHoursInserted,
                     totalErrors,
-                    systemsProcessed: systemsWithLocation.length
+                    systemsProcessed: systemsWithLocation.length,
+                    completed,
+                    message
                 });
                 
                 return respond(200, { 
@@ -419,7 +506,9 @@ exports.handler = async function(event, context) {
                     processedDays: totalProcessedDays,
                     hoursInserted: totalHoursInserted,
                     errors: totalErrors,
-                    systemsProcessed: systemsWithLocation.length
+                    systemsProcessed: systemsWithLocation.length,
+                    completed,
+                    message
                 });
             }
 

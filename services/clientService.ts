@@ -1625,12 +1625,27 @@ export const clearHistoryStore = async (): Promise<{ message: string; details: a
     });
 };
 
-export const backfillWeatherData = async (): Promise<{ success: boolean; updatedCount: number }> => {
+export const backfillWeatherData = async (): Promise<{ 
+    success: boolean; 
+    updatedCount: number;
+    errorCount?: number;
+    processedCount?: number;
+    completed?: boolean;
+    message?: string;
+}> => {
     log('info', 'Sending request to backfill weather data.');
-    return apiFetch<{ success: boolean; updatedCount: number }>('history', {
+    return apiFetch<{ 
+        success: boolean; 
+        updatedCount: number;
+        errorCount?: number;
+        processedCount?: number;
+        completed?: boolean;
+        message?: string;
+    }>('history', {
         method: 'POST',
         body: JSON.stringify({
             action: 'backfill-weather',
+            maxRecords: 50 // Process 50 records per run to avoid timeout
         }),
     });
 };
@@ -1641,6 +1656,8 @@ export const backfillHourlyCloudData = async (): Promise<{
     hoursInserted: number;
     errors: number;
     systemsProcessed: number;
+    completed?: boolean;
+    message?: string;
 }> => {
     log('info', 'Sending request to backfill hourly cloud data.');
     return apiFetch<{ 
@@ -1649,10 +1666,13 @@ export const backfillHourlyCloudData = async (): Promise<{
         hoursInserted: number;
         errors: number;
         systemsProcessed: number;
+        completed?: boolean;
+        message?: string;
     }>('history', {
         method: 'POST',
         body: JSON.stringify({
             action: 'hourly-cloud-backfill',
+            maxDays: 10 // Process 10 days per run to avoid timeout
         }),
     });
 };

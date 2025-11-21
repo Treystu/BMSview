@@ -409,21 +409,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         try {
             const { count } = await countRecordsNeedingWeather();
             if (count > 0) {
-                // Placeholder for modal
-                const confirmed = true; // window.confirm(`${count} records need weather data. Start backfill?`);
+                const confirmed = window.confirm(`${count} records need weather data. This will process up to 50 records per run. Multiple runs may be needed. Continue?`);
                 if (confirmed) {
-                    await handleGenericAction(
-                        'isBackfilling',
-                        backfillWeatherData,
-                        'Weather backfill process started.',
-                        'history'
-                    );
-                    // Placeholder for modal
-                    // alert('Weather backfill complete.');
+                    dispatch({ type: 'ACTION_START', payload: 'isBackfilling' });
+                    try {
+                        const result = await backfillWeatherData();
+                        log('info', 'Weather backfill completed.', { result });
+                        
+                        // Show result message to user
+                        const message = result.message || `Processed ${result.processedCount || result.updatedCount} records. ${result.updatedCount} updated, ${result.errorCount || 0} errors.`;
+                        alert(message + (result.completed === false ? '\n\nRun again to continue backfilling remaining records.' : ''));
+                        
+                        await fetchData(historyPage, 'history');
+                    } catch (err) {
+                        const error = err instanceof Error ? err.message : 'Failed to backfill weather data.';
+                        log('error', 'Failed to backfill weather data.', { error });
+                        dispatch({ type: 'SET_ERROR', payload: error });
+                    } finally {
+                        dispatch({ type: 'ACTION_END', payload: 'isBackfilling' });
+                    }
                 }
             } else {
-                // Placeholder for modal
-                // alert('No records need weather data.');
+                alert('No records need weather data.');
             }
         } catch (err) {
             const error = err instanceof Error ? err.message : 'Failed to count records needing weather data.';
@@ -432,13 +439,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         }
     };
 
-    const handleHourlyCloudBackfill = () => handleGenericAction(
-        'isBackfillingHourlyCloud',
-        backfillHourlyCloudData,
-        'Hourly cloud backfill process started. This may take a while...',
-        'history',
-        { requiresConfirm: true, confirmMessage: 'This will fetch hourly weather data for all daylight hours across your entire data history. This may take significant time and API calls. Continue?' }
-    );
+    const handleHourlyCloudBackfill = async () => {
+        const confirmed = window.confirm('This will fetch hourly weather data for up to 10 days per run. Multiple runs may be needed for full history. This uses weather API calls. Continue?');
+        if (confirmed) {
+            dispatch({ type: 'ACTION_START', payload: 'isBackfillingHourlyCloud' });
+            try {
+                const result = await backfillHourlyCloudData();
+                log('info', 'Hourly cloud backfill completed.', { result });
+                
+                // Show result message to user
+                const message = result.message || `Processed ${result.processedDays} days. ${result.hoursInserted} hours inserted, ${result.errors} errors.`;
+                alert(message + (result.completed === false ? '\n\nRun again to continue backfilling remaining days.' : ''));
+                
+                await fetchData(historyPage, 'history');
+            } catch (err) {
+                const error = err instanceof Error ? err.message : 'Failed to backfill hourly cloud data.';
+                log('error', 'Failed to backfill hourly cloud data.', { error });
+                dispatch({ type: 'SET_ERROR', payload: error });
+            } finally {
+                dispatch({ type: 'ACTION_END', payload: 'isBackfillingHourlyCloud' });
+            }
+        }
+    };
 
     const handleCleanupLinks = () => handleGenericAction(
         'isCleaningLinks',
