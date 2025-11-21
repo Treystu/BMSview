@@ -210,7 +210,7 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
               </div>
               <div className="text-center text-sm text-gray-400 mb-4">
                 <p>All tests are running in parallel for maximum efficiency</p>
-                <p>This typically completes in 10-30 seconds</p>
+                <p>Completes in 15-25 seconds (Netlify function timeout limit)</p>
               </div>
               
               {/* Show what tests will run */}

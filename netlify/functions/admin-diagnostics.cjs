@@ -981,8 +981,10 @@ const diagnosticTests = {
       }
 
       // Stage 2: Poll for completion with detailed status tracking
+      // CRITICAL: Keep polling minimal to stay within Netlify's 26-second function timeout
+      // This test validates job creation/retrieval, not full job completion
       let attempts = 0;
-      const maxAttempts = 15; // 30 seconds max (reduced from 60 to fail faster in diagnostics)
+      const maxAttempts = 3; // 6 seconds max (3 attempts × 2 seconds) - much faster to avoid timeout
       let finalStatus = null;
       const statusHistory = [];
 
@@ -1074,7 +1076,7 @@ const diagnosticTests = {
         statusHistory: statusHistory.slice(-5), // Last 5 status checks
         jobResult: finalStatus?.result,
         jobError: finalStatus?.error,
-        note: testResults.status === 'warning' ? 'Job did not complete within test timeout (30s)' : undefined
+        note: testResults.status === 'warning' ? 'Job did not complete within test timeout (6s) - this is expected for background jobs' : undefined
       };
 
       logger.info('========== ASYNC TEST COMPLETED ==========', testResults);
