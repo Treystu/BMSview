@@ -155,46 +155,70 @@ async function fetchHourlyWeather(lat, lon, date, log) {
 
 /**
  * Calculate sunrise and sunset times for a given location and date
- * Uses a simple approximation algorithm
+ * Uses a more accurate astronomical calculation
  * @param {number} lat - Latitude
  * @param {number} lon - Longitude  
  * @param {Date} date - Date object
  * @returns {object} Object with sunrise and sunset timestamps
  */
 function calculateSunriseSunset(lat, lon, date) {
-  // This is a simplified calculation. For production, consider using a library like suncalc
-  const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
   const latRad = lat * Math.PI / 180;
+  const year = date.getFullYear();
+  const startOfYear = new Date(year, 0, 1);
+  const dayOfYear = Math.floor((date - startOfYear) / (1000 * 60 * 60 * 24)) + 1;
   
-  // Solar declination angle
-  const declination = 23.45 * Math.sin((360/365) * (dayOfYear - 81) * Math.PI / 180);
-  const declinationRad = declination * Math.PI / 180;
+  // Julian day calculation
+  const julianDay = 367 * year - Math.floor(7 * (year + Math.floor((1 + 9 + 1) / 12)) / 4) + 
+                    Math.floor(275 * 1 / 9) + dayOfYear + 1721013.5;
+  const julianCentury = (julianDay - 2451545) / 36525;
+  
+  // Solar declination
+  const solarDeclination = 0.006918 - 
+    0.399912 * Math.cos(2 * Math.PI * (dayOfYear - 1) / 365) + 
+    0.070257 * Math.sin(2 * Math.PI * (dayOfYear - 1) / 365) - 
+    0.006758 * Math.cos(4 * Math.PI * (dayOfYear - 1) / 365) + 
+    0.000907 * Math.sin(4 * Math.PI * (dayOfYear - 1) / 365);
   
   // Hour angle
-  const cosHourAngle = -Math.tan(latRad) * Math.tan(declinationRad);
+  const cosHourAngle = (Math.sin(-0.01454) - Math.sin(latRad) * Math.sin(solarDeclination)) / 
+                       (Math.cos(latRad) * Math.cos(solarDeclination));
   
   // Handle polar day/night
   if (cosHourAngle > 1) {
     // Polar night - no sunrise
-    return { sunrise: null, sunset: null, isPolarNight: true };
+    return { sunrise: null, sunset: null, isPolarNight: true, isPolarDay: false };
   }
   if (cosHourAngle < -1) {
     // Polar day - no sunset
-    return { sunrise: null, sunset: null, isPolarDay: true };
+    return { sunrise: null, sunset: null, isPolarNight: false, isPolarDay: true };
   }
   
-  const hourAngle = Math.acos(cosHourAngle) * 180 / Math.PI;
+  const hourAngle = Math.acos(cosHourAngle);
   
-  // Convert to hours (solar noon is at 12:00)
-  const sunriseHour = 12 - (hourAngle / 15) - (lon / 15);
-  const sunsetHour = 12 + (hourAngle / 15) - (lon / 15);
+  // Equation of time (in minutes)
+  const eqTime = 229.18 * (0.000075 + 
+    0.001868 * Math.cos(2 * Math.PI * (dayOfYear - 1) / 365) - 
+    0.032077 * Math.sin(2 * Math.PI * (dayOfYear - 1) / 365) - 
+    0.014615 * Math.cos(4 * Math.PI * (dayOfYear - 1) / 365) - 
+    0.040849 * Math.sin(4 * Math.PI * (dayOfYear - 1) / 365));
+  
+  // Solar noon in minutes from midnight
+  const solarNoon = 720 - 4 * lon - eqTime;
+  
+  // Sunrise and sunset in minutes from midnight
+  const sunriseMinutes = solarNoon - hourAngle * 180 / Math.PI * 4;
+  const sunsetMinutes = solarNoon + hourAngle * 180 / Math.PI * 4;
   
   // Create Date objects for sunrise and sunset
   const sunrise = new Date(date);
-  sunrise.setHours(Math.floor(sunriseHour), Math.round((sunriseHour % 1) * 60), 0, 0);
+  const sunriseHours = Math.floor(sunriseMinutes / 60);
+  const sunriseMins = Math.round(sunriseMinutes % 60);
+  sunrise.setHours(sunriseHours, sunriseMins, 0, 0);
   
   const sunset = new Date(date);
-  sunset.setHours(Math.floor(sunsetHour), Math.round((sunsetHour % 1) * 60), 0, 0);
+  const sunsetHours = Math.floor(sunsetMinutes / 60);
+  const sunsetMins = Math.round(sunsetMinutes % 60);
+  sunset.setHours(sunsetHours, sunsetMins, 0, 0);
   
   return { sunrise, sunset, isPolarNight: false, isPolarDay: false };
 }
@@ -217,11 +241,18 @@ function getDaylightHours(lat, lon, date) {
     return Array.from({ length: 24 }, (_, i) => i); // All hours are daylight
   }
   
-  const sunriseHour = sunrise.getHours();
-  const sunsetHour = sunset.getHours();
+  // Calculate hours in local time by getting the time in minutes since start of day
+  const dayStart = new Date(date);
+  dayStart.setHours(0, 0, 0, 0);
+  
+  const sunriseMinutes = (sunrise - dayStart) / (1000 * 60);
+  const sunsetMinutes = (sunset - dayStart) / (1000 * 60);
+  
+  const sunriseHour = Math.floor(sunriseMinutes / 60);
+  const sunsetHour = Math.floor(sunsetMinutes / 60);
   
   const hours = [];
-  for (let h = sunriseHour; h <= sunsetHour; h++) {
+  for (let h = sunriseHour; h <= sunsetHour && h < 24; h++) {
     hours.push(h);
   }
   
