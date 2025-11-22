@@ -189,7 +189,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
         // Calculate quality score
         const qualityScore = calculateQualityScore(integrityValidation);
         
-        // Track best attempt so far
+        // Track best attempt so far (store only metadata to avoid large object copies)
         if (!bestAttempt || qualityScore > bestAttempt.qualityScore) {
             bestAttempt = {
                 extractedData,
@@ -264,10 +264,12 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
         }
         
         // Generate feedback for next attempt
+        // Note: attemptNumber is 1-based, so attemptNumber+1 is the next attempt number
         previousFeedback = generateValidationFeedback(integrityValidation, attemptNumber + 1);
         
         log('info', 'Preparing to retry extraction with validation feedback.', {
             ...logContext,
+            currentAttempt: attemptNumber,
             nextAttempt: attemptNumber + 1,
             feedbackLength: previousFeedback ? previousFeedback.length : 0
         });

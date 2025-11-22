@@ -45,10 +45,11 @@ function generateValidationFeedback(validationResult, attemptNumber = 1) {
         feedbackParts.push('(No critical errors, but warnings detected)');
     }
     
-    if (allIssues.length > criticalIssues.length) {
+    // Calculate warnings as items not in critical list
+    const warningsOnly = allIssues.filter(w => !criticalIssues.includes(w));
+    if (warningsOnly.length > 0) {
         feedbackParts.push('');
         feedbackParts.push('WARNINGS (review carefully):');
-        const warningsOnly = allIssues.filter(w => !criticalIssues.includes(w));
         warningsOnly.forEach((warning, index) => {
             const feedback = generateSpecificFeedback(warning);
             feedbackParts.push(`${index + 1}. ${feedback}`);

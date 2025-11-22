@@ -434,11 +434,14 @@ async function checkExistingAnalysis(contentHash, log) {
       // we should re-analyze instead of returning the bad record
       const MIN_QUALITY_FOR_REUSE = 80; // Only reuse high-quality analyses
       
-      if (existing.needsReview || (existing.validationScore && existing.validationScore < MIN_QUALITY_FOR_REUSE)) {
+      // Treat missing validationScore as low quality (0)
+      const existingQuality = existing.validationScore ?? 0;
+      
+      if (existing.needsReview || existingQuality < MIN_QUALITY_FOR_REUSE) {
         log.warn('Existing record has quality issues. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
           needsReview: existing.needsReview,
-          validationScore: existing.validationScore,
+          validationScore: existingQuality,
           minQuality: MIN_QUALITY_FOR_REUSE
         });
         
