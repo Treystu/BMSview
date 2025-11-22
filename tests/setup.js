@@ -39,7 +39,16 @@ jest.mock('@google/genai', () => ({
         text: () => 'OK - Test response from Gemini API'
       })
     }
-  }))
+  })),
+  Type: {
+    TYPE_UNSPECIFIED: 'TYPE_UNSPECIFIED',
+    STRING: 'STRING',
+    NUMBER: 'NUMBER',
+    INTEGER: 'INTEGER',
+    BOOLEAN: 'BOOLEAN',
+    ARRAY: 'ARRAY',
+    OBJECT: 'OBJECT'
+  }
 }));
 
 // Mock fetch for API tests

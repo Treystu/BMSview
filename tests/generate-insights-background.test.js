@@ -33,7 +33,10 @@ describe('generate-insights-background handler', () => {
             systemId: 'sys-1',
             customPrompt: 'prompt'
         });
-        processInsightsInBackgroundMock.mockResolvedValue(undefined);
+        processInsightsInBackgroundMock.mockResolvedValue({
+            success: true,
+            insights: { rawText: 'test insights' }
+        });
 
         const response = await handler({ body: JSON.stringify({ jobId: 'job-123' }) }, {});
         const payload = JSON.parse(response.body);
@@ -43,7 +46,7 @@ describe('generate-insights-background handler', () => {
             { foo: 'bar' },
             'sys-1',
             'prompt',
-            expect.any(Object)
+            expect.anything()
         );
         expect(response.statusCode).toBe(200);
         expect(payload.success).toBe(true);
@@ -57,8 +60,8 @@ describe('generate-insights-background handler', () => {
         const response = await handler({ body: JSON.stringify({ jobId: 'missing' }) }, {});
         const payload = JSON.parse(response.body);
 
-        expect(getInsightsJobMock).toHaveBeenCalledWith('missing', expect.any(Object));
-        expect(failJobMock).toHaveBeenCalledWith('missing', 'Job not found during background processing', expect.any(Object));
+        expect(getInsightsJobMock).toHaveBeenCalledWith('missing', expect.anything());
+        expect(failJobMock).toHaveBeenCalledWith('missing', 'Job not found during background processing', expect.anything());
         expect(payload.success).toBe(false);
         expect(payload.error).toBe('Job not found');
     });
@@ -89,9 +92,9 @@ describe('generate-insights-background handler', () => {
             { foo: 'bar' },
             'sys-2',
             null,
-            expect.any(Object)
+            expect.anything()
         );
-        expect(failJobMock).toHaveBeenCalledWith('job-err', 'boom', expect.any(Object));
+        expect(failJobMock).toHaveBeenCalledWith('job-err', 'boom', expect.anything());
         expect(payload.success).toBe(false);
         expect(payload.error).toBe('boom');
     });

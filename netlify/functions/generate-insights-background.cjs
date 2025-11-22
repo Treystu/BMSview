@@ -7,7 +7,7 @@
 
 const { createLogger } = require('./utils/logger.cjs');
 const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
-const { getInsightsJob } = require('./utils/insights-jobs.cjs');
+const { getInsightsJob, failJob } = require('./utils/insights-jobs.cjs');
 
 /**
  * Handler for background job invocations
@@ -23,17 +23,53 @@ exports.handler = async (event, context) => {
     if (event.body) {
       const body = JSON.parse(event.body);
       jobId = body.jobId;
-      analysisData = body.analysisData;
-      systemId = body.systemId;
-      customPrompt = body.customPrompt;
+      
+      // If only jobId is provided, fetch job data from database
+      if (jobId && !body.analysisData) {
+        log.info('Fetching job data from database', { jobId });
+        const job = await getInsightsJob(jobId, log);
+        
+        if (!job) {
+          log.warn('Job not found', { jobId });
+          await failJob(jobId, 'Job not found during background processing', log);
+          return {
+            statusCode: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              success: false,
+              error: 'Job not found',
+              jobId
+            })
+          };
+        }
+        
+        analysisData = job.analysisData;
+        systemId = job.systemId;
+        customPrompt = job.customPrompt;
+      } else {
+        // Use data from request body
+        analysisData = body.analysisData;
+        systemId = body.systemId;
+        customPrompt = body.customPrompt;
+      }
     } else if (event.jobId) {
       // Direct invocation
       jobId = event.jobId;
       analysisData = event.analysisData;
       systemId = event.systemId;
       customPrompt = event.customPrompt;
-    } else {
-      throw new Error('Missing required job parameters');
+    }
+
+    // Validate we have required data
+    if (!jobId) {
+      return {
+        statusCode: 400,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          success: false,
+          error: 'Missing jobId'
+        })
+      };
     }
 
     log.info('Background job started', {
@@ -73,12 +109,32 @@ exports.handler = async (event, context) => {
       stack: error.stack
     });
 
+    // Try to mark job as failed if we have a jobId
+    let jobId;
+    try {
+      if (event.body) {
+        const body = JSON.parse(event.body);
+        jobId = body.jobId;
+      } else if (event.jobId) {
+        jobId = event.jobId;
+      }
+      
+      if (jobId) {
+        await failJob(jobId, error.message, log);
+      }
+    } catch (failError) {
+      log.error('Failed to mark job as failed', {
+        error: failError.message
+      });
+    }
+
     return {
-      statusCode: 500,
+      statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        error: 'Background job failed',
-        message: error.message
+        success: false,
+        error: error.message,
+        jobId
       })
     };
   }
