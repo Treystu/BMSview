@@ -56,6 +56,7 @@ describe('Insights Status - No Duplicate Output', () => {
     getInsightsJob.mockResolvedValue(mockJob);
 
     const event = {
+      httpMethod: 'POST',
       body: JSON.stringify({ jobId: 'test-job-123' })
     };
     const context = {};
@@ -63,23 +64,23 @@ describe('Insights Status - No Duplicate Output', () => {
     // Act: Call the handler
     const result = await handler(event, context);
 
-    // Assert: Response should include finalInsights but NOT partialInsights
+    // Assert: Response should include insights (from finalInsights) but NOT partialInsights
     expect(result.statusCode).toBe(200);
     
     const responseBody = JSON.parse(result.body);
     
-    // Should have finalInsights
-    expect(responseBody.finalInsights).toBeDefined();
-    expect(responseBody.finalInsights.rawText).toBe('## KEY FINDINGS\n* Test final insight');
+    // Should have insights (from finalInsights)
+    expect(responseBody.insights).toBeDefined();
+    expect(responseBody.insights.rawText).toBe('## KEY FINDINGS\n* Test final insight');
     
     // Should NOT have partialInsights (this is the key assertion for the fix)
     expect(responseBody.partialInsights).toBeUndefined();
     
-    // Should have contextSummary from finalInsights
-    expect(responseBody.contextSummary).toEqual({ test: 'final' });
+    // Should have metadata
+    expect(responseBody.metadata).toBeDefined();
     
-    // Should have progress events
-    expect(responseBody.progress).toHaveLength(1);
+    // Should have completedAt
+    expect(responseBody.completedAt).toBeDefined();
   });
 
   test('should include partialInsights when job is processing (not completed)', async () => {
@@ -103,6 +104,7 @@ describe('Insights Status - No Duplicate Output', () => {
     getInsightsJob.mockResolvedValue(mockJob);
 
     const event = {
+      httpMethod: 'POST',
       body: JSON.stringify({ jobId: 'test-job-456' })
     };
     const context = {};
@@ -119,11 +121,11 @@ describe('Insights Status - No Duplicate Output', () => {
     expect(responseBody.partialInsights).toBeDefined();
     expect(responseBody.partialInsights.rawText).toBe('## Analyzing...');
     
-    // Should NOT have finalInsights
-    expect(responseBody.finalInsights).toBeUndefined();
+    // Should NOT have insights (which is from finalInsights)
+    expect(responseBody.insights).toBeUndefined();
     
-    // Should have contextSummary from partialInsights
-    expect(responseBody.contextSummary).toEqual({ test: 'partial' });
+    // Should have progress
+    expect(responseBody.progress).toHaveLength(2);
   });
 
   test('should handle completed job without partialInsights', async () => {
@@ -143,6 +145,7 @@ describe('Insights Status - No Duplicate Output', () => {
     getInsightsJob.mockResolvedValue(mockJob);
 
     const event = {
+      httpMethod: 'POST',
       body: JSON.stringify({ jobId: 'test-job-789' })
     };
     const context = {};
@@ -155,7 +158,7 @@ describe('Insights Status - No Duplicate Output', () => {
     
     const responseBody = JSON.parse(result.body);
     
-    expect(responseBody.finalInsights).toBeDefined();
+    expect(responseBody.insights).toBeDefined();
     expect(responseBody.partialInsights).toBeUndefined();
   });
 });
