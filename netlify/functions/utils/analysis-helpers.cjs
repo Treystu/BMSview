@@ -41,7 +41,20 @@ const getResponseSchema = () => ({
 });
 
 // This is the system prompt sent to Gemini with the image.
-const getImageExtractionPrompt = () => `You are a meticulous data extraction AI. Analyze the provided BMS screenshot and extract its data into a JSON object, strictly following these rules:
+// If previousFeedback is provided, it's a retry attempt with validation feedback
+const getImageExtractionPrompt = (previousFeedback = null) => {
+    let basePrompt = `You are a meticulous data extraction AI. Analyze the provided BMS screenshot and extract its data into a JSON object, strictly following these rules:`;
+    
+    // If this is a retry, inject feedback at the top
+    if (previousFeedback) {
+        basePrompt = `${previousFeedback}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${basePrompt}`;
+    }
+    
+    return basePrompt + `
 
 **CRITICAL: MANDATORY FIELDS**
 The following fields are MANDATORY and MUST ALWAYS be extracted. If a field is not clearly visible, use these defaults:

@@ -254,10 +254,25 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
     }
 
     // Check for existing analysis by content hash (skip if force=true)
+    let shouldUpgrade = false;
+    let existingRecordToUpgrade = null;
+    
     if (!forceReanalysis) {
       try {
         const existingAnalysis = await checkExistingAnalysis(contentHash, log);
-        if (existingAnalysis) {
+        
+        // Check if we should upgrade a low-quality record
+        if (existingAnalysis && existingAnalysis._shouldUpgrade) {
+          shouldUpgrade = true;
+          existingRecordToUpgrade = existingAnalysis._existingRecord;
+          log.info('Duplicate detected with low quality - will re-analyze to upgrade.', {
+            contentHash: contentHash.substring(0, 16) + '...',
+            existingRecordId: existingRecordToUpgrade.id,
+            existingQuality: existingRecordToUpgrade.validationScore
+          });
+          // Continue to new analysis below
+        } else if (existingAnalysis) {
+          // High-quality duplicate - return it
           const responseBody = {
             analysis: existingAnalysis.analysis,
             recordId: existingAnalysis._id?.toString?.() || existingAnalysis.id,
@@ -306,7 +321,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
 
     // Store results for future deduplication (best effort)
     try {
-      await storeAnalysisResults(record, contentHash, log, forceReanalysis);
+      await storeAnalysisResults(record, contentHash, log, forceReanalysis, shouldUpgrade, existingRecordToUpgrade);
     } catch (storageError) {
       // Log but don't fail - storage is not critical for immediate response
       log.warn('Failed to store analysis results for deduplication', { 
@@ -319,12 +334,14 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
       analysis: record.analysis,
       recordId: record.id,
       fileName: record.fileName,
-      timestamp: record.timestamp
+      timestamp: record.timestamp,
+      wasUpgraded: shouldUpgrade // Indicate if this was a quality upgrade
     };
 
     // Store idempotent response (best effort)
     try {
-      await storeIdempotentResponse(idemKey, responseBody, forceReanalysis ? 'force_reanalysis' : 'new_analysis');
+      const reasonCode = shouldUpgrade ? 'quality_upgrade' : (forceReanalysis ? 'force_reanalysis' : 'new_analysis');
+      await storeIdempotentResponse(idemKey, responseBody, reasonCode);
     } catch (idemStoreError) {
       // Log but don't fail
       log.warn('Failed to store idempotent response', { error: idemStoreError.message });
@@ -399,7 +416,7 @@ async function checkIdempotency(idemKey, log) {
  * Checks for existing analysis by content hash
  * @param {string} contentHash - Content hash to check
  * @param {Object} log - Logger instance
- * @returns {Object|null} Existing analysis if found
+ * @returns {Object|null} Existing analysis if found and high quality, null if should re-analyze
  */
 async function checkExistingAnalysis(contentHash, log) {
   try {
@@ -407,8 +424,28 @@ async function checkExistingAnalysis(contentHash, log) {
     const existing = await resultsCol.findOne({ contentHash });
     if (existing) {
       log.info('Dedupe: existing analysis found for content hash.', { 
-        contentHash: contentHash.substring(0, 16) + '...' 
+        contentHash: contentHash.substring(0, 16) + '...',
+        needsReview: existing.needsReview,
+        validationScore: existing.validationScore
       });
+      
+      // Quality-based duplicate handling:
+      // If the existing record has issues (needsReview=true or low quality score),
+      // we should re-analyze instead of returning the bad record
+      const MIN_QUALITY_FOR_REUSE = 80; // Only reuse high-quality analyses
+      
+      if (existing.needsReview || (existing.validationScore && existing.validationScore < MIN_QUALITY_FOR_REUSE)) {
+        log.warn('Existing record has quality issues. Will re-analyze to improve.', {
+          contentHash: contentHash.substring(0, 16) + '...',
+          needsReview: existing.needsReview,
+          validationScore: existing.validationScore,
+          minQuality: MIN_QUALITY_FOR_REUSE
+        });
+        
+        // Return null to trigger re-analysis, but include marker for upgrade
+        return { _shouldUpgrade: true, _existingRecord: existing };
+      }
+      
       return existing;
     }
     return null;
@@ -466,23 +503,65 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
  * @param {string} contentHash - Content hash for deduplication
  * @param {Object} log - Logger instance
  * @param {boolean} forceReanalysis - Whether this was a forced reanalysis
+ * @param {boolean} shouldUpgrade - Whether this is upgrading a low-quality record
+ * @param {Object} existingRecordToUpgrade - Existing record being upgraded (if applicable)
  */
-async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false) {
+async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false, shouldUpgrade = false, existingRecordToUpgrade = null) {
   try {
     const resultsCol = await getCollection('analysis-results');
-    await resultsCol.insertOne({
-      id: record.id,
-      fileName: record.fileName,
-      timestamp: record.timestamp,
-      analysis: record.analysis,
-      contentHash,
-      createdAt: new Date(),
-      _forceReanalysis: forceReanalysis
-    });
-    log.info('Analysis results stored for deduplication', { 
-      recordId: record.id,
-      contentHash: contentHash.substring(0, 16) + '...'
-    });
+    
+    // If upgrading, update the existing record instead of inserting
+    if (shouldUpgrade && existingRecordToUpgrade) {
+      const updateResult = await resultsCol.updateOne(
+        { contentHash },
+        {
+          $set: {
+            id: record.id,
+            fileName: record.fileName,
+            timestamp: record.timestamp,
+            analysis: record.analysis,
+            updatedAt: new Date(),
+            _wasUpgraded: true,
+            _previousQuality: existingRecordToUpgrade.validationScore,
+            _newQuality: record.validationScore,
+            needsReview: record.needsReview,
+            validationWarnings: record.validationWarnings,
+            validationScore: record.validationScore,
+            extractionAttempts: record.extractionAttempts
+          }
+        }
+      );
+      
+      log.info('Analysis results upgraded with improved quality', { 
+        recordId: record.id,
+        contentHash: contentHash.substring(0, 16) + '...',
+        previousQuality: existingRecordToUpgrade.validationScore,
+        newQuality: record.validationScore,
+        matchedCount: updateResult.matchedCount,
+        modifiedCount: updateResult.modifiedCount
+      });
+    } else {
+      // New record - insert
+      await resultsCol.insertOne({
+        id: record.id,
+        fileName: record.fileName,
+        timestamp: record.timestamp,
+        analysis: record.analysis,
+        contentHash,
+        createdAt: new Date(),
+        _forceReanalysis: forceReanalysis,
+        needsReview: record.needsReview,
+        validationWarnings: record.validationWarnings,
+        validationScore: record.validationScore,
+        extractionAttempts: record.extractionAttempts
+      });
+      
+      log.info('Analysis results stored for deduplication', { 
+        recordId: record.id,
+        contentHash: contentHash.substring(0, 16) + '...',
+        qualityScore: record.validationScore
+      });
+    }
   } catch (e) {
     log.warn('Failed to persist analysis-results record.', { 
       error: e && e.message ? e.message : String(e),

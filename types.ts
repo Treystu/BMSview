@@ -96,6 +96,9 @@ export interface AnalysisRecord {
   fileName?: string;
   needsReview?: boolean;
   validationWarnings?: string[];
+  validationScore?: number;
+  extractionAttempts?: number;
+  wasUpgraded?: boolean;
 }
 
 export interface DisplayableAnalysisResult {
