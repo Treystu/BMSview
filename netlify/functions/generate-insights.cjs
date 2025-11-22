@@ -13,7 +13,7 @@ const { handler: newHandler } = require('./generate-insights-with-tools.cjs');
 /**
  * Legacy handler - proxies to new implementation
  */
-exports.handler = async (event, context) => {
+const handler = async (event, context) => {
   const log = createLogger('generate-insights-legacy', context);
   
   log.info('Legacy endpoint called, proxying to new implementation', {
@@ -24,3 +24,7 @@ exports.handler = async (event, context) => {
   // Simply delegate to the new handler
   return await newHandler(event, context);
 };
+
+// Export both handler and generateHandler for backward compatibility
+exports.handler = handler;
+exports.generateHandler = handler;
