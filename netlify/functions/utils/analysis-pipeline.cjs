@@ -10,6 +10,7 @@ const { getCollection } = require("./mongodb.cjs");
 const { createRetryWrapper } = require("./retry.cjs");
 const { getResponseSchema, getImageExtractionPrompt, cleanAndParseJson, mapExtractedToAnalysisData, performPostAnalysis, parseTimestamp, generateAnalysisKey, mergeAnalysisData, validateExtractionQuality } = require('./analysis-helpers.cjs');
 const { validateAnalysisData } = require('./data-validation.cjs');
+const { generateValidationFeedback, calculateQualityScore } = require('./validation-feedback.cjs');
 
 const GEMINI_API_TIMEOUT_MS = 45000;
 
@@ -51,10 +52,10 @@ const callWeatherFunction = async (lat, lon, timestamp, log) => {
     }
 };
 
-const extractBmsData = async (image, mimeType, log, context) => {
+const extractBmsData = async (image, mimeType, log, context, previousFeedback = null) => {
     // ... existing code ...
     const geminiClient = getGeminiClient();
-    const extractionPrompt = getImageExtractionPrompt();
+    const extractionPrompt = getImageExtractionPrompt(previousFeedback);
     // Use Gemini 2.5 Flash (latest stable model)
     const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
@@ -112,27 +113,169 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
     // ... existing code ...
     const systemsCollection = await getCollection("systems");
 
-    // 1. Extract Data
-    // ... existing code ...
-    logContext.stage = 'extraction';
-    log('info', 'Starting data extraction.', logContext);
-    // ... existing code ...
-    const extractedData = await extractBmsData(image.image, image.mimeType, log, context);
-    log('info', 'Data extraction complete.', logContext);
+    // Configuration: Max extraction attempts with validation feedback
+    const MAX_EXTRACTION_ATTEMPTS = 3;
+    const MIN_ACCEPTABLE_QUALITY = 60; // Quality score threshold
+    
+    let attemptNumber = 0;
+    let previousFeedback = null;
+    let extractedData = null;
+    let analysisRaw = null;
+    let integrityValidation = null;
+    let validationResult = null;
+    let bestAttempt = null; // Track best attempt in case all fail
+    
+    // Retry loop for extraction with validation feedback
+    while (attemptNumber < MAX_EXTRACTION_ATTEMPTS) {
+        attemptNumber++;
+        
+        // 1. Extract Data (with feedback from previous attempt if applicable)
+        logContext.stage = 'extraction';
+        logContext.attemptNumber = attemptNumber;
+        logContext.isRetry = attemptNumber > 1;
+        
+        if (attemptNumber > 1) {
+            log('warn', `Data extraction retry attempt ${attemptNumber} of ${MAX_EXTRACTION_ATTEMPTS}.`, {
+                ...logContext,
+                hasFeedback: !!previousFeedback
+            });
+        } else {
+            log('info', 'Starting data extraction.', logContext);
+        }
+        
+        try {
+            extractedData = await extractBmsData(image.image, image.mimeType, log, context, previousFeedback);
+            log('info', 'Data extraction complete.', logContext);
+        } catch (error) {
+            log('error', `Data extraction attempt ${attemptNumber} failed.`, {
+                ...logContext,
+                error: error.message
+            });
+            
+            // If this is the last attempt, throw the error
+            if (attemptNumber >= MAX_EXTRACTION_ATTEMPTS) {
+                throw error;
+            }
+            
+            // Otherwise, prepare generic feedback and retry
+            previousFeedback = `RETRY ATTEMPT ${attemptNumber + 1}: The previous extraction attempt failed with an error: ${error.message}. Please try again, paying careful attention to all fields.`;
+            continue;
+        }
 
-    // ... existing code ...
-    // 2. Map and Post-Process
-    logContext.stage = 'processing';
-    // ... existing code ...
-    log('info', 'Processing and analyzing data.', logContext);
-    const analysisRaw = mapExtractedToAnalysisData(extractedData, log);
-    // ... existing code ...
-    if (!analysisRaw) throw new Error("Failed to map extracted data.");
+        // 2. Map and Post-Process
+        logContext.stage = 'processing';
+        log('info', 'Processing and analyzing data.', logContext);
+        analysisRaw = mapExtractedToAnalysisData(extractedData, log);
+        
+        if (!analysisRaw) {
+            log('error', `Failed to map extracted data on attempt ${attemptNumber}.`, logContext);
+            
+            if (attemptNumber >= MAX_EXTRACTION_ATTEMPTS) {
+                throw new Error("Failed to map extracted data.");
+            }
+            
+            previousFeedback = `RETRY ATTEMPT ${attemptNumber + 1}: The previous extraction attempt produced data that could not be mapped. Ensure your response is a valid JSON object following the schema exactly.`;
+            continue;
+        }
+        
+        // Validate extraction quality
+        validationResult = validateExtractionQuality(extractedData, analysisRaw, log);
+        
+        // Perform data integrity validation
+        logContext.stage = 'validation';
+        log('info', 'Validating data integrity.', logContext);
+        integrityValidation = validateAnalysisData(analysisRaw, log);
+        
+        // Calculate quality score
+        const qualityScore = calculateQualityScore(integrityValidation);
+        
+        // Track best attempt so far (store only metadata to avoid large object copies)
+        if (!bestAttempt || qualityScore > bestAttempt.qualityScore) {
+            bestAttempt = {
+                extractedData,
+                analysisRaw,
+                integrityValidation,
+                validationResult,
+                qualityScore,
+                attemptNumber
+            };
+        }
+        
+        // Log validation results
+        if (!integrityValidation.isValid) {
+            log('warn', `Data integrity validation failed on attempt ${attemptNumber}.`, {
+                ...logContext,
+                qualityScore,
+                warningCount: integrityValidation.warnings.length,
+                flagCount: integrityValidation.flags.length,
+                warnings: integrityValidation.warnings
+            });
+        } else if (integrityValidation.warnings.length > 0) {
+            log('info', `Data integrity validation passed with warnings on attempt ${attemptNumber}.`, {
+                ...logContext,
+                qualityScore,
+                warningCount: integrityValidation.warnings.length,
+                warnings: integrityValidation.warnings
+            });
+        } else {
+            log('info', `Data integrity validation passed without warnings on attempt ${attemptNumber}.`, {
+                ...logContext,
+                qualityScore
+            });
+        }
+        
+        // Success criteria: Either perfect validation OR acceptable quality score
+        if (integrityValidation.isValid && integrityValidation.warnings.length === 0) {
+            log('info', 'Extraction succeeded with perfect validation.', {
+                ...logContext,
+                qualityScore,
+                finalAttemptNumber: attemptNumber
+            });
+            break; // Success!
+        }
+        
+        if (qualityScore >= MIN_ACCEPTABLE_QUALITY) {
+            log('info', 'Extraction succeeded with acceptable quality.', {
+                ...logContext,
+                qualityScore,
+                finalAttemptNumber: attemptNumber
+            });
+            break; // Good enough!
+        }
+        
+        // If we've exhausted attempts, use best attempt
+        if (attemptNumber >= MAX_EXTRACTION_ATTEMPTS) {
+            log('warn', `All ${MAX_EXTRACTION_ATTEMPTS} extraction attempts completed. Using best attempt.`, {
+                ...logContext,
+                bestAttemptNumber: bestAttempt.attemptNumber,
+                bestQualityScore: bestAttempt.qualityScore,
+                finalQualityScore: qualityScore
+            });
+            
+            // Restore best attempt data
+            if (bestAttempt.attemptNumber !== attemptNumber) {
+                extractedData = bestAttempt.extractedData;
+                analysisRaw = bestAttempt.analysisRaw;
+                integrityValidation = bestAttempt.integrityValidation;
+                validationResult = bestAttempt.validationResult;
+            }
+            
+            break; // Exit loop with best attempt
+        }
+        
+        // Generate feedback for next attempt
+        // Note: attemptNumber is 1-based, so attemptNumber+1 is the next attempt number
+        previousFeedback = generateValidationFeedback(integrityValidation, attemptNumber + 1);
+        
+        log('info', 'Preparing to retry extraction with validation feedback.', {
+            ...logContext,
+            currentAttempt: attemptNumber,
+            nextAttempt: attemptNumber + 1,
+            feedbackLength: previousFeedback ? previousFeedback.length : 0
+        });
+    }
     
-    // Validate extraction quality
-    const validationResult = validateExtractionQuality(extractedData, analysisRaw, log);
-    
-    // Log warnings if quality is poor
+    // Log extraction quality for transparency
     if (validationResult.hasCriticalIssues) {
         log('error', 'Critical data extraction issues detected.', {
             qualityScore: validationResult.qualityScore,
@@ -145,27 +288,6 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
         });
     }
 
-    // Perform data integrity validation
-    logContext.stage = 'validation';
-    log('info', 'Validating data integrity.', logContext);
-    const integrityValidation = validateAnalysisData(analysisRaw, log);
-    
-    // Log integrity validation results
-    if (!integrityValidation.isValid) {
-        log('warn', 'Data integrity validation failed - record will be flagged for review.', {
-            warningCount: integrityValidation.warnings.length,
-            flagCount: integrityValidation.flags.length,
-            warnings: integrityValidation.warnings
-        });
-    } else if (integrityValidation.warnings.length > 0) {
-        log('info', 'Data integrity validation passed with warnings.', {
-            warningCount: integrityValidation.warnings.length,
-            warnings: integrityValidation.warnings
-        });
-    } else {
-        log('info', 'Data integrity validation passed without warnings.', logContext);
-    }
-
     const allSystems = (systems && systems.items) ? systems.items : await withRetry(() => systemsCollection.find({}).toArray());
     // ... existing code ...
     const matchingSystem = analysisRaw.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysisRaw.dlNumber)) : null;
@@ -174,6 +296,8 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
     
     // Add validation metadata to analysis
     analysis._extractionQuality = validationResult;
+    analysis._validationScore = calculateQualityScore(integrityValidation);
+    analysis._extractionAttempts = attemptNumber;
 
     // ... existing code ...
     // 3. Timestamp and Weather
@@ -225,7 +349,9 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
                 lastReanalyzed: new Date().toISOString(),
                 reanalysisCount: (existingRecord.reanalysisCount || 0) + 1,
                 needsReview: !integrityValidation.isValid,
-                validationWarnings: integrityValidation.warnings
+                validationWarnings: integrityValidation.warnings,
+                validationScore: calculateQualityScore(integrityValidation),
+                extractionAttempts: attemptNumber
             }
         };
 
@@ -249,7 +375,9 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
             lastReanalyzed: new Date().toISOString(),
             reanalysisCount: (existingRecord.reanalysisCount || 0) + 1,
             needsReview: !integrityValidation.isValid,
-            validationWarnings: integrityValidation.warnings
+            validationWarnings: integrityValidation.warnings,
+            validationScore: calculateQualityScore(integrityValidation),
+            extractionAttempts: attemptNumber
         };
     }
 
@@ -274,7 +402,9 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
         reanalysisCount: 0,
         // Add validation metadata
         needsReview: !integrityValidation.isValid,
-        validationWarnings: integrityValidation.warnings
+        validationWarnings: integrityValidation.warnings,
+        validationScore: calculateQualityScore(integrityValidation),
+        extractionAttempts: attemptNumber
     };
 
     await withRetry(() => historyCollection.insertOne(newRecord));
