@@ -243,6 +243,25 @@ const toolDefinitions = [
       },
       required: ['systemId', 'scenario']
     }
+  },
+  {
+    name: 'get_hourly_soc_predictions',
+    description: 'Get hourly State of Charge (SOC%) predictions for past hours. Combines actual BMS data with interpolated predictions based on solar patterns, weather, and historical usage. Use this to understand battery behavior between screenshots, visualize charging/discharge curves, and answer questions about hourly SOC trends. Returns timestamp, SOC%, and whether each data point is actual or predicted.',
+    parameters: {
+      type: 'object',
+      properties: {
+        systemId: {
+          type: 'string',
+          description: 'Battery system identifier'
+        },
+        hoursBack: {
+          type: 'number',
+          default: 72,
+          description: 'Number of hours to predict backwards from now (default: 72 hours / 3 days, max: 168 hours / 7 days)'
+        }
+      },
+      required: ['systemId']
+    }
   }
 ];
 
@@ -290,6 +309,10 @@ async function executeToolCall(toolName, parameters, log) {
 
       case 'calculate_energy_budget':
         result = await calculateEnergyBudget(parameters, log);
+        break;
+
+      case 'get_hourly_soc_predictions':
+        result = await getHourlySocPredictions(parameters, log);
         break;
 
       default:
@@ -834,6 +857,44 @@ async function predictBatteryTrends(params, log) {
       message: `Unable to generate ${metric} prediction: ${error.message}`,
       systemId,
       metric
+    };
+  }
+}
+
+/**
+ * Get hourly SOC predictions for past hours
+ */
+async function getHourlySocPredictions(params, log) {
+  const { systemId, hoursBack = 72 } = params;
+
+  log.info('Getting hourly SOC predictions', { systemId, hoursBack });
+
+  try {
+    // Validate hoursBack range
+    const validatedHoursBack = Math.min(Math.max(1, hoursBack), 168); // Max 7 days
+
+    if (validatedHoursBack !== hoursBack) {
+      log.warn('hoursBack adjusted to valid range', {
+        requested: hoursBack,
+        adjusted: validatedHoursBack
+      });
+    }
+
+    // Lazy-load forecasting module
+    const forecasting = require('./forecasting.cjs');
+
+    return await forecasting.predictHourlySoc(systemId, validatedHoursBack, log);
+  } catch (error) {
+    log.error('Hourly SOC prediction failed', {
+      error: error.message,
+      systemId,
+      hoursBack
+    });
+    return {
+      error: true,
+      message: `Unable to generate hourly SOC predictions: ${error.message}`,
+      systemId,
+      hoursBack
     };
   }
 }
