@@ -4,9 +4,26 @@ import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData } from '../ty
 import AlertAnalysis from './admin/AlertAnalysis';
 import SpinnerIcon from './icons/SpinnerIcon';
 
-type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp' | 'soh' | 'mosTemperature';
+type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp' | 'soh' | 'mosTemperature' | 'solarPower';
 type Axis = 'left' | 'right';
 type ChartView = 'timeline' | 'hourly' | 'predictive';
+
+// Annotation interface for alert markers
+export interface ChartAnnotation {
+    timestamp: string;
+    type: 'critical' | 'warning' | 'info';
+    message: string;
+}
+
+// Optional props for admin features
+export interface HistoricalChartProps {
+    systems: BmsSystem[];
+    history: AnalysisRecord[];
+    enableAdminFeatures?: boolean; // Enable admin-specific functionality
+    showSolarOverlay?: boolean; // Show solar data overlay
+    annotations?: ChartAnnotation[]; // Alert annotations
+    onZoomDomainChange?: (startTime: number, endTime: number) => void; // Callback when zoom/pan changes visible domain
+}
 
 const METRICS: Record<MetricKey, {
     label: string;
@@ -14,7 +31,7 @@ const METRICS: Record<MetricKey, {
     color: string;
     multiplier?: number;
     source: 'analysis' | 'weather';
-    group: 'Battery' | 'Weather' | 'Health';
+    group: 'Battery' | 'Weather' | 'Health' | 'Solar';
     anomaly?: (value: number) => { type: 'critical' | 'warning', message: string } | null;
 }> = {
     stateOfCharge: { label: 'SOC', unit: '%', color: '#34d399', source: 'analysis', group: 'Battery', anomaly: (val) => val < 20 ? { type: 'warning', message: `Warning: SOC is low (${val.toFixed(1)}%)` } : null },
@@ -28,6 +45,7 @@ const METRICS: Record<MetricKey, {
     uvi: { label: 'UV Index', unit: '', color: '#fde047', source: 'weather', group: 'Weather' },
     temp: { label: 'Air Temp', unit: '°C', color: '#a78bfa', source: 'weather', group: 'Weather' },
     soh: { label: 'SOH', unit: '%', color: '#ec4899', source: 'analysis', group: 'Health', anomaly: (val) => val < 80 ? { type: 'critical', message: `CRITICAL: State of Health is low (${val.toFixed(1)}%)` } : null },
+    solarPower: { label: 'Solar', unit: 'W', color: '#fbbf24', source: 'analysis', group: 'Solar' },
 };
 
 const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds'];
@@ -375,7 +393,9 @@ const SvgChart: React.FC<{
     setViewBox: React.Dispatch<React.SetStateAction<{ x: number, width: number }>>;
     chartDimensions: any;
     bandEnabled?: boolean;
-}> = ({ chartData, metricConfig, hiddenMetrics, viewBox, setViewBox, chartDimensions, bandEnabled = false }) => {
+    annotations?: ChartAnnotation[];
+    showSolarOverlay?: boolean;
+}> = ({ chartData, metricConfig, hiddenMetrics, viewBox, setViewBox, chartDimensions, bandEnabled = false, annotations = [], showSolarOverlay = false }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [tooltip, setTooltip] = useState<{ x: number; y: number; point: any } | null>(null);
 
@@ -464,43 +484,47 @@ const SvgChart: React.FC<{
             return { key, segments, color: METRICS[key].color };
         }).filter(Boolean);
 
-        // Calculate min/max bands for each metric - per segment instead of global
+        // Calculate min/max bands for each metric using standard deviation
+        // FIX: Use tighter, statistically-based bands instead of raw min/max
         const bands = bandEnabled ? activeMetrics.map(({ key, axis }) => {
             const yScale = axis === 'left' ? yScaleLeft : yScaleRight;
             if (!yScale) return null;
 
-            // Create band segments for each data point
-            const segments = dataToRender
-                .filter((d: any) => d[key] !== null)
-                .map((d: any, i: number) => {
-                    // For each point, calculate min/max in a local window (current point and neighbors)
-                    const windowSize = Math.max(1, Math.floor(dataToRender.length / 20)); // Adaptive window
-                    const start = Math.max(0, i - windowSize);
-                    const end = Math.min(dataToRender.length, i + windowSize + 1);
+            const filteredData = dataToRender.filter((d: any) => d[key] !== null);
+            if (filteredData.length === 0) return null;
 
-                    const windowValues = dataToRender
-                        .slice(start, end)
-                        .filter((p: any) => p[key] !== null)
-                        .map((p: any) => p[key]);
+            // Calculate mean and standard deviation for the entire visible dataset
+            const values = filteredData.map((d: any) => d[key]);
+            const mean = values.reduce((sum: number, v: number) => sum + v, 0) / values.length;
+            const variance = values.reduce((sum: number, v: number) => sum + Math.pow(v - mean, 2), 0) / values.length;
+            const stdDev = Math.sqrt(variance);
 
-                    if (windowValues.length === 0) return null;
-
-                    const min = Math.min(...windowValues);
-                    const max = Math.max(...windowValues);
+            // Create band segments using mean ± stdDev (narrower, more meaningful bands)
+            const segments = filteredData
+                .map((d: any) => {
+                    const min = mean - stdDev;
+                    const max = mean + stdDev;
                     const x = xScale(d.timestamp);
-                    const bandwidth = Math.max(2, (chartWidth / dataToRender.length) * 0.8);
+                    const bandwidth = Math.max(2, (chartWidth / filteredData.length) * 0.8);
 
                     return { x, min, max, yScale, bandwidth, timestamp: d.timestamp };
-                })
-                .filter(Boolean);
+                });
 
             if (segments.length === 0) return null;
             return { key, segments, color: METRICS[key].color };
         }).filter(Boolean) : [];
 
+        // FIX: Deduplicate anomalies using Set of composite keys
+        const anomalySet = new Set<string>();
         const anomalies = dataToRender.flatMap((d: any) => d.anomalies.map((a: any) => {
             const metricConf = metricConfig[a.key as MetricKey];
             if (!metricConf) return null;
+            
+            // Create unique key: timestamp + type + message
+            const uniqueKey = `${d.timestamp}-${a.type}-${a.message}`;
+            if (anomalySet.has(uniqueKey)) return null; // Skip duplicates
+            anomalySet.add(uniqueKey);
+            
             const yScale = metricConf.axis === 'left' ? yScaleLeft : yScaleRight;
             return { ...a, timestamp: d.timestamp, y: yScale(d[a.key]) };
         })).filter(Boolean);
@@ -644,7 +668,7 @@ const SvgChart: React.FC<{
                     {xTicks.map((tick: any, i: number) => <line key={`gl-x-${i}`} x1={tick.x} y1="0" x2={tick.x} y2={chartHeight} stroke="#4b5563" strokeWidth="0.5" strokeDasharray="3 3" />)}
                     <g clipPath="url(#chart-area)">
                         <g transform={`translate(${-viewBox.x * (chartWidth / viewBox.width)}, 0) scale(${chartWidth / viewBox.width}, 1)`}>
-                            {/* Min/Max Bands - per segment */}
+                            {/* Min/Max Bands - lighter and narrower using std dev */}
                             {bands.map((band: any) => band && !hiddenMetrics.has(band.key) && (
                                 <g key={`band-${band.key}`}>
                                     {band.segments.map((seg: any, i: number) => (
@@ -655,7 +679,7 @@ const SvgChart: React.FC<{
                                             width={seg.bandwidth}
                                             height={Math.abs(seg.yScale(seg.min) - seg.yScale(seg.max))}
                                             fill={band.color}
-                                            fillOpacity="0.15"
+                                            fillOpacity="0.05"
                                             pointerEvents="none"
                                         />
                                     ))}
@@ -706,6 +730,42 @@ const SvgChart: React.FC<{
                                     vectorEffect="non-scaling-stroke"
                                 />
                             )}
+
+                            {/* Alert Annotations (Admin Feature) */}
+                            {annotations.length > 0 && annotations.map((annotation, idx) => {
+                                const annotationTime = new Date(annotation.timestamp).getTime();
+                                const annotationX = xScale(annotation.timestamp);
+                                
+                                // Only render if within visible domain
+                                if (annotationX < viewBox.x || annotationX > viewBox.x + viewBox.width) {
+                                    return null;
+                                }
+                                
+                                return (
+                                    <g key={`annotation-${idx}`}>
+                                        <line
+                                            x1={annotationX}
+                                            y1={0}
+                                            x2={annotationX}
+                                            y2={chartHeight}
+                                            stroke={annotation.type === 'critical' ? '#ef4444' : annotation.type === 'warning' ? '#f59e0b' : '#3b82f6'}
+                                            strokeWidth="2"
+                                            strokeDasharray="4 4"
+                                            vectorEffect="non-scaling-stroke"
+                                            opacity="0.6"
+                                        />
+                                        <circle
+                                            cx={annotationX}
+                                            cy={10}
+                                            r={6 / zoomRatio}
+                                            fill={annotation.type === 'critical' ? '#ef4444' : annotation.type === 'warning' ? '#f59e0b' : '#3b82f6'}
+                                            stroke="white"
+                                            strokeWidth="1.5"
+                                            vectorEffect="non-scaling-stroke"
+                                        />
+                                    </g>
+                                );
+                            })}
                         </g>
                     </g>
                     <g>{yTicksLeft.map((tick: any, i: number) => <text key={`tl-l-${i}`} x={-8} y={tick.y} textAnchor='end' dy="0.32em" fill="#d1d5db" fontSize="12">{tick.value.toFixed(1)}</text>)}<text transform={`translate(-55, ${chartHeight / 2}) rotate(-90)`} textAnchor="middle" fill="#d1d5db" fontSize="14" fontWeight="bold">{yAxisLabelLeft}</text></g>
@@ -1116,7 +1176,14 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
 };
 
 
-const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[] }> = ({ systems, history }) => {
+const HistoricalChart: React.FC<HistoricalChartProps> = ({ 
+    systems, 
+    history, 
+    enableAdminFeatures = false,
+    showSolarOverlay = false,
+    annotations = [],
+    onZoomDomainChange
+}) => {
     const [selectedSystemId, setSelectedSystemId] = useState<string>('');
     const [metricConfig, setMetricConfig] = useState<Partial<Record<MetricKey, { axis: Axis }>>>({ stateOfCharge: { axis: 'left' }, current: { axis: 'right' } });
     const [hiddenMetrics] = useState<Set<MetricKey>>(new Set());
@@ -1153,7 +1220,8 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
 
     const chartDimensions = useMemo(() => ({
         WIDTH: 1200, CHART_HEIGHT: 450, BRUSH_HEIGHT: 80,
-        MARGIN: { top: 20, right: 80, bottom: 80, left: 80 },
+        // FIX: Increased margins to prevent cropping at borders (was top:20, right:80, bottom:80, left:80)
+        MARGIN: { top: 30, right: 100, bottom: 90, left: 90 },
         get chartWidth() { return this.WIDTH - this.MARGIN.left - this.MARGIN.right },
         get chartHeight() { return this.CHART_HEIGHT - this.MARGIN.top - this.MARGIN.bottom },
         get totalHeight() { return this.CHART_HEIGHT + this.BRUSH_HEIGHT + this.MARGIN.bottom },
@@ -1226,6 +1294,34 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
             return { x: newX, width: newWidth };
         });
     }, [zoomPercentage, timelineData, chartDimensions.chartWidth, stableSetViewBox]);
+
+    // FIX: Notify parent component of visible time domain when viewBox or timelineData changes
+    useEffect(() => {
+        if (timelineData && onZoomDomainChange) {
+            const { xScale, xMin, xMax } = timelineData;
+            const visibleStartTime = xScale.invert(viewBox.x);
+            const visibleEndTime = xScale.invert(viewBox.x + viewBox.width);
+            onZoomDomainChange(visibleStartTime, visibleEndTime);
+        }
+    }, [viewBox.x, viewBox.width, timelineData, onZoomDomainChange]);
+
+    // FIX: This effect updates averagingConfig when averaging or manual bucket size changes
+    // Ensures immediate updates when user toggles data averaging or selects a bucket size
+    useEffect(() => {
+        if (timelineData) {
+            setTimelineData((prev: any) => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    averagingConfig: {
+                        ...prev.averagingConfig,
+                        enabled: averagingEnabled,
+                        manualBucketSize: manualBucketSize
+                    }
+                };
+            });
+        }
+    }, [averagingEnabled, manualBucketSize]);
 
     // This effect updates the auto-bucket key when the zoom/viewBox changes, without re-running the entire data prep.
     useEffect(() => {
@@ -1383,8 +1479,17 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
                             <div className="grid lg:grid-cols-3 gap-8 items-start">
                                 <div className="lg:col-span-2">
                                     {chartView === 'timeline' && timelineData && (
-                                        <SvgChart chartData={timelineData} metricConfig={metricConfig} hiddenMetrics={hiddenMetrics}
-                                            viewBox={viewBox} setViewBox={setViewBox} chartDimensions={chartDimensions} bandEnabled={bandEnabled} />
+                                        <SvgChart 
+                                            chartData={timelineData} 
+                                            metricConfig={metricConfig} 
+                                            hiddenMetrics={hiddenMetrics}
+                                            viewBox={viewBox} 
+                                            setViewBox={setViewBox} 
+                                            chartDimensions={chartDimensions} 
+                                            bandEnabled={bandEnabled}
+                                            annotations={annotations}
+                                            showSolarOverlay={showSolarOverlay}
+                                        />
                                     )}
                                     {chartView === 'hourly' && analyticsData && (
                                         <HourlyAverageChart analyticsData={analyticsData} metricKey={hourlyMetric} />
