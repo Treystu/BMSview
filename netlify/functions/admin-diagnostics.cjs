@@ -1,4 +1,5 @@
 const { getDb, getCollection } = require('./utils/mongodb.cjs');
+const { ObjectId } = require('mongodb');
 const { createLogger } = require('./utils/logger.cjs');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 const { executeReActLoop } = require('./utils/react-loop.cjs');
@@ -656,7 +657,11 @@ const diagnosticTests = {
         if (bmsData._isRealProductionData && bmsData._sourceRecordId) {
           try {
             const db = await getDb();
-            const sourceRecord = await db.collection('analysis-results').findOne({ _id: bmsData._sourceRecordId });
+            // Convert to ObjectId if it's a string
+            const recordId = typeof bmsData._sourceRecordId === 'string' 
+              ? new ObjectId(bmsData._sourceRecordId) 
+              : bmsData._sourceRecordId;
+            const sourceRecord = await db.collection('analysis-results').findOne({ _id: recordId });
             if (sourceRecord && sourceRecord.imageData) {
               testImageData = sourceRecord.imageData;
               logger.info('Using REAL image data from production record', { 
