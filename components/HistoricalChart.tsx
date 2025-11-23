@@ -4,9 +4,16 @@ import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData } from '../ty
 import AlertAnalysis from './admin/AlertAnalysis';
 import SpinnerIcon from './icons/SpinnerIcon';
 
-type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp' | 'soh' | 'mosTemperature';
+type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp' | 'soh' | 'mosTemperature' | 'solarPower';
 type Axis = 'left' | 'right';
 type ChartView = 'timeline' | 'hourly' | 'predictive';
+
+// Annotation interface for alert markers
+export interface ChartAnnotation {
+    timestamp: string;
+    type: 'critical' | 'warning' | 'info';
+    message: string;
+}
 
 // Optional props for admin features
 export interface HistoricalChartProps {
@@ -14,7 +21,7 @@ export interface HistoricalChartProps {
     history: AnalysisRecord[];
     enableAdminFeatures?: boolean; // Enable admin-specific functionality
     showSolarOverlay?: boolean; // Show solar data overlay
-    annotations?: Array<{ timestamp: string; type: string; message: string }>; // Alert annotations
+    annotations?: ChartAnnotation[]; // Alert annotations
     onZoomDomainChange?: (startTime: number, endTime: number) => void; // Callback when zoom/pan changes visible domain
 }
 
@@ -24,7 +31,7 @@ const METRICS: Record<MetricKey, {
     color: string;
     multiplier?: number;
     source: 'analysis' | 'weather';
-    group: 'Battery' | 'Weather' | 'Health';
+    group: 'Battery' | 'Weather' | 'Health' | 'Solar';
     anomaly?: (value: number) => { type: 'critical' | 'warning', message: string } | null;
 }> = {
     stateOfCharge: { label: 'SOC', unit: '%', color: '#34d399', source: 'analysis', group: 'Battery', anomaly: (val) => val < 20 ? { type: 'warning', message: `Warning: SOC is low (${val.toFixed(1)}%)` } : null },
@@ -38,6 +45,7 @@ const METRICS: Record<MetricKey, {
     uvi: { label: 'UV Index', unit: '', color: '#fde047', source: 'weather', group: 'Weather' },
     temp: { label: 'Air Temp', unit: '°C', color: '#a78bfa', source: 'weather', group: 'Weather' },
     soh: { label: 'SOH', unit: '%', color: '#ec4899', source: 'analysis', group: 'Health', anomaly: (val) => val < 80 ? { type: 'critical', message: `CRITICAL: State of Health is low (${val.toFixed(1)}%)` } : null },
+    solarPower: { label: 'Solar', unit: 'W', color: '#fbbf24', source: 'analysis', group: 'Solar' },
 };
 
 const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds'];
@@ -385,7 +393,9 @@ const SvgChart: React.FC<{
     setViewBox: React.Dispatch<React.SetStateAction<{ x: number, width: number }>>;
     chartDimensions: any;
     bandEnabled?: boolean;
-}> = ({ chartData, metricConfig, hiddenMetrics, viewBox, setViewBox, chartDimensions, bandEnabled = false }) => {
+    annotations?: ChartAnnotation[];
+    showSolarOverlay?: boolean;
+}> = ({ chartData, metricConfig, hiddenMetrics, viewBox, setViewBox, chartDimensions, bandEnabled = false, annotations = [], showSolarOverlay = false }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [tooltip, setTooltip] = useState<{ x: number; y: number; point: any } | null>(null);
 
@@ -720,6 +730,42 @@ const SvgChart: React.FC<{
                                     vectorEffect="non-scaling-stroke"
                                 />
                             )}
+
+                            {/* Alert Annotations (Admin Feature) */}
+                            {annotations.length > 0 && annotations.map((annotation, idx) => {
+                                const annotationTime = new Date(annotation.timestamp).getTime();
+                                const annotationX = xScale(annotation.timestamp);
+                                
+                                // Only render if within visible domain
+                                if (annotationX < viewBox.x || annotationX > viewBox.x + viewBox.width) {
+                                    return null;
+                                }
+                                
+                                return (
+                                    <g key={`annotation-${idx}`}>
+                                        <line
+                                            x1={annotationX}
+                                            y1={0}
+                                            x2={annotationX}
+                                            y2={chartHeight}
+                                            stroke={annotation.type === 'critical' ? '#ef4444' : annotation.type === 'warning' ? '#f59e0b' : '#3b82f6'}
+                                            strokeWidth="2"
+                                            strokeDasharray="4 4"
+                                            vectorEffect="non-scaling-stroke"
+                                            opacity="0.6"
+                                        />
+                                        <circle
+                                            cx={annotationX}
+                                            cy={10}
+                                            r={6 / zoomRatio}
+                                            fill={annotation.type === 'critical' ? '#ef4444' : annotation.type === 'warning' ? '#f59e0b' : '#3b82f6'}
+                                            stroke="white"
+                                            strokeWidth="1.5"
+                                            vectorEffect="non-scaling-stroke"
+                                        />
+                                    </g>
+                                );
+                            })}
                         </g>
                     </g>
                     <g>{yTicksLeft.map((tick: any, i: number) => <text key={`tl-l-${i}`} x={-8} y={tick.y} textAnchor='end' dy="0.32em" fill="#d1d5db" fontSize="12">{tick.value.toFixed(1)}</text>)}<text transform={`translate(-55, ${chartHeight / 2}) rotate(-90)`} textAnchor="middle" fill="#d1d5db" fontSize="14" fontWeight="bold">{yAxisLabelLeft}</text></g>
@@ -1433,8 +1479,17 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                             <div className="grid lg:grid-cols-3 gap-8 items-start">
                                 <div className="lg:col-span-2">
                                     {chartView === 'timeline' && timelineData && (
-                                        <SvgChart chartData={timelineData} metricConfig={metricConfig} hiddenMetrics={hiddenMetrics}
-                                            viewBox={viewBox} setViewBox={setViewBox} chartDimensions={chartDimensions} bandEnabled={bandEnabled} />
+                                        <SvgChart 
+                                            chartData={timelineData} 
+                                            metricConfig={metricConfig} 
+                                            hiddenMetrics={hiddenMetrics}
+                                            viewBox={viewBox} 
+                                            setViewBox={setViewBox} 
+                                            chartDimensions={chartDimensions} 
+                                            bandEnabled={bandEnabled}
+                                            annotations={annotations}
+                                            showSolarOverlay={showSolarOverlay}
+                                        />
                                     )}
                                     {chartView === 'hourly' && analyticsData && (
                                         <HourlyAverageChart analyticsData={analyticsData} metricKey={hourlyMetric} />
