@@ -526,10 +526,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     };
 
     const handleRunDiagnostics = async () => {
+        const selectedTests = state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS;
+        
+        // Create initial stub results to show tests as "running" immediately
+        const initialResults = {
+            status: 'partial' as const,
+            timestamp: new Date().toISOString(),
+            duration: 0,
+            results: selectedTests.map(testId => {
+                const testConfig = DIAGNOSTIC_TEST_SECTIONS.find(t => t.id === testId);
+                return {
+                    name: testConfig?.label || testId,
+                    status: 'running' as const,
+                    duration: 0
+                };
+            }),
+            summary: {
+                total: selectedTests.length,
+                success: 0,
+                warnings: 0,
+                errors: 0
+            }
+        };
+        
+        // Open modal with initial stub results (all tests showing as "running")
         dispatch({ type: 'OPEN_DIAGNOSTICS_MODAL' });
+        dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: initialResults });
         dispatch({ type: 'ACTION_START', payload: 'isRunningDiagnostics' });
+        
         try {
-            const selectedTests = state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS;
             const results = await runDiagnostics(selectedTests);
             dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: results });
         } catch (err) {
