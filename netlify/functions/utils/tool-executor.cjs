@@ -456,6 +456,8 @@ async function getSystemHistory(params, log) {
                 temperature: d.temperature
             }
         })),
+        deprecated: true, // Programmatic deprecation indicator
+        replacementFunction: 'request_bms_data',
         note: 'DEPRECATED: This function redirects to request_bms_data. Please use request_bms_data directly.'
     };
 }

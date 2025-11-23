@@ -47,11 +47,13 @@ function calculateSunriseSunset(date, latitude, longitude) {
   // Check for polar day/night
   if (cosHourAngle > 1) {
     // Polar night - no sunrise
-    return { sunrise: null, sunset: null };
+    return { sunrise: null, sunset: null, isPolarNight: true };
   } else if (cosHourAngle < -1) {
     // Polar day - 24h daylight
-    const allDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0);
-    return { sunrise: allDay, sunset: allDay };
+    // Return distinct times to avoid confusion
+    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0);
+    const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
+    return { sunrise: dayStart, sunset: dayEnd, isPolarDay: true };
   }
   
   const hourAngle = Math.acos(cosHourAngle) * 180 / Math.PI;
@@ -828,18 +830,21 @@ function interpolateSoc(
 
   // Determine if it's daytime (potential solar charging)
   // Use sunrise/sunset calculation with lat/lon for accuracy
-  const { sunrise, sunset } = calculateSunriseSunset(targetTime, latitude, longitude);
+  const sunTimes = calculateSunriseSunset(targetTime, latitude, longitude);
   let isDaytime;
   
-  if (sunrise === null && sunset === null) {
+  if (sunTimes.isPolarNight) {
     // Polar night - no daylight
     isDaytime = false;
-  } else if (sunrise.getTime() === sunset.getTime()) {
+  } else if (sunTimes.isPolarDay) {
     // Polar day - 24h daylight
     isDaytime = true;
+  } else if (sunTimes.sunrise === null && sunTimes.sunset === null) {
+    // No solar data - fallback to simple check
+    isDaytime = targetTime.getHours() >= 6 && targetTime.getHours() < 18;
   } else {
     // Normal case - check if current time is between sunrise and sunset
-    isDaytime = targetTime >= sunrise && targetTime < sunset;
+    isDaytime = targetTime >= sunTimes.sunrise && targetTime < sunTimes.sunset;
   }
 
   // Find nearest previous known SOC

@@ -44,7 +44,7 @@ describe('SyncManager Integration Tests', () => {
             id,
             data: `record-${id}`,
             timestamp: ts,
-            updatedAt: ts, // Add updatedAt for reconcileData to use
+            updatedAt: ts, // Required by reconcileData() for conflict resolution (compares updatedAt timestamps)
             _syncStatus: 'pending'
         };
     }
