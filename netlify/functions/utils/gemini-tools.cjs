@@ -28,6 +28,12 @@ try {
   fetch = null;
 }
 
+// Pre-load utility modules at the top level for Netlify bundler
+const { aggregateHourlyData, sampleDataPoints, computeBucketMetrics } = require('./data-aggregation.cjs');
+const forecasting = require('./forecasting.cjs');
+const patternAnalysis = require('./pattern-analysis.cjs');
+const energyBudget = require('./energy-budget.cjs');
+
 /**
  * Tool definitions for Gemini function calling
  * These describe the available functions Gemini can call
@@ -457,7 +463,6 @@ async function requestBmsData(params, log) {
     }));
   } else if (granularity === 'hourly_avg') {
     // Aggregate into hourly buckets
-    const { aggregateHourlyData, sampleDataPoints } = require('./data-aggregation.cjs');
     const hourlyData = aggregateHourlyData(records, log);
 
     // Apply intelligent sampling if dataset is very large
@@ -604,7 +609,6 @@ function aggregateDailyData(records, metric, log) {
   const dailyData = [];
   for (const [bucketKey, bucketRecords] of dailyBuckets.entries()) {
     // Reuse hourly aggregation logic
-    const { computeBucketMetrics } = require('./data-aggregation.cjs');
     const dummyLog = { debug: () => { }, info: () => { }, warn: () => { }, error: () => { } };
     const metrics = computeBucketMetrics(bucketRecords, dummyLog);
 
@@ -823,9 +827,6 @@ async function predictBatteryTrends(params, log) {
   log.info('Predicting battery trends', { systemId, metric, forecastDays });
 
   try {
-    // Lazy-load forecasting module to avoid circular dependencies
-    const forecasting = require('./forecasting.cjs');
-
     // Route to appropriate prediction function based on metric
     switch (metric) {
       case 'capacity':
@@ -880,9 +881,6 @@ async function getHourlySocPredictions(params, log) {
       });
     }
 
-    // Lazy-load forecasting module
-    const forecasting = require('./forecasting.cjs');
-
     return await forecasting.predictHourlySoc(systemId, validatedHoursBack, log);
   } catch (error) {
     log.error('Hourly SOC prediction failed', {
@@ -908,9 +906,6 @@ async function analyzeUsagePatterns(params, log) {
   log.info('Analyzing usage patterns', { systemId, patternType, timeRange });
 
   try {
-    // Lazy-load pattern analysis module
-    const patternAnalysis = require('./pattern-analysis.cjs');
-
     // Route to appropriate analysis function
     switch (patternType) {
       case 'daily':
@@ -952,9 +947,6 @@ async function calculateEnergyBudget(params, log) {
   log.info('Calculating energy budget', { systemId, scenario, includeWeather, timeframe });
 
   try {
-    // Lazy-load energy budget module
-    const energyBudget = require('./energy-budget.cjs');
-
     // Route to appropriate budget calculation
     switch (scenario) {
       case 'current':

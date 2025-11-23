@@ -7,6 +7,8 @@
  * @module netlify/functions/utils/data-aggregation
  */
 
+const { getCollection } = require('./mongodb.cjs');
+
 /**
  * Aggregate BMS records into hourly averages
  * 
@@ -206,8 +208,6 @@ function computeBucketMetrics(records, log, options = {}) {
  * @returns {Promise<Array>} Hourly aggregated data
  */
 async function getHourlyAveragedData(systemId, daysBack = 30, log) {
-  const { getCollection } = require('./mongodb.cjs');
-  
   log.info('Fetching hourly averaged data', { systemId, daysBack });
 
   const historyCollection = await getCollection('history');

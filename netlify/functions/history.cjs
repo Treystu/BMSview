@@ -3,6 +3,7 @@ const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger } = require("./utils/logger.cjs");
 const { ObjectId } = require('mongodb'); // Needed for BulkWrite operations
 const { fetchHistoricalWeather, fetchHourlyWeather, getDaylightHours } = require("./utils/weather-fetcher.cjs");
+const { mergeBmsAndCloudData, downsampleMergedData } = require('./utils/data-merge.cjs');
 
 const respond = (statusCode, body) => ({
     statusCode,
@@ -35,7 +36,6 @@ exports.handler = async function(event, context) {
             // Merged timeline data (BMS + Cloud)
             if (merged === 'true' && systemId && startDate && endDate) {
                 log('info', 'Fetching merged timeline data.', { ...logContext, systemId, startDate, endDate });
-                const { mergeBmsAndCloudData, downsampleMergedData } = require('./utils/data-merge.cjs');
                 
                 try {
                     let mergedData = await mergeBmsAndCloudData(systemId, startDate, endDate, log);
