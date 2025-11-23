@@ -533,10 +533,10 @@ async function predictLifetime(systemId, confidenceLevel, log) {
  * This function generates hourly SOC predictions by:
  * 1. Using known data points from actual BMS screenshots
  * 2. Inferring intermediate values based on:
- *    - Time of day (solar charging during daylight vs discharge at night)
- *    - Cloud coverage and weather patterns
- * - Historical discharge/charge rates
- *    - Battery capacity and usage patterns
+ *    * Time of day (solar charging during daylight vs discharge at night)
+ *    * Cloud coverage and weather patterns
+ *    * Historical discharge/charge rates
+ *    * Battery capacity and usage patterns
  * 
  * @param {string} systemId - Battery system identifier
  * @param {number} hoursBack - Number of hours to predict (default: 72)
@@ -736,6 +736,13 @@ async function predictHourlySoc(systemId, hoursBack = 72, log) {
   }
 }
 
+// Constants for solar charge rate adjustments
+// These are conservative multipliers accounting for:
+// - CHARGE_EFFICIENCY: 0.6 (60%) accounts for cloud cover, panel angle, inverter efficiency, and battery acceptance
+// - LOAD_DURING_DAY: 0.3 (30%) accounts for continuous background loads during charging hours
+const SOLAR_CHARGE_EFFICIENCY = 0.6;
+const DAYTIME_LOAD_FACTOR = 0.3;
+
 /**
  * Interpolate SOC for an hour without data
  * 
@@ -760,8 +767,9 @@ function interpolateSoc(
   const hour = targetTime.getHours();
 
   // Determine if it's daytime (potential solar charging)
-  // Simple sunrise/sunset estimation: 6am-6pm for now
-  // In production, this should use actual sunrise/sunset for lat/lon
+  // TODO: Implement proper sunrise/sunset calculation using lat/lon for accuracy
+  // Current simplified approach: 6am-6pm (ignores seasonal variation)
+  // For production, consider using a solar position library or the SPA algorithm
   const isDaytime = hour >= 6 && hour < 18;
 
   // Find nearest previous known SOC
@@ -797,8 +805,8 @@ function interpolateSoc(
 
   if (isDaytime) {
     // During day: assume some solar charging, but also continuous load
-    // Net effect depends on sun availability - for now, assume slight net positive
-    const netRate = avgChargeRate * 0.6 - avgDischargeRate * 0.3; // Reduced charge rate to account for clouds/inefficiency
+    // Net effect depends on sun availability
+    const netRate = avgChargeRate * SOLAR_CHARGE_EFFICIENCY - avgDischargeRate * DAYTIME_LOAD_FACTOR;
     predictedSoc = previousSoc + netRate;
     confidence = 'low';
   } else {

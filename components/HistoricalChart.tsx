@@ -866,7 +866,9 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
                         <span className="text-gray-300">Actual Data</span>
                     </div>
                     <div className="flex items-center gap-2">
-                        <div className="w-4 h-1 bg-blue-400" style={{ borderTop: '2px dashed' }}></div>
+                        <svg width="16" height="4" className="mt-1">
+                            <line x1="0" y1="2" x2="16" y2="2" stroke="rgb(96, 165, 250)" strokeWidth="2" strokeDasharray="4,4" />
+                        </svg>
                         <span className="text-gray-300">Predicted</span>
                     </div>
                     <div className="text-xs text-gray-500 mt-2">
