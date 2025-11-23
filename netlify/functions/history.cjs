@@ -540,6 +540,232 @@ exports.handler = async function(event, context) {
                 });
             }
 
+            // --- Hourly Solar Irradiance Backfill Action ---
+            if (action === 'hourly-solar-irradiance-backfill') {
+                log('info', 'Starting hourly-solar-irradiance-backfill task.', postLogContext);
+                
+                const { calculateSolarIrradiance } = require('./utils/solar-irradiance.cjs');
+                
+                // Get maxDays parameter (default to 10 days per run to avoid timeout)
+                const maxDaysPerRun = parseInt(parsedBody.maxDays) || 10;
+                const startTime = Date.now();
+                const MAX_EXECUTION_TIME = 20000; // 20 seconds
+                
+                // Get systems with location data
+                const systemsWithLocation = await systemsCollection.find({ 
+                    latitude: { $ne: null }, 
+                    longitude: { $ne: null } 
+                }).toArray();
+                
+                if (systemsWithLocation.length === 0) {
+                    log('warn', 'No systems with location data found.', postLogContext);
+                    return respond(200, { 
+                        success: true, 
+                        message: 'No systems with location data.', 
+                        processedDays: 0,
+                        completed: true
+                    });
+                }
+                
+                const hourlyIrradianceCollection = await getCollection("hourly-solar-irradiance");
+                const hourlyWeatherCollection = await getCollection("hourly-weather");
+                let totalProcessedDays = 0;
+                let totalHoursCalculated = 0;
+                let totalErrors = 0;
+                let timeoutReached = false;
+                
+                // Process each system
+                systemLoop: for (const system of systemsWithLocation) {
+                    const systemLogContext = { 
+                        ...postLogContext, 
+                        systemId: system.id, 
+                        systemName: system.name 
+                    };
+                    log('info', 'Processing hourly solar irradiance backfill for system.', systemLogContext);
+                    
+                    // Get min and max dates for this system's analysis records
+                    const dateRange = await historyCollection.aggregate([
+                        { $match: { systemId: system.id, timestamp: { $exists: true, $ne: null } } },
+                        { 
+                            $group: {
+                                _id: null,
+                                minDate: { $min: '$timestamp' },
+                                maxDate: { $max: '$timestamp' }
+                            }
+                        }
+                    ]).toArray();
+                    
+                    if (dateRange.length === 0 || !dateRange[0].minDate) {
+                        log('info', 'No analysis records with timestamps for system, skipping.', systemLogContext);
+                        continue;
+                    }
+                    
+                    const minDate = new Date(dateRange[0].minDate);
+                    const maxDate = new Date(dateRange[0].maxDate);
+                    log('info', 'Date range for system.', { 
+                        ...systemLogContext, 
+                        minDate: minDate.toISOString(), 
+                        maxDate: maxDate.toISOString() 
+                    });
+                    
+                    // Iterate through each date in the range
+                    const currentDate = new Date(minDate);
+                    currentDate.setHours(0, 0, 0, 0);
+                    
+                    while (currentDate <= maxDate) {
+                        // Check timeout and limits
+                        const elapsedTime = Date.now() - startTime;
+                        if (elapsedTime > MAX_EXECUTION_TIME || totalProcessedDays >= maxDaysPerRun) {
+                            log('warn', 'Approaching timeout or max days limit, stopping early.', {
+                                ...postLogContext,
+                                elapsedTime,
+                                processedDays: totalProcessedDays,
+                                maxDaysPerRun
+                            });
+                            timeoutReached = true;
+                            break systemLoop;
+                        }
+                        
+                        const dateStr = currentDate.toISOString().split('T')[0];
+                        const dateLogContext = { ...systemLogContext, date: dateStr };
+                        
+                        // Check if we already have irradiance data for this date/system
+                        const existingRecord = await hourlyIrradianceCollection.findOne({
+                            systemId: system.id,
+                            date: dateStr
+                        });
+                        
+                        if (existingRecord) {
+                            log('debug', 'Hourly irradiance data already exists for date, skipping.', dateLogContext);
+                            currentDate.setDate(currentDate.getDate() + 1);
+                            continue;
+                        }
+                        
+                        try {
+                            // Get cloud data from hourly-weather collection if available
+                            const weatherRecord = await hourlyWeatherCollection.findOne({
+                                systemId: system.id,
+                                date: dateStr
+                            });
+                            
+                            // Calculate solar irradiance for each hour of the day
+                            const hourlyIrradianceData = [];
+                            
+                            for (let hour = 0; hour < 24; hour++) {
+                                const hourTimestamp = new Date(currentDate);
+                                hourTimestamp.setHours(hour, 0, 0, 0);
+                                
+                                // Get cloud cover for this hour if available
+                                let cloudCover = null;
+                                if (weatherRecord && weatherRecord.hourlyData) {
+                                    const weatherHour = weatherRecord.hourlyData.find(h => h.hour === hour);
+                                    if (weatherHour) {
+                                        cloudCover = weatherHour.clouds;
+                                    }
+                                }
+                                
+                                // Calculate irradiance with or without cloud data
+                                const irradianceData = calculateSolarIrradiance(
+                                    hourTimestamp,
+                                    system.latitude,
+                                    system.longitude,
+                                    cloudCover,
+                                    system.altitude || 0
+                                );
+                                
+                                // Only store hours when sun is up
+                                if (irradianceData.isSunUp) {
+                                    hourlyIrradianceData.push({
+                                        hour,
+                                        timestamp: irradianceData.timestamp,
+                                        solarAltitude: irradianceData.solarAltitude,
+                                        solarAzimuth: irradianceData.solarPosition.azimuth,
+                                        clearSkyGlobalIrradiance: irradianceData.clearSkyIrradiance.global,
+                                        clearSkyDirectIrradiance: irradianceData.clearSkyIrradiance.directHorizontal,
+                                        clearSkyDiffuseIrradiance: irradianceData.clearSkyIrradiance.diffuse,
+                                        actualGlobalIrradiance: irradianceData.actualIrradiance.global,
+                                        actualDirectIrradiance: irradianceData.actualIrradiance.directHorizontal,
+                                        actualDiffuseIrradiance: irradianceData.actualIrradiance.diffuse,
+                                        cloudCoverPercent: cloudCover,
+                                        cloudFactor: irradianceData.actualIrradiance.cloudFactor,
+                                        airMass: irradianceData.clearSkyIrradiance.airMass
+                                    });
+                                }
+                            }
+                            
+                            if (hourlyIrradianceData.length === 0) {
+                                log('debug', 'No daylight hours for date (polar night?), skipping.', dateLogContext);
+                                currentDate.setDate(currentDate.getDate() + 1);
+                                continue;
+                            }
+                            
+                            // Store the hourly irradiance data
+                            const recordToInsert = {
+                                systemId: system.id,
+                                systemName: system.name,
+                                date: dateStr,
+                                latitude: system.latitude,
+                                longitude: system.longitude,
+                                altitude: system.altitude || 0,
+                                hourlyIrradianceData,
+                                hasCloudData: weatherRecord !== null,
+                                createdAt: new Date().toISOString()
+                            };
+                            
+                            await hourlyIrradianceCollection.insertOne(recordToInsert);
+                            totalHoursCalculated += hourlyIrradianceData.length;
+                            totalProcessedDays++;
+                            
+                            log('info', 'Stored hourly irradiance data for date.', {
+                                ...dateLogContext,
+                                hoursStored: hourlyIrradianceData.length,
+                                hasCloudData: recordToInsert.hasCloudData
+                            });
+                            
+                            // Small delay to avoid overwhelming the system
+                            await new Promise(resolve => setTimeout(resolve, 50));
+                            
+                        } catch (error) {
+                            totalErrors++;
+                            log('error', 'Error processing hourly irradiance for date.', {
+                                ...dateLogContext,
+                                error: error.message,
+                                stack: error.stack
+                            });
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        }
+                        
+                        // Move to next day
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                }
+                
+                const completed = !timeoutReached;
+                const message = completed 
+                    ? 'Hourly solar irradiance backfill completed successfully.'
+                    : `Processed ${totalProcessedDays} days before timeout. Run again to continue.`;
+                
+                log('info', 'Hourly solar irradiance backfill task finished.', { 
+                    ...postLogContext, 
+                    totalProcessedDays, 
+                    totalHoursCalculated,
+                    totalErrors,
+                    systemsProcessed: systemsWithLocation.length,
+                    completed,
+                    message
+                });
+                
+                return respond(200, { 
+                    success: true, 
+                    processedDays: totalProcessedDays,
+                    hoursCalculated: totalHoursCalculated,
+                    errors: totalErrors,
+                    systemsProcessed: systemsWithLocation.length,
+                    completed,
+                    message
+                });
+            }
+
 
             // --- Default Action: Create New History Record ---
             log('info', 'Creating new history record.', logContext);

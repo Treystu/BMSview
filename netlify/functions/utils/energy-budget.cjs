@@ -95,10 +95,18 @@ async function calculateCurrentBudget(systemId, timeframe = '30d', includeWeathe
       hasSparsData
     });
 
-    // Get system capacity from first record
-    const systemCapacity = records[0].analysis.remainingCapacity || null;
-    const nominalVoltage = records[0].analysis.overallVoltage || 12; // Assume 12V if not available
-    const batteryCapacityWh = systemCapacity ? systemCapacity * nominalVoltage : null;
+    // Get system capacity and voltage for accurate calculations
+    const systemCapacityAh = records[0].analysis.remainingCapacity || null;
+    const nominalVoltage = records[0].analysis.overallVoltage || 48; // Use 48V as more common default for modern systems
+    const fullCapacityAh = records[0].analysis.fullCapacity || systemCapacityAh;
+    const batteryCapacityWh = fullCapacityAh ? fullCapacityAh * nominalVoltage : null;
+
+    // Calculate average load (discharging current) for autonomy calculation
+    const dischargingRecords = records.filter(r => r.analysis.current < -0.5);
+    const avgDischargeCurrent = dischargingRecords.length > 0
+      ? Math.abs(dischargingRecords.reduce((sum, r) => sum + r.analysis.current, 0) / dischargingRecords.length)
+      : 0;
+    const avgDischargeWatts = avgDischargeCurrent * nominalVoltage;
 
     // Calculate sufficiency metrics with tolerance for measurement variance
     // NEW: Apply ±10% tolerance band to account for sporadic data and measurement noise
@@ -113,10 +121,16 @@ async function calculateCurrentBudget(systemId, timeframe = '30d', includeWeathe
       ? Math.min(100, Math.round((dailyEnergyIn / dailyEnergyOut) * 100))
       : 0;
 
-    // Days of autonomy (at current usage rate)
-    // This is RUNTIME until discharge, NOT service life until replacement
-    const daysOfAutonomy = batteryCapacityWh && dailyEnergyOut > 0
-      ? Math.round((batteryCapacityWh * (avgSoC / 100)) / dailyEnergyOut * 10) / 10
+    // CRITICAL FIX: Days of autonomy = battery capacity ÷ AVERAGE LOAD, not deficit
+    // This is RUNTIME until discharge at current load, NOT service life until replacement
+    // Example: 660Ah @ 48V = 31,680 Wh. At 12A load (576W), that's 55 hours (2.3 days)
+    const daysOfAutonomy = batteryCapacityWh && avgDischargeWatts > 0
+      ? Math.round((batteryCapacityWh * (avgSoC / 100) * 0.8) / (avgDischargeWatts * 24) * 10) / 10  // 80% DoD, 24h/day
+      : null;
+    
+    // Also calculate hours of autonomy for more precision on short runtimes
+    const hoursOfAutonomy = batteryCapacityWh && avgDischargeWatts > 0
+      ? Math.round((batteryCapacityWh * (avgSoC / 100) * 0.8) / avgDischargeWatts * 10) / 10
       : null;
 
     log.info('Current energy budget calculated', {
@@ -125,7 +139,10 @@ async function calculateCurrentBudget(systemId, timeframe = '30d', includeWeathe
       dailyEnergyOut: Math.round(dailyEnergyOut),
       solarSufficiency,
       hasTrueDeficit,
-      effectiveDeficit: Math.round(effectiveDeficit)
+      effectiveDeficit: Math.round(effectiveDeficit),
+      avgDischargeCurrent: Math.round(avgDischargeCurrent * 10) / 10,
+      daysOfAutonomy,
+      hoursOfAutonomy
     });
 
     // NEW: Calculate generator runtime recommendations if there's a deficit
@@ -182,10 +199,18 @@ async function calculateCurrentBudget(systemId, timeframe = '30d', includeWeathe
         note: hasSparsData ? 'Sporadic data - calculations may be inaccurate. Need more frequent screenshots for reliable deficit detection.' : null
       },
       batteryMetrics: {
-        capacity: systemCapacity ? `${systemCapacity} Ah` : 'unknown',
-        capacityWh: batteryCapacityWh ? Math.round(batteryCapacityWh) : null,
+        capacityAh: fullCapacityAh ? `${Math.round(fullCapacityAh)} Ah` : 'unknown',
+        capacityKwh: batteryCapacityWh ? Math.round(batteryCapacityWh / 1000 * 100) / 100 : null,
         avgStateOfCharge: Math.round(avgSoC * 10) / 10,
+        avgLoadCurrent: Math.round(avgDischargeCurrent * 10) / 10,
+        avgLoadWatts: Math.round(avgDischargeWatts),
         daysOfAutonomy,
+        hoursOfAutonomy,
+        autonomyNote: hoursOfAutonomy && hoursOfAutonomy < 72 
+          ? `Battery runtime at current ${Math.round(avgDischargeWatts)}W load: ${hoursOfAutonomy} hours (${daysOfAutonomy} days)`
+          : daysOfAutonomy 
+            ? `Battery runtime at current ${Math.round(avgDischargeWatts)}W load: ${daysOfAutonomy} days`
+            : 'Insufficient load data for autonomy calculation',
         peakPower: Math.round(peakPower)
       },
       generatorRecommendation,
@@ -256,11 +281,21 @@ async function calculateWorstCase(systemId, timeframe = '30d', includeWeather = 
     const worstCaseConsumption = dailyConsumptions[Math.floor(dailyConsumptions.length * 0.1)] || 0;
 
     const deficit = worstCaseConsumption - worstCaseGeneration;
-    const batteryCapacityWh = currentBudget.batteryMetrics.capacityWh || 0;
+    const batteryCapacityWh = currentBudget.batteryMetrics.capacityKwh 
+      ? currentBudget.batteryMetrics.capacityKwh * 1000 
+      : 0;
+    
+    // Get average load from current budget for accurate autonomy calculation
+    const avgLoadWatts = currentBudget.batteryMetrics.avgLoadWatts || (worstCaseConsumption / 24);
 
-    // Days battery can sustain deficit
-    const daysWithoutSolar = batteryCapacityWh > 0 && deficit > 0
-      ? Math.round((batteryCapacityWh * 0.8) / deficit * 10) / 10 // Assume 80% DoD
+    // CRITICAL FIX: Days without solar = battery capacity ÷ ACTUAL LOAD, not deficit
+    // Example: 31,680 Wh battery @ 576W load = 55 hours, NOT 109 days
+    const daysWithoutSolar = batteryCapacityWh > 0 && avgLoadWatts > 0
+      ? Math.round((batteryCapacityWh * 0.8) / (avgLoadWatts * 24) * 10) / 10 // 80% DoD
+      : null;
+    
+    const hoursWithoutSolar = batteryCapacityWh > 0 && avgLoadWatts > 0
+      ? Math.round((batteryCapacityWh * 0.8) / avgLoadWatts * 10) / 10
       : null;
 
     return {
@@ -275,7 +310,9 @@ async function calculateWorstCase(systemId, timeframe = '30d', includeWeather = 
       },
       batteryAutonomy: {
         daysWithoutSolar,
-        assumption: '80% depth of discharge'
+        hoursWithoutSolar,
+        assumption: '80% depth of discharge',
+        calculation: `Battery runtime at ${Math.round(avgLoadWatts)}W load: ${hoursWithoutSolar}h (${daysWithoutSolar} days) - this is RUNTIME until discharge, NOT years until replacement`
       },
       comparisonToAverage: {
         generationReduction: currentBudget.energyFlow.dailyGeneration > 0
