@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getSystemAnalytics, SystemAnalytics, getHourlySocPredictions } from '../services/clientService';
+import { getSystemAnalytics, SystemAnalytics, getHourlySocPredictions, getMergedTimelineData, type MergedDataPoint } from '../services/clientService';
 import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData } from '../types';
 import AlertAnalysis from './admin/AlertAnalysis';
 import SpinnerIcon from './icons/SpinnerIcon';
@@ -40,7 +40,7 @@ const METRIC_GROUPS = Object.entries(METRICS).reduce((acc, [key, metric]) => {
 }, {} as Record<string, MetricKey[]>);
 
 const mapRecordToPoint = (r: AnalysisRecord) => {
-    const point: { [key: string]: any } = { timestamp: r.timestamp, recordCount: 1, anomalies: [] };
+    const point: { [key: string]: any } = { timestamp: r.timestamp, recordCount: 1, anomalies: [], source: 'bms' };
     Object.keys(METRICS).forEach(m => {
         const metric = m as MetricKey;
         const { source, multiplier = 1, anomaly } = METRICS[metric];
@@ -59,28 +59,95 @@ const mapRecordToPoint = (r: AnalysisRecord) => {
     return point;
 };
 
-const aggregateData = (data: AnalysisRecord[], bucketMinutes: number): any[] => {
-    if (bucketMinutes <= 0) return data.map(mapRecordToPoint);
+/**
+ * Convert merged data point to chart point format
+ */
+const mapMergedPointToChartPoint = (p: MergedDataPoint) => {
+    const point: { [key: string]: any } = {
+        timestamp: p.timestamp,
+        recordCount: p.dataPoints || 1,
+        anomalies: [],
+        source: p.source
+    };
+    
+    Object.keys(METRICS).forEach(m => {
+        const metric = m as MetricKey;
+        const { multiplier = 1, anomaly } = METRICS[metric];
+        const value = p.data[metric];
+        
+        if (value != null && typeof value === 'number') {
+            const finalValue = value * multiplier;
+            point[metric] = finalValue;
+            
+            // Also include min/max if available (from downsampling)
+            if (p.data[`${metric}_min`] !== undefined) {
+                point[`${metric}_min`] = p.data[`${metric}_min`]! * multiplier;
+            }
+            if (p.data[`${metric}_max`] !== undefined) {
+                point[`${metric}_max`] = p.data[`${metric}_max`]! * multiplier;
+            }
+            if (p.data[`${metric}_avg`] !== undefined) {
+                point[`${metric}_avg`] = p.data[`${metric}_avg`]! * multiplier;
+            }
+            
+            if (anomaly) {
+                const anomalyResult = anomaly(value);
+                if (anomalyResult) point.anomalies.push({ ...anomalyResult, key: metric });
+            }
+        } else {
+            point[metric] = null;
+        }
+    });
+    
+    return point;
+};
+
+const aggregateData = (data: any[], bucketMinutes: number): any[] => {
+    if (bucketMinutes <= 0) return data;
 
     const bucketMillis = bucketMinutes * 60 * 1000;
-    const buckets = new Map<number, AnalysisRecord[]>();
+    const buckets = new Map<number, any[]>();
     data.forEach(r => {
-        const key = Math.floor(new Date(r.timestamp).getTime() / bucketMillis) * bucketMillis;
+        const timestamp = typeof r.timestamp === 'string' ? r.timestamp : r.timestamp;
+        const key = Math.floor(new Date(timestamp).getTime() / bucketMillis) * bucketMillis;
         if (!buckets.has(key)) buckets.set(key, []);
         buckets.get(key)!.push(r);
     });
 
     return Array.from(buckets.entries()).map(([key, bucket]) => {
-        const avgPoint: { [key: string]: any } = { timestamp: new Date(key).toISOString(), recordCount: bucket.length, anomalies: [] };
+        const avgPoint: { [key: string]: any } = {
+            timestamp: new Date(key).toISOString(),
+            recordCount: bucket.length,
+            anomalies: [],
+            source: bucket[0].source || 'bms' // Preserve source from first point in bucket
+        };
         Object.keys(METRICS).forEach(m => {
             const metric = m as MetricKey;
             const { source, multiplier = 1, anomaly } = METRICS[metric];
-            const values = bucket.map(r => source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData]).filter((v): v is number => v != null && typeof v === 'number');
+            
+            // Get values from bucket, handling both old (analysis/weather) and new (data) formats
+            let values = bucket.map(r => {
+                if (r.analysis || r.weather) {
+                    // Old format (AnalysisRecord) - need to apply multiplier
+                    const rawValue = source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
+                    return rawValue != null && typeof rawValue === 'number' ? rawValue * multiplier : null;
+                } else {
+                    // New format (already a chart point with multiplier applied)
+                    return r[metric];
+                }
+            }).filter((v): v is number => v != null);
+            
             if (values.length > 0) {
                 const avgValue = values.reduce((a, v) => a + v, 0) / values.length;
-                avgPoint[metric] = avgValue * multiplier;
+                avgPoint[metric] = avgValue; // Already has multiplier applied
+                
+                // Calculate min/max for bands
+                avgPoint[`${metric}_min`] = Math.min(...values);
+                avgPoint[`${metric}_max`] = Math.max(...values);
+                
                 if (anomaly) {
-                    const anomalyResult = anomaly(avgValue);
+                    // Reverse multiplier for anomaly check since avgValue already has it applied
+                    const anomalyResult = anomaly(avgValue / multiplier);
                     if (anomalyResult) avgPoint.anomalies.push({ ...anomalyResult, key: metric });
                 }
             } else {
@@ -364,8 +431,37 @@ const SvgChart: React.FC<{
         const paths = activeMetrics.map(({ key, axis }) => {
             const yScale = axis === 'left' ? yScaleLeft : yScaleRight;
             if (!yScale) return null;
-            const pathData = dataToRender.filter((d: any) => d[key] !== null).map((d: any, i: number) => `${i === 0 ? 'M' : 'L'} ${xScale(d.timestamp).toFixed(2)} ${yScale(d[key]).toFixed(2)}`).join(' ');
-            return { key, d: pathData, color: METRICS[key].color };
+            
+            // Group consecutive points by source type to create path segments
+            const segments: { d: string; source: string; color: string }[] = [];
+            let currentSegment: any[] = [];
+            let currentSource = '';
+            
+            dataToRender.filter((d: any) => d[key] !== null).forEach((d: any, i: number) => {
+                const pointSource = d.source || 'bms';
+                
+                if (currentSource !== pointSource && currentSegment.length > 0) {
+                    // Source changed, finish current segment
+                    const pathData = currentSegment.map((p, idx) => 
+                        `${idx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(p[key]).toFixed(2)}`
+                    ).join(' ');
+                    segments.push({ d: pathData, source: currentSource, color: METRICS[key].color });
+                    currentSegment = [];
+                }
+                
+                currentSegment.push(d);
+                currentSource = pointSource;
+            });
+            
+            // Add final segment
+            if (currentSegment.length > 0) {
+                const pathData = currentSegment.map((p, idx) => 
+                    `${idx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(p[key]).toFixed(2)}`
+                ).join(' ');
+                segments.push({ d: pathData, source: currentSource, color: METRICS[key].color });
+            }
+            
+            return { key, segments, color: METRICS[key].color };
         }).filter(Boolean);
 
         // Calculate min/max bands for each metric - per segment instead of global
@@ -565,7 +661,18 @@ const SvgChart: React.FC<{
                                     ))}
                                 </g>
                             ))}
-                            {paths.map((p: any) => p && !hiddenMetrics.has(p.key) && <path key={p.key} d={p.d} fill="none" stroke={p.color} strokeWidth="2.5" vectorEffect="non-scaling-stroke" />)}
+                            {paths.map((p: any) => p && !hiddenMetrics.has(p.key) && p.segments.map((seg: any, segIdx: number) => (
+                                <path 
+                                    key={`${p.key}-seg-${segIdx}`}
+                                    d={seg.d} 
+                                    fill="none" 
+                                    stroke={seg.color} 
+                                    strokeWidth="2.5" 
+                                    vectorEffect="non-scaling-stroke"
+                                    strokeDasharray={seg.source === 'estimated' || seg.source === 'cloud' ? '8 4' : undefined}
+                                    opacity={seg.source === 'estimated' ? 0.6 : seg.source === 'cloud' ? 0.8 : 1.0}
+                                />
+                            )))}
 
                             {showDataPoints && activeMetrics.flatMap(({ key, axis }) => {
                                 if (hiddenMetrics.has(key)) return [];
@@ -1027,8 +1134,22 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
     const [manualBucketSize, setManualBucketSize] = useState<string | null>(null);
     const [predictiveData, setPredictiveData] = useState<any | null>(null);
     const [predictiveLoading, setPredictiveLoading] = useState(false);
+    const [useMergedData, setUseMergedData] = useState<boolean>(false); // New: toggle merged data
 
     const [zoomPercentage, setZoomPercentage] = useState<number>(100);
+
+    // Generate chartKey for deterministic rendering - forces re-render when parameters change
+    const chartKey = useMemo(() => {
+        return JSON.stringify({
+            systemId: selectedSystemId,
+            startDate,
+            endDate,
+            metricConfig: Object.keys(metricConfig).sort(),
+            zoomPercentage,
+            chartView,
+            useMergedData
+        });
+    }, [selectedSystemId, startDate, endDate, metricConfig, zoomPercentage, chartView, useMergedData]);
 
     const chartDimensions = useMemo(() => ({
         WIDTH: 1200, CHART_HEIGHT: 450, BRUSH_HEIGHT: 80,
@@ -1144,29 +1265,65 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
             const system = systems.find(s => s.id === selectedSystemId);
             const ratedCapacity = system?.capacity;
 
-            const systemHistory = history.filter(r => r.systemId === selectedSystemId).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+            // Determine date range for query
+            const queryStartDate = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+            const queryEndDate = endDate || new Date().toISOString();
 
-            const historyWithSoh = systemHistory.map(r => {
-                let soh = null;
-                if (ratedCapacity && ratedCapacity > 0 && r.analysis?.fullCapacity && r.analysis.fullCapacity > 0) {
-                    soh = (r.analysis.fullCapacity / ratedCapacity) * 100;
+            let chartDataPoints: any[] = [];
+
+            if (useMergedData && startDate && endDate) {
+                // Use merged data API (BMS + Cloud)
+                const mergedResponse = await getMergedTimelineData(
+                    selectedSystemId,
+                    startDate,
+                    endDate,
+                    true, // Enable downsampling
+                    2000 // Max points
+                );
+
+                // Convert merged data to chart points
+                chartDataPoints = mergedResponse.data.map(mapMergedPointToChartPoint);
+            } else {
+                // Use existing BMS-only data from props
+                const systemHistory = history.filter(r => r.systemId === selectedSystemId).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+                const historyWithSoh = systemHistory.map(r => {
+                    let soh = null;
+                    if (ratedCapacity && ratedCapacity > 0 && r.analysis?.fullCapacity && r.analysis.fullCapacity > 0) {
+                        soh = (r.analysis.fullCapacity / ratedCapacity) * 100;
+                    }
+                    return {
+                        ...r,
+                        analysis: { ...r.analysis, soh } as AnalysisData & { soh: number | null },
+                    };
+                });
+
+                const filteredHistory = historyWithSoh.filter(r => (!startDate || new Date(r.timestamp) >= new Date(startDate)) && (!endDate || new Date(r.timestamp) <= new Date(endDate)));
+
+                if (filteredHistory.length < 2) {
+                    setTimelineData(null);
+                    setIsGenerating(false);
+                    return;
                 }
-                return {
-                    ...r,
-                    analysis: { ...r.analysis, soh } as AnalysisData & { soh: number | null },
-                };
-            });
 
-            const filteredHistory = historyWithSoh.filter(r => (!startDate || new Date(r.timestamp) >= new Date(startDate)) && (!endDate || new Date(r.timestamp) <= new Date(endDate)));
+                chartDataPoints = filteredHistory.map(mapRecordToPoint);
+            }
 
-            if (filteredHistory.length < 2) {
+            if (chartDataPoints.length < 2) {
                 setTimelineData(null);
             } else {
+                // Create LODs for zoom levels
                 const dataLODs: Record<string, any[]> = {
-                    'raw': filteredHistory.map(mapRecordToPoint), '5': aggregateData(filteredHistory, 5), '15': aggregateData(filteredHistory, 15),
-                    '60': aggregateData(filteredHistory, 60), '240': aggregateData(filteredHistory, 240), '1440': aggregateData(filteredHistory, 1440),
+                    'raw': chartDataPoints,
+                    '5': aggregateData(chartDataPoints as any, 5),
+                    '15': aggregateData(chartDataPoints as any, 15),
+                    '60': aggregateData(chartDataPoints as any, 60),
+                    '240': aggregateData(chartDataPoints as any, 240),
+                    '1440': aggregateData(chartDataPoints as any, 1440),
                 };
-                const xMin = new Date(filteredHistory[0].timestamp).getTime(), xMax = new Date(filteredHistory[filteredHistory.length - 1].timestamp).getTime();
+
+                const xMin = new Date(chartDataPoints[0].timestamp).getTime();
+                const xMax = new Date(chartDataPoints[chartDataPoints.length - 1].timestamp).getTime();
                 const xScale = (time: string | number) => ((new Date(time).getTime() - xMin) / (xMax - xMin || 1)) * chartDimensions.chartWidth;
                 xScale.invert = (px: number) => xMin + (px / chartDimensions.chartWidth) * (xMax - xMin || 1);
 
@@ -1189,7 +1346,7 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
         } finally {
             setIsGenerating(false);
         }
-    }, [selectedSystemId, history, systems, startDate, endDate, chartDimensions, averagingEnabled, manualBucketSize]);
+    }, [selectedSystemId, history, systems, startDate, endDate, chartDimensions, averagingEnabled, manualBucketSize, useMergedData]);
 
     const handleResetView = () => {
         setZoomPercentage(100);
