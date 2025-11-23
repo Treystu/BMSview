@@ -135,7 +135,9 @@ async function fetchHourlyWeather(lat, lon, date, log) {
       throw new Error(data.message || 'Failed to fetch from OpenWeather Timemachine API.');
     }
 
-    const hourlyData = data.hourly || [];
+    // OpenWeather Timemachine API returns hourly data in 'data.data' array
+    // Each element in the array represents an hour with historical weather data
+    const hourlyData = data.data || [];
     log('debug', 'Successfully fetched hourly weather data.', { 
       ...logContext, 
       hourCount: hourlyData.length 
