@@ -5,6 +5,12 @@
  * requests corrections when needed, preventing user-facing errors.
  */
 
+// Validation constants
+const CSV_COLUMN_TOLERANCE = 1; // Allow ±1 column variance to handle quoted commas
+const MIN_MARKDOWN_LENGTH = 10; // Minimum characters for valid markdown response
+const MIN_CONTENT_LENGTH = 50; // Minimum length for substantial content
+const MAX_RESPONSE_SNIPPET_LENGTH = 500; // Max chars to include in correction prompts
+
 /**
  * Validate response format based on detected intent
  * @param {string} response - The response text from Gemini
@@ -58,12 +64,12 @@ function validateCSV(response) {
         };
     }
 
-    // Validate data rows have consistent column counts (allow ±1 for quoted commas)
+    // Validate data rows have consistent column counts (allow tolerance for quoted commas)
     for (let i = 1; i < lines.length; i++) {
         if (lines[i].trim() === '') continue; // Skip empty lines
         
         const cols = lines[i].split(',').length;
-        if (Math.abs(cols - headerCols) > 1) {
+        if (Math.abs(cols - headerCols) > CSV_COLUMN_TOLERANCE) {
             return {
                 valid: false,
                 error: `CSV row ${i + 1} has ${cols} columns, expected ${headerCols}`,
@@ -146,10 +152,10 @@ function validateJSON(response) {
  */
 function validateMarkdown(response) {
     // Very lenient - just check it's not completely empty or broken
-    if (response.trim().length < 10) {
+    if (response.trim().length < MIN_MARKDOWN_LENGTH) {
         return {
             valid: false,
-            error: 'Response is too short (less than 10 characters)',
+            error: `Response is too short (less than ${MIN_MARKDOWN_LENGTH} characters)`,
             formatType: 'markdown'
         };
     }
@@ -158,7 +164,7 @@ function validateMarkdown(response) {
     const hasHeaders = /^#{1,6}\s+.+$/m.test(response);
     const hasBullets = /^[\*\-]\s+.+$/m.test(response);
     const hasBold = /\*\*.+\*\*/.test(response);
-    const hasContent = response.length > 50;
+    const hasContent = response.length > MIN_CONTENT_LENGTH;
 
     if (!hasHeaders && !hasBullets && !hasBold && !hasContent) {
         return {
@@ -177,7 +183,7 @@ function validateMarkdown(response) {
 function buildCorrectionPrompt(originalResponse, validationError, formatType, userPrompt) {
     let prompt = `Your previous response had a formatting issue that will cause errors when displayed to the user.\n\n`;
     prompt += `**FORMAT ERROR:** ${validationError}\n\n`;
-    prompt += `**YOUR PREVIOUS RESPONSE:**\n${originalResponse.substring(0, 500)}${originalResponse.length > 500 ? '...' : ''}\n\n`;
+    prompt += `**YOUR PREVIOUS RESPONSE:**\n${originalResponse.substring(0, MAX_RESPONSE_SNIPPET_LENGTH)}${originalResponse.length > MAX_RESPONSE_SNIPPET_LENGTH ? '...' : ''}\n\n`;
     
     switch (formatType) {
         case 'csv':

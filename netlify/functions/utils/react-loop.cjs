@@ -15,7 +15,6 @@ const { createLogger } = require('./logger.cjs');
 const { validateResponseFormat, buildCorrectionPrompt } = require('./response-validator.cjs');
 
 const MAX_TURNS = 5;
-const MAX_FORMAT_RETRIES = 1; // Auto-retry once for format issues
 const SYNC_CONTEXT_BUDGET_MS = 22000;
 const SYNC_TOTAL_BUDGET_MS = 55000;
 
@@ -455,6 +454,5 @@ This typically means your question requires accessing long-term historical data 
 
 module.exports = {
     executeReActLoop,
-    MAX_TURNS,
-    MAX_FORMAT_RETRIES
+    MAX_TURNS
 };
