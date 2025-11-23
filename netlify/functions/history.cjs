@@ -24,12 +24,40 @@ exports.handler = async function(event, context) {
 
         // --- GET Request Handler ---
         if (httpMethod === 'GET') {
-            const { id, systemId, all, page = '1', limit = '25' } = queryStringParameters || {};
+            const { id, systemId, all, page = '1', limit = '25', merged, startDate, endDate, downsample } = queryStringParameters || {};
 
             if (id) {
                 // Fetch single record by ID
                 const record = await historyCollection.findOne({ id }, { projection: { _id: 0 } });
                 return record ? respond(200, record) : respond(404, { error: "Record not found." });
+            }
+
+            // Merged timeline data (BMS + Cloud)
+            if (merged === 'true' && systemId && startDate && endDate) {
+                log('info', 'Fetching merged timeline data.', { ...logContext, systemId, startDate, endDate });
+                const { mergeBmsAndCloudData, downsampleMergedData } = require('./utils/data-merge.cjs');
+                
+                try {
+                    let mergedData = await mergeBmsAndCloudData(systemId, startDate, endDate, log);
+                    
+                    // Apply downsampling if requested
+                    if (downsample === 'true') {
+                        const maxPoints = parseInt(queryStringParameters.maxPoints) || 2000;
+                        mergedData = downsampleMergedData(mergedData, maxPoints, log);
+                    }
+                    
+                    return respond(200, {
+                        systemId,
+                        startDate,
+                        endDate,
+                        totalPoints: mergedData.length,
+                        downsampled: downsample === 'true',
+                        data: mergedData
+                    });
+                } catch (err) {
+                    log('error', 'Failed to merge timeline data.', { error: err.message, stack: err.stack });
+                    return respond(500, { error: 'Failed to merge timeline data: ' + err.message });
+                }
             }
 
             if (systemId) {
