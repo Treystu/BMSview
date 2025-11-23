@@ -720,6 +720,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                                             {[
                                                 { id: 'weather', label: 'Weather Service' },
+                                                { id: 'backfillWeather', label: 'Backfill Weather' },
+                                                { id: 'backfillHourlyCloud', label: 'Backfill Hourly Cloud' },
                                                 { id: 'solarEstimate', label: 'Solar Estimate' },
                                                 { id: 'systemAnalytics', label: 'System Analytics' },
                                                 { id: 'predictiveMaintenance', label: 'Predictive Maintenance' },
