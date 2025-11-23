@@ -14,6 +14,7 @@ import {
     fixPowerSigns,
     getAnalysisHistory,
     getRegisteredSystems,
+    getDiagnosticProgress,
     linkAnalysisToSystem,
     mergeBmsSystems,
     runDiagnostics,
@@ -554,12 +555,118 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: initialResults });
         dispatch({ type: 'ACTION_START', payload: 'isRunningDiagnostics' });
         
+        let pollingInterval: NodeJS.Timeout | null = null;
+        let testIdForPolling: string | null = null;
+        
         try {
-            const results = await runDiagnostics(selectedTests);
-            dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: results });
+            // Start diagnostics run in background and poll for progress simultaneously
+            const diagnosticsPromise = runDiagnostics(selectedTests);
+            
+            // Start polling immediately (will initially fail until backend creates progress doc, which is fine)
+            // Extract testId from the response when it arrives
+            diagnosticsPromise.then(result => {
+                testIdForPolling = result.testId;
+            }).catch(() => {
+                // Ignore errors here, they'll be caught below
+            });
+            
+            // Poll for progress updates every 500ms
+            let pollCount = 0;
+            pollingInterval = setInterval(async () => {
+                pollCount++;
+                
+                // Skip polling if we don't have a testId yet (first ~100ms)
+                if (!testIdForPolling && pollCount < 3) {
+                    return;
+                }
+                
+                // If we still don't have testId after a few polls, something is wrong
+                if (!testIdForPolling) {
+                    return; // Wait for main promise to resolve/reject
+                }
+                
+                try {
+                    const progress = await getDiagnosticProgress(testIdForPolling);
+                    
+                    // Map completed results to display format
+                    const mappedResults = selectedTests.map(testName => {
+                        const testConfig = DIAGNOSTIC_TEST_SECTIONS.find(t => t.id === testName);
+                        const displayName = testConfig?.label || testName;
+                        
+                        const completedResult = progress.results.find(r => r.name === displayName);
+                        
+                        if (completedResult) {
+                            return completedResult;
+                        }
+                        
+                        // Test not yet completed - show as running
+                        return {
+                            name: displayName,
+                            status: 'running' as const,
+                            duration: 0
+                        };
+                    });
+                    
+                    // Calculate summary from current results
+                    const summary = {
+                        total: progress.progress.total,
+                        success: mappedResults.filter(r => r.status === 'success').length,
+                        warnings: mappedResults.filter(r => r.status === 'warning').length,
+                        errors: mappedResults.filter(r => r.status === 'error').length
+                    };
+                    
+                    // Update modal with incremental results
+                    const updatedResults = {
+                        status: 'partial' as const, // Keep as partial until fully complete
+                        timestamp: progress.timestamp,
+                        duration: 0,
+                        results: mappedResults,
+                        summary
+                    };
+                    
+                    dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: updatedResults });
+                    
+                    log('info', 'Progress update', { 
+                        completed: progress.progress.completed, 
+                        total: progress.progress.total,
+                        percentage: progress.progress.percentage
+                    });
+                } catch (pollError) {
+                    // Log but don't stop polling - tests might still be running
+                    if (pollCount % 10 === 0) { // Only log every 10th poll to avoid spam
+                        log('warn', 'Progress polling encountered error', { 
+                            error: pollError instanceof Error ? pollError.message : 'Unknown error',
+                            pollCount 
+                        });
+                    }
+                }
+            }, 500); // Poll every 500ms for smooth real-time updates
+            
+            // Wait for the full results
+            const finalResults = await diagnosticsPromise;
+            
+            // Stop polling
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+            
+            // Update with final complete results
+            dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: finalResults });
+            log('info', 'Diagnostics completed', { 
+                total: finalResults.summary?.total,
+                success: finalResults.summary?.success,
+                errors: finalResults.summary?.errors
+            });
+            
         } catch (err) {
             const error = err instanceof Error ? err.message : 'Failed to run diagnostics.';
             log('error', 'Diagnostics failed.', { error });
+            
+            // Clear polling interval on error
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+            
             // Create an error response object
             const errorResponse: any = {
                 status: 'error',

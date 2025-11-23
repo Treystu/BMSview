@@ -2046,6 +2046,60 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
 };
 
 /**
+ * Poll for diagnostic test progress
+ * Used for real-time updates while tests are running in parallel
+ */
+export const getDiagnosticProgress = async (testId: string): Promise<{
+    testId: string;
+    status: string;
+    timestamp: string;
+    lastUpdate?: string;
+    completedAt?: string;
+    progress: {
+        total: number;
+        completed: number;
+        percentage: number;
+    };
+    results: Array<{
+        name: string;
+        status: 'success' | 'warning' | 'error' | 'partial' | 'running';
+        duration: number;
+        details?: Record<string, any>;
+        error?: string;
+        steps?: any[];
+        tests?: any[];
+        stages?: any[];
+        jobLifecycle?: any[];
+    }>;
+    completedTests: string[];
+    isComplete: boolean;
+}> => {
+    log('info', 'Polling diagnostic progress.', { testId });
+
+    const response = await fetch(`/.netlify/functions/diagnostics-progress?testId=${encodeURIComponent(testId)}`);
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        log('error', 'Diagnostic progress poll failed.', { 
+            status: response.status, 
+            statusText: response.statusText,
+            error: errorText 
+        });
+        throw new Error(`Failed to get diagnostic progress: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    log('info', 'Diagnostic progress received.', { 
+        testId,
+        completed: data.progress?.completed,
+        total: data.progress?.total,
+        isComplete: data.isComplete
+    });
+
+    return data;
+};
+
+/**
  * Get hourly SOC predictions for a battery system
  * 
  * @param systemId - The ID of the battery system
