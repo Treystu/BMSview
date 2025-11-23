@@ -401,6 +401,11 @@ function capitalize(str) {
 /**
  * Get historical battery measurements for a system
  */
+/**
+ * Legacy function - DEPRECATED
+ * Use request_bms_data instead for better performance and aggregation
+ * This function is kept for backward compatibility but redirects to request_bms_data
+ */
 async function getSystemHistory(params, log) {
     const { systemId, limit = 100, startDate, endDate } = params;
 
@@ -408,38 +413,51 @@ async function getSystemHistory(params, log) {
         throw new Error('systemId is required');
     }
 
-    try {
-        const collection = await getCollection('history');
+    log.warn('getSystemHistory is deprecated - redirecting to request_bms_data', { systemId });
 
-        const query = { systemId };
-
-        if (startDate || endDate) {
-            query.timestamp = {};
-            if (startDate) query.timestamp.$gte = new Date(startDate).toISOString();
-            if (endDate) query.timestamp.$lte = new Date(endDate).toISOString();
-        }
-
-        const records = await collection
-            .find(query, { projection: { _id: 0 } })
-            .sort({ timestamp: -1 })
-            .limit(Math.min(limit, 500))
-            .toArray();
-
-        log.info('System history retrieved', { systemId, count: records.length });
-
-        return {
-            systemId,
-            recordCount: records.length,
-            records: records.map(r => ({
-                timestamp: r.timestamp,
-                analysis: r.analysis,
-                weather: r.weather
-            }))
-        };
-    } catch (error) {
-        log.error('getSystemHistory failed', { error: error.message, systemId });
-        throw error;
+    // Calculate time range
+    let time_range_start, time_range_end;
+    
+    if (endDate) {
+        time_range_end = new Date(endDate).toISOString();
+    } else {
+        time_range_end = new Date().toISOString();
     }
+    
+    if (startDate) {
+        time_range_start = new Date(startDate).toISOString();
+    } else {
+        // Default to 30 days before end date
+        const start = new Date(time_range_end);
+        start.setDate(start.getDate() - 30);
+        time_range_start = start.toISOString();
+    }
+
+    // Redirect to the new request_bms_data function
+    const result = await requestBmsData({
+        systemId,
+        metric: 'all',
+        time_range_start,
+        time_range_end,
+        granularity: 'raw'
+    }, log);
+
+    // Transform to legacy format
+    return {
+        systemId,
+        recordCount: result.dataPoints,
+        records: result.data.map(d => ({
+            timestamp: d.timestamp,
+            analysis: {
+                stateOfCharge: d.soc,
+                overallVoltage: d.voltage,
+                current: d.current,
+                power: d.power,
+                temperature: d.temperature
+            }
+        })),
+        note: 'DEPRECATED: This function redirects to request_bms_data. Please use request_bms_data directly.'
+    };
 }
 
 /**
@@ -492,6 +510,111 @@ async function getSolarEstimate(params, log) {
 }
 
 /**
+ * Calculate hourly averages from records
+ * Groups data by hour of day and calculates mean values
+ */
+function calculateHourlyAverages(records) {
+    if (!records || records.length === 0) {
+        return null;
+    }
+
+    const hourlyBuckets = Array.from({ length: 24 }, () => ({
+        soc: [],
+        voltage: [],
+        current: [],
+        power: [],
+        temperature: []
+    }));
+
+    // Group records by hour
+    for (const record of records) {
+        if (!record.timestamp || !record.analysis) continue;
+        
+        const hour = new Date(record.timestamp).getHours();
+        const analysis = record.analysis;
+
+        if (analysis.stateOfCharge != null) hourlyBuckets[hour].soc.push(analysis.stateOfCharge);
+        if (analysis.voltage != null) hourlyBuckets[hour].voltage.push(analysis.voltage);
+        if (analysis.current != null) hourlyBuckets[hour].current.push(analysis.current);
+        if (analysis.power != null) hourlyBuckets[hour].power.push(analysis.power);
+        if (analysis.temperature != null) hourlyBuckets[hour].temperature.push(analysis.temperature);
+    }
+
+    // Calculate averages for each hour
+    const averages = hourlyBuckets.map((bucket, hour) => {
+        const avg = (arr) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+        
+        return {
+            hour,
+            avgSOC: avg(bucket.soc),
+            avgVoltage: avg(bucket.voltage),
+            avgCurrent: avg(bucket.current),
+            avgPower: avg(bucket.power),
+            avgTemperature: avg(bucket.temperature),
+            sampleCount: Math.max(
+                bucket.soc.length,
+                bucket.voltage.length,
+                bucket.current.length,
+                bucket.power.length,
+                bucket.temperature.length
+            )
+        };
+    });
+
+    return averages;
+}
+
+/**
+ * Calculate performance baseline (median values from recent data)
+ * Used as reference point for detecting anomalies
+ */
+function calculatePerformanceBaseline(records) {
+    if (!records || records.length === 0) {
+        return null;
+    }
+
+    const values = {
+        soc: [],
+        voltage: [],
+        current: [],
+        power: [],
+        temperature: []
+    };
+
+    // Collect all values
+    for (const record of records) {
+        if (!record.analysis) continue;
+        
+        const analysis = record.analysis;
+        if (analysis.stateOfCharge != null) values.soc.push(analysis.stateOfCharge);
+        if (analysis.voltage != null) values.voltage.push(analysis.voltage);
+        if (analysis.current != null) values.current.push(Math.abs(analysis.current));
+        if (analysis.power != null) values.power.push(Math.abs(analysis.power));
+        if (analysis.temperature != null) values.temperature.push(analysis.temperature);
+    }
+
+    // Calculate median for each metric
+    const median = (arr) => {
+        if (arr.length === 0) return null;
+        const sorted = [...arr].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 === 0 
+            ? (sorted[mid - 1] + sorted[mid]) / 2 
+            : sorted[mid];
+    };
+
+    return {
+        medianSOC: median(values.soc),
+        medianVoltage: median(values.voltage),
+        medianCurrent: median(values.current),
+        medianPower: median(values.power),
+        medianTemperature: median(values.temperature),
+        sampleCount: records.length,
+        note: 'Baseline calculated from median values to be robust against outliers'
+    };
+}
+
+/**
  * Get system analytics with intelligent alert event grouping
  */
 async function getSystemAnalytics(params, log) {
@@ -519,7 +642,11 @@ async function getSystemAnalytics(params, log) {
                     _id: 0,
                     timestamp: 1,
                     'analysis.alerts': 1,
-                    'analysis.stateOfCharge': 1
+                    'analysis.stateOfCharge': 1,
+                    'analysis.voltage': 1,
+                    'analysis.current': 1,
+                    'analysis.power': 1,
+                    'analysis.temperature': 1
                 }
             })
             .sort({ timestamp: -1 }) // Most recent first
@@ -554,13 +681,19 @@ async function getSystemAnalytics(params, log) {
             avgSOC: group.avgSOC
         }));
 
+        // Calculate hourly averages
+        const hourlyAverages = calculateHourlyAverages(records);
+        
+        // Calculate performance baseline (median values from recent data)
+        const performanceBaseline = calculatePerformanceBaseline(records);
+
         return {
             systemId,
             lookbackDays,
             recordCount: records.length,
             wasLimited: records.length >= MAX_RECORDS,
-            hourlyAverages: null, // TODO: Implement hourly averages
-            performanceBaseline: null, // TODO: Implement performance baseline
+            hourlyAverages,
+            performanceBaseline,
             alertAnalysis: {
                 totalAlerts,
                 totalEvents: alertAnalysis.totalEvents,

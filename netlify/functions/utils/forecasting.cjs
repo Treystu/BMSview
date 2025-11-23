@@ -11,6 +11,66 @@ const { getCollection } = require('./mongodb.cjs');
 const { BATTERY_REPLACEMENT_THRESHOLDS } = require('./analysis-utilities.cjs');
 
 /**
+ * Calculate sunrise and sunset times for a given date and location
+ * Uses simplified formula accurate to within ~5 minutes for most locations
+ * 
+ * @param {Date} date - The date for calculation
+ * @param {number} latitude - Latitude in degrees
+ * @param {number} longitude - Longitude in degrees
+ * @returns {Object} Object with sunrise and sunset Date objects
+ */
+function calculateSunriseSunset(date, latitude, longitude) {
+  // Use fixed default times if coordinates not available
+  if (latitude == null || longitude == null) {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const day = date.getDate();
+    return {
+      sunrise: new Date(year, month, day, 6, 0, 0),
+      sunset: new Date(year, month, day, 18, 0, 0)
+    };
+  }
+
+  const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 86400000);
+  
+  // Solar noon correction for longitude
+  const lngCorrection = longitude / 15.0;
+  
+  // Approximate solar declination (degrees)
+  const declination = -23.44 * Math.cos((360 / 365) * (dayOfYear + 10) * Math.PI / 180);
+  
+  // Hour angle at sunrise/sunset (degrees)
+  const latRad = latitude * Math.PI / 180;
+  const declRad = declination * Math.PI / 180;
+  const cosHourAngle = -Math.tan(latRad) * Math.tan(declRad);
+  
+  // Check for polar day/night
+  if (cosHourAngle > 1) {
+    // Polar night - no sunrise
+    return { sunrise: null, sunset: null };
+  } else if (cosHourAngle < -1) {
+    // Polar day - 24h daylight
+    const allDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0);
+    return { sunrise: allDay, sunset: allDay };
+  }
+  
+  const hourAngle = Math.acos(cosHourAngle) * 180 / Math.PI;
+  
+  // Convert hour angle to time
+  const sunriseHour = 12 - (hourAngle / 15) - lngCorrection;
+  const sunsetHour = 12 + (hourAngle / 15) - lngCorrection;
+  
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const day = date.getDate();
+  
+  const sunrise = new Date(year, month, day, Math.floor(sunriseHour), Math.round((sunriseHour % 1) * 60), 0);
+  const sunset = new Date(year, month, day, Math.floor(sunsetHour), Math.round((sunsetHour % 1) * 60), 0);
+  
+  return { sunrise, sunset };
+}
+
+/**
  * Predict capacity degradation over time using context-aware analysis
  * 
  * This function now properly accounts for:
@@ -767,10 +827,20 @@ function interpolateSoc(
   const hour = targetTime.getHours();
 
   // Determine if it's daytime (potential solar charging)
-  // TODO: Implement proper sunrise/sunset calculation using lat/lon for accuracy
-  // Current simplified approach: 6am-6pm (ignores seasonal variation)
-  // For production, consider using a solar position library or the SPA algorithm
-  const isDaytime = hour >= 6 && hour < 18;
+  // Use sunrise/sunset calculation with lat/lon for accuracy
+  const { sunrise, sunset } = calculateSunriseSunset(targetTime, latitude, longitude);
+  let isDaytime;
+  
+  if (sunrise === null && sunset === null) {
+    // Polar night - no daylight
+    isDaytime = false;
+  } else if (sunrise.getTime() === sunset.getTime()) {
+    // Polar day - 24h daylight
+    isDaytime = true;
+  } else {
+    // Normal case - check if current time is between sunrise and sunset
+    isDaytime = targetTime >= sunrise && targetTime < sunset;
+  }
 
   // Find nearest previous known SOC
   let previousSoc = null;
