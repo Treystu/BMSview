@@ -45,13 +45,49 @@ interface DiagnosticsModalProps {
   onClose: () => void;
   results: DiagnosticsResponse | null;
   isLoading: boolean;
+  selectedTests: string[];
 }
 
-const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, results, isLoading }) => {
+const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, results, isLoading, selectedTests }) => {
   const [expandedTestId, setExpandedTestId] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
 
   if (!isOpen) return null;
+
+  // Map test IDs to display names - matches backend diagnosticTests object keys
+  const testDisplayNames: Record<string, string> = {
+    database: 'Database Connection',
+    gemini: 'Gemini API',
+    analyze: 'Analyze Endpoint',
+    insightsWithTools: 'Insights with Tools',
+    asyncAnalysis: 'Asynchronous Insights (Background)',
+    history: 'History Endpoint',
+    systems: 'Systems Endpoint',
+    dataExport: 'Data Export',
+    idempotency: 'Idempotency',
+    weather: 'Weather Endpoint',
+    backfillWeather: 'Backfill Weather Function',
+    backfillHourlyCloud: 'Backfill Hourly Cloud Function',
+    solarEstimate: 'Solar Estimate Endpoint',
+    predictiveMaintenance: 'Predictive Maintenance',
+    systemAnalytics: 'System Analytics',
+    contentHashing: 'Content Hashing',
+    errorHandling: 'Error Handling',
+    logging: 'Logging System',
+    retryMechanism: 'Retry Mechanism',
+    timeout: 'Timeout Handling'
+  };
+
+  // Get display names for selected tests only
+  const runningTests = selectedTests.map(testId => ({
+    id: testId,
+    displayName: testDisplayNames[testId] || `Unknown Test (${testId})`
+  }));
+
+  // Calculate dynamic time estimate based on number of tests
+  // Average: 1-2 seconds per test
+  const estimatedMinSeconds = Math.max(5, Math.ceil(runningTests.length * 1));
+  const estimatedMaxSeconds = Math.max(10, Math.ceil(runningTests.length * 2));
 
   // Component to show live test status
   const LiveTestStatus: React.FC<{ name: string; result?: DiagnosticTestResult }> = ({ name, result }) => {
@@ -252,50 +288,27 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
 
         {isLoading ? (
           <div className="space-y-4">
-            {/* LIVE Test Status - Show each test as it runs */}
+            {/* LIVE Test Status - Show ONLY tests that are actually running */}
             <div className="bg-gray-700 p-4 rounded-md">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center">
                   <SpinnerIcon className="w-6 h-6 text-secondary" />
                   <span className="ml-3 text-lg font-semibold">Running Diagnostic Tests</span>
                 </div>
-                <span className="text-sm text-gray-400">15-25 seconds</span>
+                <span className="text-sm text-gray-400">
+                  {runningTests.length} test{runningTests.length !== 1 ? 's' : ''} • ~{estimatedMinSeconds}-{estimatedMaxSeconds}s
+                </span>
               </div>
               
-              {/* Live Test List - Shows each test with real-time status */}
+              {/* Live Test List - Shows ONLY the tests that are actually being executed */}
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {/* Infrastructure Tests */}
-                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">Infrastructure (2)</div>
-                <LiveTestStatus name="Database Connection" result={results?.results?.find(r => r.name === 'Database Connection')} />
-                <LiveTestStatus name="Gemini API" result={results?.results?.find(r => r.name === 'Gemini API')} />
-                
-                {/* Core Analysis Tests */}
-                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">Core Analysis (3)</div>
-                <LiveTestStatus name="Analyze Endpoint" result={results?.results?.find(r => r.name === 'Analyze Endpoint')} />
-                <LiveTestStatus name="Insights with Tools" result={results?.results?.find(r => r.name === 'Insights with Tools')} />
-                <LiveTestStatus name="Asynchronous Insights (Background)" result={results?.results?.find(r => r.name === 'Asynchronous Insights (Background)')} />
-                
-                {/* Data Management Tests */}
-                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">Data Management (4)</div>
-                <LiveTestStatus name="History Endpoint" result={results?.results?.find(r => r.name === 'History Endpoint')} />
-                <LiveTestStatus name="Systems Endpoint" result={results?.results?.find(r => r.name === 'Systems Endpoint')} />
-                <LiveTestStatus name="Data Export" result={results?.results?.find(r => r.name === 'Data Export')} />
-                <LiveTestStatus name="Idempotency" result={results?.results?.find(r => r.name === 'Idempotency')} />
-                
-                {/* External Services Tests */}
-                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">External Services (4)</div>
-                <LiveTestStatus name="Weather Endpoint" result={results?.results?.find(r => r.name === 'Weather Endpoint')} />
-                <LiveTestStatus name="Solar Estimate Endpoint" result={results?.results?.find(r => r.name === 'Solar Estimate Endpoint')} />
-                <LiveTestStatus name="Predictive Maintenance" result={results?.results?.find(r => r.name === 'Predictive Maintenance')} />
-                <LiveTestStatus name="System Analytics" result={results?.results?.find(r => r.name === 'System Analytics')} />
-                
-                {/* System Utilities Tests */}
-                <div className="text-xs font-semibold text-gray-400 mt-3 mb-1">System Utilities (5)</div>
-                <LiveTestStatus name="Content Hashing" result={results?.results?.find(r => r.name === 'Content Hashing')} />
-                <LiveTestStatus name="Error Handling" result={results?.results?.find(r => r.name === 'Error Handling')} />
-                <LiveTestStatus name="Logging System" result={results?.results?.find(r => r.name === 'Logging System')} />
-                <LiveTestStatus name="Retry Mechanism" result={results?.results?.find(r => r.name === 'Retry Mechanism')} />
-                <LiveTestStatus name="Timeout Handling" result={results?.results?.find(r => r.name === 'Timeout Handling')} />
+                {runningTests.map((test) => (
+                  <LiveTestStatus 
+                    key={test.id}
+                    name={test.displayName} 
+                    result={results?.results?.find(r => r.name === test.displayName)} 
+                  />
+                ))}
               </div>
               
               {/* Overall Progress */}
