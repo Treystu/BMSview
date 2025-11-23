@@ -196,13 +196,14 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
         });
       }
     } else {
-      // BMS data exists, merge cloud data into it
+      // BMS data exists at this timestamp, merge cloud weather data into it
       const bmsPoint = bmsTimestampMap.get(cloudPoint.timestamp);
+      // Prefer cloud hourly data for weather metrics (more precise/recent than BMS snapshot weather)
       bmsPoint.data.clouds = cloudPoint.data.clouds ?? bmsPoint.data.clouds;
       bmsPoint.data.temp = cloudPoint.data.temp ?? bmsPoint.data.temp;
       bmsPoint.data.uvi = cloudPoint.data.uvi ?? bmsPoint.data.uvi;
-      bmsPoint.data.weather_main = cloudPoint.data.weather_main;
-      bmsPoint.data.estimated_irradiance_w_m2 = cloudPoint.data.estimated_irradiance_w_m2;
+      bmsPoint.data.weather_main = cloudPoint.data.weather_main ?? bmsPoint.data.weather_main;
+      bmsPoint.data.estimated_irradiance_w_m2 = cloudPoint.data.estimated_irradiance_w_m2 ?? bmsPoint.data.estimated_irradiance_w_m2;
     }
   }
 

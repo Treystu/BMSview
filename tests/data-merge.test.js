@@ -195,7 +195,7 @@ describe('Data Merge Utilities', () => {
             overallVoltage: 52.3
           },
           weather: {
-            clouds: 50 // BMS has cloud data
+            clouds: 50 // BMS has cloud data from its analysis
           }
         }
       ];
@@ -208,7 +208,7 @@ describe('Data Merge Utilities', () => {
           hourlyData: [
             {
               timestamp: '2024-01-01T06:00:00.000Z',
-              clouds: 60, // Different from BMS
+              clouds: 60, // Cloud hourly data provides updated weather
               temp: 20,
               uvi: 3
             }
@@ -224,9 +224,8 @@ describe('Data Merge Utilities', () => {
       expect(result.length).toBe(1);
       expect(result[0].source).toBe('bms');
       
-      // Cloud data should be merged in (preferring cloud's more recent data if available)
-      // But BMS point remains marked as 'bms' source
-      expect(result[0].data.clouds).toBe(60); // Cloud data merged in
+      // BMS point remains, but cloud weather data is merged in (cloud data preferred for weather metrics)
+      expect(result[0].data.clouds).toBe(60); // Cloud weather data merged in
       expect(result[0].data.stateOfCharge).toBe(75); // BMS data preserved
     });
 

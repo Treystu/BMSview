@@ -126,26 +126,28 @@ const aggregateData = (data: any[], bucketMinutes: number): any[] => {
             const { source, multiplier = 1, anomaly } = METRICS[metric];
             
             // Get values from bucket, handling both old (analysis/weather) and new (data) formats
-            const values = bucket.map(r => {
+            let values = bucket.map(r => {
                 if (r.analysis || r.weather) {
-                    // Old format (AnalysisRecord)
-                    return source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
+                    // Old format (AnalysisRecord) - need to apply multiplier
+                    const rawValue = source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
+                    return rawValue != null && typeof rawValue === 'number' ? rawValue * multiplier : null;
                 } else {
-                    // New format (already a chart point)
+                    // New format (already a chart point with multiplier applied)
                     return r[metric];
                 }
-            }).filter((v): v is number => v != null && typeof v === 'number');
+            }).filter((v): v is number => v != null);
             
             if (values.length > 0) {
                 const avgValue = values.reduce((a, v) => a + v, 0) / values.length;
-                avgPoint[metric] = avgValue; // Already multiplied in mapRecordToPoint/mapMergedPointToChartPoint
+                avgPoint[metric] = avgValue; // Already has multiplier applied
                 
                 // Calculate min/max for bands
                 avgPoint[`${metric}_min`] = Math.min(...values);
                 avgPoint[`${metric}_max`] = Math.max(...values);
                 
                 if (anomaly) {
-                    const anomalyResult = anomaly(avgValue / multiplier); // Reverse multiplier for anomaly check
+                    // Reverse multiplier for anomaly check since avgValue already has it applied
+                    const anomalyResult = anomaly(avgValue / multiplier);
                     if (anomalyResult) avgPoint.anomalies.push({ ...anomalyResult, key: metric });
                 }
             } else {
