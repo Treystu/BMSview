@@ -2901,6 +2901,20 @@ exports.handler = async (event, context) => {
       note: REAL_BMS_DATA._note
     });
 
+    // Initialize progress tracking in database for real-time updates
+    const db = await getDb();
+    const progressDoc = {
+      testId,
+      timestamp: new Date().toISOString(),
+      status: 'running',
+      selectedTests,
+      completedTests: [],
+      results: [],
+      totalTests: selectedTests.length
+    };
+    await db.collection('diagnostics-runs').insertOne(progressDoc);
+    logger.info('Progress tracking initialized', { testId, totalTests: selectedTests.length });
+
     // Run ALL tests in PARALLEL for faster execution (like GitHub PR checks)
     // Each test is completely independent and reports its own result
     const testPromises = selectedTests.map(async (testName) => {
@@ -2909,13 +2923,24 @@ exports.handler = async (event, context) => {
       // Check if test exists
       if (!diagnosticTests[testName]) {
         logger.warn(`Test '${testName}' not found in diagnosticTests`);
-        return {
+        const errorResult = {
           name: testName,
           status: 'error',
           error: `Test function '${testName}' not found`,
           duration: 0,
           details: { reason: 'Test not defined in diagnosticTests object' }
         };
+        
+        // Update progress immediately
+        await db.collection('diagnostics-runs').updateOne(
+          { testId },
+          { 
+            $push: { completedTests: testName, results: errorResult },
+            $set: { lastUpdate: new Date().toISOString() }
+          }
+        );
+        
+        return errorResult;
       }
       
       logger.info(`>>> Starting test IN PARALLEL: ${testName}`);
@@ -2954,6 +2979,16 @@ exports.handler = async (event, context) => {
         };
         
         logger.info(`<<< PARALLEL test completed: ${testName} (${finalResult.status}) in ${finalResult.duration}ms`);
+        
+        // Update progress in database for real-time monitoring
+        await db.collection('diagnostics-runs').updateOne(
+          { testId },
+          { 
+            $push: { completedTests: testName, results: finalResult },
+            $set: { lastUpdate: new Date().toISOString() }
+          }
+        );
+        
         return finalResult;
         
       } catch (testError) {
@@ -2981,6 +3016,16 @@ exports.handler = async (event, context) => {
         };
         
         logger.error(`<<< PARALLEL test FAILED: ${testName} after ${testDuration}ms`, errorDetails);
+        
+        // Update progress in database even on failure
+        await db.collection('diagnostics-runs').updateOne(
+          { testId },
+          { 
+            $push: { completedTests: testName, results: errorResult },
+            $set: { lastUpdate: new Date().toISOString() }
+          }
+        );
+        
         return errorResult;
       }
     });
@@ -2994,10 +3039,32 @@ exports.handler = async (event, context) => {
       failed: results.filter(r => r.status === 'error').length
     });
 
+    // Mark progress as complete
+    await db.collection('diagnostics-runs').updateOne(
+      { testId },
+      { 
+        $set: { 
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          lastUpdate: new Date().toISOString()
+        }
+      }
+    );
+
     // Cleanup test data
     logger.info('\nCleaning up test data...');
     const cleanupResults = await cleanupTestData(testId);
     logger.info('Cleanup completed', cleanupResults);
+
+    // Cleanup progress document after a delay (keep it for 60 seconds for any late polls)
+    setTimeout(async () => {
+      try {
+        await db.collection('diagnostics-runs').deleteOne({ testId });
+        logger.info('Progress document cleaned up', { testId });
+      } catch (cleanupError) {
+        logger.warn('Failed to cleanup progress document', { testId, error: cleanupError.message });
+      }
+    }, 60000); // 60 second delay
 
     // Calculate comprehensive summary
     const summary = {

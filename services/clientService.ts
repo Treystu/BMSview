@@ -2046,6 +2046,47 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
 };
 
 /**
+ * Poll for diagnostic test progress
+ * Used for real-time updates while tests are running in parallel
+ */
+export const getDiagnosticProgress = async (testId: string): Promise<{
+    testId: string;
+    status: string;
+    progress: {
+        total: number;
+        completed: number;
+        percentage: number;
+    };
+    results: any[];
+    completedTests: string[];
+    isComplete: boolean;
+}> => {
+    log('info', 'Polling diagnostic progress.', { testId });
+
+    const response = await fetch(`/.netlify/functions/diagnostics-progress?testId=${encodeURIComponent(testId)}`);
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        log('error', 'Diagnostic progress poll failed.', { 
+            status: response.status, 
+            statusText: response.statusText,
+            error: errorText 
+        });
+        throw new Error(`Failed to get diagnostic progress: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    log('info', 'Diagnostic progress received.', { 
+        testId,
+        completed: data.progress?.completed,
+        total: data.progress?.total,
+        isComplete: data.isComplete
+    });
+
+    return data;
+};
+
+/**
  * Get hourly SOC predictions for a battery system
  * 
  * @param systemId - The ID of the battery system
