@@ -117,7 +117,19 @@ export const initialState: AdminState = {
   historySortDirection: 'desc',
   isDiagnosticsModalOpen: false,
   diagnosticResults: null,
-  selectedDiagnosticTests: ['database', 'syncAnalysis', 'asyncAnalysis', 'weather', 'solar', 'systemAnalytics', 'insightsWithTools', 'gemini'],
+  // Default to all available diagnostic tests - matches DIAGNOSTIC_TEST_SECTIONS in AdminDashboard
+  selectedDiagnosticTests: [
+    // Infrastructure
+    'database', 'gemini',
+    // Core Analysis
+    'analyze', 'insightsWithTools', 'asyncAnalysis',
+    // Data Management
+    'history', 'systems', 'dataExport', 'idempotency',
+    // External Services
+    'weather', 'backfillWeather', 'backfillHourlyCloud', 'solarEstimate', 'systemAnalytics', 'predictiveMaintenance',
+    // System Utilities
+    'contentHashing', 'errorHandling', 'logging', 'retryMechanism', 'timeout'
+  ],
 };
 
 
