@@ -452,7 +452,7 @@ function buildCustomMission(customPrompt) {
     const hasDateReference = /\b(yesterday|last (week|month|tuesday|wednesday|thursday|friday|saturday|sunday|monday)|compare.*to|vs\.|versus|october|november|december|january|february|march|april|may|june|july|august|september|\d{1,2}\/\d{1,2}|on the \d+)/i.test(customPrompt);
     
     // Detect format requests
-    const csvRequested = /\b(csv|comma.separated|spreadsheet)\b/i.test(customPrompt);
+    const csvRequested = /\b(csv|comma[\s\-.]?separated|spreadsheet)\b/i.test(customPrompt);
     const tableRequested = /\b(table|tabular)\b/i.test(customPrompt);
     const jsonRequested = /\b(json|javascript object)\b/i.test(customPrompt);
     

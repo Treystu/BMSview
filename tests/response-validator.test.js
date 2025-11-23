@@ -203,6 +203,7 @@ describe('Response Validator', () => {
         test('detects CSV request keywords', () => {
             expect(validateResponseFormat('test', 'give me csv').formatType).toBe('csv');
             expect(validateResponseFormat('test', 'comma-separated values').formatType).toBe('csv');
+            expect(validateResponseFormat('test', 'comma separated values').formatType).toBe('csv');
             expect(validateResponseFormat('test', 'export to spreadsheet').formatType).toBe('csv');
         });
 

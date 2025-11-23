@@ -23,7 +23,7 @@ function validateResponseFormat(response, userPrompt = '') {
     }
 
     // Detect requested format from user prompt
-    const csvRequested = /\b(csv|comma.separated|spreadsheet)\b/i.test(userPrompt);
+    const csvRequested = /\b(csv|comma[\s\-.]?separated|spreadsheet)\b/i.test(userPrompt);
     const tableRequested = /\b(table|tabular)\b/i.test(userPrompt);
     const jsonRequested = /\b(json|javascript object)\b/i.test(userPrompt);
 
