@@ -593,7 +593,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         const testConfig = DIAGNOSTIC_TEST_SECTIONS.find(t => t.id === testName);
                         const displayName = testConfig?.label || testName;
                         
-                        const completedResult = progress.results.find((r: any) => r.name === displayName);
+                        const completedResult = progress.results.find(r => r.name === displayName);
                         
                         if (completedResult) {
                             return completedResult;

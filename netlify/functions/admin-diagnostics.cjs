@@ -655,7 +655,6 @@ const diagnosticTests = {
         
         // If we have real production data, retrieve the actual image from the database
         let testImageData;
-        let hasRealImageData = false;
         if (bmsData._isRealProductionData && bmsData._sourceRecordId) {
           try {
             const db = await getDb();
@@ -666,7 +665,6 @@ const diagnosticTests = {
             const sourceRecord = await db.collection('analysis-results').findOne({ _id: recordId });
             if (sourceRecord && sourceRecord.imageData) {
               testImageData = sourceRecord.imageData;
-              hasRealImageData = true;
               logger.info('Using REAL image data from production record', { 
                 recordId: bmsData._sourceRecordId,
                 imageSize: testImageData.length 

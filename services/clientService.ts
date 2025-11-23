@@ -2052,12 +2052,25 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
 export const getDiagnosticProgress = async (testId: string): Promise<{
     testId: string;
     status: string;
+    timestamp: string;
+    lastUpdate?: string;
+    completedAt?: string;
     progress: {
         total: number;
         completed: number;
         percentage: number;
     };
-    results: any[];
+    results: Array<{
+        name: string;
+        status: 'success' | 'warning' | 'error' | 'partial' | 'running';
+        duration: number;
+        details?: Record<string, any>;
+        error?: string;
+        steps?: any[];
+        tests?: any[];
+        stages?: any[];
+        jobLifecycle?: any[];
+    }>;
     completedTests: string[];
     isComplete: boolean;
 }> => {
