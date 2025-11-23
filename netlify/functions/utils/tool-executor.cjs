@@ -6,6 +6,7 @@
 
 const { getCollection } = require('./mongodb.cjs');
 const { createLogger } = require('./logger.cjs');
+const { groupAlertEvents } = require('./analysis-utilities.cjs');
 
 /**
  * Main dispatcher for tool execution
@@ -668,7 +669,6 @@ async function getSystemAnalytics(params, log) {
         }));
 
         // Use new groupAlertEvents function
-        const { groupAlertEvents } = require('./analysis-utilities.cjs');
         const alertAnalysis = groupAlertEvents(snapshots);
 
         // Calculate total occurrences across all events
