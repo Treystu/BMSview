@@ -142,6 +142,7 @@ const cleanupTestData = async (testId) => {
       'insights', 
       'jobs',
       'diagnostics',
+      'diagnostics-runs', // Progress tracking for real-time updates
       'systems',
       'bms_data',
       'test_data'
