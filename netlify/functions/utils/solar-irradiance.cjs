@@ -32,8 +32,8 @@ function calculateSolarPosition(timestamp, latitude, longitude) {
   // Calculate Julian Day
   let a = Math.floor((14 - month) / 12);
   let y = year + 4800 - a;
-  let m = month + 12 * a - 3;
-  const jd = day + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 100) + 
+  let julianM = month + 12 * a - 3;
+  const jd = day + Math.floor((153 * julianM + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 100) + 
              Math.floor(y / 400) - 32045 + (hour - 12) / 24;
   
   // Julian century
