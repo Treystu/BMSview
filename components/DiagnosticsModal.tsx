@@ -81,8 +81,13 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
   // Get display names for selected tests only
   const runningTests = selectedTests.map(testId => ({
     id: testId,
-    displayName: testDisplayNames[testId] || testId
+    displayName: testDisplayNames[testId] || `Unknown Test (${testId})`
   }));
+
+  // Calculate dynamic time estimate based on number of tests
+  // Average: 1-2 seconds per test
+  const estimatedMinSeconds = Math.max(5, Math.ceil(runningTests.length * 1));
+  const estimatedMaxSeconds = Math.max(10, Math.ceil(runningTests.length * 2));
 
   // Component to show live test status
   const LiveTestStatus: React.FC<{ name: string; result?: DiagnosticTestResult }> = ({ name, result }) => {
@@ -291,7 +296,7 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                   <span className="ml-3 text-lg font-semibold">Running Diagnostic Tests</span>
                 </div>
                 <span className="text-sm text-gray-400">
-                  {runningTests.length} test{runningTests.length !== 1 ? 's' : ''}
+                  {runningTests.length} test{runningTests.length !== 1 ? 's' : ''} • ~{estimatedMinSeconds}-{estimatedMaxSeconds}s
                 </span>
               </div>
               
