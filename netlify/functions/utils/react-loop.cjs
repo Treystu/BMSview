@@ -12,8 +12,10 @@ const { getGeminiClient } = require('./geminiClient.cjs');
 const { toolDefinitions, executeToolCall } = require('./gemini-tools.cjs');
 const { buildGuruPrompt, collectAutoInsightsContext } = require('./insights-guru.cjs');
 const { createLogger } = require('./logger.cjs');
+const { validateResponseFormat, buildCorrectionPrompt } = require('./response-validator.cjs');
 
 const MAX_TURNS = 5;
+const MAX_FORMAT_RETRIES = 1; // Auto-retry once for format issues
 const SYNC_CONTEXT_BUDGET_MS = 22000;
 const SYNC_TOTAL_BUDGET_MS = 55000;
 
@@ -257,6 +259,54 @@ async function executeReActLoop(params) {
                         answerLength: finalAnswer.length,
                         toolCallsTotal: toolCallCount
                     });
+                    
+                    // Validate response format
+                    const validation = validateResponseFormat(finalAnswer, customPrompt || '');
+                    
+                    if (!validation.valid && turnCount < MAX_TURNS - 1) {
+                        log.warn('Response format validation failed, requesting correction', {
+                            error: validation.error,
+                            formatType: validation.formatType,
+                            turn: turnCount,
+                            attemptsRemaining: MAX_TURNS - turnCount - 1
+                        });
+                        
+                        // Add format correction request to conversation
+                        const correctionPrompt = buildCorrectionPrompt(
+                            finalAnswer, 
+                            validation.error, 
+                            validation.formatType,
+                            customPrompt || ''
+                        );
+                        
+                        conversationHistory.push({
+                            role: 'user',
+                            parts: [{ text: correctionPrompt }]
+                        });
+                        
+                        // Clear finalAnswer to continue loop
+                        finalAnswer = null;
+                        
+                        log.info('Correction request added to conversation', {
+                            turn: turnCount,
+                            formatType: validation.formatType
+                        });
+                        
+                        // Continue to next turn for correction
+                        continue;
+                    } else if (!validation.valid) {
+                        log.warn('Response format validation failed but no retries left, using malformed response', {
+                            error: validation.error,
+                            formatType: validation.formatType,
+                            turn: turnCount
+                        });
+                        // Use the response anyway - better than nothing
+                    } else {
+                        log.info('Response format validated successfully', {
+                            formatType: validation.formatType,
+                            turn: turnCount
+                        });
+                    }
                 }
                 break;
             }
@@ -405,5 +455,6 @@ This typically means your question requires accessing long-term historical data 
 
 module.exports = {
     executeReActLoop,
-    MAX_TURNS
+    MAX_TURNS,
+    MAX_FORMAT_RETRIES
 };
