@@ -141,47 +141,96 @@ async function executeReActLoop(params) {
                 throw err;
             }
 
-            // Extract response content with detailed validation
+            // Extract response content with detailed validation and recovery
             if (!geminiResponse || !geminiResponse.candidates) {
-                log.error('Gemini response missing candidates array', {
+                log.error('Gemini response missing candidates array - full response logged', {
                     turn: turnCount,
-                    response: JSON.stringify(geminiResponse).substring(0, 500)
+                    response: JSON.stringify(geminiResponse),
+                    customPrompt: customPrompt ? customPrompt.substring(0, 200) : null
                 });
-                throw new Error('Invalid Gemini response structure: missing candidates array');
+                
+                // Attempt recovery: provide helpful message to user
+                finalAnswer = `I encountered an issue processing your request. The AI service returned an unexpected response structure. This can happen with very complex or unusual queries. Please try:\n\n1. Simplifying your question\n2. Breaking it into smaller parts\n3. Providing more specific time ranges or metrics\n\nTechnical details: Missing candidates array in Gemini response.`;
+                break;
             }
 
             if (geminiResponse.candidates.length === 0) {
                 log.error('Gemini response has empty candidates array', {
                     turn: turnCount,
-                    response: JSON.stringify(geminiResponse).substring(0, 500)
+                    response: JSON.stringify(geminiResponse).substring(0, 1000),
+                    customPrompt: customPrompt ? customPrompt.substring(0, 200) : null
                 });
-                throw new Error('Invalid Gemini response structure: empty candidates array');
+                
+                // Recovery: Check for finishReason or promptFeedback that might explain
+                const promptFeedback = geminiResponse.promptFeedback;
+                if (promptFeedback && promptFeedback.blockReason) {
+                    finalAnswer = `Your request was blocked by content safety filters. Reason: ${promptFeedback.blockReason}. Please rephrase your question.`;
+                } else {
+                    finalAnswer = `The AI service could not generate a response to your request. This may be due to the complexity or phrasing of your question. Please try rephrasing or simplifying.`;
+                }
+                break;
             }
 
             const responseContent = geminiResponse.candidates[0]?.content;
             if (!responseContent) {
                 log.error('Gemini response candidate missing content', {
                     turn: turnCount,
-                    candidate: JSON.stringify(geminiResponse.candidates[0]).substring(0, 500)
+                    candidate: JSON.stringify(geminiResponse.candidates[0]).substring(0, 1000),
+                    finishReason: geminiResponse.candidates[0]?.finishReason,
+                    customPrompt: customPrompt ? customPrompt.substring(0, 200) : null
                 });
-                throw new Error('Invalid Gemini response structure: missing content in candidate');
+                
+                // Check finish reason for context
+                const finishReason = geminiResponse.candidates[0]?.finishReason;
+                if (finishReason === 'SAFETY') {
+                    finalAnswer = `Your request triggered content safety filters. Please rephrase to avoid sensitive topics.`;
+                } else if (finishReason === 'MAX_TOKENS') {
+                    finalAnswer = `The response exceeded token limits. Try asking for a shorter or more focused answer.`;
+                } else if (finishReason === 'RECITATION') {
+                    finalAnswer = `The AI detected potential copyrighted content. Please rephrase your request.`;
+                } else {
+                    finalAnswer = `Unable to generate response. Finish reason: ${finishReason || 'unknown'}. Please try rephrasing your question.`;
+                }
+                break;
             }
 
             if (!responseContent.parts || !Array.isArray(responseContent.parts)) {
-                log.error('Gemini response content missing or invalid parts array', {
+                log.error('Gemini response content missing or invalid parts array - attempting recovery', {
                     turn: turnCount,
-                    content: JSON.stringify(responseContent).substring(0, 500),
-                    partsType: typeof responseContent.parts
+                    content: JSON.stringify(responseContent).substring(0, 1000),
+                    partsType: typeof responseContent.parts,
+                    hasRole: !!responseContent.role,
+                    customPrompt: customPrompt ? customPrompt.substring(0, 200) : null
                 });
-                throw new Error('Invalid Gemini response structure: missing or invalid parts array');
+                
+                // Recovery attempt: Check if there's a text field directly on content
+                if (responseContent.text) {
+                    log.info('Found text directly on content object, recovering', {
+                        turn: turnCount,
+                        textLength: responseContent.text.length
+                    });
+                    finalAnswer = responseContent.text;
+                    break;
+                }
+                
+                // No recovery possible
+                finalAnswer = `I encountered a technical issue processing your request. The response format was unexpected. This sometimes happens with very complex questions requiring multiple data lookups. Please try:\n\n1. Asking for specific metrics or time ranges\n2. Breaking complex questions into simpler parts\n3. Using more standard phrasing\n\nTechnical: Invalid parts array structure.`;
+                break;
             }
 
             if (responseContent.parts.length === 0) {
-                log.warn('Gemini response has empty parts array', {
+                log.warn('Gemini response has empty parts array - attempting to continue', {
                     turn: turnCount,
                     content: JSON.stringify(responseContent).substring(0, 500)
                 });
-                // Continue anyway - will be caught below when looking for text/tool calls
+                // Check if this is final turn - if so, provide fallback
+                if (turnCount === MAX_TURNS - 1) {
+                    finalAnswer = `No response generated after ${MAX_TURNS} attempts. The question may be too complex or require data that isn't available. Please try a simpler, more specific question.`;
+                    break;
+                }
+                // Otherwise continue to next turn
+                conversationHistory.push(responseContent);
+                continue;
             }
 
             log.debug('Gemini response received', {

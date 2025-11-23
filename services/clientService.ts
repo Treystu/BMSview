@@ -2045,3 +2045,27 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
     }
 };
 
+/**
+ * Get hourly SOC predictions for a battery system
+ * 
+ * @param systemId - The ID of the battery system
+ * @param hoursBack - Number of hours to predict (default: 72)
+ * @returns Promise with hourly SOC predictions
+ */
+export const getHourlySocPredictions = async (systemId: string, hoursBack: number = 72): Promise<any> => {
+    const response = await fetch('/.netlify/functions/get-hourly-soc-predictions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ systemId, hoursBack })
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to get hourly SOC predictions: ${response.status} ${errorText}`);
+    }
+
+    return await response.json();
+};
+

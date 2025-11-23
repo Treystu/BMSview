@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getSystemAnalytics, SystemAnalytics } from '../services/clientService';
+import { getSystemAnalytics, SystemAnalytics, getHourlySocPredictions } from '../services/clientService';
 import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData } from '../types';
 import AlertAnalysis from './admin/AlertAnalysis';
 import SpinnerIcon from './icons/SpinnerIcon';
 
 type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp' | 'soh' | 'mosTemperature';
 type Axis = 'left' | 'right';
-type ChartView = 'timeline' | 'hourly';
+type ChartView = 'timeline' | 'hourly' | 'predictive';
 
 const METRICS: Record<MetricKey, {
     label: string;
@@ -157,6 +157,7 @@ const ChartControls: React.FC<{
                         className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-white focus:ring-secondary focus:border-secondary">
                         <option value="timeline">Timeline</option>
                         <option value="hourly">Hourly Averages</option>
+                        <option value="predictive">Predictive SOC Model (72hr)</option>
                     </select>
                 </div>
                 {/* Hourly Metric Select */}
@@ -778,6 +779,234 @@ const HourlyAverageChart: React.FC<{
     );
 };
 
+/**
+ * Predictive SOC Chart Component
+ * Displays hourly SOC predictions with actual vs predicted values
+ */
+const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
+    if (!data || !data.predictions || data.predictions.length === 0) {
+        return (
+            <div className="text-center text-gray-400 p-8">
+                No prediction data available
+            </div>
+        );
+    }
+
+    const { predictions, metadata } = data;
+
+    // Prepare chart data
+    const chartWidth = 1200;
+    const chartHeight = 400;
+    const margin = { top: 40, right: 80, bottom: 60, left: 80 };
+    const innerWidth = chartWidth - margin.left - margin.right;
+    const innerHeight = chartHeight - margin.top - margin.bottom;
+
+    // Find SOC range
+    const socValues = predictions.map((p: any) => p.soc).filter((v: any) => v != null);
+    const minSoc = Math.max(0, Math.min(...socValues) - 5);
+    const maxSoc = Math.min(100, Math.max(...socValues) + 5);
+
+    // Scale functions
+    const xScale = (index: number) => (index / (predictions.length - 1)) * innerWidth;
+    const yScale = (soc: number) => innerHeight - ((soc - minSoc) / (maxSoc - minSoc)) * innerHeight;
+
+    // Generate path for actual and predicted data
+    const actualPoints: { x: number; y: number }[] = [];
+    const predictedPath: string[] = [];
+    
+    predictions.forEach((p: any, i: number) => {
+        const x = xScale(i);
+        const y = yScale(p.soc);
+        
+        if (!p.predicted) {
+            actualPoints.push({ x, y });
+        }
+    });
+
+    // Generate predicted line as dashed segments
+    predictions.forEach((p: any, i: number) => {
+        if (p.predicted) {
+            const x = xScale(i);
+            const y = yScale(p.soc);
+            if (predictedPath.length === 0) {
+                predictedPath.push(`M ${x} ${y}`);
+            } else {
+                predictedPath.push(`L ${x} ${y}`);
+            }
+        } else if (predictedPath.length > 0) {
+            predictedPath.length = 0; // Reset for next segment
+        }
+    });
+
+    // Time labels - show every 12 hours
+    const timeLabels = predictions
+        .filter((_: any, i: number) => i % 12 === 0)
+        .map((p: any, labelIndex: number) => {
+            const index = labelIndex * 12;
+            const date = new Date(p.timestamp);
+            return {
+                x: xScale(index),
+                label: `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:00`,
+                hour: date.getHours()
+            };
+        });
+
+    return (
+        <div className="space-y-4">
+            <div className="flex justify-between items-start">
+                <div>
+                    <h3 className="text-xl font-semibold text-white mb-2">Hourly SOC Predictions (72 Hours)</h3>
+                    <p className="text-sm text-gray-400">
+                        {metadata?.actualHours || 0} actual data points, {metadata?.predictedHours || 0} predicted values
+                    </p>
+                </div>
+                <div className="bg-gray-800 p-3 rounded text-sm space-y-1">
+                    <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 bg-green-500 rounded-full"></div>
+                        <span className="text-gray-300">Actual Data</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <svg width="16" height="4" className="mt-1">
+                            <line x1="0" y1="2" x2="16" y2="2" stroke="rgb(96, 165, 250)" strokeWidth="2" strokeDasharray="4,4" />
+                        </svg>
+                        <span className="text-gray-300">Predicted</span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2">
+                        Coverage: {metadata?.coveragePercent?.toFixed(1)}%
+                    </div>
+                </div>
+            </div>
+
+            <svg width={chartWidth} height={chartHeight} className="bg-gray-900 rounded">
+                <g transform={`translate(${margin.left},${margin.top})`}>
+                    {/* Grid lines */}
+                    {[0, 25, 50, 75, 100].map(soc => (
+                        <line
+                            key={soc}
+                            x1={0}
+                            y1={yScale(soc)}
+                            x2={innerWidth}
+                            y2={yScale(soc)}
+                            stroke="#374151"
+                            strokeWidth={1}
+                            strokeDasharray={soc % 50 === 0 ? '0' : '2,2'}
+                        />
+                    ))}
+
+                    {/* Y-axis labels */}
+                    {[0, 25, 50, 75, 100].map(soc => (
+                        <text
+                            key={soc}
+                            x={-10}
+                            y={yScale(soc)}
+                            textAnchor="end"
+                            dominantBaseline="middle"
+                            fill="#9ca3af"
+                            fontSize="12"
+                        >
+                            {soc}%
+                        </text>
+                    ))}
+
+                    {/* X-axis labels */}
+                    {timeLabels.map((label: any, i: number) => (
+                        <text
+                            key={i}
+                            x={label.x}
+                            y={innerHeight + 20}
+                            textAnchor="middle"
+                            fill="#9ca3af"
+                            fontSize="10"
+                            transform={`rotate(-45, ${label.x}, ${innerHeight + 20})`}
+                        >
+                            {label.label}
+                        </text>
+                    ))}
+
+                    {/* Predicted line - connect all points as continuous line */}
+                    <path
+                        d={predictions.map((p: any, i: number) => {
+                            const x = xScale(i);
+                            const y = yScale(p.soc);
+                            return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
+                        }).join(' ')}
+                        fill="none"
+                        stroke="#60a5fa"
+                        strokeWidth={2}
+                        strokeDasharray="4,4"
+                        opacity={0.6}
+                    />
+
+                    {/* Actual data points */}
+                    {actualPoints.map((point, i) => (
+                        <circle
+                            key={i}
+                            cx={point.x}
+                            cy={point.y}
+                            r={4}
+                            fill="#34d399"
+                            stroke="#fff"
+                            strokeWidth={1}
+                        />
+                    ))}
+
+                    {/* Axis labels */}
+                    <text
+                        x={innerWidth / 2}
+                        y={innerHeight + 50}
+                        textAnchor="middle"
+                        fill="#d1d5db"
+                        fontSize="14"
+                        fontWeight="bold"
+                    >
+                        Time
+                    </text>
+                    <text
+                        x={-innerHeight / 2}
+                        y={-60}
+                        textAnchor="middle"
+                        fill="#d1d5db"
+                        fontSize="14"
+                        fontWeight="bold"
+                        transform={`rotate(-90, -${innerHeight / 2}, -60)`}
+                    >
+                        State of Charge (%)
+                    </text>
+                </g>
+            </svg>
+
+            {/* Additional info */}
+            {metadata && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="bg-gray-800 p-3 rounded">
+                        <div className="text-gray-400">Avg Discharge Rate</div>
+                        <div className="text-white font-semibold">{metadata.avgDischargeRatePerHour?.toFixed(2)}% /hr</div>
+                    </div>
+                    <div className="bg-gray-800 p-3 rounded">
+                        <div className="text-gray-400">Avg Charge Rate</div>
+                        <div className="text-white font-semibold">{metadata.avgChargeRatePerHour?.toFixed(2)}% /hr</div>
+                    </div>
+                    <div className="bg-gray-800 p-3 rounded">
+                        <div className="text-gray-400">Data Points</div>
+                        <div className="text-white font-semibold">{metadata.actualDataPoints}</div>
+                    </div>
+                    <div className="bg-gray-800 p-3 rounded">
+                        <div className="text-gray-400">Time Range</div>
+                        <div className="text-white font-semibold text-xs">
+                            {new Date(metadata.timeRange?.start).toLocaleDateString()} -<br />
+                            {new Date(metadata.timeRange?.end).toLocaleDateString()}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="bg-blue-900/20 border border-blue-700/50 p-3 rounded text-sm text-blue-200">
+                <strong>Note:</strong> Predictions use historical charge/discharge patterns, time-of-day solar availability, and weather data. 
+                Actual values shown as green dots, predicted values as dashed blue line. Confidence varies based on data coverage.
+            </div>
+        </div>
+    );
+};
 
 
 const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[] }> = ({ systems, history }) => {
@@ -796,6 +1025,8 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
     const [error, setError] = useState<string | null>(null);
     const [averagingEnabled, setAveragingEnabled] = useState(true);
     const [manualBucketSize, setManualBucketSize] = useState<string | null>(null);
+    const [predictiveData, setPredictiveData] = useState<any | null>(null);
+    const [predictiveLoading, setPredictiveLoading] = useState(false);
 
     const [zoomPercentage, setZoomPercentage] = useState<number>(100);
 
@@ -830,6 +1061,31 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
             prepareChartData();
         }
     }, [selectedSystemId]);
+
+    // Load predictive data when chartView changes to predictive
+    useEffect(() => {
+        if (chartView === 'predictive' && selectedSystemId) {
+            loadPredictiveData();
+        }
+    }, [chartView, selectedSystemId]);
+
+    const loadPredictiveData = async () => {
+        if (!selectedSystemId) return;
+        
+        setPredictiveLoading(true);
+        setError(null);
+
+        try {
+            const predictions = await getHourlySocPredictions(selectedSystemId, 72);
+            setPredictiveData(predictions);
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : 'Failed to load predictive data';
+            setError(errorMsg);
+            console.error('Error loading predictive data:', err);
+        } finally {
+            setPredictiveLoading(false);
+        }
+    };
 
     useEffect(() => {
         if (!timelineData) return;
@@ -975,6 +1231,22 @@ const HistoricalChart: React.FC<{ systems: BmsSystem[], history: AnalysisRecord[
                                     )}
                                     {chartView === 'hourly' && analyticsData && (
                                         <HourlyAverageChart analyticsData={analyticsData} metricKey={hourlyMetric} />
+                                    )}
+                                    {chartView === 'predictive' && (
+                                        <div className="bg-gray-900 p-4 rounded-lg">
+                                            {predictiveLoading ? (
+                                                <div className="flex items-center justify-center h-96">
+                                                    <SpinnerIcon className="w-8 h-8 text-secondary" />
+                                                    <span className="ml-4 text-gray-400">Loading predictions...</span>
+                                                </div>
+                                            ) : predictiveData ? (
+                                                <PredictiveSocChart data={predictiveData} />
+                                            ) : (
+                                                <div className="flex items-center justify-center h-96 text-gray-400">
+                                                    Select a system to view hourly SOC predictions
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                                 <div className="lg:col-span-1">
