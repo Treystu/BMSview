@@ -68,12 +68,14 @@ Thank you for your interest in contributing to BMSview! This document provides g
    - Write or update tests as needed
    - Update documentation if changing APIs
 
-3. **Test your changes**:
+3. **Test your changes** (REQUIRED before completing sprint):
    ```bash
    npm test              # Run tests
-   npm run build         # Verify build works
+   npm run build         # Verify build works - MUST PASS
    npm run lint:fix      # Fix linting issues
    ```
+   
+   **⚠️ CRITICAL**: The build MUST succeed before finalizing any sprint or PR. Netlify will fail to deploy if `npm run build` fails.
 
 4. **Commit your changes**:
    ```bash
@@ -181,13 +183,16 @@ Duplicates don't work correctly. Please fix.
    - Screenshots for UI changes
    - Breaking changes (if any)
 
-3. **Review Checklist**:
-   - [ ] Code builds without errors
+3. **Review Checklist** (ALL items must pass):
+   - [ ] **Code builds without errors** (`npm run build` succeeds) - **MANDATORY**
    - [ ] All tests pass
    - [ ] Linting passes (or ESLint issues documented)
    - [ ] Documentation updated
    - [ ] No sensitive data or secrets committed
    - [ ] Changes are minimal and focused
+   - [ ] No console.log statements in production code
+
+   **⚠️ Build Requirement**: PRs with build failures will not be merged. Always run `npm run build` before requesting review.
 
 4. **Approval**: At least one maintainer approval required
 

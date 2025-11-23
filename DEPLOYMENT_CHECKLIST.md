@@ -19,8 +19,15 @@
 - [ ] Verify logger integration in all functions
 - [ ] Check configuration module usage
 - [ ] Confirm error handling is comprehensive
+- [ ] **Run full build and verify it passes** (`npm run build`)
 
-### 4. Local Testing
+### 4. Build Verification (MANDATORY)
+- [ ] Run `npm run build` - build MUST succeed
+- [ ] Verify all .cjs files have valid syntax (`node -c netlify/functions/**/*.cjs`)
+- [ ] Check for ESM/CommonJS module conflicts
+- [ ] Confirm no console.log statements in production code
+
+### 5. Local Testing
 - [ ] Test analyze function locally
 - [ ] Test process-analysis function locally
 - [ ] Test get-job-status function locally

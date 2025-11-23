@@ -353,14 +353,17 @@ Upload same screenshot twice, expect isDuplicate flag on second upload
 - Request re-review after making significant changes
 
 ### Self-Review Checklist
-Before marking a PR ready for review:
-- [ ] Code builds without errors (`npm run build`)
+Before marking a PR ready for review or completing a sprint:
+- [ ] **Code builds without errors (`npm run build`)** - **MANDATORY - Netlify deployment will fail without this**
 - [ ] All tests pass (`npm test`)
 - [ ] Linting passes (`npm run lint`)
+- [ ] All .cjs files have valid syntax (no ESM imports/exports)
 - [ ] No console.log statements left in production code
 - [ ] Documentation updated if public APIs changed
 - [ ] No temporary/debug files committed
 - [ ] Git history is clean (no merge commits if rebase was needed)
+
+**⚠️ CRITICAL BUILD REQUIREMENT**: Always run `npm run build` before completing any task. Netlify bundler will fail if there are syntax errors, module system conflicts, or other build issues. The build must succeed locally before pushing changes.
 
 ## Common Development Workflows
 

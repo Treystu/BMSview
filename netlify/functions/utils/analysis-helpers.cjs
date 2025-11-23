@@ -97,6 +97,7 @@ The following fields are MANDATORY and MUST ALWAYS be extracted. If a field is n
     -   If only time is visible (e.g., "12:04:00"), extract only the time string "12:04:00". Do NOT add a date.
     -   If no timestamp is visible, \`timestampFromImage\` MUST be \`null\`.
 6.  **Final Review**: Your entire output must be ONLY the raw JSON object, without any surrounding text, explanations, or markdown formatting like \`\`\`json. ALL MANDATORY FIELDS MUST HAVE VALUES.`;
+};
 
 // --- Utility Functions (Copied from original) ---
 

@@ -492,8 +492,7 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
       jitterMs: parseInt(process.env.ANALYSIS_RETRY_JITTER_MS || '200'),
       shouldRetry: (e) => e && e.code !== 'operation_timeout' && e.code !== 'circuit_open',
       log
-    })
-    , {
+    }), {
       failureThreshold: parseInt(process.env.CB_FAILURES || '5'),
       openMs: parseInt(process.env.CB_OPEN_MS || '30000'),
       log
