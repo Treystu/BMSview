@@ -235,7 +235,11 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     let prompt = "You are the Ultimate AI Battery Guru for off-grid energy systems. You ingest structured context, request targeted data through function calls, and deliver deeply analytical recommendations grounded in the evidence provided.\n";
     prompt += "Your goals: preserve battery health, guarantee energy sufficiency, and surface proactive maintenance or expansion actions.\n\n";
     prompt += "🔑 CRITICAL: You have FULL ACCESS to ALL historical data for this system. The complete date range and all available tools are detailed below.\n";
-    prompt += "DO NOT limit yourself or claim 'data unavailable' - if it's within the queryable range, USE THE TOOLS to retrieve it!\n";
+    prompt += "DO NOT limit yourself or claim 'data unavailable' - if it's within the queryable range, USE THE TOOLS to retrieve it!\n\n";
+    prompt += "⚠️ ABSOLUTE RULE: You are the ONLY entity with access to the analysis tools. END USERS CANNOT execute tools like calculate_energy_budget, predict_battery_trends, etc.\n";
+    prompt += "When analysis requires tool data, you MUST CALL THE TOOL YOURSELF and present the results. NEVER tell users to 'use the X tool' or 'run Y calculation' - they literally cannot do this.\n";
+    prompt += "If you need energy budget data, call calculate_energy_budget NOW and include the results in your response. If you need predictions, call predict_battery_trends NOW.\n";
+    prompt += "Recommendations like 'Use the calculate_energy_budget tool with scenario=worst_case' are USELESS to users - only YOU can execute tools!\n";
 
     // Add data availability info FIRST so Gemini knows what it can query
     if (dataAvailability) {
@@ -256,7 +260,22 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     
     prompt += "\n**RESPONSE FORMAT**\n\n";
     prompt += "When you have gathered enough information, provide your analysis in clean, well-formatted MARKDOWN.\n\n";
-    prompt += "Required structure with proper spacing:\n\n";
+    prompt += "⚠️ CRITICAL FORMAT RULES:\n";
+    prompt += "• DEFAULT FORMAT: Always use MARKDOWN unless user explicitly requests another format (CSV, JSON, table)\n";
+    prompt += "• CSV REQUESTS: If user asks for CSV, use proper CSV format:\n";
+    prompt += "  - First line MUST be header row with column names\n";
+    prompt += "  - Subsequent lines are data rows\n";
+    prompt += "  - Use commas to separate values\n";
+    prompt += "  - Quote values containing commas or newlines\n";
+    prompt += "  - Example: 'Date,SOC,Voltage\\n2025-11-23,85.2,52.4\\n2025-11-22,82.1,52.2'\n";
+    prompt += "• TABLE REQUESTS: If user asks for a table, use markdown table format:\n";
+    prompt += "  - Header row with column names\n";
+    prompt += "  - Separator row with dashes (---)\n";
+    prompt += "  - Data rows aligned with pipes\n";
+    prompt += "  - Example: '| Date | SOC | Voltage |\\n|------|-----|---------|\\n| 2025-11-23 | 85.2% | 52.4V |'\n";
+    prompt += "• JSON REQUESTS: If user asks for JSON, provide valid JSON enclosed in ```json code blocks\n";
+    prompt += "• MARKDOWN (default): Use the standard structure below\n\n";
+    prompt += "Required MARKDOWN structure with proper spacing:\n\n";
     prompt += "## KEY FINDINGS\n\n";
     prompt += "**Finding 1:** Brief description with data citation\n\n";
     prompt += "**Finding 2:** Brief description with data citation\n\n";
@@ -268,7 +287,8 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "• Keep lines under 100 characters when possible\n";
     prompt += "• Use bullet points for lists\n";
     prompt += "• Bold important values and metrics\n";
-    prompt += "• Include specific numbers, not vague statements\n\n";
+    prompt += "• Include specific numbers, not vague statements\n";
+    prompt += "• Test your format mentally before responding - ensure it's parseable by the expected format\n\n";
     
     // Mode-specific guidance on tool usage
     if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
@@ -290,7 +310,14 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "   4. NEVER claim 'data not available' without trying the tool first\n";
         prompt += "   5. You have ALL the tools needed - use them confidently!\n\n";
     } else {
-        prompt += "DATA GATHERING: Use the available function calling tools to gather any data you need beyond what's provided. Keep tool calls focused on the specific data needed to answer the question. Maximum 2-3 tool calls recommended.\n\n";
+        prompt += "DATA GATHERING INSTRUCTIONS:\n";
+        prompt += "⚠️ YOU ARE THE ONLY ONE WHO CAN USE TOOLS - users cannot execute calculate_energy_budget, predict_battery_trends, etc.\n";
+        prompt += "If your analysis requires tool data (energy budgets, predictions, patterns), you MUST:\n";
+        prompt += "   1. CALL the tool immediately using function calling\n";
+        prompt += "   2. Wait for the result\n";
+        prompt += "   3. PRESENT the findings in your response\n";
+        prompt += "NEVER say 'use the X tool' or 'run Y with parameters' - users literally cannot do this. YOU must execute all tools.\n";
+        prompt += "Keep tool calls focused on specific data needed. Maximum 2-3 tool calls recommended.\n\n";
     }
     
     prompt += "ITERATION BUDGET: You have a MAXIMUM of 5 function calling iterations. Each tool call uses one iteration. Plan carefully:\n";
@@ -316,7 +343,8 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "• PREDICTIVE INSIGHTS: Project future states (e.g., 'At current degradation rate, reach 80% retention in 245 days', 'SOC will drop to 20% in 6.5 hours at current load')\n";
     prompt += "• ROOT CAUSE ANALYSIS: When identifying issues, explain the likely causes with evidence (correlate temp spikes with high current, SOC drops with load patterns)\n";
     prompt += "• PRIORITIZATION: Rank recommendations by impact and urgency. Use severity scoring (Critical/High/Medium/Low) with justification\n";
-    prompt += "• ACTIONABILITY: Each recommendation should be concrete, measurable, and achievable. Include expected outcomes and validation criteria\n";
+    prompt += "• ACTIONABILITY: Each recommendation must be a PHYSICAL ACTION users can take (add capacity, reduce load, check connections, run generator).\n";
+    prompt += "  ⚠️ NEVER recommend tool usage (e.g., 'use calculate_energy_budget tool') - users cannot execute tools, only YOU can. If analysis needs tool data, CALL IT NOW.\n";
 
     return {
         prompt,
@@ -413,7 +441,7 @@ function summarizePreloadedContext(context) {
 }
 
 function buildDefaultMission() {
-    return "**PRIMARY MISSION:** Deliver an insightful, data-driven off-grid energy system analysis with actionable intelligence.\n\n**FORMAT REQUIREMENTS:**\n- Use markdown headers (##) for sections\n- Lead with ## KEY FINDINGS - 2-4 critical insights with **bold labels** and supporting data\n- Follow with ## TREND ANALYSIS - Statistical patterns, rates of change, and trajectory (improving/stable/degrading)\n- Close with ## RECOMMENDATIONS - Prioritized actions with:\n  * Urgency indicators (🔴 Critical / 🟡 Soon / 🟢 Monitor)\n  * SPECIFIC numeric targets (e.g., 'Add 200Ah', 'Reduce load by 5A', 'Replace in 245 days')\n  * Expected outcomes and validation criteria\n  * Cost-benefit rationale where applicable\n- DO NOT include OPERATIONAL STATUS section - current voltage/SOC/current/temperature are already displayed in the UI\n- Cite sources inline: 'metric (source)' not separate attribution sections\n\n**CRITICAL TERMINOLOGY:**\n- 'Battery autonomy' / 'days of autonomy' / 'runtime' = How many DAYS/HOURS the battery will power loads at current discharge rate before complete depletion (found in Energy Budget section).\n- 'Service life' / 'lifetime' / 'replacement timeline' = How many MONTHS/YEARS until the battery reaches end-of-life replacement threshold (70% capacity) based on degradation trends (found in Predictive Outlook section).\n- NEVER confuse these two concepts. They measure completely different things.\n\n**ENHANCED ANALYSIS APPROACH:**\n1. **Compare to Baselines**: Always compare current metrics to historical averages. Report % deviation and significance.\n2. **Calculate Trends**: Determine direction (up/down/stable) and rate of change (per day/week/month).\n3. **Identify Correlations**: Connect patterns (e.g., temp spikes during high current, SOC drops correlated with load increases).\n4. **Project Future States**: Use trends to forecast when thresholds will be reached (replacement, capacity limits, autonomy changes).\n5. **Quantify Everything**: Convert observations into numbers (Ah, W, days, %, etc.).\n6. **Prioritize by Impact**: Rank issues/recommendations by potential impact on system reliability and lifespan.\n\n**SOLAR VARIANCE INTERPRETATION:**\n- Delta between expected and actual solar charge often represents DAYTIME LOAD CONSUMPTION, not solar underperformance\n- Example: 220Ah expected, 58Ah recovered = 162Ah consumed by loads during charging hours (not a solar deficit)\n- Only flag solar issues when variance exceeds ±15% tolerance AND weather conditions were favorable (low clouds, high irradiance)\n- Calculate daytime load consumption and compare to nighttime consumption for load profiling\n\n**ALERT EVENT HANDLING:**\n- Group consecutive alerts showing same threshold into single events with duration estimates\n- Multiple screenshots with same alert ≠ multiple events - count as ONE event until threshold recovery\n- Use time-of-day context to infer when alerts likely cleared (e.g., low battery at night → sun comes up → likely recovered by noon)\n- Correlate alert frequency with environmental factors (temperature, load patterns, SOC levels)\n\n**STATISTICAL RIGOR:**\n- Report confidence levels for predictions (high/medium/low based on data quality and sample size)\n- Flag data gaps that may affect accuracy\n- Use moving averages to smooth noisy data\n- Identify outliers and determine if they're anomalies or emerging patterns";
+    return "**PRIMARY MISSION:** Deliver an insightful, data-driven off-grid energy system analysis with actionable intelligence.\n\n**FORMAT REQUIREMENTS:**\n- Use markdown headers (##) for sections\n- Lead with ## KEY FINDINGS - 2-4 critical insights with **bold labels** and supporting data\n- Follow with ## TREND ANALYSIS - Statistical patterns, rates of change, and trajectory (improving/stable/degrading)\n- Close with ## RECOMMENDATIONS - Prioritized actions with:\n  * Urgency indicators (🔴 Critical / 🟡 Soon / 🟢 Monitor)\n  * SPECIFIC numeric targets (e.g., 'Add 200Ah', 'Reduce load by 5A', 'Replace in 245 days')\n  * Expected outcomes and validation criteria\n  * Cost-benefit rationale where applicable\n  * ⚠️ ACTIONABLE BY USERS - physical actions (add capacity, reduce load, check connections) NOT tool executions\n  * NEVER recommend 'use tool X' or 'run calculation Y' - users cannot execute tools, only YOU can\n- DO NOT include OPERATIONAL STATUS section - current voltage/SOC/current/temperature are already displayed in the UI\n- Cite sources inline: 'metric (source)' not separate attribution sections\n\n**CRITICAL TERMINOLOGY:**\n- 'Battery autonomy' / 'days of autonomy' / 'runtime' = How many DAYS/HOURS the battery will power loads at current discharge rate before complete depletion (found in Energy Budget section).\n- 'Service life' / 'lifetime' / 'replacement timeline' = How many MONTHS/YEARS until the battery reaches end-of-life replacement threshold (70% capacity) based on degradation trends (found in Predictive Outlook section).\n- NEVER confuse these two concepts. They measure completely different things.\n\n**ENHANCED ANALYSIS APPROACH:**\n1. **Compare to Baselines**: Always compare current metrics to historical averages. Report % deviation and significance.\n2. **Calculate Trends**: Determine direction (up/down/stable) and rate of change (per day/week/month).\n3. **Identify Correlations**: Connect patterns (e.g., temp spikes during high current, SOC drops correlated with load increases).\n4. **Project Future States**: Use trends to forecast when thresholds will be reached (replacement, capacity limits, autonomy changes).\n5. **Quantify Everything**: Convert observations into numbers (Ah, W, days, %, etc.).\n6. **Prioritize by Impact**: Rank issues/recommendations by potential impact on system reliability and lifespan.\n7. **Execute Analysis Tools**: If analysis requires energy budgets, predictions, or pattern analysis, CALL the appropriate tools NOW and present results.\n\n**SOLAR VARIANCE INTERPRETATION:**\n- Delta between expected and actual solar charge often represents DAYTIME LOAD CONSUMPTION, not solar underperformance\n- Example: 220Ah expected, 58Ah recovered = 162Ah consumed by loads during charging hours (not a solar deficit)\n- Only flag solar issues when variance exceeds ±15% tolerance AND weather conditions were favorable (low clouds, high irradiance)\n- Calculate daytime load consumption and compare to nighttime consumption for load profiling\n\n**ALERT EVENT HANDLING:**\n- Group consecutive alerts showing same threshold into single events with duration estimates\n- Multiple screenshots with same alert ≠ multiple events - count as ONE event until threshold recovery\n- Use time-of-day context to infer when alerts likely cleared (e.g., low battery at night → sun comes up → likely recovered by noon)\n- Correlate alert frequency with environmental factors (temperature, load patterns, SOC levels)\n\n**STATISTICAL RIGOR:**\n- Report confidence levels for predictions (high/medium/low based on data quality and sample size)\n- Flag data gaps that may affect accuracy\n- Use moving averages to smooth noisy data\n- Identify outliers and determine if they're anomalies or emerging patterns";
 }
 
 /**
@@ -423,7 +451,39 @@ function buildCustomMission(customPrompt) {
     // Detect if the query involves date comparisons or specific time periods
     const hasDateReference = /\b(yesterday|last (week|month|tuesday|wednesday|thursday|friday|saturday|sunday|monday)|compare.*to|vs\.|versus|october|november|december|january|february|march|april|may|june|july|august|september|\d{1,2}\/\d{1,2}|on the \d+)/i.test(customPrompt);
     
+    // Detect format requests
+    const csvRequested = /\b(csv|comma[\s\-.]?separated|spreadsheet)\b/i.test(customPrompt);
+    const tableRequested = /\b(table|tabular)\b/i.test(customPrompt);
+    const jsonRequested = /\b(json|javascript object)\b/i.test(customPrompt);
+    
     let approach = `**USER QUESTION:**\n${customPrompt}\n\n`;
+    
+    // Format-specific instructions
+    if (csvRequested) {
+        approach += `**🔍 DETECTED:** CSV format requested.\n\n`;
+        approach += `**CSV FORMAT REQUIREMENTS:**\n`;
+        approach += `1. First line: Column headers (e.g., "Date,Time,SOC,Voltage,Current")\n`;
+        approach += `2. Data lines: Values separated by commas\n`;
+        approach += `3. Quote any value containing commas or newlines\n`;
+        approach += `4. No markdown formatting - pure CSV text\n`;
+        approach += `5. Test the format: Can it be copy-pasted into Excel/spreadsheet software?\n\n`;
+    } else if (tableRequested) {
+        approach += `**🔍 DETECTED:** Table format requested.\n\n`;
+        approach += `**TABLE FORMAT REQUIREMENTS:**\n`;
+        approach += `1. Use markdown table syntax with pipes (|)\n`;
+        approach += `2. Header row, separator row (---), then data rows\n`;
+        approach += `3. Align columns for readability\n`;
+        approach += `4. Example: | Date | SOC | Voltage |\n`;
+        approach += `           |------|-----|------|\n`;
+        approach += `           | 2025-11-23 | 85% | 52.4V |\n\n`;
+    } else if (jsonRequested) {
+        approach += `**🔍 DETECTED:** JSON format requested.\n\n`;
+        approach += `**JSON FORMAT REQUIREMENTS:**\n`;
+        approach += `1. Wrap in \`\`\`json code block\n`;
+        approach += `2. Valid JSON syntax - test mentally before responding\n`;
+        approach += `3. Use arrays for time series data\n`;
+        approach += `4. Include timestamp, value, and unit fields\n\n`;
+    }
     
     if (hasDateReference) {
         approach += `**🔍 DETECTED:** This question requires historical data comparison.\n\n`;
@@ -438,10 +498,11 @@ function buildCustomMission(customPrompt) {
     } else {
         approach += `**APPROACH:**\n`;
         approach += `1. Review preloaded context data first - you may already have everything needed\n`;
-        approach += `2. If specific data is missing, CALL the necessary tools NOW (don't suggest them)\n`;
-        approach += `3. Analyze results and deliver terse, highlight-driven answer\n`;
-        approach += `4. Format: ## KEY FINDINGS → ## ANALYSIS → ## RECOMMENDATIONS\n`;
-        approach += `5. Use bold labels, cite sources inline, skip fluff\n`;
+        approach += `2. If specific data is missing, CALL the necessary tools NOW and include the results in your answer\n`;
+        approach += `3. ⚠️ CRITICAL: NEVER recommend users run tools - they cannot access them. YOU must execute all tools.\n`;
+        approach += `4. Analyze results and deliver terse, highlight-driven answer\n`;
+        approach += `5. Format: ## KEY FINDINGS → ## ANALYSIS → ## RECOMMENDATIONS\n`;
+        approach += `6. Use bold labels, cite sources inline, skip fluff\n`;
     }
     
     return approach;
