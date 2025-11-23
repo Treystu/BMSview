@@ -2069,3 +2069,93 @@ export const getHourlySocPredictions = async (systemId: string, hoursBack: numbe
     return await response.json();
 };
 
+/**
+ * Fetch merged timeline data (BMS + Cloud hourly data)
+ * Combines BMS screenshot data with hourly cloud data for unified visualization
+ */
+export interface MergedTimelineResponse {
+    systemId: string;
+    startDate: string;
+    endDate: string;
+    totalPoints: number;
+    downsampled: boolean;
+    data: MergedDataPoint[];
+}
+
+export interface MergedDataPoint {
+    timestamp: string;
+    source: 'bms' | 'cloud' | 'estimated';
+    data: {
+        stateOfCharge?: number | null;
+        overallVoltage?: number | null;
+        current?: number | null;
+        power?: number | null;
+        temperature?: number | null;
+        mosTemperature?: number | null;
+        cellVoltageDifference?: number | null;
+        clouds?: number | null;
+        uvi?: number | null;
+        temp?: number | null;
+        remainingCapacity?: number | null;
+        fullCapacity?: number | null;
+        // Min/max/avg when downsampled
+        stateOfCharge_min?: number;
+        stateOfCharge_max?: number;
+        stateOfCharge_avg?: number;
+        overallVoltage_min?: number;
+        overallVoltage_max?: number;
+        overallVoltage_avg?: number;
+        current_min?: number;
+        current_max?: number;
+        current_avg?: number;
+        power_min?: number;
+        power_max?: number;
+        power_avg?: number;
+        temperature_min?: number;
+        temperature_max?: number;
+        temperature_avg?: number;
+        [key: string]: number | string | null | undefined;
+    };
+    recordId?: string;
+    fileName?: string;
+    dataPoints?: number; // Number of points in bucket when downsampled
+    timestampLast?: string; // Last timestamp in bucket when downsampled
+}
+
+export const getMergedTimelineData = async (
+    systemId: string,
+    startDate: string,
+    endDate: string,
+    downsample: boolean = false,
+    maxPoints: number = 2000
+): Promise<MergedTimelineResponse> => {
+    log('info', 'Fetching merged timeline data', { systemId, startDate, endDate, downsample });
+
+    const params = new URLSearchParams({
+        merged: 'true',
+        systemId,
+        startDate,
+        endDate,
+        downsample: downsample ? 'true' : 'false',
+        maxPoints: maxPoints.toString()
+    });
+
+    const response = await fetch(`/.netlify/functions/history?${params}`, {
+        method: 'GET'
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch merged timeline data: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    log('info', 'Merged timeline data received', {
+        totalPoints: data.totalPoints,
+        downsampled: data.downsampled
+    });
+
+    return data;
+};
+
