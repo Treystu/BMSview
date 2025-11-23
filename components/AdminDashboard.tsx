@@ -819,6 +819,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 onClose={() => dispatch({ type: 'CLOSE_DIAGNOSTICS_MODAL' })}
                 results={state.diagnosticResults}
                 isLoading={state.actionStatus.isRunningDiagnostics}
+                selectedTests={state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS}
             />
         </div>
     );
