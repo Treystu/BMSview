@@ -484,15 +484,38 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     );
 
     // All available diagnostic tests (matching backend implementation)
-    const ALL_DIAGNOSTIC_TESTS = [
-        'database', 'gemini',
-        'analyze', 'insightsWithTools', 'asyncAnalysis',
-        'history', 'systems',
-        'weather', 'solarEstimate', 
-        'predictiveMaintenance', 'systemAnalytics',
-        'dataExport', 'idempotency', 'contentHashing',
-        'errorHandling', 'logging', 'retryMechanism', 'timeout'
+    // Dynamically define all available diagnostic tests by extracting from the UI sections
+    // This ensures that any new tests added to the UI are automatically included in "Select All"
+    const DIAGNOSTIC_TEST_SECTIONS = [
+        // Infrastructure
+        { id: 'database', label: 'Database Connection' },
+        { id: 'gemini', label: 'Gemini API' },
+        // Core Analysis
+        { id: 'analyze', label: 'Analyze Endpoint' },
+        { id: 'insightsWithTools', label: 'Insights with Tools' },
+        { id: 'asyncAnalysis', label: 'Async Analysis' },
+        // Data Management
+        { id: 'history', label: 'History' },
+        { id: 'systems', label: 'Systems' },
+        { id: 'dataExport', label: 'Data Export' },
+        { id: 'idempotency', label: 'Idempotency' },
+        // External Services
+        { id: 'weather', label: 'Weather Service' },
+        { id: 'backfillWeather', label: 'Backfill Weather' },
+        { id: 'backfillHourlyCloud', label: 'Backfill Hourly Cloud' },
+        { id: 'solarEstimate', label: 'Solar Estimate' },
+        { id: 'systemAnalytics', label: 'System Analytics' },
+        { id: 'predictiveMaintenance', label: 'Predictive Maintenance' },
+        // System Utilities
+        { id: 'contentHashing', label: 'Content Hashing' },
+        { id: 'errorHandling', label: 'Error Handling' },
+        { id: 'logging', label: 'Logging System' },
+        { id: 'retryMechanism', label: 'Retry Mechanism' },
+        { id: 'timeout', label: 'Timeout Handling' },
     ];
+    
+    // Extract all test IDs from the sections
+    const ALL_DIAGNOSTIC_TESTS = DIAGNOSTIC_TEST_SECTIONS.map(test => test.id);
 
     const handleTestToggle = (testId: string, checked: boolean) => {
         const currentTests = state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS;
@@ -503,10 +526,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     };
 
     const handleRunDiagnostics = async () => {
+        const selectedTests = state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS;
+        
+        // Create initial stub results to show tests as "running" immediately
+        const initialResults = {
+            status: 'partial' as const,
+            timestamp: new Date().toISOString(),
+            duration: 0,
+            results: selectedTests.map(testId => {
+                const testConfig = DIAGNOSTIC_TEST_SECTIONS.find(t => t.id === testId);
+                return {
+                    name: testConfig?.label || testId,
+                    status: 'running' as const,
+                    duration: 0
+                };
+            }),
+            summary: {
+                total: selectedTests.length,
+                success: 0,
+                warnings: 0,
+                errors: 0
+            }
+        };
+        
+        // Open modal with initial stub results (all tests showing as "running")
         dispatch({ type: 'OPEN_DIAGNOSTICS_MODAL' });
+        dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: initialResults });
         dispatch({ type: 'ACTION_START', payload: 'isRunningDiagnostics' });
+        
         try {
-            const selectedTests = state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS;
             const results = await runDiagnostics(selectedTests);
             dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: results });
         } catch (err) {
@@ -652,10 +700,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                     <div className="mb-3">
                                         <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Infrastructure</h4>
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {[
-                                                { id: 'database', label: 'Database Connection' },
-                                                { id: 'gemini', label: 'Gemini API' },
-                                            ].map(test => (
+                                            {DIAGNOSTIC_TEST_SECTIONS.filter(t => ['database', 'gemini'].includes(t.id)).map(test => (
                                                 <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
                                                     <input
                                                         type="checkbox"
@@ -673,11 +718,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                     <div className="mb-3">
                                         <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Core Analysis</h4>
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {[
-                                                { id: 'analyze', label: 'Analyze Endpoint' },
-                                                { id: 'insightsWithTools', label: 'Insights with Tools' },
-                                                { id: 'asyncAnalysis', label: 'Async Analysis' },
-                                            ].map(test => (
+                                            {DIAGNOSTIC_TEST_SECTIONS.filter(t => ['analyze', 'insightsWithTools', 'asyncAnalysis'].includes(t.id)).map(test => (
                                                 <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
                                                     <input
                                                         type="checkbox"
@@ -695,12 +736,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                     <div className="mb-3">
                                         <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Data Management</h4>
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {[
-                                                { id: 'history', label: 'History' },
-                                                { id: 'systems', label: 'Systems' },
-                                                { id: 'dataExport', label: 'Data Export' },
-                                                { id: 'idempotency', label: 'Idempotency' },
-                                            ].map(test => (
+                                            {DIAGNOSTIC_TEST_SECTIONS.filter(t => ['history', 'systems', 'dataExport', 'idempotency'].includes(t.id)).map(test => (
                                                 <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
                                                     <input
                                                         type="checkbox"
@@ -718,14 +754,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                     <div className="mb-3">
                                         <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">External Services</h4>
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {[
-                                                { id: 'weather', label: 'Weather Service' },
-                                                { id: 'backfillWeather', label: 'Backfill Weather' },
-                                                { id: 'backfillHourlyCloud', label: 'Backfill Hourly Cloud' },
-                                                { id: 'solarEstimate', label: 'Solar Estimate' },
-                                                { id: 'systemAnalytics', label: 'System Analytics' },
-                                                { id: 'predictiveMaintenance', label: 'Predictive Maintenance' },
-                                            ].map(test => (
+                                            {DIAGNOSTIC_TEST_SECTIONS.filter(t => ['weather', 'backfillWeather', 'backfillHourlyCloud', 'solarEstimate', 'systemAnalytics', 'predictiveMaintenance'].includes(t.id)).map(test => (
                                                 <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
                                                     <input
                                                         type="checkbox"
@@ -743,13 +772,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                     <div className="mb-3">
                                         <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">System Utilities</h4>
                                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {[
-                                                { id: 'contentHashing', label: 'Content Hashing' },
-                                                { id: 'errorHandling', label: 'Error Handling' },
-                                                { id: 'logging', label: 'Logging System' },
-                                                { id: 'retryMechanism', label: 'Retry Mechanism' },
-                                                { id: 'timeout', label: 'Timeout Handling' },
-                                            ].map(test => (
+                                            {DIAGNOSTIC_TEST_SECTIONS.filter(t => ['contentHashing', 'errorHandling', 'logging', 'retryMechanism', 'timeout'].includes(t.id)).map(test => (
                                                 <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
                                                     <input
                                                         type="checkbox"

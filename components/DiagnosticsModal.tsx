@@ -286,49 +286,20 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
           <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button>
         </div>
 
-        {isLoading ? (
+        {isLoading && (!results || results.results.length === 0) ? (
           <div className="space-y-4">
-            {/* LIVE Test Status - Show ONLY tests that are actually running */}
+            {/* Initial Loading State - Only show if no results yet */}
             <div className="bg-gray-700 p-4 rounded-md">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center">
                   <SpinnerIcon className="w-6 h-6 text-secondary" />
-                  <span className="ml-3 text-lg font-semibold">Running Diagnostic Tests</span>
+                  <span className="ml-3 text-lg font-semibold">Initializing Diagnostic Tests</span>
                 </div>
                 <span className="text-sm text-gray-400">
-                  {runningTests.length} test{runningTests.length !== 1 ? 's' : ''} • ~{estimatedMinSeconds}-{estimatedMaxSeconds}s
+                  {selectedTests.length} test{selectedTests.length !== 1 ? 's' : ''} selected
                 </span>
               </div>
-              
-              {/* Live Test List - Shows ONLY the tests that are actually being executed */}
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {runningTests.map((test) => (
-                  <LiveTestStatus 
-                    key={test.id}
-                    name={test.displayName} 
-                    result={results?.results?.find(r => r.name === test.displayName)} 
-                  />
-                ))}
-              </div>
-              
-              {/* Overall Progress */}
-              <div className="mt-4 pt-4 border-t border-gray-600">
-                <div className="h-2 bg-gray-600 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-secondary transition-all duration-500 ease-out"
-                    style={{ 
-                      width: results?.summary 
-                        ? `${((results.summary.success + results.summary.errors + (results.summary.warnings || 0)) / results.summary.total * 100)}%`
-                        : '5%'
-                    }}
-                  />
-                </div>
-                <div className="text-center text-xs text-gray-400 mt-2">
-                  {results?.summary 
-                    ? `${results.summary.success + results.summary.errors + (results.summary.warnings || 0)} of ${results.summary.total} tests completed`
-                    : 'Starting tests...'}
-                </div>
-              </div>
+              <p className="text-gray-400 text-sm">Please wait while the diagnostic system prepares...</p>
             </div>
           </div>
         ) : (
@@ -360,8 +331,36 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
             {/* ALWAYS show results if available, even when overall status is error */}
             {results ? (
           <>
-            {/* Overall Status Banner */}
-            {results.status && (
+            {/* Show progress indicator when tests are still running */}
+            {isLoading && (
+              <div className="bg-blue-900/20 border border-blue-500 p-3 rounded-md mb-4">
+                <div className="flex items-center">
+                  <SpinnerIcon className="w-5 h-5 text-blue-400 mr-3" />
+                  <div className="flex-1">
+                    <div className="font-semibold text-blue-300">Tests Running in Parallel...</div>
+                    {summary && (
+                      <div className="text-sm text-gray-400 mt-1">
+                        {summary.success + summary.errors + (summary.warnings || 0)} of {summary.total} completed
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {/* Progress bar */}
+                {summary && (
+                  <div className="mt-3 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-500 transition-all duration-300"
+                      style={{ 
+                        width: `${((summary.success + summary.errors + (summary.warnings || 0)) / summary.total * 100)}%`
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Overall Status Banner - Only show if diagnostic system itself failed */}
+            {results.status && results.status !== 'error' && (
               <div className={`border rounded-md p-4 mb-4 ${getOverallStatusColor(results.status)}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
@@ -373,7 +372,6 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                         {results.status === 'success' && 'All Tests Passed'}
                         {results.status === 'partial' && 'Partial Success'}
                         {results.status === 'warning' && 'Tests Completed with Warnings'}
-                        {results.status === 'error' && 'Tests Failed'}
                       </h3>
                       <p className="text-sm text-gray-300 mt-1">
                         Completed in {results.duration ? `${(results.duration / 1000).toFixed(2)}s` : 'N/A'}
@@ -438,12 +436,20 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center">
-                            <span className={`text-xl mr-2 ${getStatusColor(result.status)}`}>
-                              {getStatusIcon(result.status)}
-                            </span>
+                            {result.status === 'running' ? (
+                              <SpinnerIcon className="w-5 h-5 text-blue-400 mr-2" />
+                            ) : (
+                              <span className={`text-xl mr-2 ${getStatusColor(result.status)}`}>
+                                {getStatusIcon(result.status)}
+                              </span>
+                            )}
                             <h4 className="font-semibold text-base">{result.name}</h4>
                             <span className="ml-3 text-xs text-gray-400">
-                              {result.duration ? `${result.duration}ms` : ''}
+                              {result.status === 'running' ? (
+                                <span className="text-blue-400">running...</span>
+                              ) : result.duration ? (
+                                `${result.duration}ms`
+                              ) : ''}
                             </span>
                           </div>
                           

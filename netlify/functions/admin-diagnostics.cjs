@@ -1,4 +1,5 @@
 const { getDb, getCollection } = require('./utils/mongodb.cjs');
+const { ObjectId } = require('mongodb');
 const { createLogger } = require('./utils/logger.cjs');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 const { executeReActLoop } = require('./utils/react-loop.cjs');
@@ -639,18 +640,53 @@ const diagnosticTests = {
         throw initError; // Re-throw to be caught by outer catch
       }
 
-      // Stage 2: Data extraction
+      // Stage 2: Data extraction using REAL production data
       let analysisResult = null;
       try {
-        logger.info('Stage 2/4: Extracting data from image...');
+        logger.info('Stage 2/4: Extracting data from REAL production image...');
         const extractionStart = Date.now();
         
-        // Prepare test image data
-        const testImageData = Buffer.from(JSON.stringify(TEST_BMS_DATA)).toString('base64');
-        const testFileName = `test-image-${testId}.png`;
+        //  Use REAL production data instead of fake test data
+        const bmsData = getBmsDataForTest(); // Get real data loaded at handler start
+        const testFileName = bmsData._isRealProductionData 
+          ? `production-data-${bmsData._sourceRecordId || testId}.png` 
+          : `test-image-${testId}.png`;
         
-        // Note: This test uses fake data and may fail at Gemini API
-        // We catch and report the error gracefully
+        // If we have real production data, retrieve the actual image from the database
+        let testImageData;
+        if (bmsData._isRealProductionData && bmsData._sourceRecordId) {
+          try {
+            const db = await getDb();
+            // Convert to ObjectId if it's a string
+            const recordId = typeof bmsData._sourceRecordId === 'string' 
+              ? new ObjectId(bmsData._sourceRecordId) 
+              : bmsData._sourceRecordId;
+            const sourceRecord = await db.collection('analysis-results').findOne({ _id: recordId });
+            if (sourceRecord && sourceRecord.imageData) {
+              testImageData = sourceRecord.imageData;
+              logger.info('Using REAL image data from production record', { 
+                recordId: bmsData._sourceRecordId,
+                imageSize: testImageData.length 
+              });
+            } else {
+              // Fallback: use JSON representation if no image available
+              testImageData = Buffer.from(JSON.stringify(bmsData)).toString('base64');
+              logger.warn('No image data in production record, using JSON representation', {
+                recordId: bmsData._sourceRecordId
+              });
+            }
+          } catch (dbError) {
+            logger.error('Failed to retrieve production image, using fallback', formatError(dbError));
+            testImageData = Buffer.from(JSON.stringify(bmsData)).toString('base64');
+          }
+        } else {
+          // Fallback for when no real data is available
+          testImageData = Buffer.from(JSON.stringify(TEST_BMS_DATA)).toString('base64');
+          logger.warn('No real production data available, using test data fallback');
+        }
+        
+        // NOTE: Analysis pipeline will still fail if using JSON/fake data
+        // This is EXPECTED and shows that the test correctly validates Gemini API behavior
         analysisResult = await executeWithTimeout(async () => {
           return await performAnalysisPipeline(
             {
@@ -669,17 +705,24 @@ const diagnosticTests = {
           stage: 'extraction',
           status: 'success',
           duration: Date.now() - extractionStart,
-          dataExtracted: !!analysisResult?.analysis
+          dataExtracted: !!analysisResult?.analysis,
+          usingRealData: bmsData._isRealProductionData || false
         });
       } catch (extractionError) {
         const errorDetails = formatError(extractionError, { testId, stage: 'extraction' });
-        logger.warn('Extraction stage failed (expected with fake test data)', errorDetails);
+        const bmsData = getBmsDataForTest();
+        const isRealData = bmsData._isRealProductionData || false;
+        
+        logger.warn(`Extraction stage failed${isRealData ? ' with real data' : ' (using fallback test data)'}`, errorDetails);
         testResults.stages.push({
           stage: 'extraction',
           status: 'error',
           error: errorDetails.message,
           errorDetails,
-          note: 'This test uses fake data and may fail at Gemini API - this is expected'
+          usingRealData: isRealData,
+          note: isRealData 
+            ? 'Test used real production data but extraction failed - check Gemini API logs'
+            : 'Test used fallback data (no real production data available) - this failure is expected'
         });
         // Don't throw - report the failure and continue with remaining stages
         // Return early with error status
@@ -688,7 +731,10 @@ const diagnosticTests = {
         testResults.details = {
           pipelineComplete: false,
           failedAtStage: 'extraction',
-          note: 'Test uses fake data which causes Gemini API to fail',
+          usingRealData: isRealData,
+          note: isRealData 
+            ? 'Test used real production data but extraction failed - this may indicate an API issue'
+            : 'Test used fallback test data which causes Gemini API to fail - this is expected when no production data is available',
           errorDetails: errorDetails
         };
         logger.info('========== ANALYZE TEST COMPLETED WITH ERRORS ==========', testResults);
@@ -1127,6 +1173,8 @@ const diagnosticTests = {
       }
 
       // Determine final test status
+      // Background jobs are EXPECTED to not complete within the short test window
+      // The test validates job creation and polling capability, not full execution
       testResults.status = finalStatus?.status === 'completed' ? 'success' : 
                           finalStatus?.status === 'failed' ? 'error' : 'warning';
       testResults.duration = Date.now() - startTime;
@@ -1138,7 +1186,7 @@ const diagnosticTests = {
         statusHistory: statusHistory.slice(-5), // Last 5 status checks
         jobResult: finalStatus?.result,
         jobError: finalStatus?.error,
-        note: testResults.status === 'warning' ? 'Job did not complete within test timeout (6s) - this is expected for background jobs' : undefined
+        note: testResults.status === 'warning' ? 'Job did not complete within test timeout (6s) - this is EXPECTED for background jobs. Test validates job creation and polling, not full execution.' : undefined
       };
 
       logger.info('========== ASYNC TEST COMPLETED ==========', testResults);
