@@ -20,81 +20,7 @@
  */
 
 const { getCollection } = require('./mongodb.cjs');
-
-/**
- * Calculate sun position and irradiance for a given time and location
- * This is the foundation for understanding what solar SHOULD generate
- */
-function calculateSolarIrradiance(timestamp, latitude, longitude, maxSolarWatts) {
-  const date = new Date(timestamp);
-  const hour = date.getHours();
-  const minute = date.getMinutes();
-  const dayOfYear = getDayOfYear(date);
-  
-  // Solar declination (angle of sun)
-  const declination = 23.45 * Math.sin((360 / 365) * (dayOfYear - 81) * Math.PI / 180);
-  
-  // Hour angle (solar noon = 0, morning negative, afternoon positive)
-  const solarNoon = 12; // Simplified - should account for longitude
-  const hourAngle = 15 * (hour + minute / 60 - solarNoon);
-  
-  // Solar altitude angle (elevation above horizon)
-  const latRad = latitude * Math.PI / 180;
-  const declRad = declination * Math.PI / 180;
-  const hourAngleRad = hourAngle * Math.PI / 180;
-  
-  const sinAltitude = 
-    Math.sin(latRad) * Math.sin(declRad) + 
-    Math.cos(latRad) * Math.cos(declRad) * Math.cos(hourAngleRad);
-  
-  const altitude = Math.asin(sinAltitude) * 180 / Math.PI;
-  
-  // If sun is below horizon, no solar
-  if (altitude <= 0) {
-    return {
-      altitude: 0,
-      isSunUp: false,
-      expectedWatts: 0,
-      expectedAmps: 0
-    };
-  }
-  
-  // Air mass coefficient (atmospheric absorption)
-  const airMass = 1 / sinAltitude;
-  
-  // Solar irradiance at surface (W/m²)
-  // Peak is ~1000 W/m² on clear day at solar noon
-  const clearSkyIrradiance = 1000 * Math.pow(0.7, airMass) * sinAltitude;
-  
-  // Expected panel output (accounting for panel efficiency ~15-20%)
-  // This is what panels SHOULD generate in clear sky
-  const expectedWatts = maxSolarWatts * (clearSkyIrradiance / 1000);
-  
-  return {
-    altitude: roundTo(altitude, 1),
-    isSunUp: true,
-    clearSkyIrradiance: roundTo(clearSkyIrradiance, 0),
-    expectedWatts: roundTo(expectedWatts, 0),
-    hourAngle,
-    airMass: roundTo(airMass, 2)
-  };
-}
-
-/**
- * Adjust expected solar for cloud cover
- */
-function adjustForClouds(expectedWatts, cloudCoverPercent) {
-  if (cloudCoverPercent == null || expectedWatts === 0) {
-    return expectedWatts;
-  }
-  
-  // Cloud transmission factor
-  // 0% clouds = 100% transmission
-  // 100% clouds = ~10% transmission (diffuse light)
-  const transmission = 1 - (cloudCoverPercent / 100) * 0.9;
-  
-  return roundTo(expectedWatts * transmission, 0);
-}
+const { calculateSolarIrradiance } = require('./solar-irradiance.cjs');
 
 /**
  * Analyze loads with solar-aware separation
@@ -202,9 +128,28 @@ async function analyzeSolarAwareLoads(systemId, system, records, log) {
       }
     }
     
-    // Calculate expected solar for this timestamp
-    const solar = calculateSolarIrradiance(timestamp, latitude, longitude, maxSolarWatts);
-    const expectedSolarWatts = adjustForClouds(solar.expectedWatts, cloudCover);
+    // Calculate expected solar for this timestamp using centralized solar irradiance module
+    const irradianceData = calculateSolarIrradiance(
+      timestamp,
+      latitude,
+      longitude,
+      cloudCover,
+      system.altitude || 0
+    );
+    
+    // Extract solar data - irradiance is already cloud-adjusted
+    const solar = {
+      isSunUp: irradianceData.isSunUp,
+      altitude: irradianceData.solarAltitude,
+      azimuth: irradianceData.solarPosition.azimuth
+    };
+    
+    // Scale global irradiance to panel capacity
+    // globalIrradiance is in W/m², we need to estimate panel output
+    // Typical solar panel efficiency is ~18-20%, but maxSolarWatts already accounts for this
+    const expectedSolarWatts = irradianceData.isSunUp && maxSolarWatts > 0
+      ? (irradianceData.globalIrradiance / 1000) * maxSolarWatts // Normalize to 1000 W/m² peak
+      : 0;
     const expectedSolarAmps = voltage > 0 ? expectedSolarWatts / voltage : 0;
     
     // CRITICAL LOGIC: Separate solar from load
@@ -867,16 +812,6 @@ function analyzeFallback(records, voltage, log) {
 }
 
 /**
- * Get day of year (1-365)
- */
-function getDayOfYear(date) {
-  const start = new Date(date.getFullYear(), 0, 0);
-  const diff = date - start;
-  const oneDay = 1000 * 60 * 60 * 24;
-  return Math.floor(diff / oneDay);
-}
-
-/**
  * Helper: Round to specified decimal places
  */
 function roundTo(value, decimals) {
@@ -886,7 +821,5 @@ function roundTo(value, decimals) {
 }
 
 module.exports = {
-  analyzeSolarAwareLoads,
-  calculateSolarIrradiance,
-  adjustForClouds
+  analyzeSolarAwareLoads
 };

@@ -111,6 +111,25 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
         // These are expensive operations - skip in sync mode, let Gemini request via ReAct loop
         log.info('Loading full context (async mode)', { skipExpensiveOps });
         
+        // NEW: Generate comprehensive analytics (includes solar-aware load analysis)
+        try {
+            const { generateComprehensiveAnalytics } = require('./comprehensive-analytics.cjs');
+            context.comprehensiveAnalytics = await runStep("comprehensiveAnalytics", async () => {
+                const system = context.systemProfile || await loadSystemProfile(systemId, log);
+                // Get recent records for analysis
+                const historyCollection = await getCollection('history');
+                const records = await historyCollection
+                    .find({ systemId })
+                    .sort({ timestamp: -1 })
+                    .limit(2000)
+                    .toArray();
+                
+                return await generateComprehensiveAnalytics(systemId, analysisData, log);
+            });
+        } catch (error) {
+            log.warn('Failed to generate comprehensive analytics', { error: error.message });
+        }
+        
         // Load 90-day daily rollup for comprehensive trend analysis
         context.dailyRollup90d = await runStep("dailyRollup90d", () => load90DayDailyRollup(systemId, log));
         
@@ -239,7 +258,14 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "⚠️ ABSOLUTE RULE: You are the ONLY entity with access to the analysis tools. END USERS CANNOT execute tools like calculate_energy_budget, predict_battery_trends, etc.\n";
     prompt += "When analysis requires tool data, you MUST CALL THE TOOL YOURSELF and present the results. NEVER tell users to 'use the X tool' or 'run Y calculation' - they literally cannot do this.\n";
     prompt += "If you need energy budget data, call calculate_energy_budget NOW and include the results in your response. If you need predictions, call predict_battery_trends NOW.\n";
-    prompt += "Recommendations like 'Use the calculate_energy_budget tool with scenario=worst_case' are USELESS to users - only YOU can execute tools!\n";
+    prompt += "Recommendations like 'Use the calculate_energy_budget tool with scenario=worst_case' are USELESS to users - only YOU can execute tools!\n\n";
+    prompt += "⚡ ENERGY UNITS MANDATE:\n";
+    prompt += "• ALWAYS use kWh (kilowatt-hours) for energy values - this is the INDUSTRY STANDARD\n";
+    prompt += "• NEVER use Ah (amp-hours) alone without context - Ah varies wildly by voltage (12V, 24V, 48V systems)\n";
+    prompt += "• Example: Don't say '48.9 Ah deficit' - say '2.5 kWh deficit (48.9 Ah @ 51.2V)'\n";
+    prompt += "• Conversion: kWh = (Ah × Voltage) / 1000\n";
+    prompt += "• Exception: When discussing CAPACITY ratings, you may use Ah WITH voltage context (e.g., '660Ah @ 48V = 31.7 kWh')\n";
+    prompt += "• This makes analysis comparable across different voltage systems and matches utility billing units\n";
 
     // Add data availability info FIRST so Gemini knows what it can query
     if (dataAvailability) {
