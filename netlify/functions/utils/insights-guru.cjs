@@ -12,6 +12,7 @@
 const { generateInitialSummary } = require("./insights-summary.cjs");
 const { getCollection } = require("./mongodb.cjs");
 const { toolDefinitions, executeToolCall } = require("./gemini-tools.cjs");
+const { calculateSunriseSunset } = require("./weather-fetcher.cjs");
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const RECENT_SNAPSHOT_LIMIT = 24;
@@ -847,13 +848,37 @@ function formatNightDischargeSection(nightDischarge, systemProfile) {
     if (!aggregate.avgCurrent && !aggregate.totalAh) return null;
 
     const lines = ["**OVERNIGHT LOAD ANALYSIS**"];
+    
+    // Report average overnight draw
     if (isFiniteNumber(aggregate.avgCurrent)) {
         const wattsText = isFiniteNumber(aggregate.avgWatts)
             ? ` (~${formatNumber(aggregate.avgWatts, " W", 0)})`
             : "";
         lines.push(`- Average overnight draw: ${formatNumber(aggregate.avgCurrent, " A", 1)}${wattsText}.`);
     }
-    if (isFiniteNumber(aggregate.totalAh) && isFiniteNumber(aggregate.totalHours)) {
+    
+    // NEW: Report actual night duration and projected consumption
+    if (isFiniteNumber(aggregate.actualNightHours) && isFiniteNumber(aggregate.projectedNightAh)) {
+        const geoNote = aggregate.usedGeoLocation 
+            ? " (based on location's actual sunrise/sunset times)"
+            : " (estimated using standard 12-hour night)";
+        
+        const projectedKwhText = isFiniteNumber(aggregate.projectedNightKwh)
+            ? ` (~${formatNumber(aggregate.projectedNightKwh, " kWh", 2)})`
+            : "";
+        
+        lines.push(`- Full night duration: ${formatNumber(aggregate.actualNightHours, " hours", 1)}${geoNote}.`);
+        lines.push(`- Projected overnight consumption: ${formatNumber(aggregate.projectedNightAh, " Ah", 1)}${projectedKwhText} for the entire ${formatNumber(aggregate.actualNightHours, "-hour", 1)} night.`);
+        
+        // If we have partial coverage, note the measurement window
+        if (isFiniteNumber(aggregate.totalHours) && aggregate.totalHours > 0 && aggregate.totalHours < aggregate.actualNightHours) {
+            const coverage = isFiniteNumber(aggregate.measurementCoverage) 
+                ? formatNumber(aggregate.measurementCoverage, "%", 0)
+                : "partial";
+            lines.push(`- Measurement basis: ${formatNumber(aggregate.totalAh, " Ah", 1)} observed over ${formatNumber(aggregate.totalHours, " hours", 1)} of nighttime data (${coverage} coverage).`);
+        }
+    } else if (isFiniteNumber(aggregate.totalAh) && isFiniteNumber(aggregate.totalHours)) {
+        // Fallback to old format if new calculations aren't available
         lines.push(`- Consumption window: ${formatNumber(aggregate.totalHours, " h", 1)} totaling ${formatNumber(aggregate.totalAh, " Ah", 1)}.`);
     } else if (isFiniteNumber(aggregate.totalAh)) {
         lines.push(`- Estimated overnight consumption: ${formatNumber(aggregate.totalAh, " Ah", 1)}.`);
@@ -869,8 +894,11 @@ function formatNightDischargeSection(nightDischarge, systemProfile) {
     }
 
     if (systemProfile?.solar?.maxAmps && isFiniteNumber(systemProfile.voltage)) {
-        const replacementAh = systemProfile.solar.maxAmps * Math.max(aggregate.totalHours || 0, 1);
-        lines.push(`- To offset this, solar must deliver ≈${formatNumber(replacementAh, " Ah", 1)} at ${formatNumber(systemProfile.voltage, " V", 1)} during daylight.`);
+        // Use projected night consumption for solar replacement calculation
+        const nightAh = aggregate.projectedNightAh || aggregate.totalAh || 0;
+        const nightHours = aggregate.actualNightHours || aggregate.totalHours || 12;
+        const replacementAh = systemProfile.solar.maxAmps * Math.max(nightHours, 1);
+        lines.push(`- To offset this overnight consumption, solar must deliver ≈${formatNumber(nightAh, " Ah", 1)} during the ${formatNumber(nightHours, "-hour", 1)} daytime period.`);
     }
 
     return lines.join("\n");
@@ -1426,6 +1454,10 @@ function analyzeNightDischargePatterns({ snapshots = [], analysisData = {}, syst
         return aTime - bTime;
     });
 
+    // Extract location if available
+    const latitude = systemProfile?.location?.latitude || null;
+    const longitude = systemProfile?.location?.longitude || null;
+
     const dischargeSequences = extractSequences(orderedSnapshots, snap => isFiniteNumber(snap.current) && snap.current < -0.5);
     if (dischargeSequences.length === 0) {
         return { segments: [], nightSegments: [], aggregate: null };
@@ -1434,7 +1466,7 @@ function analyzeNightDischargePatterns({ snapshots = [], analysisData = {}, syst
     const nominalVoltage = toNullableNumber(systemProfile?.voltage ?? analysisData.overallVoltage);
 
     const segments = dischargeSequences.map(sequence =>
-        computeSequenceStats(sequence, { nominalVoltage, treatAsDischarge: true })
+        computeSequenceStats(sequence, { nominalVoltage, treatAsDischarge: true, latitude, longitude })
     ).filter(Boolean);
 
     if (segments.length === 0) {
@@ -1444,21 +1476,47 @@ function analyzeNightDischargePatterns({ snapshots = [], analysisData = {}, syst
     const nightSegments = segments.filter(segment => segment.isLikelyNight);
     const targetSegments = nightSegments.length > 0 ? nightSegments : segments;
 
+    // Calculate measured consumption from segments
     const totalAh = targetSegments.reduce((sum, segment) => sum + (segment.totalAh || 0), 0);
-    const totalHours = targetSegments.reduce((sum, segment) => sum + (segment.durationHours || 0), 0);
-    const avgCurrent = totalHours > 0 ? totalAh / totalHours : 0;
+    const measuredHours = targetSegments.reduce((sum, segment) => sum + (segment.durationHours || 0), 0);
+    const avgCurrent = measuredHours > 0 ? totalAh / measuredHours : 0;
     const avgWatts = nominalVoltage != null ? avgCurrent * nominalVoltage : null;
+
+    // Calculate ACTUAL night duration for the most recent night
+    // Use the latest segment's timestamp as reference
+    let actualNightHours = 12; // Default fallback
+    let usedGeoLocation = false;
+    
+    if (targetSegments.length > 0) {
+        const latestSegment = targetSegments[targetSegments.length - 1];
+        const referenceDate = new Date(latestSegment.end || latestSegment.start);
+        
+        const nightCalc = calculateNightDuration(referenceDate, latitude, longitude);
+        actualNightHours = nightCalc.nightDurationHours;
+        usedGeoLocation = !nightCalc.usedFallback;
+    }
+
+    // Extrapolate consumption to full night duration
+    // If we measured X Ah over Y hours, full night consumption = X * (actualNightHours / Y)
+    const projectedNightAh = measuredHours > 0 ? totalAh * (actualNightHours / measuredHours) : totalAh;
+    const projectedNightKwh = nominalVoltage && projectedNightAh ? (projectedNightAh * nominalVoltage) / 1000 : null;
 
     return {
         segments,
         nightSegments,
         aggregate: {
-            totalAh: roundNumber(totalAh, 2),
-            totalHours: roundNumber(totalHours, 2),
+            totalAh: roundNumber(totalAh, 2), // Measured consumption from snapshots
+            totalHours: roundNumber(measuredHours, 2), // Measured duration from snapshots
             avgCurrent: roundNumber(avgCurrent, 2),
             avgWatts: avgWatts != null ? roundNumber(avgWatts, 1) : null,
             sampleCount: targetSegments.reduce((sum, segment) => sum + (segment.sampleCount || 0), 0),
-            isNightDominant: nightSegments.length > 0
+            isNightDominant: nightSegments.length > 0,
+            // NEW: Actual night duration and projected consumption
+            actualNightHours: roundNumber(actualNightHours, 2),
+            projectedNightAh: roundNumber(projectedNightAh, 2),
+            projectedNightKwh: projectedNightKwh != null ? roundNumber(projectedNightKwh, 2) : null,
+            usedGeoLocation,
+            measurementCoverage: measuredHours > 0 ? roundNumber((measuredHours / actualNightHours) * 100, 1) : 0
         }
     };
 }
@@ -1579,7 +1637,7 @@ function extractSequences(snapshots, predicate) {
     return sequences;
 }
 
-function computeSequenceStats(sequence, { nominalVoltage = null, treatAsDischarge = false } = {}) {
+function computeSequenceStats(sequence, { nominalVoltage = null, treatAsDischarge = false, latitude = null, longitude = null } = {}) {
     if (!sequence || sequence.length === 0) {
         return null;
     }
@@ -1619,7 +1677,7 @@ function computeSequenceStats(sequence, { nominalVoltage = null, treatAsDischarg
     const totalAh = avgCurrent * durationHours;
     const avgWatts = nominalVoltage != null ? avgCurrent * nominalVoltage : null;
 
-    const nightSamples = sequence.filter(entry => isNightHour(entry.timestamp)).length;
+    const nightSamples = sequence.filter(entry => isNightHour(entry.timestamp, latitude, longitude)).length;
     const isLikelyNight = nightSamples >= Math.ceil(sequence.length * 0.5);
 
     return {
@@ -1635,10 +1693,94 @@ function computeSequenceStats(sequence, { nominalVoltage = null, treatAsDischarg
     };
 }
 
-function isNightHour(timestamp) {
+/**
+ * Calculate actual night duration for a given date and location
+ * @param {Date} date - The date to calculate night duration for
+ * @param {number|null} latitude - Latitude (if available)
+ * @param {number|null} longitude - Longitude (if available)
+ * @returns {{ nightDurationHours: number, sunrise: Date|null, sunset: Date|null, usedFallback: boolean }}
+ */
+function calculateNightDuration(date, latitude, longitude) {
+    // If we have location data, calculate precise sunrise/sunset
+    if (latitude != null && longitude != null && isFiniteNumber(latitude) && isFiniteNumber(longitude)) {
+        try {
+            const { sunrise, sunset, isPolarNight, isPolarDay } = calculateSunriseSunset(latitude, longitude, date);
+            
+            // Handle polar extremes
+            if (isPolarNight) {
+                return { nightDurationHours: 24, sunrise: null, sunset: null, usedFallback: false };
+            }
+            if (isPolarDay) {
+                return { nightDurationHours: 0, sunrise: null, sunset: null, usedFallback: false };
+            }
+            
+            if (sunrise && sunset) {
+                // Calculate night as time from sunset to sunrise next day
+                // Night spans from sunset of previous day to sunrise of current day
+                const prevDaySunset = new Date(sunset);
+                prevDaySunset.setDate(prevDaySunset.getDate() - 1);
+                
+                const nightMs = sunrise.getTime() - prevDaySunset.getTime();
+                const nightHours = nightMs / (1000 * 60 * 60);
+                
+                // Sanity check - night should be between 0 and 24 hours
+                if (nightHours > 0 && nightHours <= 24) {
+                    return { 
+                        nightDurationHours: roundNumber(nightHours, 2), 
+                        sunrise, 
+                        sunset,
+                        usedFallback: false 
+                    };
+                }
+            }
+        } catch (err) {
+            // Fall through to fallback if calculation fails
+        }
+    }
+    
+    // Fallback: assume standard 12-hour night (6 PM to 6 AM)
+    return { 
+        nightDurationHours: 12, 
+        sunrise: null, 
+        sunset: null,
+        usedFallback: true 
+    };
+}
+
+/**
+ * Check if a timestamp is during nighttime hours
+ * @param {string|Date} timestamp - Timestamp to check
+ * @param {number|null} latitude - Optional latitude for precise calculation
+ * @param {number|null} longitude - Optional longitude for precise calculation  
+ * @returns {boolean}
+ */
+function isNightHour(timestamp, latitude = null, longitude = null) {
     if (!timestamp) return false;
     const date = new Date(timestamp);
     if (Number.isNaN(date.getTime())) return false;
+    
+    // If we have location data, use precise sunrise/sunset
+    if (latitude != null && longitude != null && isFiniteNumber(latitude) && isFiniteNumber(longitude)) {
+        try {
+            const { sunrise, sunset, isPolarNight, isPolarDay } = calculateSunriseSunset(latitude, longitude, date);
+            
+            if (isPolarNight) return true;
+            if (isPolarDay) return false;
+            
+            if (sunrise && sunset) {
+                const hour = date.getHours();
+                const sunriseHour = sunrise.getHours();
+                const sunsetHour = sunset.getHours();
+                
+                // Night is before sunrise or after sunset
+                return hour < sunriseHour || hour >= sunsetHour;
+            }
+        } catch (err) {
+            // Fall through to simple calculation
+        }
+    }
+    
+    // Fallback: use simple hour-based check (6 PM to 6 AM)
     const hour = date.getHours();
     return hour >= 18 || hour < 6;
 }
@@ -1749,7 +1891,12 @@ function summarizeContextForClient(context, analysisData) {
             avgCurrent: toNullableNumber(context.nightDischarge.aggregate.avgCurrent),
             totalAh: toNullableNumber(context.nightDischarge.aggregate.totalAh),
             totalHours: toNullableNumber(context.nightDischarge.aggregate.totalHours),
-            isNightDominant: !!context.nightDischarge.aggregate.isNightDominant
+            isNightDominant: !!context.nightDischarge.aggregate.isNightDominant,
+            actualNightHours: toNullableNumber(context.nightDischarge.aggregate.actualNightHours),
+            projectedNightAh: toNullableNumber(context.nightDischarge.aggregate.projectedNightAh),
+            projectedNightKwh: toNullableNumber(context.nightDischarge.aggregate.projectedNightKwh),
+            usedGeoLocation: !!context.nightDischarge.aggregate.usedGeoLocation,
+            measurementCoverage: toNullableNumber(context.nightDischarge.aggregate.measurementCoverage)
         } : null,
         solarVariance: context.solarVariance ? {
             expectedSolarAh: toNullableNumber(context.solarVariance.expectedSolarAh),
