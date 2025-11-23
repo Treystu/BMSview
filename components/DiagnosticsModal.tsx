@@ -360,8 +360,8 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
             {/* ALWAYS show results if available, even when overall status is error */}
             {results ? (
           <>
-            {/* Overall Status Banner */}
-            {results.status && (
+            {/* Overall Status Banner - Only show if diagnostic system itself failed */}
+            {results.status && results.status !== 'error' && (
               <div className={`border rounded-md p-4 mb-4 ${getOverallStatusColor(results.status)}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
@@ -373,7 +373,6 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                         {results.status === 'success' && 'All Tests Passed'}
                         {results.status === 'partial' && 'Partial Success'}
                         {results.status === 'warning' && 'Tests Completed with Warnings'}
-                        {results.status === 'error' && 'Tests Failed'}
                       </h3>
                       <p className="text-sm text-gray-300 mt-1">
                         Completed in {results.duration ? `${(results.duration / 1000).toFixed(2)}s` : 'N/A'}
