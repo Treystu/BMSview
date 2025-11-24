@@ -17,8 +17,8 @@ const { validateResponseFormat, buildCorrectionPrompt } = require('./response-va
 // Default iteration limits - can be overridden via params
 const DEFAULT_MAX_TURNS = 10; // Increased from 5 to 10 for standard insights
 const CUSTOM_QUERY_MAX_TURNS = 20; // 20 iterations for custom queries
-const SYNC_CONTEXT_BUDGET_MS = 22000;
-const SYNC_TOTAL_BUDGET_MS = 25000; // 25s for Netlify Pro (26s total, 1s buffer)
+const SYNC_CONTEXT_BUDGET_MS = 55000; // 55s for context collection
+const SYNC_TOTAL_BUDGET_MS = 60000; // 60s total budget for sync mode
 
 // Initialization sequence settings
 const INITIALIZATION_MAX_RETRIES = 100; // Effectively unlimited retries within timeout budget
@@ -846,11 +846,12 @@ Execute the initialization now.`;
  * Execute a complete ReAct loop for insights generation
  * 
  * Flow:
- * 1. Collect context (analytics, predictions, etc.)
- * 2. Build initial prompt with tool definitions
- * 3. Initialize conversation
+ * 1. Collect context (analytics, predictions, etc.) OR resume from checkpoint
+ * 2. Build initial prompt with tool definitions (if not resuming)
+ * 3. Initialize conversation OR load from checkpoint
  * 4. Loop: Call Gemini → check for tool calls → execute tools → add results → continue
  * 5. Return final answer when Gemini stops requesting tools
+ * 6. Save checkpoint on timeout for resuming
  */
 async function executeReActLoop(params) {
     const {
@@ -862,7 +863,9 @@ async function executeReActLoop(params) {
         contextWindowDays = DEFAULT_CONTEXT_WINDOW_DAYS,
         maxIterations, // Optional override for iteration limit
         modelOverride, // Optional model override (e.g., "gemini-2.5-pro")
-        skipInitialization = false // Skip initialization if already done separately
+        skipInitialization = false, // Skip initialization if already done separately
+        checkpointState = null, // Resume from checkpoint if provided
+        onCheckpoint = null // Callback to save checkpoint before timeout
     } = params;
 
     const log = externalLog || createLogger('react-loop');
@@ -876,7 +879,10 @@ async function executeReActLoop(params) {
     const contextBudgetMs = SYNC_CONTEXT_BUDGET_MS;
     const totalBudgetMs = SYNC_TOTAL_BUDGET_MS;
 
-    log.info('Starting ReAct loop with initialization sequence', {
+    // Check if resuming from checkpoint
+    const isResuming = !!(checkpointState && checkpointState.conversationHistory);
+    
+    log.info('Starting ReAct loop with checkpoint support', {
         mode,
         systemId,
         hasCustomPrompt: isCustomQuery,
@@ -885,62 +891,89 @@ async function executeReActLoop(params) {
         contextBudgetMs,
         totalBudgetMs,
         modelOverride,
-        skipInitialization
+        skipInitialization,
+        isResuming,
+        checkpointTurn: checkpointState?.startTurnCount || 0
     });
 
     try {
-        // Step 1: Collect pre-computed context (analytics, predictions, etc.)
-        const contextStartTime = Date.now();
+        // Step 1: Collect pre-computed context OR restore from checkpoint
         let preloadedContext;
+        let conversationHistory;
+        let contextSummary;
+        let turnCount = 0;
+        let toolCallCount = 0;
 
-        try {
-            preloadedContext = await collectAutoInsightsContext(
-                systemId,
-                analysisData,
-                log,
-                { mode, maxMs: contextBudgetMs }
-            );
-        } catch (contextError) {
-            const err = contextError instanceof Error ? contextError : new Error(String(contextError));
-            log.error('Context collection failed, continuing with minimal context', {
-                error: err.message,
-                durationMs: Date.now() - contextStartTime
+        if (isResuming) {
+            // RESUME FROM CHECKPOINT: Restore conversation state
+            log.info('Resuming from checkpoint', {
+                checkpointTurn: checkpointState.startTurnCount,
+                checkpointToolCalls: checkpointState.startToolCallCount,
+                historyLength: checkpointState.conversationHistory.length
             });
-            preloadedContext = null;
+            
+            conversationHistory = checkpointState.conversationHistory;
+            contextSummary = checkpointState.contextSummary || {};
+            turnCount = checkpointState.startTurnCount || 0;
+            toolCallCount = checkpointState.startToolCallCount || 0;
+            preloadedContext = null; // Context already embedded in conversation history
+            
+        } else {
+            // FRESH START: Collect context from scratch
+            const contextStartTime = Date.now();
+
+            try {
+                preloadedContext = await collectAutoInsightsContext(
+                    systemId,
+                    analysisData,
+                    log,
+                    { mode, maxMs: contextBudgetMs }
+                );
+            } catch (contextError) {
+                const err = contextError instanceof Error ? contextError : new Error(String(contextError));
+                log.error('Context collection failed, continuing with minimal context', {
+                    error: err.message,
+                    durationMs: Date.now() - contextStartTime
+                });
+                preloadedContext = null;
+            }
+
+            const contextDurationMs = Date.now() - contextStartTime;
+            log.info('Context collection completed', { durationMs: contextDurationMs });
+
+            // Step 2: Build initial prompt
+            const promptResult = await buildGuruPrompt({
+                analysisData,
+                systemId,
+                customPrompt,
+                log,
+                context: preloadedContext,
+                mode
+            });
+            
+            const initialPrompt = promptResult.prompt;
+            contextSummary = promptResult.contextSummary;
+
+            log.info('Initial prompt built', {
+                promptLength: initialPrompt.length,
+                toolCount: toolDefinitions.length
+            });
+
+            // Step 3: Initialize conversation history
+            conversationHistory = [
+                {
+                    role: 'user',
+                    parts: [{ text: initialPrompt }]
+                }
+            ];
         }
 
-        const contextDurationMs = Date.now() - contextStartTime;
-        log.info('Context collection completed', { durationMs: contextDurationMs });
-
-        // Step 2: Build initial prompt
-        const { prompt: initialPrompt, contextSummary } = await buildGuruPrompt({
-            analysisData,
-            systemId,
-            customPrompt,
-            log,
-            context: preloadedContext,
-            mode
-        });
-
-        log.info('Initial prompt built', {
-            promptLength: initialPrompt.length,
-            toolCount: toolDefinitions.length
-        });
-
-        // Step 3: Initialize conversation history
-        const conversationHistory = [
-            {
-                role: 'user',
-                parts: [{ text: initialPrompt }]
-            }
-        ];
-
-        // Step 3.5: MANDATORY INITIALIZATION SEQUENCE (unless skipped)
+        // Step 3.5: MANDATORY INITIALIZATION SEQUENCE (unless skipped or resuming)
         // Force Gemini to retrieve historical data before analysis
         const geminiClient = getGeminiClient();
         
-        let initResult = null;
-        if (!skipInitialization && systemId) {
+        let initResult = { toolCallsUsed: 0, turnsUsed: 0 };
+        if (!skipInitialization && !isResuming && systemId) {
             initResult = await executeInitializationSequence({
                 systemId,
                 contextWindowDays,
@@ -972,22 +1005,23 @@ async function executeReActLoop(params) {
                 dataPointsRetrieved: initResult.dataPoints,
                 durationMs: Date.now() - startTime
             });
+            
+            // Update counters with initialization usage
+            toolCallCount = initResult.toolCallsUsed || 0;
+            turnCount = initResult.turnsUsed || 0;
         } else if (skipInitialization) {
             log.info('Skipping initialization sequence (already completed separately)');
+        } else if (isResuming) {
+            log.info('Skipping initialization sequence (resuming from checkpoint)');
         } else {
             log.info('Skipping initialization sequence (no systemId)');
         }
 
-        // Update conversation history with initialization exchanges
-        // (already added by executeInitializationSequence if run)
-
         // Step 4: Main ReAct loop
         let finalAnswer = null;
-        let toolCallCount = initResult.toolCallsUsed || 0; // Count initialization tool calls
-        let turnCount = initResult.turnsUsed || 0; // Count initialization turns
 
         for (; turnCount < MAX_TURNS; turnCount++) {
-            // Check timeout
+            // Check timeout and save checkpoint if needed
             const elapsedMs = Date.now() - startTime;
             if (elapsedMs > totalBudgetMs) {
                 log.warn('Total budget exceeded, stopping loop', {
@@ -995,8 +1029,31 @@ async function executeReActLoop(params) {
                     elapsedMs,
                     budgetMs: totalBudgetMs
                 });
+                
+                // Save checkpoint before timeout
+                if (onCheckpoint) {
+                    await onCheckpoint({
+                        conversationHistory,
+                        turnCount,
+                        toolCallCount,
+                        contextSummary,
+                        startTime
+                    });
+                }
+                
                 finalAnswer = buildTimeoutMessage();
                 break;
+            }
+            
+            // Periodically save checkpoints (if callback provided)
+            if (onCheckpoint && turnCount > 0 && turnCount % 5 === 0) {
+                await onCheckpoint({
+                    conversationHistory,
+                    turnCount,
+                    toolCallCount,
+                    contextSummary,
+                    startTime
+                });
             }
 
             log.info(`ReAct turn ${turnCount + 1}/${MAX_TURNS}`, {

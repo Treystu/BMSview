@@ -20,11 +20,14 @@ const COLLECTION_NAME = 'insights-jobs';
  * @param {string} params.systemId - BMS system ID
  * @param {string} params.customPrompt - User's custom prompt (optional)
  * @param {Object} params.initialSummary - Initial battery summary
+ * @param {Object} params.contextWindowDays - Context window for analysis
+ * @param {Object} params.maxIterations - Max iterations
+ * @param {Object} params.modelOverride - Model override
  * @param {Object} log - Logger instance
  * @returns {Promise<Object>} Created job object with jobId
  */
 async function createInsightsJob(params, log) {
-  const { analysisData, systemId, customPrompt, initialSummary } = params;
+  const { analysisData, systemId, customPrompt, initialSummary, contextWindowDays, maxIterations, modelOverride } = params;
   
   const jobId = `insights_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   
@@ -35,9 +38,13 @@ async function createInsightsJob(params, log) {
     systemId,
     customPrompt,
     initialSummary,
+    contextWindowDays,
+    maxIterations,
+    modelOverride,
     progress: [],
     partialInsights: null,
     finalInsights: null,
+    checkpointState: null, // For resuming after timeout
     error: null,
     createdAt: new Date(),
     updatedAt: new Date()
@@ -280,6 +287,49 @@ async function failJob(jobId, errorMessage, log) {
 }
 
 /**
+ * Save checkpoint state for resuming after timeout
+ * 
+ * @param {string} jobId - Job ID
+ * @param {Object} checkpointState - State to save
+ * @param {Array} checkpointState.conversationHistory - Conversation history
+ * @param {number} checkpointState.turnCount - Current turn count
+ * @param {number} checkpointState.toolCallCount - Tool call count
+ * @param {Object} checkpointState.contextSummary - Context summary
+ * @param {Object} log - Logger instance
+ * @returns {Promise<boolean>} Success status
+ */
+async function saveCheckpoint(jobId, checkpointState, log) {
+  try {
+    const collection = await getCollection(COLLECTION_NAME);
+    const result = await collection.updateOne(
+      { id: jobId },
+      { 
+        $set: { 
+          checkpointState,
+          updatedAt: new Date() 
+        } 
+      }
+    );
+    
+    log.info('Checkpoint saved', { 
+      jobId,
+      turnCount: checkpointState.turnCount,
+      toolCallCount: checkpointState.toolCallCount,
+      historyLength: checkpointState.conversationHistory?.length,
+      matched: result.matchedCount 
+    });
+    
+    return result.matchedCount > 0;
+  } catch (error) {
+    log.error('Failed to save checkpoint', { 
+      error: error.message,
+      jobId
+    });
+    throw error;
+  }
+}
+
+/**
  * Ensure indexes for insights-jobs collection
  * Should be called on application startup or first use
  * 
@@ -316,5 +366,6 @@ module.exports = {
   updatePartialInsights,
   completeJob,
   failJob,
+  saveCheckpoint,
   ensureIndexes
 };
