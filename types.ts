@@ -70,6 +70,7 @@ export interface WeatherData {
   uvi: number;
   weather_main: string;
   weather_icon: string;
+  estimated_irradiance_w_m2?: number;
 }
 
 export interface BmsSystem {

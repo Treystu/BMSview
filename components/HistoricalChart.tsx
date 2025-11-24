@@ -4,7 +4,7 @@ import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData } from '../ty
 import AlertAnalysis from './admin/AlertAnalysis';
 import SpinnerIcon from './icons/SpinnerIcon';
 
-type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp' | 'soh' | 'mosTemperature' | 'solarPower';
+type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp' | 'soh' | 'mosTemperature' | 'solarPower' | 'irradiance';
 type Axis = 'left' | 'right';
 type ChartView = 'timeline' | 'hourly' | 'predictive';
 
@@ -44,11 +44,12 @@ const METRICS: Record<MetricKey, {
     clouds: { label: 'Clouds', unit: '%', color: '#94a3b8', source: 'weather', group: 'Weather' },
     uvi: { label: 'UV Index', unit: '', color: '#fde047', source: 'weather', group: 'Weather' },
     temp: { label: 'Air Temp', unit: '°C', color: '#a78bfa', source: 'weather', group: 'Weather' },
+    irradiance: { label: 'Irradiance', unit: 'W/m²', color: '#fbbf24', source: 'weather', group: 'Weather' },
     soh: { label: 'SOH', unit: '%', color: '#ec4899', source: 'analysis', group: 'Health', anomaly: (val) => val < 80 ? { type: 'critical', message: `CRITICAL: State of Health is low (${val.toFixed(1)}%)` } : null },
     solarPower: { label: 'Solar', unit: 'W', color: '#fbbf24', source: 'analysis', group: 'Solar' },
 };
 
-const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds'];
+const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds', 'irradiance'];
 
 
 const METRIC_GROUPS = Object.entries(METRICS).reduce((acc, [key, metric]) => {
@@ -62,7 +63,15 @@ const mapRecordToPoint = (r: AnalysisRecord) => {
     Object.keys(METRICS).forEach(m => {
         const metric = m as MetricKey;
         const { source, multiplier = 1, anomaly } = METRICS[metric];
-        const value = source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
+        let value;
+        
+        // Special handling for irradiance from weather data
+        if (metric === 'irradiance') {
+            value = r.weather?.estimated_irradiance_w_m2 ?? null;
+        } else {
+            value = source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
+        }
+        
         if (value != null && typeof value === 'number') {
             const finalValue = value * multiplier;
             point[metric] = finalValue;
@@ -91,7 +100,14 @@ const mapMergedPointToChartPoint = (p: MergedDataPoint) => {
     Object.keys(METRICS).forEach(m => {
         const metric = m as MetricKey;
         const { multiplier = 1, anomaly } = METRICS[metric];
-        const value = p.data[metric];
+        
+        // Special handling for irradiance from merged data
+        let value;
+        if (metric === 'irradiance') {
+            value = (p.data as Record<string, any>).estimated_irradiance_w_m2 ?? null;
+        } else {
+            value = p.data[metric];
+        }
         
         if (value != null && typeof value === 'number') {
             const finalValue = value * multiplier;
@@ -200,7 +216,9 @@ const ChartControls: React.FC<{
     setManualBucketSize: (size: string | null) => void;
     bandEnabled: boolean;
     setBandEnabled: (enabled: boolean) => void;
-}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, averagingEnabled, setAveragingEnabled, manualBucketSize, setManualBucketSize, bandEnabled, setBandEnabled }) => {
+    useMergedData: boolean;
+    setUseMergedData: (enabled: boolean) => void;
+}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, averagingEnabled, setAveragingEnabled, manualBucketSize, setManualBucketSize, bandEnabled, setBandEnabled, useMergedData, setUseMergedData }) => {
     const [isMetricConfigOpen, setIsMetricConfigOpen] = useState(false);
     const metricConfigRef = useRef<HTMLDivElement>(null);
 
@@ -331,7 +349,7 @@ const ChartControls: React.FC<{
                             )}
                         </div>
                         {/* Bands Toggle */}
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 border-r border-gray-600 pr-4">
                             <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
                                 <input
                                     type="checkbox"
@@ -340,6 +358,19 @@ const ChartControls: React.FC<{
                                     className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-secondary focus:ring-secondary"
                                 />
                                 <span>Min/Max Bands</span>
+                            </label>
+                        </div>
+
+                        {/* Merged Data Toggle */}
+                        <div className="flex items-center gap-3">
+                            <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer" title="Include hourly cloud cover and solar irradiance data">
+                                <input
+                                    type="checkbox"
+                                    checked={useMergedData}
+                                    onChange={(e) => setUseMergedData(e.target.checked)}
+                                    className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-secondary focus:ring-secondary"
+                                />
+                                <span>☁️ Hourly Weather</span>
                             </label>
                         </div>
 
@@ -425,7 +456,7 @@ const SvgChart: React.FC<{
     const showDataPoints = zoomRatio > 100; // Show points when very zoomed in
 
     const {
-        paths, anomalies, bands,
+        paths, anomalies, bands, cloudAreaPath,
         yScaleLeft, yTicksLeft, yAxisLabelLeft,
         yScaleRight, yTicksRight, yAxisLabelRight
     } = useMemo(() => {
@@ -529,9 +560,39 @@ const SvgChart: React.FC<{
             return { ...a, timestamp: d.timestamp, y: yScale(d[a.key]) };
         })).filter(Boolean);
 
-        return { paths, anomalies, bands, yScaleLeft, yTicksLeft, yAxisLabelLeft, yScaleRight, yTicksRight, yAxisLabelRight };
+        // Generate area path for cloud cover (if enabled)
+        let cloudAreaPath = '';
+        const cloudMetricConfig = metricConfig['clouds'];
+        if (cloudMetricConfig && !hiddenMetrics.has('clouds')) {
+            const cloudYScale = cloudMetricConfig.axis === 'left' ? yScaleLeft : yScaleRight;
+            if (cloudYScale) {
+                const cloudPoints = dataToRender.filter((d: any) => d.clouds !== null);
+                if (cloudPoints.length > 0) {
+                    // Create area path (from baseline to cloud value)
+                    const baselineY = cloudYScale(0);
+                    const pathParts: string[] = [];
+                    
+                    // Start at first point
+                    pathParts.push(`M ${xScale(cloudPoints[0].timestamp).toFixed(2)} ${baselineY}`);
+                    pathParts.push(`L ${xScale(cloudPoints[0].timestamp).toFixed(2)} ${cloudYScale(cloudPoints[0].clouds).toFixed(2)}`);
+                    
+                    // Add all cloud points
+                    for (let i = 1; i < cloudPoints.length; i++) {
+                        pathParts.push(`L ${xScale(cloudPoints[i].timestamp).toFixed(2)} ${cloudYScale(cloudPoints[i].clouds).toFixed(2)}`);
+                    }
+                    
+                    // Close path back to baseline
+                    pathParts.push(`L ${xScale(cloudPoints[cloudPoints.length - 1].timestamp).toFixed(2)} ${baselineY}`);
+                    pathParts.push('Z');
+                    
+                    cloudAreaPath = pathParts.join(' ');
+                }
+            }
+        }
 
-    }, [dataToRender, metricConfig, chartHeight, xScale, bandEnabled]);
+        return { paths, anomalies, bands, cloudAreaPath, yScaleLeft, yTicksLeft, yAxisLabelLeft, yScaleRight, yTicksRight, yAxisLabelRight };
+
+    }, [dataToRender, metricConfig, chartHeight, xScale, bandEnabled, hiddenMetrics]);
 
     const activeMetrics = useMemo(() => Object.entries(metricConfig).map(([key, config]) => ({ key: key as MetricKey, axis: config!.axis })), [metricConfig]);
 
@@ -685,18 +746,33 @@ const SvgChart: React.FC<{
                                     ))}
                                 </g>
                             ))}
-                            {paths.map((p: any) => p && !hiddenMetrics.has(p.key) && p.segments.map((seg: any, segIdx: number) => (
-                                <path 
-                                    key={`${p.key}-seg-${segIdx}`}
-                                    d={seg.d} 
-                                    fill="none" 
-                                    stroke={seg.color} 
-                                    strokeWidth="2.5" 
-                                    vectorEffect="non-scaling-stroke"
-                                    strokeDasharray={seg.source === 'estimated' || seg.source === 'cloud' ? '8 4' : undefined}
-                                    opacity={seg.source === 'estimated' ? 0.6 : seg.source === 'cloud' ? 0.8 : 1.0}
+                            
+                            {/* Cloud Cover Area Chart - subtle background overlay */}
+                            {cloudAreaPath && (
+                                <path
+                                    d={cloudAreaPath}
+                                    fill="#94a3b8"
+                                    fillOpacity="0.1"
+                                    stroke="none"
+                                    pointerEvents="none"
                                 />
-                            )))}
+                            )}
+                            
+                            {paths.map((p: any) => p && !hiddenMetrics.has(p.key) && p.segments.map((seg: any, segIdx: number) => {
+                                const isIrradiance = p.key === 'irradiance';
+                                return (
+                                    <path 
+                                        key={`${p.key}-seg-${segIdx}`}
+                                        d={seg.d} 
+                                        fill="none" 
+                                        stroke={seg.color} 
+                                        strokeWidth={isIrradiance ? "2" : "2.5"} 
+                                        vectorEffect="non-scaling-stroke"
+                                        strokeDasharray={isIrradiance || seg.source === 'estimated' || seg.source === 'cloud' ? '8 4' : undefined}
+                                        opacity={seg.source === 'estimated' ? 0.6 : (seg.source === 'cloud' || isIrradiance) ? 0.8 : 1.0}
+                                    />
+                                );
+                            }))}
 
                             {showDataPoints && activeMetrics.flatMap(({ key, axis }) => {
                                 if (hiddenMetrics.has(key)) return [];
@@ -797,6 +873,19 @@ const SvgChart: React.FC<{
                         hour12: false,
                         timeZone: 'UTC'
                     })} UTC</p>
+                    {tooltip.point.source && (
+                        <p className="text-xs mb-2">
+                            <span className={`px-2 py-0.5 rounded ${
+                                tooltip.point.source === 'bms' ? 'bg-green-900/50 text-green-300' :
+                                tooltip.point.source === 'cloud' ? 'bg-blue-900/50 text-blue-300' :
+                                'bg-purple-900/50 text-purple-300'
+                            }`}>
+                                {tooltip.point.source === 'bms' ? '📸 BMS Screenshot' :
+                                 tooltip.point.source === 'cloud' ? '☁️ Hourly Weather' :
+                                 '🔮 Interpolated'}
+                            </span>
+                        </p>
+                    )}
                     {tooltip.point.recordCount > 1 && <p className="text-xs text-gray-400 mb-2 italic">Averaged over {tooltip.point.recordCount} records</p>}
                     <table className="min-w-full text-left"><tbody>
                         {Object.keys(METRICS).filter(k => metricConfig[k as MetricKey] && !hiddenMetrics.has(k as MetricKey)).map(key => (
@@ -1367,12 +1456,12 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
             let chartDataPoints: any[] = [];
 
-            if (useMergedData && startDate && endDate) {
+            if (useMergedData) {
                 // Use merged data API (BMS + Cloud)
                 const mergedResponse = await getMergedTimelineData(
                     selectedSystemId,
-                    startDate,
-                    endDate,
+                    queryStartDate,
+                    queryEndDate,
                     true, // Enable downsampling
                     2000 // Max points
                 );
@@ -1467,6 +1556,8 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                 setManualBucketSize={setManualBucketSize}
                 bandEnabled={bandEnabled}
                 setBandEnabled={setBandEnabled}
+                useMergedData={useMergedData}
+                setUseMergedData={setUseMergedData}
             />
             <div className="mt-4">
                 {isGenerating && <div className="flex items-center justify-center h-full text-gray-400 min-h-[600px]"><SpinnerIcon className="w-8 h-8 text-secondary" /> <span className="ml-4">Loading Analytics Data...</span></div>}
