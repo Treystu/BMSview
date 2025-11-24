@@ -873,6 +873,19 @@ const SvgChart: React.FC<{
                         hour12: false,
                         timeZone: 'UTC'
                     })} UTC</p>
+                    {tooltip.point.source && (
+                        <p className="text-xs mb-2">
+                            <span className={`px-2 py-0.5 rounded ${
+                                tooltip.point.source === 'bms' ? 'bg-green-900/50 text-green-300' :
+                                tooltip.point.source === 'cloud' ? 'bg-blue-900/50 text-blue-300' :
+                                'bg-purple-900/50 text-purple-300'
+                            }`}>
+                                {tooltip.point.source === 'bms' ? '📸 BMS Screenshot' :
+                                 tooltip.point.source === 'cloud' ? '☁️ Hourly Weather' :
+                                 '🔮 Interpolated'}
+                            </span>
+                        </p>
+                    )}
                     {tooltip.point.recordCount > 1 && <p className="text-xs text-gray-400 mb-2 italic">Averaged over {tooltip.point.recordCount} records</p>}
                     <table className="min-w-full text-left"><tbody>
                         {Object.keys(METRICS).filter(k => metricConfig[k as MetricKey] && !hiddenMetrics.has(k as MetricKey)).map(key => (
