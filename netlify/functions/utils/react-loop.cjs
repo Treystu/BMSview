@@ -17,8 +17,17 @@ const { validateResponseFormat, buildCorrectionPrompt } = require('./response-va
 // Default iteration limits - can be overridden via params
 const DEFAULT_MAX_TURNS = 10; // Increased from 5 to 10 for standard insights
 const CUSTOM_QUERY_MAX_TURNS = 20; // 20 iterations for custom queries
-const SYNC_CONTEXT_BUDGET_MS = 55000; // 55s for context collection
-const SYNC_TOTAL_BUDGET_MS = 60000; // 60s total budget for sync mode
+
+// CRITICAL TIMEOUT SETTINGS
+// Netlify has hard limits: 10s free, 26s pro, configurable enterprise
+// We use conservative values to ensure we can save checkpoint and return response
+const NETLIFY_TIMEOUT_MS = parseInt(process.env.NETLIFY_FUNCTION_TIMEOUT_MS || '20000'); // 20s safe default
+const CONTEXT_COLLECTION_BUFFER_MS = 3000; // Reserve 3s for context collection
+const CHECKPOINT_SAVE_BUFFER_MS = 3000; // Reserve 3s for checkpoint save + response (increased from 2s)
+const RESPONSE_BUFFER_MS = 2000; // Reserve 2s for formatting and returning response
+const SYNC_CONTEXT_BUDGET_MS = Math.max(NETLIFY_TIMEOUT_MS - CONTEXT_COLLECTION_BUFFER_MS - RESPONSE_BUFFER_MS, 5000); // ~15s for context
+const SYNC_TOTAL_BUDGET_MS = Math.max(NETLIFY_TIMEOUT_MS - CHECKPOINT_SAVE_BUFFER_MS - RESPONSE_BUFFER_MS, 8000); // ~15s total before checkpoint
+const CHECKPOINT_FREQUENCY_MS = Math.max(Math.floor((NETLIFY_TIMEOUT_MS - RESPONSE_BUFFER_MS) / 3), 4000); // Save checkpoint every ~6s
 
 // Initialization sequence settings
 const INITIALIZATION_MAX_RETRIES = 100; // Effectively unlimited retries within timeout budget
@@ -1019,15 +1028,21 @@ async function executeReActLoop(params) {
 
         // Step 4: Main ReAct loop
         let finalAnswer = null;
+        let lastCheckpointTime = startTime; // Track when we last saved a checkpoint
+        let timedOut = false; // Track if we exited due to timeout
 
         for (; turnCount < MAX_TURNS; turnCount++) {
             // Check timeout and save checkpoint if needed
             const elapsedMs = Date.now() - startTime;
+            const timeSinceLastCheckpoint = Date.now() - lastCheckpointTime;
+            
+            // CRITICAL: Check if we're approaching timeout
             if (elapsedMs > totalBudgetMs) {
-                log.warn('Total budget exceeded, stopping loop', {
+                log.warn('Total budget exceeded, stopping loop and saving checkpoint', {
                     turn: turnCount,
                     elapsedMs,
-                    budgetMs: totalBudgetMs
+                    budgetMs: totalBudgetMs,
+                    timeRemaining: totalBudgetMs - elapsedMs
                 });
                 
                 // Save checkpoint before timeout
@@ -1042,11 +1057,19 @@ async function executeReActLoop(params) {
                 }
                 
                 finalAnswer = buildTimeoutMessage();
+                timedOut = true; // Mark as timed out
                 break;
             }
             
-            // Periodically save checkpoints (if callback provided)
-            if (onCheckpoint && turnCount > 0 && turnCount % 5 === 0) {
+            // Progressive checkpointing: Save checkpoint every CHECKPOINT_FREQUENCY_MS (~6s)
+            // This ensures we don't lose much progress if Netlify kills the function
+            if (onCheckpoint && turnCount > 0 && timeSinceLastCheckpoint >= CHECKPOINT_FREQUENCY_MS) {
+                log.info('Saving periodic checkpoint', {
+                    turn: turnCount,
+                    elapsedMs,
+                    timeSinceLastCheckpoint
+                });
+                
                 await onCheckpoint({
                     conversationHistory,
                     turnCount,
@@ -1054,11 +1077,14 @@ async function executeReActLoop(params) {
                     contextSummary,
                     startTime
                 });
+                
+                lastCheckpointTime = Date.now();
             }
 
             log.info(`ReAct turn ${turnCount + 1}/${MAX_TURNS}`, {
                 elapsedMs,
-                remainingMs: totalBudgetMs - elapsedMs
+                remainingMs: totalBudgetMs - elapsedMs,
+                percentComplete: Math.round((elapsedMs / totalBudgetMs) * 100)
             });
 
             // Call Gemini with conversation history and tools
@@ -1336,7 +1362,8 @@ async function executeReActLoop(params) {
             toolCalls: toolCallCount,
             durationMs: totalDurationMs,
             contextSummary,
-            conversationLength: conversationHistory.length
+            conversationLength: conversationHistory.length,
+            timedOut // Indicate if we exited due to timeout
         };
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));

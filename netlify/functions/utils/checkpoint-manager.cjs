@@ -17,8 +17,11 @@ const { saveCheckpoint, getInsightsJob, createInsightsJob } = require('./insight
 const { createLogger } = require('./logger.cjs');
 
 // Constants
-const CHECKPOINT_SAVE_THRESHOLD_MS = 55000; // Save checkpoint at 55s (before 60s timeout)
-const MAX_RETRY_ATTEMPTS = 3; // Maximum number of resume attempts
+// CRITICAL: Netlify timeout limits (10s free, 26s pro)
+// Save checkpoint well before timeout to ensure we can respond
+const NETLIFY_TIMEOUT_MS = parseInt(process.env.NETLIFY_FUNCTION_TIMEOUT_MS || '20000'); // 20s safe default
+const CHECKPOINT_SAVE_THRESHOLD_MS = Math.max(NETLIFY_TIMEOUT_MS - 2000, 5000); // Save 2s before timeout (~18s)
+const MAX_RETRY_ATTEMPTS = 10; // Maximum number of resume attempts (10 attempts * 20s = 200s total = ~3.3 minutes max)
 const CONTEXT_COMPRESSION_THRESHOLD = 50; // Compress history after 50 turns
 
 /**
