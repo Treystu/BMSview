@@ -1185,14 +1185,14 @@ const pollInsightsJobCompletion = async (
 
                 // Continue polling
                 attempts++;
-                if (attempts < maxAttempts) {
-                    currentInterval = Math.min(currentInterval * backoffMultiplier, maxInterval);
-                    setTimeout(poll, currentInterval);
-                } else {
-                    // "Starter Motor" approach: After many attempts, show informative message
-                    // but don't reject - the background job may still be running
-                    const totalMinutes = Math.round((attempts * currentInterval) / 60000);
-                    const warning = `\n\n⚠️ **Analysis taking longer than expected (${totalMinutes}+ minutes)**\n\n` +
+                
+                // "Starter Motor" approach: After many attempts, show informative message
+                // but don't reject - the background job may still be running
+                if (attempts >= maxAttempts) {
+                    // Calculate actual elapsed time (rough estimate based on exponential backoff)
+                    // This is approximate because we don't track exact interval history
+                    const estimatedMinutes = Math.round((attempts * initialInterval * backoffMultiplier) / 60000);
+                    const warning = `\n\n⚠️ **Analysis taking longer than expected (${estimatedMinutes}+ minutes)**\n\n` +
                         `Your analysis is still processing in the background. This typically means:\n` +
                         `• Very large dataset being analyzed (${contextWindowDays || 30}+ days)\n` +
                         `• Complex query requiring extensive AI processing\n` +
@@ -1205,30 +1205,31 @@ const pollInsightsJobCompletion = async (
                     log('warn', 'Background insights polling exceeded expected time', { 
                         jobId, 
                         attempts,
-                        totalMinutes,
+                        estimatedMinutes,
                         contextWindowDays 
                     });
                     
                     // Show warning but continue polling (don't reject)
                     onChunk(warning);
-                    
-                    // Keep polling with longer intervals (up to 30s)
-                    currentInterval = Math.min(30000, currentInterval * 2);
-                    setTimeout(poll, currentInterval);
                 }
+                
+                // Always continue polling with backoff
+                currentInterval = Math.min(currentInterval * backoffMultiplier, maxInterval);
+                setTimeout(poll, currentInterval);
             } catch (err) {
                 const error = err instanceof Error ? err : new Error(String(err));
                 
                 // "Starter Motor" approach: Log network errors but keep polling
                 // Only reject on catastrophic errors (404, 403, etc.)
-                const isCatastrophic = error.message?.includes('404') || 
-                                      error.message?.includes('403') || 
-                                      error.message?.includes('401');
+                // Check for HTTP status in error object or response
+                const status = (error as any).status || (error as any).response?.status;
+                const isCatastrophic = status === 404 || status === 403 || status === 401;
                 
                 if (isCatastrophic) {
                     log('error', 'Catastrophic error polling insights job status', { 
                         jobId, 
-                        error: error.message 
+                        error: error.message,
+                        status
                     });
                     reject(error);
                     return;
@@ -1238,12 +1239,14 @@ const pollInsightsJobCompletion = async (
                 log('warn', 'Transient error polling insights job status, retrying', { 
                     jobId, 
                     error: error.message,
+                    status,
                     attempt: attempts
                 });
                 
                 // Increase backoff and continue
+                const ERROR_BACKOFF_MULTIPLIER = 1.5;
                 attempts++;
-                currentInterval = Math.min(currentInterval * backoffMultiplier * 1.5, maxInterval);
+                currentInterval = Math.min(currentInterval * backoffMultiplier * ERROR_BACKOFF_MULTIPLIER, maxInterval);
                 setTimeout(poll, currentInterval);
             }
         };

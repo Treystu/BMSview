@@ -180,6 +180,14 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     
+    // Determine which checkpoint was reached last for better error diagnostics
+    const getLastCheckpoint = () => {
+      if (checkpoints.reactLoopEnd) return 'reactLoopEnd';
+      if (checkpoints.reactLoopStart) return 'reactLoopStart';
+      if (checkpoints.statusUpdate) return 'statusUpdate';
+      return 'entry';
+    };
+    
     // Log detailed error with checkpoint information
     log.error('Background processing failed', {
       jobId,
@@ -187,13 +195,7 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
       stack: err.stack,
       checkpoints: {
         failedAt: Date.now() - checkpoints.entry,
-        lastCheckpoint: checkpoints.reactLoopEnd 
-          ? 'reactLoopEnd' 
-          : checkpoints.reactLoopStart 
-            ? 'reactLoopStart' 
-            : checkpoints.statusUpdate 
-              ? 'statusUpdate' 
-              : 'entry'
+        lastCheckpoint: getLastCheckpoint()
       }
     });
 

@@ -161,9 +161,11 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
 
       // "Starter Motor" approach: Only stop on catastrophic errors that won't recover
       // Network errors (500, 502, 504, timeouts) are transient - keep trying
-      const isCatastrophic = err.message?.includes('404') || // Job not found
-                             err.message?.includes('403') || // Forbidden
-                             err.message?.includes('401');   // Unauthorized
+      // Check HTTP status code from error object or response
+      const status = err.status || err.response?.status;
+      const isCatastrophic = status === 404 || // Job not found
+                             status === 403 || // Forbidden
+                             status === 401;   // Unauthorized
       
       if (isCatastrophic) {
         setError(`Fatal error: ${err.message}`);

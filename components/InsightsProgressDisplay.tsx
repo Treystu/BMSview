@@ -12,6 +12,12 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { InsightsProgress, InsightsJobStatus } from '../hooks/useInsightsPolling';
 
+// Time thresholds for progress messages (in seconds)
+const TIME_THRESHOLD_INITIAL = 30;
+const TIME_THRESHOLD_ANALYZING = 60;
+const TIME_THRESHOLD_CRUNCHING = 120;
+const TIME_THRESHOLD_DEEP = 180;
+
 interface InsightsProgressDisplayProps {
   status: InsightsJobStatus | null;
   isPolling: boolean;
@@ -51,13 +57,13 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
       return 'AI Analysis Complete';
     }
     
-    if (elapsedSeconds < 30) {
+    if (elapsedSeconds < TIME_THRESHOLD_INITIAL) {
       return 'AI Analyzing Your Battery...';
-    } else if (elapsedSeconds < 60) {
+    } else if (elapsedSeconds < TIME_THRESHOLD_ANALYZING) {
       return 'Analyzing Historical Trends...';
-    } else if (elapsedSeconds < 120) {
+    } else if (elapsedSeconds < TIME_THRESHOLD_CRUNCHING) {
       return 'Crunching Complex Data...';
-    } else if (elapsedSeconds < 180) {
+    } else if (elapsedSeconds < TIME_THRESHOLD_DEEP) {
       return 'Deep Analysis in Progress...';
     } else {
       return 'Processing Comprehensive Analysis...';
@@ -87,7 +93,7 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
         {isPolling && elapsedSeconds > 0 && (
           <p className="text-sm text-gray-500 mb-2">
             Elapsed time: {Math.floor(elapsedSeconds / 60)}m {elapsedSeconds % 60}s
-            {elapsedSeconds > 60 && (
+            {elapsedSeconds > TIME_THRESHOLD_ANALYZING && (
               <span className="ml-2 text-blue-600 font-medium">
                 • Complex analysis in progress, please wait...
               </span>
@@ -169,9 +175,9 @@ function StatusBadge({ status, isPolling, error, elapsedSeconds }: { status?: st
   }
 
   if (status === 'processing' || isPolling) {
-    // Show different messages based on elapsed time
-    const message = elapsedSeconds > 120 ? 'Deep Analysis...' : 
-                    elapsedSeconds > 60 ? 'Processing...' : 
+    // Show different messages based on elapsed time using the same thresholds
+    const message = elapsedSeconds > TIME_THRESHOLD_CRUNCHING ? 'Deep Analysis...' : 
+                    elapsedSeconds > TIME_THRESHOLD_ANALYZING ? 'Processing...' : 
                     'Analyzing...';
     
     return (
