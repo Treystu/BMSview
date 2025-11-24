@@ -50,7 +50,7 @@ exports.handler = async function(event, context) {
             {
                 // Only include records that have a dlNumber
                 $match: {
-                    "analysis.dlNumber": { $exists: true, $ne: null, $ne: "" }
+                    "analysis.dlNumber": { $exists: true, $nin: [null, ""] }
                 }
             },
             {

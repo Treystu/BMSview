@@ -1,4 +1,3 @@
-<![CDATA[
 const { v4: uuidv4 } = require("uuid");
 const { createTimer } = require('./logger.cjs');
 const { executeAnalysisPipeline } = require('./analysis-pipeline.cjs');
@@ -53,4 +52,3 @@ async function handleStoryModeAnalysis(requestBody, idemKey, forceReanalysis, he
 }
 
 module.exports = { handleStoryModeAnalysis };
-]]>

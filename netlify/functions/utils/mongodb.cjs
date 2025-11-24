@@ -195,7 +195,8 @@ async function connectToDatabase() {
 
             // Provide helpful error messages
             if (error.message && error.message.includes('ENOTFOUND')) {
-                log.error('DNS resolution failed - check MongoDB URI hostname');
+                const hostname = MONGODB_URI.split('@').split('/');
+                log.error(`DNS resolution failed - check MongoDB URI hostname: ${hostname}`);
             } else if (error.message && error.message.includes('authentication')) {
                 log.error('Authentication failed - check MongoDB credentials');
             } else if (error.message && error.message.includes('timeout')) {

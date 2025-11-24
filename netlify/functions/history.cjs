@@ -143,7 +143,7 @@ exports.handler = async function(event, context) {
                     });
                 });
 
-                const unlinkedCursor = historyCollection.find({ systemId: null, dlNumber: { $exists: true, $ne: null, $ne: '' } });
+                const unlinkedCursor = historyCollection.find({ systemId: null, dlNumber: { $exists: true, $nin: [null, ''] } });
                 let associatedCount = 0;
                 const bulkOps = [];
 

@@ -24,15 +24,16 @@
     "axios": "^1.7.9",
     "buffer": "^6.0.3",
     "dexie": "^4.2.1",
+    "fast-xml-parser": "^4.3.2",
     "jszip": "^3.10.1",
     "mongodb": "^6.20.0",
+    "multiparty": "^4.2.3",
+    "nodemailer": "^7.0.10",
     "process": "^0.11.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "multiparty": "^4.2.3",
-    "fast-xml-parser": "^4.3.2",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

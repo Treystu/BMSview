@@ -1,32 +1,15 @@
 # Testing Guide for BMSview
 
-## Testing Modes
+## Testing Policy: No Mock Data
 
-BMSview supports two testing modes:
+To ensure production-like testing, all tests in this project are run against **real services**, including the Gemini API and a MongoDB database. Mocks are strictly prohibited.
 
-### 1. Unit Tests with Mocks (Default - Fast)
+### Integration Tests with Real Services
 
-Fast, isolated tests using mocks for Gemini API and MongoDB. **This is the default mode.**
+All tests validate actual production behavior.
 
 ```bash
 npm test
-# or explicitly
-USE_REAL_SERVICES=false npm test
-```
-
-**Advantages:**
-- Fast execution (~20 seconds for full suite)
-- No external dependencies
-- No API costs
-- Works in any environment
-- Ideal for CI/CD pipelines
-
-### 2. Integration Tests with Real Services (Optional)
-
-Tests that validate actual production behavior with real Gemini API and MongoDB.
-
-```bash
-USE_REAL_SERVICES=true npm test
 ```
 
 **Required Environment Variables:**
@@ -42,14 +25,13 @@ export MONGODB_DB_NAME="bmsview-test"
 - True production parity
 
 **Disadvantages:**
-- Slow (~2-5 minutes)
+- Slower execution
 - Consumes API quota
 - Requires credentials
-- Use sparingly
 
 ## Quick Start
 
-### Running Unit Tests (Default)
+### Running All Tests
 ```bash
 npm test
 ```
@@ -79,17 +61,10 @@ npm test -- tests/specific-feature.test.js
 
 ### Before Committing
 ```bash
-# Run all unit tests
+# Run all integration tests
 npm test
 ```
 
-### Before Releasing
-```bash
-# Run integration tests to validate production behavior
-USE_REAL_SERVICES=true npm test
-```
-
 ### In CI/CD
-- Use unit tests (mocks) for all PRs
-- Use integration tests only on main/release branches
-- Set secrets in repository settings
+- All tests are integration tests.
+- Set secrets in repository settings.
