@@ -168,4 +168,86 @@ const createRetryWrapper = (log) => async (fn, maxRetries = 3, initialDelay = 25
     }
 };
 
-module.exports = { withTimeout, retryAsync, circuitBreaker, createRetryWrapper };
+/**
+ * Get status of all circuit breakers
+ * Used for monitoring and debugging
+ */
+function getCircuitBreakerStatus() {
+  const now = Date.now();
+  const breakerArray = Array.from(breakers.entries()).map(([key, b]) => {
+    const isOpen = b.openUntil && now < b.openUntil;
+    // Circuit breaker states:
+    // - 'open': Breaker is open, rejecting requests (openUntil is in the future)
+    // - 'closed': Breaker is closed, accepting requests normally (no failures)
+    // - 'degraded': Has some failures but still accepting requests (transitioning)
+    let state;
+    if (isOpen) {
+      state = 'open';
+    } else if (b.failures > 0) {
+      state = 'degraded'; // Has failures but not open yet
+    } else {
+      state = 'closed';
+    }
+    
+    return {
+      key,
+      state,
+      failures: b.failures,
+      openUntil: b.openUntil,
+      isOpen
+    };
+  });
+
+  return {
+    breakers: breakerArray,
+    total: breakerArray.length,
+    open: breakerArray.filter(b => b.isOpen).length,
+    closed: breakerArray.filter(b => b.state === 'closed').length,
+    anyOpen: breakerArray.some(b => b.isOpen)
+  };
+}
+
+/**
+ * Reset a specific circuit breaker
+ * Returns info about the reset operation
+ */
+function resetCircuitBreaker(key) {
+  const b = getBreaker(key);
+  const wasOpen = b.openUntil && Date.now() < b.openUntil;
+  const previousFailures = b.failures;
+  
+  b.failures = 0;
+  b.openUntil = 0;
+  
+  return {
+    key,
+    wasOpen,
+    previousFailures,
+    resetAt: new Date().toISOString()
+  };
+}
+
+/**
+ * Reset all circuit breakers
+ * Use with caution - for emergency recovery only
+ */
+function resetAllCircuitBreakers() {
+  const keys = Array.from(breakers.keys());
+  const results = keys.map(key => resetCircuitBreaker(key));
+  
+  return {
+    count: results.length,
+    keys,
+    resetAt: new Date().toISOString()
+  };
+}
+
+module.exports = { 
+  withTimeout, 
+  retryAsync, 
+  circuitBreaker, 
+  createRetryWrapper,
+  getCircuitBreakerStatus,
+  resetCircuitBreaker,
+  resetAllCircuitBreakers
+};

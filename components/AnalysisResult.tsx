@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { streamInsights } from '../services/clientService';
+import { hasOpenCircuitBreakers, resetAllCircuitBreakers } from '../services/circuitBreakerService';
 import type { AnalysisData, BmsSystem, DisplayableAnalysisResult, WeatherData } from '../types';
 import { formatError, getIsActualError } from '../utils';
 import CloudIcon from './icons/CloudIcon';
@@ -31,6 +32,9 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   const [isLoading, setIsLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [circuitBreakerOpen, setCircuitBreakerOpen] = useState(false);
+  const [isResettingCircuitBreaker, setIsResettingCircuitBreaker] = useState(false);
+  const successTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   
   // Context window configuration
   const [contextWindowDays, setContextWindowDays] = useState(30); // Default 1 month
@@ -100,9 +104,20 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
         },
         (chunk) => { setInsights(prev => prev + chunk); },
         () => { setIsLoading(false); },
-        (err) => {
+        async (err) => {
           setError(err.message);
           setIsLoading(false);
+          
+          // Check if circuit breaker might be open
+          try {
+            const hasOpen = await hasOpenCircuitBreakers();
+            setCircuitBreakerOpen(hasOpen);
+            if (hasOpen) {
+              log('warn', 'Circuit breaker is open after error', { error: err.message });
+            }
+          } catch (checkError) {
+            log('error', 'Failed to check circuit breaker status', { error: checkError });
+          }
         }
       );
     } catch (e) {
@@ -110,8 +125,50 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       setError(errorMessage);
       setIsLoading(false);
       log('error', 'Deeper insights stream initiation failed.', { error: errorMessage });
+      
+      // Check if circuit breaker might be open
+      hasOpenCircuitBreakers()
+        .then(hasOpen => setCircuitBreakerOpen(hasOpen))
+        .catch(err => log('error', 'Failed to check circuit breaker status', { error: err }));
     }
   };
+
+  const handleResetCircuitBreaker = async () => {
+    setIsResettingCircuitBreaker(true);
+    try {
+      await resetAllCircuitBreakers();
+      setCircuitBreakerOpen(false);
+      setError(null);
+      log('info', 'Circuit breaker reset successfully');
+      
+      // Clear any existing timeout
+      if (successTimeoutRef.current) {
+        clearTimeout(successTimeoutRef.current);
+      }
+      
+      // Show success message briefly with cleanup
+      setInsights('✅ Circuit breaker reset. You can try generating insights again.');
+      successTimeoutRef.current = setTimeout(() => {
+        setInsights('');
+        successTimeoutRef.current = null;
+      }, 3000);
+    } catch (err) {
+      log('error', 'Failed to reset circuit breaker', { error: err });
+      const errorMessage = err instanceof Error ? err.message : 'Failed to reset circuit breaker';
+      setError(`Reset failed: ${errorMessage}`);
+    } finally {
+      setIsResettingCircuitBreaker(false);
+    }
+  };
+
+  // Cleanup timeout on unmount
+  React.useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) {
+        clearTimeout(successTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="mb-8">
@@ -165,7 +222,40 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
             <span className="mr-2">⚠️</span>
             Error Generating Insights
           </h5>
-          <p className="text-red-700 mt-1">{error}</p>
+          <p className="text-red-700 mt-1 whitespace-pre-wrap">{error}</p>
+          
+          {circuitBreakerOpen && (
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
+              <p className="text-yellow-800 text-sm mb-2">
+                🔌 <strong>Circuit Breaker Open:</strong> The service is temporarily unavailable due to repeated failures.
+                This is a safety mechanism to prevent cascading errors.
+              </p>
+              <button
+                onClick={handleResetCircuitBreaker}
+                disabled={isResettingCircuitBreaker}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  isResettingCircuitBreaker
+                    ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                    : 'bg-yellow-600 text-white hover:bg-yellow-700'
+                }`}
+              >
+                {isResettingCircuitBreaker ? 'Resetting...' : '🔄 Reset Circuit Breaker'}
+              </button>
+              <p className="text-yellow-700 text-xs mt-2">
+                Note: Resetting the circuit breaker will clear the error state and allow you to try again.
+                If the underlying issue persists, the circuit breaker will reopen.
+              </p>
+            </div>
+          )}
+          
+          {!circuitBreakerOpen && (
+            <button
+              onClick={() => handleGenerateInsights(customPrompt || undefined)}
+              className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+            >
+              🔄 Retry
+            </button>
+          )}
         </div>
       )}
       {!isLoading && (

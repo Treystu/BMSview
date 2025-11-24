@@ -53,7 +53,7 @@ const CHECKPOINT_FREQUENCY_MS = Math.max(
 // Initialization sequence settings
 const INITIALIZATION_MAX_RETRIES = 100; // Effectively unlimited retries within timeout budget
 const DEFAULT_CONTEXT_WINDOW_DAYS = 30; // Default 1-month lookback
-const INITIALIZATION_BUDGET_RATIO = 1.0; // Use 100% of budget for initialization (separate function now)
+const INITIALIZATION_BUDGET_RATIO = 0.6; // Use 60% of budget for initialization (reserve 40% for checkpoint save + response)
 
 // Retry backoff settings - LINEAR (1s increments)
 const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
@@ -1036,17 +1036,40 @@ async function executeReActLoop(params) {
             });
 
             if (!initResult.success) {
-                // Initialization failed after retries - provide clear error
-                log.error('Initialization sequence failed', {
+                // Initialization failed after retries
+                // This is NOT fatal - we'll save a checkpoint and let the client retry
+                log.warn('Initialization sequence incomplete, will retry on next attempt', {
                     error: initResult.error,
                     attempts: initResult.attempts,
                     durationMs: Date.now() - startTime
                 });
                 
+                // Save checkpoint so we can resume later
+                // Mark initialization as not complete so next attempt tries again
+                if (onCheckpoint) {
+                    await onCheckpoint({
+                        conversationHistory,
+                        turnCount: initResult.turnsUsed || 0,
+                        toolCallCount: initResult.toolCallsUsed || 0,
+                        contextSummary: {
+                            initializationAttempted: true,
+                            initializationComplete: false,
+                            initializationError: initResult.error
+                        },
+                        startTime
+                    });
+                }
+                
+                // Return with timedOut flag so handler knows this is retryable
+                // Using consistent pattern: success=false + timedOut=true for timeout cases
                 return {
                     success: false,
-                    error: `Failed to initialize data retrieval: ${initResult.error}. Please try again.`,
-                    durationMs: Date.now() - startTime
+                    timedOut: true, // Indicates this is a timeout, triggers 408 response
+                    reason: 'initialization_timeout', // Specific reason for debugging
+                    error: `Initialization in progress: ${initResult.error}. Retrying automatically...`,
+                    durationMs: Date.now() - startTime,
+                    turns: initResult.turnsUsed || 0,
+                    toolCalls: initResult.toolCallsUsed || 0
                 };
             }
 
