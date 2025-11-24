@@ -4,7 +4,7 @@ import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData } from '../ty
 import AlertAnalysis from './admin/AlertAnalysis';
 import SpinnerIcon from './icons/SpinnerIcon';
 
-type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp' | 'soh' | 'mosTemperature' | 'solarPower';
+type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp' | 'soh' | 'mosTemperature' | 'solarPower' | 'irradiance';
 type Axis = 'left' | 'right';
 type ChartView = 'timeline' | 'hourly' | 'predictive';
 
@@ -44,11 +44,12 @@ const METRICS: Record<MetricKey, {
     clouds: { label: 'Clouds', unit: '%', color: '#94a3b8', source: 'weather', group: 'Weather' },
     uvi: { label: 'UV Index', unit: '', color: '#fde047', source: 'weather', group: 'Weather' },
     temp: { label: 'Air Temp', unit: '°C', color: '#a78bfa', source: 'weather', group: 'Weather' },
+    irradiance: { label: 'Irradiance', unit: 'W/m²', color: '#fbbf24', source: 'weather', group: 'Weather' },
     soh: { label: 'SOH', unit: '%', color: '#ec4899', source: 'analysis', group: 'Health', anomaly: (val) => val < 80 ? { type: 'critical', message: `CRITICAL: State of Health is low (${val.toFixed(1)}%)` } : null },
     solarPower: { label: 'Solar', unit: 'W', color: '#fbbf24', source: 'analysis', group: 'Solar' },
 };
 
-const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds'];
+const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds', 'irradiance'];
 
 
 const METRIC_GROUPS = Object.entries(METRICS).reduce((acc, [key, metric]) => {
@@ -62,7 +63,15 @@ const mapRecordToPoint = (r: AnalysisRecord) => {
     Object.keys(METRICS).forEach(m => {
         const metric = m as MetricKey;
         const { source, multiplier = 1, anomaly } = METRICS[metric];
-        const value = source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
+        let value;
+        
+        // Special handling for irradiance from weather data
+        if (metric === 'irradiance') {
+            value = (r.weather as any)?.estimated_irradiance_w_m2 ?? null;
+        } else {
+            value = source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
+        }
+        
         if (value != null && typeof value === 'number') {
             const finalValue = value * multiplier;
             point[metric] = finalValue;
@@ -91,7 +100,14 @@ const mapMergedPointToChartPoint = (p: MergedDataPoint) => {
     Object.keys(METRICS).forEach(m => {
         const metric = m as MetricKey;
         const { multiplier = 1, anomaly } = METRICS[metric];
-        const value = p.data[metric];
+        
+        // Special handling for irradiance from merged data
+        let value;
+        if (metric === 'irradiance') {
+            value = (p.data as any).estimated_irradiance_w_m2 ?? null;
+        } else {
+            value = p.data[metric];
+        }
         
         if (value != null && typeof value === 'number') {
             const finalValue = value * multiplier;
@@ -200,7 +216,9 @@ const ChartControls: React.FC<{
     setManualBucketSize: (size: string | null) => void;
     bandEnabled: boolean;
     setBandEnabled: (enabled: boolean) => void;
-}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, averagingEnabled, setAveragingEnabled, manualBucketSize, setManualBucketSize, bandEnabled, setBandEnabled }) => {
+    useMergedData: boolean;
+    setUseMergedData: (enabled: boolean) => void;
+}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, averagingEnabled, setAveragingEnabled, manualBucketSize, setManualBucketSize, bandEnabled, setBandEnabled, useMergedData, setUseMergedData }) => {
     const [isMetricConfigOpen, setIsMetricConfigOpen] = useState(false);
     const metricConfigRef = useRef<HTMLDivElement>(null);
 
@@ -331,7 +349,7 @@ const ChartControls: React.FC<{
                             )}
                         </div>
                         {/* Bands Toggle */}
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 border-r border-gray-600 pr-4">
                             <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
                                 <input
                                     type="checkbox"
@@ -340,6 +358,19 @@ const ChartControls: React.FC<{
                                     className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-secondary focus:ring-secondary"
                                 />
                                 <span>Min/Max Bands</span>
+                            </label>
+                        </div>
+
+                        {/* Merged Data Toggle */}
+                        <div className="flex items-center gap-3">
+                            <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer" title="Include hourly cloud cover and solar irradiance data">
+                                <input
+                                    type="checkbox"
+                                    checked={useMergedData}
+                                    onChange={(e) => setUseMergedData(e.target.checked)}
+                                    className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-secondary focus:ring-secondary"
+                                />
+                                <span>☁️ Hourly Weather</span>
                             </label>
                         </div>
 
@@ -1467,6 +1498,8 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                 setManualBucketSize={setManualBucketSize}
                 bandEnabled={bandEnabled}
                 setBandEnabled={setBandEnabled}
+                useMergedData={useMergedData}
+                setUseMergedData={setUseMergedData}
             />
             <div className="mt-4">
                 {isGenerating && <div className="flex items-center justify-center h-full text-gray-400 min-h-[600px]"><SpinnerIcon className="w-8 h-8 text-secondary" /> <span className="ml-4">Loading Analytics Data...</span></div>}
