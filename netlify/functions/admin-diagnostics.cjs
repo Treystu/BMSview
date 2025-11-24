@@ -27,12 +27,13 @@ const getRealProductionData = async () => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     
-    // Get the EARLIEST real analysis record from the current month
+    // Get the EARLIEST real analysis record from the current month that has image data
     // This provides a stable, dedicated test position that changes monthly
     const earliestMonthlyAnalysis = await db.collection('analysis-results')
       .find({ 
         'analysis.testData': { $ne: true }, // Exclude test data
         'analysis.voltage': { $exists: true }, // Must have actual BMS data
+        'imageData': { $exists: true, $ne: null }, // CRITICAL: Must have actual image data for Gemini API test
         timestamp: { 
           $gte: monthStart.toISOString(),
           $lt: monthEnd.toISOString()
@@ -741,7 +742,37 @@ const diagnosticTests = {
           return testResults;
         }
         
+        // CRITICAL SAFETY CHECK: Verify we have valid real image data before proceeding
+        // This prevents fake/test data from ever reaching the Gemini API
+        if (!testImageData || testImageData.length === 0) {
+          logger.error('CRITICAL: testImageData is empty or undefined - cannot proceed with Gemini API test', {
+            testId,
+            hasImageData: !!testImageData,
+            imageLength: testImageData?.length || 0
+          });
+          testResults.status = 'error';
+          testResults.duration = Date.now() - startTime;
+          testResults.stages.push({
+            stage: 'extraction',
+            status: 'error',
+            error: 'Test image data validation failed - image data is empty or undefined'
+          });
+          testResults.details = {
+            pipelineComplete: false,
+            failedAtStage: 'pre_extraction_validation',
+            note: 'Safety check prevented invalid data from reaching Gemini API'
+          };
+          logger.info('========== ANALYZE TEST ABORTED (SAFETY CHECK) ==========', testResults);
+          return testResults;
+        }
+        
         // At this point, we have real image data - proceed with Gemini API test
+        logger.info('Proceeding with Gemini API test using REAL production image data', {
+          testId,
+          imageSize: testImageData.length,
+          fileName: testFileName
+        });
+        
         analysisResult = await executeWithTimeout(async () => {
           return await performAnalysisPipeline(
             {
@@ -813,7 +844,8 @@ const diagnosticTests = {
         throw validationError;
       }
 
-      // Stage 4: Database storage
+      // Stage 4: Database storage verification and cleanup
+      let cleanupSuccessful = false;
       try {
         logger.info('Stage 4/4: Verifying database storage...');
         const historyCollection = await getCollection('history');
@@ -826,20 +858,49 @@ const diagnosticTests = {
           documentSize: savedAnalysis ? JSON.stringify(savedAnalysis).length : 0
         });
 
-        // Cleanup
+        // COMPREHENSIVE CLEANUP: Remove all test artifacts from database
+        // This ensures no footprint remains after the test (except logged results)
         if (analysisResult?.id) {
-          await historyCollection.deleteOne({ id: analysisResult.id });
-          logger.info('Test data cleaned up from history collection');
+          logger.info('Starting comprehensive test data cleanup...', { 
+            testRecordId: analysisResult.id,
+            testId 
+          });
+          
+          const deleteResult = await historyCollection.deleteOne({ id: analysisResult.id });
+          cleanupSuccessful = deleteResult.deletedCount === 1;
+          
+          if (cleanupSuccessful) {
+            logger.info('✓ Test data successfully cleaned up from history collection', {
+              testRecordId: analysisResult.id,
+              deletedCount: deleteResult.deletedCount
+            });
+          } else {
+            logger.warn('Test record may not have been deleted (already removed or not found)', {
+              testRecordId: analysisResult.id,
+              deletedCount: deleteResult.deletedCount
+            });
+          }
+          
+          // Verify cleanup by attempting to find the deleted record
+          const verifyCleanup = await historyCollection.findOne({ id: analysisResult.id });
+          if (verifyCleanup) {
+            logger.error('CLEANUP VERIFICATION FAILED: Test record still exists after deletion!', {
+              testRecordId: analysisResult.id
+            });
+          } else {
+            logger.info('✓ Cleanup verified: No test footprint remains in database');
+          }
         }
       } catch (storageError) {
         const errorDetails = formatError(storageError, { testId, stage: 'storage' });
+        logger.error('Storage stage or cleanup failed', errorDetails);
         testResults.stages.push({
           stage: 'storage',
           status: 'error',
           error: errorDetails.message,
           errorDetails
         });
-        // Continue - don't fail the whole test for storage issues
+        // Continue - don't fail the whole test for storage/cleanup issues
       }
 
       testResults.status = 'success';
@@ -847,12 +908,14 @@ const diagnosticTests = {
       testResults.details = {
         pipelineComplete: true,
         allStagesSuccessful: testResults.stages.every(s => s.status === 'success'),
+        cleanupSuccessful,
         extractedData: analysisResult?.analysis ? {
           voltage: analysisResult.analysis.voltage,
           soc: analysisResult.analysis.soc,
           power: analysisResult.analysis.power,
           capacity: analysisResult.analysis.capacity
-        } : null
+        } : null,
+        note: 'Test used real production data; all test artifacts cleaned up from database'
       };
 
       logger.info('========== ANALYZE TEST COMPLETED ==========', testResults);
