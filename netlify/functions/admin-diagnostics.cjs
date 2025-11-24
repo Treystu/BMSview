@@ -33,7 +33,7 @@ const getRealProductionData = async () => {
       .find({ 
         'analysis.testData': { $ne: true }, // Exclude test data
         'analysis.voltage': { $exists: true }, // Must have actual BMS data
-        'imageData': { $exists: true, $ne: null }, // CRITICAL: Must have actual image data for Gemini API test
+        'imageData': { $exists: true, $ne: null }, // Required: Must have actual image data for Gemini API test
         timestamp: { 
           $gte: monthStart.toISOString(),
           $lt: monthEnd.toISOString()
@@ -742,10 +742,10 @@ const diagnosticTests = {
           return testResults;
         }
         
-        // CRITICAL SAFETY CHECK: Verify we have valid real image data before proceeding
+        // Safety check: Verify we have valid real image data before proceeding
         // This prevents fake/test data from ever reaching the Gemini API
         if (!testImageData || testImageData.length === 0) {
-          logger.error('CRITICAL: testImageData is empty or undefined - cannot proceed with Gemini API test', {
+          logger.error('Safety check failed: testImageData is empty or undefined - cannot proceed with Gemini API test', {
             testId,
             hasImageData: !!testImageData,
             imageLength: testImageData?.length || 0
@@ -858,7 +858,7 @@ const diagnosticTests = {
           documentSize: savedAnalysis ? JSON.stringify(savedAnalysis).length : 0
         });
 
-        // COMPREHENSIVE CLEANUP: Remove all test artifacts from database
+        // Database cleanup: Remove all test artifacts from database
         // This ensures no footprint remains after the test (except logged results)
         if (analysisResult?.id) {
           logger.info('Starting comprehensive test data cleanup...', { 
@@ -884,7 +884,7 @@ const diagnosticTests = {
           // Verify cleanup by attempting to find the deleted record
           const verifyCleanup = await historyCollection.findOne({ id: analysisResult.id });
           if (verifyCleanup) {
-            logger.error('CLEANUP VERIFICATION FAILED: Test record still exists after deletion!', {
+            logger.error('Cleanup verification failed: Test record still exists after deletion', {
               testRecordId: analysisResult.id
             });
           } else {
