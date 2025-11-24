@@ -170,12 +170,18 @@ exports.handler = async (event, context) => {
     }
 
     // Start background processing (don't await)
+    // Pass all parameters including contextWindowDays, maxIterations, and modelOverride
     processInsightsInBackground(
       job.id,
       analysisData,
       systemId,
       customPrompt,
-      log
+      log,
+      {
+        contextWindowDays,
+        maxIterations,
+        modelOverride
+      }
     ).catch(err => {
       log.error('Background processing error (logged, not thrown)', {
         jobId: job.id,
