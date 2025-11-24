@@ -1333,15 +1333,20 @@ async function dualWriteWithTimerReset<T>(
 }
 
 export const registerBmsSystem = async (
-    systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>
+    systemData: Omit<BmsSystem, 'id'>
 ): Promise<BmsSystem> => {
     return dualWriteWithTimerReset(
         'create',
         async () => {
             log('info', 'Registering new BMS system.', { name: systemData.name });
+            // Ensure associatedDLs is always an array (default to empty if not provided)
+            const dataToSend = {
+                ...systemData,
+                associatedDLs: systemData.associatedDLs || []
+            };
             return apiFetch<BmsSystem>('systems', {
                 method: 'POST',
-                body: JSON.stringify(systemData),
+                body: JSON.stringify(dataToSend),
             });
         },
         async () => {
@@ -1352,7 +1357,7 @@ export const registerBmsSystem = async (
                     const newSystem: BmsSystem = {
                         id: `temp-${Date.now()}`,
                         ...systemData,
-                        associatedDLs: []
+                        associatedDLs: systemData.associatedDLs || []
                     };
                     await localCache.systemsCache.put(newSystem, 'pending');
                 }
@@ -1796,6 +1801,42 @@ export const deleteIpRecord = async (key: string): Promise<void> => {
         method: 'POST',
         body: JSON.stringify({ action: 'delete-ip', key }),
     });
+};
+
+/**
+ * Data Reconciliation: Fetch comprehensive data integrity audit
+ * Returns all DL-# sources categorized as MATCHED or ORPHAN
+ */
+export interface DataIntegrityItem {
+    dl_id: string;
+    record_count: number;
+    status: 'MATCHED' | 'ORPHAN';
+    system_id: string | null;
+    system_name: string | null;
+    first_seen: string;
+    last_seen: string;
+    system_chemistry?: string;
+    system_voltage?: number;
+    system_capacity?: number;
+    previously_linked_system_id?: string | null;
+    previously_linked_system_name?: string | null;
+}
+
+export interface DataIntegrityResponse {
+    summary: {
+        total_dl_sources: number;
+        matched: number;
+        orphaned: number;
+        total_records: number;
+        orphaned_records: number;
+    };
+    data: DataIntegrityItem[];
+    timestamp: string;
+}
+
+export const getDataIntegrity = async (): Promise<DataIntegrityResponse> => {
+    log('info', 'Fetching data integrity audit from admin endpoint.');
+    return apiFetch<DataIntegrityResponse>('admin-data-integrity');
 };
 
 export const getHourlyWeather = async (lat: number, lon: number, date: string): Promise<any[]> => {

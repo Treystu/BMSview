@@ -17,6 +17,7 @@ import {
     getDiagnosticProgress,
     linkAnalysisToSystem,
     mergeBmsSystems,
+    registerBmsSystem,
     runDiagnostics,
     streamAllHistory,
     updateBmsSystem
@@ -35,6 +36,7 @@ import AdminHeader from './admin/AdminHeader';
 import DataManagement from './admin/DataManagement';
 import HistoryTable from './admin/HistoryTable';
 import SystemsTable from './admin/SystemsTable';
+import ReconciliationDashboard from './admin/reconciliation/ReconciliationDashboard';
 import { getNestedValue } from './admin/columnDefinitions';
 
 interface NetlifyUser {
@@ -777,6 +779,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                 itemsPerPage: ITEMS_PER_PAGE,
                             }}
                         />
+                        <section id="data-reconciliation-section">
+                            <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">
+                                Data Reconciliation & System Management
+                            </h2>
+                            <ReconciliationDashboard
+                                systems={systems}
+                                onSystemCreated={async () => {
+                                    // Refresh systems list after creating a new system
+                                    await fetchData(1, 'systems');
+                                }}
+                                onMergeRequested={async (systemIds: string[], primaryId: string) => {
+                                    // Use existing merge handler
+                                    dispatch({ type: 'SET_SELECTED_SYSTEM_IDS', payload: systemIds });
+                                    dispatch({ type: 'SET_PRIMARY_SYSTEM_ID', payload: primaryId });
+                                    await handleMergeSystems();
+                                }}
+                            />
+                        </section>
                         <section id="ip-management-section">
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">API Security & IP Management</h2>
                             <IpManagement />
