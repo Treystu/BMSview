@@ -141,21 +141,26 @@ function createCheckpointState(state) {
 /**
  * Compress conversation history to reduce checkpoint size
  * Keeps initial context and recent turns, summarizes middle turns
+ * EDGE CASE PROTECTION: More aggressive compression for memory safety
  * 
  * @param {Array} history - Full conversation history
  * @param {number} currentTurn - Current turn number
  * @returns {Array} Compressed history
  */
 function compressConversationHistory(history, currentTurn) {
+  // EDGE CASE PROTECTION #5: More aggressive compression threshold
+  const MEMORY_SAFE_THRESHOLD = 30; // Compress after 30 exchanges instead of 50
+  
   // If history is small, don't compress
-  if (history.length < CONTEXT_COMPRESSION_THRESHOLD) {
+  if (history.length < MEMORY_SAFE_THRESHOLD) {
     return history;
   }
   
-  // Keep first 5 exchanges (initial prompt + setup)
-  const keepInitial = 5;
-  // Keep last 20 exchanges (recent context)
-  const keepRecent = 20;
+  // EDGE CASE PROTECTION #6: Keep fewer messages to prevent memory issues
+  // Keep first 3 exchanges (initial prompt + setup)
+  const keepInitial = 3;
+  // Keep last 15 exchanges (recent context) - reduced from 20
+  const keepRecent = 15;
   
   const initial = history.slice(0, keepInitial);
   const recent = history.slice(-keepRecent);

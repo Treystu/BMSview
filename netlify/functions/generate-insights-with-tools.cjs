@@ -11,7 +11,8 @@ const { executeReActLoop } = require('./utils/react-loop.cjs');
 const { 
   createInsightsJob, 
   getInsightsJob,
-  updateJobStatus 
+  updateJobStatus,
+  saveCheckpoint // Add saveCheckpoint for emergency saves
 } = require('./utils/insights-jobs.cjs');
 const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
@@ -162,12 +163,41 @@ exports.handler = async (event, context) => {
 
         // Check if the result indicates timeout
         if (result && result.timedOut) {
-          log.info('ReAct loop timed out gracefully, checkpoint saved', {
+          log.info('ReAct loop timed out gracefully, verifying checkpoint', {
             jobId: job.id,
             turns: result.turns || 0,
             toolCalls: result.toolCalls || 0,
             durationMs: result.durationMs || 0
           });
+          
+          // EDGE CASE PROTECTION #7: Verify checkpoint was actually saved
+          // If checkpoint save failed, make one final attempt
+          try {
+            const verifyJob = await getInsightsJob(job.id, log);
+            if (!verifyJob || !verifyJob.checkpointState) {
+              log.warn('Checkpoint missing after timeout, attempting emergency save', {
+                jobId: job.id
+              });
+              
+              // Emergency checkpoint save with minimal data
+              const emergencyCheckpoint = {
+                conversationHistory: [], // Empty - better than nothing
+                turnCount: result.turns || 0,
+                toolCallCount: result.toolCalls || 0,
+                contextSummary: result.contextSummary || {},
+                startTime: Date.now(),
+                emergency: true
+              };
+              
+              await saveCheckpoint(job.id, emergencyCheckpoint, log);
+            }
+          } catch (verifyError) {
+            log.error('Failed to verify/save emergency checkpoint', {
+              jobId: job.id,
+              error: verifyError.message
+            });
+            // Continue anyway - client will retry and may succeed
+          }
           
           // Return 408 to trigger automatic retry
           return {

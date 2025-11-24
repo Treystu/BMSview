@@ -932,18 +932,38 @@ async function executeReActLoop(params) {
             const contextStartTime = Date.now();
 
             try {
-                preloadedContext = await collectAutoInsightsContext(
+                // EDGE CASE PROTECTION #4: Add hard timeout to context collection
+                // Prevent context collection from consuming entire budget
+                const contextCollectionPromise = collectAutoInsightsContext(
                     systemId,
                     analysisData,
                     log,
                     { mode, maxMs: contextBudgetMs }
                 );
+                
+                preloadedContext = await Promise.race([
+                    contextCollectionPromise,
+                    new Promise((_, reject) =>
+                        setTimeout(() => {
+                            reject(new Error('CONTEXT_TIMEOUT'));
+                        }, contextBudgetMs + 1000) // Allow 1s extra for graceful completion
+                    )
+                ]);
             } catch (contextError) {
                 const err = contextError instanceof Error ? contextError : new Error(String(contextError));
-                log.error('Context collection failed, continuing with minimal context', {
-                    error: err.message,
-                    durationMs: Date.now() - contextStartTime
-                });
+                
+                if (err.message === 'CONTEXT_TIMEOUT') {
+                    log.warn('Context collection exceeded budget, continuing with minimal context', {
+                        budgetMs: contextBudgetMs,
+                        durationMs: Date.now() - contextStartTime
+                    });
+                } else {
+                    log.error('Context collection failed, continuing with minimal context', {
+                        error: err.message,
+                        durationMs: Date.now() - contextStartTime
+                    });
+                }
+                
                 preloadedContext = null;
             }
 
@@ -1087,17 +1107,70 @@ async function executeReActLoop(params) {
                 percentComplete: Math.round((elapsedMs / totalBudgetMs) * 100)
             });
 
+            // EDGE CASE PROTECTION #1: Calculate safe timeout for this iteration
+            // Ensure Gemini call completes with time left for checkpoint
+            const timeRemaining = totalBudgetMs - elapsedMs;
+            const safeIterationTimeout = Math.max(
+                timeRemaining - CHECKPOINT_SAVE_BUFFER_MS - RESPONSE_BUFFER_MS,
+                3000 // Minimum 3s for Gemini call
+            );
+            
+            log.debug('Iteration timeout calculated', {
+                turn: turnCount,
+                timeRemaining,
+                safeIterationTimeout,
+                checkpointBuffer: CHECKPOINT_SAVE_BUFFER_MS,
+                responseBuffer: RESPONSE_BUFFER_MS
+            });
+
             // Call Gemini with conversation history and tools
+            // EDGE CASE PROTECTION #2: Wrap Gemini call with timeout to prevent hangs
             let geminiResponse;
             try {
-                geminiResponse = await geminiClient.callAPI(null, {
+                const geminiCallPromise = geminiClient.callAPI(null, {
                     history: conversationHistory,
                     tools: toolDefinitions,
                     model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
                     maxOutputTokens: 4096
                 }, log);
+                
+                // Race Gemini call against iteration timeout
+                geminiResponse = await Promise.race([
+                    geminiCallPromise,
+                    new Promise((_, reject) => 
+                        setTimeout(() => {
+                            reject(new Error('ITERATION_TIMEOUT'));
+                        }, safeIterationTimeout)
+                    )
+                ]);
             } catch (geminiError) {
                 const err = geminiError instanceof Error ? geminiError : new Error(String(geminiError));
+                
+                // EDGE CASE PROTECTION #3: Detect iteration timeout vs Gemini error
+                if (err.message === 'ITERATION_TIMEOUT') {
+                    log.warn('Gemini call exceeded iteration timeout, saving checkpoint', {
+                        turn: turnCount,
+                        timeoutMs: safeIterationTimeout,
+                        elapsedMs: Date.now() - startTime
+                    });
+                    
+                    // Save checkpoint immediately
+                    if (onCheckpoint) {
+                        await onCheckpoint({
+                            conversationHistory,
+                            turnCount,
+                            toolCallCount,
+                            contextSummary,
+                            startTime
+                        });
+                    }
+                    
+                    // Return timeout to trigger retry
+                    finalAnswer = buildTimeoutMessage();
+                    timedOut = true;
+                    break;
+                }
+                
                 log.error('Gemini API call failed', {
                     turn: turnCount,
                     error: err.message,

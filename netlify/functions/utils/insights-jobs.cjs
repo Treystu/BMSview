@@ -288,6 +288,7 @@ async function failJob(jobId, errorMessage, log) {
 
 /**
  * Save checkpoint state for resuming after timeout
+ * EDGE CASE PROTECTION: Includes retry logic to handle MongoDB errors
  * 
  * @param {string} jobId - Job ID
  * @param {Object} checkpointState - State to save
@@ -299,34 +300,62 @@ async function failJob(jobId, errorMessage, log) {
  * @returns {Promise<boolean>} Success status
  */
 async function saveCheckpoint(jobId, checkpointState, log) {
-  try {
-    const collection = await getCollection(COLLECTION_NAME);
-    const result = await collection.updateOne(
-      { id: jobId },
-      { 
-        $set: { 
-          checkpointState,
-          updatedAt: new Date() 
-        } 
+  const MAX_SAVE_RETRIES = 3;
+  const RETRY_DELAY_MS = 200; // Quick retries
+  
+  for (let attempt = 1; attempt <= MAX_SAVE_RETRIES; attempt++) {
+    try {
+      const collection = await getCollection(COLLECTION_NAME);
+      const result = await collection.updateOne(
+        { id: jobId },
+        { 
+          $set: { 
+            checkpointState,
+            updatedAt: new Date() 
+          } 
+        },
+        { 
+          // EDGE CASE PROTECTION: Set short timeout on MongoDB operation
+          maxTimeMS: 2000 // 2 second max
+        }
+      );
+      
+      log.info('Checkpoint saved', { 
+        jobId,
+        turnCount: checkpointState.turnCount,
+        toolCallCount: checkpointState.toolCallCount,
+        historyLength: checkpointState.conversationHistory?.length,
+        matched: result.matchedCount,
+        attempt
+      });
+      
+      return result.matchedCount > 0;
+    } catch (error) {
+      const isLastAttempt = attempt === MAX_SAVE_RETRIES;
+      
+      log.warn(`Failed to save checkpoint (attempt ${attempt}/${MAX_SAVE_RETRIES})`, { 
+        error: error.message,
+        jobId,
+        willRetry: !isLastAttempt
+      });
+      
+      if (isLastAttempt) {
+        // EDGE CASE PROTECTION: Don't throw - return false to indicate failure
+        // This prevents checkpoint save failure from crashing the entire function
+        log.error('Checkpoint save failed after all retries', {
+          jobId,
+          error: error.message,
+          attempts: MAX_SAVE_RETRIES
+        });
+        return false;
       }
-    );
-    
-    log.info('Checkpoint saved', { 
-      jobId,
-      turnCount: checkpointState.turnCount,
-      toolCallCount: checkpointState.toolCallCount,
-      historyLength: checkpointState.conversationHistory?.length,
-      matched: result.matchedCount 
-    });
-    
-    return result.matchedCount > 0;
-  } catch (error) {
-    log.error('Failed to save checkpoint', { 
-      error: error.message,
-      jobId
-    });
-    throw error;
+      
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * attempt));
+    }
   }
+  
+  return false; // Should never reach here, but be safe
 }
 
 /**
