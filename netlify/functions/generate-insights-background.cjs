@@ -108,9 +108,7 @@ exports.handler = async (event, context) => {
       error: error.message,
       stack: error.stack,
       name: error.name,
-      code: error.code,
-      // Log full error object for debugging
-      fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+      code: error.code
     });
 
     // Try to mark job as failed if we have a jobId

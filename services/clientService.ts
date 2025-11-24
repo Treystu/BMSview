@@ -1088,6 +1088,9 @@ const formatContextSummary = (summary: any): string => {
     return filtered.join('\n') + '\n';
 };
 
+// Error backoff multiplier for transient failures
+const ERROR_BACKOFF_MULTIPLIER = 1.5;
+
 /**
  * Poll for background job completion with streaming updates
  * "Starter Motor" approach: Infinite polling until definitive result
@@ -1107,6 +1110,7 @@ const pollInsightsJobCompletion = async (
     const maxInterval = 10000;
     const backoffMultiplier = 1.3;
     let contextSummarySent = false;
+    const pollingStartTime = Date.now(); // Track actual elapsed time
 
     const emitContextSummary = (summary: any) => {
         if (!summary || contextSummarySent) {
@@ -1189,10 +1193,11 @@ const pollInsightsJobCompletion = async (
                 // "Starter Motor" approach: After many attempts, show informative message
                 // but don't reject - the background job may still be running
                 if (attempts >= maxAttempts) {
-                    // Note: Actual elapsed time is difficult to calculate precisely due to exponential backoff
-                    // This is a rough lower-bound estimate - actual time will be longer
-                    const estimatedMinutes = Math.round((attempts * initialInterval) / 60000);
-                    const warning = `\n\n⚠️ **Analysis taking longer than expected (${estimatedMinutes}+ minutes)**\n\n` +
+                    // Calculate actual elapsed time
+                    const actualElapsedMs = Date.now() - pollingStartTime;
+                    const actualMinutes = Math.round(actualElapsedMs / 60000);
+                    
+                    const warning = `\n\n⚠️ **Analysis taking longer than expected (${actualMinutes} minutes elapsed)**\n\n` +
                         `Your analysis is still processing in the background. This typically means:\n` +
                         `• Very large dataset being analyzed (${contextWindowDays || 30}+ days)\n` +
                         `• Complex query requiring extensive AI processing\n` +
@@ -1205,9 +1210,9 @@ const pollInsightsJobCompletion = async (
                     log('warn', 'Background insights polling exceeded expected time', { 
                         jobId, 
                         attempts,
-                        estimatedMinutes,
-                        contextWindowDays,
-                        note: 'Actual elapsed time is longer due to exponential backoff'
+                        actualElapsedMs,
+                        actualMinutes,
+                        contextWindowDays
                     });
                     
                     // Show warning but continue polling (don't reject)
@@ -1221,9 +1226,15 @@ const pollInsightsJobCompletion = async (
                 const error = err instanceof Error ? err : new Error(String(err));
                 
                 // "Starter Motor" approach: Log network errors but keep polling
-                // Only reject on catastrophic errors (404, 403, etc.)
-                // Check for HTTP status in error object or response
-                const status = (error as any).status || (error as any).response?.status;
+                // Only reject on catastrophic errors (404, 403, 401)
+                // For HTTP errors, check if response was attached with status
+                let status: number | undefined = undefined;
+                if ((error as any).response && typeof (error as any).response.status === 'number') {
+                    status = (error as any).response.status;
+                } else if (typeof (error as any).status === 'number') {
+                    status = (error as any).status;
+                }
+                
                 const isCatastrophic = status === 404 || status === 403 || status === 401;
                 
                 if (isCatastrophic) {
@@ -1245,7 +1256,6 @@ const pollInsightsJobCompletion = async (
                 });
                 
                 // Increase backoff and continue
-                const ERROR_BACKOFF_MULTIPLIER = 1.5;
                 attempts++;
                 currentInterval = Math.min(currentInterval * backoffMultiplier * ERROR_BACKOFF_MULTIPLIER, maxInterval);
                 setTimeout(poll, currentInterval);

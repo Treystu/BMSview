@@ -42,7 +42,7 @@ const DEFAULT_CONFIG: Required<PollingConfig> = {
   initialInterval: 2000,
   maxInterval: 10000,
   backoffMultiplier: 1.3,
-  maxRetries: Infinity, // "Starter Motor" approach: never give up until definitive result
+  maxRetries: 1000, // Very high limit (~8+ hours with backoff) instead of Infinity to prevent resource exhaustion
   onComplete: () => {},
   onError: () => {},
   onProgress: () => {}
@@ -99,7 +99,9 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
+        (error as any).status = response.status;
+        throw error;
       }
 
       const data: InsightsJobStatus = await response.json();
@@ -160,9 +162,9 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
       }
 
       // "Starter Motor" approach: Only stop on catastrophic errors that won't recover
-      // Network errors (500, 502, 504, timeouts) are transient - keep trying
-      // Check HTTP status code from error object or response
-      const status = err.status || err.response?.status;
+      // For HTTP errors, status is attached to error object (see line 102)
+      // For network errors (no response), status will be undefined - treat as transient
+      const status = err.status;
       const isCatastrophic = status === 404 || // Job not found
                              status === 403 || // Forbidden
                              status === 401;   // Unauthorized
@@ -173,7 +175,7 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
         return true;
       }
 
-      // For transient errors, don't update UI error state, just continue polling
+      // For transient errors (network failures, 5xx errors), don't update UI error state
       // This keeps the UI showing "Analyzing..." instead of flashing error messages
       return false; // Continue polling
     }
@@ -184,20 +186,44 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
 
     retryCountRef.current++;
 
-    // "Starter Motor" approach: No maximum retry limit
-    // Comment out the maxRetries check - we keep trying until definitive result
-    // if (retryCountRef.current > fullConfig.maxRetries) {
-    //   setError('Maximum polling attempts reached');
-    //   setIsPolling(false);
-    //   return;
-    // }
+    // "Starter Motor" approach: Very high limit to handle long-running operations
+    // Log critical warning when approaching limit to help diagnose stuck jobs
+    if (retryCountRef.current > fullConfig.maxRetries) {
+      console.error(JSON.stringify({
+        level: 'ERROR',
+        timestamp: new Date().toISOString(),
+        message: 'Maximum polling attempts reached - possible stuck job',
+        context: {
+          jobId,
+          attempts: retryCountRef.current,
+          maxRetries: fullConfig.maxRetries
+        }
+      }));
+      setError('Maximum polling attempts reached');
+      setIsPolling(false);
+      return;
+    }
+
+    // Log warning when approaching limit (at 90%)
+    if (retryCountRef.current === Math.floor(fullConfig.maxRetries * 0.9)) {
+      console.warn(JSON.stringify({
+        level: 'WARN',
+        timestamp: new Date().toISOString(),
+        message: 'Approaching maximum polling attempts',
+        context: {
+          jobId,
+          attempts: retryCountRef.current,
+          maxRetries: fullConfig.maxRetries
+        }
+      }));
+    }
 
     const shouldStop = await fetchStatus();
 
     if (!shouldStop && isPolling) {
       timeoutRef.current = setTimeout(poll, intervalRef.current);
     }
-  }, [isPolling, fetchStatus]);
+  }, [isPolling, fetchStatus, fullConfig.maxRetries, jobId]);
 
   const startPolling = useCallback(() => {
     if (!jobId) return;

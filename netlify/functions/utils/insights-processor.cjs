@@ -204,9 +204,9 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
     await addProgressEvent(jobId, {
       type: 'error',
       data: { 
-        error: err.message,
-        stack: err.stack,
-        checkpoint: checkpoints
+        error: err.message
+        // Note: Stack trace and checkpoint data are logged server-side only
+        // for security - not exposed to clients via progress events
       }
     }, log);
 
