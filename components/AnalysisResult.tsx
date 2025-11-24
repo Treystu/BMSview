@@ -31,6 +31,55 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   const [isLoading, setIsLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
+  
+  // Context window configuration
+  const [contextWindowDays, setContextWindowDays] = useState(30); // Default 1 month
+  
+  // Model override configuration
+  const [modelOverride, setModelOverride] = useState(''); // Empty = use default
+  const [customModel, setCustomModel] = useState(''); // For custom model input
+  const [useCustomModel, setUseCustomModel] = useState(false); // Toggle between preset and custom
+  
+  // Available Gemini models (presets)
+  const availableModels = [
+    { value: '', label: 'Default (2.5 Flash)' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash Exp' },
+    { value: 'gemini-2.0-flash-thinking-exp-1219', label: 'Gemini 2.0 Flash Thinking' },
+    { value: 'gemini-exp-1206', label: 'Gemini Exp 1206' },
+    { value: 'learnlm-1.5-pro-experimental', label: 'LearnLM 1.5 Pro Experimental' },
+    { value: 'custom', label: 'Custom Model (enter below)' },
+  ];
+  
+  // Get the effective model to use
+  const getEffectiveModel = () => {
+    if (useCustomModel || modelOverride === 'custom') {
+      return customModel.trim();
+    }
+    return modelOverride;
+  };
+  
+  // Predefined context window options
+  const contextWindowOptions = [
+    { days: 1/24, label: '1 Hour' },
+    { days: 1/8, label: '3 Hours' },
+    { days: 0.5, label: '12 Hours' },
+    { days: 1, label: '1 Day' },
+    { days: 3, label: '3 Days' },
+    { days: 7, label: '1 Week' },
+    { days: 14, label: '2 Weeks' },
+    { days: 30, label: '1 Month' },
+    { days: 60, label: '2 Months' },
+    { days: 90, label: '3 Months' },
+    { days: 180, label: '6 Months' },
+    { days: 365, label: '1 Year' }
+  ];
+
+  const getContextWindowLabel = (days: number) => {
+    const option = contextWindowOptions.find(opt => opt.days === days);
+    return option ? option.label : `${days} days`;
+  };
 
   const handleGenerateInsights = async (prompt?: string) => {
     setIsLoading(true);
@@ -39,7 +88,16 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
 
     try {
       await streamInsights(
-        { analysisData, systemId, customPrompt: prompt, useEnhancedMode: true }, // Always use enhanced mode
+        { 
+          analysisData, 
+          systemId, 
+          customPrompt: prompt, 
+          useEnhancedMode: true,
+          contextWindowDays, // Pass context window configuration
+          modelOverride: getEffectiveModel() || undefined, // Pass model override if selected
+          // Iteration limits: 20 for custom queries, 10 for standard (matches react-loop.cjs constants)
+          maxIterations: prompt ? 20 : 10
+        },
         (chunk) => { setInsights(prev => prev + chunk); },
         () => { setIsLoading(false); },
         (err) => {
@@ -112,6 +170,91 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       )}
       {!isLoading && (
         <div className="p-5 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg space-y-4 border border-gray-200">
+          {/* Context Window Slider */}
+          <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
+            <label htmlFor="context-window-slider" className="block text-sm font-semibold text-gray-700 mb-3">
+              📊 Data Analysis Window: <span className="text-blue-600">{getContextWindowLabel(contextWindowDays)}</span>
+            </label>
+            <p className="text-xs text-gray-600 mb-3">
+              Select how far back the AI should retrieve historical data for analysis.
+              Larger windows provide more context but may take longer to process.
+            </p>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-500 whitespace-nowrap">1 Hour</span>
+              <input
+                id="context-window-slider"
+                type="range"
+                min="0"
+                max="11"
+                step="1"
+                value={contextWindowOptions.findIndex(opt => opt.days === contextWindowDays)}
+                onChange={(e) => {
+                  const index = parseInt(e.target.value, 10);
+                  setContextWindowDays(contextWindowOptions[index].days);
+                }}
+                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+              />
+              <span className="text-xs text-gray-500 whitespace-nowrap">1 Year</span>
+            </div>
+            <div className="mt-2 flex justify-between text-xs text-gray-500">
+              <span>Recent</span>
+              <span>Comprehensive</span>
+            </div>
+          </div>
+          
+          {/* Model Override Dropdown */}
+          <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
+            <label htmlFor="model-override" className="block text-sm font-semibold text-gray-700 mb-3">
+              🤖 AI Model: <span className="text-purple-600">
+                {modelOverride === 'custom' || useCustomModel 
+                  ? customModel.trim() || 'Custom (not set)'
+                  : availableModels.find(m => m.value === modelOverride)?.label || 'Default (2.5 Flash)'}
+              </span>
+            </label>
+            <p className="text-xs text-gray-600 mb-3">
+              Select a preset model or enter a custom model name. Pro models provide better analysis for complex queries but take longer.
+            </p>
+            <select
+              id="model-override"
+              value={modelOverride}
+              onChange={(e) => {
+                setModelOverride(e.target.value);
+                if (e.target.value === 'custom') {
+                  setUseCustomModel(true);
+                } else {
+                  setUseCustomModel(false);
+                }
+              }}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 bg-white cursor-pointer mb-3"
+            >
+              {availableModels.map((model) => (
+                <option key={model.value} value={model.value}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
+            
+            {/* Custom Model Input - shown when "Custom" is selected or user wants custom */}
+            {(modelOverride === 'custom' || useCustomModel) && (
+              <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <label htmlFor="custom-model-input" className="block text-xs font-semibold text-purple-800 mb-2">
+                  Custom Model Name
+                </label>
+                <input
+                  id="custom-model-input"
+                  type="text"
+                  value={customModel}
+                  onChange={(e) => setCustomModel(e.target.value)}
+                  placeholder="e.g., gemini-3.0-ultra, gemini-2.5-pro-latest"
+                  className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 text-sm font-mono"
+                />
+                <p className="text-xs text-purple-700 mt-2">
+                  Enter any Gemini model name. Make sure it's available in your API key's permissions.
+                </p>
+              </div>
+            )}
+          </div>
+          
           <div className="flex flex-col sm:flex-row items-center gap-4">
             <button
               type="button"

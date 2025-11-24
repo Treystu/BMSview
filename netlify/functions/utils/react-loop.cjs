@@ -10,13 +10,837 @@
 
 const { getGeminiClient } = require('./geminiClient.cjs');
 const { toolDefinitions, executeToolCall } = require('./gemini-tools.cjs');
-const { buildGuruPrompt, collectAutoInsightsContext } = require('./insights-guru.cjs');
+const { buildGuruPrompt, collectAutoInsightsContext, buildQuickReferenceCatalog } = require('./insights-guru.cjs');
 const { createLogger } = require('./logger.cjs');
 const { validateResponseFormat, buildCorrectionPrompt } = require('./response-validator.cjs');
 
-const MAX_TURNS = 5;
+// Default iteration limits - can be overridden via params
+const DEFAULT_MAX_TURNS = 10; // Increased from 5 to 10 for standard insights
+const CUSTOM_QUERY_MAX_TURNS = 20; // 20 iterations for custom queries
 const SYNC_CONTEXT_BUDGET_MS = 22000;
-const SYNC_TOTAL_BUDGET_MS = 55000;
+const SYNC_TOTAL_BUDGET_MS = 25000; // 25s for Netlify Pro (26s total, 1s buffer)
+
+// Initialization sequence settings
+const INITIALIZATION_MAX_RETRIES = 100; // Effectively unlimited retries within timeout budget
+const DEFAULT_CONTEXT_WINDOW_DAYS = 30; // Default 1-month lookback
+const INITIALIZATION_BUDGET_RATIO = 1.0; // Use 100% of budget for initialization (separate function now)
+
+// Retry backoff settings - LINEAR (1s increments)
+const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
+
+/**
+ * Analyze Gemini's response text to detect what it's struggling with
+ * Uses keyword extraction to identify which tool or concept needs guidance
+ * 
+ * @param {string} responseText - Gemini's text response
+ * @returns {Array<string>} Array of detected tool/concept names
+ */
+function detectStrugglingConcepts(responseText) {
+    const lowercaseText = responseText.toLowerCase();
+    const detectedConcepts = [];
+    
+    // Keyword mappings for each tool/concept
+    const keywordMap = {
+        'request_bms_data': [
+            'insufficient data', 'not enough data', 'limited data', 'no data',
+            'only 4 records', 'only a few records', 'historical data',
+            'data points', 'time series', 'bms data', 'battery data'
+        ],
+        'getWeatherData': [
+            'weather', 'temperature', 'clouds', 'cloud cover', 'uvi', 'uv index',
+            'weather conditions', 'climate', 'meteorological'
+        ],
+        'getSolarEstimate': [
+            'solar', 'solar production', 'solar generation', 'solar estimate',
+            'solar charging', 'pv', 'photovoltaic', 'panel', 'irradiance'
+        ],
+        'getSystemAnalytics': [
+            'analytics', 'statistics', 'baseline', 'performance metrics',
+            'usage statistics', 'system statistics', 'trends'
+        ],
+        'predict_battery_trends': [
+            'prediction', 'forecast', 'trend', 'degradation', 'capacity loss',
+            'future performance', 'lifespan', 'service life', 'projections'
+        ],
+        'analyze_usage_patterns': [
+            'usage pattern', 'consumption pattern', 'daily pattern', 'weekly pattern',
+            'seasonal pattern', 'anomaly', 'anomalies', 'unusual behavior'
+        ],
+        'calculate_energy_budget': [
+            'energy budget', 'budget', 'autonomy', 'backup power', 'days of autonomy',
+            'worst case', 'emergency scenario', 'energy requirements'
+        ],
+        'date_format': [
+            'invalid date', 'date format', 'timestamp', 'iso 8601', 'yyyy-mm-dd',
+            'time range', 'date range'
+        ],
+        'systemid_missing': [
+            'system id', 'systemid', 'no system', 'which system', 'missing system'
+        ],
+        'general_data_access': [
+            'cannot access', 'unable to retrieve', 'failed to get', 'data unavailable',
+            'no access', 'cannot get', 'missing information'
+        ]
+    };
+    
+    // Check each concept's keywords
+    for (const [concept, keywords] of Object.entries(keywordMap)) {
+        for (const keyword of keywords) {
+            if (lowercaseText.includes(keyword)) {
+                if (!detectedConcepts.includes(concept)) {
+                    detectedConcepts.push(concept);
+                }
+                break; // Found match for this concept, move to next
+            }
+        }
+    }
+    
+    return detectedConcepts;
+}
+
+/**
+ * Generate context-aware recovery guidance based on detected struggles
+ * Combines multiple detected issues into a comprehensive recovery prompt
+ * Uses the data catalog from insights-guru.cjs to avoid duplication
+ * 
+ * @param {Array<string>} detectedConcepts - Concepts detected from response analysis
+ * @param {Object} contextData - Context data (systemId, dates, etc.)
+ * @returns {string} Combined guidance prompt
+ */
+function buildContextAwareGuidance(detectedConcepts, contextData = {}) {
+    if (detectedConcepts.length === 0) {
+        return null; // No specific issues detected
+    }
+    
+    const { systemId, startDate, endDate, totalRecords } = contextData;
+    let guidance = '\n\n🔧 CONTEXT-AWARE RECOVERY GUIDANCE\n\n';
+    guidance += `Detected ${detectedConcepts.length} potential issue(s): ${detectedConcepts.join(', ')}\n\n`;
+    
+    // If data access issues detected, show the comprehensive quick reference catalog
+    if (detectedConcepts.includes('request_bms_data') || 
+        detectedConcepts.includes('general_data_access')) {
+        
+        guidance += "🚨 DETECTED: You're claiming data unavailability or insufficient data.\n";
+        guidance += "📖 HERE'S THE COMPLETE DATA CATALOG showing what you can access:\n\n";
+        
+        // Use the comprehensive quick reference from insights-guru.cjs
+        guidance += buildQuickReferenceCatalog(systemId, startDate, endDate, totalRecords);
+        guidance += "\n";
+        
+        // Add specific instruction based on the issue
+        guidance += "⚠️ IMMEDIATE ACTION REQUIRED:\n";
+        guidance += "   1. Review the SYSTEM ID and QUERYABLE RANGE above\n";
+        guidance += "   2. Call request_bms_data with the EXACT parameters shown in examples\n";
+        guidance += "   3. Verify the response contains data (dataPoints > 0)\n";
+        guidance += "   4. ONLY THEN may you proceed with analysis\n\n";
+        
+        return guidance;
+    }
+    
+    // For other specific tool issues, provide targeted guidance
+    const toolSpecificConcepts = detectedConcepts.filter(c => 
+        c.startsWith('get') || c.startsWith('calculate') || c.startsWith('analyze') || c.startsWith('predict')
+    );
+    
+    if (toolSpecificConcepts.length > 0) {
+        guidance += "🎯 TOOL-SPECIFIC GUIDANCE:\n\n";
+        
+        for (const concept of toolSpecificConcepts) {
+            guidance += `**Issue detected with: ${concept}**\n`;
+            guidance += buildDetailedToolGuidance(concept, null, null, contextData);
+            guidance += "\n\n";
+        }
+    }
+    
+    // Add specific fixes for common issues
+    if (detectedConcepts.includes('date_format')) {
+        guidance += `
+📅 DATE FORMAT REQUIREMENTS:
+
+**ISO 8601 Format (for most tools):**
+- Correct: "2025-11-23T14:30:00Z" or "${startDate}"
+- Incorrect: "11/23/2025", "Nov 23 2025", "2025-11-23"
+
+**YYYY-MM-DD Format (for getSolarEstimate only):**
+- Correct: "2025-11-23"
+- Incorrect: "2025-11-23T14:30:00Z"
+
+**How to use:**
+- request_bms_data: ISO 8601 format
+- getWeatherData: ISO 8601 format
+- getSolarEstimate: YYYY-MM-DD format
+- All other tools: ISO 8601 format
+
+`;
+    }
+    
+    if (detectedConcepts.includes('systemid_missing')) {
+        guidance += `
+🔑 SYSTEM ID INFORMATION:
+
+Your systemId is: "${systemId}"
+
+**Use this EXACT value in ALL system-related tool calls:**
+- request_bms_data
+- getSystemAnalytics
+- predict_battery_trends
+- analyze_usage_patterns
+- calculate_energy_budget
+
+**Do NOT:**
+- Make up a systemId
+- Use a different systemId
+- Skip the systemId parameter
+
+`;
+    }
+    
+    return guidance;
+}
+
+/**
+ * Generate detailed recovery guidance for specific tool failures
+ * Provides verbose, step-by-step instructions when Gemini struggles with a particular tool
+ * 
+ * @param {string} toolName - Name of the tool that failed
+ * @param {Object} toolArgs - Arguments that were used (if any)
+ * @param {Object} errorResult - The error response from the tool
+ * @param {Object} contextData - Additional context (systemId, dates, etc.)
+ * @returns {string} Detailed guidance prompt
+ */
+function buildDetailedToolGuidance(toolName, toolArgs, errorResult, contextData = {}) {
+    const { systemId, startDate, endDate } = contextData;
+    
+    const guidanceMap = {
+        request_bms_data: `
+📖 DETAILED GUIDE: Retrieving BMS Historical Data
+
+The request_bms_data tool is your PRIMARY data access method. Here's exactly how to use it:
+
+**STEP 1: Understand the Parameters**
+- systemId: "${systemId}" ← USE THIS EXACT VALUE
+- metric: Choose ONE metric at a time for best performance:
+  * "voltage" - Battery pack voltage over time
+  * "current" - Charge/discharge current (positive = charging, negative = discharging)
+  * "soc" - State of charge percentage
+  * "power" - Power in Watts
+  * "capacity" - Remaining capacity in Ah
+  * "temperature" - Battery temperature
+  * "all" - All metrics (use sparingly, returns large datasets)
+- time_range_start: "${startDate}" ← ISO 8601 format
+- time_range_end: "${endDate}" ← ISO 8601 format
+- granularity: 
+  * "hourly_avg" - Best for detailed analysis (<30 days)
+  * "daily_avg" - Best for trends (30-90 days)
+  * "raw" - All data points (use only for specific lookups)
+
+**STEP 2: Make the Function Call**
+Call the tool with this EXACT structure:
+{
+  "systemId": "${systemId}",
+  "metric": "all",
+  "time_range_start": "${startDate}",
+  "time_range_end": "${endDate}",
+  "granularity": "daily_avg"
+}
+
+**STEP 3: Interpret the Response**
+Success response will have:
+- dataPoints: Number of data points retrieved (should be > 0)
+- data: Array of time-series data
+- systemId: Confirms the system queried
+
+Error response will have:
+- error: true
+- message: Description of what went wrong
+
+**COMMON MISTAKES TO AVOID:**
+❌ Using wrong date format (must be ISO 8601: YYYY-MM-DDTHH:mm:ss.sssZ)
+❌ Setting time_range_start after time_range_end
+❌ Using a systemId that doesn't exist
+❌ Requesting "all" metrics for large time ranges (causes timeout)
+
+**WHAT WENT WRONG THIS TIME:**
+${errorResult ? JSON.stringify(errorResult, null, 2) : 'Tool was not called or returned empty response'}
+
+**YOUR NEXT ACTION:**
+Call request_bms_data again with the EXACT parameters above. Do it now.`,
+
+        getWeatherData: `
+📖 DETAILED GUIDE: Retrieving Weather Data
+
+The getWeatherData tool provides weather conditions for correlation with battery performance.
+
+**STEP 1: Understand the Parameters**
+- latitude: Decimal degrees (e.g., 38.8)
+- longitude: Decimal degrees (e.g., -104.8)
+- timestamp: ISO 8601 format for historical weather (e.g., "2025-11-15T12:00:00Z")
+  * Omit this parameter for current weather
+- type: "current" | "historical" | "hourly"
+  * "historical" - Weather at specific past timestamp
+  * "current" - Latest conditions
+  * "hourly" - Hourly forecast/history
+
+**STEP 2: Make the Function Call**
+Example for historical weather:
+{
+  "latitude": ${contextData.latitude || 'LATITUDE_FROM_SYSTEM_PROFILE'},
+  "longitude": ${contextData.longitude || 'LONGITUDE_FROM_SYSTEM_PROFILE'},
+  "timestamp": "${contextData.weatherTimestamp || startDate}",
+  "type": "historical"
+}
+
+**STEP 3: Interpret the Response**
+Success response includes:
+- temp: Temperature in Celsius
+- clouds: Cloud cover percentage (0-100)
+- uvi: UV index
+- weather_main: Weather condition description
+- weather_icon: Icon code
+
+**COMMON MISTAKES:**
+❌ Forgetting to include timestamp for historical data
+❌ Using invalid latitude/longitude (must be decimal degrees)
+❌ Requesting weather for dates too far in past (API has limits)
+
+**WHAT WENT WRONG:**
+${errorResult ? JSON.stringify(errorResult, null, 2) : 'Tool was not called or returned empty response'}
+
+**WHERE TO GET LAT/LON:**
+Check the SYSTEM PROFILE section in your context - it should contain latitude and longitude values.
+
+**YOUR NEXT ACTION:**
+Call getWeatherData with the correct parameters from the system profile.`,
+
+        getSolarEstimate: `
+📖 DETAILED GUIDE: Retrieving Solar Energy Estimates
+
+The getSolarEstimate tool calculates expected solar generation based on location and panel specs.
+
+**STEP 1: Understand the Parameters**
+- location: Either US zip code ("80942") OR "lat,lon" format ("38.8,-104.8")
+- panelWatts: Total panel wattage (e.g., 1600 for 4x400W panels)
+  * Get this from SYSTEM PROFILE → maxAmpsSolarCharging * voltage
+- startDate: "YYYY-MM-DD" format (e.g., "2025-11-01")
+- endDate: "YYYY-MM-DD" format (e.g., "2025-11-18")
+
+**STEP 2: Make the Function Call**
+{
+  "location": "${contextData.latitude && contextData.longitude ? `${contextData.latitude},${contextData.longitude}` : 'ZIP_OR_LATLON'}",
+  "panelWatts": ${contextData.panelWatts || 'CALCULATE_FROM_SYSTEM_PROFILE'},
+  "startDate": "${startDate ? startDate.split('T')[0] : 'YYYY-MM-DD'}",
+  "endDate": "${endDate ? endDate.split('T')[0] : 'YYYY-MM-DD'}"
+}
+
+**STEP 3: Interpret the Response**
+Returns daily solar estimates with:
+- date: Each day in the range
+- expectedWh: Expected generation in watt-hours
+- irradiance: Solar irradiance value
+
+**COMMON MISTAKES:**
+❌ Using wrong date format (must be YYYY-MM-DD, not ISO 8601)
+❌ Not calculating panelWatts correctly (maxAmps * voltage)
+❌ Using location outside US (service may be limited)
+
+**WHAT WENT WRONG:**
+${errorResult ? JSON.stringify(errorResult, null, 2) : 'Tool was not called'}
+
+**CALCULATING PANEL WATTS:**
+If system has maxAmpsSolarCharging = 60A and voltage = 48V:
+panelWatts = 60A * 48V = 2880W
+
+**YOUR NEXT ACTION:**
+Calculate panelWatts from system profile and call getSolarEstimate.`,
+
+        getSystemAnalytics: `
+📖 DETAILED GUIDE: Retrieving System Analytics
+
+The getSystemAnalytics tool provides comprehensive usage statistics and baselines.
+
+**STEP 1: Understand the Parameters**
+- systemId: "${systemId}" ← USE THIS EXACT VALUE
+
+That's it! This tool only needs the systemId.
+
+**STEP 2: Make the Function Call**
+{
+  "systemId": "${systemId}"
+}
+
+**STEP 3: Interpret the Response**
+Returns rich analytics including:
+- hourlyUsagePatterns: Usage by hour of day
+- performanceBaselines: Typical operating ranges
+- alertFrequency: How often alerts occur
+- statisticalSummaries: Averages, trends, etc.
+
+**WHAT WENT WRONG:**
+${errorResult ? JSON.stringify(errorResult, null, 2) : 'Tool was not called'}
+
+**YOUR NEXT ACTION:**
+Call getSystemAnalytics with systemId: "${systemId}"`,
+
+        predict_battery_trends: `
+📖 DETAILED GUIDE: Predicting Battery Performance Trends
+
+The predict_battery_trends tool uses statistical forecasting for capacity, efficiency, and lifespan.
+
+**STEP 1: Understand the Parameters**
+- systemId: "${systemId}"
+- metric: Choose what to predict:
+  * "capacity" - Capacity degradation over time
+  * "efficiency" - Charge/discharge efficiency trends
+  * "temperature" - Thermal patterns
+  * "voltage" - Voltage trends
+  * "lifetime" - Estimated SERVICE LIFE until replacement (NOT runtime)
+- forecastDays: How far to predict (default: 30, max: 365)
+- confidenceLevel: Include confidence intervals (true/false)
+
+**STEP 2: Make the Function Call**
+{
+  "systemId": "${systemId}",
+  "metric": "capacity",
+  "forecastDays": 90,
+  "confidenceLevel": true
+}
+
+**STEP 3: Interpret the Response**
+Returns prediction data with:
+- predictions: Array of future values
+- trend: Direction (improving/degrading)
+- confidence: Statistical confidence if requested
+
+**IMPORTANT TERMINOLOGY:**
+- "lifetime" metric = SERVICE LIFE (years/months until replacement)
+- NOT the same as "battery autonomy" or "runtime" (hours until discharge)
+
+**WHAT WENT WRONG:**
+${errorResult ? JSON.stringify(errorResult, null, 2) : 'Tool was not called'}
+
+**YOUR NEXT ACTION:**
+Call predict_battery_trends with systemId and desired metric.`,
+
+        analyze_usage_patterns: `
+📖 DETAILED GUIDE: Analyzing Energy Usage Patterns
+
+The analyze_usage_patterns tool identifies consumption trends and anomalies.
+
+**STEP 1: Understand the Parameters**
+- systemId: "${systemId}"
+- patternType: What to analyze:
+  * "daily" - Hourly usage patterns throughout the day
+  * "weekly" - Weekday vs weekend comparison
+  * "seasonal" - Monthly/quarterly trends
+  * "anomalies" - Detect unusual events
+- timeRange: Analysis period ("7d", "30d", "90d", or "1y")
+
+**STEP 2: Make the Function Call**
+{
+  "systemId": "${systemId}",
+  "patternType": "daily",
+  "timeRange": "30d"
+}
+
+**STEP 3: Interpret the Response**
+Returns pattern analysis with:
+- patterns: Identified usage patterns
+- insights: Key findings
+- recommendations: Optimization suggestions
+
+**WHAT WENT WRONG:**
+${errorResult ? JSON.stringify(errorResult, null, 2) : 'Tool was not called'}
+
+**YOUR NEXT ACTION:**
+Call analyze_usage_patterns with systemId and desired pattern type.`,
+
+        calculate_energy_budget: `
+📖 DETAILED GUIDE: Calculating Energy Budgets
+
+The calculate_energy_budget tool models energy requirements for different scenarios.
+
+**STEP 1: Understand the Parameters**
+- systemId: "${systemId}"
+- scenario: What to model:
+  * "current" - Existing usage patterns
+  * "worst_case" - Minimum solar + max consumption
+  * "average" - Typical conditions
+  * "emergency" - Backup power requirements
+- includeWeather: Include weather-based solar adjustments (true/false)
+- timeframe: Budget period ("7d", "30d", "90d")
+
+**STEP 2: Make the Function Call**
+{
+  "systemId": "${systemId}",
+  "scenario": "worst_case",
+  "includeWeather": true,
+  "timeframe": "30d"
+}
+
+**STEP 3: Interpret the Response**
+Returns energy budget with:
+- dailyProduction: Expected generation
+- dailyConsumption: Expected usage
+- netBalance: Surplus or deficit
+- autonomyDays: Days of backup power
+- recommendations: Actions to take
+
+**CRITICAL: You are the ONLY one who can call this tool**
+Users cannot "use the calculate_energy_budget tool" - YOU must call it and present results.
+
+**WHAT WENT WRONG:**
+${errorResult ? JSON.stringify(errorResult, null, 2) : 'Tool was not called'}
+
+**YOUR NEXT ACTION:**
+Call calculate_energy_budget NOW and include results in your response.`
+    };
+
+    return guidanceMap[toolName] || `
+📖 TOOL GUIDANCE: ${toolName}
+
+The tool "${toolName}" failed or was not called correctly.
+
+**What went wrong:**
+${errorResult ? JSON.stringify(errorResult, null, 2) : 'Tool was not called or returned empty response'}
+
+**Tool arguments attempted:**
+${toolArgs ? JSON.stringify(toolArgs, null, 2) : 'No arguments provided'}
+
+**General guidance:**
+1. Check that all required parameters are provided
+2. Ensure parameter types are correct (strings, numbers, booleans)
+3. Verify that date ranges are valid (start before end)
+4. Use systemId: "${systemId}" if this is a system-specific tool
+
+**Your next action:**
+Review the tool definition in the AVAILABLE TOOLS section and try again with correct parameters.`;
+}
+
+/**
+ * MANDATORY INITIALIZATION SEQUENCE
+ * 
+ * Forces Gemini to retrieve historical data before proceeding with analysis.
+ * This prevents "insufficient data" errors by ensuring Gemini actually calls
+ * the data retrieval tools and verifies successful data access.
+ * 
+ * @param {Object} params
+ * @param {string} params.systemId - System ID to query
+ * @param {number} params.contextWindowDays - Days of historical data to retrieve
+ * @param {Array} params.conversationHistory - Conversation history to update
+ * @param {Object} params.geminiClient - Gemini API client
+ * @param {Object} params.log - Logger instance
+ * @param {number} params.startTime - Loop start timestamp
+ * @param {number} params.totalBudgetMs - Total time budget
+ * @returns {Promise<{success: boolean, attempts: number, dataPoints?: number, error?: string, toolCallsUsed?: number, turnsUsed?: number}>}
+ */
+async function executeInitializationSequence(params) {
+    const { systemId, contextWindowDays, conversationHistory, geminiClient, log, startTime, totalBudgetMs, modelOverride } = params;
+    
+    if (!systemId) {
+        log.warn('No systemId provided, skipping initialization sequence');
+        return { success: true, attempts: 0, dataPoints: 0, toolCallsUsed: 0, turnsUsed: 0 };
+    }
+
+    // Calculate date range for data retrieval
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - contextWindowDays);
+    
+    const initPrompt = `
+🔧 INITIALIZATION SEQUENCE - MANDATORY DATA VERIFICATION
+
+Before providing any analysis, you MUST complete this initialization sequence:
+
+1. **Call request_bms_data tool** with these EXACT parameters:
+   - systemId: "${systemId}"
+   - metric: "all"
+   - time_range_start: "${startDate.toISOString()}"
+   - time_range_end: "${endDate.toISOString()}"
+   - granularity: "daily_avg"
+
+2. **Verify the response**:
+   - Check that dataPoints > 0
+   - Confirm you received actual data (not an error)
+   - Note the number of data points retrieved
+
+3. **Respond with EXACTLY this format**:
+   "INITIALIZATION COMPLETE: Retrieved [X] data points from [start_date] to [end_date]"
+
+⚠️ CRITICAL: Do NOT proceed with analysis until you complete this sequence.
+⚠️ Do NOT say "data unavailable" - the tool WILL return data if parameters are correct.
+⚠️ If the tool returns an error, report EXACTLY what the error says so we can fix it.
+
+Execute the initialization now.`;
+
+    log.info('Starting initialization sequence', {
+        systemId,
+        contextWindowDays,
+        dateRange: `${startDate.toISOString()} to ${endDate.toISOString()}`
+    });
+
+    let attempts = 0;
+    let toolCallsUsed = 0;
+    let turnsUsed = 0;
+
+    // Retry loop until we get successful data retrieval or timeout
+    for (attempts = 0; attempts < INITIALIZATION_MAX_RETRIES; attempts++) {
+        // Check timeout budget
+        const elapsedMs = Date.now() - startTime;
+        if (elapsedMs > totalBudgetMs * INITIALIZATION_BUDGET_RATIO) {
+            log.warn('Initialization sequence timeout (budget ratio exceeded)', {
+                attempts,
+                elapsedMs,
+                budgetMs: totalBudgetMs * INITIALIZATION_BUDGET_RATIO,
+                ratio: INITIALIZATION_BUDGET_RATIO
+            });
+            return {
+                success: false,
+                attempts,
+                error: `Initialization timed out after ${attempts} attempts`,
+                toolCallsUsed,
+                turnsUsed
+            };
+        }
+
+        turnsUsed++;
+        
+        // Add initialization prompt (only on first attempt)
+        if (attempts === 0) {
+            conversationHistory.push({
+                role: 'user',
+                parts: [{ text: initPrompt }]
+            });
+        }
+
+        log.info(`Initialization attempt ${attempts + 1}`, { elapsedMs });
+
+        let geminiResponse;
+        try {
+            geminiResponse = await geminiClient.callAPI(null, {
+                history: conversationHistory,
+                tools: toolDefinitions,
+                model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+                maxOutputTokens: 2048 // Smaller limit for initialization
+            }, log);
+        } catch (geminiError) {
+            const err = geminiError instanceof Error ? geminiError : new Error(String(geminiError));
+            log.error('Gemini API call failed during initialization', {
+                attempt: attempts + 1,
+                error: err.message
+            });
+            
+            // On API errors, retry with linear backoff (add 1 second per attempt)
+            const delayMs = Math.min(RETRY_LINEAR_INCREMENT_MS * (attempts + 1), 10000); // Cap at 10 seconds
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue;
+        }
+
+        // Validate response structure (reuse validation from main loop)
+        const responseContent = geminiResponse?.candidates?.[0]?.content;
+        if (!responseContent || !responseContent.parts || responseContent.parts.length === 0) {
+            log.warn('Invalid Gemini response during initialization, retrying', {
+                attempt: attempts + 1,
+                hasResponse: !!geminiResponse,
+                hasCandidates: !!geminiResponse?.candidates,
+                candidatesLength: geminiResponse?.candidates?.length || 0
+            });
+            
+            // Add error feedback to conversation
+            conversationHistory.push({
+                role: 'user',
+                parts: [{ text: 'Your response was empty or invalid. Please call request_bms_data with the parameters specified above.' }]
+            });
+            continue;
+        }
+
+        // Add response to history
+        conversationHistory.push(responseContent);
+
+        // Check for tool calls
+        const toolCalls = responseContent.parts.filter(p => p.functionCall);
+        
+        if (toolCalls.length === 0) {
+            // No tool call - check if Gemini claims initialization is complete
+            const textParts = responseContent.parts.filter(p => p.text);
+            const responseText = textParts.map(p => p.text).join(' ');
+            
+            log.warn('Gemini did not call request_bms_data during initialization', {
+                attempt: attempts + 1,
+                responseText: responseText.substring(0, 500),
+                responseLength: responseText.length
+            });
+
+            // Log the full response for debugging
+            log.info('Full Gemini response without tool call', {
+                attempt: attempts + 1,
+                fullResponse: JSON.stringify(geminiResponse).substring(0, 2000)
+            });
+            
+            // KEYWORD DETECTION: Analyze what Gemini is struggling with
+            const detectedConcepts = detectStrugglingConcepts(responseText);
+            
+            if (detectedConcepts.length > 0) {
+                log.info('Detected struggling concepts via keyword analysis', {
+                    attempt: attempts + 1,
+                    concepts: detectedConcepts,
+                    responseExcerpt: responseText.substring(0, 300)
+                });
+                
+                // Build context-aware guidance
+                const contextAwareGuidance = buildContextAwareGuidance(detectedConcepts, {
+                    systemId,
+                    startDate: startDate.toISOString(),
+                    endDate: endDate.toISOString()
+                });
+                
+                if (contextAwareGuidance) {
+                    conversationHistory.push({
+                        role: 'user',
+                        parts: [{ text: contextAwareGuidance }]
+                    });
+                    continue;
+                }
+            }
+            
+            // Fallback: Provide generic feedback
+            conversationHistory.push({
+                role: 'user',
+                parts: [{ text: `You did not call the request_bms_data tool. You MUST call it with the exact parameters provided. Do it now.` }]
+            });
+            continue;
+        }
+
+        // Execute tool calls
+        let dataRetrieved = false;
+        let dataPoints = 0;
+
+        for (const toolCall of toolCalls) {
+            const toolName = toolCall.functionCall.name;
+            const toolArgs = toolCall.functionCall.args;
+            
+            log.info(`Initialization tool call: ${toolName}`, {
+                attempt: attempts + 1,
+                toolArgs: JSON.stringify(toolArgs).substring(0, 500)
+            });
+
+            toolCallsUsed++;
+
+            try {
+                const toolResult = await executeToolCall(toolName, toolArgs, log);
+                
+                // Add tool result to conversation
+                conversationHistory.push({
+                    role: 'function',
+                    parts: [{
+                        functionResponse: {
+                            name: toolName,
+                            response: { result: toolResult }
+                        }
+                    }]
+                });
+
+                // Check if this was request_bms_data and it succeeded
+                if (toolName === 'request_bms_data' && toolResult && !toolResult.error) {
+                    dataPoints = toolResult.dataPoints || 0;
+                    if (dataPoints > 0) {
+                        dataRetrieved = true;
+                        log.info('Initialization data successfully retrieved', {
+                            toolName,
+                            dataPoints,
+                            attempt: attempts + 1
+                        });
+                    } else {
+                        log.warn('request_bms_data returned 0 data points', {
+                            attempt: attempts + 1,
+                            toolResult: JSON.stringify(toolResult).substring(0, 1000)
+                        });
+                    }
+                } else if (toolResult && toolResult.error) {
+                    // Tool returned an error - log it for improvement
+                    log.error('Tool execution returned error during initialization', {
+                        toolName,
+                        error: toolResult.message || toolResult.error,
+                        attempt: attempts + 1,
+                        fullResult: JSON.stringify(toolResult).substring(0, 1000)
+                    });
+                }
+            } catch (toolError) {
+                const err = toolError instanceof Error ? toolError : new Error(String(toolError));
+                log.error('Tool execution threw exception during initialization', {
+                    toolName,
+                    error: err.message,
+                    stack: err.stack,
+                    attempt: attempts + 1
+                });
+                
+                // Add error to conversation
+                conversationHistory.push({
+                    role: 'function',
+                    parts: [{
+                        functionResponse: {
+                            name: toolName,
+                            response: {
+                                error: true,
+                                message: `Tool failed: ${err.message}`
+                            }
+                        }
+                    }]
+                });
+            }
+        }
+
+        // Check if we successfully retrieved data
+        if (dataRetrieved && dataPoints > 0) {
+            log.info('Initialization sequence SUCCEEDED', {
+                attempts: attempts + 1,
+                dataPoints,
+                toolCallsUsed,
+                turnsUsed,
+                durationMs: Date.now() - startTime
+            });
+            
+            // Ask Gemini to acknowledge initialization completion
+            conversationHistory.push({
+                role: 'user',
+                parts: [{ text: `Data retrieval successful. You now have ${dataPoints} data points available. Acknowledge with "INITIALIZATION COMPLETE" and then proceed with analysis.` }]
+            });
+            
+            return {
+                success: true,
+                attempts: attempts + 1,
+                dataPoints,
+                toolCallsUsed,
+                turnsUsed
+            };
+        }
+
+        // Data retrieval failed or returned 0 points - retry with guidance
+        log.warn('Data retrieval attempt did not succeed, retrying', {
+            attempt: attempts + 1,
+            dataRetrieved,
+            dataPoints
+        });
+        
+        conversationHistory.push({
+            role: 'user',
+            parts: [{ text: 'Data retrieval incomplete. Call request_bms_data again with the EXACT parameters specified. Do not proceed without data.' }]
+        });
+    }
+
+    // Exhausted all retries
+    log.error('Initialization sequence failed after all retries', {
+        attempts,
+        maxRetries: INITIALIZATION_MAX_RETRIES
+    });
+
+    return {
+        success: false,
+        attempts,
+        error: `Failed to retrieve data after ${attempts} attempts`,
+        toolCallsUsed,
+        turnsUsed
+    };
+}
 
 /**
  * Execute a complete ReAct loop for insights generation
@@ -34,22 +858,34 @@ async function executeReActLoop(params) {
         systemId,
         customPrompt,
         log: externalLog,
-        mode = 'sync'
+        mode = 'sync',
+        contextWindowDays = DEFAULT_CONTEXT_WINDOW_DAYS,
+        maxIterations, // Optional override for iteration limit
+        modelOverride, // Optional model override (e.g., "gemini-2.5-pro")
+        skipInitialization = false // Skip initialization if already done separately
     } = params;
 
     const log = externalLog || createLogger('react-loop');
     const startTime = Date.now();
 
+    // Determine max turns based on query type
+    const isCustomQuery = !!customPrompt;
+    const MAX_TURNS = maxIterations || (isCustomQuery ? CUSTOM_QUERY_MAX_TURNS : DEFAULT_MAX_TURNS);
+
     // Calculate time budgets
     const contextBudgetMs = SYNC_CONTEXT_BUDGET_MS;
     const totalBudgetMs = SYNC_TOTAL_BUDGET_MS;
 
-    log.info('Starting ReAct loop', {
+    log.info('Starting ReAct loop with initialization sequence', {
         mode,
         systemId,
-        hasCustomPrompt: !!customPrompt,
+        hasCustomPrompt: isCustomQuery,
+        contextWindowDays,
+        maxTurns: MAX_TURNS,
         contextBudgetMs,
-        totalBudgetMs
+        totalBudgetMs,
+        modelOverride,
+        skipInitialization
     });
 
     try {
@@ -99,13 +935,58 @@ async function executeReActLoop(params) {
             }
         ];
 
-        // Step 4: Main ReAct loop
+        // Step 3.5: MANDATORY INITIALIZATION SEQUENCE (unless skipped)
+        // Force Gemini to retrieve historical data before analysis
         const geminiClient = getGeminiClient();
-        let finalAnswer = null;
-        let toolCallCount = 0;
-        let turnCount = 0;
+        
+        let initResult = null;
+        if (!skipInitialization && systemId) {
+            initResult = await executeInitializationSequence({
+                systemId,
+                contextWindowDays,
+                conversationHistory,
+                geminiClient,
+                log,
+                startTime,
+                totalBudgetMs,
+                modelOverride
+            });
 
-        for (turnCount = 0; turnCount < MAX_TURNS; turnCount++) {
+            if (!initResult.success) {
+                // Initialization failed after retries - provide clear error
+                log.error('Initialization sequence failed', {
+                    error: initResult.error,
+                    attempts: initResult.attempts,
+                    durationMs: Date.now() - startTime
+                });
+                
+                return {
+                    success: false,
+                    error: `Failed to initialize data retrieval: ${initResult.error}. Please try again.`,
+                    durationMs: Date.now() - startTime
+                };
+            }
+
+            log.info('Initialization sequence completed successfully', {
+                attempts: initResult.attempts,
+                dataPointsRetrieved: initResult.dataPoints,
+                durationMs: Date.now() - startTime
+            });
+        } else if (skipInitialization) {
+            log.info('Skipping initialization sequence (already completed separately)');
+        } else {
+            log.info('Skipping initialization sequence (no systemId)');
+        }
+
+        // Update conversation history with initialization exchanges
+        // (already added by executeInitializationSequence if run)
+
+        // Step 4: Main ReAct loop
+        let finalAnswer = null;
+        let toolCallCount = initResult.toolCallsUsed || 0; // Count initialization tool calls
+        let turnCount = initResult.turnsUsed || 0; // Count initialization turns
+
+        for (; turnCount < MAX_TURNS; turnCount++) {
             // Check timeout
             const elapsedMs = Date.now() - startTime;
             if (elapsedMs > totalBudgetMs) {
@@ -129,7 +1010,7 @@ async function executeReActLoop(params) {
                 geminiResponse = await geminiClient.callAPI(null, {
                     history: conversationHistory,
                     tools: toolDefinitions,
-                    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+                    model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
                     maxOutputTokens: 4096
                 }, log);
             } catch (geminiError) {
@@ -454,5 +1335,9 @@ This typically means your question requires accessing long-term historical data 
 
 module.exports = {
     executeReActLoop,
-    MAX_TURNS
+    DEFAULT_MAX_TURNS,
+    CUSTOM_QUERY_MAX_TURNS,
+    DEFAULT_CONTEXT_WINDOW_DAYS,
+    INITIALIZATION_MAX_RETRIES,
+    INITIALIZATION_BUDGET_RATIO
 };

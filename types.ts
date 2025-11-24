@@ -117,3 +117,18 @@ export interface DisplayableAnalysisResult {
   needsReview?: boolean;
   validationWarnings?: string[];
 }
+
+// Context window configuration for insights generation
+export type ContextWindowUnit = 'hours' | 'days' | 'months' | 'years';
+
+export interface ContextWindowConfig {
+  value: number;
+  unit: ContextWindowUnit;
+  label: string; // Display label for UI (e.g., "1 Month", "3 Days")
+}
+
+export interface InsightsRequestConfig {
+  contextWindow?: ContextWindowConfig;
+  maxIterations?: number; // Max ReAct loop iterations (10 for standard, 20 for custom queries)
+  isCustomQuery?: boolean; // Whether this is a custom user query
+}
