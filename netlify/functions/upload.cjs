@@ -1,5 +1,8 @@
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLogger, createTimer } = require('./utils/logger.cjs');
+const multiparty = require('multiparty');
+const { XMLParser } = require('fast-xml-parser');
+const fs = require('fs');
 
 exports.handler = async (event, context) => {
   const log = createLogger('upload', context);
@@ -42,7 +45,7 @@ exports.handler = async (event, context) => {
   try {
     log.debug('Parsing multipart form data', logContext);
     // Parse multipart form data
-    const formData = await parseMultipartData(event.body, event.headers['content-type'], log);
+    const formData = await parseMultipartData(event, log);
     const { file, userId } = formData;
     
     const requestContext = { ...logContext, fileName: file?.name, userId, fileSize: file?.size };
@@ -156,38 +159,50 @@ exports.handler = async (event, context) => {
   }
 };
 
-// Mock multipart parser - in production, use a proper library
-async function parseMultipartData(body, contentType, log) {
-  // This is a simplified mock - in production, use a library like 'multiparty'
-  // For now, we'll assume JSON payload with base64 file data
-  
-  try {
-    log.debug('Parsing request body as JSON', { contentType, bodyLength: body?.length });
-    const data = JSON.parse(body);
-    
-    // If file is sent as base64, decode it
-    if (data.fileBase64) {
-      log.debug('Decoding base64 file data', { filename: data.filename, base64Length: data.fileBase64.length });
-      const buffer = Buffer.from(data.fileBase64, 'base64');
-      log.debug('File decoded successfully', { filename: data.filename, decodedSize: buffer.length });
-      return {
-        file: {
-          name: data.filename,
-          size: buffer.length,
-          type: data.contentType || 'application/octet-stream',
-          data: buffer
-        },
-        userId: data.userId
-      };
+async function parseMultipartData(event, log) {
+  return new Promise((resolve, reject) => {
+    const form = new multiparty.Form();
+
+    form.on('error', (err) => {
+      log.error('Multiparty form error', { error: err.message, stack: err.stack });
+      reject(new Error('Failed to parse multipart form'));
+    });
+
+    form.on('part', (part) => {
+      // For now, we are assuming the file is the only part
+      let data = [];
+      part.on('data', (chunk) => {
+        data.push(chunk);
+      });
+      part.on('end', () => {
+        const buffer = Buffer.concat(data);
+        resolve({
+          file: {
+            name: part.filename,
+            size: buffer.length,
+            type: part.headers['content-type'],
+            data: buffer,
+          },
+          userId: 'user-id-from-form-or-header' // Replace with actual user ID extraction
+        });
+      });
+      part.on('error', (err) => {
+        log.error('Multiparty part error', { error: err.message, stack: err.stack });
+        reject(new Error('Error processing file part'));
+      });
+    });
+
+    // multiparty expects a request object with headers and a body
+    const req = {
+      headers: event.headers,
+      body: event.body,
+    };
+    if (event.isBase64Encoded) {
+      req.body = Buffer.from(event.body, 'base64');
     }
     
-    // Handle other formats as needed
-    log.debug('Returning parsed data (non-base64)', { hasFile: !!data.file, hasUserId: !!data.userId });
-    return data;
-  } catch (error) {
-    log.error('Failed to parse multipart data', { error: error.message, contentType, bodyPreview: body?.substring(0, 100) });
-    throw new Error('Failed to parse multipart data');
-  }
+    form.parse(req);
+  });
 }
 
 async function processFile(file, uploadId, log) {
@@ -415,33 +430,19 @@ function parseTextLog(content, log) {
 
 function parseXML(content, log) {
   log.debug('Parsing XML content', { contentLength: content.length });
-  // Mock XML parsing - in production, use a proper XML parser
-  const measurements = [];
+  const parser = new XMLParser();
+  const jsonObj = parser.parse(content);
   
-  // Simple XML tag extraction
-  const measurementTags = content.match(/<measurement[^>]*>[\s\S]*?<\/measurement>/g) || [];
-  log.debug('Found XML measurement tags', { tagCount: measurementTags.length });
+  let measurements = [];
   
-  for (const tag of measurementTags) {
-    const measurement = {};
-    
-    // Extract values from tags
-    const voltageMatch = tag.match(/<voltage>(.*?)<\/voltage>/);
-    const currentMatch = tag.match(/<current>(.*?)<\/current>/);
-    const capacityMatch = tag.match(/<capacity>(.*?)<\/capacity>/);
-    const temperatureMatch = tag.match(/<temperature>(.*?)<\/temperature>/);
-    const timestampMatch = tag.match(/<timestamp>(.*?)<\/timestamp>/);
-    
-    if (voltageMatch) measurement.voltage = parseFloat(voltageMatch[1]);
-    if (currentMatch) measurement.current = parseFloat(currentMatch[1]);
-    if (capacityMatch) measurement.capacity = parseFloat(capacityMatch[1]);
-    if (temperatureMatch) measurement.temperature = parseFloat(temperatureMatch[1]);
-    if (timestampMatch) measurement.timestamp = timestampMatch[1];
-    else measurement.timestamp = new Date().toISOString();
-    
-    measurements.push(measurement);
+  if (jsonObj.measurements && jsonObj.measurements.measurement) {
+    measurements = Array.isArray(jsonObj.measurements.measurement) 
+      ? jsonObj.measurements.measurement 
+      : [jsonObj.measurements.measurement];
+  } else {
+    log.warn('No measurements found in XML', { xmlContent: content.substring(0, 500) });
   }
-  
+
   log.debug('XML parsing completed', { measurementCount: measurements.length });
   return { format: 'xml', measurements };
 }

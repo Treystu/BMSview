@@ -24,6 +24,10 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
     const [visibleTimeRange, setVisibleTimeRange] = useState<{ start: number; end: number } | null>(null);
     const [startDate, setStartDate] = useState<string>('');
     const [endDate, setEndDate] = useState<string>('');
+    const [analysisResult, setAnalysisResult] = useState<any>(null);
+    const [predictionResult, setPredictionResult] = useState<any>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [isPredicting, setIsPredicting] = useState(false);
 
     // Use analytics hook for data management
     const {
@@ -67,18 +71,61 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
     }, []);
 
     // Handle analyze history action
-    const handleAnalyzeHistory = useCallback(() => {
-        // TODO: Implement admin-specific insights generation
-        // This should trigger generate-insights-with-tools with admin context
-        console.log('Analyze History triggered for system:', selectedSystemId);
-        alert('AI Analysis feature coming soon! This will generate comprehensive insights for the selected system.');
+    const handleAnalyzeHistory = useCallback(async () => {
+        if (!selectedSystemId) {
+            alert('Please select a system to analyze.');
+            return;
+        }
+        setIsAnalyzing(true);
+        setAnalysisResult(null);
+        try {
+            const response = await fetch('/.netlify/functions/generate-insights-with-tools', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ systemId: selectedSystemId }),
+            });
+            if (!response.ok) {
+                throw new Error('Failed to analyze history');
+            }
+            const result = await response.json();
+            setAnalysisResult(result);
+        } catch (error) {
+            console.error('Error analyzing history:', error);
+            alert('An error occurred while analyzing history.');
+        } finally {
+            setIsAnalyzing(false);
+        }
     }, [selectedSystemId]);
 
     // Handle predict maintenance action
-    const handlePredictMaintenance = useCallback(() => {
-        // TODO: Implement predictive maintenance analysis
-        console.log('Predict Maintenance triggered for system:', selectedSystemId);
-        alert('Predictive Maintenance feature coming soon! This will analyze degradation trends and predict maintenance needs.');
+    const handlePredictMaintenance = useCallback(async () => {
+        if (!selectedSystemId) {
+            alert('Please select a system to predict maintenance for.');
+            return;
+        }
+        setIsPredicting(true);
+        setPredictionResult(null);
+        try {
+            const response = await fetch('/.netlify/functions/predictive-maintenance', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ systemId: selectedSystemId }),
+            });
+            if (!response.ok) {
+                throw new Error('Failed to predict maintenance');
+            }
+            const result = await response.json();
+            setPredictionResult(result);
+        } catch (error) {
+            console.error('Error predicting maintenance:', error);
+            alert('An error occurred while predicting maintenance.');
+        } finally {
+            setIsPredicting(false);
+        }
     }, [selectedSystemId]);
 
     return (
@@ -135,9 +182,25 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
                         selectedSystemId={selectedSystemId}
                         onAnalyzeHistory={handleAnalyzeHistory}
                         onPredictMaintenance={handlePredictMaintenance}
+                        isAnalyzing={isAnalyzing}
+                        isPredicting={isPredicting}
                     />
                 </div>
             </div>
+
+            {/* Analysis and Prediction Results */}
+            {analysisResult && (
+                <div className="mb-6 p-4 bg-gray-800 rounded-lg shadow-inner">
+                    <h3 className="text-lg font-semibold text-white mb-2">Analysis Result</h3>
+                    <pre className="text-sm text-gray-300 bg-gray-900 p-4 rounded">{JSON.stringify(analysisResult, null, 2)}</pre>
+                </div>
+            )}
+            {predictionResult && (
+                <div className="mb-6 p-4 bg-gray-800 rounded-lg shadow-inner">
+                    <h3 className="text-lg font-semibold text-white mb-2">Prediction Result</h3>
+                    <pre className="text-sm text-gray-300 bg-gray-900 p-4 rounded">{JSON.stringify(predictionResult, null, 2)}</pre>
+                </div>
+            )}
 
             {/* Alert Analysis Section - Context Aware */}
             {analyticsData && analyticsData.alertAnalysis && analyticsData.alertAnalysis.totalAlerts > 0 && (

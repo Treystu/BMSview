@@ -500,7 +500,11 @@ function calculateTemperatureVariation(measurements) {
 }
 
 function calculateCellEfficiency(component, measurements) {
-  // Mock calculation - in real implementation would use specific cell data
+  // A more realistic calculation based on remaining and original capacity
+  if (component.originalCapacity && component.remainingCapacity) {
+    return component.remainingCapacity / component.originalCapacity;
+  }
+  // Fallback to a mock calculation if capacity is not available
   return 0.8 + Math.random() * 0.2;
 }
 

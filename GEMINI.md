@@ -1,91 +1,129 @@
-# Project Overview
+# GEMINI Project Guidelines: BMSview
 
-This project is a web application for analyzing Battery Management System (BMS) screenshots. Users can upload images of their BMS and the application will analyze them using the Gemini AI model. The application has a public-facing side for users to upload and view their analysis results, and an admin section for managing the system.
+This document provides a comprehensive guide for agents working on the BMSview project. It covers the project's architecture, development practices, and key operational details to ensure consistent and high-quality contributions.
 
-**Main Technologies:**
+## 1. Project Overview
 
-*   **Frontend:** React, Vite, TypeScript, Tailwind CSS
-*   **Backend:** Netlify Functions (Node.js)
-*   **AI:** Google Gemini
-*   **Database:** MongoDB (inferred from `netlify/functions/utils/mongodb.js`)
-*   **Authentication:** Netlify Identity
+BMSview is an advanced web application for analyzing Battery Management System (BMS) screenshots. It leverages Google's Gemini AI to provide users with detailed insights into their battery performance. The application also integrates solar energy estimation and battery charging correlation features.
 
-**Architecture:**
+### 1.1. Core Features
+- **AI-Powered Screenshot Analysis**: Users can upload BMS screenshots for automated analysis.
+- **Historical Performance Tracking**: The application stores and displays historical battery data.
+- **BMS System Management**: Users can register and manage multiple BMS systems.
+- **Interactive Data Visualization**: Data is presented through interactive charts and graphs.
+- **Solar Integration**: Provides solar energy generation estimates and correlates them with battery charging data.
+- **"Ultimate AI Battery Guru"**: A context-aware AI assistant that provides rich insights based on system analytics, forecasts, and historical data.
 
-The application is a single-page application (SPA) with two entry points: `index.html` for the public-facing side and `admin.html` for the admin section. The frontend is built with React and Vite. The backend is a set of serverless functions deployed on Netlify. These functions handle tasks such as image analysis, database operations, and user authentication.
+### 1.2. Technology Stack
+- **Frontend**: React, Vite, TypeScript, Tailwind CSS
+- **Backend**: Netlify Functions (Node.js/TypeScript)
+- **Database**: MongoDB
+- **AI**: Google Gemini (specifically Gemini 2.5 Flash)
+- **APIs**: Solar Charge Estimator API, OpenWeather API
+- **Authentication**: Netlify Identity
 
-# Logic Flows
+## 2. System Architecture
 
-## Analysis Process
+BMSview is built on a **local-first sync architecture**. This design prioritizes offline functionality and minimizes server load by using intelligent caching and periodic synchronization.
 
-The application supports two analysis flows: a synchronous flow for single-file uploads to provide a faster user experience, and an asynchronous flow for bulk uploads.
+### 2.1. Key Architectural Principles
+1.  **Local-First**: Data is primarily stored in the browser's IndexedDB. The server acts as the authoritative source for conflict resolution.
+2.  **Intelligent Sync**: Synchronization is driven by metadata comparison (timestamps, record counts) rather than on every operation.
+3.  **Periodic Sync**: A background timer syncs data every 90 seconds, with manual triggers on critical actions.
+4.  **Dual-Write for Critical Actions**: Important user actions (e.g., new analysis) are written to both the local cache and the server immediately.
+5.  **UTC Timestamps**: All timestamps use the ISO 8601 UTC format (`YYYY-MM-DDTHH:mm:ss.sssZ`).
 
-### Single-File Synchronous Flow
+### 2.2. Core Components
+- **`SyncManager` (`src/services/syncManager.ts`)**: Orchestrates the entire sync process, including periodic scheduling and decision-making.
+- **`LocalCache` (`src/services/localCache.ts`)**: Manages the IndexedDB storage using Dexie.js, handling data persistence and sync status tracking.
+- **`ClientService` (`services/clientService.ts`)**: An API wrapper that implements the cache-first data fetching strategy.
+- **`AppState` (`state/appState.tsx`)**: The global React state, managed with `useReducer` and `useContext`, which includes sync status fields.
+- **Netlify Sync Functions (`netlify/functions/sync-*.cjs`)**: A set of serverless functions that handle the backend logic for metadata comparison, incremental data fetching, and data pushes.
 
-1.  **Upload:** The user uploads a single image file on the main page.
-2.  **Request:** The frontend sends a request to the `/api/analyze?sync=true` endpoint.
-3.  **Analysis:** The `analyze` function on the backend performs the following steps in a single invocation:
-    *   Checks for duplicates in the database.
-    *   If it's a new image, it extracts the data using the Gemini AI model.
-    *   Performs post-analysis processing (e.g., calculating cell voltage differences).
-    *   Fetches weather data if applicable.
-    *   Saves the complete analysis record to the database.
-4.  **Response:** The `analyze` function returns the full `AnalysisRecord` to the frontend.
-5.  **Display:** The frontend receives the complete record and displays the results immediately, without the need for polling.
+### 2.3. Data Flow
+- **Read Operations**: Follow a **cache-first** strategy. The application first attempts to read data from the local IndexedDB. If the data is not available locally, it fetches it from the server and populates the cache.
+- **Critical Write Operations**: Use a **dual-write** pattern. The data is sent to the server and written to the local cache simultaneously. The sync timer is reset after these actions.
+- **Periodic Sync**: Every 90 seconds, the `SyncManager` compares local metadata with server metadata to decide whether to push local changes, pull server changes, or do nothing.
 
-### Multiple-File Asynchronous Flow
+### 2.4. Analysis Flows
+- **Synchronous Flow (`/api/analyze?sync=true`)**: Used for single-file uploads to provide a fast user experience. The entire analysis is performed in a single serverless function invocation.
+- **Asynchronous Flow (`/api/analyze`)**: Used for bulk uploads. The backend creates jobs for each file, and the frontend polls for completion status. **This flow is being deprecated in favor of the synchronous flow and local-first architecture.**
 
-1.  **Upload:** The user uploads multiple image files.
-2.  **Request:** The frontend sends a request to the `/api/analyze` endpoint with all the image data.
-3.  **Job Creation:** The `analyze` function on the backend:
-    *   Checks for duplicates.
-    *   For each new image, it creates a job document in the `jobs` collection in the database.
-    *   It then asynchronously invokes the `process-analysis` function for each job.
-4.  **Job IDs:** The `analyze` function returns a list of job IDs to the frontend.
-5.  **Polling:** The frontend polls the `/api/get-job-status` endpoint with the job IDs to get the status of each analysis. The polling interval is dynamic and uses a `setTimeout` loop to prevent overlapping requests, which helps to avoid rate-limiting issues.
-6.  **Processing:** The `process-analysis` function (running in the background) performs the same analysis steps as the synchronous flow for each job.
-7.  **Completion:** Once a job is complete, the polling mechanism on the frontend will detect this, fetch the final `AnalysisRecord`, and display the results.
+## 3. Development Setup
 
-# Building and Running
+### 3.1. Prerequisites
+- Node.js (v20 or later)
+- An account with access to the project's Netlify and MongoDB resources.
 
-**Prerequisites:**
-
-*   Node.js (version 20, as specified in `package.json`)
-*   A Gemini API key
-
-**Instructions:**
-
-1.  **Install dependencies:**
+### 3.2. Local Environment
+1.  **Install Dependencies**:
     ```bash
     npm install
     ```
-
-2.  **Set up environment variables:**
-    Create a `.env.local` file in the root of the project and add your Gemini API key:
+2.  **Configure Environment Variables**: Create a `.env.local` file in the project root and add the following:
     ```
     GEMINI_API_KEY=your_gemini_api_key
+    MONGODB_URI=your_mongodb_connection_string
+    MONGODB_DB_NAME=your_database_name
     ```
-
-3.  **Run the development server:**
+3.  **Run the Development Server**:
     ```bash
     npm run dev
     ```
-    This will start the Vite development server and make the application available at `http://localhost:5173`.
+    The application will be available at `http://localhost:5173`.
 
-**Other Scripts:**
+### 3.3. Important Scripts
+- `npm run build`: Builds the application for production.
+- `npm run preview`: Previews the production build locally.
+- `npm test`: Runs the test suite.
 
-*   **Build for production:**
-    ```bash
-    npm run build
-    ```
-*   **Preview the production build:**
-    ```bash
-    npm run preview
-    ```
+## 4. Codebase Conventions and Best Practices
 
-# Development Conventions
+### 4.1. Module Systems
+- **Frontend (`.ts`, `.tsx`)**: Use ES Modules (`import`/`export`).
+- **Backend (`.cjs`)**: Use CommonJS (`require`/`module.exports`).
+- **Do not mix module systems.**
 
-*   **State Management:** The application uses React's `useReducer` and `useContext` hooks for state management, as seen in `state/appState.tsx` and `state/adminState.tsx`.
-*   **Styling:** The application uses Tailwind CSS for styling.
-*   **Linting and Formatting:** There are no explicit linting or formatting configurations in the `package.json` file. However, the code is well-formatted and consistent, suggesting that a linter or formatter is being used.
-*   **Testing:** There are no explicit testing configurations in the `package.json` file. However, there are a few test files in the root directory (`test-createTimer.js`, `test-fixes.js`), which suggests that some form of testing is being done.
+### 4.2. Path Aliases
+Use the configured path aliases (`components/*`, `services/*`, etc.) for imports within the frontend code to avoid long relative paths.
+
+### 4.3. State Management
+- Global state is managed using React's `useReducer` and `useContext` hooks.
+- The main state logic is located in `state/appState.tsx` and `state/adminState.tsx`.
+
+### 4.4. Error Handling & Logging
+- Use the structured JSON logger from `utils/logger.cjs` for all server-side logging.
+- Implement the retry wrappers from `utils/retry.cjs` for operations that interact with external services.
+- Always return structured error responses from API endpoints.
+
+### 4.5. Interacting with Gemini
+- Use `process.env.GEMINI_MODEL` to specify the model, with a fallback to a default value.
+- Implement strict timeouts: 25 seconds for iterations and 58 seconds for the total operation.
+- Gracefully handle potential JSON parsing errors from the API response.
+
+### 4.6. MongoDB Interactions
+- Always use the `getCollection()` helper from `utils/mongodb.cjs` to interact with the database.
+- Ensure all necessary indexes are created on the collections, as defined in `ARCHITECTURE.md` and `MONGODB_INDEXES.md`.
+
+### 4.7. Anti-Patterns to Avoid
+1.  **Do not create new job-based asynchronous flows.** The local-first sync architecture is the preferred model.
+2.  **Do not use `require()` in the frontend code.**
+3.  **Do not skip logging, especially on the backend.**
+4.  **Do not hardcode AI model names.**
+5.  **Do not mix module systems within the same part of the application.**
+
+## 5. Contribution Guidelines
+
+This repository is configured for contributions from both human developers and the GitHub Copilot Coding Agent.
+
+### 5.1. For Human Contributors
+1.  Create a feature branch from the `main` branch.
+2.  Make your changes, adhering to the conventions outlined in this document.
+3.  Ensure all tests pass (`npm test`) and the application builds successfully (`npm run build`).
+4.  Submit a pull request with a clear description of the changes.
+
+### 5.2. For AI Agent Contributors
+- Detailed instructions for the agent are located in `.github/copilot-instructions.md`.
+- When creating issues for the agent, provide clear context, acceptance criteria, and specify the files to be modified.
+
+By adhering to these guidelines, we can maintain a clean, consistent, and high-quality codebase.
