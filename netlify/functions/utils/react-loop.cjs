@@ -23,7 +23,7 @@ const CUSTOM_QUERY_MAX_TURNS = 20; // 20 iterations for custom queries
 // We use conservative values to ensure we can save checkpoint and return response
 const NETLIFY_TIMEOUT_MS = parseInt(process.env.NETLIFY_FUNCTION_TIMEOUT_MS || '20000'); // 20s safe default
 const CONTEXT_COLLECTION_BUFFER_MS = 3000; // Reserve 3s for context collection
-const CHECKPOINT_SAVE_BUFFER_MS = 3000; // Reserve 3s for checkpoint save + response (increased from 2s)
+const CHECKPOINT_SAVE_BUFFER_MS = 3000; // Reserve 3s for checkpoint save (response buffer is separate)
 const RESPONSE_BUFFER_MS = 2000; // Reserve 2s for formatting and returning response
 
 // Minimum safe values to prevent degenerate cases
