@@ -37,14 +37,28 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   
   // Model override configuration
   const [modelOverride, setModelOverride] = useState(''); // Empty = use default
+  const [customModel, setCustomModel] = useState(''); // For custom model input
+  const [useCustomModel, setUseCustomModel] = useState(false); // Toggle between preset and custom
   
-  // Available Gemini models
+  // Available Gemini models (presets)
   const availableModels = [
     { value: '', label: 'Default (2.5 Flash)' },
     { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
     { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { value: 'gemini-exp-1206', label: 'Gemini 2.0 Flash Exp' },
+    { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash Exp' },
+    { value: 'gemini-2.0-flash-thinking-exp-1219', label: 'Gemini 2.0 Flash Thinking' },
+    { value: 'gemini-exp-1206', label: 'Gemini Exp 1206' },
+    { value: 'learnlm-1.5-pro-experimental', label: 'LearnLM 1.5 Pro Experimental' },
+    { value: 'custom', label: 'Custom Model (enter below)' },
   ];
+  
+  // Get the effective model to use
+  const getEffectiveModel = () => {
+    if (useCustomModel || modelOverride === 'custom') {
+      return customModel.trim();
+    }
+    return modelOverride;
+  };
   
   // Predefined context window options
   const contextWindowOptions = [
@@ -80,7 +94,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           customPrompt: prompt, 
           useEnhancedMode: true,
           contextWindowDays, // Pass context window configuration
-          modelOverride: modelOverride || undefined, // Pass model override if selected
+          modelOverride: getEffectiveModel() || undefined, // Pass model override if selected
           // Iteration limits: 20 for custom queries, 10 for standard (matches react-loop.cjs constants)
           maxIterations: prompt ? 20 : 10
         },
@@ -191,16 +205,27 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           {/* Model Override Dropdown */}
           <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
             <label htmlFor="model-override" className="block text-sm font-semibold text-gray-700 mb-3">
-              🤖 AI Model: <span className="text-purple-600">{availableModels.find(m => m.value === modelOverride)?.label || 'Default (2.5 Flash)'}</span>
+              🤖 AI Model: <span className="text-purple-600">
+                {modelOverride === 'custom' || useCustomModel 
+                  ? customModel.trim() || 'Custom (not set)'
+                  : availableModels.find(m => m.value === modelOverride)?.label || 'Default (2.5 Flash)'}
+              </span>
             </label>
             <p className="text-xs text-gray-600 mb-3">
-              Select which Gemini model to use. Pro models provide better analysis for complex queries but take longer.
+              Select a preset model or enter a custom model name. Pro models provide better analysis for complex queries but take longer.
             </p>
             <select
               id="model-override"
               value={modelOverride}
-              onChange={(e) => setModelOverride(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 bg-white cursor-pointer"
+              onChange={(e) => {
+                setModelOverride(e.target.value);
+                if (e.target.value === 'custom') {
+                  setUseCustomModel(true);
+                } else {
+                  setUseCustomModel(false);
+                }
+              }}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 bg-white cursor-pointer mb-3"
             >
               {availableModels.map((model) => (
                 <option key={model.value} value={model.value}>
@@ -208,6 +233,26 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                 </option>
               ))}
             </select>
+            
+            {/* Custom Model Input - shown when "Custom" is selected or user wants custom */}
+            {(modelOverride === 'custom' || useCustomModel) && (
+              <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <label htmlFor="custom-model-input" className="block text-xs font-semibold text-purple-800 mb-2">
+                  Custom Model Name
+                </label>
+                <input
+                  id="custom-model-input"
+                  type="text"
+                  value={customModel}
+                  onChange={(e) => setCustomModel(e.target.value)}
+                  placeholder="e.g., gemini-3.0-ultra, gemini-2.5-pro-latest"
+                  className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 text-sm font-mono"
+                />
+                <p className="text-xs text-purple-700 mt-2">
+                  Enter any Gemini model name. Make sure it's available in your API key's permissions.
+                </p>
+              </div>
+            )}
           </div>
           
           <div className="flex flex-col sm:flex-row items-center gap-4">
