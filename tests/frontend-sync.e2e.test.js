@@ -6,6 +6,8 @@
  *
  * Note: These tests mock the Netlify functions and IndexedDB to simulate
  * a full browser environment without actual backend or database.
+ * 
+ * @jest-environment jsdom
  */
 
 // Mock fetch globally before any imports

@@ -2906,6 +2906,615 @@ const diagnosticTests = {
         }
       };
     }
+  },
+
+  // ========== LOCAL-FIRST SYNC DIAGNOSTIC TESTS ==========
+  
+  cacheIntegrity: async (testId) => {
+    const startTime = Date.now();
+    const testResults = {
+      name: 'Cache Integrity Check',
+      status: 'running',
+      collections: [],
+      duration: 0
+    };
+
+    try {
+      logger.info('========== STARTING CACHE INTEGRITY CHECK ==========');
+      
+      const db = await getDb();
+      const collections = ['systems', 'analysis-results', 'history'];
+      let totalRecords = 0;
+      let validRecords = 0;
+      let invalidRecords = 0;
+      const warnings = [];
+
+      for (const collectionName of collections) {
+        logger.info(`Checking collection: ${collectionName}`);
+        
+        const collection = db.collection(collectionName);
+        const records = await collection.find({}).limit(100).toArray();
+        
+        const collectionStats = {
+          name: collectionName,
+          totalSampled: records.length,
+          validRecords: 0,
+          invalidRecords: 0,
+          issues: []
+        };
+
+        for (const record of records) {
+          totalRecords++;
+          let isValid = true;
+          
+          // Check updatedAt field exists and is ISO 8601 UTC
+          if (!record.updatedAt) {
+            collectionStats.issues.push({ id: record._id, issue: 'Missing updatedAt field' });
+            isValid = false;
+          } else if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(record.updatedAt)) {
+            collectionStats.issues.push({ 
+              id: record._id, 
+              issue: 'updatedAt not ISO 8601 UTC format', 
+              value: record.updatedAt 
+            });
+            isValid = false;
+          }
+          
+          // Check _syncStatus field is valid
+          if (record._syncStatus && !['synced', 'pending', 'conflict', 'error'].includes(record._syncStatus)) {
+            collectionStats.issues.push({ 
+              id: record._id, 
+              issue: 'Invalid _syncStatus value', 
+              value: record._syncStatus 
+            });
+            isValid = false;
+          }
+          
+          if (isValid) {
+            collectionStats.validRecords++;
+            validRecords++;
+          } else {
+            collectionStats.invalidRecords++;
+            invalidRecords++;
+          }
+        }
+        
+        testResults.collections.push(collectionStats);
+      }
+
+      testResults.status = invalidRecords === 0 ? 'success' : 'warning';
+      testResults.duration = Date.now() - startTime;
+      testResults.summary = {
+        totalSampled: totalRecords,
+        validRecords,
+        invalidRecords,
+        validPercentage: totalRecords > 0 ? ((validRecords / totalRecords) * 100).toFixed(2) : 100
+      };
+      
+      logger.info('========== CACHE INTEGRITY CHECK COMPLETED ==========', testResults);
+      return testResults;
+      
+    } catch (error) {
+      const errorDetails = formatError(error, { testId });
+      logger.error('========== CACHE INTEGRITY CHECK FAILED ==========', errorDetails);
+      
+      return {
+        name: 'Cache Integrity Check',
+        status: 'error',
+        duration: Date.now() - startTime,
+        error: errorDetails.message,
+        details: { errorDetails }
+      };
+    }
+  },
+
+  mongodbSyncStatus: async (testId) => {
+    const startTime = Date.now();
+    const testResults = {
+      name: 'MongoDB Sync Status',
+      status: 'running',
+      syncData: {},
+      duration: 0
+    };
+
+    try {
+      logger.info('========== STARTING MONGODB SYNC STATUS CHECK ==========');
+      
+      const db = await getDb();
+      
+      // Check sync-metadata collection
+      const syncMetadata = await db.collection('sync-metadata').find({}).toArray();
+      
+      const now = new Date();
+      const twoMinutesAgo = new Date(now.getTime() - 2 * 60 * 1000);
+      
+      // Count pending items across collections
+      const systemsPending = await db.collection('systems').countDocuments({ _syncStatus: 'pending' });
+      const analysisPending = await db.collection('analysis-results').countDocuments({ _syncStatus: 'pending' });
+      const historyPending = await db.collection('history').countDocuments({ _syncStatus: 'pending' });
+      
+      const totalPending = systemsPending + analysisPending + historyPending;
+      
+      testResults.syncData = {
+        metadataRecords: syncMetadata.length,
+        pendingItems: {
+          systems: systemsPending,
+          analysisResults: analysisPending,
+          history: historyPending,
+          total: totalPending
+        },
+        metadata: syncMetadata
+      };
+
+      // Determine status based on last sync time and pending items
+      if (syncMetadata.length === 0) {
+        testResults.status = 'warning';
+        testResults.message = 'No sync metadata found - sync may not be initialized';
+      } else if (totalPending > 100) {
+        testResults.status = 'warning';
+        testResults.message = `${totalPending} pending items awaiting sync`;
+      } else if (totalPending > 0) {
+        testResults.status = 'success';
+        testResults.message = `${totalPending} pending items (normal)`;
+      } else {
+        testResults.status = 'success';
+        testResults.message = 'All items synced';
+      }
+      
+      testResults.duration = Date.now() - startTime;
+      
+      logger.info('========== MONGODB SYNC STATUS CHECK COMPLETED ==========', testResults);
+      return testResults;
+      
+    } catch (error) {
+      const errorDetails = formatError(error, { testId });
+      logger.error('========== MONGODB SYNC STATUS CHECK FAILED ==========', errorDetails);
+      
+      return {
+        name: 'MongoDB Sync Status',
+        status: 'error',
+        duration: Date.now() - startTime,
+        error: errorDetails.message,
+        details: { errorDetails }
+      };
+    }
+  },
+
+  syncConflictDetection: async (testId) => {
+    const startTime = Date.now();
+    const testResults = {
+      name: 'Sync Conflict Detection',
+      status: 'running',
+      conflicts: [],
+      duration: 0
+    };
+
+    try {
+      logger.info('========== STARTING SYNC CONFLICT DETECTION ==========');
+      
+      const db = await getDb();
+      const collections = ['systems', 'analysis-results', 'history'];
+      
+      let totalConflicts = 0;
+      
+      for (const collectionName of collections) {
+        const conflicts = await db.collection(collectionName)
+          .find({ _syncStatus: 'conflict' })
+          .toArray();
+        
+        if (conflicts.length > 0) {
+          testResults.conflicts.push({
+            collection: collectionName,
+            count: conflicts.length,
+            records: conflicts.map(c => ({
+              id: c._id.toString(),
+              updatedAt: c.updatedAt,
+              conflictReason: c.conflictReason || 'Unknown'
+            }))
+          });
+          totalConflicts += conflicts.length;
+        }
+      }
+
+      testResults.status = totalConflicts === 0 ? 'success' : 'warning';
+      testResults.duration = Date.now() - startTime;
+      testResults.summary = {
+        totalConflicts,
+        message: totalConflicts === 0 ? 'No sync conflicts detected' : `${totalConflicts} conflicts require resolution`
+      };
+      
+      logger.info('========== SYNC CONFLICT DETECTION COMPLETED ==========', testResults);
+      return testResults;
+      
+    } catch (error) {
+      const errorDetails = formatError(error, { testId });
+      logger.error('========== SYNC CONFLICT DETECTION FAILED ==========', errorDetails);
+      
+      return {
+        name: 'Sync Conflict Detection',
+        status: 'error',
+        duration: Date.now() - startTime,
+        error: errorDetails.message,
+        details: { errorDetails }
+      };
+    }
+  },
+
+  timestampConsistency: async (testId) => {
+    const startTime = Date.now();
+    const testResults = {
+      name: 'Timestamp Consistency Check',
+      status: 'running',
+      collections: [],
+      duration: 0
+    };
+
+    try {
+      logger.info('========== STARTING TIMESTAMP CONSISTENCY CHECK ==========');
+      
+      const db = await getDb();
+      const collections = ['systems', 'analysis-results', 'history'];
+      const ISO_8601_UTC_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+      
+      let totalChecked = 0;
+      let totalValid = 0;
+      let totalInvalid = 0;
+      
+      for (const collectionName of collections) {
+        logger.info(`Checking timestamps in collection: ${collectionName}`);
+        
+        const records = await db.collection(collectionName).find({}).limit(100).toArray();
+        
+        const collectionStats = {
+          name: collectionName,
+          sampled: records.length,
+          validTimestamps: 0,
+          invalidTimestamps: 0,
+          issues: []
+        };
+
+        for (const record of records) {
+          totalChecked++;
+          
+          // Check updatedAt field
+          if (record.updatedAt) {
+            if (ISO_8601_UTC_REGEX.test(record.updatedAt)) {
+              // Try to parse it
+              try {
+                new Date(record.updatedAt);
+                collectionStats.validTimestamps++;
+                totalValid++;
+              } catch (e) {
+                collectionStats.invalidTimestamps++;
+                totalInvalid++;
+                collectionStats.issues.push({
+                  id: record._id,
+                  field: 'updatedAt',
+                  issue: 'Not parseable',
+                  value: record.updatedAt
+                });
+              }
+            } else {
+              collectionStats.invalidTimestamps++;
+              totalInvalid++;
+              collectionStats.issues.push({
+                id: record._id,
+                field: 'updatedAt',
+                issue: 'Not ISO 8601 UTC format',
+                value: record.updatedAt
+              });
+            }
+          }
+        }
+        
+        testResults.collections.push(collectionStats);
+      }
+
+      testResults.status = totalInvalid === 0 ? 'success' : 'warning';
+      testResults.duration = Date.now() - startTime;
+      testResults.summary = {
+        totalChecked,
+        validTimestamps: totalValid,
+        invalidTimestamps: totalInvalid,
+        consistencyPercentage: totalChecked > 0 ? ((totalValid / totalChecked) * 100).toFixed(2) : 100
+      };
+      
+      logger.info('========== TIMESTAMP CONSISTENCY CHECK COMPLETED ==========', testResults);
+      return testResults;
+      
+    } catch (error) {
+      const errorDetails = formatError(error, { testId });
+      logger.error('========== TIMESTAMP CONSISTENCY CHECK FAILED ==========', errorDetails);
+      
+      return {
+        name: 'Timestamp Consistency Check',
+        status: 'error',
+        duration: Date.now() - startTime,
+        error: errorDetails.message,
+        details: { errorDetails }
+      };
+    }
+  },
+
+  dataIntegrityChecksum: async (testId) => {
+    const startTime = Date.now();
+    const testResults = {
+      name: 'Data Integrity Checksum',
+      status: 'running',
+      checksums: {},
+      duration: 0
+    };
+
+    try {
+      logger.info('========== STARTING DATA INTEGRITY CHECKSUM ==========');
+      
+      const db = await getDb();
+      const collections = ['systems', 'analysis-results', 'history'];
+      
+      for (const collectionName of collections) {
+        logger.info(`Generating checksum for collection: ${collectionName}`);
+        
+        const records = await db.collection(collectionName)
+          .find({})
+          .sort({ _id: 1 })
+          .limit(1000)
+          .toArray();
+        
+        // Generate SHA-256 checksum from record IDs and updatedAt timestamps
+        const checksumData = records.map(r => 
+          `${r._id}:${r.updatedAt || 'no-timestamp'}`
+        ).join('|');
+        
+        const checksum = crypto.createHash('sha256').update(checksumData).digest('hex');
+        
+        testResults.checksums[collectionName] = {
+          recordCount: records.length,
+          checksum: checksum,
+          generated: new Date().toISOString()
+        };
+      }
+
+      testResults.status = 'success';
+      testResults.duration = Date.now() - startTime;
+      testResults.message = 'Checksums generated successfully';
+      
+      logger.info('========== DATA INTEGRITY CHECKSUM COMPLETED ==========', testResults);
+      return testResults;
+      
+    } catch (error) {
+      const errorDetails = formatError(error, { testId });
+      logger.error('========== DATA INTEGRITY CHECKSUM FAILED ==========', errorDetails);
+      
+      return {
+        name: 'Data Integrity Checksum',
+        status: 'error',
+        duration: Date.now() - startTime,
+        error: errorDetails.message,
+        details: { errorDetails }
+      };
+    }
+  },
+
+  fullSyncCycle: async (testId) => {
+    const startTime = Date.now();
+    const testResults = {
+      name: 'Full Sync Cycle Test',
+      status: 'running',
+      steps: [],
+      duration: 0
+    };
+
+    let testDocId = null;
+
+    try {
+      logger.info('========== STARTING FULL SYNC CYCLE TEST ==========');
+      
+      const db = await getDb();
+      const collection = db.collection('systems');
+      
+      // Step 1: CREATE - Insert test record
+      logger.info('Step 1/5: Creating test system record...');
+      const testDoc = {
+        name: `Sync Test ${testId}`,
+        chemistry: 'LiFePO4',
+        capacity: 100,
+        voltage: 48,
+        testData: true,
+        diagnosticTestId: testId,
+        updatedAt: new Date().toISOString(),
+        _syncStatus: 'synced',
+        createdAt: new Date().toISOString()
+      };
+      
+      const insertResult = await collection.insertOne(testDoc);
+      testDocId = insertResult.insertedId;
+      
+      testResults.steps.push({
+        step: 'create',
+        status: 'success',
+        recordId: testDocId.toString(),
+        time: Date.now() - startTime
+      });
+      
+      // Step 2: READ - Verify record exists
+      logger.info('Step 2/5: Reading back test record...');
+      const readDoc = await collection.findOne({ _id: testDocId });
+      
+      testResults.steps.push({
+        step: 'read',
+        status: readDoc ? 'success' : 'error',
+        recordFound: !!readDoc,
+        time: Date.now() - startTime
+      });
+      
+      // Step 3: UPDATE - Modify record
+      logger.info('Step 3/5: Updating test record...');
+      const updateResult = await collection.updateOne(
+        { _id: testDocId },
+        { 
+          $set: { 
+            updated: true,
+            updatedAt: new Date().toISOString(),
+            updateCount: 1
+          } 
+        }
+      );
+      
+      testResults.steps.push({
+        step: 'update',
+        status: updateResult.modifiedCount === 1 ? 'success' : 'error',
+        modifiedCount: updateResult.modifiedCount,
+        time: Date.now() - startTime
+      });
+      
+      // Step 4: VERIFY UPDATE - Read updated record
+      logger.info('Step 4/5: Verifying update...');
+      const updatedDoc = await collection.findOne({ _id: testDocId });
+      
+      testResults.steps.push({
+        step: 'verify_update',
+        status: updatedDoc && updatedDoc.updated ? 'success' : 'error',
+        updateVerified: updatedDoc && updatedDoc.updated,
+        time: Date.now() - startTime
+      });
+      
+      // Step 5: DELETE - Remove test record
+      logger.info('Step 5/5: Deleting test record...');
+      const deleteResult = await collection.deleteOne({ _id: testDocId });
+      
+      testResults.steps.push({
+        step: 'delete',
+        status: deleteResult.deletedCount === 1 ? 'success' : 'error',
+        deletedCount: deleteResult.deletedCount,
+        time: Date.now() - startTime
+      });
+      
+      // Verify deletion
+      const deletedDoc = await collection.findOne({ _id: testDocId });
+      testResults.steps.push({
+        step: 'verify_deletion',
+        status: !deletedDoc ? 'success' : 'error',
+        deletionVerified: !deletedDoc,
+        time: Date.now() - startTime
+      });
+
+      const allStepsPassed = testResults.steps.every(s => s.status === 'success');
+      testResults.status = allStepsPassed ? 'success' : 'error';
+      testResults.duration = Date.now() - startTime;
+      testResults.summary = {
+        allStepsPassed,
+        stepsCompleted: testResults.steps.length,
+        stepsFailed: testResults.steps.filter(s => s.status === 'error').length
+      };
+      
+      logger.info('========== FULL SYNC CYCLE TEST COMPLETED ==========', testResults);
+      return testResults;
+      
+    } catch (error) {
+      const errorDetails = formatError(error, { testId });
+      logger.error('========== FULL SYNC CYCLE TEST FAILED ==========', errorDetails);
+      
+      // Cleanup: Try to delete test record if it exists
+      if (testDocId) {
+        try {
+          const db = await getDb();
+          await db.collection('systems').deleteOne({ _id: testDocId });
+          logger.info('Test record cleaned up after error');
+        } catch (cleanupError) {
+          logger.warn('Failed to cleanup test record', formatError(cleanupError));
+        }
+      }
+      
+      return {
+        name: 'Full Sync Cycle Test',
+        status: 'error',
+        duration: Date.now() - startTime,
+        error: errorDetails.message,
+        steps: testResults.steps,
+        details: { errorDetails }
+      };
+    }
+  },
+
+  cacheStatistics: async (testId) => {
+    const startTime = Date.now();
+    const testResults = {
+      name: 'Cache Statistics',
+      status: 'running',
+      collections: [],
+      duration: 0
+    };
+
+    try {
+      logger.info('========== STARTING CACHE STATISTICS ==========');
+      
+      const db = await getDb();
+      const collections = ['systems', 'analysis-results', 'history'];
+      
+      let totalRecords = 0;
+      let totalPending = 0;
+      let totalSynced = 0;
+      
+      for (const collectionName of collections) {
+        logger.info(`Gathering statistics for collection: ${collectionName}`);
+        
+        const collection = db.collection(collectionName);
+        
+        const total = await collection.countDocuments({});
+        const pending = await collection.countDocuments({ _syncStatus: 'pending' });
+        const synced = await collection.countDocuments({ _syncStatus: 'synced' });
+        const noStatus = await collection.countDocuments({ _syncStatus: { $exists: false } });
+        
+        // Estimate cache size (sample-based)
+        const sampleDocs = await collection.find({}).limit(10).toArray();
+        const avgDocSize = sampleDocs.length > 0 
+          ? sampleDocs.reduce((sum, doc) => sum + JSON.stringify(doc).length, 0) / sampleDocs.length
+          : 0;
+        const estimatedSize = avgDocSize * total;
+        
+        const collectionStats = {
+          name: collectionName,
+          totalRecords: total,
+          pending,
+          synced,
+          noStatus,
+          estimatedSizeBytes: Math.round(estimatedSize),
+          estimatedSizeMB: (estimatedSize / (1024 * 1024)).toFixed(2),
+          syncPercentage: total > 0 ? ((synced / total) * 100).toFixed(2) : 0
+        };
+        
+        testResults.collections.push(collectionStats);
+        
+        totalRecords += total;
+        totalPending += pending;
+        totalSynced += synced;
+      }
+
+      testResults.status = 'success';
+      testResults.duration = Date.now() - startTime;
+      testResults.summary = {
+        totalRecords,
+        totalPending,
+        totalSynced,
+        overallSyncPercentage: totalRecords > 0 ? ((totalSynced / totalRecords) * 100).toFixed(2) : 0,
+        totalEstimatedMB: testResults.collections.reduce((sum, c) => sum + parseFloat(c.estimatedSizeMB), 0).toFixed(2)
+      };
+      
+      logger.info('========== CACHE STATISTICS COMPLETED ==========', testResults);
+      return testResults;
+      
+    } catch (error) {
+      const errorDetails = formatError(error, { testId });
+      logger.error('========== CACHE STATISTICS FAILED ==========', errorDetails);
+      
+      return {
+        name: 'Cache Statistics',
+        status: 'error',
+        duration: Date.now() - startTime,
+        error: errorDetails.message,
+        details: { errorDetails }
+      };
+    }
   }
 };
 
