@@ -31,6 +31,30 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   const [isLoading, setIsLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
+  
+  // Context window configuration
+  const [contextWindowDays, setContextWindowDays] = useState(30); // Default 1 month
+  
+  // Predefined context window options
+  const contextWindowOptions = [
+    { value: 0.04, label: '1 Hour', days: 1/24 },
+    { value: 0.125, label: '3 Hours', days: 1/8 },
+    { value: 0.5, label: '12 Hours', days: 0.5 },
+    { value: 1, label: '1 Day', days: 1 },
+    { value: 3, label: '3 Days', days: 3 },
+    { value: 7, label: '1 Week', days: 7 },
+    { value: 14, label: '2 Weeks', days: 14 },
+    { value: 30, label: '1 Month', days: 30 },
+    { value: 60, label: '2 Months', days: 60 },
+    { value: 90, label: '3 Months', days: 90 },
+    { value: 180, label: '6 Months', days: 180 },
+    { value: 365, label: '1 Year', days: 365 }
+  ];
+
+  const getContextWindowLabel = (days: number) => {
+    const option = contextWindowOptions.find(opt => opt.days === days);
+    return option ? option.label : `${days} days`;
+  };
 
   const handleGenerateInsights = async (prompt?: string) => {
     setIsLoading(true);
@@ -39,7 +63,14 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
 
     try {
       await streamInsights(
-        { analysisData, systemId, customPrompt: prompt, useEnhancedMode: true }, // Always use enhanced mode
+        { 
+          analysisData, 
+          systemId, 
+          customPrompt: prompt, 
+          useEnhancedMode: true,
+          contextWindowDays, // Pass context window configuration
+          maxIterations: prompt ? 20 : 10 // 20 for custom queries, 10 for standard
+        },
         (chunk) => { setInsights(prev => prev + chunk); },
         () => { setIsLoading(false); },
         (err) => {
@@ -112,6 +143,38 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       )}
       {!isLoading && (
         <div className="p-5 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg space-y-4 border border-gray-200">
+          {/* Context Window Slider */}
+          <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
+            <label htmlFor="context-window-slider" className="block text-sm font-semibold text-gray-700 mb-3">
+              📊 Data Analysis Window: <span className="text-blue-600">{getContextWindowLabel(contextWindowDays)}</span>
+            </label>
+            <p className="text-xs text-gray-600 mb-3">
+              Select how far back the AI should retrieve historical data for analysis.
+              Larger windows provide more context but may take longer to process.
+            </p>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-500 whitespace-nowrap">1 Hour</span>
+              <input
+                id="context-window-slider"
+                type="range"
+                min="0"
+                max="11"
+                step="1"
+                value={contextWindowOptions.findIndex(opt => opt.days === contextWindowDays)}
+                onChange={(e) => {
+                  const index = parseInt(e.target.value, 10);
+                  setContextWindowDays(contextWindowOptions[index].days);
+                }}
+                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+              />
+              <span className="text-xs text-gray-500 whitespace-nowrap">1 Year</span>
+            </div>
+            <div className="mt-2 flex justify-between text-xs text-gray-500">
+              <span>Recent</span>
+              <span>Comprehensive</span>
+            </div>
+          </div>
+          
           <div className="flex flex-col sm:flex-row items-center gap-4">
             <button
               type="button"

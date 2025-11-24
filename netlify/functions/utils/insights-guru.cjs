@@ -2248,6 +2248,137 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push("   • granularity: 'hourly_avg', 'daily_avg', or 'raw'");
     
     lines.push("\n⛔ NEVER RESPOND WITH 'DATA UNAVAILABLE' OR 'LIMITED TO X DAYS' IF:");
+    lines.push("   1. The requested date is within the queryable range shown above");
+    lines.push("   2. You haven't actually CALLED request_bms_data yet");
+    lines.push("   3. The data exists - you just need to request it with the correct tool call");
+    
+    lines.push("\n🚫 COMMON MISTAKES TO AVOID:");
+    lines.push("   ❌ Claiming 'insufficient data' without calling request_bms_data");
+    lines.push("   ❌ Using wrong date format (must be ISO 8601)");
+    lines.push("   ❌ Requesting dates outside the queryable range");
+    lines.push("   ❌ Using incorrect systemId (copy EXACTLY from above)");
+    lines.push("   ❌ Requesting 'all' metrics for large time ranges (causes timeout)");
+    lines.push("   ✅ ALWAYS call request_bms_data BEFORE claiming data unavailable!");
+    
+    lines.push("\n💡 QUICK START EXAMPLES:");
+    lines.push(`\n**Example 1: Get last 7 days of SOC data**`);
+    if (minDate && maxDate) {
+        const exampleEnd = new Date(maxDate);
+        const exampleStart = new Date(exampleEnd);
+        exampleStart.setDate(exampleStart.getDate() - 7);
+        lines.push(`Call request_bms_data with:`);
+        lines.push(`   systemId: "${systemId}"`);
+        lines.push(`   metric: "soc"`);
+        lines.push(`   time_range_start: "${exampleStart.toISOString()}"`);
+        lines.push(`   time_range_end: "${exampleEnd.toISOString()}"`);
+        lines.push(`   granularity: "daily_avg"`);
+    }
+    
+    lines.push(`\n**Example 2: Get yesterday's hourly current data**`);
+    if (minDate && maxDate) {
+        const yesterday = new Date(maxDate);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayEnd = new Date(yesterday);
+        yesterdayEnd.setHours(23, 59, 59, 999);
+        const yesterdayStart = new Date(yesterday);
+        yesterdayStart.setHours(0, 0, 0, 0);
+        lines.push(`Call request_bms_data with:`);
+        lines.push(`   systemId: "${systemId}"`);
+        lines.push(`   metric: "current"`);
+        lines.push(`   time_range_start: "${yesterdayStart.toISOString()}"`);
+        lines.push(`   time_range_end: "${yesterdayEnd.toISOString()}"`);
+        lines.push(`   granularity: "hourly_avg"`);
+    }
+    
+    lines.push(`\n**Example 3: Get full historical voltage trend**`);
+    if (minDate && maxDate) {
+        lines.push(`Call request_bms_data with:`);
+        lines.push(`   systemId: "${systemId}"`);
+        lines.push(`   metric: "voltage"`);
+        lines.push(`   time_range_start: "${new Date(minDate).toISOString()}"`);
+        lines.push(`   time_range_end: "${new Date(maxDate).toISOString()}"`);
+        lines.push(`   granularity: "daily_avg" (use daily for long ranges)`);
+    }
+    
+    lines.push("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    lines.push("🎓 REMEMBER:");
+    lines.push("   • You have COMPLETE access to all historical data");
+    lines.push("   • ALWAYS use request_bms_data for historical comparisons");
+    lines.push("   • NEVER claim 'data unavailable' without trying to request it first");
+    lines.push("   • Copy the systemId EXACTLY as shown above");
+    lines.push("   • Use ISO 8601 date format: YYYY-MM-DDTHH:mm:ss.sssZ");
+    lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    
+    return lines.join("\n");
+}
+
+/**
+ * Build a comprehensive quick-reference catalog for data access
+ * This is a condensed version for error recovery scenarios
+ */
+function buildQuickReferenceCatalog(systemId, startDate, endDate, totalRecords = 0) {
+    const lines = [];
+    
+    lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    lines.push("📚 QUICK REFERENCE: DATA ACCESS CATALOG");
+    lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    
+    lines.push(`\n🔑 YOUR SYSTEM ID: "${systemId}"`);
+    lines.push("   ☝️ USE THIS EXACT VALUE IN ALL TOOL CALLS");
+    
+    if (startDate && endDate) {
+        const days = Math.floor((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24));
+        lines.push(`\n📅 FULL QUERYABLE RANGE: ${startDate} to ${endDate}`);
+        lines.push(`   📊 ${days} days | ${totalRecords || 'Many'} snapshots available`);
+        lines.push(`   ✅ ALL DATA ACCESSIBLE - You can query ANY date in this range!`);
+    }
+    
+    lines.push("\n🛠️ PRIMARY DATA ACCESS TOOL: request_bms_data");
+    lines.push("   Required parameters:");
+    lines.push(`     • systemId: "${systemId}" ← COPY THIS EXACTLY`);
+    lines.push("     • metric: Choose ONE: 'voltage', 'current', 'soc', 'power', 'capacity', 'temperature'");
+    lines.push(`     • time_range_start: ISO format, e.g., "${startDate}"`);
+    lines.push(`     • time_range_end: ISO format, e.g., "${endDate}"`);
+    lines.push("     • granularity: 'hourly_avg' (detailed) or 'daily_avg' (trends)");
+    
+    lines.push("\n📖 COMPLETE TOOL LIST:");
+    lines.push("   1. request_bms_data - Get historical BMS data (voltage, current, SOC, etc.)");
+    lines.push("   2. getWeatherData - Weather data for location/timestamp");
+    lines.push("   3. getSolarEstimate - Expected solar generation for date range");
+    lines.push("   4. getSystemAnalytics - Comprehensive usage statistics");
+    lines.push("   5. predict_battery_trends - Forecast capacity, efficiency, lifetime");
+    lines.push("   6. analyze_usage_patterns - Detect patterns and anomalies");
+    lines.push("   7. calculate_energy_budget - Solar sufficiency and autonomy");
+    lines.push("   8. get_hourly_soc_predictions - Hourly SOC predictions with interpolation");
+    
+    lines.push("\n⚡ WORKING EXAMPLE:");
+    lines.push("   To get last 30 days of SOC data:");
+    if (endDate) {
+        const end = new Date(endDate);
+        const start = new Date(end);
+        start.setDate(start.getDate() - 30);
+        lines.push("   {");
+        lines.push(`     "systemId": "${systemId}",`);
+        lines.push(`     "metric": "soc",`);
+        lines.push(`     "time_range_start": "${start.toISOString()}",`);
+        lines.push(`     "time_range_end": "${end.toISOString()}",`);
+        lines.push(`     "granularity": "daily_avg"`);
+        lines.push("   }");
+    }
+    
+    lines.push("\n🚨 CRITICAL RULES:");
+    lines.push("   ❌ NEVER say 'data unavailable' without calling the tool first");
+    lines.push("   ❌ NEVER use wrong systemId or date format");
+    lines.push("   ✅ ALWAYS call request_bms_data for historical data");
+    lines.push("   ✅ ALWAYS use exact systemId shown above");
+    lines.push("   ✅ ALWAYS use ISO 8601 date format (YYYY-MM-DDTHH:mm:ss.sssZ)");
+    
+    lines.push("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    
+    return lines.join("\n");
+}
+
+async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push("   • The requested date is within your queryable range shown above");
     lines.push("   • You haven't tried calling request_bms_data yet");
     lines.push("   • You're being asked to compare dates or time periods");
@@ -2512,5 +2643,7 @@ function formatComparativePeriodsSection(comparativePeriods) {
 module.exports = {
     collectAutoInsightsContext,
     buildGuruPrompt,
-    summarizeContextForClient
+    summarizeContextForClient,
+    buildQuickReferenceCatalog,
+    buildDataAvailabilitySummary
 };

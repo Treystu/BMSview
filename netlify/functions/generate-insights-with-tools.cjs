@@ -40,7 +40,9 @@ exports.handler = async (event, context) => {
       analysisData, 
       systemId, 
       customPrompt,
-      mode = DEFAULT_MODE 
+      mode = DEFAULT_MODE,
+      contextWindowDays, // Optional: days of historical data to retrieve
+      maxIterations // Optional: max ReAct loop iterations
     } = body;
 
     // Validate input
@@ -58,7 +60,9 @@ exports.handler = async (event, context) => {
       hasAnalysisData: !!analysisData,
       hasSystemId: !!systemId,
       hasCustomPrompt: !!customPrompt,
-      mode
+      mode,
+      contextWindowDays,
+      maxIterations
     });
 
     // SYNC MODE: Execute ReAct loop directly (with timeout protection)
@@ -72,7 +76,9 @@ exports.handler = async (event, context) => {
             systemId,
             customPrompt,
             log,
-            mode: 'sync'
+            mode: 'sync',
+            contextWindowDays,
+            maxIterations
           }),
           new Promise((_, reject) => 
             setTimeout(() => reject(new Error('TIMEOUT')), SYNC_MODE_TIMEOUT_MS)
@@ -139,7 +145,9 @@ exports.handler = async (event, context) => {
         analysisData,
         systemId,
         customPrompt,
-        initialSummary: null
+        initialSummary: null,
+        contextWindowDays,
+        maxIterations
       }, log);
       
       if (!job || !job.id) {

@@ -630,6 +630,8 @@ export const streamInsights = async (
         systemId?: string;
         customPrompt?: string;
         useEnhancedMode?: boolean;
+        contextWindowDays?: number; // Days of historical data to retrieve
+        maxIterations?: number; // Max ReAct loop iterations
     },
     onChunk: (chunk: string) => void,
     onComplete: () => void,
@@ -644,6 +646,8 @@ export const streamInsights = async (
         systemId: payload.systemId,
         hasCustomPrompt: !!payload.customPrompt,
         useEnhancedMode: payload.useEnhancedMode,
+        contextWindowDays: payload.contextWindowDays,
+        maxIterations: payload.maxIterations,
         dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
     });
 
