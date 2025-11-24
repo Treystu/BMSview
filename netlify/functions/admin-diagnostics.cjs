@@ -1,6 +1,21 @@
 const { getDb, getCollection } = require('./utils/mongodb.cjs');
 const { ObjectId } = require('mongodb');
 const { createLogger } = require('./utils/logger.cjs');
+
+/**
+ * @param {import('./utils/logger.cjs').LogFunction} log
+ */
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  if (!process.env.GEMINI_API_KEY) {
+    log.error('Missing GEMINI_API_KEY environment variable');
+    return false;
+  }
+  return true;
+}
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 const { executeReActLoop } = require('./utils/react-loop.cjs');
 const { createInsightsJob, getInsightsJob, updateJobStatus } = require('./utils/insights-jobs.cjs');
@@ -3764,6 +3779,13 @@ exports.handler = async (event, context) => {
 
     // Update logger with actual request context
     logger = createLogger('admin-diagnostics', context);
+    
+    if (!validateEnvironment(logger)) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Server configuration error' })
+      };
+    }
 
     logger.info('========================================');
     logger.info('ADMIN DIAGNOSTICS STARTED');

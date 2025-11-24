@@ -23,8 +23,9 @@
  * @returns {object} Solar position data
  */
 function calculateSolarPosition(timestamp, latitude, longitude) {
-  const date = new Date(timestamp);
-  const year = date.getFullYear();
+  try {
+    const date = new Date(timestamp);
+    const year = date.getFullYear();
   const month = date.getMonth() + 1;
   const day = date.getDate();
   const hour = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
@@ -95,7 +96,11 @@ function calculateSolarPosition(timestamp, latitude, longitude) {
     hourAngle: roundTo(ha, 2),
     declination: roundTo(decl, 2),
     isSunUp: altitude > 0
-  };
+    };
+  } catch (error) {
+    console.error('Error in calculateSolarPosition:', error);
+    return { altitude: 0, azimuth: 0, isSunUp: false };
+  }
 }
 
 /**

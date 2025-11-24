@@ -1,7 +1,19 @@
-const { createLogger } = require('../../utils/logger.cjs');
+const { createLogger } = require('./utils/logger.cjs');
+
+function validateEnvironment(log) {
+  // No specific env vars required for this function, but good practice to have the hook.
+  return true;
+}
 
 exports.handler = async (event, context) => {
   const log = createLogger('debug-insights', context);
+  
+  if (!validateEnvironment(log)) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Server configuration error' })
+    };
+  }
 
   try {
     const body = event.body ? JSON.parse(event.body) : {};

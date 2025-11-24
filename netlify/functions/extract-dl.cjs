@@ -1,5 +1,10 @@
 const { createLogger } = require('./utils/logger.cjs');
 
+function validateEnvironment(log) {
+  // No specific env vars required for this function, but good practice to have the hook.
+  return true;
+}
+
 const respond = (statusCode, body) => ({
     statusCode,
     body: JSON.stringify(body),
@@ -8,6 +13,14 @@ const respond = (statusCode, body) => ({
 
 exports.handler = async function(event, context) {
     const log = createLogger('extract-dl', context);
+    
+    if (!validateEnvironment(log)) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Server configuration error' })
+      };
+    }
+    
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const { httpMethod, body } = event;
     const logContext = { clientIp, httpMethod };

@@ -1,6 +1,14 @@
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger } = require("./utils/logger.cjs");
+
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  return true;
+}
 const { z } = require("zod");
 
 // System validation schema

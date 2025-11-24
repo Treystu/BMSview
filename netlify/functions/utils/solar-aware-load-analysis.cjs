@@ -27,9 +27,10 @@ const { calculateSolarIrradiance } = require('./solar-irradiance.cjs');
  * This is the core function that separates solar from load
  */
 async function analyzeSolarAwareLoads(systemId, system, records, log) {
-  if (records.length < 48) {
-    return {
-      insufficient_data: true,
+  try {
+    if (records.length < 48) {
+      return {
+        insufficient_data: true,
       message: 'Need at least 48 hours for solar-aware load analysis'
     };
   }
@@ -370,6 +371,13 @@ async function analyzeSolarAwareLoads(systemId, system, records, log) {
         : 0
     }
   };
+  } catch (error) {
+    log.error('Error in analyzeSolarAwareLoads', { error: error.message, stack: error.stack });
+    return {
+      error: true,
+      message: 'Failed to analyze solar-aware loads'
+    };
+  }
 }
 
 /**

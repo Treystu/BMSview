@@ -7,20 +7,29 @@
 
 const { createLogger } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
-
-// Import the breaker map from retry.cjs to check states
-// Note: This is a direct reference to the in-memory circuit breaker state
 const { getCircuitBreakerStatus } = require('./utils/retry.cjs');
 
+function validateEnvironment(log) {
+  // No specific env vars required for this function, but good practice to have the hook.
+  return true;
+}
+
 exports.handler = async (event, context) => {
+  const log = createLogger('circuit-breaker-status', context);
+
+  if (!validateEnvironment(log)) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Server configuration error' })
+    };
+  }
+
   const headers = getCorsHeaders(event);
   
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
-
-  const log = createLogger('circuit-breaker-status', context);
 
   try {
     log.info('Circuit breaker status requested');

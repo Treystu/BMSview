@@ -9,12 +9,27 @@ const { createLogger } = require('./utils/logger.cjs');
 const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
 const { getInsightsJob, failJob } = require('./utils/insights-jobs.cjs');
 
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  return true;
+}
+
 /**
  * Handler for background job invocations
  * Can be triggered via HTTP or direct invocation
  */
 exports.handler = async (event, context) => {
   const log = createLogger('generate-insights-background', context);
+  
+  if (!validateEnvironment(log)) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Server configuration error' })
+    };
+  }
 
   try {
     // Parse job details from event

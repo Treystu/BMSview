@@ -1,11 +1,28 @@
 const { MongoClient } = require('mongodb');
+const { createLogger } = require('./utils/logger.cjs');
 
-// MongoDB connection
-const client = new MongoClient(process.env.MONGODB_URI);
-const database = client.db('battery-analysis');
+// Validate environment variables
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  return true;
+}
 
 exports.handler = async (event, context) => {
-  // Enable CORS
+  const log = createLogger('admin-systems', context);
+  
+  if (!validateEnvironment(log)) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Server configuration error' })
+    };
+  }
+
+  const client = new MongoClient(process.env.MONGODB_URI);
+  const database = client.db('battery-analysis');
+  
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
@@ -13,7 +30,6 @@ exports.handler = async (event, context) => {
     'Content-Type': 'application/json'
   };
 
-  // Handle preflight requests
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
@@ -33,16 +49,16 @@ exports.handler = async (event, context) => {
       
       switch (filter) {
         case 'unadopted':
-          systems = await getUnadoptedSystems();
+          systems = await getUnadoptedSystems(database, log);
           break;
         case 'adopted':
-          systems = await getAdoptedSystems(userId);
+          systems = await getAdoptedSystems(database, userId, log);
           break;
         case 'all':
-          systems = await getAllSystems();
+          systems = await getAllSystems(database, log);
           break;
         default:
-          systems = await getUnadoptedSystems();
+          systems = await getUnadoptedSystems(database, log);
       }
 
       return {
@@ -63,23 +79,23 @@ exports.handler = async (event, context) => {
         };
       }
 
-      const result = await adoptSystem(systemId, userId);
+      const result = await adoptSystem(database, systemId, userId, log);
       
       if (result.success) {
         return {
           statusCode: 200,
           headers,
-          body: JSON.stringify({ 
-            success: true, 
-            message: 'System adopted successfully' 
+          body: JSON.stringify({
+            success: true,
+            message: 'System adopted successfully'
           })
         };
       } else {
         return {
           statusCode: 400,
           headers,
-          body: JSON.stringify({ 
-            error: result.error || 'Failed to adopt system' 
+          body: JSON.stringify({
+            error: result.error || 'Failed to adopt system'
           })
         };
       }
@@ -92,7 +108,7 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
-    console.error('Admin systems error:', error);
+    log.error('Admin systems error:', { error: error.message, stack: error.stack });
     return {
       statusCode: 500,
       headers,

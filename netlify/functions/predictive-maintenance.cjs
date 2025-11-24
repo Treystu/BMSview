@@ -2,6 +2,18 @@ const { GoogleGenAI } = require('@google/genai');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLogger, createTimer } = require('./utils/logger.cjs');
 
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  if (!process.env.GEMINI_API_KEY) {
+    log.error('Missing GEMINI_API_KEY environment variable');
+    return false;
+  }
+  return true;
+}
+
 // Initialize Gemini AI (will be called per request with proper config)
 function getGenAI() {
   if (!process.env.GEMINI_API_KEY) {

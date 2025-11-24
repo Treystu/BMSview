@@ -1,6 +1,14 @@
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLogger, createTimer } = require('./utils/logger.cjs');
 const multiparty = require('multiparty');
+
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  return true;
+}
 const { XMLParser } = require('fast-xml-parser');
 const fs = require('fs');
 

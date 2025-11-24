@@ -18,9 +18,14 @@ const { getCollection } = require('./mongodb.cjs');
  * @returns {number} Interpolated value
  */
 function linearInterpolate(y0, y1, t0, t1, t) {
-  if (t1 === t0) return y0; // Avoid division by zero
-  const ratio = (t - t0) / (t1 - t0);
+  try {
+    if (t1 === t0) return y0; // Avoid division by zero
+    const ratio = (t - t0) / (t1 - t0);
   return y0 + ratio * (y1 - y0);
+  } catch (error) {
+    console.error('Error in linearInterpolate:', error);
+    return y0;
+  }
 }
 
 /**

@@ -1,6 +1,14 @@
 const { getDb } = require('./utils/mongodb.cjs');
 const { createLogger } = require('./utils/logger.cjs');
 
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  return true;
+}
+
 /**
  * Netlify Function: diagnostics-progress
  * 
@@ -12,6 +20,13 @@ const { createLogger } = require('./utils/logger.cjs');
  */
 exports.handler = async (event, context) => {
   const logger = createLogger('diagnostics-progress', context);
+  
+  if (!validateEnvironment(logger)) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Server configuration error' })
+    };
+  }
   
   try {
     // Handle CORS

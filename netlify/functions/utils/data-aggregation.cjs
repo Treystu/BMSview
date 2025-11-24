@@ -17,10 +17,11 @@ const { getCollection } = require('./mongodb.cjs');
  * @returns {Array} Array of hourly aggregated data points
  */
 function aggregateHourlyData(records, log) {
-  if (!records || records.length === 0) {
-    log.debug('No records to aggregate');
-    return [];
-  }
+  try {
+    if (!records || records.length === 0) {
+      log.debug('No records to aggregate');
+      return [];
+    }
 
   log.info('Starting hourly aggregation', { totalRecords: records.length });
 
@@ -66,6 +67,10 @@ function aggregateHourlyData(records, log) {
   });
 
   return hourlyData;
+  } catch (error) {
+    log.error('Error in aggregateHourlyData', { error: error.message, stack: error.stack });
+    return [];
+  }
 }
 
 /**

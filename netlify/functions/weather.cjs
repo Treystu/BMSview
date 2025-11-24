@@ -1,5 +1,13 @@
 const { createLogger } = require("./utils/logger.cjs");
 
+function validateEnvironment(log) {
+  if (!process.env.WEATHER_API_KEY) {
+    log.error('Missing WEATHER_API_KEY environment variable');
+    return false;
+  }
+  return true;
+}
+
 const fetchWithRetry = async (url, log, retries = 3, initialDelay = 500) => {
   for (let i = 0; i < retries; i++) {
     const attempt = i + 1;

@@ -4,6 +4,14 @@
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger } = require("./utils/logger.cjs");
 
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  return true;
+}
+
 class HttpError extends Error {
     constructor(statusCode, message) {
         super(message);
@@ -165,6 +173,14 @@ const checkSecurity = async (request, log) => {
 
 exports.handler = async function(event, context) {
     const log = createLogger('security-handler', context);
+    
+    if (!validateEnvironment(log)) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Server configuration error' })
+      };
+    }
+    
     const clientIp = event.headers['x-nf-client-connection-ip'];
     const logContext = { clientIp, httpMethod: event.httpMethod };
 

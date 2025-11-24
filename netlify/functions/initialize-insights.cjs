@@ -11,6 +11,18 @@
 const { createLogger } = require('./utils/logger.cjs');
 const { getGeminiClient } = require('./utils/geminiClient.cjs');
 const { toolDefinitions, executeToolCall } = require('./utils/gemini-tools.cjs');
+
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  if (!process.env.GEMINI_API_KEY) {
+    log.error('Missing GEMINI_API_KEY environment variable');
+    return false;
+  }
+  return true;
+}
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 // Full timeout for initialization (Netlify Pro allows 26 seconds)
@@ -30,6 +42,13 @@ exports.handler = async (event, context) => {
   }
 
   const log = createLogger('initialize-insights', context);
+  
+  if (!validateEnvironment(log)) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Server configuration error' })
+    };
+  }
   const startTime = Date.now();
 
   try {

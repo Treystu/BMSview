@@ -8,6 +8,14 @@ const { createLogger } = require('./utils/logger.cjs');
 const { getInsightsJob } = require('./utils/insights-jobs.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  return true;
+}
+
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
   

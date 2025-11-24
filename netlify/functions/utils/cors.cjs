@@ -10,9 +10,13 @@
  * @returns {string[]} Array of allowed origins
  */
 function getAllowedOrigins() {
-  const envOrigins = process.env.ALLOWED_ORIGINS;
-  if (envOrigins) {
-    return envOrigins.split(',').map(o => o.trim());
+  try {
+    const envOrigins = process.env.ALLOWED_ORIGINS;
+    if (envOrigins) {
+      return envOrigins.split(',').map(o => o.trim());
+    }
+  } catch (error) {
+    console.error('Error parsing ALLOWED_ORIGINS:', error);
   }
   
   // Default: Allow Netlify deployment URLs and localhost for development

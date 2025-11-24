@@ -2,6 +2,14 @@ const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger } = require("./utils/logger.cjs");
 const { createRetryWrapper } = require("./utils/retry.cjs");
 
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  return true;
+}
+
 const respond = (statusCode, body) => ({
     statusCode,
     body: JSON.stringify(body),

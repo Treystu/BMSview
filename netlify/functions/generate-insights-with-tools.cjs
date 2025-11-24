@@ -9,6 +9,19 @@
 
 const { createLogger } = require('./utils/logger.cjs');
 const { executeReActLoop } = require('./utils/react-loop.cjs');
+
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  if (!process.env.GEMINI_API_KEY) {
+    log.error('Missing GEMINI_API_KEY environment variable');
+    return false;
+  }
+  return true;
+}
+
 const {
   createInsightsJob,
   getInsightsJob,

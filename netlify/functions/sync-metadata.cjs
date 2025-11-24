@@ -2,6 +2,14 @@
 
 const crypto = require("crypto");
 const { getCollection } = require("./utils/mongodb.cjs");
+
+function validateEnvironment(log) {
+  if (!process.env.MONGODB_URI) {
+    log.error('Missing MONGODB_URI environment variable');
+    return false;
+  }
+  return true;
+}
 const { createLogger } = require("./utils/logger.cjs");
 const { errorResponse } = require("./utils/errors.cjs");
 
@@ -142,6 +150,14 @@ async function calculateChecksum(payload) {
 
 exports.handler = async function (event, context) {
     const log = createLogger("sync-metadata", context);
+    
+    if (!validateEnvironment(log)) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Server configuration error' })
+      };
+    }
+    
     log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
     const requestStartedAt = Date.now();
 

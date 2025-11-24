@@ -9,15 +9,27 @@ const { createLogger } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { resetCircuitBreaker, resetAllCircuitBreakers } = require('./utils/retry.cjs');
 
+function validateEnvironment(log) {
+  // No specific env vars required for this function, but good practice to have the hook.
+  return true;
+}
+
 exports.handler = async (event, context) => {
+  const log = createLogger('circuit-breaker-reset', context);
+  
+  if (!validateEnvironment(log)) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Server configuration error' })
+    };
+  }
+  
   const headers = getCorsHeaders(event);
   
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
-
-  const log = createLogger('circuit-breaker-reset', context);
 
   try {
     // Parse request

@@ -4,6 +4,29 @@
  * This test validates the new function calling implementation
  */
 
+exports.handler = async (event, context) => {
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    await runAllTests();
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({ success: true, message: 'All tests passed' })
+    };
+  } catch (error) {
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ success: false, message: error.message })
+    };
+  }
+};
+
+function validateEnvironment(log) {
+  // No specific env vars required for this function, but good practice to have the hook.
+  return true;
+}
+
 // Mock logger for testing
 const mockLogger = {
   debug: (msg, ctx) => console.log(`[DEBUG] ${msg}`, ctx || ''),

@@ -4,8 +4,9 @@ const { createTimer } = require('./logger.cjs');
 const { executeAnalysisPipeline } = require('./analysis-pipeline.cjs');
 
 async function handleStoryModeAnalysis(requestBody, idemKey, forceReanalysis, headers, log, context) {
-  const { timeline, title, summary } = requestBody;
-  const sequenceId = uuidv4();
+  try {
+    const { timeline, title, summary } = requestBody;
+    const sequenceId = uuidv4();
   const storyTimer = createTimer(log, 'story-mode-analysis');
 
   log.info('Starting story mode analysis', { sequenceId, timelineCount: timeline.length, title });
@@ -41,6 +42,14 @@ async function handleStoryModeAnalysis(requestBody, idemKey, forceReanalysis, he
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify(story),
   };
+  } catch (error) {
+    log.error('Error in handleStoryModeAnalysis', { error: error.message, stack: error.stack });
+    return {
+      statusCode: 500,
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Failed to process story mode analysis' })
+    };
+  }
 }
 
 module.exports = { handleStoryModeAnalysis };

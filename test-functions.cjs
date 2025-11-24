@@ -48,7 +48,7 @@ class FunctionTester {
     testFunctionStructure() {
         const functionsDir = path.join(process.cwd(), 'netlify/functions');
         const functionFiles = fs.readdirSync(functionsDir)
-            .filter(file => file.endsWith('.js') && !file.startsWith('utils'))
+            .filter(file => file.endsWith('.cjs') && !file.startsWith('utils'))
             .map(file => path.join(functionsDir, file));
 
         const validFunctions = [];
@@ -86,7 +86,7 @@ class FunctionTester {
 
                 // Check for environment variable validation
                 if (fileName !== 'get-ip.js') { // Exclude simple functions
-                    const hasEnvValidation = content.includes('process.env');
+                    const hasEnvValidation = content.includes('validateEnvironment');
                     if (!hasEnvValidation) {
                         issues.push(`${fileName}: May need environment variable validation`);
                     }
@@ -110,7 +110,7 @@ class FunctionTester {
     testUtilsFunctions() {
         const utilsDir = path.join(process.cwd(), 'netlify/functions/utils');
         const utilFiles = fs.readdirSync(utilsDir)
-            .filter(file => file.endsWith('.js'))
+            .filter(file => file.endsWith('.cjs'))
             .map(file => path.join(utilsDir, file));
 
         const validUtils = [];
@@ -152,7 +152,7 @@ class FunctionTester {
     testImportConsistency() {
         const functionsDir = path.join(process.cwd(), 'netlify/functions');
         const functionFiles = fs.readdirSync(functionsDir)
-            .filter(file => file.endsWith('.js'))
+            .filter(file => file.endsWith('.cjs'))
             .map(file => path.join(functionsDir, file));
 
         const importIssues = [];
@@ -190,7 +190,7 @@ class FunctionTester {
     testEnvironmentVariables() {
         const functionsDir = path.join(process.cwd(), 'netlify/functions');
         const functionFiles = fs.readdirSync(functionsDir)
-            .filter(file => file.endsWith('.js'))
+            .filter(file => file.endsWith('.cjs'))
             .map(file => path.join(functionsDir, file));
 
         const envVars = new Set();
@@ -224,7 +224,7 @@ class FunctionTester {
     testSecurityMeasures() {
         const functionsDir = path.join(process.cwd(), 'netlify/functions');
         const functionFiles = fs.readdirSync(functionsDir)
-            .filter(file => file.endsWith('.js'))
+            .filter(file => file.endsWith('.cjs'))
             .map(file => path.join(functionsDir, file));
 
         const securityIssues = [];

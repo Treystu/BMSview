@@ -9,11 +9,16 @@
  * @param {object} [details] - Optional additional context (non-PII).
  */
 function createErrorPayload(code, message, details) {
-  const payload = { error: { code, message } };
-  if (details && typeof details === "object") {
-    payload.error.details = details;
+  try {
+    const payload = { error: { code, message } };
+    if (details && typeof details === "object") {
+      payload.error.details = details;
+    }
+    return payload;
+  } catch (error) {
+    console.error('Error in createErrorPayload:', error);
+    return { error: { code: 'internal_error', message: 'Failed to create error payload' } };
   }
-  return payload;
 }
 
 /**

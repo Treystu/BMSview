@@ -1,8 +1,25 @@
 const nodemailer = require('nodemailer');
 const { createLogger } = require("./utils/logger.cjs");
 
+function validateEnvironment(log) {
+  const required = ['EMAIL_HOST', 'EMAIL_PORT', 'EMAIL_USER', 'EMAIL_PASS', 'CONTACT_EMAIL_RECIPIENT'];
+  const missing = required.filter(v => !process.env[v]);
+  if (missing.length > 0) {
+    log.error(`Missing required environment variables: ${missing.join(', ')}`);
+    return false;
+  }
+  return true;
+}
+
 exports.handler = async function(event, context) {
   const log = createLogger('contact', context);
+  
+  if (!validateEnvironment(log)) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Server configuration error' })
+    };
+  }
   const clientIp = event.headers['x-nf-client-connection-ip'];
   const logContext = { clientIp, httpMethod: event.httpMethod };
 
