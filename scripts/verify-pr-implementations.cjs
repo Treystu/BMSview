@@ -67,35 +67,35 @@ function runVerification() {
   log('PR #172: Fix Timeout Error for Generate Insights Function', 'blue');
   log('─'.repeat(60), 'blue');
   
-  allPassed &= checkFileContains(
+  allPassed = allPassed && checkFileContains(
     'services/clientService.ts',
     ['MAX_RESUME_ATTEMPTS', 'resumeJobId', 'attemptInsightsGeneration', 'Continuing analysis'],
     'Frontend retry logic with resumeJobId support'
   );
   
-  allPassed &= checkFileContains(
+  allPassed = allPassed && checkFileContains(
     'netlify/functions/generate-insights-with-tools.cjs',
     ['getOrCreateResumableJob', 'resumeJobId', 'checkpoint', 'canResume'],
     'Backend checkpoint/resume system'
   );
   
-  allPassed &= checkFileExists(
+  allPassed = allPassed && checkFileExists(
     'netlify/functions/utils/checkpoint-manager.cjs',
     'Checkpoint manager utility exists'
   );
   
-  allPassed &= checkFileExists(
+  allPassed = allPassed && checkFileExists(
     'tests/insights-retry-resume.test.js',
     'Retry/resume test file exists'
   );
   
-  allPassed &= checkFileContains(
+  allPassed = allPassed && checkFileContains(
     'tests/insights-retry-resume.test.js',
-    ['should handle successful response on first attempt', 'should automatically retry', 'should save checkpoint state'],
+    ['should handle successful response on first attempt', 'should automatically retry when receiving 408 with resumeJobId', 'should save checkpoint state on timeout'],
     'Test cases for retry/resume functionality'
   );
   
-  allPassed &= checkFileExists(
+  allPassed = allPassed && checkFileExists(
     'INSIGHTS_TIMEOUT_FIX.md',
     'Documentation for timeout fix exists'
   );
@@ -106,19 +106,19 @@ function runVerification() {
   log('PR #161: Fix Background Mode Insights Generation', 'blue');
   log('─'.repeat(60), 'blue');
   
-  allPassed &= checkFileContains(
+  allPassed = allPassed && checkFileContains(
     'netlify/functions/utils/insights-processor.cjs',
     ['executeReActLoop', 'processInsightsInBackground', 'mode: \'background\''],
     'Background processor uses executeReActLoop'
   );
   
-  allPassed &= checkFileContains(
+  allPassed = allPassed && checkFileContains(
     'netlify/functions/utils/insights-processor.cjs',
     ['contextWindowDays', 'maxIterations', 'modelOverride'],
     'Background processor accepts all parameters'
   );
   
-  allPassed &= checkFileContains(
+  allPassed = allPassed && checkFileContains(
     'netlify/functions/utils/react-loop.cjs',
     ['DEFAULT_MAX_TURNS'],
     'ReAct loop exports DEFAULT_MAX_TURNS constant'
@@ -142,20 +142,20 @@ function runVerification() {
   log('PR #173: Fix Failed Test for Analyze Endpoint', 'blue');
   log('─'.repeat(60), 'blue');
   
-  allPassed &= checkFileContains(
+  allPassed = allPassed && checkFileContains(
     'netlify/functions/admin-diagnostics.cjs',
     ['getRealProductionData', 'imageData', '$exists: true, $ne: null'],
     'Admin diagnostics uses real production data query'
   );
   
-  allPassed &= checkFileContains(
+  allPassed = allPassed && checkFileContains(
     'netlify/functions/admin-diagnostics.cjs',
     ['testImageData', 'sourceRecord.imageData'],
     'Safety check for imageData before Gemini API call'
   );
   
   // Verify cleanup logic exists
-  allPassed &= checkFileContains(
+  allPassed = allPassed && checkFileContains(
     'netlify/functions/admin-diagnostics.cjs',
     ['deleteOne', 'cleanup'],
     'Cleanup logic with verification exists'
