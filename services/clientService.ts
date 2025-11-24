@@ -2340,6 +2340,27 @@ export const uploadStoryPhoto = async (storyId: string, photo: File, caption: st
     });
 };
 
+export const checkHashes = async (hashes: string[]): Promise<{ duplicates: string[], upgrades: string[] }> => {
+    if (hashes.length === 0) {
+        return { duplicates: [], upgrades: [] };
+    }
+    log('info', 'Checking file hashes against the backend for duplicates and upgrades.', { count: hashes.length });
+    try {
+        const response = await apiFetch<{ duplicates: string[], upgrades: string[] }>('check-hashes', {
+            method: 'POST',
+            body: JSON.stringify({ hashes }),
+        });
+        return {
+            duplicates: response.duplicates || [],
+            upgrades: response.upgrades || [],
+        };
+    } catch (error) {
+        log('error', 'Failed to check hashes.', { error: error instanceof Error ? error.message : String(error) });
+        // In case of error, assume no hashes exist to avoid blocking uploads
+        return { duplicates: [], upgrades: [] };
+    }
+};
+
 /**
  * Run a single diagnostic test using the scope parameter for granular execution
  * This enables real-time updates as individual tests complete

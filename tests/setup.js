@@ -1,3 +1,17 @@
+const fs = require('fs');
+const path = require('path');
+
+const envPath = path.resolve(__dirname, '../.env.test');
+if (fs.existsSync(envPath)) {
+  const envConfig = fs.readFileSync(envPath, 'utf8');
+  envConfig.split('\n').forEach(line => {
+    const [key, value] = line.split('=');
+    if (key && value) {
+      process.env[key.trim()] = value.trim().replace(/"/g, '');
+    }
+  });
+}
+
 // Test setup file for Jest
 jest.setTimeout(60000); // Increased timeout for real API calls
 

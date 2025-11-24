@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import JSZip from 'jszip';
+import { sha256Browser } from '../utils';
+import { checkHashes } from '../services/clientService';
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({
@@ -34,6 +36,7 @@ interface FileUploadOptions {
 
 export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) => {
     const [files, setFiles] = useState<File[]>([]);
+    const [skippedFiles, setSkippedFiles] = useState<Map<string, string>>(new Map());
     const [previews, setPreviews] = useState<string[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
     const [fileError, setFileError] = useState<string | null>(null);
@@ -78,7 +81,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
         }
     }, []);
 
-    const processFileList = useCallback((fileList: FileList) => {
+    const processFileList = useCallback(async (fileList: FileList) => {
         log('info', 'Processing new file list.', { count: fileList.length });
         setFileError(null);
         const fileArray = Array.from(fileList);
@@ -96,10 +99,36 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
         }
 
         const zipFiles = fileArray.filter(f => f.name.endsWith('.zip') || f.type === 'application/zip' || f.type === 'application/x-zip-compressed');
-        
-        if (validImageFiles.length > 0) {
-            setFiles(prevFiles => [...prevFiles, ...validImageFiles]);
-        }
+
+        const imageProcessingPromise = (async () => {
+            if (validImageFiles.length > 0) {
+                setIsProcessing(true);
+                const hashes = await Promise.all(validImageFiles.map(sha256Browser));
+                const { duplicates, upgrades } = await checkHashes(hashes);
+                const duplicateSet = new Set(duplicates);
+                const upgradeSet = new Set(upgrades);
+
+                const newFiles: File[] = [];
+                const filesToUpgrade: File[] = [];
+                const newSkipped = new Map(skippedFiles);
+
+                hashes.forEach((hash, index) => {
+                    const file = validImageFiles[index];
+                    if (duplicateSet.has(hash)) {
+                        newSkipped.set(file.name, 'Skipped (duplicate)');
+                    } else if (upgradeSet.has(hash)) {
+                        filesToUpgrade.push(file);
+                    } else {
+                        newFiles.push(file);
+                    }
+                });
+                
+                // Add new files and upgrades to the main files list
+                setFiles(prev => [...prev, ...newFiles, ...filesToUpgrade.map(f => Object.assign(f, { _isUpgrade: true }))]);
+                setSkippedFiles(newSkipped);
+                setIsProcessing(false);
+            }
+        })();
 
         if (oversizedFiles.length > 0) {
             const errorMsg = `The following files are too large (max ${maxFileSizeMb}MB): ${oversizedFiles.join(', ')}. Please resize them and try again.`;
@@ -108,8 +137,12 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
         }
         
         log('info', 'File list processed.', { validImageCount: validImageFiles.length, oversizedCount: oversizedFiles.length, zipCount: zipFiles.length });
-        zipFiles.forEach(handleZipFile);
-    }, [handleZipFile, maxFileSizeBytes, maxFileSizeMb]);
+        
+        const zipProcessingPromises = zipFiles.map(handleZipFile);
+
+        await Promise.all([imageProcessingPromise, ...zipProcessingPromises]);
+
+    }, [handleZipFile, maxFileSizeBytes, maxFileSizeMb, skippedFiles]);
 
     const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         if (event.target.files) {
@@ -128,17 +161,20 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
     const clearFiles = () => {
         log('info', 'Clearing all selected files.');
         setFiles([]);
+        setSkippedFiles(new Map());
         setPreviews([]);
         setFileError(null);
     };
 
     return {
         files,
+        skippedFiles,
         previews,
         isProcessing,
         fileError,
         handleFileChange,
         handleDrop,
         clearFiles,
+        processFileList,
     };
 };

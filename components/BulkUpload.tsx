@@ -57,6 +57,7 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
 }) => {
   const {
     files,
+    skippedFiles,
     isProcessing,
     fileError,
     handleFileChange,
@@ -162,9 +163,9 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
         </label>
       </div>
 
-      {files.length > 0 && 
+      {(files.length > 0 || skippedFiles.size > 0) &&
         <div className="mt-4 text-sm text-gray-300 flex justify-between items-center">
-            <span>{files.length} file(s) selected.</span>
+            <span>{files.length} new file(s) selected, {skippedFiles.size} duplicate(s) skipped.</span>
             <button onClick={clearFiles} className="text-red-500 hover:text-red-400 text-xs font-semibold">CLEAR SELECTION</button>
         </div>
       }
@@ -198,37 +199,45 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
         </div>
       )}
 
-      {results.length > 0 && (
-          <div className="mt-6">
-              <div className="flex justify-between items-center mb-2">
-                <h4 className="font-semibold text-white">Ingestion Progress</h4>
-                <button onClick={() => dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: [] })} className="text-sm text-gray-400 hover:text-white hover:underline">Clear Results</button>
-              </div>
+      {(results.length > 0 || skippedFiles.size > 0) && (
+        <div className="mt-6">
+            <div className="flex justify-between items-center mb-2">
+              <h4 className="font-semibold text-white">Ingestion Progress</h4>
+              <button onClick={() => dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: [] })} className="text-sm text-gray-400 hover:text-white hover:underline">Clear Results</button>
+            </div>
 
-              <div className="w-full bg-gray-700 rounded-full h-2.5">
-                  <div className="bg-secondary h-2.5 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
-              </div>
-              <div className="text-xs text-gray-400 flex justify-between mt-2">
-                  <span>Processed: {terminalCount} / {totalFiles}</span>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 justify-end">
-                      <span className="text-blue-400 font-medium">Pending: {pendingCount}</span>
-                      <span className="text-green-400 font-medium">Success: {successCount}</span>
-                      <span className="text-yellow-400 font-medium">Skipped: {skippedCount}</span>
-                      <span className="text-red-400 font-medium">Failed: {failedCount}</span>
-                  </div>
-              </div>
+            <div className="w-full bg-gray-700 rounded-full h-2.5">
+                <div className="bg-secondary h-2.5 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
+            </div>
+            <div className="text-xs text-gray-400 flex justify-between mt-2">
+                <span>Processed: {terminalCount} / {totalFiles}</span>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 justify-end">
+                    <span className="text-blue-400 font-medium">Pending: {pendingCount}</span>
+                    <span className="text-green-400 font-medium">Success: {successCount}</span>
+                    <span className="text-yellow-400 font-medium">Skipped: {skippedCount + skippedFiles.size}</span>
+                    <span className="text-red-400 font-medium">Failed: {failedCount}</span>
+                </div>
+            </div>
 
-              <div className="mt-4 max-h-96 overflow-y-auto pr-2 space-y-2 border-t border-gray-700 pt-4">
-                  {results.map((result) => (
-                      <div key={result.fileName} className="bg-gray-900 p-3 rounded-md flex justify-between items-center text-sm">
-                          <span className="truncate pr-4 text-gray-300 flex-1">{result.fileName}</span>
-                          <div className="w-24 text-right">
-                            {renderStatus(result)}
-                          </div>
-                      </div>
-                  ))}
-              </div>
-          </div>
+            <div className="mt-4 max-h-96 overflow-y-auto pr-2 space-y-2 border-t border-gray-700 pt-4">
+                {Array.from(skippedFiles.entries()).map(([fileName, reason]) => (
+                    <div key={`skipped-${fileName}`} className="bg-gray-900 p-3 rounded-md flex justify-between items-center text-sm">
+                        <span className="truncate pr-4 text-gray-400 flex-1">{fileName}</span>
+                        <div className="w-24 text-right">
+                          <span className="font-semibold text-yellow-400">{reason}</span>
+                        </div>
+                    </div>
+                ))}
+                {results.map((result) => (
+                    <div key={result.fileName} className="bg-gray-900 p-3 rounded-md flex justify-between items-center text-sm">
+                        <span className="truncate pr-4 text-gray-300 flex-1">{result.fileName}</span>
+                        <div className="w-24 text-right">
+                          {renderStatus(result)}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
       )}
     </div>
   );

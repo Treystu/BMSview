@@ -260,41 +260,39 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
     }
 
     // Check for existing analysis by content hash (skip if force=true)
-    let shouldUpgrade = false;
+    const isUpgrade = !!imagePayload._isUpgrade;
     let existingRecordToUpgrade = null;
 
     if (!forceReanalysis) {
       try {
         const existingAnalysis = await checkExistingAnalysis(contentHash, log);
 
-        // Check if we should upgrade a low-quality record
-        if (existingAnalysis && existingAnalysis._shouldUpgrade) {
-          shouldUpgrade = true;
-          existingRecordToUpgrade = existingAnalysis._existingRecord;
-          log.info('Duplicate detected with low quality - will re-analyze to upgrade.', {
-            contentHash: contentHash.substring(0, 16) + '...',
-            existingRecordId: existingRecordToUpgrade.id,
-            existingQuality: existingRecordToUpgrade.validationScore
-          });
-          // Continue to new analysis below
-        } else if (existingAnalysis) {
-          // High-quality duplicate - return it
-          const responseBody = {
-            analysis: existingAnalysis.analysis,
-            recordId: existingAnalysis._id?.toString?.() || existingAnalysis.id,
-            fileName: existingAnalysis.fileName,
-            timestamp: existingAnalysis.timestamp,
-            isDuplicate: true
-          };
+        if (existingAnalysis) {
+          if (isUpgrade) {
+            existingRecordToUpgrade = existingAnalysis;
+            log.info('Low-quality duplicate found, proceeding with upgrade.', {
+              contentHash: contentHash.substring(0, 16) + '...',
+              recordId: existingAnalysis._id
+            });
+          } else {
+            // High-quality duplicate - return it
+            const responseBody = {
+              analysis: existingAnalysis.analysis,
+              recordId: existingAnalysis._id?.toString?.() || existingAnalysis.id,
+              fileName: existingAnalysis.fileName,
+              timestamp: existingAnalysis.timestamp,
+              isDuplicate: true
+            };
 
-          await storeIdempotentResponse(idemKey, responseBody, 'dedupe_hit');
-          const durationMs = timer.end({ recordId: responseBody.recordId, dedupe: true });
-          log.exit(200, { mode: 'sync', dedupe: true, durationMs });
-          return {
-            statusCode: 200,
-            headers: { ...headers, 'Content-Type': 'application/json' },
-            body: JSON.stringify(responseBody)
-          };
+            await storeIdempotentResponse(idemKey, responseBody, 'dedupe_hit');
+            const durationMs = timer.end({ recordId: responseBody.recordId, dedupe: true });
+            log.exit(200, { mode: 'sync', dedupe: true, durationMs });
+            return {
+              statusCode: 200,
+              headers: { ...headers, 'Content-Type': 'application/json' },
+              body: JSON.stringify(responseBody)
+            };
+          }
         }
       } catch (dedupeError) {
         // Log but continue - deduplication is not critical
@@ -436,23 +434,23 @@ async function checkExistingAnalysis(contentHash, log) {
         validationScore: existing.validationScore
       });
 
-      // Quality-based duplicate handling:
-      // If the existing record has issues (needsReview=true or low quality score),
-      // we should re-analyze instead of returning the bad record
-      const MIN_QUALITY_FOR_REUSE = 80; // Only reuse high-quality analyses
+      const criticalFields = [
+        'dlNumber', 'stateOfCharge', 'overallVoltage', 'current', 'remainingCapacity',
+        'chargeMosOn', 'dischargeMosOn', 'balanceOn', 'highestCellVoltage',
+        'lowestCellVoltage', 'averageCellVoltage', 'cellVoltageDifference',
+        'cycleCount', 'power'
+      ];
 
-      // Treat missing validationScore as low quality (0)
-      const existingQuality = existing.validationScore ?? 0;
+      const hasAllCriticalFields = criticalFields.every(field =>
+        existing.analysis &&
+        existing.analysis[field] !== null &&
+        existing.analysis[field] !== undefined
+      );
 
-      if (existing.needsReview || existingQuality < MIN_QUALITY_FOR_REUSE) {
-        log.warn('Existing record has quality issues. Will re-analyze to improve.', {
+      if (!hasAllCriticalFields) {
+        log.warn('Existing record is missing critical fields. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
-          needsReview: existing.needsReview,
-          validationScore: existingQuality,
-          minQuality: MIN_QUALITY_FOR_REUSE
         });
-
-        // Return null to trigger re-analysis, but include marker for upgrade
         return { _shouldUpgrade: true, _existingRecord: existing };
       }
 
@@ -517,12 +515,12 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
  * @param {boolean} shouldUpgrade - Whether this is upgrading a low-quality record
  * @param {Object} existingRecordToUpgrade - Existing record being upgraded (if applicable)
  */
-async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false, shouldUpgrade = false, existingRecordToUpgrade = null) {
+async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false, isUpgrade = false, existingRecordToUpgrade = null) {
   try {
     const resultsCol = await getCollection('analysis-results');
 
     // If upgrading, update the existing record instead of inserting
-    if (shouldUpgrade && existingRecordToUpgrade) {
+    if (isUpgrade && existingRecordToUpgrade) {
       const updateResult = await resultsCol.updateOne(
         { contentHash },
         {
