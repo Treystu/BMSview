@@ -167,6 +167,7 @@ export type AdminAction =
   | { type: 'OPEN_DIAGNOSTICS_MODAL' }
   | { type: 'CLOSE_DIAGNOSTICS_MODAL' }
   | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: DiagnosticsResponse | null }
+  | { type: 'UPDATE_SINGLE_DIAGNOSTIC_RESULT'; payload: { testId: string; result: DiagnosticTestResult } }
   | { type: 'SET_SELECTED_DIAGNOSTIC_TESTS'; payload: string[] }
   | { type: 'REMOVE_HISTORY_RECORD'; payload: string };
 
@@ -280,6 +281,50 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       return { ...state, isDiagnosticsModalOpen: false, diagnosticResults: null };
     case 'SET_DIAGNOSTIC_RESULTS':
       return { ...state, diagnosticResults: action.payload };
+    case 'UPDATE_SINGLE_DIAGNOSTIC_RESULT':
+      // Real-time update: replace the specific test result as it completes
+      if (!state.diagnosticResults) {
+        return state;
+      }
+      
+      const updatedResults = state.diagnosticResults.results.map(r => {
+        // Match by test ID (convert display name back to test ID)
+        const testConfig = ['database', 'gemini', 'analyze', 'insightsWithTools', 'asyncAnalysis',
+          'history', 'systems', 'dataExport', 'idempotency', 'weather', 'backfillWeather',
+          'backfillHourlyCloud', 'solarEstimate', 'systemAnalytics', 'predictiveMaintenance',
+          'contentHashing', 'errorHandling', 'logging', 'retryMechanism', 'timeout'
+        ].find(testId => {
+          // This is a simple mapping - in production we'd use DIAGNOSTIC_TEST_SECTIONS
+          return testId === action.payload.testId && r.name === action.payload.result.name;
+        });
+        
+        if (r.name === action.payload.result.name) {
+          return action.payload.result;
+        }
+        return r;
+      });
+      
+      // Recalculate summary in real-time
+      const newSummary = {
+        total: updatedResults.length,
+        success: updatedResults.filter(r => r.status === 'success').length,
+        partial: updatedResults.filter(r => r.status === 'partial').length,
+        warnings: updatedResults.filter(r => r.status === 'warning').length,
+        errors: updatedResults.filter(r => r.status === 'error').length
+      };
+      
+      return {
+        ...state,
+        diagnosticResults: {
+          ...state.diagnosticResults,
+          results: updatedResults,
+          summary: newSummary,
+          // Keep status as partial until all tests complete
+          status: updatedResults.some(r => r.status === 'running') ? 'partial' : (
+            newSummary.errors > 0 || newSummary.warnings > 0 || newSummary.partial > 0 ? 'partial' : 'success'
+          )
+        }
+      };
     case 'REMOVE_HISTORY_RECORD':
       // Remove the record from the current page and the cache immediately to allow optimistic UI updates
       const idToRemove = action.payload;

@@ -2949,14 +2949,31 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Parse request
+    // Parse request - support both query parameter scope and POST body selectedTests
     let selectedTests = Object.keys(diagnosticTests);
-    if (event.httpMethod === 'POST' && event.body) {
+    
+    // Check for scope query parameter (for granular single-test execution)
+    const queryScope = event.queryStringParameters?.scope;
+    if (queryScope) {
+      // Scope can be a single test name or comma-separated list
+      const scopeTests = queryScope.split(',').map(t => t.trim()).filter(t => diagnosticTests[t]);
+      if (scopeTests.length > 0) {
+        selectedTests = scopeTests;
+        logger.info('Query parameter scope selection', { 
+          scope: queryScope,
+          valid: selectedTests.length,
+          tests: selectedTests
+        });
+      } else {
+        logger.warn('Invalid scope parameter - no matching tests found', { scope: queryScope });
+      }
+    } else if (event.httpMethod === 'POST' && event.body) {
+      // Fallback to POST body for backward compatibility
       try {
         const { selectedTests: requestedTests } = JSON.parse(event.body);
         if (requestedTests && Array.isArray(requestedTests)) {
           selectedTests = requestedTests.filter(test => diagnosticTests[test]);
-          logger.info('Custom test selection', { 
+          logger.info('Custom test selection from POST body', { 
             requested: requestedTests.length,
             valid: selectedTests.length,
             tests: selectedTests
