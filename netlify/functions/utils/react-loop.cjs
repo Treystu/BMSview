@@ -21,8 +21,13 @@ const SYNC_CONTEXT_BUDGET_MS = 22000;
 const SYNC_TOTAL_BUDGET_MS = 55000;
 
 // Initialization sequence settings
-const INITIALIZATION_MAX_RETRIES = 100; // Effectively infinite within timeout budget
+const INITIALIZATION_MAX_RETRIES = 20; // Reasonable retry limit with exponential backoff
 const DEFAULT_CONTEXT_WINDOW_DAYS = 30; // Default 1-month lookback
+const INITIALIZATION_BUDGET_RATIO = 0.5; // Use max 50% of budget for initialization
+
+// Retry backoff settings
+const RETRY_BASE_DELAY_MS = 1000; // 1 second base delay
+const RETRY_MAX_DELAY_MS = 5000; // 5 second max delay
 
 /**
  * Analyze Gemini's response text to detect what it's struggling with
@@ -582,11 +587,12 @@ Execute the initialization now.`;
     for (attempts = 0; attempts < INITIALIZATION_MAX_RETRIES; attempts++) {
         // Check timeout budget
         const elapsedMs = Date.now() - startTime;
-        if (elapsedMs > totalBudgetMs * 0.5) { // Use max 50% of budget for initialization
-            log.warn('Initialization sequence timeout (50% of total budget used)', {
+        if (elapsedMs > totalBudgetMs * INITIALIZATION_BUDGET_RATIO) {
+            log.warn('Initialization sequence timeout (budget ratio exceeded)', {
                 attempts,
                 elapsedMs,
-                budgetMs: totalBudgetMs * 0.5
+                budgetMs: totalBudgetMs * INITIALIZATION_BUDGET_RATIO,
+                ratio: INITIALIZATION_BUDGET_RATIO
             });
             return {
                 success: false,
@@ -625,7 +631,7 @@ Execute the initialization now.`;
             });
             
             // On API errors, retry with exponential backoff
-            await new Promise(resolve => setTimeout(resolve, Math.min(1000 * Math.pow(2, attempts), 5000)));
+            await new Promise(resolve => setTimeout(resolve, Math.min(RETRY_BASE_DELAY_MS * Math.pow(2, attempts), RETRY_MAX_DELAY_MS)));
             continue;
         }
 
@@ -1318,5 +1324,7 @@ module.exports = {
     executeReActLoop,
     DEFAULT_MAX_TURNS,
     CUSTOM_QUERY_MAX_TURNS,
-    DEFAULT_CONTEXT_WINDOW_DAYS
+    DEFAULT_CONTEXT_WINDOW_DAYS,
+    INITIALIZATION_MAX_RETRIES,
+    INITIALIZATION_BUDGET_RATIO
 };

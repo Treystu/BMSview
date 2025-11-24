@@ -37,18 +37,18 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   
   // Predefined context window options
   const contextWindowOptions = [
-    { value: 0.04, label: '1 Hour', days: 1/24 },
-    { value: 0.125, label: '3 Hours', days: 1/8 },
-    { value: 0.5, label: '12 Hours', days: 0.5 },
-    { value: 1, label: '1 Day', days: 1 },
-    { value: 3, label: '3 Days', days: 3 },
-    { value: 7, label: '1 Week', days: 7 },
-    { value: 14, label: '2 Weeks', days: 14 },
-    { value: 30, label: '1 Month', days: 30 },
-    { value: 60, label: '2 Months', days: 60 },
-    { value: 90, label: '3 Months', days: 90 },
-    { value: 180, label: '6 Months', days: 180 },
-    { value: 365, label: '1 Year', days: 365 }
+    { days: 1/24, label: '1 Hour' },
+    { days: 1/8, label: '3 Hours' },
+    { days: 0.5, label: '12 Hours' },
+    { days: 1, label: '1 Day' },
+    { days: 3, label: '3 Days' },
+    { days: 7, label: '1 Week' },
+    { days: 14, label: '2 Weeks' },
+    { days: 30, label: '1 Month' },
+    { days: 60, label: '2 Months' },
+    { days: 90, label: '3 Months' },
+    { days: 180, label: '6 Months' },
+    { days: 365, label: '1 Year' }
   ];
 
   const getContextWindowLabel = (days: number) => {
@@ -69,7 +69,8 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           customPrompt: prompt, 
           useEnhancedMode: true,
           contextWindowDays, // Pass context window configuration
-          maxIterations: prompt ? 20 : 10 // 20 for custom queries, 10 for standard
+          // Iteration limits: 20 for custom queries, 10 for standard (matches react-loop.cjs constants)
+          maxIterations: prompt ? 20 : 10
         },
         (chunk) => { setInsights(prev => prev + chunk); },
         () => { setIsLoading(false); },
