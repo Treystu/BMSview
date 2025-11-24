@@ -1918,7 +1918,7 @@ export const getHourlyWeather = async (lat: number, lon: number, date: string): 
 
 export interface DiagnosticTestResult {
     name: string;
-    status: 'success' | 'warning' | 'error';
+    status: 'success' | 'warning' | 'error' | 'partial' | 'running';
     duration: number;
     details?: Record<string, any>;
     error?: string;
@@ -2213,6 +2213,107 @@ export const getDiagnosticProgress = async (testId: string): Promise<{
     });
 
     return data;
+};
+
+/**
+ * Run a single diagnostic test using the scope parameter for granular execution
+ * This enables real-time updates as individual tests complete
+ * 
+ * @param testScope - The test name to run (e.g., 'database', 'gemini', 'analyze')
+ * @returns Promise with the test result
+ */
+export const runSingleDiagnosticTest = async (testScope: string): Promise<DiagnosticTestResult> => {
+    log('info', 'Running single diagnostic test.', { testScope });
+
+    // Each test can take up to 120 seconds for complex ones like 'analyze' or 'asyncAnalysis'
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout
+
+    try {
+        const headers = {
+            'Content-Type': 'application/json',
+        } as Record<string, string>;
+
+        // Add Netlify Identity token if available
+        if (typeof window !== 'undefined' && (window as any).netlifyIdentity?.currentUser) {
+            const token = await (window as any).netlifyIdentity.currentUser()?.jwt();
+            if (token) {
+                Object.assign(headers, { 'Authorization': `Bearer ${token}` });
+            }
+        }
+
+        // Use query parameter scope for granular single-test execution
+        const response = await fetch(`/.netlify/functions/admin-diagnostics?scope=${encodeURIComponent(testScope)}`, {
+            method: 'GET',
+            headers,
+            signal: controller.signal,
+        } as RequestInit);
+
+        log('info', 'Single diagnostic test response received.', { 
+            testScope,
+            status: response.status, 
+            ok: response.ok
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            log('error', 'Single diagnostic test API error.', { 
+                testScope,
+                status: response.status, 
+                errorText: errorText.substring(0, 500)
+            });
+            
+            throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
+        }
+
+        const data = await response.json() as DiagnosticsResponse;
+        
+        // Extract the single test result from the response
+        if (data.results && data.results.length > 0) {
+            return data.results[0];
+        }
+        
+        // If no results, return error
+        return {
+            name: testScope,
+            status: 'error',
+            error: 'No result returned from server',
+            duration: 0
+        };
+    } catch (error) {
+        if (error instanceof Error) {
+            if (error.name === 'AbortError') {
+                log('error', 'Single diagnostic test timed out.', { testScope });
+                return {
+                    name: testScope,
+                    status: 'error',
+                    error: 'Test timed out after 120 seconds',
+                    duration: 120000
+                };
+            }
+            
+            log('error', 'Single diagnostic test failed.', { 
+                testScope,
+                error: error.message 
+            });
+            
+            return {
+                name: testScope,
+                status: 'error',
+                error: error.message,
+                duration: 0
+            };
+        }
+        
+        return {
+            name: testScope,
+            status: 'error',
+            error: 'Unknown error occurred',
+            duration: 0
+        };
+    } finally {
+        clearTimeout(timeoutId);
+    }
 };
 
 /**

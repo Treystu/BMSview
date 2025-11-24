@@ -19,6 +19,7 @@ import {
     mergeBmsSystems,
     registerBmsSystem,
     runDiagnostics,
+    runSingleDiagnosticTest,
     streamAllHistory,
     updateBmsSystem
 } from '../services/clientService';
@@ -531,6 +532,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     const handleRunDiagnostics = async () => {
         const selectedTests = state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS;
         
+        log('info', 'Starting real-time parallel diagnostics', { 
+            testCount: selectedTests.length,
+            tests: selectedTests 
+        });
+        
         // Create initial stub results to show tests as "running" immediately
         const initialResults = {
             status: 'partial' as const,
@@ -548,7 +554,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 total: selectedTests.length,
                 success: 0,
                 warnings: 0,
-                errors: 0
+                errors: 0,
+                partial: 0
             }
         };
         
@@ -557,124 +564,117 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: initialResults });
         dispatch({ type: 'ACTION_START', payload: 'isRunningDiagnostics' });
         
-        let pollingInterval: NodeJS.Timeout | null = null;
-        let testIdForPolling: string | null = null;
+        const startTime = Date.now();
         
         try {
-            // Start diagnostics run in background and poll for progress simultaneously
-            const diagnosticsPromise = runDiagnostics(selectedTests);
-            
-            // Start polling immediately (will initially fail until backend creates progress doc, which is fine)
-            // Extract testId from the response when it arrives
-            diagnosticsPromise.then(result => {
-                testIdForPolling = result.testId;
-            }).catch(() => {
-                // Ignore errors here, they'll be caught below
-            });
-            
-            // Poll for progress updates every 500ms
-            let pollCount = 0;
-            pollingInterval = setInterval(async () => {
-                pollCount++;
+            // Run ALL tests in parallel, each with its own API call
+            // This is the key change: instead of one monolithic call, fire multiple parallel requests
+            const testPromises = selectedTests.map(async (testId) => {
+                const testConfig = DIAGNOSTIC_TEST_SECTIONS.find(t => t.id === testId);
+                const displayName = testConfig?.label || testId;
                 
-                // Skip polling if we don't have a testId yet (first ~100ms)
-                if (!testIdForPolling && pollCount < 3) {
-                    return;
-                }
-                
-                // If we still don't have testId after a few polls, something is wrong
-                if (!testIdForPolling) {
-                    return; // Wait for main promise to resolve/reject
-                }
+                log('info', `Starting test: ${testId}`, { displayName });
                 
                 try {
-                    const progress = await getDiagnosticProgress(testIdForPolling);
+                    // Each test runs independently using the scope parameter
+                    const result = await runSingleDiagnosticTest(testId);
                     
-                    // Map completed results to display format
-                    const mappedResults = selectedTests.map(testName => {
-                        const testConfig = DIAGNOSTIC_TEST_SECTIONS.find(t => t.id === testName);
-                        const displayName = testConfig?.label || testName;
-                        
-                        const completedResult = progress.results.find(r => r.name === displayName);
-                        
-                        if (completedResult) {
-                            return completedResult;
-                        }
-                        
-                        // Test not yet completed - show as running
-                        return {
-                            name: displayName,
-                            status: 'running' as const,
-                            duration: 0
-                        };
+                    log('info', `Completed test: ${testId}`, { 
+                        displayName,
+                        status: result.status,
+                        duration: result.duration 
                     });
                     
-                    // Calculate summary from current results
-                    const summary = {
-                        total: progress.progress.total,
-                        success: mappedResults.filter(r => r.status === 'success').length,
-                        warnings: mappedResults.filter(r => r.status === 'warning').length,
-                        errors: mappedResults.filter(r => r.status === 'error').length
-                    };
-                    
-                    // Update modal with incremental results
-                    const updatedResults = {
-                        status: 'partial' as const, // Keep as partial until fully complete
-                        timestamp: progress.timestamp,
-                        duration: 0,
-                        results: mappedResults,
-                        summary
-                    };
-                    
-                    dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: updatedResults });
-                    
-                    log('info', 'Progress update', { 
-                        completed: progress.progress.completed, 
-                        total: progress.progress.total,
-                        percentage: progress.progress.percentage
+                    // Immediately update UI with this specific test result
+                    dispatch({ 
+                        type: 'UPDATE_SINGLE_DIAGNOSTIC_RESULT', 
+                        payload: { testId, result }
                     });
-                } catch (pollError) {
-                    // Log but don't stop polling - tests might still be running
-                    if (pollCount % 10 === 0) { // Only log every 10th poll to avoid spam
-                        log('warn', 'Progress polling encountered error', { 
-                            error: pollError instanceof Error ? pollError.message : 'Unknown error',
-                            pollCount 
-                        });
-                    }
+                    
+                    return result;
+                } catch (error) {
+                    const errorMessage = error instanceof Error ? error.message : 'Test failed';
+                    log('error', `Test failed: ${testId}`, { displayName, error: errorMessage });
+                    
+                    // Create error result for this test
+                    const errorResult = {
+                        name: displayName,
+                        status: 'error' as const,
+                        error: errorMessage,
+                        duration: 0
+                    };
+                    
+                    // Update UI with error immediately
+                    dispatch({ 
+                        type: 'UPDATE_SINGLE_DIAGNOSTIC_RESULT', 
+                        payload: { testId, result: errorResult }
+                    });
+                    
+                    return errorResult;
                 }
-            }, 500); // Poll every 500ms for smooth real-time updates
+            });
             
-            // Wait for the full results
-            const finalResults = await diagnosticsPromise;
+            // Wait for all tests to complete (they run in parallel)
+            const allResults = await Promise.all(testPromises);
             
-            // Stop polling
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
-            }
+            // Calculate final summary
+            const summary = {
+                total: allResults.length,
+                success: allResults.filter(r => r.status === 'success').length,
+                partial: allResults.filter(r => r.status === 'partial').length,
+                warnings: allResults.filter(r => r.status === 'warning').length,
+                errors: allResults.filter(r => r.status === 'error').length
+            };
+            
+            // Determine overall status
+            const overallStatus = summary.errors > 0 || summary.warnings > 0 || summary.partial > 0 
+                ? 'partial' as const 
+                : 'success' as const;
+            
+            // Create final results object
+            const finalResults = {
+                status: overallStatus,
+                timestamp: new Date().toISOString(),
+                duration: Date.now() - startTime,
+                results: allResults,
+                summary
+            };
             
             // Update with final complete results
             dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: finalResults });
-            log('info', 'Diagnostics completed', { 
-                total: finalResults.summary?.total,
-                success: finalResults.summary?.success,
-                errors: finalResults.summary?.errors
+            
+            log('info', 'All diagnostics completed', { 
+                duration: finalResults.duration,
+                total: summary.total,
+                success: summary.success,
+                errors: summary.errors,
+                warnings: summary.warnings
             });
             
         } catch (err) {
             const error = err instanceof Error ? err.message : 'Failed to run diagnostics.';
-            log('error', 'Diagnostics failed.', { error });
-            
-            // Clear polling interval on error
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
-            }
+            log('error', 'Diagnostics orchestration failed.', { error });
             
             // Create an error response object
             const errorResponse: any = {
                 status: 'error',
                 timestamp: new Date().toISOString(),
-                duration: 0,
-                results: [],
+                duration: Date.now() - startTime,
+                results: selectedTests.map(testId => {
+                    const testConfig = DIAGNOSTIC_TEST_SECTIONS.find(t => t.id === testId);
+                    return {
+                        name: testConfig?.label || testId,
+                        status: 'error' as const,
+                        error: 'Diagnostic orchestration failed',
+                        duration: 0
+                    };
+                }),
+                summary: {
+                    total: selectedTests.length,
+                    success: 0,
+                    warnings: 0,
+                    errors: selectedTests.length
+                },
                 error
             };
             dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: errorResponse });
