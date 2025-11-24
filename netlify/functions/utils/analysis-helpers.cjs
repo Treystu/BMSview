@@ -497,9 +497,33 @@ const validateExtractionQuality = (extractedData, analysisData, log) => {
     return result;
 };
 
+const getStoryModePrompt = (timeline, title, summary) => {
+    return `
+You are an expert in battery analysis. You will be given a timeline of BMS data, a title, and a summary.
+Your task is to analyze the timeline and provide a detailed, insightful narrative that explains the events that occurred.
+Focus on causal relationships and temporal patterns.
+
+**Title:** ${title}
+**Summary:** ${summary}
+
+**Timeline:**
+${timeline.map((record, index) => `
+**Event ${index + 1}:**
+- **Timestamp:** ${record.timestamp}
+- **SOC:** ${record.analysis.stateOfCharge}%
+- **Voltage:** ${record.analysis.overallVoltage}V
+- **Current:** ${record.analysis.current}A
+- **Power:** ${record.analysis.power}W
+`).join('')}
+
+**Analysis:**
+`;
+};
+
 module.exports = {
     getResponseSchema,
     getImageExtractionPrompt,
+    getStoryModePrompt,
     cleanAndParseJson,
     mapExtractedToAnalysisData,
     performPostAnalysis,

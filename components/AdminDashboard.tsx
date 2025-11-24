@@ -77,6 +77,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
     const [cleanupProgress] = useState<string | null>(null);
     const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
+    const [isStoryMode, setIsStoryMode] = useState(false);
+    const [storyTitle, setStoryTitle] = useState('');
+    const [storySummary, setStorySummary] = useState('');
 
     // --- Data Fetching ---
     const fetchData = useCallback(async (page: number, type: 'systems' | 'history' | 'all') => {
@@ -168,7 +171,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
      */
     const handleBulkAnalyze = async (files: File[]) => {
         if (files.length === 0) return;
-        log('info', 'Starting bulk analysis.', { fileCount: files.length });
+        log('info', 'Starting bulk analysis.', { fileCount: files.length, isStoryMode });
+
+        if (isStoryMode) {
+            // In story mode, we send all files at once.
+            // This will be handled by a new service function.
+            console.log("Story mode analysis:", { title: storyTitle, summary: storySummary, files });
+            return;
+        }
+
         dispatch({ type: 'ACTION_START', payload: 'isBulkLoading' });
         setShowRateLimitWarning(false); // Reset warning
 
@@ -732,6 +743,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         isLoading={actionStatus.isBulkLoading}
                         showRateLimitWarning={showRateLimitWarning}
                         dispatch={dispatch}
+                        isStoryMode={isStoryMode}
+                        setIsStoryMode={setIsStoryMode}
+                        storyTitle={storyTitle}
+                        setStoryTitle={setStoryTitle}
+                        storySummary={storySummary}
+                        setStorySummary={setStorySummary}
                     />
                 </section>
 

@@ -10,6 +10,12 @@ interface BulkUploadProps {
   isLoading: boolean;
   showRateLimitWarning: boolean;
   dispatch: React.Dispatch<AdminAction>;
+  isStoryMode: boolean;
+  setIsStoryMode: (isStoryMode: boolean) => void;
+  storyTitle: string;
+  setStoryTitle: (title: string) => void;
+  storySummary: string;
+  setStorySummary: (summary: string) => void;
 }
 
 // A more robust rendering function for the status of each upload.
@@ -36,7 +42,19 @@ const renderStatus = (result: DisplayableAnalysisResult) => {
 };
 
 
-const BulkUpload: React.FC<BulkUploadProps> = ({ onAnalyze, results, isLoading, showRateLimitWarning, dispatch }) => {
+const BulkUpload: React.FC<BulkUploadProps> = ({
+  onAnalyze,
+  results,
+  isLoading,
+  showRateLimitWarning,
+  dispatch,
+  isStoryMode,
+  setIsStoryMode,
+  storyTitle,
+  setStoryTitle,
+  storySummary,
+  setStorySummary,
+}) => {
   const {
     files,
     isProcessing,
@@ -89,7 +107,38 @@ const BulkUpload: React.FC<BulkUploadProps> = ({ onAnalyze, results, isLoading, 
       <h3 className="font-semibold text-lg text-white mb-2">Supercharged Ingestion Portal</h3>
       <p className="text-sm text-gray-400 mb-4">Optimized for bulk uploads. Drop hundreds of screenshots or ZIP files at once.</p>
 
-      <div 
+      <div className="flex items-center mb-4">
+        <input
+          type="checkbox"
+          id="story-mode"
+          checked={isStoryMode}
+          onChange={(e) => setIsStoryMode(e.target.checked)}
+          className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+        />
+        <label htmlFor="story-mode" className="ml-2 text-sm font-medium">
+          Story Mode
+        </label>
+      </div>
+
+      {isStoryMode && (
+        <div className="space-y-4 mb-4">
+          <input
+            type="text"
+            placeholder="Story Title"
+            value={storyTitle}
+            onChange={(e) => setStoryTitle(e.target.value)}
+            className="w-full p-2 bg-gray-700 rounded"
+          />
+          <textarea
+            placeholder="Story Summary"
+            value={storySummary}
+            onChange={(e) => setStorySummary(e.target.value)}
+            className="w-full p-2 bg-gray-700 rounded"
+          />
+        </div>
+      )}
+
+      <div
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         className="border-2 border-dashed border-gray-600 rounded-lg p-10 text-center cursor-pointer hover:border-secondary transition-colors bg-gray-900/50"

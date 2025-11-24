@@ -29,6 +29,7 @@ const { sha256HexFromBase64 } = require('./utils/hash.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { handleStoryModeAnalysis } = require('./utils/story-mode.cjs');
 
 /**
  * Validate that required environment variables are set
@@ -217,6 +218,11 @@ exports.handler = async (event, context) => {
  */
 async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers, log, context) {
   const timer = createTimer(log, 'sync-analysis');
+
+  if (requestBody.storyMode) {
+    return await handleStoryModeAnalysis(requestBody, idemKey, forceReanalysis, headers, log, context);
+  }
+
   const imagePayload = requestBody && requestBody.image;
 
   try {
@@ -359,6 +365,46 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
     timer.end({ error: error.message });
     throw error;
   }
+}
+
+async function handleStoryModeAnalysis(requestBody, idemKey, forceReanalysis, headers, log, context) {
+  const { timeline, title, summary } = requestBody;
+  const sequenceId = uuidv4();
+  const storyTimer = createTimer(log, 'story-mode-analysis');
+
+  log.info('Starting story mode analysis', { sequenceId, timelineCount: timeline.length, title });
+
+  const timelineRecords = [];
+  for (let i = 0; i < timeline.length; i++) {
+    const imagePayload = timeline[i];
+    imagePayload.sequenceId = sequenceId;
+    imagePayload.timelinePosition = i;
+
+    // This re-uses the single-image analysis logic
+    const record = await executeAnalysisPipeline(imagePayload, log, context);
+    timelineRecords.push(record);
+  }
+
+  const story = {
+    id: sequenceId,
+    title,
+    summary,
+    timeline: timelineRecords,
+    photos: [], // Photo upload will be a separate step
+  };
+
+  // Here you would save the story to a new 'stories' collection in MongoDB
+  // For now, we'll just log it.
+  log.info('Story created successfully', { sequenceId, title });
+
+  const durationMs = storyTimer.end();
+  log.exit(200, { mode: 'story', durationMs });
+
+  return {
+    statusCode: 200,
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(story),
+  };
 }
 
 /**

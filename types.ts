@@ -100,6 +100,21 @@ export interface AnalysisRecord {
   validationScore?: number;
   extractionAttempts?: number;
   wasUpgraded?: boolean;
+  story?: AnalysisStory;
+}
+
+export interface StoryPhoto {
+  url: string;
+  caption?: string;
+  timestamp: string;
+}
+
+export interface AnalysisStory {
+  id: string;
+  title: string;
+  summary: string;
+  timeline: AnalysisRecord[];
+  photos: StoryPhoto[];
 }
 
 export interface DisplayableAnalysisResult {

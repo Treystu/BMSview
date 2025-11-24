@@ -355,6 +355,7 @@ async function executeToolCall(toolName, parameters, log) {
  * Implements intelligent data size limits to prevent timeouts
  */
 async function requestBmsData(params, log) {
+  log.info('requestBmsData called with params', { params });
   if (!getCollection) {
     log.error('Database connection not available for requestBmsData');
     throw new Error('Database connection not available');
@@ -502,7 +503,7 @@ async function requestBmsData(params, log) {
     estimatedTokens
   });
 
-  return {
+  const result = {
     systemId,
     metric,
     time_range: { start: time_range_start, end: time_range_end },
@@ -513,6 +514,10 @@ async function requestBmsData(params, log) {
       note: `Data was sampled from ${records.length} records to ${processedData.length} points for optimization`
     })
   };
+
+  log.info('requestBmsData returning result', { result });
+
+  return result;
 }
 
 /**

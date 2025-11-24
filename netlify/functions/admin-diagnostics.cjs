@@ -2867,15 +2867,17 @@ const diagnosticTests = {
 
   resiliency: async (/** @type {string} */ testId) => {
     const startTime = Date.now();
-    /** @type {{name: string, status: string, tests: Array<any>, duration: number, details?: any, error?: string}} */
+    /** @type {{name: string, status: string, tests: Array<any>, duration: number, details?: any, error?: string, message?: string}} */
     const testResults = {
       name: 'Resiliency Mechanisms',
-      status: 'running',
+      status: 'skipped',
       tests: [],
-      duration: 0,
-      details: {}
+      duration: Date.now() - startTime,
+      details: { reason: 'Test not implemented' },
+      message: 'Test not implemented'
     };
-    // ...
+    logger.info('Skipping resiliency test: not implemented');
+    return testResults;
   },
 
   retryMechanism: async (/** @type {string} */ testId) => {

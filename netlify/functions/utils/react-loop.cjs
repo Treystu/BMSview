@@ -672,6 +672,11 @@ Execute the initialization now.`;
         log.info(`Initialization attempt ${attempts + 1}`, { elapsedMs });
         if(stream) stream.write(JSON.stringify({ type: 'status', message: `Attempting to retrieve data (attempt ${attempts + 1})...` }) + '\n');
         
+        // Log the conversation history for debugging
+        log.info('Conversation history before Gemini call in initialization', {
+            turn: attempts + 1,
+            history: JSON.stringify(conversationHistory, null, 2)
+        });
 
         let geminiResponse;
         try {

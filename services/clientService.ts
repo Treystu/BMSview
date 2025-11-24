@@ -1,4 +1,5 @@
-import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData } from '../types';
+import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData, AnalysisStory, StoryPhoto } from '../types';
+import * as fs from 'fs';
 
 interface PaginatedResponse<T> {
     items: T[];
@@ -2292,6 +2293,51 @@ export const getDiagnosticProgress = async (testId: string): Promise<{
     });
 
     return data;
+};
+
+export const createAnalysisStory = async (title: string, summary: string, timeline: File[]): Promise<AnalysisStory> => {
+    log('info', 'Creating analysis story.', { title, summary, timelineCount: timeline.length });
+
+    const timelinePayload = await Promise.all(timeline.map(async (file) => {
+        const image = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = (error) => reject(error);
+            reader.readAsDataURL(file);
+        });
+
+        return {
+            image: image.split(','),
+            mimeType: file.type,
+            fileName: file.name,
+        };
+    }));
+
+    return apiFetch<AnalysisStory>('analyze', {
+        method: 'POST',
+        body: JSON.stringify({
+            storyMode: true,
+            title,
+            summary,
+            timeline: timelinePayload,
+        }),
+    });
+};
+
+export const uploadStoryPhoto = async (storyId: string, photo: File, caption: string, timestamp: string): Promise<StoryPhoto> => {
+    log('info', 'Uploading story photo.', { storyId, caption, timestamp });
+
+    const image = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(photo);
+    });
+
+    return apiFetch<StoryPhoto>(`upload-story-photo?storyId=${storyId}&caption=${caption}&timestamp=${timestamp}`, {
+        method: 'POST',
+        body: JSON.stringify({ image: image.split(',') }),
+    });
 };
 
 /**

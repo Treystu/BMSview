@@ -50,6 +50,8 @@ exports.handler = async (event, context) => {
   }
 
   const log = createLogger('generate-insights-with-tools', context);
+  log.info('Received event', { event });
+  log.info('Received context', { context });
   const startTime = Date.now();
 
   try {
@@ -151,7 +153,7 @@ exports.handler = async (event, context) => {
         // CRITICAL: Do NOT use Promise.race here!
         // The ReAct loop handles its own timeout internally and saves checkpoints properly.
         // Promise.race would interrupt checkpoint saving and cause data loss.
-        const result = await executeReActLoop({
+        const params = {
           analysisData: job.analysisData || analysisData,
           systemId: job.systemId || systemId,
           customPrompt: job.customPrompt || customPrompt,
@@ -164,7 +166,9 @@ exports.handler = async (event, context) => {
           checkpointState: resumeConfig, // Pass resume config if available
           onCheckpoint: checkpointCallback, // Auto-save checkpoints
           stream
-        });
+        };
+        log.info('Calling executeReActLoop with params', params);
+        const result = await executeReActLoop(params);
 
         // Check if the result indicates timeout
         if (result && result.timedOut) {

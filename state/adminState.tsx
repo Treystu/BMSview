@@ -1,6 +1,6 @@
 import { DEFAULT_VISIBLE_COLUMNS, HistoryColumnKey } from 'components/admin/columnDefinitions';
 import React, { createContext, Dispatch, useContext, useReducer } from 'react';
-import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
+import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult, AnalysisStory } from '../types';
 
 export type HistorySortKey = HistoryColumnKey;
 
@@ -79,6 +79,7 @@ export interface AdminState {
   isDiagnosticsModalOpen: boolean;
   diagnosticResults: DiagnosticsResponse | null;
   selectedDiagnosticTests: string[];
+  stories: AnalysisStory[];
 }
 
 export const initialState: AdminState = {
@@ -131,6 +132,7 @@ export const initialState: AdminState = {
     // System Utilities
     'contentHashing', 'errorHandling', 'logging', 'retryMechanism', 'timeout'
   ],
+  stories: [],
 };
 
 
@@ -170,7 +172,8 @@ export type AdminAction =
   | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: DiagnosticsResponse | null }
   | { type: 'UPDATE_SINGLE_DIAGNOSTIC_RESULT'; payload: { testId: string; result: DiagnosticTestResult } }
   | { type: 'SET_SELECTED_DIAGNOSTIC_TESTS'; payload: string[] }
-  | { type: 'REMOVE_HISTORY_RECORD'; payload: string };
+  | { type: 'REMOVE_HISTORY_RECORD'; payload: string }
+  | { type: 'SET_STORIES'; payload: AnalysisStory[] };
 
 // 3. Reducer
 export const adminReducer = (state: AdminState, action: AdminAction): AdminState => {
@@ -325,6 +328,8 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       };
     case 'SET_SELECTED_DIAGNOSTIC_TESTS':
       return { ...state, selectedDiagnosticTests: action.payload };
+    case 'SET_STORIES':
+      return { ...state, stories: action.payload };
     default:
       return state;
   }
