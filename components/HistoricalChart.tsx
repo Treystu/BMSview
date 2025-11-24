@@ -67,7 +67,7 @@ const mapRecordToPoint = (r: AnalysisRecord) => {
         
         // Special handling for irradiance from weather data
         if (metric === 'irradiance') {
-            value = (r.weather as any)?.estimated_irradiance_w_m2 ?? null;
+            value = r.weather?.estimated_irradiance_w_m2 ?? null;
         } else {
             value = source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
         }
@@ -104,7 +104,7 @@ const mapMergedPointToChartPoint = (p: MergedDataPoint) => {
         // Special handling for irradiance from merged data
         let value;
         if (metric === 'irradiance') {
-            value = (p.data as any).estimated_irradiance_w_m2 ?? null;
+            value = (p.data as Record<string, any>).estimated_irradiance_w_m2 ?? null;
         } else {
             value = p.data[metric];
         }
