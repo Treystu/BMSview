@@ -1918,7 +1918,7 @@ export const getHourlyWeather = async (lat: number, lon: number, date: string): 
 
 export interface DiagnosticTestResult {
     name: string;
-    status: 'success' | 'warning' | 'error';
+    status: 'success' | 'warning' | 'error' | 'partial' | 'running';
     duration: number;
     details?: Record<string, any>;
     error?: string;

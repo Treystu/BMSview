@@ -7,7 +7,7 @@ export type HistorySortKey = HistoryColumnKey;
 // Diagnostic types
 interface DiagnosticTestResult {
   name: string;
-  status: 'success' | 'warning' | 'error';
+  status: 'success' | 'warning' | 'error' | 'partial' | 'running';
   duration: number;
   details?: Record<string, any>;
   error?: string;
