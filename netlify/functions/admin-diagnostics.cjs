@@ -2927,7 +2927,6 @@ const diagnosticTests = {
       let totalRecords = 0;
       let validRecords = 0;
       let invalidRecords = 0;
-      const warnings = [];
 
       for (const collectionName of collections) {
         logger.info(`Checking collection: ${collectionName}`);
@@ -3024,9 +3023,6 @@ const diagnosticTests = {
       
       // Check sync-metadata collection
       const syncMetadata = await db.collection('sync-metadata').find({}).toArray();
-      
-      const now = new Date();
-      const twoMinutesAgo = new Date(now.getTime() - 2 * 60 * 1000);
       
       // Count pending items across collections
       const systemsPending = await db.collection('systems').countDocuments({ _syncStatus: 'pending' });
@@ -3179,20 +3175,20 @@ const diagnosticTests = {
           // Check updatedAt field
           if (record.updatedAt) {
             if (ISO_8601_UTC_REGEX.test(record.updatedAt)) {
-              // Try to parse it
-              try {
-                new Date(record.updatedAt);
-                collectionStats.validTimestamps++;
-                totalValid++;
-              } catch (e) {
+              // Validate that it's parseable as a valid date
+              const parsedDate = new Date(record.updatedAt);
+              if (isNaN(parsedDate.getTime())) {
                 collectionStats.invalidTimestamps++;
                 totalInvalid++;
                 collectionStats.issues.push({
                   id: record._id,
                   field: 'updatedAt',
-                  issue: 'Not parseable',
+                  issue: 'Not parseable as valid date',
                   value: record.updatedAt
                 });
+              } else {
+                collectionStats.validTimestamps++;
+                totalValid++;
               }
             } else {
               collectionStats.invalidTimestamps++;
@@ -3414,17 +3410,6 @@ const diagnosticTests = {
       const errorDetails = formatError(error, { testId });
       logger.error('========== FULL SYNC CYCLE TEST FAILED ==========', errorDetails);
       
-      // Cleanup: Try to delete test record if it exists
-      if (testDocId) {
-        try {
-          const db = await getDb();
-          await db.collection('systems').deleteOne({ _id: testDocId });
-          logger.info('Test record cleaned up after error');
-        } catch (cleanupError) {
-          logger.warn('Failed to cleanup test record', formatError(cleanupError));
-        }
-      }
-      
       return {
         name: 'Full Sync Cycle Test',
         status: 'error',
@@ -3433,6 +3418,19 @@ const diagnosticTests = {
         steps: testResults.steps,
         details: { errorDetails }
       };
+    } finally {
+      // Cleanup: Always try to delete test record if it was created
+      if (testDocId) {
+        try {
+          const db = await getDb();
+          const deleteResult = await db.collection('systems').deleteOne({ _id: testDocId });
+          if (deleteResult.deletedCount > 0) {
+            logger.info('Test record cleaned up in finally block', { testDocId: testDocId.toString() });
+          }
+        } catch (cleanupError) {
+          logger.warn('Failed to cleanup test record in finally block', formatError(cleanupError));
+        }
+      }
     }
   },
 
