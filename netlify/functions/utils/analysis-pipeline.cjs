@@ -20,13 +20,13 @@ const callWeatherFunction = async (lat, lon, timestamp, log) => {
     const baseUrl = process.env.URL || 'http://localhost:8888';
     const weatherUrl = `${baseUrl}/.netlify/functions/weather`;
     const logContext = { lat, lon, timestamp, weatherUrl, hasEnvUrl: !!process.env.URL };
-    
+
     // Validate required parameters
     if (!lat || !lon) {
         log('warn', 'Missing required parameters for weather function.', logContext);
         return null;
     }
-    
+
     // ... existing code ...
     log('debug', 'Calling weather function.', logContext);
     try {
@@ -52,6 +52,15 @@ const callWeatherFunction = async (lat, lon, timestamp, log) => {
     }
 };
 
+/**
+ * Extracts BMS data from an image using Gemini.
+ * @param {string} image - Base64 encoded image data
+ * @param {string} mimeType - MIME type of the image
+ * @param {Function} log - Logger function
+ * @param {Object} context - Execution context
+ * @param {string|null} [previousFeedback] - Feedback from previous failed attempt
+ * @returns {Promise<Object>} Extracted data
+ */
 const extractBmsData = async (image, mimeType, log, context, previousFeedback = null) => {
     // ... existing code ...
     const geminiClient = getGeminiClient();
@@ -89,7 +98,7 @@ const extractBmsData = async (image, mimeType, log, context, previousFeedback = 
 
     } catch (error) {
         // ... existing code ...
-        const errorMessage = error.message || 'Unknown Gemini API error';
+        const errorMessage = error instanceof Error ? error.message : String(error) || 'Unknown Gemini API error';
         log('error', 'Gemini API call failed.', { error: errorMessage });
 
         // ... existing code ...
@@ -101,6 +110,20 @@ const extractBmsData = async (image, mimeType, log, context, previousFeedback = 
     }
 };
 
+/**
+ * Orchestrates the analysis pipeline.
+ * @param {Object} image - Image payload
+ * @param {string} image.image - Base64 image data
+ * @param {string} image.mimeType - MIME type
+ * @param {string} image.fileName - File name
+ * @param {boolean} [image.force] - Force re-analysis
+ * @param {string} [image.sequenceId] - Sequence ID for Story Mode
+ * @param {number} [image.timelinePosition] - Position in sequence
+ * @param {Object} systems - Systems collection or data
+ * @param {Function} log - Logger function
+ * @param {Object} context - Execution context
+ * @returns {Promise<Object>} Analysis record
+ */
 const performAnalysisPipeline = async (image, systems, log, context) => {
     // ... existing code ...
     const logContext = { fileName: image.fileName, stage: 'pipeline-start' };
@@ -116,7 +139,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
     // Configuration: Max extraction attempts with validation feedback
     const MAX_EXTRACTION_ATTEMPTS = 3;
     const MIN_ACCEPTABLE_QUALITY = 60; // Quality score threshold
-    
+
     let attemptNumber = 0;
     let previousFeedback = null;
     let extractedData = null;
@@ -124,16 +147,16 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
     let integrityValidation = null;
     let validationResult = null;
     let bestAttempt = null; // Track best attempt in case all fail
-    
+
     // Retry loop for extraction with validation feedback
     while (attemptNumber < MAX_EXTRACTION_ATTEMPTS) {
         attemptNumber++;
-        
+
         // 1. Extract Data (with feedback from previous attempt if applicable)
         logContext.stage = 'extraction';
         logContext.attemptNumber = attemptNumber;
         logContext.isRetry = attemptNumber > 1;
-        
+
         if (attemptNumber > 1) {
             log('warn', `Data extraction retry attempt ${attemptNumber} of ${MAX_EXTRACTION_ATTEMPTS}.`, {
                 ...logContext,
@@ -142,7 +165,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
         } else {
             log('info', 'Starting data extraction.', logContext);
         }
-        
+
         try {
             extractedData = await extractBmsData(image.image, image.mimeType, log, context, previousFeedback);
             log('info', 'Data extraction complete.', logContext);
@@ -151,12 +174,12 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
                 ...logContext,
                 error: error.message
             });
-            
+
             // If this is the last attempt, throw the error
             if (attemptNumber >= MAX_EXTRACTION_ATTEMPTS) {
                 throw error;
             }
-            
+
             // Otherwise, prepare generic feedback and retry
             previousFeedback = `RETRY ATTEMPT ${attemptNumber + 1}: The previous extraction attempt failed with an error: ${error.message}. Please try again, paying careful attention to all fields.`;
             continue;
@@ -166,29 +189,29 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
         logContext.stage = 'processing';
         log('info', 'Processing and analyzing data.', logContext);
         analysisRaw = mapExtractedToAnalysisData(extractedData, log);
-        
+
         if (!analysisRaw) {
             log('error', `Failed to map extracted data on attempt ${attemptNumber}.`, logContext);
-            
+
             if (attemptNumber >= MAX_EXTRACTION_ATTEMPTS) {
                 throw new Error("Failed to map extracted data.");
             }
-            
+
             previousFeedback = `RETRY ATTEMPT ${attemptNumber + 1}: The previous extraction attempt produced data that could not be mapped. Ensure your response is a valid JSON object following the schema exactly.`;
             continue;
         }
-        
+
         // Validate extraction quality
         validationResult = validateExtractionQuality(extractedData, analysisRaw, log);
-        
+
         // Perform data integrity validation
         logContext.stage = 'validation';
         log('info', 'Validating data integrity.', logContext);
         integrityValidation = validateAnalysisData(analysisRaw, log);
-        
+
         // Calculate quality score
         const qualityScore = calculateQualityScore(integrityValidation);
-        
+
         // Track best attempt so far (store only metadata to avoid large object copies)
         if (!bestAttempt || qualityScore > bestAttempt.qualityScore) {
             bestAttempt = {
@@ -200,7 +223,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
                 attemptNumber
             };
         }
-        
+
         // Log validation results
         if (!integrityValidation.isValid) {
             log('warn', `Data integrity validation failed on attempt ${attemptNumber}.`, {
@@ -223,7 +246,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
                 qualityScore
             });
         }
-        
+
         // Success criteria: Either perfect validation OR acceptable quality score
         if (integrityValidation.isValid && integrityValidation.warnings.length === 0) {
             log('info', 'Extraction succeeded with perfect validation.', {
@@ -233,7 +256,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
             });
             break; // Success!
         }
-        
+
         if (qualityScore >= MIN_ACCEPTABLE_QUALITY) {
             log('info', 'Extraction succeeded with acceptable quality.', {
                 ...logContext,
@@ -242,7 +265,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
             });
             break; // Good enough!
         }
-        
+
         // If we've exhausted attempts, use best attempt
         if (attemptNumber >= MAX_EXTRACTION_ATTEMPTS) {
             log('warn', `All ${MAX_EXTRACTION_ATTEMPTS} extraction attempts completed. Using best attempt.`, {
@@ -251,7 +274,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
                 bestQualityScore: bestAttempt.qualityScore,
                 finalQualityScore: qualityScore
             });
-            
+
             // Restore best attempt data
             if (bestAttempt.attemptNumber !== attemptNumber) {
                 extractedData = bestAttempt.extractedData;
@@ -259,14 +282,14 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
                 integrityValidation = bestAttempt.integrityValidation;
                 validationResult = bestAttempt.validationResult;
             }
-            
+
             break; // Exit loop with best attempt
         }
-        
+
         // Generate feedback for next attempt
         // Note: attemptNumber is 1-based, so attemptNumber+1 is the next attempt number
         previousFeedback = generateValidationFeedback(integrityValidation, attemptNumber + 1);
-        
+
         log('info', 'Preparing to retry extraction with validation feedback.', {
             ...logContext,
             currentAttempt: attemptNumber,
@@ -274,7 +297,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
             feedbackLength: previousFeedback ? previousFeedback.length : 0
         });
     }
-    
+
     // Log extraction quality for transparency
     if (validationResult.hasCriticalIssues) {
         log('error', 'Critical data extraction issues detected.', {
@@ -293,7 +316,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
     const matchingSystem = analysisRaw.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysisRaw.dlNumber)) : null;
 
     const analysis = performPostAnalysis(analysisRaw, matchingSystem, log);
-    
+
     // Add validation metadata to analysis
     analysis._extractionQuality = validationResult;
     analysis._validationScore = calculateQualityScore(integrityValidation);
@@ -404,7 +427,10 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
         needsReview: !integrityValidation.isValid,
         validationWarnings: integrityValidation.warnings,
         validationScore: calculateQualityScore(integrityValidation),
-        extractionAttempts: attemptNumber
+        extractionAttempts: attemptNumber,
+        // Story Mode / Sequence Modeling
+        sequenceId: image.sequenceId || null,
+        timelinePosition: image.timelinePosition !== undefined ? image.timelinePosition : null
     };
 
     await withRetry(() => historyCollection.insertOne(newRecord));

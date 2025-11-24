@@ -38,22 +38,22 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 function validateEnvironment(log) {
   const missing = [];
   const warnings = [];
-  
+
   // Critical: Must have Gemini API key
   if (!process.env.GEMINI_API_KEY) {
     missing.push('GEMINI_API_KEY');
   }
-  
+
   // Critical: Must have MongoDB URI
   if (!process.env.MONGODB_URI) {
     missing.push('MONGODB_URI');
   }
-  
+
   // Warning: Should have database name
   if (!process.env.MONGODB_DB_NAME && !process.env.MONGODB_DB) {
     warnings.push('MONGODB_DB_NAME (will use default: bmsview)');
   }
-  
+
   if (missing.length > 0) {
     const error = `Missing required environment variables: ${missing.join(', ')}`;
     log.error('Environment validation failed', { missing, warnings });
@@ -68,11 +68,11 @@ function validateEnvironment(log) {
       }
     };
   }
-  
+
   if (warnings.length > 0) {
     log.warn('Environment has warnings', { warnings });
   }
-  
+
   return { ok: true };
 }
 
@@ -83,7 +83,7 @@ function validateEnvironment(log) {
  */
 function getErrorStatusCode(error) {
   const message = error.message || '';
-  
+
   // Client errors (400-499)
   if (message.includes('invalid') || message.includes('validation')) return 400;
   if (message.includes('unauthorized') || message.includes('authentication')) return 401;
@@ -91,11 +91,11 @@ function getErrorStatusCode(error) {
   if (message.includes('not found')) return 404;
   if (message.includes('timeout') || message.includes('TIMEOUT')) return 408;
   if (message.includes('quota') || message.includes('rate limit')) return 429;
-  
+
   // Service errors (500-599)
   if (message.includes('service_unavailable') || message.includes('ECONNREFUSED')) return 503;
   if (message.includes('circuit_open')) return 503;
-  
+
   // Default to 500 for unknown errors
   return 500;
 }
@@ -107,13 +107,13 @@ function getErrorStatusCode(error) {
  */
 function getErrorCode(error) {
   const message = error.message || '';
-  
+
   if (message.includes('timeout') || message.includes('TIMEOUT')) return 'analysis_timeout';
   if (message.includes('quota') || message.includes('rate limit')) return 'quota_exceeded';
   if (message.includes('ECONNREFUSED') || message.includes('connection')) return 'database_unavailable';
   if (message.includes('circuit_open')) return 'service_degraded';
   if (message.includes('Gemini')) return 'ai_service_error';
-  
+
   return 'analysis_failed';
 }
 
@@ -136,14 +136,14 @@ exports.handler = async (event, context) => {
   // Logger and request-scoped context
   const log = createLogger('analyze', context);
   log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
-  
+
   // Validate environment before processing
   const envValidation = validateEnvironment(log);
   if (!envValidation.ok) {
     log.error('Environment validation failed', envValidation);
     return errorResponse(503, 'service_unavailable', envValidation.error, envValidation.details, headers);
   }
-  
+
   const isSync = (event.queryStringParameters && event.queryStringParameters.sync === 'true');
   const forceReanalysis = (event.queryStringParameters && event.queryStringParameters.force === 'true');
   const headersIn = event.headers || {};
@@ -168,8 +168,8 @@ exports.handler = async (event, context) => {
     return await handleLegacyAnalysis(parsed.value, headers, log, requestContext);
 
   } catch (error) {
-    log.error('Analyze function failed.', { 
-      error: error && error.message ? error.message : String(error), 
+    log.error('Analyze function failed.', {
+      error: error && error.message ? error.message : String(error),
       stack: error.stack,
       errorType: error.constructor?.name
     });
@@ -183,24 +183,24 @@ exports.handler = async (event, context) => {
           message: `Analysis failed: ${error.message}`
         });
       }
-    } catch (_) { 
+    } catch (_) {
       // Swallow cleanup errors to avoid masking primary error
     }
 
     // Determine appropriate status code and error type
     const statusCode = getErrorStatusCode(error);
     const errorCode = getErrorCode(error);
-    
+
     log.exit(statusCode, { error: error.message, errorCode });
     return errorResponse(
-      statusCode, 
-      errorCode, 
-      'Analysis failed', 
-      { 
+      statusCode,
+      errorCode,
+      'Analysis failed',
+      {
         message: error.message,
         type: error.constructor?.name,
         recoverable: statusCode < 500
-      }, 
+      },
       { ...headers, 'Content-Type': 'application/json' }
     );
   }
@@ -246,9 +246,9 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
         }
       } catch (idemError) {
         // Log but continue - idempotency is not critical
-        log.warn('Idempotency check failed, continuing with analysis', { 
+        log.warn('Idempotency check failed, continuing with analysis', {
           error: idemError.message,
-          idemKey 
+          idemKey
         });
       }
     }
@@ -256,11 +256,11 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
     // Check for existing analysis by content hash (skip if force=true)
     let shouldUpgrade = false;
     let existingRecordToUpgrade = null;
-    
+
     if (!forceReanalysis) {
       try {
         const existingAnalysis = await checkExistingAnalysis(contentHash, log);
-        
+
         // Check if we should upgrade a low-quality record
         if (existingAnalysis && existingAnalysis._shouldUpgrade) {
           shouldUpgrade = true;
@@ -292,26 +292,26 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
         }
       } catch (dedupeError) {
         // Log but continue - deduplication is not critical
-        log.warn('Duplicate check failed, continuing with analysis', { 
+        log.warn('Duplicate check failed, continuing with analysis', {
           error: dedupeError.message,
           contentHash: contentHash.substring(0, 16) + '...'
         });
       }
     } else {
-      log.info('Force re-analysis requested, bypassing duplicate detection.', { 
-        contentHash: contentHash.substring(0, 16) + '...', 
-        auditEvent: 'force_reanalysis', 
-        timestamp: new Date().toISOString() 
+      log.info('Force re-analysis requested, bypassing duplicate detection.', {
+        contentHash: contentHash.substring(0, 16) + '...',
+        auditEvent: 'force_reanalysis',
+        timestamp: new Date().toISOString()
       });
     }
 
     // Perform new analysis (critical path - errors thrown here are caught by main handler)
-    log.info('Starting synchronous analysis via pipeline.', { 
-      fileName: imagePayload.fileName, 
+    log.info('Starting synchronous analysis via pipeline.', {
+      fileName: imagePayload.fileName,
       mimeType: imagePayload.mimeType,
       imageSize: imagePayload.image?.length || 0
     });
-    
+
     const record = await executeAnalysisPipeline(imagePayload, log, context);
 
     // Validate analysis result
@@ -324,7 +324,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
       await storeAnalysisResults(record, contentHash, log, forceReanalysis, shouldUpgrade, existingRecordToUpgrade);
     } catch (storageError) {
       // Log but don't fail - storage is not critical for immediate response
-      log.warn('Failed to store analysis results for deduplication', { 
+      log.warn('Failed to store analysis results for deduplication', {
         error: storageError.message,
         recordId: record.id
       });
@@ -423,20 +423,20 @@ async function checkExistingAnalysis(contentHash, log) {
     const resultsCol = await getCollection('analysis-results');
     const existing = await resultsCol.findOne({ contentHash });
     if (existing) {
-      log.info('Dedupe: existing analysis found for content hash.', { 
+      log.info('Dedupe: existing analysis found for content hash.', {
         contentHash: contentHash.substring(0, 16) + '...',
         needsReview: existing.needsReview,
         validationScore: existing.validationScore
       });
-      
+
       // Quality-based duplicate handling:
       // If the existing record has issues (needsReview=true or low quality score),
       // we should re-analyze instead of returning the bad record
       const MIN_QUALITY_FOR_REUSE = 80; // Only reuse high-quality analyses
-      
+
       // Treat missing validationScore as low quality (0)
       const existingQuality = existing.validationScore ?? 0;
-      
+
       if (existing.needsReview || existingQuality < MIN_QUALITY_FOR_REUSE) {
         log.warn('Existing record has quality issues. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
@@ -444,18 +444,18 @@ async function checkExistingAnalysis(contentHash, log) {
           validationScore: existingQuality,
           minQuality: MIN_QUALITY_FOR_REUSE
         });
-        
+
         // Return null to trigger re-analysis, but include marker for upgrade
         return { _shouldUpgrade: true, _existingRecord: existing };
       }
-      
+
       return existing;
     }
     return null;
   } catch (error) {
-    log.warn('Duplicate check failed', { 
-      error: error.message, 
-      contentHash: contentHash.substring(0, 16) + '...' 
+    log.warn('Duplicate check failed', {
+      error: error.message,
+      contentHash: contentHash.substring(0, 16) + '...'
     });
     // Re-throw to let caller decide how to handle
     throw error;
@@ -477,7 +477,9 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
           image: imagePayload.image,
           mimeType: imagePayload.mimeType,
           fileName: imagePayload.fileName,
-          force: !!imagePayload.force
+          force: !!imagePayload.force,
+          sequenceId: imagePayload.sequenceId,
+          timelinePosition: imagePayload.timelinePosition
         },
         null,
         log,
@@ -493,10 +495,10 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
       shouldRetry: (e) => e && e.code !== 'operation_timeout' && e.code !== 'circuit_open',
       log
     }), {
-      failureThreshold: parseInt(process.env.CB_FAILURES || '5'),
-      openMs: parseInt(process.env.CB_OPEN_MS || '30000'),
-      log
-    });
+    failureThreshold: parseInt(process.env.CB_FAILURES || '5'),
+    openMs: parseInt(process.env.CB_OPEN_MS || '30000'),
+    log
+  });
 }
 
 /**
@@ -511,7 +513,7 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
 async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false, shouldUpgrade = false, existingRecordToUpgrade = null) {
   try {
     const resultsCol = await getCollection('analysis-results');
-    
+
     // If upgrading, update the existing record instead of inserting
     if (shouldUpgrade && existingRecordToUpgrade) {
       const updateResult = await resultsCol.updateOne(
@@ -533,8 +535,8 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
           }
         }
       );
-      
-      log.info('Analysis results upgraded with improved quality', { 
+
+      log.info('Analysis results upgraded with improved quality', {
         recordId: record.id,
         contentHash: contentHash.substring(0, 16) + '...',
         previousQuality: existingRecordToUpgrade.validationScore,
@@ -557,15 +559,15 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         validationScore: record.validationScore,
         extractionAttempts: record.extractionAttempts
       });
-      
-      log.info('Analysis results stored for deduplication', { 
+
+      log.info('Analysis results stored for deduplication', {
         recordId: record.id,
         contentHash: contentHash.substring(0, 16) + '...',
         qualityScore: record.validationScore
       });
     }
   } catch (e) {
-    log.warn('Failed to persist analysis-results record.', { 
+    log.warn('Failed to persist analysis-results record.', {
       error: e && e.message ? e.message : String(e),
       recordId: record.id
     });

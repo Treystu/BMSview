@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import UploadOptimizer from '../utils/uploadOptimizer';
 
 interface UploadProgress {
@@ -32,17 +32,19 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
   const [results, setResults] = useState<UploadResult | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [optimizer] = useState(() => new UploadOptimizer());
+  const [isStoryMode, setIsStoryMode] = useState(false);
+  const [sequenceId, setSequenceId] = useState('');
 
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files || []);
     setFiles(selectedFiles);
     setValidationErrors([]);
     setResults(null);
-    
+
     // Validate files immediately
     const validation = optimizer.validateFiles(selectedFiles);
     if (!validation.allValid) {
-      const errors = validation.invalidFiles.map(file => 
+      const errors = validation.invalidFiles.map(file =>
         `${file.name}: ${file.errors.join(', ')}`
       );
       setValidationErrors(errors);
@@ -57,16 +59,16 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
   const handleDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    
+
     const droppedFiles = Array.from(event.dataTransfer.files);
     setFiles(droppedFiles);
     setValidationErrors([]);
     setResults(null);
-    
+
     // Validate dropped files
     const validation = optimizer.validateFiles(droppedFiles);
     if (!validation.allValid) {
-      const errors = validation.invalidFiles.map(file => 
+      const errors = validation.invalidFiles.map(file =>
         `${file.name}: ${file.errors.join(', ')}`
       );
       setValidationErrors(errors);
@@ -75,11 +77,11 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
 
   const handleUpload = async () => {
     if (files.length === 0) return;
-    
+
     // Re-validate before upload
     const validation = optimizer.validateFiles(files);
     if (!validation.allValid) {
-      const errors = validation.invalidFiles.map(file => 
+      const errors = validation.invalidFiles.map(file =>
         `${file.name}: ${file.errors.join(', ')}`
       );
       setValidationErrors(errors);
@@ -93,31 +95,84 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
     try {
       // Optimize file order for better performance
       const optimizedFiles = optimizer.optimizeFileOrder(files);
-      
+
+      // Generate a sequence ID for this batch if in Story Mode and none provided
+      const batchSequenceId = isStoryMode ? (sequenceId || `seq_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`) : null;
+
       // Define upload function
       const uploadFunction = async (file: File) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('userId', userId);
+        // Handle Image Uploads (Analysis)
+        if (file.type.startsWith('image/')) {
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = reader.result as string;
+              // Remove data URL prefix if present
+              const base64Data = result.includes(',') ? result.split(',')[1] : result;
+              resolve(base64Data);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
 
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData
-        });
+          const payload = {
+            image: {
+              image: base64,
+              fileName: file.name,
+              mimeType: file.type,
+              sequenceId: batchSequenceId,
+              timelinePosition: isStoryMode ? files.indexOf(file) + 1 : null
+            },
+            userId
+          };
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `Upload failed with status ${response.status}`);
+          // Use sync analysis for immediate feedback, or async if preferred. 
+          // For story mode, we might want async if many files. 
+          // But let's stick to the standard analysis endpoint.
+          // We'll use sync=true for now to get immediate results, or let the backend decide.
+          // Actually, for batch uploads, we should probably use the async flow if possible, 
+          // but the current architecture might be simpler with sync for now.
+          // Let's use the standard /api/analyze endpoint.
+
+          const response = await fetch('/api/analyze?sync=true', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Analysis failed with status ${response.status}`);
+          }
+
+          return await response.json();
         }
 
-        return await response.json();
+        // Handle Data File Uploads (Standard Upload)
+        else {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('userId', userId);
+
+          const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Upload failed with status ${response.status}`);
+          }
+
+          return await response.json();
+        }
       };
 
       // Process batch with optimized concurrency
       const uploadResults = await optimizer.processBatch(
         optimizedFiles,
         uploadFunction,
-        (progressData) => {
+        (progressData: UploadProgress) => {
           setProgress(progressData);
         }
       );
@@ -173,6 +228,45 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
         </p>
       </div>
 
+      {/* Story Mode Controls */}
+      <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#f3f4f6', borderRadius: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+          <input
+            type="checkbox"
+            id="story-mode"
+            checked={isStoryMode}
+            onChange={(e) => setIsStoryMode(e.target.checked)}
+            style={{ marginRight: '8px' }}
+          />
+          <label htmlFor="story-mode" style={{ fontWeight: 'bold', color: '#1f2937' }}>
+            Enable Story Mode (Timeline Analysis)
+          </label>
+        </div>
+
+        {isStoryMode && (
+          <div>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', color: '#4b5563' }}>
+              Sequence ID (Optional - leave blank to auto-generate)
+            </label>
+            <input
+              type="text"
+              value={sequenceId}
+              onChange={(e) => setSequenceId(e.target.value)}
+              placeholder="e.g., maintenance-cycle-2023-10"
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px'
+              }}
+            />
+            <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+              Files will be analyzed as a sequence in the order they appear below.
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Upload Area */}
       <div
         onDragOver={handleDragOver}
@@ -199,7 +293,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
           id="file-input"
           type="file"
           multiple
-          accept=".csv,.json,.txt,.log,.xml"
+          accept=".csv,.json,.txt,.log,.xml,.jpg,.jpeg,.png,.webp"
           onChange={handleFileSelect}
           style={{ display: 'none' }}
         />
@@ -228,9 +322,9 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
       {/* File List */}
       {files.length > 0 && (
         <div style={{ marginTop: '20px' }}>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
             alignItems: 'center',
             marginBottom: '12px'
           }}>
@@ -252,8 +346,8 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
               Clear All
             </button>
           </div>
-          
-          <div style={{ 
+
+          <div style={{
             border: '1px solid #e5e7eb',
             borderRadius: '4px',
             backgroundColor: 'white'
@@ -319,8 +413,8 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
             backgroundColor: '#f9fafb'
           }}>
             <div style={{ marginBottom: '8px' }}>
-              <div style={{ 
-                fontSize: '14px', 
+              <div style={{
+                fontSize: '14px',
                 color: '#1f2937',
                 marginBottom: '4px'
               }}>
@@ -354,15 +448,15 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
           <h3 style={{ margin: '0 0 12px 0', color: '#1f2937', fontSize: '16px' }}>
             Upload Results
           </h3>
-          
+
           <div style={{
             border: '1px solid #e5e7eb',
             borderRadius: '4px',
             padding: '16px',
             backgroundColor: 'white'
           }}>
-            <div style={{ 
-              display: 'grid', 
+            <div style={{
+              display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
               gap: '16px',
               marginBottom: '16px'

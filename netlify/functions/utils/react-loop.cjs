@@ -35,20 +35,44 @@ const ITERATION_SAFETY_BUFFER_MS = 1000; // 1s safety margin per iteration
 const CHECKPOINT_FREQUENCY_DIVISOR = 3; // Save checkpoint every 1/3 of timeout
 
 // Calculate actual budgets with safety minimums
+// If mode is background, use 14 minute timeout
+const getBudgets = (mode) => {
+    const isBackground = mode === 'background';
+    const TIMEOUT_MS = isBackground ? 14 * 60 * 1000 : NETLIFY_TIMEOUT_MS;
+
+    const contextBudget = Math.max(
+        TIMEOUT_MS - CONTEXT_COLLECTION_BUFFER_MS - RESPONSE_BUFFER_MS,
+        MIN_SYNC_CONTEXT_BUDGET_MS
+    );
+
+    const totalBudget = Math.max(
+        TIMEOUT_MS - CHECKPOINT_SAVE_BUFFER_MS - RESPONSE_BUFFER_MS,
+        MIN_SYNC_TOTAL_BUDGET_MS
+    );
+
+    const checkpointFreq = Math.max(
+        Math.floor((TIMEOUT_MS - RESPONSE_BUFFER_MS) / CHECKPOINT_FREQUENCY_DIVISOR),
+        MIN_CHECKPOINT_FREQUENCY_MS
+    );
+
+    return { contextBudget, totalBudget, checkpointFreq };
+};
+
+// Default budgets for sync mode (legacy support)
 const SYNC_CONTEXT_BUDGET_MS = Math.max(
-  NETLIFY_TIMEOUT_MS - CONTEXT_COLLECTION_BUFFER_MS - RESPONSE_BUFFER_MS, 
-  MIN_SYNC_CONTEXT_BUDGET_MS
-); // ~15s for context
+    NETLIFY_TIMEOUT_MS - CONTEXT_COLLECTION_BUFFER_MS - RESPONSE_BUFFER_MS,
+    MIN_SYNC_CONTEXT_BUDGET_MS
+);
 
 const SYNC_TOTAL_BUDGET_MS = Math.max(
-  NETLIFY_TIMEOUT_MS - CHECKPOINT_SAVE_BUFFER_MS - RESPONSE_BUFFER_MS, 
-  MIN_SYNC_TOTAL_BUDGET_MS
-); // ~15s total before checkpoint
+    NETLIFY_TIMEOUT_MS - CHECKPOINT_SAVE_BUFFER_MS - RESPONSE_BUFFER_MS,
+    MIN_SYNC_TOTAL_BUDGET_MS
+);
 
 const CHECKPOINT_FREQUENCY_MS = Math.max(
-  Math.floor((NETLIFY_TIMEOUT_MS - RESPONSE_BUFFER_MS) / CHECKPOINT_FREQUENCY_DIVISOR), 
-  MIN_CHECKPOINT_FREQUENCY_MS
-); // Save checkpoint every ~6s
+    Math.floor((NETLIFY_TIMEOUT_MS - RESPONSE_BUFFER_MS) / CHECKPOINT_FREQUENCY_DIVISOR),
+    MIN_CHECKPOINT_FREQUENCY_MS
+);
 
 // Initialization sequence settings
 const INITIALIZATION_MAX_RETRIES = 100; // Effectively unlimited retries within timeout budget
@@ -68,7 +92,7 @@ const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
 function detectStrugglingConcepts(responseText) {
     const lowercaseText = responseText.toLowerCase();
     const detectedConcepts = [];
-    
+
     // Keyword mappings for each tool/concept
     const keywordMap = {
         'request_bms_data': [
@@ -112,7 +136,7 @@ function detectStrugglingConcepts(responseText) {
             'no access', 'cannot get', 'missing information'
         ]
     };
-    
+
     // Check each concept's keywords
     for (const [concept, keywords] of Object.entries(keywordMap)) {
         for (const keyword of keywords) {
@@ -124,7 +148,7 @@ function detectStrugglingConcepts(responseText) {
             }
         }
     }
-    
+
     return detectedConcepts;
 }
 
@@ -141,47 +165,47 @@ function buildContextAwareGuidance(detectedConcepts, contextData = {}) {
     if (detectedConcepts.length === 0) {
         return null; // No specific issues detected
     }
-    
+
     const { systemId, startDate, endDate, totalRecords } = contextData;
     let guidance = '\n\n🔧 CONTEXT-AWARE RECOVERY GUIDANCE\n\n';
     guidance += `Detected ${detectedConcepts.length} potential issue(s): ${detectedConcepts.join(', ')}\n\n`;
-    
+
     // If data access issues detected, show the comprehensive quick reference catalog
-    if (detectedConcepts.includes('request_bms_data') || 
+    if (detectedConcepts.includes('request_bms_data') ||
         detectedConcepts.includes('general_data_access')) {
-        
+
         guidance += "🚨 DETECTED: You're claiming data unavailability or insufficient data.\n";
         guidance += "📖 HERE'S THE COMPLETE DATA CATALOG showing what you can access:\n\n";
-        
+
         // Use the comprehensive quick reference from insights-guru.cjs
         guidance += buildQuickReferenceCatalog(systemId, startDate, endDate, totalRecords);
         guidance += "\n";
-        
+
         // Add specific instruction based on the issue
         guidance += "⚠️ IMMEDIATE ACTION REQUIRED:\n";
         guidance += "   1. Review the SYSTEM ID and QUERYABLE RANGE above\n";
         guidance += "   2. Call request_bms_data with the EXACT parameters shown in examples\n";
         guidance += "   3. Verify the response contains data (dataPoints > 0)\n";
         guidance += "   4. ONLY THEN may you proceed with analysis\n\n";
-        
+
         return guidance;
     }
-    
+
     // For other specific tool issues, provide targeted guidance
-    const toolSpecificConcepts = detectedConcepts.filter(c => 
+    const toolSpecificConcepts = detectedConcepts.filter(c =>
         c.startsWith('get') || c.startsWith('calculate') || c.startsWith('analyze') || c.startsWith('predict')
     );
-    
+
     if (toolSpecificConcepts.length > 0) {
         guidance += "🎯 TOOL-SPECIFIC GUIDANCE:\n\n";
-        
+
         for (const concept of toolSpecificConcepts) {
             guidance += `**Issue detected with: ${concept}**\n`;
             guidance += buildDetailedToolGuidance(concept, null, null, contextData);
             guidance += "\n\n";
         }
     }
-    
+
     // Add specific fixes for common issues
     if (detectedConcepts.includes('date_format')) {
         guidance += `
@@ -203,7 +227,7 @@ function buildContextAwareGuidance(detectedConcepts, contextData = {}) {
 
 `;
     }
-    
+
     if (detectedConcepts.includes('systemid_missing')) {
         guidance += `
 🔑 SYSTEM ID INFORMATION:
@@ -224,7 +248,7 @@ Your systemId is: "${systemId}"
 
 `;
     }
-    
+
     return guidance;
 }
 
@@ -240,7 +264,7 @@ Your systemId is: "${systemId}"
  */
 function buildDetailedToolGuidance(toolName, toolArgs, errorResult, contextData = {}) {
     const { systemId, startDate, endDate } = contextData;
-    
+
     const guidanceMap = {
         request_bms_data: `
 📖 DETAILED GUIDE: Retrieving BMS Historical Data
@@ -565,7 +589,7 @@ Review the tool definition in the AVAILABLE TOOLS section and try again with cor
  */
 async function executeInitializationSequence(params) {
     const { systemId, contextWindowDays, conversationHistory, geminiClient, log, startTime, totalBudgetMs, modelOverride } = params;
-    
+
     if (!systemId) {
         log.warn('No systemId provided, skipping initialization sequence');
         return { success: true, attempts: 0, dataPoints: 0, toolCallsUsed: 0, turnsUsed: 0 };
@@ -575,7 +599,7 @@ async function executeInitializationSequence(params) {
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - contextWindowDays);
-    
+
     const initPrompt = `
 🔧 INITIALIZATION SEQUENCE - MANDATORY DATA VERIFICATION
 
@@ -633,7 +657,7 @@ Execute the initialization now.`;
         }
 
         turnsUsed++;
-        
+
         // Add initialization prompt (only on first attempt)
         if (attempts === 0) {
             conversationHistory.push({
@@ -658,7 +682,7 @@ Execute the initialization now.`;
                 attempt: attempts + 1,
                 error: err.message
             });
-            
+
             // On API errors, retry with linear backoff (add 1 second per attempt)
             const delayMs = Math.min(RETRY_LINEAR_INCREMENT_MS * (attempts + 1), 10000); // Cap at 10 seconds
             await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -674,7 +698,7 @@ Execute the initialization now.`;
                 hasCandidates: !!geminiResponse?.candidates,
                 candidatesLength: geminiResponse?.candidates?.length || 0
             });
-            
+
             // Add error feedback to conversation
             conversationHistory.push({
                 role: 'user',
@@ -688,12 +712,12 @@ Execute the initialization now.`;
 
         // Check for tool calls
         const toolCalls = responseContent.parts.filter(p => p.functionCall);
-        
+
         if (toolCalls.length === 0) {
             // No tool call - check if Gemini claims initialization is complete
             const textParts = responseContent.parts.filter(p => p.text);
             const responseText = textParts.map(p => p.text).join(' ');
-            
+
             log.warn('Gemini did not call request_bms_data during initialization', {
                 attempt: attempts + 1,
                 responseText: responseText.substring(0, 500),
@@ -705,24 +729,24 @@ Execute the initialization now.`;
                 attempt: attempts + 1,
                 fullResponse: JSON.stringify(geminiResponse).substring(0, 2000)
             });
-            
+
             // KEYWORD DETECTION: Analyze what Gemini is struggling with
             const detectedConcepts = detectStrugglingConcepts(responseText);
-            
+
             if (detectedConcepts.length > 0) {
                 log.info('Detected struggling concepts via keyword analysis', {
                     attempt: attempts + 1,
                     concepts: detectedConcepts,
                     responseExcerpt: responseText.substring(0, 300)
                 });
-                
+
                 // Build context-aware guidance
                 const contextAwareGuidance = buildContextAwareGuidance(detectedConcepts, {
                     systemId,
                     startDate: startDate.toISOString(),
                     endDate: endDate.toISOString()
                 });
-                
+
                 if (contextAwareGuidance) {
                     conversationHistory.push({
                         role: 'user',
@@ -731,7 +755,7 @@ Execute the initialization now.`;
                     continue;
                 }
             }
-            
+
             // Fallback: Provide generic feedback
             conversationHistory.push({
                 role: 'user',
@@ -747,7 +771,7 @@ Execute the initialization now.`;
         for (const toolCall of toolCalls) {
             const toolName = toolCall.functionCall.name;
             const toolArgs = toolCall.functionCall.args;
-            
+
             log.info(`Initialization tool call: ${toolName}`, {
                 attempt: attempts + 1,
                 toolArgs: JSON.stringify(toolArgs).substring(0, 500)
@@ -757,7 +781,7 @@ Execute the initialization now.`;
 
             try {
                 const toolResult = await executeToolCall(toolName, toolArgs, log);
-                
+
                 // Add tool result to conversation
                 conversationHistory.push({
                     role: 'function',
@@ -802,7 +826,7 @@ Execute the initialization now.`;
                     stack: err.stack,
                     attempt: attempts + 1
                 });
-                
+
                 // Add error to conversation
                 conversationHistory.push({
                     role: 'function',
@@ -828,13 +852,13 @@ Execute the initialization now.`;
                 turnsUsed,
                 durationMs: Date.now() - startTime
             });
-            
+
             // Ask Gemini to acknowledge initialization completion
             conversationHistory.push({
                 role: 'user',
                 parts: [{ text: `Data retrieval successful. You now have ${dataPoints} data points available. Acknowledge with "INITIALIZATION COMPLETE" and then proceed with analysis.` }]
             });
-            
+
             return {
                 success: true,
                 attempts: attempts + 1,
@@ -850,7 +874,7 @@ Execute the initialization now.`;
             dataRetrieved,
             dataPoints
         });
-        
+
         conversationHistory.push({
             role: 'user',
             parts: [{ text: 'Data retrieval incomplete. Call request_bms_data again with the EXACT parameters specified. Do not proceed without data.' }]
@@ -911,7 +935,7 @@ async function executeReActLoop(params) {
 
     // Check if resuming from checkpoint
     const isResuming = !!(checkpointState && checkpointState.conversationHistory);
-    
+
     log.info('Starting ReAct loop with checkpoint support', {
         mode,
         systemId,
@@ -941,13 +965,13 @@ async function executeReActLoop(params) {
                 checkpointToolCalls: checkpointState.startToolCallCount,
                 historyLength: checkpointState.conversationHistory.length
             });
-            
+
             conversationHistory = checkpointState.conversationHistory;
             contextSummary = checkpointState.contextSummary || {};
             turnCount = checkpointState.startTurnCount || 0;
             toolCallCount = checkpointState.startToolCallCount || 0;
             preloadedContext = null; // Context already embedded in conversation history
-            
+
         } else {
             // FRESH START: Collect context from scratch
             const contextStartTime = Date.now();
@@ -961,7 +985,7 @@ async function executeReActLoop(params) {
                     log,
                     { mode, maxMs: contextBudgetMs }
                 );
-                
+
                 preloadedContext = await Promise.race([
                     contextCollectionPromise,
                     new Promise((_, reject) =>
@@ -972,7 +996,7 @@ async function executeReActLoop(params) {
                 ]);
             } catch (contextError) {
                 const err = contextError instanceof Error ? contextError : new Error(String(contextError));
-                
+
                 if (err.message === 'CONTEXT_TIMEOUT') {
                     log.warn('Context collection exceeded budget, continuing with minimal context', {
                         budgetMs: contextBudgetMs,
@@ -984,7 +1008,7 @@ async function executeReActLoop(params) {
                         durationMs: Date.now() - contextStartTime
                     });
                 }
-                
+
                 preloadedContext = null;
             }
 
@@ -1000,7 +1024,7 @@ async function executeReActLoop(params) {
                 context: preloadedContext,
                 mode
             });
-            
+
             const initialPrompt = promptResult.prompt;
             contextSummary = promptResult.contextSummary;
 
@@ -1021,7 +1045,7 @@ async function executeReActLoop(params) {
         // Step 3.5: MANDATORY INITIALIZATION SEQUENCE (unless skipped or resuming)
         // Force Gemini to retrieve historical data before analysis
         const geminiClient = getGeminiClient();
-        
+
         let initResult = { toolCallsUsed: 0, turnsUsed: 0 };
         if (!skipInitialization && !isResuming && systemId) {
             initResult = await executeInitializationSequence({
@@ -1043,7 +1067,7 @@ async function executeReActLoop(params) {
                     attempts: initResult.attempts,
                     durationMs: Date.now() - startTime
                 });
-                
+
                 // Save checkpoint so we can resume later
                 // Mark initialization as not complete so next attempt tries again
                 if (onCheckpoint) {
@@ -1059,7 +1083,7 @@ async function executeReActLoop(params) {
                         startTime
                     });
                 }
-                
+
                 // Return with timedOut flag so handler knows this is retryable
                 // Using consistent pattern: success=false + timedOut=true for timeout cases
                 return {
@@ -1078,7 +1102,7 @@ async function executeReActLoop(params) {
                 dataPointsRetrieved: initResult.dataPoints,
                 durationMs: Date.now() - startTime
             });
-            
+
             // Update counters with initialization usage
             toolCallCount = initResult.toolCallsUsed || 0;
             turnCount = initResult.turnsUsed || 0;
@@ -1100,7 +1124,7 @@ async function executeReActLoop(params) {
             const elapsedMs = Date.now() - startTime;
             const timeSinceLastCheckpoint = Date.now() - lastCheckpointTime;
             const timeRemaining = totalBudgetMs - elapsedMs;
-            
+
             // CRITICAL: Check if we're approaching timeout
             if (elapsedMs > totalBudgetMs) {
                 log.warn('Total budget exceeded, stopping loop and saving checkpoint', {
@@ -1109,7 +1133,7 @@ async function executeReActLoop(params) {
                     budgetMs: totalBudgetMs,
                     timeRemaining
                 });
-                
+
                 // Save checkpoint before timeout
                 if (onCheckpoint) {
                     await onCheckpoint({
@@ -1120,12 +1144,12 @@ async function executeReActLoop(params) {
                         startTime
                     });
                 }
-                
+
                 finalAnswer = buildTimeoutMessage();
                 timedOut = true; // Mark as timed out
                 break;
             }
-            
+
             // EDGE CASE PROTECTION: Check if we have enough time for a meaningful iteration
             // Need at least MIN_GEMINI_CALL_TIMEOUT_MS for the call, plus buffers for checkpoint and response
             const MIN_ITERATION_TIME = MIN_GEMINI_CALL_TIMEOUT_MS + CHECKPOINT_SAVE_BUFFER_MS + RESPONSE_BUFFER_MS;
@@ -1135,7 +1159,7 @@ async function executeReActLoop(params) {
                     timeRemaining,
                     minRequired: MIN_ITERATION_TIME
                 });
-                
+
                 // Save checkpoint before exiting
                 if (onCheckpoint) {
                     await onCheckpoint({
@@ -1146,12 +1170,12 @@ async function executeReActLoop(params) {
                         startTime
                     });
                 }
-                
+
                 finalAnswer = buildTimeoutMessage();
                 timedOut = true;
                 break;
             }
-            
+
             // Progressive checkpointing: Save checkpoint every CHECKPOINT_FREQUENCY_MS (~6s)
             // This ensures we don't lose much progress if Netlify kills the function
             if (onCheckpoint && turnCount > 0 && timeSinceLastCheckpoint >= CHECKPOINT_FREQUENCY_MS) {
@@ -1160,7 +1184,7 @@ async function executeReActLoop(params) {
                     elapsedMs,
                     timeSinceLastCheckpoint
                 });
-                
+
                 await onCheckpoint({
                     conversationHistory,
                     turnCount,
@@ -1168,7 +1192,7 @@ async function executeReActLoop(params) {
                     contextSummary,
                     startTime
                 });
-                
+
                 lastCheckpointTime = Date.now();
             }
 
@@ -1185,7 +1209,7 @@ async function executeReActLoop(params) {
                 timeRemaining - ITERATION_SAFETY_BUFFER_MS,
                 MIN_GEMINI_CALL_TIMEOUT_MS
             );
-            
+
             log.debug('Iteration timeout calculated', {
                 turn: turnCount,
                 timeRemaining,
@@ -1203,11 +1227,11 @@ async function executeReActLoop(params) {
                     model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
                     maxOutputTokens: 4096
                 }, log);
-                
+
                 // Race Gemini call against iteration timeout
                 geminiResponse = await Promise.race([
                     geminiCallPromise,
-                    new Promise((_, reject) => 
+                    new Promise((_, reject) =>
                         setTimeout(() => {
                             reject(new Error('ITERATION_TIMEOUT'));
                         }, safeIterationTimeout)
@@ -1215,7 +1239,7 @@ async function executeReActLoop(params) {
                 ]);
             } catch (geminiError) {
                 const err = geminiError instanceof Error ? geminiError : new Error(String(geminiError));
-                
+
                 // EDGE CASE PROTECTION #3: Detect iteration timeout vs Gemini error
                 if (err.message === 'ITERATION_TIMEOUT') {
                     log.warn('Gemini call exceeded iteration timeout, saving checkpoint', {
@@ -1223,7 +1247,7 @@ async function executeReActLoop(params) {
                         timeoutMs: safeIterationTimeout,
                         elapsedMs: Date.now() - startTime
                     });
-                    
+
                     // Save checkpoint immediately
                     if (onCheckpoint) {
                         await onCheckpoint({
@@ -1234,13 +1258,13 @@ async function executeReActLoop(params) {
                             startTime
                         });
                     }
-                    
+
                     // Return timeout to trigger retry
                     finalAnswer = buildTimeoutMessage();
                     timedOut = true;
                     break;
                 }
-                
+
                 log.error('Gemini API call failed', {
                     turn: turnCount,
                     error: err.message,
@@ -1256,7 +1280,7 @@ async function executeReActLoop(params) {
                     response: JSON.stringify(geminiResponse),
                     customPrompt: customPrompt ? customPrompt.substring(0, 200) : null
                 });
-                
+
                 // Attempt recovery: provide helpful message to user
                 finalAnswer = `I encountered an issue processing your request. The AI service returned an unexpected response structure. This can happen with very complex or unusual queries. Please try:\n\n1. Simplifying your question\n2. Breaking it into smaller parts\n3. Providing more specific time ranges or metrics\n\nTechnical details: Missing candidates array in Gemini response.`;
                 break;
@@ -1268,7 +1292,7 @@ async function executeReActLoop(params) {
                     response: JSON.stringify(geminiResponse).substring(0, 1000),
                     customPrompt: customPrompt ? customPrompt.substring(0, 200) : null
                 });
-                
+
                 // Recovery: Check for finishReason or promptFeedback that might explain
                 const promptFeedback = geminiResponse.promptFeedback;
                 if (promptFeedback && promptFeedback.blockReason) {
@@ -1287,7 +1311,7 @@ async function executeReActLoop(params) {
                     finishReason: geminiResponse.candidates[0]?.finishReason,
                     customPrompt: customPrompt ? customPrompt.substring(0, 200) : null
                 });
-                
+
                 // Check finish reason for context
                 const finishReason = geminiResponse.candidates[0]?.finishReason;
                 if (finishReason === 'SAFETY') {
@@ -1310,7 +1334,7 @@ async function executeReActLoop(params) {
                     hasRole: !!responseContent.role,
                     customPrompt: customPrompt ? customPrompt.substring(0, 200) : null
                 });
-                
+
                 // Recovery attempt: Check if there's a text field directly on content
                 if (responseContent.text) {
                     log.info('Found text directly on content object, recovering', {
@@ -1320,7 +1344,7 @@ async function executeReActLoop(params) {
                     finalAnswer = responseContent.text;
                     break;
                 }
-                
+
                 // No recovery possible
                 finalAnswer = `I encountered a technical issue processing your request. The response format was unexpected. This sometimes happens with very complex questions requiring multiple data lookups. Please try:\n\n1. Asking for specific metrics or time ranges\n2. Breaking complex questions into simpler parts\n3. Using more standard phrasing\n\nTechnical: Invalid parts array structure.`;
                 break;
@@ -1365,10 +1389,10 @@ async function executeReActLoop(params) {
                         answerLength: finalAnswer.length,
                         toolCallsTotal: toolCallCount
                     });
-                    
+
                     // Validate response format
                     const validation = validateResponseFormat(finalAnswer, customPrompt || '');
-                    
+
                     if (!validation.valid && turnCount < MAX_TURNS - 1) {
                         log.warn('Response format validation failed, requesting correction', {
                             error: validation.error,
@@ -1376,28 +1400,28 @@ async function executeReActLoop(params) {
                             turn: turnCount,
                             attemptsRemaining: MAX_TURNS - turnCount - 1
                         });
-                        
+
                         // Add format correction request to conversation
                         const correctionPrompt = buildCorrectionPrompt(
-                            finalAnswer, 
-                            validation.error, 
+                            finalAnswer,
+                            validation.error,
                             validation.formatType,
                             customPrompt || ''
                         );
-                        
+
                         conversationHistory.push({
                             role: 'user',
                             parts: [{ text: correctionPrompt }]
                         });
-                        
+
                         // Clear finalAnswer to continue loop
                         finalAnswer = null;
-                        
+
                         log.info('Correction request added to conversation', {
                             turn: turnCount,
                             formatType: validation.formatType
                         });
-                        
+
                         // Continue to next turn for correction
                         continue;
                     } else if (!validation.valid) {
