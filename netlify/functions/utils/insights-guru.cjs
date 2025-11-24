@@ -2378,54 +2378,6 @@ function buildQuickReferenceCatalog(systemId, startDate, endDate, totalRecords =
     return lines.join("\n");
 }
 
-async function buildDataAvailabilitySummary(systemId, contextData, log) {
-    lines.push("   • The requested date is within your queryable range shown above");
-    lines.push("   • You haven't tried calling request_bms_data yet");
-    lines.push("   • You're being asked to compare dates or time periods");
-    lines.push("   • User asks about 'past 14 days', 'last week', 'last month', etc.");
-    lines.push("\n✅ YOU HAVE FULL ACCESS TO ALL HISTORICAL DATA - ALWAYS CALL THE TOOLS!");
-    lines.push("✅ The data exists and is queryable - use request_bms_data to retrieve it!");
-    lines.push("✅ Don't make assumptions about data availability - query and verify!");
-    
-    lines.push("\n📝 REQUIRED INSIGHT FORMAT:");
-    lines.push("Your final_answer MUST follow this exact structure:");
-    lines.push("\n## KEY FINDINGS");
-    lines.push("2-4 critical insights with **bold labels** and supporting data:");
-    lines.push("• Include trend directions (📈📉➡️) and statistical confidence (R²)");
-    lines.push("• Cite data sources inline: 'metric (source + evidence)'");
-    lines.push("• Compare to baselines: 'X% deviation from 30-day average'");
-    lines.push("• Week/month-over-month context when available");
-    
-    lines.push("\n## TREND ANALYSIS");
-    lines.push("Statistical patterns and trajectory:");
-    lines.push("• SOC/voltage/current trends with R² confidence");
-    lines.push("• Rate of change (per day/week/month)");
-    lines.push("• Significance assessment (is change meaningful?)");
-    lines.push("• Correlations (temp vs performance, weather vs solar, etc.)");
-    
-    lines.push("\n## RECOMMENDATIONS");
-    lines.push("Prioritized actions with complete details:");
-    lines.push("• Format: 🔴/🟡/🟢 **ACTION** (Priority: X, Impact: Y, Timeline: Z days)");
-    lines.push("• Action: Specific, measurable change (e.g., 'Add 200Ah capacity')");
-    lines.push("• Rationale: Why needed, backed by data and trends");
-    lines.push("• Cost-Benefit: Estimated costs vs benefits (ROI, payback period)");
-    lines.push("• Expected Outcome: Quantified results (e.g., '+0.5 days autonomy')");
-    lines.push("• Implementation: Step-by-step or options (A/B/C)");
-    lines.push("• Validation Criteria: How to verify success (e.g., 'SOC >40% for 7 days')");
-    
-    lines.push("\n⚠️ CRITICAL REQUIREMENTS:");
-    lines.push("• NO OPERATIONAL STATUS section (current readings shown in UI)");
-    lines.push("• ALL recommendations must have specific numbers, not vague suggestions");
-    lines.push("• ALWAYS distinguish 'battery autonomy' (runtime) from 'service life' (replacement timeline)");
-    lines.push("• Solar variance = daytime load consumption (NOT solar underperformance) unless weather was favorable");
-    lines.push("• Group consecutive alerts into time-based events (multiple screenshots ≠ multiple events)");
-    lines.push("• Include confidence levels (high/medium/low based on R², sample size, data quality)");
-    
-    lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    
-    return lines.join("\n");
-}
-
 function truncate(text, maxLength) {
     if (!text) return "";
     if (text.length <= maxLength) return text;
