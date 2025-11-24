@@ -16,40 +16,57 @@ let REAL_BMS_DATA = null;
 
 // Helper function to get REAL production BMS data from the database
 // This replaces the fake TEST_BMS_DATA with actual production data
+// Strategy: Use the EARLIEST record from the current month as a stable test position
+// This ensures we have a dedicated position that only changes monthly
 const getRealProductionData = async () => {
   try {
     const db = await getDb();
     
-    // Get the most recent real analysis record
-    const recentAnalysis = await db.collection('analysis-results')
+    // Calculate the start of the current month for querying
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    
+    // Get the EARLIEST real analysis record from the current month
+    // This provides a stable, dedicated test position that changes monthly
+    const earliestMonthlyAnalysis = await db.collection('analysis-results')
       .find({ 
         'analysis.testData': { $ne: true }, // Exclude test data
-        'analysis.voltage': { $exists: true } // Must have actual BMS data
+        'analysis.voltage': { $exists: true }, // Must have actual BMS data
+        timestamp: { 
+          $gte: monthStart.toISOString(),
+          $lt: monthEnd.toISOString()
+        }
       })
-      .sort({ timestamp: -1 })
+      .sort({ timestamp: 1 }) // Ascending order - earliest first
       .limit(1)
       .toArray();
     
-    if (recentAnalysis && recentAnalysis.length > 0 && recentAnalysis[0].analysis) {
-      logger.info('Using REAL production BMS data from database', {
-        recordId: recentAnalysis[0]._id,
-        timestamp: recentAnalysis[0].timestamp,
-        fileName: recentAnalysis[0].fileName
+    if (earliestMonthlyAnalysis && earliestMonthlyAnalysis.length > 0 && earliestMonthlyAnalysis[0].analysis) {
+      logger.info('Using REAL production BMS data from database (earliest record this month)', {
+        recordId: earliestMonthlyAnalysis[0]._id,
+        timestamp: earliestMonthlyAnalysis[0].timestamp,
+        fileName: earliestMonthlyAnalysis[0].fileName,
+        monthStart: monthStart.toISOString(),
+        strategy: 'earliest-monthly'
       });
       return {
-        ...recentAnalysis[0].analysis,
-        _sourceRecordId: recentAnalysis[0]._id,
-        _sourceTimestamp: recentAnalysis[0].timestamp,
+        ...earliestMonthlyAnalysis[0].analysis,
+        _sourceRecordId: earliestMonthlyAnalysis[0]._id,
+        _sourceTimestamp: earliestMonthlyAnalysis[0].timestamp,
         _isRealProductionData: true
       };
     }
     
-    // Fallback: If no real data exists yet, use realistic test data but mark it clearly
-    logger.warn('No real production data found in database - using fallback test data');
+    // Fallback: If no real data exists for this month, use realistic test data but mark it clearly
+    logger.warn('No real production data found in database for current month - using fallback test data', {
+      monthStart: monthStart.toISOString(),
+      monthEnd: monthEnd.toISOString()
+    });
     return {
       ...TEST_BMS_DATA,
       _isRealProductionData: false,
-      _note: 'No real BMS data available in database yet - upload a screenshot first'
+      _note: `No real BMS data available for ${monthStart.toISOString().substring(0, 7)} - upload a screenshot to enable real data testing`
     };
     
   } catch (error) {
