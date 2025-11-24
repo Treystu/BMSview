@@ -923,24 +923,42 @@ export const streamInsights = async (
 
             const error = err instanceof Error ? err : new Error(String(err));
 
-            // Provide user-friendly message for timeout/abort
+            // CRITICAL FIX: Treat AbortError as a retry signal, not a fatal error
+            // This is the "Starter Motor" approach - keep trying instead of showing error
             if (error.name === 'AbortError') {
                 // Client-side timeout - the function took too long to respond
-                // This is likely because it's stuck or the network is slow
-                const timeoutError = new Error(
-                    `Request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds. The server is taking too long to respond.\n\n` +
-                    `This might mean:\n` +
-                    `• The query is very complex and needs more processing\n` +
-                    `• Network connectivity issues\n` +
-                    `• The server is experiencing high load\n\n` +
-                    `The system will automatically retry if the server supports resume.`
-                );
-                log('error', 'Insights request aborted due to timeout', { 
-                    originalError: error.message,
+                // Instead of showing error, treat this like a 408 and retry
+                log('warn', 'Client-side timeout occurred, treating as retry signal', { 
                     attemptCount,
+                    maxAttempts: MAX_RESUME_ATTEMPTS,
                     timeoutMs: REQUEST_TIMEOUT_MS
                 });
-                throw timeoutError;
+                
+                // Check if we can retry
+                if (attemptCount < MAX_RESUME_ATTEMPTS) {
+                    // Show continuing message to user
+                    const continuingMessage = `\n\n⏳ **Server is taking longer than expected. Continuing analysis (attempt ${attemptCount + 1}/${MAX_RESUME_ATTEMPTS})...**\n\n`;
+                    onChunk(continuingMessage);
+                    
+                    log('info', 'Auto-retrying after client timeout', {
+                        attemptCount,
+                        maxAttempts: MAX_RESUME_ATTEMPTS
+                    });
+                    
+                    // Recursively retry - this implements the "never give up" approach
+                    return await attemptInsightsGeneration();
+                } else {
+                    // Max retries exceeded - only NOW show error to user
+                    const totalTimeMinutes = Math.round((MAX_RESUME_ATTEMPTS * BACKEND_FUNCTION_TIMEOUT_S) / 60);
+                    const maxRetriesError = new Error(
+                        `Analysis is taking longer than expected (${totalTimeMinutes} minutes, ${MAX_RESUME_ATTEMPTS} attempts).\n\n` +
+                        `This is a very complex query. Consider:\n` +
+                        `• Reducing the time range (currently: ${payload.contextWindowDays || 30} days)\n` +
+                        `• Asking a more specific question\n` +
+                        `• Breaking your query into multiple smaller questions`
+                    );
+                    throw maxRetriesError;
+                }
             } else {
                 throw error;
             }
