@@ -1,92 +1,38 @@
 // Test setup file for Jest
-jest.setTimeout(30000); // Increase timeout for comprehensive tests
+jest.setTimeout(60000); // Increased timeout for real API calls
 
-// Mock console for cleaner test output
-global.console = {
-  ...console,
-  log: jest.fn(),
-  debug: jest.fn(),
-  info: jest.fn(),
-  warn: jest.fn(), // Changed to mock for cleaner output
-  error: jest.fn(), // Changed to mock for cleaner output
-};
+// IMPORTANT: Tests now use REAL services - no mocking
+// You MUST set these environment variables for tests to pass:
+// - GEMINI_API_KEY: Your Google Gemini API key
+// - MONGODB_URI: Your MongoDB connection string
+// - MONGODB_DB_NAME: Your MongoDB database name (default: bmsview-test)
 
-// Mock environment variables
-process.env.GEMINI_API_KEY = 'test-api-key';
-process.env.MONGODB_URI = 'mongodb://localhost:27017/test';
+// Set test environment
 process.env.NODE_ENV = 'test';
 
-// Mock MongoDB client so tests don't require a real server
-jest.mock('mongodb', () => {
-  const { mockMongoDB } = require('./mocks/mongodb.mock');
-  class MockMongoClient {
-    constructor(uri) { this.uri = uri; }
-    async connect() { return mockMongoDB.client.connect(); }
-    db(name) { return mockMongoDB.client.db(name); }
-    async close() { return Promise.resolve(); }
-  }
-  return { MongoClient: MockMongoClient };
-});
+// Use test database name to avoid polluting production data
+if (!process.env.MONGODB_DB_NAME) {
+  process.env.MONGODB_DB_NAME = 'bmsview-test';
+}
 
-// Mock new Gemini SDK (@google/genai)
-jest.mock('@google/genai', () => ({
-  GoogleGenAI: jest.fn().mockImplementation(() => ({
-    models: {
-      generateContent: jest.fn().mockResolvedValue({
-        response: {
-          text: () => 'OK - Test response from Gemini API'
-        },
-        text: () => 'OK - Test response from Gemini API'
-      })
-    }
-  })),
-  Type: {
-    TYPE_UNSPECIFIED: 'TYPE_UNSPECIFIED',
-    STRING: 'STRING',
-    NUMBER: 'NUMBER',
-    INTEGER: 'INTEGER',
-    BOOLEAN: 'BOOLEAN',
-    ARRAY: 'ARRAY',
-    OBJECT: 'OBJECT'
-  }
-}));
+// Validate required environment variables
+const requiredEnvVars = ['GEMINI_API_KEY', 'MONGODB_URI'];
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
-// Mock fetch for API tests
-const mockFetch = jest.fn((url, options) => {
-  if (typeof url === 'string' && url.includes('/.netlify/functions/upload')) {
-    global.__uploadCallCount = (global.__uploadCallCount || 0) + 1;
-    const isDuplicate = global.__uploadCallCount % 2 === 0;
-    return Promise.resolve({
-      ok: !isDuplicate,
-      status: isDuplicate ? 409 : 200,
-      json: () => Promise.resolve({ success: !isDuplicate, reason: isDuplicate ? 'duplicate' : undefined })
-    });
-  }
-  return Promise.resolve({
-    ok: true,
-    status: 200,
-    json: () => Promise.resolve({ success: true })
+if (missingEnvVars.length > 0) {
+  console.warn('\n⚠️  WARNING: Missing required environment variables for tests:');
+  missingEnvVars.forEach(varName => {
+    console.warn(`   - ${varName}`);
   });
-});
-
-global.fetch = mockFetch;
+  console.warn('\nTests that require these services will be skipped or fail.');
+  console.warn('Set these variables in a .env file or export them before running tests.\n');
+}
 
 // Global test hooks
 beforeEach(() => {
   jest.clearAllMocks();
-  // Reset fetch mock
-  global.__uploadCallCount = 0;
-  global.fetch.mockClear();
-  // Reset console mocks
-  Object.keys(global.console).forEach(key => {
-    if (typeof global.console[key] === 'function' && global.console[key].mockClear) {
-      global.console[key].mockClear();
-    }
-  });
 });
 
 afterEach(() => {
-  // Only verify console.error in tests that explicitly check for it
-  // Some tests intentionally trigger errors (e.g., error handling tests)
-  // So we don't globally assert on console.error
+  // Cleanup after each test
 });

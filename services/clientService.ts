@@ -1189,9 +1189,9 @@ const pollInsightsJobCompletion = async (
                 // "Starter Motor" approach: After many attempts, show informative message
                 // but don't reject - the background job may still be running
                 if (attempts >= maxAttempts) {
-                    // Calculate actual elapsed time (rough estimate based on exponential backoff)
-                    // This is approximate because we don't track exact interval history
-                    const estimatedMinutes = Math.round((attempts * initialInterval * backoffMultiplier) / 60000);
+                    // Note: Actual elapsed time is difficult to calculate precisely due to exponential backoff
+                    // This is a rough lower-bound estimate - actual time will be longer
+                    const estimatedMinutes = Math.round((attempts * initialInterval) / 60000);
                     const warning = `\n\n⚠️ **Analysis taking longer than expected (${estimatedMinutes}+ minutes)**\n\n` +
                         `Your analysis is still processing in the background. This typically means:\n` +
                         `• Very large dataset being analyzed (${contextWindowDays || 30}+ days)\n` +
@@ -1206,7 +1206,8 @@ const pollInsightsJobCompletion = async (
                         jobId, 
                         attempts,
                         estimatedMinutes,
-                        contextWindowDays 
+                        contextWindowDays,
+                        note: 'Actual elapsed time is longer due to exponential backoff'
                     });
                     
                     // Show warning but continue polling (don't reject)

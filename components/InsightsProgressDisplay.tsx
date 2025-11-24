@@ -150,6 +150,17 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
 }
 
 function StatusBadge({ status, isPolling, error, elapsedSeconds }: { status?: string; isPolling: boolean; error: string | null; elapsedSeconds: number }) {
+  // Helper function to get appropriate status message based on elapsed time
+  const getStatusBadgeMessage = () => {
+    if (elapsedSeconds > TIME_THRESHOLD_CRUNCHING) {
+      return 'Deep Analysis...';
+    } else if (elapsedSeconds > TIME_THRESHOLD_ANALYZING) {
+      return 'Processing...';
+    } else {
+      return 'Analyzing...';
+    }
+  };
+
   if (error) {
     return (
       <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
@@ -175,10 +186,7 @@ function StatusBadge({ status, isPolling, error, elapsedSeconds }: { status?: st
   }
 
   if (status === 'processing' || isPolling) {
-    // Show different messages based on elapsed time using the same thresholds
-    const message = elapsedSeconds > TIME_THRESHOLD_CRUNCHING ? 'Deep Analysis...' : 
-                    elapsedSeconds > TIME_THRESHOLD_ANALYZING ? 'Processing...' : 
-                    'Analyzing...';
+    const message = getStatusBadgeMessage();
     
     return (
       <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
