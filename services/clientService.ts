@@ -642,6 +642,9 @@ export const streamInsights = async (
     const endpoint = '/.netlify/functions/generate-insights-with-tools';
 
     let contextSummarySent = false;
+    const MAX_RESUME_ATTEMPTS = 5; // Maximum 5 attempts (5 minutes total with 60s each)
+    let resumeJobId: string | undefined = undefined;
+    let attemptCount = 0;
 
     log('info', 'Streaming insights from server.', {
         systemId: payload.systemId,
@@ -653,221 +656,287 @@ export const streamInsights = async (
         dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
     });
 
-    // Add timeout for insights request (90 seconds to allow for background job creation + startup)
-    // Background mode is now the default, which requires time to:
-    // - Create job in MongoDB
-    // - Dispatch to background function
-    // - Background function to start processing
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-        controller.abort();
-        log('warn', 'Insights request timed out after 90 seconds.');
-    }, 90000);
+    // Wrapper function to handle retries with resume
+    const attemptInsightsGeneration = async (): Promise<void> => {
+        attemptCount++;
 
-    try {
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-            signal: controller.signal,
-        });
+        // Show retry progress to user
+        if (attemptCount > 1) {
+            const retryMessage = `\n\n⏳ **Continuing analysis (attempt ${attemptCount}/${MAX_RESUME_ATTEMPTS})...**\n\n`;
+            onChunk(retryMessage);
+            log('info', 'Resuming insights generation', { attemptCount, resumeJobId });
+        }
 
-        clearTimeout(timeoutId);
+        // Add timeout for insights request (90 seconds to allow for background job creation + startup)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+            log('warn', 'Insights request timed out after 90 seconds.');
+        }, 90000);
 
-        if (!response.ok) {
-            let errorMessage = `Request failed: ${response.status}`;
+        try {
+            // Build request body with resumeJobId if available
+            const requestBody: any = {
+                ...payload,
+                mode: 'sync' // Explicitly use sync mode for checkpoint/resume
+            };
+            
+            if (resumeJobId) {
+                requestBody.resumeJobId = resumeJobId;
+            }
 
-            // Provide user-friendly error messages for common status codes
-            if (response.status === 504) {
-                errorMessage = 'Request timed out. The AI took too long to process your query. Try:\n' +
-                    '• Asking a simpler question\n' +
-                    '• Requesting a smaller time range\n' +
-                    '• Breaking complex queries into multiple questions';
-            } else if (response.status === 503) {
-                errorMessage = 'Service temporarily unavailable. Please try again in a few moments.';
-            } else if (response.status === 500) {
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            // Handle 408 timeout response with resumeJobId
+            if (response.status === 408) {
                 try {
                     const errorData = await response.json();
-                    if (errorData.message) {
-                        errorMessage = errorData.message;
+                    
+                    log('info', 'Received 408 timeout response', {
+                        hasJobId: !!errorData.details?.jobId,
+                        canResume: errorData.details?.canResume,
+                        attemptCount
+                    });
+
+                    // Check if we can resume
+                    if (errorData.details?.canResume && errorData.details?.jobId) {
+                        if (attemptCount < MAX_RESUME_ATTEMPTS) {
+                            // Save jobId and retry
+                            resumeJobId = errorData.details.jobId;
+                            log('info', 'Automatic retry scheduled', {
+                                attemptCount,
+                                maxAttempts: MAX_RESUME_ATTEMPTS,
+                                jobId: resumeJobId
+                            });
+                            
+                            // Recursively retry
+                            return await attemptInsightsGeneration();
+                        } else {
+                            // Max retries exceeded
+                            const maxRetriesError = new Error(
+                                `Analysis is taking longer than expected (${MAX_RESUME_ATTEMPTS} minutes).\n\n` +
+                                `This is a very complex query. Consider:\n` +
+                                `• Reducing the time range (currently: ${payload.contextWindowDays || 30} days)\n` +
+                                `• Asking a more specific question\n` +
+                                `• Breaking your query into multiple smaller questions`
+                            );
+                            throw maxRetriesError;
+                        }
+                    } else {
+                        // Can't resume - throw original error
+                        throw new Error(errorData.message || 'Insights generation timed out and cannot be resumed');
                     }
-                } catch {
-                    errorMessage = 'Internal server error. Please try again.';
-                }
-            } else {
-                try {
-                    const errorText = await response.text();
-                    errorMessage = errorText || errorMessage;
-                } catch {
-                    // Use default error message
+                } catch (parseError) {
+                    log('error', 'Failed to parse 408 response', { error: parseError });
+                    throw new Error('Insights generation timed out');
                 }
             }
 
-            log('error', 'Insights request failed', {
-                status: response.status,
-                statusText: response.statusText,
-                errorMessage
+            if (!response.ok) {
+                let errorMessage = `Request failed: ${response.status}`;
+
+                // Provide user-friendly error messages for common status codes
+                if (response.status === 504) {
+                    errorMessage = 'Request timed out. The AI took too long to process your query. Try:\n' +
+                        '• Asking a simpler question\n' +
+                        '• Requesting a smaller time range\n' +
+                        '• Breaking complex queries into multiple questions';
+                } else if (response.status === 503) {
+                    errorMessage = 'Service temporarily unavailable. Please try again in a few moments.';
+                } else if (response.status === 500) {
+                    try {
+                        const errorData = await response.json();
+                        if (errorData.message) {
+                            errorMessage = errorData.message;
+                        }
+                    } catch {
+                        errorMessage = 'Internal server error. Please try again.';
+                    }
+                } else {
+                    try {
+                        const errorText = await response.text();
+                        errorMessage = errorText || errorMessage;
+                    } catch {
+                        // Use default error message
+                    }
+                }
+
+                log('error', 'Insights request failed', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    errorMessage
+                });
+
+                throw new Error(errorMessage);
+            }
+
+            const result = await response.json();
+
+            // Log response structure for debugging
+            log('info', 'Insights response received', {
+                hasJobId: !!result.jobId,
+                hasInsights: !!result.insights,
+                hasSuccess: !!result.success,
+                hasStatus: !!result.status,
+                responseKeys: Object.keys(result),
+                jobId: result.jobId?.substring?.(0, 20) || 'none',
+                status: result.status,
+                mode: result.metadata?.mode,
+                wasResumed: result.metadata?.wasResumed,
+                attemptCount
             });
 
-            throw new Error(errorMessage);
-        }
-
-        const result = await response.json();
-
-        // Log response structure for debugging
-        log('info', 'Insights response received', {
-            hasJobId: !!result.jobId,
-            hasInsights: !!result.insights,
-            hasSuccess: !!result.success,
-            hasStatus: !!result.status,
-            responseKeys: Object.keys(result),
-            jobId: result.jobId?.substring?.(0, 20) || 'none',
-            status: result.status,
-            mode: result.analysisMode
-        });
-
-        // AGGRESSIVE DEBUGGING: Log the actual values
-        const debugInfo = {
-            'result.jobId (type)': typeof result.jobId,
-            'result.jobId (value)': result.jobId,
-            'result.jobId (truthy)': !!result.jobId,
-            'result.insights (type)': typeof result.insights,
-            'result.insights (value)': result.insights,
-            'result.insights (falsy)': !result.insights,
-            'condition result': !!(result.jobId && !result.insights)
-        };
-        log('info', 'DEBUG: Response validation details', debugInfo);
-
-        if (result.contextSummary && !contextSummarySent) {
-            const summaryText = formatContextSummary(result.contextSummary);
-            if (summaryText) {
-                onChunk(summaryText);
-                contextSummarySent = true;
-            }
-        }
-
-        // Handle BACKGROUND MODE: Response contains jobId (async processing)
-        if (result.jobId && !result.insights) {
-            log('info', 'Background insights job started - CONDITION PASSED', {
-                jobId: result.jobId,
-                status: result.status
-            });
-
-            // Stream initial summary if available
-            if (result.initialSummary) {
-                const summaryText = formatInitialSummary(result.initialSummary);
-                if (summaryText) {
-                    onChunk(summaryText);
-                }
-            }
-
-            // Start polling for job completion
-            await pollInsightsJobCompletion(
-                result.jobId,
-                onChunk,
-                onError,
-                600,
-                2000,
-                contextSummarySent ? undefined : result.contextSummary
-            );
-            onComplete();
-            return;
-        }
-
-        // Handle SYNC MODE: Response contains insights directly
-        if (result.success && result.insights) {
-            // Check for warnings (e.g., max iterations reached)
-            if (result.warning) {
-                log('warn', 'Insights generation warning', { warning: result.warning });
-            }
-
-            if (!contextSummarySent && result.insights.contextSummary) {
-                const summaryText = formatContextSummary(result.insights.contextSummary);
+            if (result.contextSummary && !contextSummarySent) {
+                const summaryText = formatContextSummary(result.contextSummary);
                 if (summaryText) {
                     onChunk(summaryText);
                     contextSummarySent = true;
                 }
             }
 
-            onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis completed');
-
-            // Log performance metrics if available
-            if (result.iterations || result.toolCalls) {
-                log('info', 'Insights generation metrics', {
-                    iterations: result.iterations,
-                    toolCallsUsed: result.toolCalls?.length || 0,
-                    usedFunctionCalling: result.usedFunctionCalling
+            // Handle BACKGROUND MODE: Response contains jobId (async processing)
+            if (result.jobId && !result.insights) {
+                log('info', 'Background insights job started', {
+                    jobId: result.jobId,
+                    status: result.status
                 });
-            }
-            onComplete();
-            return;
-        }
 
-        if (result.error && result.insights) {
-            // Handle error case where insights contains error message
-            log('warn', 'Insights generated with error', { result });
-            onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis failed');
-            onComplete();
-            return;
-        }
-
-        // Unknown response format - provide detailed error message for debugging
-        log('warn', 'Unexpected insights response format - PRIMARY CONDITIONS FAILED', {
-            result,
-            detail: {
-                hasJobId: !!result.jobId,
-                hasInsights: !!result.insights,
-                hasSuccess: !!result.success,
-                hasStatus: !!result.status,
-                allKeys: Object.keys(result),
-                responseJSON: JSON.stringify(result)
-            }
-        });
-
-        // Fallback: Try to detect mode even with unexpected structure
-        if (result.jobId && result.status === 'processing') {
-            log('info', 'Detected background mode from status field despite unexpected structure - FALLBACK CONDITION PASSED', { jobId: result.jobId });
-            if (result.initialSummary) {
-                const summaryText = formatInitialSummary(result.initialSummary);
-                if (summaryText) {
-                    onChunk(summaryText);
+                // Stream initial summary if available
+                if (result.initialSummary) {
+                    const summaryText = formatInitialSummary(result.initialSummary);
+                    if (summaryText) {
+                        onChunk(summaryText);
+                    }
                 }
+
+                // Start polling for job completion
+                await pollInsightsJobCompletion(
+                    result.jobId,
+                    onChunk,
+                    onError,
+                    600,
+                    2000,
+                    contextSummarySent ? undefined : result.contextSummary
+                );
+                onComplete();
+                return;
             }
-            await pollInsightsJobCompletion(
-                result.jobId,
-                onChunk,
-                onError,
-                600,
-                2000,
-                contextSummarySent ? undefined : result.contextSummary
-            );
-            onComplete();
-            return;
+
+            // Handle SYNC MODE: Response contains insights directly
+            if (result.success && result.insights) {
+                // Check for warnings (e.g., max iterations reached)
+                if (result.warning) {
+                    log('warn', 'Insights generation warning', { warning: result.warning });
+                }
+
+                if (!contextSummarySent && result.insights.contextSummary) {
+                    const summaryText = formatContextSummary(result.insights.contextSummary);
+                    if (summaryText) {
+                        onChunk(summaryText);
+                        contextSummarySent = true;
+                    }
+                }
+
+                onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis completed');
+
+                // Log performance metrics if available
+                if (result.metadata) {
+                    log('info', 'Insights generation metrics', {
+                        iterations: result.metadata.turns,
+                        toolCallsUsed: result.metadata.toolCalls,
+                        durationMs: result.metadata.durationMs,
+                        wasResumed: result.metadata.wasResumed,
+                        totalAttempts: attemptCount
+                    });
+                }
+                onComplete();
+                return;
+            }
+
+            if (result.error && result.insights) {
+                // Handle error case where insights contains error message
+                log('warn', 'Insights generated with error', { result });
+                onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis failed');
+                onComplete();
+                return;
+            }
+
+            // Unknown response format - provide detailed error message for debugging
+            log('warn', 'Unexpected insights response format', {
+                result,
+                detail: {
+                    hasJobId: !!result.jobId,
+                    hasInsights: !!result.insights,
+                    hasSuccess: !!result.success,
+                    hasStatus: !!result.status,
+                    allKeys: Object.keys(result),
+                    responseJSON: JSON.stringify(result)
+                }
+            });
+
+            // Fallback: Try to detect mode even with unexpected structure
+            if (result.jobId && result.status === 'processing') {
+                log('info', 'Detected background mode from status field', { jobId: result.jobId });
+                if (result.initialSummary) {
+                    const summaryText = formatInitialSummary(result.initialSummary);
+                    if (summaryText) {
+                        onChunk(summaryText);
+                    }
+                }
+                await pollInsightsJobCompletion(
+                    result.jobId,
+                    onChunk,
+                    onError,
+                    600,
+                    2000,
+                    contextSummarySent ? undefined : result.contextSummary
+                );
+                onComplete();
+                return;
+            }
+
+            throw new Error('Server returned unexpected response format');
+        } catch (err) {
+            clearTimeout(timeoutId);
+
+            const error = err instanceof Error ? err : new Error(String(err));
+
+            // Provide user-friendly message for timeout/abort
+            if (error.name === 'AbortError') {
+                const timeoutError = new Error(
+                    'Request timed out after 90 seconds. The server is taking too long to start processing.\n\n' +
+                    'This usually means:\n' +
+                    '• The background processing service is busy\n' +
+                    '• There may be a temporary service issue\n\n' +
+                    'Please try again in a few moments.'
+                );
+                log('error', 'Insights request aborted due to timeout', { originalError: error.message });
+                throw timeoutError;
+            } else {
+                throw error;
+            }
         }
+    };
 
-        throw new Error('Server returned unexpected response format');
-    } catch (err) {
-        clearTimeout(timeoutId);
-
-        const error = err instanceof Error ? err : new Error(String(err));
-
-        // Provide user-friendly message for timeout/abort
-        if (error.name === 'AbortError') {
-            const timeoutError = new Error(
-                'Request timed out after 90 seconds. The server is taking too long to start processing.\n\n' +
-                'This usually means:\n' +
-                '• The background processing service is busy\n' +
-                '• There may be a temporary service issue\n\n' +
-                'Please try again in a few moments.'
-            );
-            log('error', 'Insights request aborted due to timeout', { originalError: error.message });
-            onError(timeoutError);
-        } else {
-            log('error', 'Error streaming insights', { error: error.message });
-            onError(error);
-        }
+    // Start the insights generation with retry logic
+    try {
+        await attemptInsightsGeneration();
+    } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        log('error', 'Insights generation failed after retries', { 
+            error: err.message,
+            attemptCount 
+        });
+        onError(err);
     }
 };
 
