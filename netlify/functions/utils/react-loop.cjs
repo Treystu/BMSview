@@ -1335,9 +1335,6 @@ This typically means your question requires accessing long-term historical data 
 
 module.exports = {
     executeReActLoop,
-    DEFAULT_MAX_TURNS,
-    module.exports = {
-    executeReActLoop,
     executeInitializationSequence,
     DEFAULT_MAX_TURNS,
     CUSTOM_QUERY_MAX_TURNS,
