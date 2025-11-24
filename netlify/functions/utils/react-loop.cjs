@@ -25,9 +25,28 @@ const NETLIFY_TIMEOUT_MS = parseInt(process.env.NETLIFY_FUNCTION_TIMEOUT_MS || '
 const CONTEXT_COLLECTION_BUFFER_MS = 3000; // Reserve 3s for context collection
 const CHECKPOINT_SAVE_BUFFER_MS = 3000; // Reserve 3s for checkpoint save + response (increased from 2s)
 const RESPONSE_BUFFER_MS = 2000; // Reserve 2s for formatting and returning response
-const SYNC_CONTEXT_BUDGET_MS = Math.max(NETLIFY_TIMEOUT_MS - CONTEXT_COLLECTION_BUFFER_MS - RESPONSE_BUFFER_MS, 5000); // ~15s for context
-const SYNC_TOTAL_BUDGET_MS = Math.max(NETLIFY_TIMEOUT_MS - CHECKPOINT_SAVE_BUFFER_MS - RESPONSE_BUFFER_MS, 8000); // ~15s total before checkpoint
-const CHECKPOINT_FREQUENCY_MS = Math.max(Math.floor((NETLIFY_TIMEOUT_MS - RESPONSE_BUFFER_MS) / 3), 4000); // Save checkpoint every ~6s
+
+// Minimum safe values to prevent degenerate cases
+const MIN_SYNC_CONTEXT_BUDGET_MS = 5000; // Minimum 5s for context collection
+const MIN_SYNC_TOTAL_BUDGET_MS = 8000; // Minimum 8s total processing time
+const MIN_CHECKPOINT_FREQUENCY_MS = 4000; // Minimum 4s between checkpoints
+const CHECKPOINT_FREQUENCY_DIVISOR = 3; // Save checkpoint every 1/3 of timeout
+
+// Calculate actual budgets with safety minimums
+const SYNC_CONTEXT_BUDGET_MS = Math.max(
+  NETLIFY_TIMEOUT_MS - CONTEXT_COLLECTION_BUFFER_MS - RESPONSE_BUFFER_MS, 
+  MIN_SYNC_CONTEXT_BUDGET_MS
+); // ~15s for context
+
+const SYNC_TOTAL_BUDGET_MS = Math.max(
+  NETLIFY_TIMEOUT_MS - CHECKPOINT_SAVE_BUFFER_MS - RESPONSE_BUFFER_MS, 
+  MIN_SYNC_TOTAL_BUDGET_MS
+); // ~15s total before checkpoint
+
+const CHECKPOINT_FREQUENCY_MS = Math.max(
+  Math.floor((NETLIFY_TIMEOUT_MS - RESPONSE_BUFFER_MS) / CHECKPOINT_FREQUENCY_DIVISOR), 
+  MIN_CHECKPOINT_FREQUENCY_MS
+); // Save checkpoint every ~6s
 
 // Initialization sequence settings
 const INITIALIZATION_MAX_RETRIES = 100; // Effectively unlimited retries within timeout budget
@@ -1109,10 +1128,11 @@ async function executeReActLoop(params) {
 
             // EDGE CASE PROTECTION #1: Calculate safe timeout for this iteration
             // Ensure Gemini call completes with time left for checkpoint
+            const MIN_GEMINI_CALL_TIMEOUT_MS = 3000; // Minimum 3s for Gemini API call
             const timeRemaining = totalBudgetMs - elapsedMs;
             const safeIterationTimeout = Math.max(
                 timeRemaining - CHECKPOINT_SAVE_BUFFER_MS - RESPONSE_BUFFER_MS,
-                3000 // Minimum 3s for Gemini call
+                MIN_GEMINI_CALL_TIMEOUT_MS
             );
             
             log.debug('Iteration timeout calculated', {

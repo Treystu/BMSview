@@ -301,7 +301,7 @@ async function failJob(jobId, errorMessage, log) {
  */
 async function saveCheckpoint(jobId, checkpointState, log) {
   const MAX_SAVE_RETRIES = 3;
-  const RETRY_DELAY_MS = 200; // Quick retries
+  const BASE_RETRY_DELAY_MS = 200; // Base delay for exponential backoff
   
   for (let attempt = 1; attempt <= MAX_SAVE_RETRIES; attempt++) {
     try {
@@ -350,8 +350,8 @@ async function saveCheckpoint(jobId, checkpointState, log) {
         return false;
       }
       
-      // Wait before retry
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * attempt));
+      // Wait before retry with exponential backoff
+      await new Promise(resolve => setTimeout(resolve, BASE_RETRY_DELAY_MS * attempt));
     }
   }
   
