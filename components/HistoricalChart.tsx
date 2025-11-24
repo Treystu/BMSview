@@ -456,7 +456,7 @@ const SvgChart: React.FC<{
     const showDataPoints = zoomRatio > 100; // Show points when very zoomed in
 
     const {
-        paths, anomalies, bands,
+        paths, anomalies, bands, cloudAreaPath,
         yScaleLeft, yTicksLeft, yAxisLabelLeft,
         yScaleRight, yTicksRight, yAxisLabelRight
     } = useMemo(() => {
@@ -560,9 +560,39 @@ const SvgChart: React.FC<{
             return { ...a, timestamp: d.timestamp, y: yScale(d[a.key]) };
         })).filter(Boolean);
 
-        return { paths, anomalies, bands, yScaleLeft, yTicksLeft, yAxisLabelLeft, yScaleRight, yTicksRight, yAxisLabelRight };
+        // Generate area path for cloud cover (if enabled)
+        let cloudAreaPath = '';
+        const cloudMetricConfig = metricConfig['clouds'];
+        if (cloudMetricConfig && !hiddenMetrics.has('clouds')) {
+            const cloudYScale = cloudMetricConfig.axis === 'left' ? yScaleLeft : yScaleRight;
+            if (cloudYScale) {
+                const cloudPoints = dataToRender.filter((d: any) => d.clouds !== null);
+                if (cloudPoints.length > 0) {
+                    // Create area path (from baseline to cloud value)
+                    const baselineY = cloudYScale(0);
+                    const pathParts: string[] = [];
+                    
+                    // Start at first point
+                    pathParts.push(`M ${xScale(cloudPoints[0].timestamp).toFixed(2)} ${baselineY}`);
+                    pathParts.push(`L ${xScale(cloudPoints[0].timestamp).toFixed(2)} ${cloudYScale(cloudPoints[0].clouds).toFixed(2)}`);
+                    
+                    // Add all cloud points
+                    for (let i = 1; i < cloudPoints.length; i++) {
+                        pathParts.push(`L ${xScale(cloudPoints[i].timestamp).toFixed(2)} ${cloudYScale(cloudPoints[i].clouds).toFixed(2)}`);
+                    }
+                    
+                    // Close path back to baseline
+                    pathParts.push(`L ${xScale(cloudPoints[cloudPoints.length - 1].timestamp).toFixed(2)} ${baselineY}`);
+                    pathParts.push('Z');
+                    
+                    cloudAreaPath = pathParts.join(' ');
+                }
+            }
+        }
 
-    }, [dataToRender, metricConfig, chartHeight, xScale, bandEnabled]);
+        return { paths, anomalies, bands, cloudAreaPath, yScaleLeft, yTicksLeft, yAxisLabelLeft, yScaleRight, yTicksRight, yAxisLabelRight };
+
+    }, [dataToRender, metricConfig, chartHeight, xScale, bandEnabled, hiddenMetrics]);
 
     const activeMetrics = useMemo(() => Object.entries(metricConfig).map(([key, config]) => ({ key: key as MetricKey, axis: config!.axis })), [metricConfig]);
 
@@ -716,18 +746,33 @@ const SvgChart: React.FC<{
                                     ))}
                                 </g>
                             ))}
-                            {paths.map((p: any) => p && !hiddenMetrics.has(p.key) && p.segments.map((seg: any, segIdx: number) => (
-                                <path 
-                                    key={`${p.key}-seg-${segIdx}`}
-                                    d={seg.d} 
-                                    fill="none" 
-                                    stroke={seg.color} 
-                                    strokeWidth="2.5" 
-                                    vectorEffect="non-scaling-stroke"
-                                    strokeDasharray={seg.source === 'estimated' || seg.source === 'cloud' ? '8 4' : undefined}
-                                    opacity={seg.source === 'estimated' ? 0.6 : seg.source === 'cloud' ? 0.8 : 1.0}
+                            
+                            {/* Cloud Cover Area Chart - subtle background overlay */}
+                            {cloudAreaPath && (
+                                <path
+                                    d={cloudAreaPath}
+                                    fill="#94a3b8"
+                                    fillOpacity="0.1"
+                                    stroke="none"
+                                    pointerEvents="none"
                                 />
-                            )))}
+                            )}
+                            
+                            {paths.map((p: any) => p && !hiddenMetrics.has(p.key) && p.segments.map((seg: any, segIdx: number) => {
+                                const isIrradiance = p.key === 'irradiance';
+                                return (
+                                    <path 
+                                        key={`${p.key}-seg-${segIdx}`}
+                                        d={seg.d} 
+                                        fill="none" 
+                                        stroke={seg.color} 
+                                        strokeWidth={isIrradiance ? "2" : "2.5"} 
+                                        vectorEffect="non-scaling-stroke"
+                                        strokeDasharray={isIrradiance || seg.source === 'estimated' || seg.source === 'cloud' ? '8 4' : undefined}
+                                        opacity={seg.source === 'estimated' ? 0.6 : (seg.source === 'cloud' || isIrradiance) ? 0.8 : 1.0}
+                                    />
+                                );
+                            }))}
 
                             {showDataPoints && activeMetrics.flatMap(({ key, axis }) => {
                                 if (hiddenMetrics.has(key)) return [];
@@ -1398,12 +1443,12 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
             let chartDataPoints: any[] = [];
 
-            if (useMergedData && startDate && endDate) {
+            if (useMergedData) {
                 // Use merged data API (BMS + Cloud)
                 const mergedResponse = await getMergedTimelineData(
                     selectedSystemId,
-                    startDate,
-                    endDate,
+                    queryStartDate,
+                    queryEndDate,
                     true, // Enable downsampling
                     2000 // Max points
                 );
