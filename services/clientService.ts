@@ -836,7 +836,8 @@ export const streamInsights = async (
                     onError,
                     600,
                     2000,
-                    contextSummarySent ? undefined : result.contextSummary
+                    contextSummarySent ? undefined : result.contextSummary,
+                    payload.contextWindowDays
                 );
                 onComplete();
                 return;
@@ -909,7 +910,8 @@ export const streamInsights = async (
                     onError,
                     600,
                     2000,
-                    contextSummarySent ? undefined : result.contextSummary
+                    contextSummarySent ? undefined : result.contextSummary,
+                    payload.contextWindowDays
                 );
                 onComplete();
                 return;
@@ -1086,8 +1088,12 @@ const formatContextSummary = (summary: any): string => {
     return filtered.join('\n') + '\n';
 };
 
+// Error backoff multiplier for transient failures
+const ERROR_BACKOFF_MULTIPLIER = 1.5;
+
 /**
  * Poll for background job completion with streaming updates
+ * "Starter Motor" approach: Infinite polling until definitive result
  */
 const pollInsightsJobCompletion = async (
     jobId: string,
@@ -1095,7 +1101,8 @@ const pollInsightsJobCompletion = async (
     onError: (error: Error) => void,
     maxAttempts: number = 600,  // Increased from 120 (~4 min) to 600 (~20 min) to allow for longer AI processing
     initialInterval: number = 2000,
-    initialContextSummary?: any
+    initialContextSummary?: any,
+    contextWindowDays?: number // Add parameter to track context window for logging
 ): Promise<void> => {
     let attempts = 0;
     let lastProgressCount = 0;
@@ -1103,6 +1110,7 @@ const pollInsightsJobCompletion = async (
     const maxInterval = 10000;
     const backoffMultiplier = 1.3;
     let contextSummarySent = false;
+    const pollingStartTime = Date.now(); // Track actual elapsed time
 
     const emitContextSummary = (summary: any) => {
         if (!summary || contextSummarySent) {
@@ -1181,23 +1189,76 @@ const pollInsightsJobCompletion = async (
 
                 // Continue polling
                 attempts++;
-                if (attempts < maxAttempts) {
-                    currentInterval = Math.min(currentInterval * backoffMultiplier, maxInterval);
-                    setTimeout(poll, currentInterval);
-                } else {
-                    // Timeout after ~20 minutes of polling - this should be rare as AI usually completes in 5-30 seconds
-                    const error = new Error(
-                        'Insights generation taking longer than expected (>20 minutes). ' +
-                        'The AI analysis may be processing a very large dataset or experiencing delays. ' +
-                        'Please try again or contact support if this persists.'
-                    );
-                    log('error', 'Background insights polling timeout after 20 minutes', { jobId, attempts });
-                    reject(error);
+                
+                // "Starter Motor" approach: After many attempts, show informative message
+                // but don't reject - the background job may still be running
+                if (attempts >= maxAttempts) {
+                    // Calculate actual elapsed time
+                    const actualElapsedMs = Date.now() - pollingStartTime;
+                    const actualMinutes = Math.round(actualElapsedMs / 60000);
+                    
+                    const warning = `\n\n⚠️ **Analysis taking longer than expected (${actualMinutes} minutes elapsed)**\n\n` +
+                        `Your analysis is still processing in the background. This typically means:\n` +
+                        `• Very large dataset being analyzed (${contextWindowDays || 30}+ days)\n` +
+                        `• Complex query requiring extensive AI processing\n` +
+                        `• High system load\n\n` +
+                        `The analysis will continue. You can:\n` +
+                        `• Wait for completion (recommended)\n` +
+                        `• Reduce the time window and try again\n` +
+                        `• Refresh the page to check status later\n`;
+                    
+                    log('warn', 'Background insights polling exceeded expected time', { 
+                        jobId, 
+                        attempts,
+                        actualElapsedMs,
+                        actualMinutes,
+                        contextWindowDays
+                    });
+                    
+                    // Show warning but continue polling (don't reject)
+                    onChunk(warning);
                 }
+                
+                // Always continue polling with backoff
+                currentInterval = Math.min(currentInterval * backoffMultiplier, maxInterval);
+                setTimeout(poll, currentInterval);
             } catch (err) {
                 const error = err instanceof Error ? err : new Error(String(err));
-                log('error', 'Error polling insights job status', { jobId, error: error.message });
-                reject(error);
+                
+                // "Starter Motor" approach: Log network errors but keep polling
+                // Only reject on catastrophic errors (404, 403, 401)
+                // For HTTP errors, check if response was attached with status
+                let status: number | undefined = undefined;
+                if ((error as any).response && typeof (error as any).response.status === 'number') {
+                    status = (error as any).response.status;
+                } else if (typeof (error as any).status === 'number') {
+                    status = (error as any).status;
+                }
+                
+                const isCatastrophic = status === 404 || status === 403 || status === 401;
+                
+                if (isCatastrophic) {
+                    log('error', 'Catastrophic error polling insights job status', { 
+                        jobId, 
+                        error: error.message,
+                        status
+                    });
+                    reject(error);
+                    return;
+                }
+                
+                // For transient errors (network issues, 500s, timeouts), just log and retry
+                log('warn', 'Transient error polling insights job status, retrying', { 
+                    jobId, 
+                    error: error.message,
+                    status,
+                    attempt: attempts
+                });
+                
+                // Increase backoff and continue
+                attempts++;
+                currentInterval = Math.min(currentInterval * backoffMultiplier * ERROR_BACKOFF_MULTIPLIER, maxInterval);
+                setTimeout(poll, currentInterval);
             }
         };
 
