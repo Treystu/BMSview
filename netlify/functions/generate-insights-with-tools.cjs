@@ -179,13 +179,14 @@ exports.handler = async (event, context) => {
                 jobId: job.id
               });
               
-              // Emergency checkpoint save with minimal data
+              // Emergency checkpoint save - preserve conversation history if available
+              // If result doesn't have conversationHistory, fallback to empty array
               const emergencyCheckpoint = {
-                conversationHistory: [], // Empty - better than nothing
+                conversationHistory: result.conversationHistory || [], // Preserve history if available
                 turnCount: result.turns || 0,
                 toolCallCount: result.toolCalls || 0,
                 contextSummary: result.contextSummary || {},
-                startTime: Date.now(),
+                startTime: result.startTime || Date.now(),
                 emergency: true
               };
               

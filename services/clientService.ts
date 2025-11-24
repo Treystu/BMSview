@@ -642,8 +642,14 @@ export const streamInsights = async (
     const endpoint = '/.netlify/functions/generate-insights-with-tools';
 
     let contextSummarySent = false;
-    // CRITICAL: With Netlify's 20s timeout, each attempt is shorter
-    // Allow 15 attempts (15 * 20s = 300s = 5 minutes total processing time)
+    
+    // CRITICAL: Backend timeout configuration
+    // Default is 20s for Pro/Business, but can be configured via NETLIFY_FUNCTION_TIMEOUT_MS
+    // Since we can't read env vars directly in the browser, we use the default
+    const BACKEND_FUNCTION_TIMEOUT_S = 20; // 20 seconds (configurable on backend)
+    
+    // CRITICAL: With Netlify's configurable timeout, each attempt is shorter
+    // Allow 15 attempts (15 * 20s default = 300s = 5 minutes total processing time)
     const MAX_RESUME_ATTEMPTS = 15; // Maximum 15 attempts for complex queries
     let resumeJobId: string | undefined = undefined;
     let attemptCount = 0;
@@ -726,7 +732,7 @@ export const streamInsights = async (
                             return await attemptInsightsGeneration();
                         } else {
                             // Max retries exceeded
-                            const totalTimeMinutes = Math.round((MAX_RESUME_ATTEMPTS * 20) / 60); // 20s per attempt
+                            const totalTimeMinutes = Math.round((MAX_RESUME_ATTEMPTS * BACKEND_FUNCTION_TIMEOUT_S) / 60);
                             const maxRetriesError = new Error(
                                 `Analysis is taking longer than expected (${totalTimeMinutes} minutes, ${MAX_RESUME_ATTEMPTS} attempts).\n\n` +
                                 `This is a very complex query. Consider:\n` +

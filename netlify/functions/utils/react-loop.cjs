@@ -30,6 +30,8 @@ const RESPONSE_BUFFER_MS = 2000; // Reserve 2s for formatting and returning resp
 const MIN_SYNC_CONTEXT_BUDGET_MS = 5000; // Minimum 5s for context collection
 const MIN_SYNC_TOTAL_BUDGET_MS = 8000; // Minimum 8s total processing time
 const MIN_CHECKPOINT_FREQUENCY_MS = 4000; // Minimum 4s between checkpoints
+const MIN_GEMINI_CALL_TIMEOUT_MS = 3000; // Minimum 3s for Gemini API call
+const ITERATION_SAFETY_BUFFER_MS = 1000; // 1s safety margin per iteration
 const CHECKPOINT_FREQUENCY_DIVISOR = 3; // Save checkpoint every 1/3 of timeout
 
 // Calculate actual budgets with safety minimums
@@ -1074,6 +1076,7 @@ async function executeReActLoop(params) {
             // Check timeout and save checkpoint if needed
             const elapsedMs = Date.now() - startTime;
             const timeSinceLastCheckpoint = Date.now() - lastCheckpointTime;
+            const timeRemaining = totalBudgetMs - elapsedMs;
             
             // CRITICAL: Check if we're approaching timeout
             if (elapsedMs > totalBudgetMs) {
@@ -1081,7 +1084,7 @@ async function executeReActLoop(params) {
                     turn: turnCount,
                     elapsedMs,
                     budgetMs: totalBudgetMs,
-                    timeRemaining: totalBudgetMs - elapsedMs
+                    timeRemaining
                 });
                 
                 // Save checkpoint before timeout
@@ -1097,6 +1100,32 @@ async function executeReActLoop(params) {
                 
                 finalAnswer = buildTimeoutMessage();
                 timedOut = true; // Mark as timed out
+                break;
+            }
+            
+            // EDGE CASE PROTECTION: Check if we have enough time for a meaningful iteration
+            // Need at least MIN_GEMINI_CALL_TIMEOUT_MS for the call, plus buffers for checkpoint and response
+            const MIN_ITERATION_TIME = MIN_GEMINI_CALL_TIMEOUT_MS + CHECKPOINT_SAVE_BUFFER_MS + RESPONSE_BUFFER_MS;
+            if (timeRemaining < MIN_ITERATION_TIME) {
+                log.info('Insufficient time for another iteration, saving checkpoint', {
+                    turn: turnCount,
+                    timeRemaining,
+                    minRequired: MIN_ITERATION_TIME
+                });
+                
+                // Save checkpoint before exiting
+                if (onCheckpoint) {
+                    await onCheckpoint({
+                        conversationHistory,
+                        turnCount,
+                        toolCallCount,
+                        contextSummary,
+                        startTime
+                    });
+                }
+                
+                finalAnswer = buildTimeoutMessage();
+                timedOut = true;
                 break;
             }
             
@@ -1127,11 +1156,10 @@ async function executeReActLoop(params) {
             });
 
             // EDGE CASE PROTECTION #1: Calculate safe timeout for this iteration
-            // Ensure Gemini call completes with time left for checkpoint
-            const MIN_GEMINI_CALL_TIMEOUT_MS = 3000; // Minimum 3s for Gemini API call
-            const timeRemaining = totalBudgetMs - elapsedMs;
+            // Since SYNC_TOTAL_BUDGET_MS already accounts for checkpoint and response buffers,
+            // we only need a small safety margin for this iteration
             const safeIterationTimeout = Math.max(
-                timeRemaining - CHECKPOINT_SAVE_BUFFER_MS - RESPONSE_BUFFER_MS,
+                timeRemaining - ITERATION_SAFETY_BUFFER_MS,
                 MIN_GEMINI_CALL_TIMEOUT_MS
             );
             
@@ -1139,8 +1167,7 @@ async function executeReActLoop(params) {
                 turn: turnCount,
                 timeRemaining,
                 safeIterationTimeout,
-                checkpointBuffer: CHECKPOINT_SAVE_BUFFER_MS,
-                responseBuffer: RESPONSE_BUFFER_MS
+                iterationSafetyBuffer: ITERATION_SAFETY_BUFFER_MS
             });
 
             // Call Gemini with conversation history and tools
