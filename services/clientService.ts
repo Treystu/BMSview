@@ -1339,9 +1339,14 @@ export const registerBmsSystem = async (
         'create',
         async () => {
             log('info', 'Registering new BMS system.', { name: systemData.name });
+            // Ensure associatedDLs is always an array (default to empty if not provided)
+            const dataToSend = {
+                ...systemData,
+                associatedDLs: systemData.associatedDLs || []
+            };
             return apiFetch<BmsSystem>('systems', {
                 method: 'POST',
-                body: JSON.stringify(systemData),
+                body: JSON.stringify(dataToSend),
             });
         },
         async () => {
@@ -1351,7 +1356,8 @@ export const registerBmsSystem = async (
                 if (localCache && localCache.systemsCache) {
                     const newSystem: BmsSystem = {
                         id: `temp-${Date.now()}`,
-                        ...systemData
+                        ...systemData,
+                        associatedDLs: systemData.associatedDLs || []
                     };
                     await localCache.systemsCache.put(newSystem, 'pending');
                 }

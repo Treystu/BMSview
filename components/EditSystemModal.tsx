@@ -8,6 +8,7 @@ interface EditSystemModalProps {
     isSaving: boolean;
     initialData?: Partial<Omit<BmsSystem, 'id'>>; // Pre-fill data for new systems
     enableGeolocation?: boolean; // Auto-detect GPS coordinates
+    error?: string | null; // Error message to display
 }
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
@@ -26,7 +27,8 @@ const EditSystemModal: React.FC<EditSystemModalProps> = ({
     onClose, 
     isSaving,
     initialData,
-    enableGeolocation = false
+    enableGeolocation = false,
+    error
 }) => {
     const [name, setName] = useState('');
     const [chemistry, setChemistry] = useState('');
@@ -38,6 +40,7 @@ const EditSystemModal: React.FC<EditSystemModalProps> = ({
     const [maxAmpsSolarCharging, setMaxAmpsSolarCharging] = useState('');
     const [maxAmpsGeneratorCharging, setMaxAmpsGeneratorCharging] = useState('');
     const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+    const [geoError, setGeoError] = useState<string | null>(null);
 
     useEffect(() => {
         if (system) {
@@ -75,11 +78,12 @@ const EditSystemModal: React.FC<EditSystemModalProps> = ({
     const handleDetectLocation = () => {
         if (!navigator.geolocation) {
             log('warn', 'Geolocation is not supported by this browser.');
-            alert('Geolocation is not supported by your browser.');
+            setGeoError('Geolocation is not supported by your browser.');
             return;
         }
 
         setIsDetectingLocation(true);
+        setGeoError(null);
         log('info', 'Requesting geolocation from browser...');
 
         navigator.geolocation.getCurrentPosition(
@@ -88,11 +92,24 @@ const EditSystemModal: React.FC<EditSystemModalProps> = ({
                 log('info', 'Geolocation detected.', { latitude: lat, longitude: lon });
                 setLatitude(lat.toFixed(6));
                 setLongitude(lon.toFixed(6));
+                setGeoError(null);
                 setIsDetectingLocation(false);
             },
             (error) => {
                 log('error', 'Geolocation error.', { error: error.message });
-                alert(`Unable to detect location: ${error.message}`);
+                let errorMessage = 'Unable to detect location.';
+                switch (error.code) {
+                    case error.PERMISSION_DENIED:
+                        errorMessage = 'Location permission denied. Please enable location access in your browser settings.';
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        errorMessage = 'Location information is unavailable.';
+                        break;
+                    case error.TIMEOUT:
+                        errorMessage = 'Location request timed out.';
+                        break;
+                }
+                setGeoError(errorMessage);
                 setIsDetectingLocation(false);
             },
             {
@@ -141,6 +158,14 @@ const EditSystemModal: React.FC<EditSystemModalProps> = ({
                 >
                     &times;
                 </button>
+                
+                {/* Display error from parent component (e.g., save error) */}
+                {error && (
+                    <div className="mb-4 p-3 bg-red-900/50 border border-red-500 rounded-md text-red-300 text-sm">
+                        <strong>Error:</strong> {error}
+                    </div>
+                )}
+                
                 <form onSubmit={handleSubmit}>
                     <div className="mb-4">
                         <label htmlFor="system-name-edit" className="block text-gray-300 font-medium mb-1">System Name *</label>
@@ -227,14 +252,21 @@ const EditSystemModal: React.FC<EditSystemModalProps> = ({
                             </div>
                         </div>
                         {enableGeolocation && (
-                            <button
-                                type="button"
-                                onClick={handleDetectLocation}
-                                disabled={isDetectingLocation}
-                                className="mt-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md transition-colors text-sm disabled:bg-blue-900 disabled:cursor-not-allowed"
-                            >
-                                {isDetectingLocation ? '🌍 Detecting...' : '📍 Use Current Location'}
-                            </button>
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={handleDetectLocation}
+                                    disabled={isDetectingLocation}
+                                    className="mt-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md transition-colors text-sm disabled:bg-blue-900 disabled:cursor-not-allowed"
+                                >
+                                    {isDetectingLocation ? '🌍 Detecting...' : '📍 Use Current Location'}
+                                </button>
+                                {geoError && (
+                                    <div className="mt-2 p-2 bg-yellow-900/50 border border-yellow-500 rounded text-yellow-200 text-xs">
+                                        {geoError}
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
 

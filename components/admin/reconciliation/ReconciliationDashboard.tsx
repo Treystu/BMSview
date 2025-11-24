@@ -37,6 +37,7 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
     const [selectedSystemIds, setSelectedSystemIds] = useState<string[]>([]);
     const [primarySystemId, setPrimarySystemId] = useState<string>('');
     const [isSavingNewSystem, setIsSavingNewSystem] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
     // Fetch data integrity report
     const fetchIntegrityData = async () => {
         log('info', 'Fetching data integrity report...');
@@ -67,6 +68,7 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
     const handleSaveNewSystem = async (systemData: Omit<BmsSystem, 'id'>) => {
         log('info', 'Saving new system from adoption workflow.', { systemData });
         setIsSavingNewSystem(true);
+        setSaveError(null);
         try {
             // Call the registerBmsSystem API with full system data
             await registerBmsSystem(systemData);
@@ -78,7 +80,8 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to create system.';
             log('error', 'Failed to create new system.', { error: errorMessage });
-            alert(`Error creating system: ${errorMessage}`);
+            setSaveError(errorMessage);
+            // Don't close modal on error - let user retry
         } finally {
             setIsSavingNewSystem(false);
         }
@@ -350,7 +353,10 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
                 <EditSystemModal
                     system={null} // null means we're creating a new system
                     onSave={handleSaveNewSystem}
-                    onClose={() => setAdoptingDL(null)}
+                    onClose={() => {
+                        setAdoptingDL(null);
+                        setSaveError(null);
+                    }}
                     isSaving={isSavingNewSystem}
                     initialData={{
                         name: `System for ${adoptingDL.dl_id}`,
@@ -362,6 +368,7 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
                         longitude: null
                     }}
                     enableGeolocation={true}
+                    error={saveError}
                 />
             )}
         </div>

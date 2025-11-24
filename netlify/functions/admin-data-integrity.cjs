@@ -61,7 +61,10 @@ exports.handler = async function(event, context) {
             }
         ];
 
-        log('debug', 'Running aggregation pipeline...', { ...logContext, pipeline: JSON.stringify(aggregationPipeline) });
+        // Only log pipeline in debug mode to avoid performance impact
+        if (process.env.LOG_LEVEL === 'DEBUG') {
+            log('debug', 'Running aggregation pipeline...', { ...logContext, pipeline: JSON.stringify(aggregationPipeline) });
+        }
         const aggregationResults = await historyCollection.aggregate(aggregationPipeline).toArray();
         
         log('info', `Aggregation complete. Found ${aggregationResults.length} unique DL-# sources.`, logContext);
