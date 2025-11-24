@@ -1060,10 +1060,12 @@ async function executeReActLoop(params) {
                     });
                 }
                 
-                // Return timeout signal so handler returns 408 for client retry
+                // Return with timedOut flag so handler knows this is retryable
+                // Using consistent pattern: success=false + timedOut=true for timeout cases
                 return {
                     success: false,
-                    timedOut: true, // Signal that this is a timeout, not a hard failure
+                    timedOut: true, // Indicates this is a timeout, triggers 408 response
+                    reason: 'initialization_timeout', // Specific reason for debugging
                     error: `Initialization in progress: ${initResult.error}. Retrying automatically...`,
                     durationMs: Date.now() - startTime,
                     turns: initResult.turnsUsed || 0,

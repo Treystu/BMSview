@@ -34,6 +34,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   const [error, setError] = useState<string | null>(null);
   const [circuitBreakerOpen, setCircuitBreakerOpen] = useState(false);
   const [isResettingCircuitBreaker, setIsResettingCircuitBreaker] = useState(false);
+  const successTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   
   // Context window configuration
   const [contextWindowDays, setContextWindowDays] = useState(30); // Default 1 month
@@ -140,9 +141,17 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       setError(null);
       log('info', 'Circuit breaker reset successfully');
       
-      // Show success message briefly
+      // Clear any existing timeout
+      if (successTimeoutRef.current) {
+        clearTimeout(successTimeoutRef.current);
+      }
+      
+      // Show success message briefly with cleanup
       setInsights('✅ Circuit breaker reset. You can try generating insights again.');
-      setTimeout(() => setInsights(''), 3000);
+      successTimeoutRef.current = setTimeout(() => {
+        setInsights('');
+        successTimeoutRef.current = null;
+      }, 3000);
     } catch (err) {
       log('error', 'Failed to reset circuit breaker', { error: err });
       const errorMessage = err instanceof Error ? err.message : 'Failed to reset circuit breaker';
@@ -151,6 +160,15 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       setIsResettingCircuitBreaker(false);
     }
   };
+
+  // Cleanup timeout on unmount
+  React.useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) {
+        clearTimeout(successTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="mb-8">

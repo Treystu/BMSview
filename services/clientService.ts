@@ -664,9 +664,11 @@ export const streamInsights = async (
         dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
     });
 
-    // Wrapper function to handle retries with resume
-    const attemptInsightsGeneration = async (): Promise<void> => {
-        attemptCount++;
+    // Iterative retry loop to avoid stack overflow with many attempts
+    // Using while loop instead of recursion for safety and performance
+    try {
+        while (attemptCount < MAX_RESUME_ATTEMPTS) {
+            attemptCount++;
 
         // Show retry progress to user
         if (attemptCount > 1) {
@@ -724,29 +726,16 @@ export const streamInsights = async (
 
                     // Check if we can resume
                     if (errorData.details?.canResume && errorData.details?.jobId) {
-                        if (attemptCount < MAX_RESUME_ATTEMPTS) {
-                            // Save jobId and retry
-                            resumeJobId = errorData.details.jobId;
-                            log('info', 'Automatic retry scheduled', {
-                                attemptCount,
-                                maxAttempts: MAX_RESUME_ATTEMPTS,
-                                jobId: resumeJobId
-                            });
-                            
-                            // Recursively retry
-                            return await attemptInsightsGeneration();
-                        } else {
-                            // Max retries exceeded
-                            const totalTimeMinutes = Math.round((MAX_RESUME_ATTEMPTS * BACKEND_FUNCTION_TIMEOUT_S) / 60);
-                            const maxRetriesError = new Error(
-                                `Analysis is taking longer than expected (${totalTimeMinutes} minutes, ${MAX_RESUME_ATTEMPTS} attempts).\n\n` +
-                                `This is a very complex query. Consider:\n` +
-                                `• Reducing the time range (currently: ${payload.contextWindowDays || 30} days)\n` +
-                                `• Asking a more specific question\n` +
-                                `• Breaking your query into multiple smaller questions`
-                            );
-                            throw maxRetriesError;
-                        }
+                        // Save jobId and continue loop for retry
+                        resumeJobId = errorData.details.jobId;
+                        log('info', 'Automatic retry scheduled', {
+                            attemptCount,
+                            maxAttempts: MAX_RESUME_ATTEMPTS,
+                            jobId: resumeJobId
+                        });
+                        
+                        // Continue to next iteration
+                        continue;
                     } else {
                         // Can't resume - throw original error
                         throw new Error(errorData.message || 'Insights generation timed out and cannot be resumed');
@@ -939,48 +928,34 @@ export const streamInsights = async (
                     timeoutMs: REQUEST_TIMEOUT_MS
                 });
                 
-                // Check if we can retry
-                if (attemptCount < MAX_RESUME_ATTEMPTS) {
-                    // Show continuing message to user
-                    const continuingMessage = `\n\n⏳ **Server is taking longer than expected. Continuing analysis (attempt ${attemptCount + 1}/${MAX_RESUME_ATTEMPTS})...**\n\n`;
-                    onChunk(continuingMessage);
-                    
-                    log('info', 'Auto-retrying after client timeout', {
-                        attemptCount,
-                        maxAttempts: MAX_RESUME_ATTEMPTS
-                    });
-                    
-                    // Recursively retry - this implements the "never give up" approach
-                    return await attemptInsightsGeneration();
-                } else {
-                    // Max retries exceeded - only NOW show error to user
-                    const totalTimeMinutes = Math.round((MAX_RESUME_ATTEMPTS * BACKEND_FUNCTION_TIMEOUT_S) / 60);
-                    const maxRetriesError = new Error(
-                        `Analysis is taking longer than expected (${totalTimeMinutes} minutes, ${MAX_RESUME_ATTEMPTS} attempts).\n\n` +
-                        `This is a very complex query. Consider:\n` +
-                        `• Reducing the time range (currently: ${payload.contextWindowDays || 30} days)\n` +
-                        `• Asking a more specific question\n` +
-                        `• Breaking your query into multiple smaller questions`
-                    );
-                    throw maxRetriesError;
-                }
+                // Continue to next iteration if we haven't hit max attempts
+                // The while loop will handle the retry
+                continue;
             } else {
+                // Non-timeout error - throw immediately
                 throw error;
             }
         }
-    };
-
-    // Start the insights generation with retry logic
-    try {
-        await attemptInsightsGeneration();
-    } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        log('error', 'Insights generation failed after retries', { 
-            error: err.message,
-            attemptCount 
-        });
-        onError(err);
     }
+    
+    // If we exit the loop, we've exceeded max attempts
+    const totalTimeMinutes = Math.round((MAX_RESUME_ATTEMPTS * BACKEND_FUNCTION_TIMEOUT_S) / 60);
+    const maxRetriesError = new Error(
+        `Analysis is taking longer than expected (${totalTimeMinutes} minutes, ${MAX_RESUME_ATTEMPTS} attempts).\n\n` +
+        `This is a very complex query. Consider:\n` +
+        `• Reducing the time range (currently: ${payload.contextWindowDays || 30} days)\n` +
+        `• Asking a more specific question\n` +
+        `• Breaking your query into multiple smaller questions`
+    );
+    throw maxRetriesError;
+} catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    log('error', 'Insights generation failed after retries', { 
+        error: err.message,
+        attemptCount 
+    });
+    onError(err);
+}
 };
 
 /**
