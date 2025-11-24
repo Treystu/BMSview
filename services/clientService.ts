@@ -632,6 +632,7 @@ export const streamInsights = async (
         useEnhancedMode?: boolean;
         contextWindowDays?: number; // Days of historical data to retrieve
         maxIterations?: number; // Max ReAct loop iterations
+        modelOverride?: string; // Optional Gemini model override
     },
     onChunk: (chunk: string) => void,
     onComplete: () => void,
@@ -648,6 +649,7 @@ export const streamInsights = async (
         useEnhancedMode: payload.useEnhancedMode,
         contextWindowDays: payload.contextWindowDays,
         maxIterations: payload.maxIterations,
+        modelOverride: payload.modelOverride,
         dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
     });
 

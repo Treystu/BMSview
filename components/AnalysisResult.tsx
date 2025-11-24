@@ -35,6 +35,17 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   // Context window configuration
   const [contextWindowDays, setContextWindowDays] = useState(30); // Default 1 month
   
+  // Model override configuration
+  const [modelOverride, setModelOverride] = useState(''); // Empty = use default
+  
+  // Available Gemini models
+  const availableModels = [
+    { value: '', label: 'Default (2.5 Flash)' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-exp-1206', label: 'Gemini 2.0 Flash Exp' },
+  ];
+  
   // Predefined context window options
   const contextWindowOptions = [
     { days: 1/24, label: '1 Hour' },
@@ -69,6 +80,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           customPrompt: prompt, 
           useEnhancedMode: true,
           contextWindowDays, // Pass context window configuration
+          modelOverride: modelOverride || undefined, // Pass model override if selected
           // Iteration limits: 20 for custom queries, 10 for standard (matches react-loop.cjs constants)
           maxIterations: prompt ? 20 : 10
         },
@@ -174,6 +186,28 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               <span>Recent</span>
               <span>Comprehensive</span>
             </div>
+          </div>
+          
+          {/* Model Override Dropdown */}
+          <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
+            <label htmlFor="model-override" className="block text-sm font-semibold text-gray-700 mb-3">
+              🤖 AI Model: <span className="text-purple-600">{availableModels.find(m => m.value === modelOverride)?.label || 'Default (2.5 Flash)'}</span>
+            </label>
+            <p className="text-xs text-gray-600 mb-3">
+              Select which Gemini model to use. Pro models provide better analysis for complex queries but take longer.
+            </p>
+            <select
+              id="model-override"
+              value={modelOverride}
+              onChange={(e) => setModelOverride(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 bg-white cursor-pointer"
+            >
+              {availableModels.map((model) => (
+                <option key={model.value} value={model.value}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
           </div>
           
           <div className="flex flex-col sm:flex-row items-center gap-4">

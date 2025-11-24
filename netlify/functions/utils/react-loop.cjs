@@ -18,16 +18,15 @@ const { validateResponseFormat, buildCorrectionPrompt } = require('./response-va
 const DEFAULT_MAX_TURNS = 10; // Increased from 5 to 10 for standard insights
 const CUSTOM_QUERY_MAX_TURNS = 20; // 20 iterations for custom queries
 const SYNC_CONTEXT_BUDGET_MS = 22000;
-const SYNC_TOTAL_BUDGET_MS = 55000;
+const SYNC_TOTAL_BUDGET_MS = 25000; // 25s for Netlify Pro (26s total, 1s buffer)
 
 // Initialization sequence settings
-const INITIALIZATION_MAX_RETRIES = 20; // Reasonable retry limit with exponential backoff
+const INITIALIZATION_MAX_RETRIES = 100; // Effectively unlimited retries within timeout budget
 const DEFAULT_CONTEXT_WINDOW_DAYS = 30; // Default 1-month lookback
-const INITIALIZATION_BUDGET_RATIO = 0.5; // Use max 50% of budget for initialization
+const INITIALIZATION_BUDGET_RATIO = 1.0; // Use 100% of budget for initialization (separate function now)
 
-// Retry backoff settings
-const RETRY_BASE_DELAY_MS = 1000; // 1 second base delay
-const RETRY_MAX_DELAY_MS = 5000; // 5 second max delay
+// Retry backoff settings - LINEAR (1s increments)
+const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
 
 /**
  * Analyze Gemini's response text to detect what it's struggling with
@@ -535,7 +534,7 @@ Review the tool definition in the AVAILABLE TOOLS section and try again with cor
  * @returns {Promise<{success: boolean, attempts: number, dataPoints?: number, error?: string, toolCallsUsed?: number, turnsUsed?: number}>}
  */
 async function executeInitializationSequence(params) {
-    const { systemId, contextWindowDays, conversationHistory, geminiClient, log, startTime, totalBudgetMs } = params;
+    const { systemId, contextWindowDays, conversationHistory, geminiClient, log, startTime, totalBudgetMs, modelOverride } = params;
     
     if (!systemId) {
         log.warn('No systemId provided, skipping initialization sequence');
@@ -620,7 +619,7 @@ Execute the initialization now.`;
             geminiResponse = await geminiClient.callAPI(null, {
                 history: conversationHistory,
                 tools: toolDefinitions,
-                model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+                model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
                 maxOutputTokens: 2048 // Smaller limit for initialization
             }, log);
         } catch (geminiError) {
@@ -630,8 +629,9 @@ Execute the initialization now.`;
                 error: err.message
             });
             
-            // On API errors, retry with exponential backoff
-            await new Promise(resolve => setTimeout(resolve, Math.min(RETRY_BASE_DELAY_MS * Math.pow(2, attempts), RETRY_MAX_DELAY_MS)));
+            // On API errors, retry with linear backoff (add 1 second per attempt)
+            const delayMs = Math.min(RETRY_LINEAR_INCREMENT_MS * (attempts + 1), 10000); // Cap at 10 seconds
+            await new Promise(resolve => setTimeout(resolve, delayMs));
             continue;
         }
 
@@ -860,7 +860,9 @@ async function executeReActLoop(params) {
         log: externalLog,
         mode = 'sync',
         contextWindowDays = DEFAULT_CONTEXT_WINDOW_DAYS,
-        maxIterations // Optional override for iteration limit
+        maxIterations, // Optional override for iteration limit
+        modelOverride, // Optional model override (e.g., "gemini-2.5-pro")
+        skipInitialization = false // Skip initialization if already done separately
     } = params;
 
     const log = externalLog || createLogger('react-loop');
@@ -881,7 +883,9 @@ async function executeReActLoop(params) {
         contextWindowDays,
         maxTurns: MAX_TURNS,
         contextBudgetMs,
-        totalBudgetMs
+        totalBudgetMs,
+        modelOverride,
+        skipInitialization
     });
 
     try {
@@ -931,42 +935,51 @@ async function executeReActLoop(params) {
             }
         ];
 
-        // Step 3.5: MANDATORY INITIALIZATION SEQUENCE
+        // Step 3.5: MANDATORY INITIALIZATION SEQUENCE (unless skipped)
         // Force Gemini to retrieve historical data before analysis
         const geminiClient = getGeminiClient();
-        const initResult = await executeInitializationSequence({
-            systemId,
-            contextWindowDays,
-            conversationHistory,
-            geminiClient,
-            log,
-            startTime,
-            totalBudgetMs
-        });
+        
+        let initResult = null;
+        if (!skipInitialization && systemId) {
+            initResult = await executeInitializationSequence({
+                systemId,
+                contextWindowDays,
+                conversationHistory,
+                geminiClient,
+                log,
+                startTime,
+                totalBudgetMs,
+                modelOverride
+            });
 
-        if (!initResult.success) {
-            // Initialization failed after retries - provide clear error
-            log.error('Initialization sequence failed', {
-                error: initResult.error,
+            if (!initResult.success) {
+                // Initialization failed after retries - provide clear error
+                log.error('Initialization sequence failed', {
+                    error: initResult.error,
+                    attempts: initResult.attempts,
+                    durationMs: Date.now() - startTime
+                });
+                
+                return {
+                    success: false,
+                    error: `Failed to initialize data retrieval: ${initResult.error}. Please try again.`,
+                    durationMs: Date.now() - startTime
+                };
+            }
+
+            log.info('Initialization sequence completed successfully', {
                 attempts: initResult.attempts,
+                dataPointsRetrieved: initResult.dataPoints,
                 durationMs: Date.now() - startTime
             });
-            
-            return {
-                success: false,
-                error: `Failed to initialize data retrieval: ${initResult.error}. Please try again.`,
-                durationMs: Date.now() - startTime
-            };
+        } else if (skipInitialization) {
+            log.info('Skipping initialization sequence (already completed separately)');
+        } else {
+            log.info('Skipping initialization sequence (no systemId)');
         }
 
-        log.info('Initialization sequence completed successfully', {
-            attempts: initResult.attempts,
-            dataPointsRetrieved: initResult.dataPoints,
-            durationMs: Date.now() - startTime
-        });
-
         // Update conversation history with initialization exchanges
-        // (already added by executeInitializationSequence)
+        // (already added by executeInitializationSequence if run)
 
         // Step 4: Main ReAct loop
         let finalAnswer = null;
@@ -997,7 +1010,7 @@ async function executeReActLoop(params) {
                 geminiResponse = await geminiClient.callAPI(null, {
                     history: conversationHistory,
                     tools: toolDefinitions,
-                    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+                    model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
                     maxOutputTokens: 4096
                 }, log);
             } catch (geminiError) {

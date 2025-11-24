@@ -16,7 +16,7 @@ const { processInsightsInBackground } = require('./utils/insights-processor.cjs'
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 // Mode constants
-const SYNC_MODE_TIMEOUT_MS = 55000; // 55s for Netlify function timeout
+const SYNC_MODE_TIMEOUT_MS = 25000; // 25s for Netlify Pro tier (26s total, leave 1s buffer)
 const DEFAULT_MODE = 'sync'; // Start with sync, auto-fallback to background if needed
 
 /**
@@ -42,7 +42,9 @@ exports.handler = async (event, context) => {
       customPrompt,
       mode = DEFAULT_MODE,
       contextWindowDays, // Optional: days of historical data to retrieve
-      maxIterations // Optional: max ReAct loop iterations
+      maxIterations, // Optional: max ReAct loop iterations
+      modelOverride, // Optional: override Gemini model (e.g., "gemini-2.5-pro")
+      initializationComplete // Optional: skip initialization if already done
     } = body;
 
     // Validate input
@@ -62,7 +64,9 @@ exports.handler = async (event, context) => {
       hasCustomPrompt: !!customPrompt,
       mode,
       contextWindowDays,
-      maxIterations
+      maxIterations,
+      modelOverride,
+      initializationComplete
     });
 
     // SYNC MODE: Execute ReAct loop directly (with timeout protection)
@@ -78,7 +82,9 @@ exports.handler = async (event, context) => {
             log,
             mode: 'sync',
             contextWindowDays,
-            maxIterations
+            maxIterations,
+            modelOverride,
+            skipInitialization: initializationComplete // Skip if already initialized
           }),
           new Promise((_, reject) => 
             setTimeout(() => reject(new Error('TIMEOUT')), SYNC_MODE_TIMEOUT_MS)
