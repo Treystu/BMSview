@@ -126,13 +126,8 @@ async function calculateChecksum(data: any[]): Promise<string> {
         return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    try {
-        const nodeCrypto = await import('crypto');
-        return nodeCrypto.createHash('sha256').update(combined, 'utf8').digest('hex');
-    } catch (error) {
-        log('warn', 'Falling back to simple checksum hash.', { error: error instanceof Error ? error.message : error });
-        return simpleChecksum(combined);
-    }
+    log('warn', 'Web Crypto API not available, falling back to simple checksum.');
+    return simpleChecksum(combined);
 }
 
 function simpleChecksum(input: string): string {
