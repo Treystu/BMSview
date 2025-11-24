@@ -56,9 +56,7 @@ describe('Admin Diagnostics Granular Scope', () => {
       
       // Empty string filtered out by .filter(t => t)
       expect(scopeTests).toEqual([]);
-      // Filter out empty strings
-      const filteredTests = scopeTests.filter(t => t.length > 0);
-      expect(filteredTests).toEqual([]);
+      expect(scopeTests.length).toBe(0);
     });
   });
 

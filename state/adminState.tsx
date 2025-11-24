@@ -21,6 +21,7 @@ interface DiagnosticsResponse {
   summary?: {
     total: number;
     success: number;
+    partial?: number;
     warnings: number;
     errors: number;
   };
@@ -287,22 +288,10 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         return state;
       }
       
-      const updatedResults = state.diagnosticResults.results.map(r => {
-        // Match by test ID (convert display name back to test ID)
-        const testConfig = ['database', 'gemini', 'analyze', 'insightsWithTools', 'asyncAnalysis',
-          'history', 'systems', 'dataExport', 'idempotency', 'weather', 'backfillWeather',
-          'backfillHourlyCloud', 'solarEstimate', 'systemAnalytics', 'predictiveMaintenance',
-          'contentHashing', 'errorHandling', 'logging', 'retryMechanism', 'timeout'
-        ].find(testId => {
-          // This is a simple mapping - in production we'd use DIAGNOSTIC_TEST_SECTIONS
-          return testId === action.payload.testId && r.name === action.payload.result.name;
-        });
-        
-        if (r.name === action.payload.result.name) {
-          return action.payload.result;
-        }
-        return r;
-      });
+      // Simple name-based matching - no need for complex test ID lookup
+      const updatedResults = state.diagnosticResults.results.map(r => 
+        r.name === action.payload.result.name ? action.payload.result : r
+      );
       
       // Recalculate summary in real-time
       const newSummary = {
