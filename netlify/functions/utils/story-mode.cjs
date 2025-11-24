@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require("uuid");
 const { createTimer } = require('./logger.cjs');
 const { executeAnalysisPipeline } = require('./analysis-pipeline.cjs');
+const { getCollection } = require('./mongodb.cjs');
 
 async function handleStoryModeAnalysis(requestBody, idemKey, forceReanalysis, headers, log, context) {
   try {
@@ -29,9 +30,9 @@ async function handleStoryModeAnalysis(requestBody, idemKey, forceReanalysis, he
     photos: [], // Photo upload will be a separate step
   };
 
-  // Here you would save the story to a new 'stories' collection in MongoDB
-  // For now, we'll just log it.
-  log.info('Story created successfully', { sequenceId, title });
+  const storiesCollection = await getCollection('stories');
+  await storiesCollection.insertOne(story);
+  log.info('Story created and saved successfully', { sequenceId, title });
 
   const durationMs = storyTimer.end();
   log.exit(200, { mode: 'story', durationMs });

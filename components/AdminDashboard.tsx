@@ -7,6 +7,7 @@ import {
     cleanupLinks,
     clearAllData, clearHistoryStore,
     countRecordsNeedingWeather,
+    createAnalysisStory,
     deleteAnalysisRecord,
     deleteAnalysisRecords,
     deleteUnlinkedAnalysisHistory,
@@ -174,9 +175,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         log('info', 'Starting bulk analysis.', { fileCount: files.length, isStoryMode });
 
         if (isStoryMode) {
-            // In story mode, we send all files at once.
-            // This will be handled by a new service function.
-            console.log("Story mode analysis:", { title: storyTitle, summary: storySummary, files });
+            try {
+                dispatch({ type: 'ACTION_START', payload: 'isBulkLoading' });
+                const story = await createAnalysisStory(storyTitle, storySummary, files);
+                log('info', 'Story analysis complete.', { storyId: story.id });
+                // We could update some state here to show the story was created.
+                // For now, we'll just clear the form.
+                setStoryTitle('');
+                setStorySummary('');
+                // Maybe clear the files in BulkUpload component state via a callback?
+            } catch (err) {
+                const error = err instanceof Error ? err.message : "Failed to create story.";
+                log('error', 'Story mode analysis failed.', { error });
+                dispatch({ type: 'SET_ERROR', payload: error });
+            } finally {
+                dispatch({ type: 'ACTION_END', payload: 'isBulkLoading' });
+            }
             return;
         }
 
