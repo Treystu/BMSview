@@ -17,8 +17,38 @@ const { validateResponseFormat, buildCorrectionPrompt } = require('./response-va
 // Default iteration limits - can be overridden via params
 const DEFAULT_MAX_TURNS = 10; // Increased from 5 to 10 for standard insights
 const CUSTOM_QUERY_MAX_TURNS = 20; // 20 iterations for custom queries
-const SYNC_CONTEXT_BUDGET_MS = 55000; // 55s for context collection
-const SYNC_TOTAL_BUDGET_MS = 60000; // 60s total budget for sync mode
+
+// CRITICAL TIMEOUT SETTINGS
+// Netlify has hard limits: 10s free, 26s pro, configurable enterprise
+// We use conservative values to ensure we can save checkpoint and return response
+const NETLIFY_TIMEOUT_MS = parseInt(process.env.NETLIFY_FUNCTION_TIMEOUT_MS || '20000'); // 20s safe default
+const CONTEXT_COLLECTION_BUFFER_MS = 3000; // Reserve 3s for context collection
+const CHECKPOINT_SAVE_BUFFER_MS = 3000; // Reserve 3s for checkpoint save (response buffer is separate)
+const RESPONSE_BUFFER_MS = 2000; // Reserve 2s for formatting and returning response
+
+// Minimum safe values to prevent degenerate cases
+const MIN_SYNC_CONTEXT_BUDGET_MS = 5000; // Minimum 5s for context collection
+const MIN_SYNC_TOTAL_BUDGET_MS = 8000; // Minimum 8s total processing time
+const MIN_CHECKPOINT_FREQUENCY_MS = 4000; // Minimum 4s between checkpoints
+const MIN_GEMINI_CALL_TIMEOUT_MS = 3000; // Minimum 3s for Gemini API call
+const ITERATION_SAFETY_BUFFER_MS = 1000; // 1s safety margin per iteration
+const CHECKPOINT_FREQUENCY_DIVISOR = 3; // Save checkpoint every 1/3 of timeout
+
+// Calculate actual budgets with safety minimums
+const SYNC_CONTEXT_BUDGET_MS = Math.max(
+  NETLIFY_TIMEOUT_MS - CONTEXT_COLLECTION_BUFFER_MS - RESPONSE_BUFFER_MS, 
+  MIN_SYNC_CONTEXT_BUDGET_MS
+); // ~15s for context
+
+const SYNC_TOTAL_BUDGET_MS = Math.max(
+  NETLIFY_TIMEOUT_MS - CHECKPOINT_SAVE_BUFFER_MS - RESPONSE_BUFFER_MS, 
+  MIN_SYNC_TOTAL_BUDGET_MS
+); // ~15s total before checkpoint
+
+const CHECKPOINT_FREQUENCY_MS = Math.max(
+  Math.floor((NETLIFY_TIMEOUT_MS - RESPONSE_BUFFER_MS) / CHECKPOINT_FREQUENCY_DIVISOR), 
+  MIN_CHECKPOINT_FREQUENCY_MS
+); // Save checkpoint every ~6s
 
 // Initialization sequence settings
 const INITIALIZATION_MAX_RETRIES = 100; // Effectively unlimited retries within timeout budget
@@ -923,18 +953,38 @@ async function executeReActLoop(params) {
             const contextStartTime = Date.now();
 
             try {
-                preloadedContext = await collectAutoInsightsContext(
+                // EDGE CASE PROTECTION #4: Add hard timeout to context collection
+                // Prevent context collection from consuming entire budget
+                const contextCollectionPromise = collectAutoInsightsContext(
                     systemId,
                     analysisData,
                     log,
                     { mode, maxMs: contextBudgetMs }
                 );
+                
+                preloadedContext = await Promise.race([
+                    contextCollectionPromise,
+                    new Promise((_, reject) =>
+                        setTimeout(() => {
+                            reject(new Error('CONTEXT_TIMEOUT'));
+                        }, contextBudgetMs + 1000) // Allow 1s extra for graceful completion
+                    )
+                ]);
             } catch (contextError) {
                 const err = contextError instanceof Error ? contextError : new Error(String(contextError));
-                log.error('Context collection failed, continuing with minimal context', {
-                    error: err.message,
-                    durationMs: Date.now() - contextStartTime
-                });
+                
+                if (err.message === 'CONTEXT_TIMEOUT') {
+                    log.warn('Context collection exceeded budget, continuing with minimal context', {
+                        budgetMs: contextBudgetMs,
+                        durationMs: Date.now() - contextStartTime
+                    });
+                } else {
+                    log.error('Context collection failed, continuing with minimal context', {
+                        error: err.message,
+                        durationMs: Date.now() - contextStartTime
+                    });
+                }
+                
                 preloadedContext = null;
             }
 
@@ -1019,15 +1069,22 @@ async function executeReActLoop(params) {
 
         // Step 4: Main ReAct loop
         let finalAnswer = null;
+        let lastCheckpointTime = startTime; // Track when we last saved a checkpoint
+        let timedOut = false; // Track if we exited due to timeout
 
         for (; turnCount < MAX_TURNS; turnCount++) {
             // Check timeout and save checkpoint if needed
             const elapsedMs = Date.now() - startTime;
+            const timeSinceLastCheckpoint = Date.now() - lastCheckpointTime;
+            const timeRemaining = totalBudgetMs - elapsedMs;
+            
+            // CRITICAL: Check if we're approaching timeout
             if (elapsedMs > totalBudgetMs) {
-                log.warn('Total budget exceeded, stopping loop', {
+                log.warn('Total budget exceeded, stopping loop and saving checkpoint', {
                     turn: turnCount,
                     elapsedMs,
-                    budgetMs: totalBudgetMs
+                    budgetMs: totalBudgetMs,
+                    timeRemaining
                 });
                 
                 // Save checkpoint before timeout
@@ -1042,11 +1099,45 @@ async function executeReActLoop(params) {
                 }
                 
                 finalAnswer = buildTimeoutMessage();
+                timedOut = true; // Mark as timed out
                 break;
             }
             
-            // Periodically save checkpoints (if callback provided)
-            if (onCheckpoint && turnCount > 0 && turnCount % 5 === 0) {
+            // EDGE CASE PROTECTION: Check if we have enough time for a meaningful iteration
+            // Need at least MIN_GEMINI_CALL_TIMEOUT_MS for the call, plus buffers for checkpoint and response
+            const MIN_ITERATION_TIME = MIN_GEMINI_CALL_TIMEOUT_MS + CHECKPOINT_SAVE_BUFFER_MS + RESPONSE_BUFFER_MS;
+            if (timeRemaining < MIN_ITERATION_TIME) {
+                log.info('Insufficient time for another iteration, saving checkpoint', {
+                    turn: turnCount,
+                    timeRemaining,
+                    minRequired: MIN_ITERATION_TIME
+                });
+                
+                // Save checkpoint before exiting
+                if (onCheckpoint) {
+                    await onCheckpoint({
+                        conversationHistory,
+                        turnCount,
+                        toolCallCount,
+                        contextSummary,
+                        startTime
+                    });
+                }
+                
+                finalAnswer = buildTimeoutMessage();
+                timedOut = true;
+                break;
+            }
+            
+            // Progressive checkpointing: Save checkpoint every CHECKPOINT_FREQUENCY_MS (~6s)
+            // This ensures we don't lose much progress if Netlify kills the function
+            if (onCheckpoint && turnCount > 0 && timeSinceLastCheckpoint >= CHECKPOINT_FREQUENCY_MS) {
+                log.info('Saving periodic checkpoint', {
+                    turn: turnCount,
+                    elapsedMs,
+                    timeSinceLastCheckpoint
+                });
+                
                 await onCheckpoint({
                     conversationHistory,
                     turnCount,
@@ -1054,24 +1145,79 @@ async function executeReActLoop(params) {
                     contextSummary,
                     startTime
                 });
+                
+                lastCheckpointTime = Date.now();
             }
 
             log.info(`ReAct turn ${turnCount + 1}/${MAX_TURNS}`, {
                 elapsedMs,
-                remainingMs: totalBudgetMs - elapsedMs
+                remainingMs: totalBudgetMs - elapsedMs,
+                percentComplete: Math.round((elapsedMs / totalBudgetMs) * 100)
+            });
+
+            // EDGE CASE PROTECTION #1: Calculate safe timeout for this iteration
+            // Since SYNC_TOTAL_BUDGET_MS already accounts for checkpoint and response buffers,
+            // we only need a small safety margin for this iteration
+            const safeIterationTimeout = Math.max(
+                timeRemaining - ITERATION_SAFETY_BUFFER_MS,
+                MIN_GEMINI_CALL_TIMEOUT_MS
+            );
+            
+            log.debug('Iteration timeout calculated', {
+                turn: turnCount,
+                timeRemaining,
+                safeIterationTimeout,
+                iterationSafetyBuffer: ITERATION_SAFETY_BUFFER_MS
             });
 
             // Call Gemini with conversation history and tools
+            // EDGE CASE PROTECTION #2: Wrap Gemini call with timeout to prevent hangs
             let geminiResponse;
             try {
-                geminiResponse = await geminiClient.callAPI(null, {
+                const geminiCallPromise = geminiClient.callAPI(null, {
                     history: conversationHistory,
                     tools: toolDefinitions,
                     model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
                     maxOutputTokens: 4096
                 }, log);
+                
+                // Race Gemini call against iteration timeout
+                geminiResponse = await Promise.race([
+                    geminiCallPromise,
+                    new Promise((_, reject) => 
+                        setTimeout(() => {
+                            reject(new Error('ITERATION_TIMEOUT'));
+                        }, safeIterationTimeout)
+                    )
+                ]);
             } catch (geminiError) {
                 const err = geminiError instanceof Error ? geminiError : new Error(String(geminiError));
+                
+                // EDGE CASE PROTECTION #3: Detect iteration timeout vs Gemini error
+                if (err.message === 'ITERATION_TIMEOUT') {
+                    log.warn('Gemini call exceeded iteration timeout, saving checkpoint', {
+                        turn: turnCount,
+                        timeoutMs: safeIterationTimeout,
+                        elapsedMs: Date.now() - startTime
+                    });
+                    
+                    // Save checkpoint immediately
+                    if (onCheckpoint) {
+                        await onCheckpoint({
+                            conversationHistory,
+                            turnCount,
+                            toolCallCount,
+                            contextSummary,
+                            startTime
+                        });
+                    }
+                    
+                    // Return timeout to trigger retry
+                    finalAnswer = buildTimeoutMessage();
+                    timedOut = true;
+                    break;
+                }
+                
                 log.error('Gemini API call failed', {
                     turn: turnCount,
                     error: err.message,
@@ -1336,7 +1482,8 @@ async function executeReActLoop(params) {
             toolCalls: toolCallCount,
             durationMs: totalDurationMs,
             contextSummary,
-            conversationLength: conversationHistory.length
+            conversationLength: conversationHistory.length,
+            timedOut // Indicate if we exited due to timeout
         };
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));

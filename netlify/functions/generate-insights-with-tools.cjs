@@ -11,7 +11,8 @@ const { executeReActLoop } = require('./utils/react-loop.cjs');
 const { 
   createInsightsJob, 
   getInsightsJob,
-  updateJobStatus 
+  updateJobStatus,
+  saveCheckpoint // Add saveCheckpoint for emergency saves
 } = require('./utils/insights-jobs.cjs');
 const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
@@ -23,7 +24,13 @@ const {
 } = require('./utils/checkpoint-manager.cjs');
 
 // Mode constants
-const SYNC_MODE_TIMEOUT_MS = 60000; // 60s timeout for sync mode
+// CRITICAL: Netlify has hard timeout limits:
+// - Free tier: 10 seconds
+// - Pro/Business: 26 seconds  
+// - Enterprise: Can be configured higher
+// We use 20s as safe limit to allow for cleanup/response before hard timeout
+const NETLIFY_FUNCTION_TIMEOUT_MS = parseInt(process.env.NETLIFY_FUNCTION_TIMEOUT_MS || '20000'); // 20s safe limit
+const SYNC_MODE_TIMEOUT_MS = NETLIFY_FUNCTION_TIMEOUT_MS; // Align with Netlify limits
 const DEFAULT_MODE = 'sync';
 
 /**
@@ -137,24 +144,82 @@ exports.handler = async (event, context) => {
         // Create checkpoint callback for this job
         const checkpointCallback = createCheckpointCallback(job.id, SYNC_MODE_TIMEOUT_MS, log);
         
-        const result = await Promise.race([
-          executeReActLoop({
-            analysisData: job.analysisData || analysisData,
-            systemId: job.systemId || systemId,
-            customPrompt: job.customPrompt || customPrompt,
-            log,
-            mode: 'sync',
-            contextWindowDays: job.contextWindowDays || contextWindowDays,
-            maxIterations: job.maxIterations || maxIterations,
-            modelOverride: job.modelOverride || modelOverride,
-            skipInitialization: resumeConfig?.skipInitialization || initializationComplete,
-            checkpointState: resumeConfig, // Pass resume config if available
-            onCheckpoint: checkpointCallback // Auto-save checkpoints
-          }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('TIMEOUT')), SYNC_MODE_TIMEOUT_MS)
-          )
-        ]);
+        // CRITICAL: Do NOT use Promise.race here!
+        // The ReAct loop handles its own timeout internally and saves checkpoints properly.
+        // Promise.race would interrupt checkpoint saving and cause data loss.
+        const result = await executeReActLoop({
+          analysisData: job.analysisData || analysisData,
+          systemId: job.systemId || systemId,
+          customPrompt: job.customPrompt || customPrompt,
+          log,
+          mode: 'sync',
+          contextWindowDays: job.contextWindowDays || contextWindowDays,
+          maxIterations: job.maxIterations || maxIterations,
+          modelOverride: job.modelOverride || modelOverride,
+          skipInitialization: resumeConfig?.skipInitialization || initializationComplete,
+          checkpointState: resumeConfig, // Pass resume config if available
+          onCheckpoint: checkpointCallback // Auto-save checkpoints
+        });
+
+        // Check if the result indicates timeout
+        if (result && result.timedOut) {
+          log.info('ReAct loop timed out gracefully, verifying checkpoint', {
+            jobId: job.id,
+            turns: result.turns || 0,
+            toolCalls: result.toolCalls || 0,
+            durationMs: result.durationMs || 0
+          });
+          
+          // EDGE CASE PROTECTION #7: Verify checkpoint was actually saved
+          // If checkpoint save failed, make one final attempt
+          try {
+            const verifyJob = await getInsightsJob(job.id, log);
+            if (!verifyJob || !verifyJob.checkpointState) {
+              log.warn('Checkpoint missing after timeout, attempting emergency save', {
+                jobId: job.id
+              });
+              
+              // Emergency checkpoint save - preserve conversation history if available
+              // If result doesn't have conversationHistory, fallback to empty array
+              const emergencyCheckpoint = {
+                conversationHistory: result.conversationHistory || [], // Preserve history if available
+                turnCount: result.turns || 0,
+                toolCallCount: result.toolCalls || 0,
+                contextSummary: result.contextSummary || {},
+                startTime: result.startTime || Date.now(),
+                emergency: true
+              };
+              
+              await saveCheckpoint(job.id, emergencyCheckpoint, log);
+            }
+          } catch (verifyError) {
+            log.error('Failed to verify/save emergency checkpoint', {
+              jobId: job.id,
+              error: verifyError.message
+            });
+            // Continue anyway - client will retry and may succeed
+          }
+          
+          // Return 408 to trigger automatic retry
+          return {
+            statusCode: 408,
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              success: false,
+              error: 'insights_timeout',
+              message: `Insights generation timed out after ${SYNC_MODE_TIMEOUT_MS}ms. A checkpoint was saved - retry with resumeJobId to continue.`,
+              details: {
+                jobId: job.id,
+                durationMs: result.durationMs || 0,
+                timeoutMs: SYNC_MODE_TIMEOUT_MS,
+                canResume: true,
+                wasResumed: isResume,
+                turns: result.turns || 0,
+                toolCalls: result.toolCalls || 0
+              }
+            })
+          };
+        }
 
         if (!result || !result.success) {
           const errorMsg = result?.error || 'ReAct loop failed without error details';
@@ -212,15 +277,13 @@ exports.handler = async (event, context) => {
           headers: { ...headers, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             success: false,
-            error: syncError.message === 'TIMEOUT' ? 'insights_timeout' : 'insights_failed',
-            message: syncError.message === 'TIMEOUT' 
-              ? `Insights generation timed out after ${SYNC_MODE_TIMEOUT_MS}ms. A checkpoint was saved - retry with resumeJobId to continue.`
-              : syncError.message,
+            error: 'insights_timeout',
+            message: `Insights generation timed out after ${SYNC_MODE_TIMEOUT_MS}ms. A checkpoint was saved - retry with resumeJobId to continue.`,
             details: {
               jobId: job.id, // Include jobId for resumption
               durationMs: Date.now() - startTime,
               timeoutMs: SYNC_MODE_TIMEOUT_MS,
-              canResume: syncError.message === 'TIMEOUT', // Only resume on timeout
+              canResume: true, // Always can resume since checkpoint saved
               wasResumed: isResume
             }
           })

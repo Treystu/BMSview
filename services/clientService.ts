@@ -642,7 +642,15 @@ export const streamInsights = async (
     const endpoint = '/.netlify/functions/generate-insights-with-tools';
 
     let contextSummarySent = false;
-    const MAX_RESUME_ATTEMPTS = 5; // Maximum 5 attempts (5 minutes total with 60s each)
+    
+    // CRITICAL: Backend timeout configuration
+    // Default is 20s for Pro/Business, but can be configured via NETLIFY_FUNCTION_TIMEOUT_MS
+    // Since we can't read env vars directly in the browser, we use the default
+    const BACKEND_FUNCTION_TIMEOUT_S = 20; // 20 seconds (configurable on backend)
+    
+    // CRITICAL: With Netlify's configurable timeout, each attempt is shorter
+    // Allow 15 attempts (15 * 20s default = 300s = 5 minutes total processing time)
+    const MAX_RESUME_ATTEMPTS = 15; // Maximum 15 attempts for complex queries
     let resumeJobId: string | undefined = undefined;
     let attemptCount = 0;
 
@@ -667,12 +675,14 @@ export const streamInsights = async (
             log('info', 'Resuming insights generation', { attemptCount, resumeJobId });
         }
 
-        // Add timeout for insights request (90 seconds to allow for background job creation + startup)
+        // Timeout for insights request: 30 seconds (allows for Netlify 20s + network overhead)
+        // This is MUCH shorter than the old 90s since each backend attempt is now only ~20s
         const controller = new AbortController();
+        const REQUEST_TIMEOUT_MS = 30000; // 30 seconds per attempt
         const timeoutId = setTimeout(() => {
             controller.abort();
-            log('warn', 'Insights request timed out after 90 seconds.');
-        }, 90000);
+            log('warn', `Insights request timed out after ${REQUEST_TIMEOUT_MS}ms.`);
+        }, REQUEST_TIMEOUT_MS);
 
         try {
             // Build request body with resumeJobId if available
@@ -722,8 +732,9 @@ export const streamInsights = async (
                             return await attemptInsightsGeneration();
                         } else {
                             // Max retries exceeded
+                            const totalTimeMinutes = Math.round((MAX_RESUME_ATTEMPTS * BACKEND_FUNCTION_TIMEOUT_S) / 60);
                             const maxRetriesError = new Error(
-                                `Analysis is taking longer than expected (${MAX_RESUME_ATTEMPTS} minutes).\n\n` +
+                                `Analysis is taking longer than expected (${totalTimeMinutes} minutes, ${MAX_RESUME_ATTEMPTS} attempts).\n\n` +
                                 `This is a very complex query. Consider:\n` +
                                 `• Reducing the time range (currently: ${payload.contextWindowDays || 30} days)\n` +
                                 `• Asking a more specific question\n` +
@@ -912,14 +923,21 @@ export const streamInsights = async (
 
             // Provide user-friendly message for timeout/abort
             if (error.name === 'AbortError') {
+                // Client-side timeout - the function took too long to respond
+                // This is likely because it's stuck or the network is slow
                 const timeoutError = new Error(
-                    'Request timed out after 90 seconds. The server is taking too long to start processing.\n\n' +
-                    'This usually means:\n' +
-                    '• The background processing service is busy\n' +
-                    '• There may be a temporary service issue\n\n' +
-                    'Please try again in a few moments.'
+                    `Request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds. The server is taking too long to respond.\n\n` +
+                    `This might mean:\n` +
+                    `• The query is very complex and needs more processing\n` +
+                    `• Network connectivity issues\n` +
+                    `• The server is experiencing high load\n\n` +
+                    `The system will automatically retry if the server supports resume.`
                 );
-                log('error', 'Insights request aborted due to timeout', { originalError: error.message });
+                log('error', 'Insights request aborted due to timeout', { 
+                    originalError: error.message,
+                    attemptCount,
+                    timeoutMs: REQUEST_TIMEOUT_MS
+                });
                 throw timeoutError;
             } else {
                 throw error;
