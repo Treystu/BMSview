@@ -673,6 +673,11 @@ export const streamInsights = async (
             const retryMessage = `\n\n⏳ **Continuing analysis (attempt ${attemptCount}/${MAX_RESUME_ATTEMPTS})...**\n\n`;
             onChunk(retryMessage);
             log('info', 'Resuming insights generation', { attemptCount, resumeJobId });
+        } else {
+            // First attempt - show initialization message
+            const initMessage = `🔧 **Initializing AI analysis system...**\n\n`;
+            onChunk(initMessage);
+            log('info', 'Starting initial insights generation', { attemptCount });
         }
 
         // Timeout for insights request: 30 seconds (allows for Netlify 20s + network overhead)
