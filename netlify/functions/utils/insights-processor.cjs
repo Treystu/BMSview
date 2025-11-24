@@ -8,7 +8,7 @@
  * @module netlify/functions/utils/insights-processor
  */
 
-const { executeReActLoop } = require('./react-loop.cjs');
+const { executeReActLoop, DEFAULT_MAX_TURNS } = require('./react-loop.cjs');
 const {
   updateJobStatus,
   addProgressEvent,
@@ -17,7 +17,6 @@ const {
 } = require('./insights-jobs.cjs');
 
 // Processing constants
-const MAX_TOOL_ITERATIONS = 10; // Match sync mode default
 const TOTAL_TIMEOUT_MS = 14 * 60 * 1000; // 14 minutes for background mode
 
 /**
@@ -44,7 +43,7 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
   }));
 
   try {
-    const { contextWindowDays, maxIterations = MAX_TOOL_ITERATIONS, modelOverride } = options;
+    const { contextWindowDays, maxIterations, modelOverride } = options;
     
     log.info('Background processing started', { 
       jobId, 
