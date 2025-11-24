@@ -37,7 +37,11 @@ const DEFAULT_MODE = 'sync';
 /**
  * Main handler for insights generation
  */
+const { PassThrough } = require('stream');
+
 exports.handler = async (event, context) => {
+  const stream = new PassThrough();
+  
   const headers = getCorsHeaders(event);
 
   // Handle preflight
@@ -158,7 +162,8 @@ exports.handler = async (event, context) => {
           modelOverride: job.modelOverride || modelOverride,
           skipInitialization: resumeConfig?.skipInitialization || initializationComplete,
           checkpointState: resumeConfig, // Pass resume config if available
-          onCheckpoint: checkpointCallback // Auto-save checkpoints
+          onCheckpoint: checkpointCallback, // Auto-save checkpoints
+          stream
         });
 
         // Check if the result indicates timeout

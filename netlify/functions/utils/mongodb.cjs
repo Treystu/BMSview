@@ -148,6 +148,9 @@ async function connectToDatabase() {
             // Verify connection with ping
             await db.admin().ping();
 
+            // Create indexes
+            await createIndexes(db);
+
             // Cache the connection
             cachedClient = client;
             cachedDb = db;
@@ -243,6 +246,21 @@ async function getCollection(collectionName, retries = 2) {
             // Exponential backoff
             await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
         }
+    }
+}
+
+/**
+ * Creates indexes for the collections in the database.
+ * @param {import('mongodb').Db} db
+ */
+async function createIndexes(db) {
+    try {
+        log.info('Creating indexes...');
+        const historyCollection = db.collection('history');
+        await historyCollection.createIndex({ systemId: 1, timestamp: -1 });
+        log.info('Indexes created successfully.');
+    } catch (error) {
+        log.error('Error creating indexes', { error: error.message, stack: error.stack });
     }
 }
 

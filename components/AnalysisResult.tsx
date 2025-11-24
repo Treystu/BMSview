@@ -29,6 +29,7 @@ interface AnalysisResultProps {
 
 const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: string, systemName?: string }> = ({ analysisData, systemId, systemName }) => {
   const [insights, setInsights] = useState('');
+  const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'initializing' | 'streaming' | 'complete' | 'error'>('idle');
   const [isLoading, setIsLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +87,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   };
 
   const handleGenerateInsights = async (prompt?: string) => {
-    setIsLoading(true);
+    setAnalysisStatus('initializing');
     setError(null);
     setInsights('');
 
@@ -102,11 +103,16 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           // Iteration limits: 20 for custom queries, 10 for standard (matches react-loop.cjs constants)
           maxIterations: prompt ? 20 : 10
         },
-        (chunk) => { setInsights(prev => prev + chunk); },
-        () => { setIsLoading(false); },
+        (chunk) => { 
+          setInsights(prev => prev + chunk);
+          if (analysisStatus !== 'streaming') {
+            setAnalysisStatus('streaming');
+          }
+        },
+        () => { setAnalysisStatus('complete'); },
         async (err) => {
           setError(err.message);
-          setIsLoading(false);
+          setAnalysisStatus('error');
           
           // Check if circuit breaker might be open
           try {
@@ -118,12 +124,15 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           } catch (checkError) {
             log('error', 'Failed to check circuit breaker status', { error: checkError });
           }
+        },
+        () => {
+          setAnalysisStatus('initializing');
         }
       );
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
       setError(errorMessage);
-      setIsLoading(false);
+      setAnalysisStatus('error');
       log('error', 'Deeper insights stream initiation failed.', { error: errorMessage });
       
       // Check if circuit breaker might be open
@@ -148,6 +157,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       
       // Show success message briefly with cleanup
       setInsights('✅ Circuit breaker reset. You can try generating insights again.');
+      setAnalysisStatus('idle');
       successTimeoutRef.current = setTimeout(() => {
         setInsights('');
         successTimeoutRef.current = null;

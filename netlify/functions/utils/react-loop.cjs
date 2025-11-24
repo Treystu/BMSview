@@ -588,7 +588,7 @@ Review the tool definition in the AVAILABLE TOOLS section and try again with cor
  * @returns {Promise<{success: boolean, attempts: number, dataPoints?: number, error?: string, toolCallsUsed?: number, turnsUsed?: number}>}
  */
 async function executeInitializationSequence(params) {
-    const { systemId, contextWindowDays, conversationHistory, geminiClient, log, startTime, totalBudgetMs, modelOverride } = params;
+    const { systemId, contextWindowDays, conversationHistory, geminiClient, log, startTime, totalBudgetMs, modelOverride, stream } = params;
 
     if (!systemId) {
         log.warn('No systemId provided, skipping initialization sequence');
@@ -631,6 +631,8 @@ Execute the initialization now.`;
         contextWindowDays,
         dateRange: `${startDate.toISOString()} to ${endDate.toISOString()}`
     });
+    
+    if(stream) stream.write(JSON.stringify({ type: 'status', message: 'Initializing analysis and fetching historical data...' }) + '\n');
 
     let attempts = 0;
     let toolCallsUsed = 0;
@@ -647,6 +649,7 @@ Execute the initialization now.`;
                 budgetMs: totalBudgetMs * INITIALIZATION_BUDGET_RATIO,
                 ratio: INITIALIZATION_BUDGET_RATIO
             });
+            if(stream) stream.write(JSON.stringify({ type: 'error', message: 'Initialization timed out.' }) + '\n');
             return {
                 success: false,
                 attempts,
@@ -667,6 +670,8 @@ Execute the initialization now.`;
         }
 
         log.info(`Initialization attempt ${attempts + 1}`, { elapsedMs });
+        if(stream) stream.write(JSON.stringify({ type: 'status', message: `Attempting to retrieve data (attempt ${attempts + 1})...` }) + '\n');
+        
 
         let geminiResponse;
         try {
@@ -682,6 +687,7 @@ Execute the initialization now.`;
                 attempt: attempts + 1,
                 error: err.message
             });
+            if(stream) stream.write(JSON.stringify({ type: 'error', message: `API call failed: ${err.message}` }) + '\n');
 
             // On API errors, retry with linear backoff (add 1 second per attempt)
             const delayMs = Math.min(RETRY_LINEAR_INCREMENT_MS * (attempts + 1), 10000); // Cap at 10 seconds
@@ -723,6 +729,7 @@ Execute the initialization now.`;
                 responseText: responseText.substring(0, 500),
                 responseLength: responseText.length
             });
+            if(stream) stream.write(JSON.stringify({ type: 'status', message: 'AI is not calling the required tools. Retrying...' }) + '\n');
 
             // Log the full response for debugging
             log.info('Full Gemini response without tool call', {
@@ -776,6 +783,7 @@ Execute the initialization now.`;
                 attempt: attempts + 1,
                 toolArgs: JSON.stringify(toolArgs).substring(0, 500)
             });
+            if(stream) stream.write(JSON.stringify({ type: 'status', message: `Calling tool: ${toolName}...` }) + '\n');
 
             toolCallsUsed++;
 
@@ -803,11 +811,13 @@ Execute the initialization now.`;
                             dataPoints,
                             attempt: attempts + 1
                         });
+                        if(stream) stream.write(JSON.stringify({ type: 'status', message: `Successfully retrieved ${dataPoints} data points.` }) + '\n');
                     } else {
                         log.warn('request_bms_data returned 0 data points', {
                             attempt: attempts + 1,
                             toolResult: JSON.stringify(toolResult).substring(0, 1000)
                         });
+                        if(stream) stream.write(JSON.stringify({ type: 'status', message: 'Data query returned no results. Retrying...' }) + '\n');
                     }
                 } else if (toolResult && toolResult.error) {
                     // Tool returned an error - log it for improvement
@@ -817,6 +827,7 @@ Execute the initialization now.`;
                         attempt: attempts + 1,
                         fullResult: JSON.stringify(toolResult).substring(0, 1000)
                     });
+                    if(stream) stream.write(JSON.stringify({ type: 'error', message: `Tool ${toolName} failed: ${toolResult.message}` }) + '\n');
                 }
             } catch (toolError) {
                 const err = toolError instanceof Error ? toolError : new Error(String(toolError));
@@ -826,6 +837,7 @@ Execute the initialization now.`;
                     stack: err.stack,
                     attempt: attempts + 1
                 });
+                if(stream) stream.write(JSON.stringify({ type: 'error', message: `Tool ${toolName} threw an exception: ${err.message}` }) + '\n');
 
                 // Add error to conversation
                 conversationHistory.push({
@@ -852,6 +864,7 @@ Execute the initialization now.`;
                 turnsUsed,
                 durationMs: Date.now() - startTime
             });
+            if(stream) stream.write(JSON.stringify({ type: 'status', message: 'Initialization complete. Generating insights...' }) + '\n');
 
             // Ask Gemini to acknowledge initialization completion
             conversationHistory.push({
@@ -886,6 +899,7 @@ Execute the initialization now.`;
         attempts,
         maxRetries: INITIALIZATION_MAX_RETRIES
     });
+     if(stream) stream.write(JSON.stringify({ type: 'error', message: 'Initialization failed after multiple retries.' }) + '\n');
 
     return {
         success: false,
@@ -1056,7 +1070,8 @@ async function executeReActLoop(params) {
                 log,
                 startTime,
                 totalBudgetMs,
-                modelOverride
+                modelOverride,
+                stream: params.stream // Pass the stream here
             });
 
             if (!initResult.success) {
@@ -1215,6 +1230,12 @@ async function executeReActLoop(params) {
                 timeRemaining,
                 safeIterationTimeout,
                 iterationSafetyBuffer: ITERATION_SAFETY_BUFFER_MS
+            });
+
+            // Log the conversation history for debugging
+            log.info('Conversation history before Gemini call', {
+                turn: turnCount,
+                history: JSON.stringify(conversationHistory, null, 2)
             });
 
             // Call Gemini with conversation history and tools

@@ -636,8 +636,10 @@ export const streamInsights = async (
     },
     onChunk: (chunk: string) => void,
     onComplete: () => void,
-    onError: (error: Error) => void
+    onError: (error: Error) => void,
+    onStart?: () => void
 ) => {
+    onStart?.();
     // Always use the fully-featured ReAct loop implementation
     const endpoint = '/.netlify/functions/generate-insights-with-tools';
 
