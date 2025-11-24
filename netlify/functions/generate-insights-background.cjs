@@ -106,7 +106,11 @@ exports.handler = async (event, context) => {
   } catch (error) {
     log.error('Background job failed', {
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
+      name: error.name,
+      code: error.code,
+      // Log full error object for debugging
+      fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
     });
 
     // Try to mark job as failed if we have a jobId
@@ -121,10 +125,13 @@ exports.handler = async (event, context) => {
       
       if (jobId) {
         await failJob(jobId, error.message, log);
+        log.info('Job marked as failed', { jobId });
       }
     } catch (failError) {
       log.error('Failed to mark job as failed', {
-        error: failError.message
+        error: failError.message,
+        stack: failError.stack,
+        originalError: error.message
       });
     }
 

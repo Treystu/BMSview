@@ -4,6 +4,7 @@
  * Displays real-time progress for background insights generation.
  * Shows initial summary, tool calls, data fetches, and streaming results.
  * Features collapsible "AI thinking" section that auto-collapses when complete.
+ * Implements "Starter Motor" approach: reassuring messages for long-running analyses.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -19,6 +20,49 @@ interface InsightsProgressDisplayProps {
 
 export function InsightsProgressDisplay({ status, isPolling, error }: InsightsProgressDisplayProps) {
   const [showThinking, setShowThinking] = useState(true);
+  const [analysisStartTime, setAnalysisStartTime] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  
+  // Track when analysis started
+  useEffect(() => {
+    if (isPolling && !analysisStartTime) {
+      setAnalysisStartTime(Date.now());
+    } else if (!isPolling) {
+      setAnalysisStartTime(null);
+      setElapsedSeconds(0);
+    }
+  }, [isPolling, analysisStartTime]);
+
+  // Update elapsed time every second
+  useEffect(() => {
+    if (!analysisStartTime) return;
+    
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - analysisStartTime) / 1000);
+      setElapsedSeconds(elapsed);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [analysisStartTime]);
+
+  // Get appropriate status message based on elapsed time
+  const getStatusMessage = () => {
+    if (status?.status === 'completed') {
+      return 'AI Analysis Complete';
+    }
+    
+    if (elapsedSeconds < 30) {
+      return 'AI Analyzing Your Battery...';
+    } else if (elapsedSeconds < 60) {
+      return 'Analyzing Historical Trends...';
+    } else if (elapsedSeconds < 120) {
+      return 'Crunching Complex Data...';
+    } else if (elapsedSeconds < 180) {
+      return 'Deep Analysis in Progress...';
+    } else {
+      return 'Processing Comprehensive Analysis...';
+    }
+  };
   
   // Auto-collapse thinking section when analysis completes
   useEffect(() => {
@@ -38,9 +82,19 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
     <div className="bg-white rounded-lg shadow-md p-6 mb-6">
       <div className="mb-4">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          🤖 {isComplete ? 'AI Analysis Complete' : 'AI Working...'}
+          🤖 {getStatusMessage()}
         </h3>
-        <StatusBadge status={status?.status} isPolling={isPolling} error={error} />
+        {isPolling && elapsedSeconds > 0 && (
+          <p className="text-sm text-gray-500 mb-2">
+            Elapsed time: {Math.floor(elapsedSeconds / 60)}m {elapsedSeconds % 60}s
+            {elapsedSeconds > 60 && (
+              <span className="ml-2 text-blue-600 font-medium">
+                • Complex analysis in progress, please wait...
+              </span>
+            )}
+          </p>
+        )}
+        <StatusBadge status={status?.status} isPolling={isPolling} error={error} elapsedSeconds={elapsedSeconds} />
       </div>
 
       {/* Final Insights - Show prominently when complete */}
@@ -89,7 +143,7 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
   );
 }
 
-function StatusBadge({ status, isPolling, error }: { status?: string; isPolling: boolean; error: string | null }) {
+function StatusBadge({ status, isPolling, error, elapsedSeconds }: { status?: string; isPolling: boolean; error: string | null; elapsedSeconds: number }) {
   if (error) {
     return (
       <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
@@ -115,13 +169,18 @@ function StatusBadge({ status, isPolling, error }: { status?: string; isPolling:
   }
 
   if (status === 'processing' || isPolling) {
+    // Show different messages based on elapsed time
+    const message = elapsedSeconds > 120 ? 'Deep Analysis...' : 
+                    elapsedSeconds > 60 ? 'Processing...' : 
+                    'Analyzing...';
+    
     return (
       <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
         <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-800" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
-        Processing...
+        {message}
       </span>
     );
   }

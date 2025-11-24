@@ -42,7 +42,7 @@ const DEFAULT_CONFIG: Required<PollingConfig> = {
   initialInterval: 2000,
   maxInterval: 10000,
   backoffMultiplier: 1.3,
-  maxRetries: 200, // Allow up to ~15 minutes of polling
+  maxRetries: Infinity, // "Starter Motor" approach: never give up until definitive result
   onComplete: () => {},
   onError: () => {},
   onProgress: () => {}
@@ -137,7 +137,18 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
         return false;
       }
 
-      console.error('Error fetching insights status:', err);
+      // Log error for debugging but don't update UI state to "Error"
+      console.warn(JSON.stringify({
+        level: 'WARN',
+        timestamp: new Date().toISOString(),
+        message: 'Polling request failed, will retry',
+        context: {
+          error: err.message,
+          consecutiveErrors: consecutiveErrorsRef.current + 1,
+          jobId
+        }
+      }));
+      
       consecutiveErrorsRef.current++;
 
       // Exponential backoff on errors
@@ -148,15 +159,21 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
         );
       }
 
-      // Stop polling after too many consecutive errors
-      if (consecutiveErrorsRef.current >= 10) {
-        setError('Too many consecutive errors. Polling stopped.');
+      // "Starter Motor" approach: Only stop on catastrophic errors that won't recover
+      // Network errors (500, 502, 504, timeouts) are transient - keep trying
+      const isCatastrophic = err.message?.includes('404') || // Job not found
+                             err.message?.includes('403') || // Forbidden
+                             err.message?.includes('401');   // Unauthorized
+      
+      if (isCatastrophic) {
+        setError(`Fatal error: ${err.message}`);
         setIsPolling(false);
         return true;
       }
 
-      setError(err.message);
-      return false;
+      // For transient errors, don't update UI error state, just continue polling
+      // This keeps the UI showing "Analyzing..." instead of flashing error messages
+      return false; // Continue polling
     }
   }, [jobId, fullConfig, lastProgressCount]);
 
@@ -165,18 +182,20 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
 
     retryCountRef.current++;
 
-    if (retryCountRef.current > fullConfig.maxRetries) {
-      setError('Maximum polling attempts reached');
-      setIsPolling(false);
-      return;
-    }
+    // "Starter Motor" approach: No maximum retry limit
+    // Comment out the maxRetries check - we keep trying until definitive result
+    // if (retryCountRef.current > fullConfig.maxRetries) {
+    //   setError('Maximum polling attempts reached');
+    //   setIsPolling(false);
+    //   return;
+    // }
 
     const shouldStop = await fetchStatus();
 
     if (!shouldStop && isPolling) {
       timeoutRef.current = setTimeout(poll, intervalRef.current);
     }
-  }, [isPolling, fetchStatus, fullConfig.maxRetries]);
+  }, [isPolling, fetchStatus]);
 
   const startPolling = useCallback(() => {
     if (!jobId) return;

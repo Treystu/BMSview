@@ -836,7 +836,8 @@ export const streamInsights = async (
                     onError,
                     600,
                     2000,
-                    contextSummarySent ? undefined : result.contextSummary
+                    contextSummarySent ? undefined : result.contextSummary,
+                    payload.contextWindowDays
                 );
                 onComplete();
                 return;
@@ -909,7 +910,8 @@ export const streamInsights = async (
                     onError,
                     600,
                     2000,
-                    contextSummarySent ? undefined : result.contextSummary
+                    contextSummarySent ? undefined : result.contextSummary,
+                    payload.contextWindowDays
                 );
                 onComplete();
                 return;
@@ -1088,6 +1090,7 @@ const formatContextSummary = (summary: any): string => {
 
 /**
  * Poll for background job completion with streaming updates
+ * "Starter Motor" approach: Infinite polling until definitive result
  */
 const pollInsightsJobCompletion = async (
     jobId: string,
@@ -1095,7 +1098,8 @@ const pollInsightsJobCompletion = async (
     onError: (error: Error) => void,
     maxAttempts: number = 600,  // Increased from 120 (~4 min) to 600 (~20 min) to allow for longer AI processing
     initialInterval: number = 2000,
-    initialContextSummary?: any
+    initialContextSummary?: any,
+    contextWindowDays?: number // Add parameter to track context window for logging
 ): Promise<void> => {
     let attempts = 0;
     let lastProgressCount = 0;
@@ -1185,19 +1189,62 @@ const pollInsightsJobCompletion = async (
                     currentInterval = Math.min(currentInterval * backoffMultiplier, maxInterval);
                     setTimeout(poll, currentInterval);
                 } else {
-                    // Timeout after ~20 minutes of polling - this should be rare as AI usually completes in 5-30 seconds
-                    const error = new Error(
-                        'Insights generation taking longer than expected (>20 minutes). ' +
-                        'The AI analysis may be processing a very large dataset or experiencing delays. ' +
-                        'Please try again or contact support if this persists.'
-                    );
-                    log('error', 'Background insights polling timeout after 20 minutes', { jobId, attempts });
-                    reject(error);
+                    // "Starter Motor" approach: After many attempts, show informative message
+                    // but don't reject - the background job may still be running
+                    const totalMinutes = Math.round((attempts * currentInterval) / 60000);
+                    const warning = `\n\n⚠️ **Analysis taking longer than expected (${totalMinutes}+ minutes)**\n\n` +
+                        `Your analysis is still processing in the background. This typically means:\n` +
+                        `• Very large dataset being analyzed (${contextWindowDays || 30}+ days)\n` +
+                        `• Complex query requiring extensive AI processing\n` +
+                        `• High system load\n\n` +
+                        `The analysis will continue. You can:\n` +
+                        `• Wait for completion (recommended)\n` +
+                        `• Reduce the time window and try again\n` +
+                        `• Refresh the page to check status later\n`;
+                    
+                    log('warn', 'Background insights polling exceeded expected time', { 
+                        jobId, 
+                        attempts,
+                        totalMinutes,
+                        contextWindowDays 
+                    });
+                    
+                    // Show warning but continue polling (don't reject)
+                    onChunk(warning);
+                    
+                    // Keep polling with longer intervals (up to 30s)
+                    currentInterval = Math.min(30000, currentInterval * 2);
+                    setTimeout(poll, currentInterval);
                 }
             } catch (err) {
                 const error = err instanceof Error ? err : new Error(String(err));
-                log('error', 'Error polling insights job status', { jobId, error: error.message });
-                reject(error);
+                
+                // "Starter Motor" approach: Log network errors but keep polling
+                // Only reject on catastrophic errors (404, 403, etc.)
+                const isCatastrophic = error.message?.includes('404') || 
+                                      error.message?.includes('403') || 
+                                      error.message?.includes('401');
+                
+                if (isCatastrophic) {
+                    log('error', 'Catastrophic error polling insights job status', { 
+                        jobId, 
+                        error: error.message 
+                    });
+                    reject(error);
+                    return;
+                }
+                
+                // For transient errors (network issues, 500s, timeouts), just log and retry
+                log('warn', 'Transient error polling insights job status, retrying', { 
+                    jobId, 
+                    error: error.message,
+                    attempt: attempts
+                });
+                
+                // Increase backoff and continue
+                attempts++;
+                currentInterval = Math.min(currentInterval * backoffMultiplier * 1.5, maxInterval);
+                setTimeout(poll, currentInterval);
             }
         };
 

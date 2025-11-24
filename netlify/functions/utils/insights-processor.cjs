@@ -42,6 +42,15 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
     context: { jobId, hasSystemId: !!systemId, hasCustomPrompt: !!customPrompt }
   }));
 
+  // Checkpoint tracking for granular debugging
+  const checkpoints = {
+    entry: Date.now(),
+    statusUpdate: null,
+    reactLoopStart: null,
+    reactLoopEnd: null,
+    jobComplete: null
+  };
+
   try {
     const { contextWindowDays, maxIterations, modelOverride } = options;
     
@@ -53,14 +62,25 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
       modelOverride
     });
 
-    // Update job status
+    // Checkpoint: Update job status
+    checkpoints.statusUpdate = Date.now();
+    log.info('Checkpoint: Updating job status to processing', { 
+      jobId,
+      elapsed: checkpoints.statusUpdate - checkpoints.entry
+    });
+
     await updateJobStatus(jobId, 'processing', log);
     await addProgressEvent(jobId, {
       type: 'status',
       data: { message: 'AI analysis starting...' }
     }, log);
 
-    log.info('Starting ReAct loop for background job', { jobId });
+    // Checkpoint: Start ReAct loop
+    checkpoints.reactLoopStart = Date.now();
+    log.info('Checkpoint: Starting ReAct loop for background job', { 
+      jobId,
+      elapsed: checkpoints.reactLoopStart - checkpoints.entry
+    });
 
     // Use executeReActLoop (same as sync mode) for consistency
     const result = await executeReActLoop({
@@ -73,6 +93,15 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
       maxIterations,
       modelOverride,
       skipInitialization: false // Run full initialization in background
+    });
+
+    // Checkpoint: ReAct loop complete
+    checkpoints.reactLoopEnd = Date.now();
+    log.info('Checkpoint: ReAct loop completed', {
+      jobId,
+      elapsed: checkpoints.reactLoopEnd - checkpoints.reactLoopStart,
+      totalElapsed: checkpoints.reactLoopEnd - checkpoints.entry,
+      success: result?.success
     });
 
     if (!result || !result.success) {
@@ -90,7 +119,15 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
       jobId,
       turns: result.turns || 0,
       toolCalls: result.toolCalls || 0,
-      hasAnswer: !!result.finalAnswer
+      hasAnswer: !!result.finalAnswer,
+      reactLoopDuration: checkpoints.reactLoopEnd - checkpoints.reactLoopStart
+    });
+
+    // Checkpoint: Formatting insights
+    const formatStart = Date.now();
+    log.info('Checkpoint: Formatting insights for storage', {
+      jobId,
+      elapsed: formatStart - checkpoints.reactLoopEnd
     });
 
     // Format insights for storage
@@ -101,9 +138,21 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
         mode: 'background',
         turns: result.turns || 0,
         toolCalls: result.toolCalls || 0,
-        usedFunctionCalling: true
+        usedFunctionCalling: true,
+        checkpoints: {
+          totalDuration: formatStart - checkpoints.entry,
+          reactLoopDuration: checkpoints.reactLoopEnd - checkpoints.reactLoopStart,
+          initDuration: checkpoints.reactLoopStart - checkpoints.entry
+        }
       }
     };
+
+    // Checkpoint: Mark job as complete
+    const completeStart = Date.now();
+    log.info('Checkpoint: Marking job as complete', {
+      jobId,
+      elapsed: completeStart - formatStart
+    });
 
     // Mark job as complete
     await completeJob(jobId, insights, log);
@@ -112,27 +161,51 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
       data: { message: 'Analysis completed successfully' }
     }, log);
 
+    checkpoints.jobComplete = Date.now();
     log.info('Background processing completed', {
       jobId,
       turns: result.turns,
-      toolCalls: result.toolCalls
+      toolCalls: result.toolCalls,
+      totalDuration: checkpoints.jobComplete - checkpoints.entry,
+      checkpoints: {
+        init: checkpoints.reactLoopStart - checkpoints.entry,
+        reactLoop: checkpoints.reactLoopEnd - checkpoints.reactLoopStart,
+        formatting: completeStart - checkpoints.reactLoopEnd,
+        completion: checkpoints.jobComplete - completeStart
+      }
     });
 
     return { success: true, insights };
 
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
+    
+    // Log detailed error with checkpoint information
     log.error('Background processing failed', {
       jobId,
       error: err.message,
-      stack: err.stack
+      stack: err.stack,
+      checkpoints: {
+        failedAt: Date.now() - checkpoints.entry,
+        lastCheckpoint: checkpoints.reactLoopEnd 
+          ? 'reactLoopEnd' 
+          : checkpoints.reactLoopStart 
+            ? 'reactLoopStart' 
+            : checkpoints.statusUpdate 
+              ? 'statusUpdate' 
+              : 'entry'
+      }
     });
 
     // Mark job as failed
     await failJob(jobId, err.message, log);
     await addProgressEvent(jobId, {
       type: 'error',
-      data: { error: err.message }
+      data: { 
+        error: err.message,
+        stack: err.stack,
+        checkpoint: checkpoints
+      }
     }, log);
 
     throw error;
