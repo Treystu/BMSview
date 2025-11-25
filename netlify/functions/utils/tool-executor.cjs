@@ -208,6 +208,14 @@ async function requestBmsData(params, log) {
                 ? `${note}. Each day includes hourly breakdown (up to 24 hours) for detailed analysis.`
                 : 'Each daily record includes hourly breakdown data (up to 24 hours) for detailed analysis.';
         }
+        
+        // Add energy calculation guidance
+        const energyNote = `ENERGY FIELDS EXPLAINED: ` +
+            `avgPower_W = instantaneous power (rate), ` +
+            `chargingKWh/dischargingKWh = pre-calculated ENERGY for this time bucket (power × time), ` +
+            `netEnergyKWh = net energy balance. ` +
+            `For daily totals, use daily_avg granularity and sum chargingKWh across days. ` +
+            `NEVER confuse W (power rate) with Wh (energy accumulated).`;
 
         return {
             systemId,
@@ -216,7 +224,8 @@ async function requestBmsData(params, log) {
             granularity,
             dataPoints: processedData.length,
             data: processedData,
-            ...(note && { note })
+            ...(note && { note }),
+            energyNote
         };
     } catch (error) {
         log.error('requestBmsData failed', { error: error.message, params });
@@ -281,7 +290,8 @@ function aggregateByHour(records, metric, log) {
     log.debug('Records grouped by hour', { bucketCount: buckets.size });
 
     const hourlyData = Array.from(buckets.entries()).map(([bucket, recs]) => {
-        const metrics = computeAggregateMetrics(recs, metric);
+        // Hourly aggregation = 1 hour bucket
+        const metrics = computeAggregateMetrics(recs, metric, { bucketHours: 1 });
         return {
             timestamp: bucket,
             dataPoints: recs.length,
@@ -315,8 +325,8 @@ function aggregateByDay(records, metric, log) {
     log.debug('Records grouped by day', { bucketCount: dayBuckets.size });
 
     const dailyData = Array.from(dayBuckets.entries()).map(([dayKey, dayRecords]) => {
-        // Calculate daily aggregates
-        const dailyMetrics = computeAggregateMetrics(dayRecords, metric);
+        // Calculate daily aggregates with 24-hour bucket
+        const dailyMetrics = computeAggregateMetrics(dayRecords, metric, { bucketHours: 24 });
 
         // Also create hourly breakdown for this day
         const hourBuckets = new Map();
@@ -332,7 +342,8 @@ function aggregateByDay(records, metric, log) {
 
         const hourlyBreakdown = Array.from(hourBuckets.entries())
             .map(([hour, hourRecords]) => {
-                const hourMetrics = computeAggregateMetrics(hourRecords, metric);
+                // Hourly breakdown = 1 hour bucket
+                const hourMetrics = computeAggregateMetrics(hourRecords, metric, { bucketHours: 1 });
                 return {
                     hour,
                     dataPoints: hourRecords.length,
@@ -354,8 +365,23 @@ function aggregateByDay(records, metric, log) {
 
 /**
  * Compute average/min/max/count for aggregated metrics
+ * 
+ * IMPORTANT: This function now calculates ENERGY (Wh/kWh) in addition to POWER (W).
+ * 
+ * Key distinctions:
+ * - Power (W): Instantaneous rate of energy transfer (what you see at a moment)
+ * - Energy (Wh): Power integrated over time (what you actually consumed/generated)
+ * 
+ * Energy calculation: Energy (Wh) = Average Power (W) × Duration (hours)
+ * 
+ * @param {Array} records - Records to aggregate
+ * @param {string} metric - Which metric to compute ('all' or specific)
+ * @param {Object} options - Aggregation options
+ * @param {number} options.bucketHours - Hours in this bucket (1 for hourly, 24 for daily)
  */
-function computeAggregateMetrics(records, metric) {
+function computeAggregateMetrics(records, metric, options = {}) {
+    const { bucketHours = 1 } = options; // Default to 1 hour for backward compatibility
+    
     const metricsToCompute = metric === 'all'
         ? ['voltage', 'current', 'power', 'soc', 'capacity', 'temperature', 'cell_voltage_difference']
         : [metric];
@@ -377,6 +403,114 @@ function computeAggregateMetrics(records, metric) {
         result[`avg${capitalize(fieldName)}`] = Number(avg.toFixed(2));
         result[`min${capitalize(fieldName)}`] = Number(min.toFixed(2));
         result[`max${capitalize(fieldName)}`] = Number(max.toFixed(2));
+    }
+    
+    // Calculate energy metrics if we have the necessary data
+    // This is the KEY addition - converting power to energy with proper time integration
+    if (metric === 'all' || metric === 'power' || metric === 'current') {
+        // Get voltage for Ah → Wh conversion
+        const voltages = records
+            .map(r => r.analysis?.overallVoltage)
+            .filter(v => typeof v === 'number' && isFinite(v));
+        const avgVoltage = voltages.length > 0 
+            ? voltages.reduce((a, b) => a + b, 0) / voltages.length 
+            : null;
+        
+        // Separate charging and discharging data
+        const chargingRecords = records.filter(r => 
+            r.analysis?.current != null && r.analysis.current > 0.5
+        );
+        const dischargingRecords = records.filter(r => 
+            r.analysis?.current != null && r.analysis.current < -0.5
+        );
+        
+        // Calculate charging metrics with energy
+        if (chargingRecords.length > 0) {
+            const chargingCurrents = chargingRecords
+                .map(r => r.analysis.current)
+                .filter(v => typeof v === 'number');
+            const avgChargingCurrent = chargingCurrents.reduce((a, b) => a + b, 0) / chargingCurrents.length;
+            
+            const chargingPowers = chargingRecords
+                .map(r => r.analysis.power)
+                .filter(v => typeof v === 'number' && v > 0);
+            const avgChargingPower = chargingPowers.length > 0
+                ? chargingPowers.reduce((a, b) => a + b, 0) / chargingPowers.length
+                : null;
+            
+            // Estimate charging duration as proportion of bucket
+            const chargingHoursProportion = chargingRecords.length / Math.max(records.length, 1);
+            const estimatedChargingHours = bucketHours * chargingHoursProportion;
+            
+            result.avgChargingCurrent_A = Number(avgChargingCurrent.toFixed(2));
+            result.chargingDataPoints = chargingRecords.length;
+            result.estimatedChargingHours = Number(estimatedChargingHours.toFixed(2));
+            
+            // Calculate Ah charged during this period: Current (A) × Time (h) = Ah
+            result.chargingAh = Number((avgChargingCurrent * estimatedChargingHours).toFixed(2));
+            
+            // Convert Ah to Wh if we have voltage: Ah × V = Wh
+            if (avgVoltage) {
+                result.chargingWh = Number((result.chargingAh * avgVoltage).toFixed(1));
+                result.chargingKWh = Number((result.chargingWh / 1000).toFixed(3));
+            }
+            
+            // Also calculate from power if available (more accurate)
+            if (avgChargingPower != null) {
+                result.avgChargingPower_W = Number(avgChargingPower.toFixed(1));
+                // Energy from power: Power (W) × Time (h) = Wh
+                result.chargingEnergyWh = Number((avgChargingPower * estimatedChargingHours).toFixed(1));
+                result.chargingEnergyKWh = Number((result.chargingEnergyWh / 1000).toFixed(3));
+            }
+        }
+        
+        // Calculate discharging metrics with energy
+        if (dischargingRecords.length > 0) {
+            const dischargingCurrents = dischargingRecords
+                .map(r => Math.abs(r.analysis.current))
+                .filter(v => typeof v === 'number');
+            const avgDischargingCurrent = dischargingCurrents.reduce((a, b) => a + b, 0) / dischargingCurrents.length;
+            
+            const dischargingPowers = dischargingRecords
+                .map(r => Math.abs(r.analysis.power))
+                .filter(v => typeof v === 'number' && v > 0);
+            const avgDischargingPower = dischargingPowers.length > 0
+                ? dischargingPowers.reduce((a, b) => a + b, 0) / dischargingPowers.length
+                : null;
+            
+            // Estimate discharging duration as proportion of bucket
+            const dischargingHoursProportion = dischargingRecords.length / Math.max(records.length, 1);
+            const estimatedDischargingHours = bucketHours * dischargingHoursProportion;
+            
+            result.avgDischargingCurrent_A = Number(avgDischargingCurrent.toFixed(2));
+            result.dischargingDataPoints = dischargingRecords.length;
+            result.estimatedDischargingHours = Number(estimatedDischargingHours.toFixed(2));
+            
+            // Calculate Ah discharged during this period
+            result.dischargingAh = Number((avgDischargingCurrent * estimatedDischargingHours).toFixed(2));
+            
+            // Convert Ah to Wh if we have voltage
+            if (avgVoltage) {
+                result.dischargingWh = Number((result.dischargingAh * avgVoltage).toFixed(1));
+                result.dischargingKWh = Number((result.dischargingWh / 1000).toFixed(3));
+            }
+            
+            // Also calculate from power if available
+            if (avgDischargingPower != null) {
+                result.avgDischargingPower_W = Number(avgDischargingPower.toFixed(1));
+                // Energy from power: Power (W) × Time (h) = Wh
+                result.dischargingEnergyWh = Number((avgDischargingPower * estimatedDischargingHours).toFixed(1));
+                result.dischargingEnergyKWh = Number((result.dischargingEnergyWh / 1000).toFixed(3));
+            }
+        }
+        
+        // Calculate net energy balance
+        const chargingEnergy = result.chargingEnergyWh || result.chargingWh || 0;
+        const dischargingEnergy = result.dischargingEnergyWh || result.dischargingWh || 0;
+        if (chargingEnergy > 0 || dischargingEnergy > 0) {
+            result.netEnergyWh = Number((chargingEnergy - dischargingEnergy).toFixed(1));
+            result.netEnergyKWh = Number((result.netEnergyWh / 1000).toFixed(3));
+        }
     }
 
     return result;

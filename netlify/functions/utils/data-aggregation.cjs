@@ -76,15 +76,31 @@ function aggregateHourlyData(records, log) {
 /**
  * Compute average metrics for a bucket of records
  * 
+ * ENERGY CALCULATION METHODOLOGY:
+ * ================================
+ * This function calculates both POWER (instantaneous, in Watts) and ENERGY (accumulated, in Wh).
+ * 
+ * - Power (W) = Instantaneous rate of energy transfer
+ * - Energy (Wh) = Power × Time = How much work was done
+ * 
+ * For energy calculations, we estimate the time interval between data points and
+ * multiply by the average power during that interval. This gives a more accurate
+ * energy estimate than simply averaging power values.
+ * 
  * @param {Array} records - Records to aggregate
  * @param {Object} log - Logger instance
  * @param {Object} options - Configuration options
  * @param {number} options.chargingThreshold - Current threshold for charging (default: 0.5A)
  * @param {number} options.dischargingThreshold - Current threshold for discharging (default: -0.5A)
- * @returns {Object} Aggregated metrics
+ * @param {number} options.bucketHours - Duration of this bucket in hours (default: 1 for hourly aggregation)
+ * @returns {Object} Aggregated metrics including both power (W) and energy (Wh)
  */
 function computeBucketMetrics(records, log, options = {}) {
-  const { chargingThreshold = 0.5, dischargingThreshold = -0.5 } = options;
+  const { 
+    chargingThreshold = 0.5, 
+    dischargingThreshold = -0.5,
+    bucketHours = 1 // Default to 1 hour for hourly aggregation
+  } = options;
   
   const metrics = {
     voltage: { sum: 0, count: 0 },
@@ -161,44 +177,107 @@ function computeBucketMetrics(records, log, options = {}) {
   const result = {};
   
   if (metrics.voltage.count > 0) {
-    result.avgVoltage = parseFloat((metrics.voltage.sum / metrics.voltage.count).toFixed(2));
+    result.avgVoltage_V = parseFloat((metrics.voltage.sum / metrics.voltage.count).toFixed(2));
+    // Keep old field name for backward compatibility
+    result.avgVoltage = result.avgVoltage_V;
   }
   if (metrics.current.count > 0) {
-    result.avgCurrent = parseFloat((metrics.current.sum / metrics.current.count).toFixed(2));
+    result.avgCurrent_A = parseFloat((metrics.current.sum / metrics.current.count).toFixed(2));
+    result.avgCurrent = result.avgCurrent_A;
   }
   if (metrics.power.count > 0) {
-    result.avgPower = parseFloat((metrics.power.sum / metrics.power.count).toFixed(1));
+    result.avgPower_W = parseFloat((metrics.power.sum / metrics.power.count).toFixed(1));
+    result.avgPower = result.avgPower_W;
   }
   if (metrics.soc.count > 0) {
-    result.avgSoC = parseFloat((metrics.soc.sum / metrics.soc.count).toFixed(1));
+    result.avgSoC_percent = parseFloat((metrics.soc.sum / metrics.soc.count).toFixed(1));
+    result.avgSoC = result.avgSoC_percent;
   }
   if (metrics.capacity.count > 0) {
-    result.avgCapacity = parseFloat((metrics.capacity.sum / metrics.capacity.count).toFixed(1));
+    result.avgCapacity_Ah = parseFloat((metrics.capacity.sum / metrics.capacity.count).toFixed(1));
+    result.avgCapacity = result.avgCapacity_Ah;
   }
   if (metrics.temperature.count > 0) {
-    result.avgTemperature = parseFloat((metrics.temperature.sum / metrics.temperature.count).toFixed(1));
+    result.avgTemperature_C = parseFloat((metrics.temperature.sum / metrics.temperature.count).toFixed(1));
+    result.avgTemperature = result.avgTemperature_C;
   }
   if (metrics.mosTemperature.count > 0) {
-    result.avgMosTemperature = parseFloat((metrics.mosTemperature.sum / metrics.mosTemperature.count).toFixed(1));
+    result.avgMosTemperature_C = parseFloat((metrics.mosTemperature.sum / metrics.mosTemperature.count).toFixed(1));
+    result.avgMosTemperature = result.avgMosTemperature_C;
   }
   if (metrics.cellVoltageDiff.count > 0) {
-    result.avgCellVoltageDiff = parseFloat((metrics.cellVoltageDiff.sum / metrics.cellVoltageDiff.count).toFixed(4));
+    result.avgCellVoltageDiff_V = parseFloat((metrics.cellVoltageDiff.sum / metrics.cellVoltageDiff.count).toFixed(4));
+    result.avgCellVoltageDiff = result.avgCellVoltageDiff_V;
   }
 
-  // Add charging/discharging specific metrics
+  // Add charging/discharging specific metrics with BOTH power and energy
   if (metrics.chargingCurrent.count > 0) {
-    result.avgChargingCurrent = parseFloat((metrics.chargingCurrent.sum / metrics.chargingCurrent.count).toFixed(2));
+    const avgChargingCurrent = metrics.chargingCurrent.sum / metrics.chargingCurrent.count;
+    result.avgChargingCurrent_A = parseFloat(avgChargingCurrent.toFixed(2));
+    result.avgChargingCurrent = result.avgChargingCurrent_A;
     result.chargingCount = metrics.chargingCurrent.count;
+    
+    // Calculate charging Ah for this bucket: current × time
+    // Estimate charging hours as proportion of bucket that was spent charging
+    const chargingHoursProportion = metrics.chargingCurrent.count / Math.max(records.length, 1);
+    const estimatedChargingHours = bucketHours * chargingHoursProportion;
+    result.chargingAh = parseFloat((avgChargingCurrent * estimatedChargingHours).toFixed(2));
+    
+    // If we have voltage, also calculate Wh
+    if (result.avgVoltage_V) {
+      result.chargingWh = parseFloat((result.chargingAh * result.avgVoltage_V).toFixed(1));
+      result.chargingKWh = parseFloat((result.chargingWh / 1000).toFixed(3));
+    }
   }
   if (metrics.dischargingCurrent.count > 0) {
-    result.avgDischargingCurrent = parseFloat((metrics.dischargingCurrent.sum / metrics.dischargingCurrent.count).toFixed(2));
+    const avgDischargingCurrent = metrics.dischargingCurrent.sum / metrics.dischargingCurrent.count;
+    result.avgDischargingCurrent_A = parseFloat(avgDischargingCurrent.toFixed(2));
+    result.avgDischargingCurrent = result.avgDischargingCurrent_A;
     result.dischargingCount = metrics.dischargingCurrent.count;
+    
+    // Calculate discharging Ah for this bucket
+    const dischargingHoursProportion = metrics.dischargingCurrent.count / Math.max(records.length, 1);
+    const estimatedDischargingHours = bucketHours * dischargingHoursProportion;
+    result.dischargingAh = parseFloat((avgDischargingCurrent * estimatedDischargingHours).toFixed(2));
+    
+    // If we have voltage, also calculate Wh
+    if (result.avgVoltage_V) {
+      result.dischargingWh = parseFloat((result.dischargingAh * result.avgVoltage_V).toFixed(1));
+      result.dischargingKWh = parseFloat((result.dischargingWh / 1000).toFixed(3));
+    }
   }
+  
+  // Power-based energy calculations (more direct from power measurements)
   if (metrics.chargingPower.count > 0) {
-    result.avgChargingPower = parseFloat((metrics.chargingPower.sum / metrics.chargingPower.count).toFixed(1));
+    const avgChargingPower = metrics.chargingPower.sum / metrics.chargingPower.count;
+    result.avgChargingPower_W = parseFloat(avgChargingPower.toFixed(1));
+    result.avgChargingPower = result.avgChargingPower_W;
+    
+    // Calculate energy from power × time
+    // Use proportion of bucket spent charging
+    const chargingHoursProportion = metrics.chargingPower.count / Math.max(records.length, 1);
+    const estimatedChargingHours = bucketHours * chargingHoursProportion;
+    result.chargingEnergyWh = parseFloat((avgChargingPower * estimatedChargingHours).toFixed(1));
+    result.chargingEnergyKWh = parseFloat((result.chargingEnergyWh / 1000).toFixed(3));
   }
   if (metrics.dischargingPower.count > 0) {
-    result.avgDischargingPower = parseFloat((metrics.dischargingPower.sum / metrics.dischargingPower.count).toFixed(1));
+    const avgDischargingPower = metrics.dischargingPower.sum / metrics.dischargingPower.count;
+    result.avgDischargingPower_W = parseFloat(avgDischargingPower.toFixed(1));
+    result.avgDischargingPower = result.avgDischargingPower_W;
+    
+    // Calculate energy from power × time
+    const dischargingHoursProportion = metrics.dischargingPower.count / Math.max(records.length, 1);
+    const estimatedDischargingHours = bucketHours * dischargingHoursProportion;
+    result.dischargingEnergyWh = parseFloat((avgDischargingPower * estimatedDischargingHours).toFixed(1));
+    result.dischargingEnergyKWh = parseFloat((result.dischargingEnergyWh / 1000).toFixed(3));
+  }
+  
+  // Net energy for this bucket
+  const chargingEnergy = result.chargingEnergyWh || 0;
+  const dischargingEnergy = result.dischargingEnergyWh || 0;
+  if (chargingEnergy > 0 || dischargingEnergy > 0) {
+    result.netEnergyWh = parseFloat((chargingEnergy - dischargingEnergy).toFixed(1));
+    result.netEnergyKWh = parseFloat((result.netEnergyWh / 1000).toFixed(3));
   }
 
   return result;

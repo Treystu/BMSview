@@ -286,6 +286,36 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "When analysis requires tool data, you MUST CALL THE TOOL YOURSELF and present the results. NEVER tell users to 'use the X tool' or 'run Y calculation' - they literally cannot do this.\n";
     prompt += "If you need energy budget data, call calculate_energy_budget NOW and include the results in your response. If you need predictions, call predict_battery_trends NOW.\n";
     prompt += "Recommendations like 'Use the calculate_energy_budget tool with scenario=worst_case' are USELESS to users - only YOU can execute tools!\n\n";
+    
+    // ENHANCED ENERGY CALCULATION GUIDANCE
+    prompt += "⚡ CRITICAL: POWER vs ENERGY - DO NOT CONFUSE THESE!\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    prompt += "🔴 POWER (W, kW) = INSTANTANEOUS RATE of energy transfer (like speedometer reading)\n";
+    prompt += "   - avgChargingPower_W = average charging RATE during the period\n";
+    prompt += "   - This is NOT how much energy was charged! It's just the RATE.\n\n";
+    prompt += "🟢 ENERGY (Wh, kWh) = ACCUMULATED energy over time (like odometer reading)\n";
+    prompt += "   - chargingKWh, dischargingKWh = pre-calculated ENERGY for each time bucket\n";
+    prompt += "   - This IS how much energy was actually charged/discharged.\n\n";
+    prompt += "📐 THE FUNDAMENTAL FORMULA:\n";
+    prompt += "   Energy (Wh) = Power (W) × Time (hours)\n";
+    prompt += "   Energy (kWh) = Power (kW) × Time (hours)\n\n";
+    prompt += "🧮 EXAMPLE CALCULATION:\n";
+    prompt += "   If avgChargingPower_W = 1100 W (average charging rate)\n";
+    prompt += "   And the system charged for 8 hours of sunlight:\n";
+    prompt += "   Daily charging energy = 1100 W × 8 h = 8,800 Wh = 8.8 kWh\n\n";
+    prompt += "   ❌ WRONG: 'The system generated 1.1 kWh per day' (this confuses W with Wh)\n";
+    prompt += "   ✅ CORRECT: 'With 1.1 kW average charging power over 8 sun-hours, daily generation is 8.8 kWh'\n\n";
+    prompt += "🎯 BEST PRACTICE: USE PRE-CALCULATED ENERGY FIELDS!\n";
+    prompt += "   The tool responses include pre-calculated energy fields:\n";
+    prompt += "   - chargingKWh: Energy added during this bucket (already power × time)\n";
+    prompt += "   - dischargingKWh: Energy consumed during this bucket\n";
+    prompt += "   - netEnergyKWh: Net energy balance (charging - discharging)\n";
+    prompt += "   USE THESE instead of trying to calculate from power values!\n\n";
+    prompt += "⚠️ TREND ANALYSIS: Make sure direction is correct!\n";
+    prompt += "   If values go from 145 Ah to 524 Ah, that's INCREASING (going UP), not decreasing.\n";
+    prompt += "   Always double-check: larger number at end = increasing trend.\n\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    
     prompt += "⚡ ENERGY UNITS MANDATE:\n";
     prompt += "• ALWAYS use kWh (kilowatt-hours) for energy values - this is the INDUSTRY STANDARD\n";
     prompt += "• NEVER use Ah (amp-hours) alone without context - Ah varies wildly by voltage (12V, 24V, 48V systems)\n";
