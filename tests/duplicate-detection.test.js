@@ -1,6 +1,6 @@
 import { rest } from 'msw';
 import { setupServer } from 'msw/node';
-import { renderHook, act } from '@testing-library/react-hooks';
+import { renderHook, act } from '@testing-library/react';
 import { useFileUpload } from '../hooks/useFileUpload';
 
 // Mock the checkHashes service
@@ -43,7 +43,7 @@ global.DataTransfer = MockDataTransfer;
 
 describe('useFileUpload with duplicate detection', () => {
   it('should correctly categorize files as new, duplicate, or upgradeable', async () => {
-    const { result, waitForNextUpdate } = renderHook(() => useFileUpload({}));
+    const { result } = renderHook(() => useFileUpload({}));
 
     const dataTransfer = new DataTransfer();
     dataTransfer.add(new File(['content1'], 'existing-perfect.png', { type: 'image/png' }));
