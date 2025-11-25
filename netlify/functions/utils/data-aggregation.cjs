@@ -52,7 +52,8 @@ function aggregateHourlyData(records, log) {
     const aggregated = {
       timestamp: bucketKey,
       dataPoints: bucketRecords.length,
-      metrics: computeBucketMetrics(bucketRecords, log)
+      // Explicitly pass bucketHours: 1 for hourly aggregation to ensure correct energy calculations
+      metrics: computeBucketMetrics(bucketRecords, log, { bucketHours: 1 })
     };
     hourlyData.push(aggregated);
   }

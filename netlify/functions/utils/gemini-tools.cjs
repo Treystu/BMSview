@@ -641,9 +641,9 @@ function aggregateDailyData(records, metric, log) {
 
   const dailyData = [];
   for (const [bucketKey, bucketRecords] of dailyBuckets.entries()) {
-    // Reuse hourly aggregation logic
+    // Reuse hourly aggregation logic with 24-hour bucket for daily energy calculations
     const dummyLog = { debug: () => { }, info: () => { }, warn: () => { }, error: () => { } };
-    const metrics = computeBucketMetrics(bucketRecords, dummyLog);
+    const metrics = computeBucketMetrics(bucketRecords, dummyLog, { bucketHours: 24 });
 
     dailyData.push({
       timestamp: bucketKey,
