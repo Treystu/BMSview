@@ -286,6 +286,36 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "When analysis requires tool data, you MUST CALL THE TOOL YOURSELF and present the results. NEVER tell users to 'use the X tool' or 'run Y calculation' - they literally cannot do this.\n";
     prompt += "If you need energy budget data, call calculate_energy_budget NOW and include the results in your response. If you need predictions, call predict_battery_trends NOW.\n";
     prompt += "Recommendations like 'Use the calculate_energy_budget tool with scenario=worst_case' are USELESS to users - only YOU can execute tools!\n\n";
+    
+    // ENHANCED ENERGY CALCULATION GUIDANCE
+    prompt += "⚡ CRITICAL: POWER vs ENERGY - DO NOT CONFUSE THESE!\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    prompt += "🔴 POWER (W, kW) = INSTANTANEOUS RATE of energy transfer (like speedometer reading)\n";
+    prompt += "   - avgChargingPower_W = average charging RATE during the period\n";
+    prompt += "   - This is NOT how much energy was charged! It's just the RATE.\n\n";
+    prompt += "🟢 ENERGY (Wh, kWh) = ACCUMULATED energy over time (like odometer reading)\n";
+    prompt += "   - chargingKWh, dischargingKWh = pre-calculated ENERGY for each time bucket\n";
+    prompt += "   - This IS how much energy was actually charged/discharged.\n\n";
+    prompt += "📐 THE FUNDAMENTAL FORMULA:\n";
+    prompt += "   Energy (Wh) = Power (W) × Time (hours)\n";
+    prompt += "   Energy (kWh) = Power (kW) × Time (hours)\n\n";
+    prompt += "🧮 EXAMPLE CALCULATION:\n";
+    prompt += "   If avgChargingPower_W = 1100 W (average charging rate)\n";
+    prompt += "   And the system charged for 8 hours of sunlight:\n";
+    prompt += "   Daily charging energy = 1100 W × 8 h = 8,800 Wh = 8.8 kWh\n\n";
+    prompt += "   ❌ WRONG: 'The system generated 1.1 kWh per day' (this confuses W with Wh)\n";
+    prompt += "   ✅ CORRECT: 'With 1100 W average charging power over 8 sun-hours, daily generation is 8.8 kWh'\n\n";
+    prompt += "🎯 BEST PRACTICE: USE PRE-CALCULATED ENERGY FIELDS!\n";
+    prompt += "   The tool responses include pre-calculated energy fields:\n";
+    prompt += "   - chargingKWh: Energy added during this bucket (already power × time)\n";
+    prompt += "   - dischargingKWh: Energy consumed during this bucket\n";
+    prompt += "   - netEnergyKWh: Net energy balance (charging - discharging)\n";
+    prompt += "   USE THESE instead of trying to calculate from power values!\n\n";
+    prompt += "⚠️ TREND ANALYSIS: Make sure direction is correct!\n";
+    prompt += "   If values go from 145 Ah to 524 Ah, that's INCREASING (going UP), not decreasing.\n";
+    prompt += "   Always double-check: larger number at end = increasing trend.\n\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    
     prompt += "⚡ ENERGY UNITS MANDATE:\n";
     prompt += "• ALWAYS use kWh (kilowatt-hours) for energy values - this is the INDUSTRY STANDARD\n";
     prompt += "• NEVER use Ah (amp-hours) alone without context - Ah varies wildly by voltage (12V, 24V, 48V systems)\n";
@@ -1028,11 +1058,14 @@ function formatDailyRollupSection(dailyRollup) {
             const socStdDev = standardDeviation(avgSocValues);
             lines.push(`- SOC range: ${formatPercent(minSoc, 0)} to ${formatPercent(maxSoc, 0)} (avg ${formatPercent(overallAvgSoc, 0)}, σ ${formatPercent(socStdDev, 1)})`);
             
-            // Calculate SOC trend (linear regression)
+            // Calculate SOC trend (linear regression) with explicit direction
             const socTrend = calculateLinearTrend(avgSocValues);
             if (socTrend) {
-                const direction = socTrend.slope > 0.01 ? '📈 Improving' : socTrend.slope < -0.01 ? '📉 Declining' : '➡️ Stable';
-                lines.push(`- SOC trend: ${direction} (${formatSigned(socTrend.slope * totalDays, '%', 1)} over period, R²=${formatNumber(socTrend.rSquared, '', 2)})`);
+                const directionLabel = socTrend.isIncreasing ? '📈 Improving' : socTrend.isDecreasing ? '📉 Declining' : '➡️ Stable';
+                lines.push(`- SOC trend: ${directionLabel} (${formatNumber(socTrend.firstValue, '%', 0)} → ${formatNumber(socTrend.lastValue, '%', 0)}, change: ${formatSigned(socTrend.absoluteChange, '%', 1)}, R²=${formatNumber(socTrend.rSquared, '', 2)})`);
+                if (socTrend.directionNote) {
+                    lines.push(`  ⚠️ ${socTrend.directionNote}`);
+                }
             }
         }
         
@@ -1041,11 +1074,14 @@ function formatDailyRollupSection(dailyRollup) {
             const voltageStdDev = standardDeviation(avgVoltageValues);
             lines.push(`- Average voltage: ${formatNumber(overallAvgVoltage, " V", 2)} (σ ${formatNumber(voltageStdDev, 'V', 2)})`);
             
-            // Calculate voltage trend
+            // Calculate voltage trend with explicit direction
             const voltageTrend = calculateLinearTrend(avgVoltageValues);
             if (voltageTrend) {
-                const direction = voltageTrend.slope > 0.01 ? '📈 Rising' : voltageTrend.slope < -0.01 ? '📉 Falling' : '➡️ Stable';
-                lines.push(`- Voltage trend: ${direction} (${formatSigned(voltageTrend.slope * totalDays, 'V', 2)} over period, R²=${formatNumber(voltageTrend.rSquared, '', 2)})`);
+                const directionLabel = voltageTrend.isIncreasing ? '📈 Rising' : voltageTrend.isDecreasing ? '📉 Falling' : '➡️ Stable';
+                lines.push(`- Voltage trend: ${directionLabel} (${formatNumber(voltageTrend.firstValue, 'V', 1)} → ${formatNumber(voltageTrend.lastValue, 'V', 1)}, change: ${formatSigned(voltageTrend.absoluteChange, 'V', 2)}, R²=${formatNumber(voltageTrend.rSquared, '', 2)})`);
+                if (voltageTrend.directionNote) {
+                    lines.push(`  ⚠️ ${voltageTrend.directionNote}`);
+                }
             }
         }
         
@@ -1055,11 +1091,11 @@ function formatDailyRollupSection(dailyRollup) {
             const dischargingDays = avgCurrentValues.filter(c => c < -0.5).length;
             lines.push(`- Average current: ${formatNumber(overallAvgCurrent, " A", 1)} (${chargingDays} charging days, ${dischargingDays} discharging days)`);
             
-            // Calculate energy balance trend
+            // Calculate energy balance trend with explicit direction
             const netEnergyTrend = calculateLinearTrend(avgCurrentValues);
             if (netEnergyTrend) {
-                const balanceStatus = netEnergyTrend.slope > 0.01 ? '📈 Improving balance' : netEnergyTrend.slope < -0.01 ? '📉 Worsening deficit' : '➡️ Stable balance';
-                lines.push(`- Energy balance trend: ${balanceStatus} (${formatSigned(netEnergyTrend.slope * totalDays, 'A', 2)} over period)`);
+                const balanceStatus = netEnergyTrend.isIncreasing ? '📈 Improving balance' : netEnergyTrend.isDecreasing ? '📉 Worsening deficit' : '➡️ Stable balance';
+                lines.push(`- Energy balance trend: ${balanceStatus} (${formatNumber(netEnergyTrend.firstValue, 'A', 1)} → ${formatNumber(netEnergyTrend.lastValue, 'A', 1)}, change: ${formatSigned(netEnergyTrend.absoluteChange, 'A', 2)} over period)`);
             }
         }
         
@@ -1102,8 +1138,16 @@ function formatDailyRollupSection(dailyRollup) {
 }
 
 /**
- * Calculate linear trend using least squares regression
- * Returns slope, intercept, and R² value
+ * Calculate linear trend from a series of values
+ * 
+ * IMPORTANT: This function determines trend DIRECTION mathematically:
+ * - Positive slope = values are INCREASING over time
+ * - Negative slope = values are DECREASING over time
+ * 
+ * Example: Values [145, 200, 300, 400, 524] have POSITIVE slope = INCREASING trend
+ * 
+ * @param {Array<number>} values - Time-ordered array of values (index 0 = earliest, last = latest)
+ * @returns {Object|null} Trend analysis with slope, intercept, R², and explicit direction labels
  */
 function calculateLinearTrend(values) {
     const filtered = values.filter(v => isFiniteNumber(v));
@@ -1144,10 +1188,57 @@ function calculateLinearTrend(values) {
     
     const rSquared = ssTotal > 0 ? 1 - (ssResidual / ssTotal) : 0;
     
+    // Explicitly determine direction with SANITY CHECK
+    // If first value is 145 and last is 524, that's INCREASING (going UP)
+    const firstValue = filtered[0];
+    const lastValue = filtered[n - 1];
+    const actualDelta = lastValue - firstValue;
+    
+    // Direction is determined by slope sign:
+    // Positive slope = INCREASING = values going UP over time
+    // Negative slope = DECREASING = values going DOWN over time
+    let direction, directionEmoji;
+    if (slope > 0.01) {
+        direction = 'increasing';
+        directionEmoji = '📈';
+    } else if (slope < -0.01) {
+        direction = 'decreasing';
+        directionEmoji = '📉';
+    } else {
+        direction = 'stable';
+        directionEmoji = '➡️';
+    }
+    
+    // SANITY CHECK: Verify direction matches actual first→last delta
+    // This catches potential calculation errors
+    // Use a tolerance for delta, similar to slope threshold
+    const DELTA_TOLERANCE = 0.01;
+    const deltaDirection =
+        actualDelta > DELTA_TOLERANCE ? 'increasing' :
+        actualDelta < -DELTA_TOLERANCE ? 'decreasing' :
+        'stable';
+    const directionMismatch =
+        (direction === 'increasing' && deltaDirection === 'decreasing') ||
+        (direction === 'decreasing' && deltaDirection === 'increasing');
+    
     return {
         slope: roundNumber(slope, 4),
         intercept: roundNumber(intercept, 2),
-        rSquared: roundNumber(Math.max(0, Math.min(1, rSquared)), 3) // Clamp between 0 and 1
+        rSquared: roundNumber(Math.max(0, Math.min(1, rSquared)), 3), // Clamp between 0 and 1
+        // Explicit direction fields to prevent AI misinterpretation
+        direction,
+        directionEmoji,
+        isIncreasing: slope > 0.01,
+        isDecreasing: slope < -0.01,
+        isStable: Math.abs(slope) <= 0.01,
+        // First and last values for context
+        firstValue: roundNumber(firstValue, 2),
+        lastValue: roundNumber(lastValue, 2),
+        absoluteChange: roundNumber(actualDelta, 2),
+        // Warning if direction seems contradictory (likely data issue, not calculation error)
+        directionNote: directionMismatch 
+            ? `Note: Trend slope suggests ${direction}, but first→last delta is ${deltaDirection}. This may indicate non-linear patterns.`
+            : null
     };
 }
 
