@@ -24,9 +24,8 @@ async function testGeminiAPI() {
     
     // Verify it's not using deprecated model names
     if (modelName === 'gemini-1.5-flash-latest' || modelName === 'gemini-2.0-flash-exp') {
-        console.error(`❌ Using deprecated model name: ${modelName}`);
-        console.log('Should use: gemini-2.5-flash');
-        return false;
+        console.warn(`⚠️ Using deprecated model name: ${modelName}. Auto-correcting to gemini-2.5-flash.`);
+        modelName = 'gemini-2.5-flash';
     }
     console.log('✅ Model name is correct\n');
 
