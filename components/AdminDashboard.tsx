@@ -35,6 +35,7 @@ import IpManagement from './IpManagement';
 import SpinnerIcon from './icons/SpinnerIcon';
 
 import AdminHeader from './admin/AdminHeader';
+import AdminStoryManager from './admin/AdminStoryManager';
 import DataManagement from './admin/DataManagement';
 import HistoryTable from './admin/HistoryTable';
 import SystemsTable from './admin/SystemsTable';
@@ -768,6 +769,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         storyUserContext={storyUserContext}
                         setStoryUserContext={setStoryUserContext}
                     />
+                </section>
+
+                <section id="stories-management-section">
+                    <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">
+                        📖 Stories Management
+                    </h2>
+                    <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
+                        <AdminStoryManager />
+                    </div>
                 </section>
 
                 <section>

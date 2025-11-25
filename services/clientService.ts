@@ -2417,6 +2417,7 @@ export const createAnalysisStory = async (title: string, summary: string, timeli
         method: 'POST',
         body: JSON.stringify({
             storyMode: true,
+            isAdmin: true, // Story mode is admin-only
             title,
             summary,
             userContext,
