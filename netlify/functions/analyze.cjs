@@ -325,7 +325,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
 
     // Store results for future deduplication (best effort)
     try {
-      await storeAnalysisResults(record, contentHash, log, forceReanalysis, shouldUpgrade, existingRecordToUpgrade);
+      await storeAnalysisResults(record, contentHash, log, forceReanalysis, isUpgrade, existingRecordToUpgrade);
     } catch (storageError) {
       // Log but don't fail - storage is not critical for immediate response
       log.warn('Failed to store analysis results for deduplication', {
@@ -339,12 +339,12 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
       recordId: record.id,
       fileName: record.fileName,
       timestamp: record.timestamp,
-      wasUpgraded: shouldUpgrade // Indicate if this was a quality upgrade
+      wasUpgraded: isUpgrade // Indicate if this was a quality upgrade
     };
 
     // Store idempotent response (best effort)
     try {
-      const reasonCode = shouldUpgrade ? 'quality_upgrade' : (forceReanalysis ? 'force_reanalysis' : 'new_analysis');
+      const reasonCode = isUpgrade ? 'quality_upgrade' : (forceReanalysis ? 'force_reanalysis' : 'new_analysis');
       await storeIdempotentResponse(idemKey, responseBody, reasonCode);
     } catch (idemStoreError) {
       // Log but don't fail
@@ -451,7 +451,7 @@ async function checkExistingAnalysis(contentHash, log) {
         log.warn('Existing record is missing critical fields. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
         });
-        return { _shouldUpgrade: true, _existingRecord: existing };
+        return { _isUpgrade: true, _existingRecord: existing };
       }
 
       return existing;
@@ -512,7 +512,7 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
  * @param {string} contentHash - Content hash for deduplication
  * @param {Object} log - Logger instance
  * @param {boolean} forceReanalysis - Whether this was a forced reanalysis
- * @param {boolean} shouldUpgrade - Whether this is upgrading a low-quality record
+ * @param {boolean} isUpgrade - Whether this is upgrading a low-quality record
  * @param {Object} existingRecordToUpgrade - Existing record being upgraded (if applicable)
  */
 async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false, isUpgrade = false, existingRecordToUpgrade = null) {
