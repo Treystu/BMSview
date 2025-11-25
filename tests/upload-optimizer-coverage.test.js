@@ -357,20 +357,19 @@ describe('UploadOptimizer Coverage Tests', () => {
       expect(optimizer._shouldStoreTelemetry()).toBe(true);
     });
 
-    test('should handle errors gracefully', () => {
-      // Mock window to throw error - use value assignment instead of getter
-      // to avoid breaking other tests/module loading
+    test('should handle missing window gracefully', () => {
+      // Test that function works even when window is undefined
       const originalWindow = global.window;
       const originalWindowDescriptor = Object.getOwnPropertyDescriptor(global, 'window');
       
       try {
-        // Delete window entirely to simulate environments without window
+        // Delete window entirely to simulate non-browser environments
         delete global.window;
         global.window = undefined;
         
-        // The function should return false when window is undefined
-        // This tests the error handling path without causing test suite failures
-        expect(optimizer._shouldStoreTelemetry()).toBe(true); // Still true because NODE_ENV=test
+        // Function still returns true because NODE_ENV=test takes precedence
+        // (see line 306 in uploadOptimizer.js: process.env.NODE_ENV === 'test')
+        expect(optimizer._shouldStoreTelemetry()).toBe(true);
       } finally {
         // Restore window
         if (originalWindowDescriptor) {
