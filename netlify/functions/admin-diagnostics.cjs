@@ -125,8 +125,8 @@ const getRealProductionData = async () => {
         power: record.analysis.power || 0,
         soc: record.analysis.stateOfCharge || record.analysis.soc || 0,
         capacity: record.analysis.remainingCapacity || record.analysis.capacity || 0,
-        temperature: record.analysis.highestTemperature || record.analysis.temperature || 25,
-        cellVoltages: record.analysis.cellVoltages || Array(16).fill(3.3),
+        temperature: record.analysis.highestTemperature || record.analysis.temperature || DEFAULT_TEMPERATURE_CELSIUS,
+        cellVoltages: record.analysis.cellVoltages || Array(DEFAULT_CELL_COUNT).fill(DEFAULT_CELL_VOLTAGE),
         cellTemperatures: record.analysis.cellTemperatures || [],
         maxCellVoltage: record.analysis.highestCellVoltage || 0,
         minCellVoltage: record.analysis.lowestCellVoltage || 0,
@@ -180,6 +180,12 @@ const getBmsDataForTest = () => {
   return REAL_BMS_DATA || TEST_BMS_DATA;
 };
 
+// Default values for BMS data when actual values are missing
+// These are used as fallback defaults in getRealProductionData mapping
+const DEFAULT_TEMPERATURE_CELSIUS = 25;
+const DEFAULT_CELL_COUNT = 16;
+const DEFAULT_CELL_VOLTAGE = 3.3;
+
 // Test data based on actual BMS screenshot - ONLY used as fallback if no real data exists
 /** @type {BmsData} */
 const TEST_BMS_DATA = {
@@ -188,9 +194,9 @@ const TEST_BMS_DATA = {
   power: 90.78, // 0.090kw from image
   soc: 72.1,
   capacity: 475.8,
-  temperature: 25,
-  cellVoltages: Array(16).fill(3.338), // Average from image
-  cellTemperatures: Array(16).fill(25),
+  temperature: DEFAULT_TEMPERATURE_CELSIUS,
+  cellVoltages: Array(DEFAULT_CELL_COUNT).fill(3.338), // Average from image
+  cellTemperatures: Array(DEFAULT_CELL_COUNT).fill(DEFAULT_TEMPERATURE_CELSIUS),
   maxCellVoltage: 3.339,
   minCellVoltage: 3.337,
   cellVoltageDelta: 0.002,
