@@ -129,7 +129,24 @@ function App() {
         // 4. Handle error for this specific file
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
         log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
-        dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${errorMessage}` } });
+
+        if (errorMessage.toLowerCase().includes('duplicate')) {
+          dispatch({
+            type: 'SYNC_ANALYSIS_COMPLETE',
+            payload: {
+              fileName: file.name,
+              isDuplicate: true,
+              record: {
+                id: `local-duplicate-${Date.now()}`,
+                timestamp: new Date().toISOString(),
+                analysis: null,
+                fileName: file.name,
+              },
+            },
+          });
+        } else {
+          dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${errorMessage}` } });
+        }
       }
     }
 

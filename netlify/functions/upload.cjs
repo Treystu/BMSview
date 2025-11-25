@@ -57,6 +57,7 @@ exports.handler = async (event, context) => {
     const { file, userId } = formData;
     
     const requestContext = { ...logContext, fileName: file?.name, userId, fileSize: file?.size };
+    log('info', 'Processing upload request', requestContext);
     
     if (!file || !userId) {
       log.warn('Missing required fields', requestContext);
@@ -88,7 +89,8 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({
           error: 'Duplicate file',
           message: `File ${file.name} has already been uploaded`,
-          existingId: existing._id
+          existingId: existing._id,
+          requestContext
         })
       };
     }
@@ -193,6 +195,7 @@ async function parseMultipartData(event, log) {
           },
           userId: 'user-id-from-form-or-header' // Replace with actual user ID extraction
         });
+        log.info('User ID extracted', { userId: 'user-id-from-form-or-header' });
       });
       part.on('error', (err) => {
         log.error('Multiparty part error', { error: err.message, stack: err.stack });
