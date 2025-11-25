@@ -140,6 +140,24 @@ log.info('Message', { key: value });  // Use log levels: info, warn, error, debu
 - **Timeouts**: `withTimeout()` wraps promises with configurable timeouts
 - **Error responses**: Use `errorResponse(statusCode, code, message, details, headers)` from `utils/errors.cjs`
 
+**Circuit Breaker Pattern:**
+The circuit breaker protects against cascading failures when external services (like Gemini API) are unavailable.
+
+States:
+- `CLOSED` (normal): Requests pass through normally
+- `OPEN` (failing): After 5 failures, rejects requests immediately for 60s
+- `HALF_OPEN` (testing): After timeout, allows 3 test requests to verify recovery
+
+Configuration (in `geminiClient.cjs`):
+- `failureThreshold`: 5 failures before opening circuit
+- `resetTimeout`: 60 seconds before transitioning to HALF_OPEN
+- `halfOpenRequests`: 3 successful requests needed to close circuit
+
+The insights generation (`react-loop.cjs`) handles circuit breaker errors by:
+- Detecting `circuit_open` errors
+- Waiting 10s for the circuit to transition
+- Continuing retries silently (no user-visible retry spam)
+
 ### 5. Analysis Pipeline (Synchronous Mode)
 **Old architecture** (deprecated): Job-based async processing with `job-shepherd.cjs` ⚠️ **DO NOT USE**
 **Current architecture**: Synchronous analysis via `?sync=true` query parameter
@@ -253,6 +271,35 @@ dispatch({ type: 'SYNC_ANALYSIS_COMPLETE', payload: { fileName, record, isDuplic
 8. **Don't misinterpret solar variance** - Remember: expected minus actual often equals daytime load, not solar deficiency
 9. **Don't include redundant data in insights** - Current operational metrics are already displayed in the UI
 10. **Don't confuse battery autonomy with service life** - One is runtime, the other is replacement timeline
+11. **NEVER use static/hardcoded error messages** - All error messages must be dynamic and include:
+    - Actual error details from the API (error code, status, message)
+    - Current query context (time range, metrics requested)
+    - Specific, actionable suggestions based on the actual failure mode
+12. **Don't show retry spam to users** - Keep retries silent in the UI, log to console only
+    - Use calm progress indicators instead of "attempt X/N" messages
+    - Aggressive retries should happen in the background, invisible to users
+
+## Error Handling Best Practices
+
+When implementing error handling, follow these guidelines:
+
+```typescript
+// ❌ BAD - Static error message
+throw new Error("This is a very complex query. Consider reducing the time range.");
+
+// ✅ GOOD - Dynamic, contextual error message
+throw new Error(
+  `Analysis could not complete after ${attemptCount} attempts.\n\n` +
+  `${errorReason}\n\n` +
+  `Suggestions:\n${suggestions.map(s => `• ${s}`).join('\n')}`
+);
+```
+
+**Error context should include:**
+- HTTP status codes (404, 429, 503, etc.)
+- Error codes from APIs (rate_limited, not_found, etc.)
+- Actual query parameters (time range, system ID)
+- Suggested actions based on the specific error type
 
 ## Recent Migration Notes
 

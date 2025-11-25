@@ -470,10 +470,30 @@ function FinalInsightsDisplay({ insights }: { insights: any }) {
 }
 
 function ErrorDisplay({ error }: { error: string }) {
+  // Parse error message to separate sections (main message, reason, suggestions)
+  const lines = error.split('\n').filter(line => line.trim());
+  const mainMessage = lines[0] || 'An error occurred';
+  const hasDetails = lines.length > 1;
+  
   return (
-    <div className="mt-4 p-4 bg-red-50 rounded-lg">
-      <h4 className="text-sm font-semibold text-red-900 mb-2">❌ Error</h4>
-      <p className="text-sm text-red-700">{error}</p>
+    <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+      <h4 className="text-sm font-semibold text-amber-900 mb-2 flex items-center gap-2">
+        <span>⚠️</span>
+        <span>Analysis Issue</span>
+      </h4>
+      <p className="text-sm text-amber-800 font-medium mb-2">{mainMessage}</p>
+      {hasDetails && (
+        <div className="text-sm text-amber-700 space-y-1">
+          {lines.slice(1).map((line, index) => (
+            <p key={index} className={line.startsWith('•') ? 'ml-2' : ''}>
+              {line}
+            </p>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-amber-600 mt-3 italic">
+        The system will automatically retry when you try again.
+      </p>
     </div>
   );
 }
