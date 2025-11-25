@@ -24,6 +24,7 @@
     "axios": "^1.7.9",
     "buffer": "^6.0.3",
     "dexie": "^4.2.1",
+    "dotenv": "^17.2.3",
     "fast-xml-parser": "^4.3.2",
     "jszip": "^3.10.1",
     "mongodb": "^6.20.0",
