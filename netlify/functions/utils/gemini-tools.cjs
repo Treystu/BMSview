@@ -3,6 +3,26 @@
  * 
  * This module defines the tools/functions that can be used to query additional data
  * when generating insights. This enables intelligent, context-aware analysis.
+ * 
+ * IMPORTANT UNIT CLARIFICATIONS:
+ * ==============================
+ * - Power (W, kW): Instantaneous rate of energy transfer. avgPower_W is a RATE, not accumulation.
+ * - Energy (Wh, kWh): Power integrated over time. This is what you pay for on your electric bill.
+ * - Current (A): Rate of charge flow. To get Ah, multiply by hours.
+ * - Capacity (Ah): Total charge. To get Wh, multiply by voltage.
+ * 
+ * CRITICAL CALCULATION RULES:
+ * ===========================
+ * - Energy (Wh) = Power (W) × Time (hours)
+ * - Energy (kWh) = Power (kW) × Time (hours) = Energy (Wh) / 1000
+ * - Energy (Wh) = Current (A) × Voltage (V) × Time (hours)
+ * - Energy (Wh) = Capacity (Ah) × Voltage (V)
+ * 
+ * EXAMPLE:
+ * If avgChargingPower_W = 1100 W for 8 hours of sunlight:
+ * Daily charging energy = 1100 W × 8 h = 8800 Wh = 8.8 kWh
+ * 
+ * NEVER confuse W (power) with Wh (energy) - they are different units!
  */
 
 // Lazy-load MongoDB to avoid connection errors when not needed
@@ -37,11 +57,19 @@ const energyBudget = require('./energy-budget.cjs');
 /**
  * Tool definitions for Gemini function calling
  * These describe the available functions Gemini can call
+ * 
+ * RESPONSE FIELD NAMING CONVENTION:
+ * - Fields ending with _W: Power in Watts (instantaneous rate)
+ * - Fields ending with _Wh: Energy in Watt-hours (accumulated)
+ * - Fields ending with _kWh: Energy in kilowatt-hours (accumulated)
+ * - Fields ending with _A: Current in Amps
+ * - Fields ending with _Ah: Charge in Amp-hours
+ * - Fields ending with _V: Voltage in Volts
  */
 const toolDefinitions = [
   {
     name: 'request_bms_data',
-    description: 'Request specific BMS data when you need additional information. Returns time-series data (timestamps with metric values). Use this as your PRIMARY data access tool. Choose granularity wisely: hourly_avg for detailed analysis (<30 days), daily_avg for trends (30-90 days), raw only for specific point lookups. ALWAYS request ONLY the specific metric needed (not "all") to minimize data size and processing time.',
+    description: 'Request specific BMS data. Returns time-series data with BOTH power (W - instantaneous rate) and energy (Wh/kWh - accumulated) metrics. The response includes pre-calculated energy values like chargingKWh (energy added) and dischargingKWh (energy consumed) for each time bucket. ALWAYS use the pre-calculated energy fields rather than trying to estimate from power values. Choose granularity wisely: hourly_avg for detailed analysis (<30 days), daily_avg for trends (30-90 days with daily energy totals).',
     parameters: {
       type: 'object',
       properties: {
@@ -51,7 +79,7 @@ const toolDefinitions = [
         },
         metric: {
           type: 'string',
-          description: 'The SPECIFIC data metric needed. Request ONE metric at a time for best performance. Options: "voltage" (battery pack voltage), "current" (charge/discharge current, positive=charging, negative=discharging), "power" (Watts), "soc" (state of charge percentage), "capacity" (remaining Ah), "temperature" (battery temp), "cell_voltage_difference" (voltage spread across cells), "all" (use sparingly - returns all metrics)',
+          description: 'The SPECIFIC data metric needed. Request ONE metric at a time for best performance. Options: "voltage" (battery pack voltage V), "current" (charge/discharge current A, positive=charging, negative=discharging, includes Ah calculations), "power" (instantaneous Watts AND pre-calculated Wh/kWh energy), "soc" (state of charge percentage), "capacity" (remaining Ah), "temperature" (battery temp °C), "cell_voltage_difference" (voltage spread across cells), "all" (use sparingly - returns all metrics including energy)',
           enum: ['all', 'voltage', 'current', 'power', 'soc', 'capacity', 'temperature', 'cell_voltage_difference']
         },
         time_range_start: {
@@ -64,7 +92,7 @@ const toolDefinitions = [
         },
         granularity: {
           type: 'string',
-          description: 'Data resolution: "hourly_avg" (hourly averages, recommended for most queries), "daily_avg" (daily averages, best for long ranges >30 days), "raw" (all data points, use only for specific timestamp lookups). Choose wisely to balance detail vs data size.',
+          description: 'Data resolution: "hourly_avg" (hourly averages + hourly energy kWh), "daily_avg" (daily averages + daily energy kWh, best for energy totals), "raw" (snapshots only, no energy calculations). For energy analysis, use daily_avg which provides chargingKWh and dischargingKWh per day.',
           enum: ['hourly_avg', 'daily_avg', 'raw'],
           default: 'hourly_avg'
         }
@@ -613,9 +641,9 @@ function aggregateDailyData(records, metric, log) {
 
   const dailyData = [];
   for (const [bucketKey, bucketRecords] of dailyBuckets.entries()) {
-    // Reuse hourly aggregation logic
+    // Reuse hourly aggregation logic with 24-hour bucket for daily energy calculations
     const dummyLog = { debug: () => { }, info: () => { }, warn: () => { }, error: () => { } };
-    const metrics = computeBucketMetrics(bucketRecords, dummyLog);
+    const metrics = computeBucketMetrics(bucketRecords, dummyLog, { bucketHours: 24 });
 
     dailyData.push({
       timestamp: bucketKey,
