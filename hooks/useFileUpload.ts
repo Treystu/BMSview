@@ -1,7 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
 import JSZip from 'jszip';
-import { sha256Browser } from '../utils';
-import { checkHashes } from '../services/clientService';
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({
@@ -103,29 +101,13 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
         const imageProcessingPromise = (async () => {
             if (validImageFiles.length > 0) {
                 setIsProcessing(true);
-                const hashes = await Promise.all(validImageFiles.map(sha256Browser));
-                const { duplicates, upgrades } = await checkHashes(hashes);
-                const duplicateSet = new Set(duplicates);
-                const upgradeSet = new Set(upgrades);
-
-                const newFiles: File[] = [];
-                const filesToUpgrade: File[] = [];
-                const newSkipped = new Map(skippedFiles);
-
-                hashes.forEach((hash, index) => {
-                    const file = validImageFiles[index];
-                    if (duplicateSet.has(hash)) {
-                        newSkipped.set(file.name, 'Skipped (duplicate)');
-                    } else if (upgradeSet.has(hash)) {
-                        filesToUpgrade.push(file);
-                    } else {
-                        newFiles.push(file);
-                    }
-                });
                 
-                // Add new files and upgrades to the main files list
-                setFiles(prev => [...prev, ...newFiles, ...filesToUpgrade.map(f => Object.assign(f, { _isUpgrade: true }))]);
-                setSkippedFiles(newSkipped);
+                // All valid image files should be added to the files list.
+                // The backend will handle duplicate detection and return existing data
+                // with isDuplicate flag, allowing users to view results and re-analyze if needed.
+                // This supports the common use case of re-uploading a screenshot to analyze
+                // a specific event and generate insights.
+                setFiles(prev => [...prev, ...validImageFiles]);
                 setIsProcessing(false);
             }
         })();
@@ -142,7 +124,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
 
         await Promise.all([imageProcessingPromise, ...zipProcessingPromises]);
 
-    }, [handleZipFile, maxFileSizeBytes, maxFileSizeMb, skippedFiles]);
+    }, [handleZipFile, maxFileSizeBytes, maxFileSizeMb]);
 
     const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         if (event.target.files) {
