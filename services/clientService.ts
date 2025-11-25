@@ -2395,8 +2395,8 @@ export const getDiagnosticProgress = async (testId: string): Promise<{
     return data;
 };
 
-export const createAnalysisStory = async (title: string, summary: string, timeline: File[]): Promise<AnalysisStory> => {
-    log('info', 'Creating analysis story.', { title, summary, timelineCount: timeline.length });
+export const createAnalysisStory = async (title: string, summary: string, timeline: File[], userContext?: string): Promise<AnalysisStory> => {
+    log('info', 'Creating analysis story.', { title, summary, timelineCount: timeline.length, hasUserContext: !!userContext });
 
     const timelinePayload = await Promise.all(timeline.map(async (file) => {
         const image = await new Promise<string>((resolve, reject) => {
@@ -2419,6 +2419,7 @@ export const createAnalysisStory = async (title: string, summary: string, timeli
             storyMode: true,
             title,
             summary,
+            userContext,
             timeline: timelinePayload,
         }),
     });
@@ -2437,6 +2438,31 @@ export const uploadStoryPhoto = async (storyId: string, photo: File, caption: st
     return apiFetch<StoryPhoto>(`upload-story-photo?storyId=${storyId}&caption=${caption}&timestamp=${timestamp}`, {
         method: 'POST',
         body: JSON.stringify({ image: image.split(',') }),
+    });
+};
+
+export interface StoriesResponse {
+    items: AnalysisStory[];
+    totalItems: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+}
+
+export const getStories = async (page = 1, limit = 20): Promise<StoriesResponse> => {
+    log('info', 'Fetching stories.', { page, limit });
+    return apiFetch<StoriesResponse>(`stories?page=${page}&limit=${limit}`);
+};
+
+export const getStory = async (id: string): Promise<AnalysisStory> => {
+    log('info', 'Fetching story by ID.', { id });
+    return apiFetch<AnalysisStory>(`stories?id=${id}`);
+};
+
+export const deleteStory = async (id: string): Promise<{ success: boolean; id: string }> => {
+    log('info', 'Deleting story.', { id });
+    return apiFetch<{ success: boolean; id: string }>(`stories?id=${id}`, {
+        method: 'DELETE',
     });
 };
 

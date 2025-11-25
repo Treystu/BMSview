@@ -109,12 +109,23 @@ export interface StoryPhoto {
   timestamp: string;
 }
 
+export interface StoryAiInterpretation {
+  summary: string;
+  trendAnalysis?: string;
+  events?: string[];
+  recommendations?: string[];
+  generatedAt: string;
+}
+
 export interface AnalysisStory {
   id: string;
   title: string;
   summary: string;
+  userContext?: string;
   timeline: AnalysisRecord[];
   photos: StoryPhoto[];
+  aiInterpretation?: StoryAiInterpretation;
+  createdAt: string;
 }
 
 export interface DisplayableAnalysisResult {
