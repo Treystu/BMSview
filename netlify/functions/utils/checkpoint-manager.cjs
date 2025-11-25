@@ -232,7 +232,6 @@ function validateCheckpoint(checkpoint, log) {
  * @returns {Function} Checkpoint callback function
  */
 function createCheckpointCallback(jobId, timeoutMs, log) {
-  const checkpointThreshold = Math.min(timeoutMs - 5000, CHECKPOINT_SAVE_THRESHOLD_MS);
   let lastCheckpointTime = Date.now();
   
   return async function(currentState) {
@@ -240,23 +239,23 @@ function createCheckpointCallback(jobId, timeoutMs, log) {
     const elapsed = now - currentState.startTime;
     const timeSinceLastCheckpoint = now - lastCheckpointTime;
     
-    // Only save checkpoint if approaching timeout and enough time has passed since last save
-    if (elapsed > checkpointThreshold && timeSinceLastCheckpoint > 10000) {
-      log.info('Approaching timeout, saving checkpoint', {
-        jobId,
-        elapsedMs: elapsed,
-        thresholdMs: checkpointThreshold,
-        turnCount: currentState.turnCount
-      });
-      
-      const checkpoint = createCheckpointState(currentState);
-      await saveCheckpoint(jobId, checkpoint, log);
-      lastCheckpointTime = now;
-      
-      return true; // Checkpoint saved
-    }
+    // ALWAYS save checkpoint when called by the react-loop.
+    // Previously this had conditional logic that could skip saves, but the react-loop
+    // is responsible for deciding when to checkpoint, so we should always save here.
+    // This ensures we never lose conversation history on timeout.
+    log.info('Saving checkpoint', {
+      jobId,
+      elapsedMs: elapsed,
+      turnCount: currentState.turnCount,
+      historyLength: currentState.conversationHistory?.length || 0,
+      timeSinceLastCheckpoint
+    });
     
-    return false; // No checkpoint needed yet
+    const checkpoint = createCheckpointState(currentState);
+    await saveCheckpoint(jobId, checkpoint, log);
+    lastCheckpointTime = now;
+    
+    return true; // Checkpoint saved
   };
 }
 
