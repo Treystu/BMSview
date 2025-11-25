@@ -47,27 +47,34 @@ exports.handler = async (event, context) => {
 
         const query = { contentHash: { $in: hashes } };
         const allMatchingRecords = await collection.find(query, {
-            projection: { contentHash: 1, analysis: 1, _id: 0 }
+            projection: { contentHash: 1, analysis: 1 }
         }).toArray();
 
-        const duplicates = new Set();
+        const duplicates = [];
         const upgrades = new Set();
+        const seenHashes = new Set();
 
         for (const record of allMatchingRecords) {
+            if (seenHashes.has(record.contentHash)) continue;
+
             const hasAllCriticalFields = criticalFields.every(field => {
                 const fieldValue = field.split('.').reduce((o, i) => o?.[i], record);
                 return fieldValue !== undefined && fieldValue !== null;
             });
 
             if (hasAllCriticalFields) {
-                duplicates.add(record.contentHash);
+                duplicates.push({
+                    hash: record.contentHash,
+                    data: { ...record.analysis, _recordId: record._id.toString() },
+                });
+                seenHashes.add(record.contentHash);
             } else {
                 upgrades.add(record.contentHash);
             }
         }
         
         const result = {
-            duplicates: [...duplicates],
+            duplicates,
             upgrades: [...upgrades],
         };
 

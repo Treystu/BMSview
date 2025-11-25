@@ -2442,13 +2442,13 @@ export const uploadStoryPhoto = async (storyId: string, photo: File, caption: st
     });
 };
 
-export const checkHashes = async (hashes: string[]): Promise<{ duplicates: string[], upgrades: string[] }> => {
+export const checkHashes = async (hashes: string[]): Promise<{ duplicates: { hash: string, data: any }[], upgrades: string[] }> => {
     if (hashes.length === 0) {
         return { duplicates: [], upgrades: [] };
     }
     log('info', 'Checking file hashes against the backend for duplicates and upgrades.', { count: hashes.length });
     try {
-        const response = await apiFetch<{ duplicates: string[], upgrades: string[] }>('check-hashes', {
+        const response = await apiFetch<{ duplicates: { hash: string, data: any }[], upgrades: string[] }>('check-hashes', {
             method: 'POST',
             body: JSON.stringify({ hashes }),
         });

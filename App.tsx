@@ -99,6 +99,25 @@ function App() {
     // Process each file one by one
     for (const file of files) {
       try {
+        const fileWithData = file as File & { _isDuplicate?: boolean; _analysisData?: any };
+
+        if (fileWithData._isDuplicate && fileWithData._analysisData) {
+            log('info', 'Processing pre-identified duplicate file.', { fileName: file.name });
+            dispatch({
+                type: 'SYNC_ANALYSIS_COMPLETE',
+                payload: {
+                    fileName: file.name,
+                    isDuplicate: true,
+                    record: {
+                        id: fileWithData._analysisData._recordId || `local-duplicate-${Date.now()}`,
+                        timestamp: fileWithData._analysisData._timestamp || new Date().toISOString(),
+                        analysis: fileWithData._analysisData,
+                        fileName: file.name,
+                    },
+                },
+            });
+            continue;
+        }
         // 1. Mark this specific file as "Processing"
         dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
 

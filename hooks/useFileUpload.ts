@@ -105,7 +105,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                 setIsProcessing(true);
                 const hashes = await Promise.all(validImageFiles.map(sha256Browser));
                 const { duplicates, upgrades } = await checkHashes(hashes);
-                const duplicateSet = new Set(duplicates);
+                const duplicateMap = new Map(duplicates.map(d => [d.hash, d.data]));
                 const upgradeSet = new Set(upgrades);
 
                 const newFiles: File[] = [];
@@ -114,8 +114,15 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
 
                 hashes.forEach((hash, index) => {
                     const file = validImageFiles[index];
-                    if (duplicateSet.has(hash)) {
-                        newSkipped.set(file.name, 'Skipped (duplicate)');
+                    const duplicateData = duplicateMap.get(hash);
+
+                    if (duplicateData) {
+                        // This is a duplicate, add it to the files array with the data
+                        const duplicateFile = Object.assign(file, {
+                            _isDuplicate: true,
+                            _analysisData: duplicateData,
+                        });
+                        newFiles.push(duplicateFile);
                     } else if (upgradeSet.has(hash)) {
                         filesToUpgrade.push(file);
                     } else {
