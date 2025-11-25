@@ -451,7 +451,7 @@ async function checkExistingAnalysis(contentHash, log) {
         log.warn('Existing record is missing critical fields. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
         });
-        return { _shouldUpgrade: true, _existingRecord: existing };
+        return { _isUpgrade: true, _existingRecord: existing };
       }
 
       return existing;
