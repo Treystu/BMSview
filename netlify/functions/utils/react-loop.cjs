@@ -1607,6 +1607,9 @@ async function executeReActLoop(params) {
             durationMs: totalDurationMs,
             contextSummary,
             conversationLength: conversationHistory.length,
+            // Include conversationHistory when timed out for emergency checkpoint saves
+            conversationHistory: timedOut ? conversationHistory : undefined,
+            startTime: timedOut ? startTime : undefined,
             timedOut // Indicate if we exited due to timeout
         };
     } catch (error) {
