@@ -334,6 +334,14 @@ class UploadOptimizer {
   }
 
   /**
+   * Set test metrics for testing environments
+   * @param {Array} metrics - Array of metric objects
+   */
+  setTestMetrics(metrics) {
+    this._testMetrics = metrics;
+  }
+
+  /**
    * Simple sleep utility
    */
   sleep(ms) {

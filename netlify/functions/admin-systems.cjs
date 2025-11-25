@@ -122,7 +122,7 @@ exports.handler = async (event, context) => {
   }
 };
 
-async function getUnadoptedSystems() {
+async function getUnadoptedSystems(database, log) {
   const systems = await database.collection('systems').aggregate([
     { $match: { adopted: false } },
     { $lookup: {
@@ -149,7 +149,7 @@ async function getUnadoptedSystems() {
   }));
 }
 
-async function getAdoptedSystems(userId) {
+async function getAdoptedSystems(database, userId, log) {
   const systems = await database.collection('systems').aggregate([
     { $match: { 
         adopted: true,
@@ -179,7 +179,7 @@ async function getAdoptedSystems(userId) {
   }));
 }
 
-async function getAllSystems() {
+async function getAllSystems(database, log) {
   const systems = await database.collection('systems').aggregate([
     { $lookup: {
         from: 'records',
@@ -205,7 +205,7 @@ async function getAllSystems() {
   }));
 }
 
-async function adoptSystem(systemId, userId) {
+async function adoptSystem(database, systemId, userId, log) {
   try {
     // Check if system exists and is unadopted
     const system = await database.collection('systems').findOne({
@@ -251,7 +251,7 @@ async function adoptSystem(systemId, userId) {
 }
 
 // Additional helper functions for system management
-async function createMockSystems() {
+async function createMockSystems(database) {
   // Create some mock unadopted systems for testing
   const mockSystems = [
     {
@@ -289,9 +289,9 @@ async function createMockSystems() {
 }
 
 // Initialize mock data if needed
-async function initializeMockData() {
+async function initializeMockData(database) {
   const systemCount = await database.collection('systems').countDocuments();
   if (systemCount === 0) {
-    await createMockSystems();
+    await createMockSystems(database);
   }
 }

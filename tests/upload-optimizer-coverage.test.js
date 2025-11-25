@@ -124,11 +124,11 @@ describe('UploadOptimizer Coverage Tests', () => {
     });
 
     test('should calculate statistics from stored metrics', () => {
-      optimizer._testMetrics = [
+      optimizer.setTestMetrics([
         { success: true, duration: 100, size: 1000 },
         { success: true, duration: 200, size: 2000 },
         { success: false, duration: 0, size: 500 }
-      ];
+      ]);
       const stats = optimizer.getStatistics();
       expect(stats.totalUploads).toBe(3);
       expect(stats.successful).toBe(2);
@@ -140,7 +140,7 @@ describe('UploadOptimizer Coverage Tests', () => {
 
   describe('clearStatistics', () => {
     test('should call clearStatistics without error', () => {
-      optimizer._testMetrics = [{ success: true, duration: 100, size: 1000 }];
+      optimizer.setTestMetrics([{ success: true, duration: 100, size: 1000 }]);
       // Should not throw
       expect(() => optimizer.clearStatistics()).not.toThrow();
     });
@@ -352,7 +352,7 @@ describe('UploadOptimizer Coverage Tests', () => {
 
     test('should handle errors gracefully', () => {
       // Mock window to throw error
-      const originalWindow = global.window;
+      const originalWindowDescriptor = Object.getOwnPropertyDescriptor(global, 'window');
       try {
         Object.defineProperty(global, 'window', {
           get() {
@@ -362,8 +362,11 @@ describe('UploadOptimizer Coverage Tests', () => {
         });
         expect(optimizer._shouldStoreTelemetry()).toBe(false);
       } finally {
-        if (originalWindow) {
-          global.window = originalWindow;
+        // Properly restore the original window descriptor
+        if (originalWindowDescriptor) {
+          Object.defineProperty(global, 'window', originalWindowDescriptor);
+        } else {
+          delete global.window;
         }
       }
     });
