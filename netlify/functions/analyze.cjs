@@ -260,7 +260,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
     }
 
     // Check for existing analysis by content hash (skip if force=true)
-    const isUpgrade = !!imagePayload._isUpgrade;
+    let isUpgrade = !!imagePayload._isUpgrade;
     let existingRecordToUpgrade = null;
 
     if (!forceReanalysis) {
@@ -268,9 +268,19 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
         const existingAnalysis = await checkExistingAnalysis(contentHash, log);
 
         if (existingAnalysis) {
-          if (isUpgrade) {
-            existingRecordToUpgrade = existingAnalysis;
+          // Check if checkExistingAnalysis flagged this as needing upgrade
+          // (returns { _isUpgrade: true, _existingRecord: existing } when critical fields are missing)
+          if (existingAnalysis._isUpgrade) {
+            isUpgrade = true;
+            existingRecordToUpgrade = existingAnalysis._existingRecord;
             log.info('Low-quality duplicate found, proceeding with upgrade.', {
+              contentHash: contentHash.substring(0, 16) + '...',
+              recordId: existingRecordToUpgrade._id
+            });
+          } else if (isUpgrade) {
+            // Caller explicitly requested upgrade via imagePayload._isUpgrade
+            existingRecordToUpgrade = existingAnalysis;
+            log.info('Upgrade requested by caller, proceeding with upgrade.', {
               contentHash: contentHash.substring(0, 16) + '...',
               recordId: existingAnalysis._id
             });
