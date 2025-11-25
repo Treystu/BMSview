@@ -1,15 +1,27 @@
 // Simple service worker to cache app shell and static assets.
-const CACHE_NAME = 'bmsview-shell-v1';
+const CACHE_NAME = 'bmsview-shell-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
-  '/admin.html',
-  '/index.css'
+  '/admin.html'
 ];
 
 self.addEventListener('install', event => {
+  // Skip waiting to activate immediately
+  self.skipWaiting();
+  
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS_TO_CACHE))
+    caches.open(CACHE_NAME).then(cache => {
+      // Cache each asset individually with error handling to avoid failing the entire operation
+      return Promise.all(
+        ASSETS_TO_CACHE.map(url =>
+          cache.add(url).catch(err => {
+            console.warn(`Failed to cache ${url}:`, err);
+            // Don't fail the entire cache operation for one failed asset
+          })
+        )
+      );
+    })
   );
 });
 
