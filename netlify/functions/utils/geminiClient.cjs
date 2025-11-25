@@ -44,9 +44,9 @@ class CircuitBreaker {
       // Client errors (4xx except 429) indicate a problem with the request, not the service
       const isServerError = error.status >= 500;
       const isRateLimit = error.status === 429;
-      const isServiceError = isServerError || isRateLimit;
+      const shouldTripCircuitBreaker = isServerError || isRateLimit;
       
-      if (isServiceError) {
+      if (shouldTripCircuitBreaker) {
         this.onFailure(logger, error);
       } else {
         // Log but don't count as circuit breaker failure

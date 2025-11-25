@@ -239,9 +239,10 @@ function createCheckpointCallback(jobId, timeoutMs, log) {
     const elapsed = now - currentState.startTime;
     const timeSinceLastCheckpoint = now - lastCheckpointTime;
     
-    // ALWAYS save checkpoint when called by the react-loop
-    // The react-loop is responsible for deciding when to checkpoint
-    // This ensures we never lose conversation history on timeout
+    // ALWAYS save checkpoint when called by the react-loop.
+    // Previously this had conditional logic that could skip saves, but the react-loop
+    // is responsible for deciding when to checkpoint, so we should always save here.
+    // This ensures we never lose conversation history on timeout.
     log.info('Saving checkpoint', {
       jobId,
       elapsedMs: elapsed,

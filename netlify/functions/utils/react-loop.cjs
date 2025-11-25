@@ -1607,7 +1607,9 @@ async function executeReActLoop(params) {
             durationMs: totalDurationMs,
             contextSummary,
             conversationLength: conversationHistory.length,
-            // Include conversationHistory when timed out for emergency checkpoint saves
+            // Include conversationHistory and startTime when timed out so the handler can
+            // perform an emergency checkpoint save if the normal onCheckpoint callback failed.
+            // These fields are large so we only include them when needed for recovery.
             conversationHistory: timedOut ? conversationHistory : undefined,
             startTime: timedOut ? startTime : undefined,
             timedOut // Indicate if we exited due to timeout
