@@ -12,7 +12,7 @@ self.addEventListener('install', event => {
   
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-      // Use addAll with error handling - cache what we can
+      // Cache each asset individually with error handling to avoid failing the entire operation
       return Promise.all(
         ASSETS_TO_CACHE.map(url =>
           cache.add(url).catch(err => {
