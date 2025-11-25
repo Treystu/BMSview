@@ -680,6 +680,17 @@ Execute the initialization now.`;
 
         let geminiResponse;
         try {
+            // Check circuit breaker state before making request
+            const circuitState = geminiClient.getCircuitState ? geminiClient.getCircuitState() : null;
+            if (circuitState === 'OPEN') {
+                log.warn('Circuit breaker is OPEN, waiting for reset before retry', {
+                    attempt: attempts + 1,
+                    circuitState
+                });
+                // Wait 5 seconds for circuit to transition to HALF_OPEN
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+            
             geminiResponse = await geminiClient.callAPI(null, {
                 history: conversationHistory,
                 tools: toolDefinitions,
@@ -688,15 +699,28 @@ Execute the initialization now.`;
             }, log);
         } catch (geminiError) {
             const err = geminiError instanceof Error ? geminiError : new Error(String(geminiError));
+            
+            // Detect circuit breaker errors and handle specially
+            const isCircuitOpen = err.message.includes('Circuit breaker') || 
+                                  err.message.includes('circuit_open') ||
+                                  err.message.includes('OPEN');
+            
             log.error('Gemini API call failed during initialization', {
                 attempt: attempts + 1,
-                error: err.message
+                error: err.message,
+                isCircuitOpen
             });
-            if(stream) stream.write(JSON.stringify({ type: 'error', message: `API call failed: ${err.message}` }) + '\n');
-
-            // On API errors, retry with linear backoff (add 1 second per attempt)
-            const delayMs = Math.min(RETRY_LINEAR_INCREMENT_MS * (attempts + 1), 10000); // Cap at 10 seconds
-            await new Promise(resolve => setTimeout(resolve, delayMs));
+            
+            if (isCircuitOpen) {
+                // For circuit breaker errors, wait longer before retry
+                if(stream) stream.write(JSON.stringify({ type: 'status', message: 'AI service recovering, please wait...' }) + '\n');
+                await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10s for circuit reset
+            } else {
+                if(stream) stream.write(JSON.stringify({ type: 'status', message: 'Retrying connection...' }) + '\n');
+                // On other API errors, retry with linear backoff (add 1 second per attempt)
+                const delayMs = Math.min(RETRY_LINEAR_INCREMENT_MS * (attempts + 1), 10000); // Cap at 10 seconds
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
             continue;
         }
 
@@ -1247,6 +1271,17 @@ async function executeReActLoop(params) {
             // EDGE CASE PROTECTION #2: Wrap Gemini call with timeout to prevent hangs
             let geminiResponse;
             try {
+                // Check circuit breaker state before making request
+                const circuitState = geminiClient.getCircuitState ? geminiClient.getCircuitState() : null;
+                if (circuitState === 'OPEN') {
+                    log.warn('Circuit breaker is OPEN in main loop, waiting for reset', {
+                        turn: turnCount,
+                        circuitState
+                    });
+                    // Wait 5 seconds for circuit to transition to HALF_OPEN
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                }
+                
                 const geminiCallPromise = geminiClient.callAPI(null, {
                     history: conversationHistory,
                     tools: toolDefinitions,
@@ -1265,6 +1300,11 @@ async function executeReActLoop(params) {
                 ]);
             } catch (geminiError) {
                 const err = geminiError instanceof Error ? geminiError : new Error(String(geminiError));
+                
+                // Detect circuit breaker errors
+                const isCircuitOpen = err.message.includes('Circuit breaker') || 
+                                      err.message.includes('circuit_open') ||
+                                      err.message.includes('OPEN');
 
                 // EDGE CASE PROTECTION #3: Detect iteration timeout vs Gemini error
                 if (err.message === 'ITERATION_TIMEOUT') {
@@ -1290,10 +1330,21 @@ async function executeReActLoop(params) {
                     timedOut = true;
                     break;
                 }
+                
+                // Handle circuit breaker errors - wait and retry instead of throwing
+                if (isCircuitOpen && turnCount < MAX_TURNS - 1) {
+                    log.warn('Circuit breaker error, waiting before retry', {
+                        turn: turnCount,
+                        error: err.message
+                    });
+                    await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10s
+                    continue; // Retry this turn
+                }
 
                 log.error('Gemini API call failed', {
                     turn: turnCount,
                     error: err.message,
+                    isCircuitOpen,
                     elapsedMs: Date.now() - startTime
                 });
                 throw err;
