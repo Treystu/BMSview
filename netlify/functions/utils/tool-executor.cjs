@@ -374,6 +374,27 @@ function aggregateByDay(records, metric, log) {
  * 
  * Energy calculation: Energy (Wh) = Average Power (W) × Duration (hours)
  * 
+ * DUAL CALCULATION APPROACH:
+ * ==========================
+ * Energy is calculated using TWO methods when both data sources are available:
+ * 
+ * 1. **Current-based**: chargingWh/chargingKWh (from Ah × Voltage)
+ *    - More accurate when voltage measurements are precise
+ *    - Used when power data is unavailable
+ * 
+ * 2. **Power-based**: chargingEnergyWh/chargingEnergyKWh (from Power × Time)
+ *    - More direct measurement
+ *    - Preferred when available (used in netEnergyWh calculation)
+ * 
+ * The net energy balance (netEnergyWh) preferentially uses power-based values,
+ * with fallback to current-based values if power data is missing.
+ * 
+ * TIME ESTIMATION:
+ * ================
+ * Time proportions are calculated based on active (charging + discharging) records
+ * to prevent proportions from summing to >100%. Records with current between -0.5A
+ * and +0.5A are excluded from both counts.
+ * 
  * @param {Array} records - Records to aggregate
  * @param {string} metric - Which metric to compute ('all' or specific)
  * @param {Object} options - Aggregation options
@@ -438,8 +459,12 @@ function computeAggregateMetrics(records, metric, options = {}) {
                 ? chargingPowers.reduce((a, b) => a + b, 0) / chargingPowers.length
                 : null;
             
-            // Estimate charging duration as proportion of bucket
-            const chargingHoursProportion = chargingRecords.length / Math.max(records.length, 1);
+            // Estimate charging duration as proportion of active (charging + discharging) time
+            // to prevent proportions from summing to >100%
+            const activeRecordsCount = chargingRecords.length + dischargingRecords.length;
+            const chargingHoursProportion = activeRecordsCount > 0
+                ? chargingRecords.length / activeRecordsCount
+                : 0;
             const estimatedChargingHours = bucketHours * chargingHoursProportion;
             
             result.avgChargingCurrent_A = Number(avgChargingCurrent.toFixed(2));
@@ -478,8 +503,11 @@ function computeAggregateMetrics(records, metric, options = {}) {
                 ? dischargingPowers.reduce((a, b) => a + b, 0) / dischargingPowers.length
                 : null;
             
-            // Estimate discharging duration as proportion of bucket
-            const dischargingHoursProportion = dischargingRecords.length / Math.max(records.length, 1);
+            // Estimate discharging duration as proportion of active time
+            const activeRecordsCount = chargingRecords.length + dischargingRecords.length;
+            const dischargingHoursProportion = activeRecordsCount > 0
+                ? dischargingRecords.length / activeRecordsCount
+                : 0;
             const estimatedDischargingHours = bucketHours * dischargingHoursProportion;
             
             result.avgDischargingCurrent_A = Number(avgDischargingCurrent.toFixed(2));

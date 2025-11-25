@@ -304,7 +304,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "   And the system charged for 8 hours of sunlight:\n";
     prompt += "   Daily charging energy = 1100 W × 8 h = 8,800 Wh = 8.8 kWh\n\n";
     prompt += "   ❌ WRONG: 'The system generated 1.1 kWh per day' (this confuses W with Wh)\n";
-    prompt += "   ✅ CORRECT: 'With 1.1 kW average charging power over 8 sun-hours, daily generation is 8.8 kWh'\n\n";
+    prompt += "   ✅ CORRECT: 'With 1100 W average charging power over 8 sun-hours, daily generation is 8.8 kWh'\n\n";
     prompt += "🎯 BEST PRACTICE: USE PRE-CALCULATED ENERGY FIELDS!\n";
     prompt += "   The tool responses include pre-calculated energy fields:\n";
     prompt += "   - chargingKWh: Energy added during this bucket (already power × time)\n";
@@ -1138,10 +1138,6 @@ function formatDailyRollupSection(dailyRollup) {
 }
 
 /**
- * Calculate linear trend using least squares regression
- * Returns slope, intercept, and R² value
- */
-/**
  * Calculate linear trend from a series of values
  * 
  * IMPORTANT: This function determines trend DIRECTION mathematically:
@@ -1215,9 +1211,15 @@ function calculateLinearTrend(values) {
     
     // SANITY CHECK: Verify direction matches actual first→last delta
     // This catches potential calculation errors
-    const deltaDirection = actualDelta > 0 ? 'increasing' : actualDelta < 0 ? 'decreasing' : 'stable';
-    const directionMismatch = (direction === 'increasing' && actualDelta < 0) ||
-                              (direction === 'decreasing' && actualDelta > 0);
+    // Use a tolerance for delta, similar to slope threshold
+    const DELTA_TOLERANCE = 0.01;
+    const deltaDirection =
+        actualDelta > DELTA_TOLERANCE ? 'increasing' :
+        actualDelta < -DELTA_TOLERANCE ? 'decreasing' :
+        'stable';
+    const directionMismatch =
+        (direction === 'increasing' && deltaDirection === 'decreasing') ||
+        (direction === 'decreasing' && deltaDirection === 'increasing');
     
     return {
         slope: roundNumber(slope, 4),

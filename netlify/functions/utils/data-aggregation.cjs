@@ -84,9 +84,31 @@ function aggregateHourlyData(records, log) {
  * - Power (W) = Instantaneous rate of energy transfer
  * - Energy (Wh) = Power × Time = How much work was done
  * 
- * For energy calculations, we estimate the time interval between data points and
- * multiply by the average power during that interval. This gives a more accurate
- * energy estimate than simply averaging power values.
+ * DUAL CALCULATION APPROACH:
+ * ==========================
+ * Energy is calculated using TWO methods when both data sources are available:
+ * 
+ * 1. **Current-based**: chargingWh/chargingKWh (from Ah × Voltage)
+ *    - More accurate when voltage measurements are precise
+ *    - Used when power data is unavailable
+ * 
+ * 2. **Power-based**: chargingEnergyWh/chargingEnergyKWh (from Power × Time)
+ *    - More direct measurement
+ *    - Preferred when available (used in netEnergyWh calculation)
+ * 
+ * The net energy balance (netEnergyWh) preferentially uses power-based values,
+ * with fallback to current-based values if power data is missing.
+ * 
+ * TIME ESTIMATION:
+ * ================
+ * For energy calculations, we estimate the time interval based on the proportion
+ * of active (charging + discharging) records. Records with current between -0.5A 
+ * and +0.5A are excluded from both charging and discharging counts to prevent
+ * time proportions from summing to >100%.
+ * 
+ * NOTE: This assumes relatively even distribution of data points. For clustered
+ * data points, actual time-based calculations would be more accurate but require
+ * timestamp processing.
  * 
  * @param {Array} records - Records to aggregate
  * @param {Object} log - Logger instance
@@ -219,8 +241,12 @@ function computeBucketMetrics(records, log, options = {}) {
     result.chargingCount = metrics.chargingCurrent.count;
     
     // Calculate charging Ah for this bucket: current × time
-    // Estimate charging hours as proportion of bucket that was spent charging
-    const chargingHoursProportion = metrics.chargingCurrent.count / Math.max(records.length, 1);
+    // Use only records that are either charging or discharging as denominator
+    // to prevent time proportions from summing to >100%
+    const activeRecordsCount = metrics.chargingCurrent.count + metrics.dischargingCurrent.count;
+    const chargingHoursProportion = activeRecordsCount > 0
+        ? metrics.chargingCurrent.count / activeRecordsCount
+        : 0;
     const estimatedChargingHours = bucketHours * chargingHoursProportion;
     result.chargingAh = parseFloat((avgChargingCurrent * estimatedChargingHours).toFixed(2));
     
@@ -237,7 +263,11 @@ function computeBucketMetrics(records, log, options = {}) {
     result.dischargingCount = metrics.dischargingCurrent.count;
     
     // Calculate discharging Ah for this bucket
-    const dischargingHoursProportion = metrics.dischargingCurrent.count / Math.max(records.length, 1);
+    // Use only records that are either charging or discharging as denominator
+    const activeRecordsCount = metrics.chargingCurrent.count + metrics.dischargingCurrent.count;
+    const dischargingHoursProportion = activeRecordsCount > 0
+        ? metrics.dischargingCurrent.count / activeRecordsCount
+        : 0;
     const estimatedDischargingHours = bucketHours * dischargingHoursProportion;
     result.dischargingAh = parseFloat((avgDischargingCurrent * estimatedDischargingHours).toFixed(2));
     
@@ -255,8 +285,11 @@ function computeBucketMetrics(records, log, options = {}) {
     result.avgChargingPower = result.avgChargingPower_W;
     
     // Calculate energy from power × time
-    // Use proportion of bucket spent charging
-    const chargingHoursProportion = metrics.chargingPower.count / Math.max(records.length, 1);
+    // Use proportion of active (charging + discharging) records
+    const activeRecordsCount = metrics.chargingPower.count + metrics.dischargingPower.count;
+    const chargingHoursProportion = activeRecordsCount > 0
+        ? metrics.chargingPower.count / activeRecordsCount
+        : 0;
     const estimatedChargingHours = bucketHours * chargingHoursProportion;
     result.chargingEnergyWh = parseFloat((avgChargingPower * estimatedChargingHours).toFixed(1));
     result.chargingEnergyKWh = parseFloat((result.chargingEnergyWh / 1000).toFixed(3));
@@ -267,15 +300,19 @@ function computeBucketMetrics(records, log, options = {}) {
     result.avgDischargingPower = result.avgDischargingPower_W;
     
     // Calculate energy from power × time
-    const dischargingHoursProportion = metrics.dischargingPower.count / Math.max(records.length, 1);
+    const activeRecordsCount = metrics.chargingPower.count + metrics.dischargingPower.count;
+    const dischargingHoursProportion = activeRecordsCount > 0
+        ? metrics.dischargingPower.count / activeRecordsCount
+        : 0;
     const estimatedDischargingHours = bucketHours * dischargingHoursProportion;
     result.dischargingEnergyWh = parseFloat((avgDischargingPower * estimatedDischargingHours).toFixed(1));
     result.dischargingEnergyKWh = parseFloat((result.dischargingEnergyWh / 1000).toFixed(3));
   }
   
   // Net energy for this bucket
-  const chargingEnergy = result.chargingEnergyWh || 0;
-  const dischargingEnergy = result.dischargingEnergyWh || 0;
+  // Prefer power-based calculations, but fall back to current-based if power data unavailable
+  const chargingEnergy = result.chargingEnergyWh || result.chargingWh || 0;
+  const dischargingEnergy = result.dischargingEnergyWh || result.dischargingWh || 0;
   if (chargingEnergy > 0 || dischargingEnergy > 0) {
     result.netEnergyWh = parseFloat((chargingEnergy - dischargingEnergy).toFixed(1));
     result.netEnergyKWh = parseFloat((result.netEnergyWh / 1000).toFixed(3));
