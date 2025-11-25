@@ -117,6 +117,20 @@ export interface StoryAiInterpretation {
   generatedAt: string;
 }
 
+export interface StoryContextNotes {
+  priorEvents?: string;
+  environmentalFactors?: string;
+  maintenanceActions?: string;
+}
+
+export interface StoryEvent {
+  analysisId: string;
+  timestamp: string;
+  annotation?: string;
+  contextNotes?: StoryContextNotes;
+  addedAt?: string;
+}
+
 export interface AnalysisStory {
   id: string;
   title: string;
@@ -126,6 +140,34 @@ export interface AnalysisStory {
   photos: StoryPhoto[];
   aiInterpretation?: StoryAiInterpretation;
   createdAt: string;
+}
+
+export interface AdminStory {
+  id: string;
+  adminId?: string;
+  title: string;
+  description: string;
+  systemIdentifier?: string;
+  events: StoryEvent[];
+  tags: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  metadata?: {
+    totalEvents: number;
+    dateRange: {
+      start: string | null;
+      end: string | null;
+    };
+  };
+}
+
+export interface AdminStoriesResponse {
+  items: AdminStory[];
+  totalItems: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
 export interface DisplayableAnalysisResult {

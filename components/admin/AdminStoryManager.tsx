@@ -1,46 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import type { AnalysisStory, AnalysisRecord } from '../../types';
+import type { AdminStory, AdminStoriesResponse } from '../../types';
 import StoryViewer from '../StoryViewer';
-
-interface StoryEvent {
-  analysisId: string;
-  timestamp: string;
-  annotation: string;
-  contextNotes: {
-    priorEvents: string;
-    environmentalFactors: string;
-    maintenanceActions: string;
-  };
-  addedAt?: string;
-}
-
-interface AdminStory {
-  id: string;
-  adminId?: string;
-  title: string;
-  description: string;
-  systemIdentifier?: string;
-  events: StoryEvent[];
-  tags: string[];
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  metadata?: {
-    totalEvents: number;
-    dateRange: {
-      start: string | null;
-      end: string | null;
-    };
-  };
-}
-
-interface AdminStoriesResponse {
-  items: AdminStory[];
-  totalItems: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
 
 const AdminStoryManager: React.FC = () => {
   const [stories, setStories] = useState<AdminStory[]>([]);

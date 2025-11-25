@@ -1,4 +1,4 @@
-import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData, AnalysisStory, StoryPhoto } from '../types';
+import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData, AnalysisStory, StoryPhoto, AdminStory, AdminStoriesResponse } from '../types';
 
 interface PaginatedResponse<T> {
     items: T[];
@@ -2463,6 +2463,60 @@ export const getStory = async (id: string): Promise<AnalysisStory> => {
 export const deleteStory = async (id: string): Promise<{ success: boolean; id: string }> => {
     log('info', 'Deleting story.', { id });
     return apiFetch<{ success: boolean; id: string }>(`stories?id=${id}`, {
+        method: 'DELETE',
+    });
+};
+
+// Admin Stories API Functions
+export const getAdminStories = async (page = 1, limit = 20, options: { isActive?: boolean; systemIdentifier?: string; tags?: string } = {}): Promise<AdminStoriesResponse> => {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (options.isActive !== undefined) params.append('isActive', String(options.isActive));
+    if (options.systemIdentifier) params.append('systemIdentifier', options.systemIdentifier);
+    if (options.tags) params.append('tags', options.tags);
+    
+    log('info', 'Fetching admin stories.', { page, limit, ...options });
+    return apiFetch<AdminStoriesResponse>(`admin-stories?${params.toString()}`);
+};
+
+export const getAdminStory = async (id: string): Promise<AdminStory> => {
+    log('info', 'Fetching admin story by ID.', { id });
+    return apiFetch<AdminStory>(`admin-stories?id=${id}`);
+};
+
+export const createAdminStory = async (story: Partial<AdminStory>): Promise<AdminStory> => {
+    log('info', 'Creating admin story.', { title: story.title });
+    return apiFetch<AdminStory>('admin-stories', {
+        method: 'POST',
+        body: JSON.stringify(story),
+    });
+};
+
+export const updateAdminStory = async (id: string, updates: Partial<AdminStory>): Promise<AdminStory> => {
+    log('info', 'Updating admin story.', { id });
+    return apiFetch<AdminStory>(`admin-stories?id=${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+    });
+};
+
+export const deleteAdminStory = async (id: string): Promise<{ success: boolean; id: string }> => {
+    log('info', 'Deleting admin story.', { id });
+    return apiFetch<{ success: boolean; id: string }>(`admin-stories?id=${id}`, {
+        method: 'DELETE',
+    });
+};
+
+export const addEventToStory = async (storyId: string, event: { analysisId: string; annotation?: string; contextNotes?: { priorEvents?: string; environmentalFactors?: string; maintenanceActions?: string } }): Promise<{ success: boolean; event: any }> => {
+    log('info', 'Adding event to story.', { storyId, analysisId: event.analysisId });
+    return apiFetch<{ success: boolean; event: any }>(`admin-stories?id=${storyId}&action=add-event`, {
+        method: 'POST',
+        body: JSON.stringify(event),
+    });
+};
+
+export const removeEventFromStory = async (storyId: string, eventIndex: number): Promise<{ success: boolean }> => {
+    log('info', 'Removing event from story.', { storyId, eventIndex });
+    return apiFetch<{ success: boolean }>(`admin-stories?id=${storyId}&action=remove-event&eventIndex=${eventIndex}`, {
         method: 'DELETE',
     });
 };
