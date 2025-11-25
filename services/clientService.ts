@@ -680,9 +680,7 @@ export const streamInsights = async (
             log('info', 'Resuming insights generation silently', { attemptCount, resumeJobId });
             // No visible message to user - the processing indicator continues smoothly
         } else {
-            // First attempt - show initialization message
-            const initMessage = `🔧 **Analyzing your battery system...**\n\n`;
-            onChunk(initMessage);
+            // First attempt - log, but don't send an init message via onChunk
             log('info', 'Starting initial insights generation', { attemptCount });
         }
 

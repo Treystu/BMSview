@@ -87,32 +87,35 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   };
 
   const handleGenerateInsights = async (prompt?: string) => {
+    setIsLoading(true);
     setAnalysisStatus('initializing');
     setError(null);
     setInsights('');
 
     try {
       await streamInsights(
-        { 
-          analysisData, 
-          systemId, 
-          customPrompt: prompt, 
+        {
+          analysisData,
+          systemId,
+          customPrompt: prompt,
           useEnhancedMode: true,
           contextWindowDays, // Pass context window configuration
           modelOverride: getEffectiveModel() || undefined, // Pass model override if selected
           // Iteration limits: 20 for custom queries, 10 for standard (matches react-loop.cjs constants)
           maxIterations: prompt ? 20 : 10
         },
-        (chunk) => { 
+        (chunk) => {
           setInsights(prev => prev + chunk);
-          if (analysisStatus !== 'streaming') {
-            setAnalysisStatus('streaming');
-          }
+          setAnalysisStatus('streaming');
         },
-        () => { setAnalysisStatus('complete'); },
+        () => {
+          setAnalysisStatus('complete');
+          setIsLoading(false);
+        },
         async (err) => {
           setError(err.message);
           setAnalysisStatus('error');
+          setIsLoading(false);
           
           // Check if circuit breaker might be open
           try {
@@ -124,15 +127,13 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           } catch (checkError) {
             log('error', 'Failed to check circuit breaker status', { error: checkError });
           }
-        },
-        () => {
-          setAnalysisStatus('initializing');
         }
       );
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
       setError(errorMessage);
       setAnalysisStatus('error');
+      setIsLoading(false);
       log('error', 'Deeper insights stream initiation failed.', { error: errorMessage });
       
       // Check if circuit breaker might be open
@@ -191,13 +192,15 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       
       {insights && (
         <div className="mb-6 p-8 bg-white rounded-2xl shadow-xl border border-gray-100 transition-all duration-300 hover:shadow-2xl">
-          <div className="mb-4 flex items-center gap-2">
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
-              <span className="text-green-600 text-lg">✓</span>
+          {analysisStatus === 'complete' && (
+            <div className="mb-4 flex items-center gap-2">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                <span className="text-green-600 text-lg">✓</span>
+              </div>
+              <h5 className="text-lg font-semibold text-gray-800">Analysis Complete</h5>
             </div>
-            <h5 className="text-lg font-semibold text-gray-800">Analysis Complete</h5>
-          </div>
-          <TypewriterMarkdown 
+          )}
+          <TypewriterMarkdown
             content={insights}
             speed={30}
             interval={40}
@@ -206,7 +209,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
         </div>
       )}
       
-      {isLoading && (
+      {isLoading && !insights && (
         <div className="relative overflow-hidden p-8 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-2xl shadow-lg border border-blue-100">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 animate-pulse"></div>
           <div className="flex flex-col items-center justify-center space-y-4">
