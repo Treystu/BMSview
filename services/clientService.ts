@@ -1043,7 +1043,7 @@ export const streamInsights = async (
         suggestions = [
             `Reduce the time range (currently: ${contextWindowDays} days)`,
             'Ask a more specific question',
-            'Breaking your query into multiple smaller questions'
+            'Break your query into multiple smaller questions'
         ];
     }
     

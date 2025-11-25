@@ -687,8 +687,8 @@ Execute the initialization now.`;
                     attempt: attempts + 1,
                     circuitState
                 });
-                // Wait 5 seconds for circuit to transition to HALF_OPEN
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                // Wait 10 seconds for circuit to transition to HALF_OPEN
+                await new Promise(resolve => setTimeout(resolve, 10000));
             }
             
             geminiResponse = await geminiClient.callAPI(null, {
@@ -1278,8 +1278,8 @@ async function executeReActLoop(params) {
                         turn: turnCount,
                         circuitState
                     });
-                    // Wait 5 seconds for circuit to transition to HALF_OPEN
-                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    // Wait 10 seconds for circuit to transition to HALF_OPEN
+                    await new Promise(resolve => setTimeout(resolve, 10000));
                 }
                 
                 const geminiCallPromise = geminiClient.callAPI(null, {
