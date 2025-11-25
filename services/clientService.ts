@@ -656,6 +656,7 @@ export const streamInsights = async (
     const MAX_RESUME_ATTEMPTS = 15; // Maximum 15 attempts for complex queries
     let resumeJobId: string | undefined = undefined;
     let attemptCount = 0;
+    let lastErrorDetails: { code?: string; message?: string; status?: number } | null = null;
 
     log('info', 'Streaming insights from server.', {
         systemId: payload.systemId,
@@ -673,14 +674,15 @@ export const streamInsights = async (
         while (attemptCount < MAX_RESUME_ATTEMPTS) {
             attemptCount++;
 
-        // Show retry progress to user
+        // Show retry progress to user - CALM UI approach
+        // Only show initial message, hide retry spam from user
         if (attemptCount > 1) {
-            const retryMessage = `\n\n⏳ **Continuing analysis (attempt ${attemptCount}/${MAX_RESUME_ATTEMPTS})...**\n\n`;
-            onChunk(retryMessage);
-            log('info', 'Resuming insights generation', { attemptCount, resumeJobId });
+            // Log retry for debugging, but don't spam user with attempt counts
+            log('info', 'Resuming insights generation silently', { attemptCount, resumeJobId });
+            // No visible message to user - the processing indicator continues smoothly
         } else {
             // First attempt - show initialization message
-            const initMessage = `🔧 **Initializing AI analysis system...**\n\n`;
+            const initMessage = `🔧 **Analyzing your battery system...**\n\n`;
             onChunk(initMessage);
             log('info', 'Starting initial insights generation', { attemptCount });
         }
@@ -721,6 +723,13 @@ export const streamInsights = async (
                 try {
                     const errorData = await response.json();
                     
+                    // Track error details for dynamic error messages
+                    lastErrorDetails = {
+                        code: errorData.error || 'insights_timeout',
+                        message: errorData.message || 'Request timed out',
+                        status: 408
+                    };
+                    
                     log('info', 'Received 408 timeout response', {
                         hasJobId: !!errorData.details?.jobId,
                         canResume: errorData.details?.canResume,
@@ -744,6 +753,7 @@ export const streamInsights = async (
                         throw new Error(errorData.message || 'Insights generation timed out and cannot be resumed');
                     }
                 } catch (parseError) {
+                    lastErrorDetails = { code: 'parse_error', message: 'Failed to parse timeout response', status: 408 };
                     log('error', 'Failed to parse 408 response', { error: parseError });
                     throw new Error('Insights generation timed out');
                 }
@@ -751,6 +761,7 @@ export const streamInsights = async (
 
             if (!response.ok) {
                 let errorMessage = `Request failed: ${response.status}`;
+                let errorCode = `http_${response.status}`;
 
                 // Provide user-friendly error messages for common status codes
                 if (response.status === 504) {
@@ -758,17 +769,28 @@ export const streamInsights = async (
                         '• Asking a simpler question\n' +
                         '• Requesting a smaller time range\n' +
                         '• Breaking complex queries into multiple questions';
+                    errorCode = 'gateway_timeout';
                 } else if (response.status === 503) {
                     errorMessage = 'Service temporarily unavailable. Please try again in a few moments.';
+                    errorCode = 'service_unavailable';
                 } else if (response.status === 500) {
                     try {
                         const errorData = await response.json();
                         if (errorData.message) {
                             errorMessage = errorData.message;
                         }
+                        if (errorData.error) {
+                            errorCode = errorData.error;
+                        }
                     } catch {
                         errorMessage = 'Internal server error. Please try again.';
                     }
+                } else if (response.status === 404) {
+                    errorCode = 'not_found';
+                    errorMessage = 'AI model or endpoint not found. This may be a configuration issue.';
+                } else if (response.status === 429) {
+                    errorCode = 'rate_limited';
+                    errorMessage = 'Rate limit exceeded. Please wait a moment before trying again.';
                 } else {
                     try {
                         const errorText = await response.text();
@@ -778,10 +800,18 @@ export const streamInsights = async (
                     }
                 }
 
+                // Track error details for dynamic error messages
+                lastErrorDetails = {
+                    code: errorCode,
+                    message: errorMessage,
+                    status: response.status
+                };
+
                 log('error', 'Insights request failed', {
                     status: response.status,
                     statusText: response.statusText,
-                    errorMessage
+                    errorMessage,
+                    errorCode
                 });
 
                 throw new Error(errorMessage);
@@ -925,6 +955,12 @@ export const streamInsights = async (
             if (error.name === 'AbortError') {
                 // Client-side timeout - the function took too long to respond
                 // Instead of showing error, treat this like a 408 and retry
+                lastErrorDetails = {
+                    code: 'client_timeout',
+                    message: 'Request timed out on client side',
+                    status: 408
+                };
+                
                 log('warn', 'Client-side timeout occurred, treating as retry signal', { 
                     attemptCount,
                     maxAttempts: MAX_RESUME_ATTEMPTS,
@@ -935,20 +971,87 @@ export const streamInsights = async (
                 // The while loop will handle the retry
                 continue;
             } else {
-                // Non-timeout error - throw immediately
+                // Non-timeout error - track details and throw immediately
+                lastErrorDetails = {
+                    code: 'unknown_error',
+                    message: error.message,
+                    status: undefined
+                };
                 throw error;
             }
         }
     }
     
     // If we exit the loop, we've exceeded max attempts
+    // Build DYNAMIC error message based on actual error context
     const totalTimeMinutes = Math.round((MAX_RESUME_ATTEMPTS * BACKEND_FUNCTION_TIMEOUT_S) / 60);
+    const contextWindowDays = payload.contextWindowDays || 30;
+    
+    // Build contextual error message based on last error
+    let errorReason = 'The analysis server is experiencing high load.';
+    let suggestions: string[] = [];
+    
+    if (lastErrorDetails) {
+        switch (lastErrorDetails.code) {
+            case 'not_found':
+            case 'http_404':
+                errorReason = `AI model configuration error (${lastErrorDetails.code}): ${lastErrorDetails.message || 'Model not found'}`;
+                suggestions = [
+                    'This appears to be a server configuration issue',
+                    'Please contact support if this persists'
+                ];
+                break;
+            case 'rate_limited':
+            case 'http_429':
+                errorReason = `API rate limit reached after ${attemptCount} attempts`;
+                suggestions = [
+                    'Wait a few minutes before trying again',
+                    'Consider reducing query frequency'
+                ];
+                break;
+            case 'service_unavailable':
+            case 'http_503':
+                errorReason = 'The AI service is temporarily unavailable';
+                suggestions = [
+                    'The service may be undergoing maintenance',
+                    'Try again in a few minutes'
+                ];
+                break;
+            case 'gateway_timeout':
+            case 'http_504':
+            case 'client_timeout':
+            case 'insights_timeout':
+                errorReason = `Analysis timed out after ${attemptCount} attempts (${totalTimeMinutes} minutes total)`;
+                suggestions = [
+                    `Reduce the time range (currently: ${contextWindowDays} days)`,
+                    'Ask a more specific question',
+                    'Break your query into multiple smaller questions'
+                ];
+                break;
+            default:
+                if (lastErrorDetails.message) {
+                    errorReason = `Last error: ${lastErrorDetails.message}`;
+                }
+                suggestions = [
+                    `Reduce the time range (currently: ${contextWindowDays} days)`,
+                    'Ask a more specific question',
+                    'Try again in a few moments'
+                ];
+        }
+    } else {
+        // Default suggestions if no error details available
+        suggestions = [
+            `Reduce the time range (currently: ${contextWindowDays} days)`,
+            'Ask a more specific question',
+            'Breaking your query into multiple smaller questions'
+        ];
+    }
+    
+    const suggestionList = suggestions.map(s => `• ${s}`).join('\n');
     const maxRetriesError = new Error(
-        `Analysis is taking longer than expected (${totalTimeMinutes} minutes, ${MAX_RESUME_ATTEMPTS} attempts).\n\n` +
-        `This is a very complex query. Consider:\n` +
-        `• Reducing the time range (currently: ${payload.contextWindowDays || 30} days)\n` +
-        `• Asking a more specific question\n` +
-        `• Breaking your query into multiple smaller questions`
+        `Analysis could not complete after ${attemptCount} attempts.\n\n` +
+        `${errorReason}\n\n` +
+        `Suggestions:\n${suggestionList}`
     );
     throw maxRetriesError;
 } catch (error) {
