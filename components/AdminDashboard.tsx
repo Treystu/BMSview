@@ -35,6 +35,7 @@ import IpManagement from './IpManagement';
 import SpinnerIcon from './icons/SpinnerIcon';
 
 import AdminHeader from './admin/AdminHeader';
+import AdminStoryManager from './admin/AdminStoryManager';
 import DataManagement from './admin/DataManagement';
 import HistoryTable from './admin/HistoryTable';
 import SystemsTable from './admin/SystemsTable';
@@ -81,6 +82,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     const [isStoryMode, setIsStoryMode] = useState(false);
     const [storyTitle, setStoryTitle] = useState('');
     const [storySummary, setStorySummary] = useState('');
+    const [storyUserContext, setStoryUserContext] = useState('');
 
     // --- Data Fetching ---
     const fetchData = useCallback(async (page: number, type: 'systems' | 'history' | 'all') => {
@@ -177,12 +179,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         if (isStoryMode) {
             try {
                 dispatch({ type: 'ACTION_START', payload: 'isBulkLoading' });
-                const story = await createAnalysisStory(storyTitle, storySummary, files);
+                const story = await createAnalysisStory(storyTitle, storySummary, files, storyUserContext || undefined);
                 log('info', 'Story analysis complete.', { storyId: story.id });
                 // We could update some state here to show the story was created.
                 // For now, we'll just clear the form.
                 setStoryTitle('');
                 setStorySummary('');
+                setStoryUserContext('');
                 // Maybe clear the files in BulkUpload component state via a callback?
             } catch (err) {
                 const error = err instanceof Error ? err.message : "Failed to create story.";
@@ -763,7 +766,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         setStoryTitle={setStoryTitle}
                         storySummary={storySummary}
                         setStorySummary={setStorySummary}
+                        storyUserContext={storyUserContext}
+                        setStoryUserContext={setStoryUserContext}
                     />
+                </section>
+
+                <section id="stories-management-section">
+                    <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">
+                        📖 Stories Management
+                    </h2>
+                    <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
+                        <AdminStoryManager />
+                    </div>
                 </section>
 
                 <section>

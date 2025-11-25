@@ -216,6 +216,32 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
         })
     );
 
+    // Collect active story context for enhanced AI understanding
+    // Stories provide admin-supplied narrative and annotations for analysis sequences
+    if (systemId) {
+        context.storyContext = await runStep("storyContext", async () => {
+            try {
+                const storiesCollection = await getCollection('stories');
+                const activeStories = await storiesCollection.find({
+                    isActive: true,
+                    $or: [
+                        { systemIdentifier: systemId },
+                        { 'events.systemId': systemId }
+                    ]
+                }).sort({ updatedAt: -1 }).limit(5).toArray();
+                
+                if (activeStories.length === 0) {
+                    return null;
+                }
+                
+                return buildStoryContextSummary(activeStories, log);
+            } catch (error) {
+                log.warn('Failed to load story context', { error: error.message });
+                return null;
+            }
+        });
+    }
+
     context.meta.durationMs = Date.now() - start;
     
     log.info('Context collection complete', {
@@ -434,6 +460,10 @@ function buildContextSections(context, analysisData) {
 
     const recentSnapshotsSection = formatRecentSnapshotsSection(context.recentSnapshots);
     if (recentSnapshotsSection) sections.push(recentSnapshotsSection);
+
+    // Add story context section if admin has provided story annotations
+    const storyContextSection = formatStoryContextSection(context.storyContext);
+    if (storyContextSection) sections.push(storyContextSection);
 
     return { sections };
 }
@@ -1168,6 +1198,55 @@ function formatRecentSnapshotsSection(recentSnapshots) {
     return lines.join("\n");
 }
 
+/**
+ * Format story context section for Gemini prompt injection.
+ * Stories provide admin-supplied narrative and contextual information
+ * that helps Gemini understand causality, maintenance events, and environmental factors.
+ * @param {Object|null} storyContext - Story context summary from buildStoryContextSummary
+ * @returns {string|null} Formatted story context section or null if no stories
+ */
+function formatStoryContextSection(storyContext) {
+    if (!storyContext || !storyContext.stories || storyContext.stories.length === 0) {
+        return null;
+    }
+
+    const lines = ["**📖 HISTORICAL CONTEXT (Admin Stories)**"];
+    lines.push(`Active stories providing context: ${storyContext.totalStories}`);
+    lines.push("");
+    
+    for (const story of storyContext.stories) {
+        lines.push(`### "${story.title}"`);
+        if (story.description) {
+            lines.push(`Description: ${story.description}`);
+        }
+        if (story.tags && story.tags.length > 0) {
+            lines.push(`Tags: ${story.tags.join(', ')}`);
+        }
+        if (story.dateRange && story.dateRange.start && story.dateRange.end) {
+            lines.push(`Time Period: ${new Date(story.dateRange.start).toLocaleDateString()} to ${new Date(story.dateRange.end).toLocaleDateString()}`);
+        }
+        lines.push(`Events: ${story.eventCount}`);
+        
+        // Include event annotations that provide causal context
+        if (story.events && story.events.length > 0) {
+            lines.push("Key Context Notes:");
+            for (const event of story.events) {
+                if (event.context) {
+                    const timestamp = event.timestamp ? new Date(event.timestamp).toLocaleDateString() : 'Unknown date';
+                    lines.push(`  • [${timestamp}] ${event.context}`);
+                }
+            }
+        }
+        lines.push("");
+    }
+    
+    lines.push("⚠️ IMPORTANT: Use this admin-provided context to inform your analysis.");
+    lines.push("Stories explain maintenance events, environmental factors, and system interventions.");
+    lines.push("Correlate story context with BMS data patterns when providing insights.");
+    
+    return lines.join("\n");
+}
+
 async function loadRecentSnapshots(systemId, log) {
     try {
         const collection = await getCollection("history");
@@ -1440,6 +1519,66 @@ function buildBatteryFacts({ analysisData = {}, systemProfile = null }) {
         cellsInSeries,
         brandNewLikely,
         lastMeasurementTimestamp: analysisData.timestamp ?? null
+    };
+}
+
+/**
+ * Build a summary of active stories for context injection into Gemini prompts.
+ * Stories provide admin-supplied narrative, annotations, and contextual information
+ * that helps Gemini understand causality, maintenance events, and environmental factors.
+ * @param {Array} activeStories - Active story documents from MongoDB
+ * @param {Object} log - Logger instance
+ * @returns {Object|null} Story context summary for prompt injection
+ */
+function buildStoryContextSummary(activeStories, log) {
+    if (!activeStories || activeStories.length === 0) {
+        return null;
+    }
+
+    const storyContexts = activeStories.map(story => {
+        const eventSummaries = (story.events || []).map(event => {
+            const contextParts = [];
+            if (event.annotation) {
+                contextParts.push(`Annotation: ${event.annotation}`);
+            }
+            if (event.contextNotes) {
+                if (event.contextNotes.priorEvents) {
+                    contextParts.push(`Prior Events: ${event.contextNotes.priorEvents}`);
+                }
+                if (event.contextNotes.environmentalFactors) {
+                    contextParts.push(`Environmental: ${event.contextNotes.environmentalFactors}`);
+                }
+                if (event.contextNotes.maintenanceActions) {
+                    contextParts.push(`Maintenance: ${event.contextNotes.maintenanceActions}`);
+                }
+            }
+            return {
+                timestamp: event.timestamp,
+                analysisId: event.analysisId,
+                context: contextParts.join(' | ')
+            };
+        });
+
+        return {
+            title: story.title,
+            description: story.description,
+            systemIdentifier: story.systemIdentifier,
+            tags: story.tags || [],
+            eventCount: (story.events || []).length,
+            dateRange: story.metadata?.dateRange || null,
+            events: eventSummaries.slice(0, 10) // Limit to most relevant events
+        };
+    });
+
+    log.info('Built story context summary', {
+        storyCount: storyContexts.length,
+        totalEvents: storyContexts.reduce((sum, s) => sum + s.eventCount, 0)
+    });
+
+    return {
+        stories: storyContexts,
+        totalStories: storyContexts.length,
+        summary: storyContexts.map(s => `"${s.title}" (${s.eventCount} events)`).join(', ')
     };
 }
 

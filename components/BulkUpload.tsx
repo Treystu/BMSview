@@ -16,6 +16,8 @@ interface BulkUploadProps {
   setStoryTitle: (title: string) => void;
   storySummary: string;
   setStorySummary: (summary: string) => void;
+  storyUserContext: string;
+  setStoryUserContext: (context: string) => void;
 }
 
 // A more robust rendering function for the status of each upload.
@@ -54,6 +56,8 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
   setStoryTitle,
   storySummary,
   setStorySummary,
+  storyUserContext,
+  setStoryUserContext,
 }) => {
   const {
     files,
@@ -135,6 +139,14 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
             value={storySummary}
             onChange={(e) => setStorySummary(e.target.value)}
             className="w-full p-2 bg-gray-700 rounded"
+            rows={2}
+          />
+          <textarea
+            placeholder="User Context (Describe the event, actions, or environmental context...)"
+            value={storyUserContext}
+            onChange={(e) => setStoryUserContext(e.target.value)}
+            className="w-full p-2 bg-gray-700 rounded border border-secondary/30 focus:border-secondary"
+            rows={3}
           />
         </div>
       )}

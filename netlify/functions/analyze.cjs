@@ -219,7 +219,14 @@ exports.handler = async (event, context) => {
 async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers, log, context) {
   const timer = createTimer(log, 'sync-analysis');
 
+  // Story Mode is admin-only - requires explicit isAdmin flag
   if (requestBody.storyMode) {
+    // Verify this is an admin request (isAdmin flag must be explicitly set)
+    if (!requestBody.isAdmin) {
+      log.warn('Story mode requested without admin privileges');
+      return errorResponse(403, 'forbidden', 'Story mode is only available to administrators', null, { ...headers, 'Content-Type': 'application/json' });
+    }
+    log.info('Admin story mode analysis requested');
     return await handleStoryModeAnalysis(requestBody, idemKey, forceReanalysis, headers, log, context);
   }
 
