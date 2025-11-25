@@ -1,5 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const { TextEncoder, TextDecoder } = require('util');
+
+// Polyfill for TextEncoder/TextDecoder (required for mongodb in jsdom environment)
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder;
 
 const envPath = path.resolve(__dirname, '../.env.test');
 if (fs.existsSync(envPath)) {

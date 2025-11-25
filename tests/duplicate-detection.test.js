@@ -1,19 +1,5 @@
-import { rest } from 'msw';
-import { setupServer } from 'msw/node';
-import { renderHook, act } from '@testing-library/react-hooks';
+import { renderHook, act } from '@testing-library/react';
 import { useFileUpload } from '../hooks/useFileUpload';
-
-// Mock the checkHashes service
-const server = setupServer(
-  rest.post('/.netlify/functions/check-hashes', (req, res, ctx) => {
-    const { hashes } = req.body;
-    const response = {
-      duplicates: hashes.filter(h => h === 'hash-existing-perfect.png'),
-      upgrades: hashes.filter(h => h === 'hash-existing-imperfect.png'),
-    };
-    return res(ctx.json(response));
-  })
-);
 
 // Mock sha256Browser
 jest.mock('../utils', () => ({
@@ -22,9 +8,15 @@ jest.mock('../utils', () => ({
   }),
 }));
 
-beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
+// Mock the checkHashes service directly
+jest.mock('../services/clientService', () => ({
+  checkHashes: jest.fn().mockImplementation(async (hashes) => {
+    return {
+      duplicates: hashes.filter(h => h === 'hash-existing-perfect.png'),
+      upgrades: hashes.filter(h => h === 'hash-existing-imperfect.png'),
+    };
+  }),
+}));
 
 global.URL.createObjectURL = jest.fn();
 global.URL.revokeObjectURL = jest.fn();
@@ -43,7 +35,7 @@ global.DataTransfer = MockDataTransfer;
 
 describe('useFileUpload with duplicate detection', () => {
   it('should correctly categorize files as new, duplicate, or upgradeable', async () => {
-    const { result, waitForNextUpdate } = renderHook(() => useFileUpload({}));
+    const { result } = renderHook(() => useFileUpload({}));
 
     const dataTransfer = new DataTransfer();
     dataTransfer.add(new File(['content1'], 'existing-perfect.png', { type: 'image/png' }));
