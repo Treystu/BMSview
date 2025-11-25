@@ -60,7 +60,8 @@ describe('Generate Insights Mode Selection', () => {
           voltage: 52.4,
           current: -5.2,
           soc: 85
-        }
+        },
+        systemId: 'test-system-id'
       }),
       headers: {
         host: 'test.netlify.app',

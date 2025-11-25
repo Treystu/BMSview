@@ -11,7 +11,17 @@
  */
 
 // Mock fetch globally before any imports
-global.fetch = jest.fn();
+global.fetch = jest.fn().mockImplementation(() => 
+    Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ items: [], total: 0 }),
+        text: () => Promise.resolve(''),
+        headers: new Headers({
+            'content-type': 'application/json'
+        })
+    })
+);
 
 // Mock IndexedDB before any imports
 const mockIndexedDB = {
@@ -37,6 +47,21 @@ const mockLocalStorage = {
     }
 };
 Object.defineProperty(window, 'localStorage', { value: mockLocalStorage });
+
+// Mock localCache before importing syncManager
+jest.mock('../src/services/localCache', () => ({
+    systemsCache: {
+        getAll: jest.fn().mockResolvedValue([]),
+        bulkPut: jest.fn().mockResolvedValue(undefined),
+    },
+    historyCache: {
+        getAll: jest.fn().mockResolvedValue([]),
+        bulkPut: jest.fn().mockResolvedValue(undefined),
+    },
+    getPendingItems: jest.fn().mockResolvedValue({ systems: [], history: [], analytics: [] }),
+    getLatestTimestamps: jest.fn().mockResolvedValue({ systems: null, history: null }),
+    refreshFromServer: jest.fn().mockResolvedValue(undefined),
+}));
 
 const { syncManager, intelligentSync } = require('../src/services/syncManager');
 

@@ -122,7 +122,7 @@ exports.handler = async (event, context) => {
   }
 };
 
-async function getUnadoptedSystems() {
+async function getUnadoptedSystems(database, log) {
   const systems = await database.collection('systems').aggregate([
     { $match: { adopted: false } },
     { $lookup: {
@@ -149,7 +149,7 @@ async function getUnadoptedSystems() {
   }));
 }
 
-async function getAdoptedSystems(userId) {
+async function getAdoptedSystems(database, userId, log) {
   const systems = await database.collection('systems').aggregate([
     { $match: { 
         adopted: true,
@@ -179,7 +179,7 @@ async function getAdoptedSystems(userId) {
   }));
 }
 
-async function getAllSystems() {
+async function getAllSystems(database, log) {
   const systems = await database.collection('systems').aggregate([
     { $lookup: {
         from: 'records',
@@ -205,7 +205,7 @@ async function getAllSystems() {
   }));
 }
 
-async function adoptSystem(systemId, userId) {
+async function adoptSystem(database, systemId, userId, log) {
   try {
     // Check if system exists and is unadopted
     const system = await database.collection('systems').findOne({

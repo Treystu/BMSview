@@ -63,8 +63,8 @@ describe('generate-insights logger fix', () => {
     // Call handler - it should create a logger instance
     await handler(event, mockContext);
     
-    // Verify createLogger was called
-    expect(createLogger).toHaveBeenCalledWith('generate-insights', mockContext);
+    // Verify createLogger was called with the legacy name
+    expect(createLogger).toHaveBeenCalledWith('generate-insights-legacy', mockContext);
   });
 
   test.skip('generateInsightsWithTools creates logger instance without error', async () => {
