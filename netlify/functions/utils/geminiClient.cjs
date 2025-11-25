@@ -40,7 +40,21 @@ class CircuitBreaker {
       this.onSuccess(logger);
       return result;
     } catch (error) {
-      this.onFailure(logger, error);
+      // Only count server errors (5xx) and rate limits (429) as circuit breaker failures
+      // Client errors (4xx except 429) indicate a problem with the request, not the service
+      const isServerError = error.status >= 500;
+      const isRateLimit = error.status === 429;
+      const shouldTripCircuitBreaker = isServerError || isRateLimit;
+      
+      if (shouldTripCircuitBreaker) {
+        this.onFailure(logger, error);
+      } else {
+        // Log but don't count as circuit breaker failure
+        logger.debug('Client error (not counting as circuit breaker failure)', {
+          status: error.status,
+          message: error.message
+        });
+      }
       throw error;
     }
   }
@@ -201,6 +215,8 @@ class GeminiClient {
         logger.error('Gemini API error', {
           attempt: attempt + 1,
           error: error.message,
+          status: error.status,
+          body: error.body, // Include the error body for debugging 400 errors
           stack: error.stack
         });
         throw error;
