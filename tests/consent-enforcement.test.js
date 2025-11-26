@@ -462,7 +462,7 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
   });
 
   describe('Edge Cases', () => {
-    test('should require either systemId and analysisData together, or resumeJobId', async () => {
+    test('should require either (systemId and analysisData together) or resumeJobId', async () => {
       const event = {
         body: JSON.stringify({
           consentGranted: true,
@@ -475,7 +475,7 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
       const result = JSON.parse(response.body);
 
       expect(response.statusCode).toBe(400);
-      expect(result.error).toContain('Either analysisData, systemId, or resumeJobId is required');
+      expect(result.error).toContain('Either analysisData and systemId, or resumeJobId is required');
     });
 
     test('should check for required fields before validating consent', async () => {
@@ -492,7 +492,7 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
 
       // Current implementation validates required fields first
       expect(response.statusCode).toBe(400);
-      expect(result.error).toContain('Either analysisData, systemId, or resumeJobId is required');
+      expect(result.error).toContain('Either analysisData and systemId, or resumeJobId is required');
     });
 
     test('should handle malformed JSON gracefully', async () => {

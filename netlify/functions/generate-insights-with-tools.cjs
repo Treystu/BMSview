@@ -82,13 +82,13 @@ exports.handler = async (event, context) => {
     const resumeJobId = body.resumeJobId;
     const consentGranted = body.consentGranted;
 
-    // Validate input
-    if (!analysisData || !systemId) {
+    // Validate input: Must have either (analysisData AND systemId) OR resumeJobId
+    if ((!analysisData || !systemId) && !resumeJobId) {
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          error: 'Either analysisData, systemId, or resumeJobId is required'
+          error: 'Either analysisData and systemId, or resumeJobId is required'
         })
       };
     }
