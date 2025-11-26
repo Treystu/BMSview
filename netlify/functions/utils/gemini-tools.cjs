@@ -363,20 +363,134 @@ async function executeToolCall(toolName, parameters, log) {
     return result;
   } catch (error) {
       const duration = Date.now() - startTime;
+      
+      // Categorize error for better handling
+      const errorCategory = categorizeToolError(error, toolName);
+      
       log.error('Tool execution failed', {
         toolName,
         error: error.message,
+        category: errorCategory.category,
+        isRetriable: errorCategory.isRetriable,
         stack: error.stack,
         duration: `${duration}ms`,
         parameters
       });
+      
+      // Return error with graceful degradation info
       return {
         error: true,
         message: `Failed to execute ${toolName}: ${error.message}`,
-        graceful_degradation: true
+        errorCategory: errorCategory.category,
+        isRetriable: errorCategory.isRetriable,
+        suggestedAction: errorCategory.suggestedAction,
+        graceful_degradation: true,
+        partialResults: errorCategory.canContinue ? {} : null
       };
     }
   }
+
+/**
+ * Categorize tool execution errors for better handling
+ * Determines if error is retriable and suggests remediation
+ * 
+ * @param {Error} error - The error that occurred
+ * @param {string} toolName - Name of the tool that failed
+ * @returns {Object} Error categorization
+ */
+function categorizeToolError(error, toolName) {
+  const errorMessage = error.message?.toLowerCase() || '';
+  
+  // Network/connectivity errors - retriable
+  if (errorMessage.includes('network') || 
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('econnrefused') ||
+      errorMessage.includes('fetch failed')) {
+    return {
+      category: 'network',
+      isRetriable: true,
+      canContinue: true,
+      suggestedAction: 'Retry with exponential backoff. System can continue with partial data.'
+    };
+  }
+  
+  // Rate limiting - retriable with delay
+  if (errorMessage.includes('rate limit') || 
+      errorMessage.includes('429') ||
+      errorMessage.includes('quota')) {
+    return {
+      category: 'rate_limit',
+      isRetriable: true,
+      canContinue: true,
+      suggestedAction: 'Wait before retry. Reduce request frequency. Analysis can proceed with available data.'
+    };
+  }
+  
+  // Database errors - potentially retriable
+  if (errorMessage.includes('database') || 
+      errorMessage.includes('mongodb') ||
+      errorMessage.includes('connection')) {
+    return {
+      category: 'database',
+      isRetriable: true,
+      canContinue: true,
+      suggestedAction: 'Retry database operation. Check connection pool status.'
+    };
+  }
+  
+  // Invalid parameters - not retriable
+  if (errorMessage.includes('invalid') || 
+      errorMessage.includes('required') ||
+      errorMessage.includes('parameter')) {
+    return {
+      category: 'invalid_parameters',
+      isRetriable: false,
+      canContinue: true,
+      suggestedAction: `Fix ${toolName} parameters. Check parameter types and required fields.`
+    };
+  }
+  
+  // Data not found - not an error, system can continue
+  if (errorMessage.includes('not found') || 
+      errorMessage.includes('no data') ||
+      errorMessage.includes('empty')) {
+    return {
+      category: 'no_data',
+      isRetriable: false,
+      canContinue: true,
+      suggestedAction: 'No action needed. System will proceed with available data from other sources.'
+    };
+  }
+  
+  // Token limit exceeded - special handling
+  if (errorMessage.includes('token') && 
+      (errorMessage.includes('limit') || errorMessage.includes('exceeded'))) {
+    return {
+      category: 'token_limit',
+      isRetriable: true,
+      canContinue: true,
+      suggestedAction: 'Reduce context size. Use smaller time windows or daily aggregation instead of hourly.'
+    };
+  }
+  
+  // Circuit breaker open - retriable after cooldown
+  if (errorMessage.includes('circuit') && errorMessage.includes('open')) {
+    return {
+      category: 'circuit_open',
+      isRetriable: true,
+      canContinue: true,
+      suggestedAction: 'Wait for circuit breaker to reset. Service is temporarily unavailable.'
+    };
+  }
+  
+  // Default: unknown error
+  return {
+    category: 'unknown',
+    isRetriable: true,
+    canContinue: true,
+    suggestedAction: 'Investigate error cause. System will attempt to continue with partial results.'
+  };
+}
 
 /**
  * Request BMS data with specified granularity and metric filtering

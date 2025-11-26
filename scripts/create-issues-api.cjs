@@ -397,20 +397,129 @@ function makeGitHubRequest(path, method, data) {
 }
 
 /**
- * Create a single GitHub issue
+ * Determine if an error is retriable
  */
-async function createIssue(issueData, retries = 3, delay = 1000) {
-  const path = `/repos/${REPO_OWNER}/${REPO_NAME}/issues`;
-  try {
-    return await makeGitHubRequest(path, 'POST', issueData);
-  } catch (error) {
-    if (retries > 0) {
-      console.log(`   Retrying... (${retries} retries left)`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return await createIssue(issueData, retries - 1, delay * 2);
-    }
-    throw error;
+function isRetriableError(error) {
+  const errorMessage = error.message.toLowerCase();
+  
+  // Network errors - always retriable
+  if (errorMessage.includes('econnrefused') ||
+      errorMessage.includes('enotfound') ||
+      errorMessage.includes('timeout')) {
+    return true;
   }
+  
+  // Rate limiting (403 or 429) - retriable with longer delay
+  if (errorMessage.includes('403') || errorMessage.includes('429')) {
+    return true;
+  }
+  
+  // Server errors (5xx) - retriable
+  if (errorMessage.includes('500') ||
+      errorMessage.includes('502') ||
+      errorMessage.includes('503') ||
+      errorMessage.includes('504')) {
+    return true;
+  }
+  
+  // Client errors (4xx except rate limit) - not retriable
+  if (errorMessage.includes('400') ||
+      errorMessage.includes('401') ||
+      errorMessage.includes('404') ||
+      errorMessage.includes('422')) {
+    return false;
+  }
+  
+  // Default: retry unknown errors
+  return true;
+}
+
+/**
+ * Create a single GitHub issue with enhanced retry logic
+ * Uses exponential backoff with jitter for resilience
+ */
+async function createIssue(issueData, retries = 5, baseDelay = 1000) {
+  const path = `/repos/${REPO_OWNER}/${REPO_NAME}/issues`;
+  const maxRetries = retries;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await makeGitHubRequest(path, 'POST', issueData);
+    } catch (error) {
+      const retriable = isRetriableError(error);
+      const isLastAttempt = attempt === maxRetries;
+      
+      if (!retriable || isLastAttempt) {
+        // Add error categorization for better error messages
+        const errorCategory = categorizeGitHubError(error);
+        error.category = errorCategory;
+        throw error;
+      }
+      
+      // Calculate delay with exponential backoff and jitter
+      const exponentialDelay = baseDelay * Math.pow(2, attempt);
+      const jitter = Math.random() * 500; // Add up to 500ms jitter
+      const delay = Math.min(exponentialDelay + jitter, 30000); // Cap at 30 seconds
+      
+      console.log(`   Attempt ${attempt + 1}/${maxRetries + 1} failed: ${error.message}`);
+      console.log(`   Retrying in ${Math.round(delay)}ms... (${maxRetries - attempt} retries left)`);
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
+/**
+ * Categorize GitHub API errors for better reporting
+ */
+function categorizeGitHubError(error) {
+  const errorMessage = error.message.toLowerCase();
+  
+  if (errorMessage.includes('403') || errorMessage.includes('429')) {
+    return {
+      type: 'rate_limit',
+      message: 'GitHub API rate limit exceeded. Wait before retrying or check authentication token.',
+      recoverable: true
+    };
+  }
+  
+  if (errorMessage.includes('401')) {
+    return {
+      type: 'authentication',
+      message: 'Invalid or missing GitHub token. Check GITHUB_TOKEN environment variable.',
+      recoverable: false
+    };
+  }
+  
+  if (errorMessage.includes('404')) {
+    return {
+      type: 'not_found',
+      message: 'Repository not found. Check REPO_OWNER and REPO_NAME.',
+      recoverable: false
+    };
+  }
+  
+  if (errorMessage.includes('422')) {
+    return {
+      type: 'validation',
+      message: 'Invalid issue data. Check issue title, body, and labels.',
+      recoverable: false
+    };
+  }
+  
+  if (errorMessage.includes('timeout') || errorMessage.includes('econnrefused')) {
+    return {
+      type: 'network',
+      message: 'Network error. Check internet connection and try again.',
+      recoverable: true
+    };
+  }
+  
+  return {
+    type: 'unknown',
+    message: error.message,
+    recoverable: true
+  };
 }
 
 /**
@@ -421,7 +530,7 @@ function delay(ms) {
 }
 
 /**
- * Main function to create all issues
+ * Main function to create all issues with enhanced error tracking
  */
 async function main() {
   console.log('🚀 Creating 12 AI Feedback System issues...');
@@ -430,6 +539,7 @@ async function main() {
   console.log('');
 
   const createdIssues = [];
+  const failedIssues = [];
 
   for (let i = 0; i < issues.length; i++) {
     const issue = issues[i];
@@ -447,7 +557,23 @@ async function main() {
       }
     } catch (error) {
       console.error(`❌ Failed to create issue: ${issue.title}`);
-      console.error(`   Error: ${error.message}`);
+      
+      // Enhanced error reporting with category
+      if (error.category) {
+        console.error(`   Category: ${error.category.type}`);
+        console.error(`   ${error.category.message}`);
+        console.error(`   Recoverable: ${error.category.recoverable ? 'Yes' : 'No'}`);
+      } else {
+        console.error(`   Error: ${error.message}`);
+      }
+      
+      // Track failed issues for recovery
+      failedIssues.push({
+        title: issue.title,
+        error: error.message,
+        category: error.category || { type: 'unknown' },
+        data: issue
+      });
       
       // Continue with next issue instead of stopping
       continue;
@@ -457,6 +583,7 @@ async function main() {
   console.log('');
   console.log('📊 Summary:');
   console.log(`   ✅ Successfully created: ${createdIssues.length}/${issues.length} issues`);
+  console.log(`   ❌ Failed: ${failedIssues.length}/${issues.length} issues`);
   
   if (createdIssues.length > 0) {
     console.log('');
@@ -467,9 +594,27 @@ async function main() {
     });
   }
 
+  if (failedIssues.length > 0) {
+    console.log('');
+    console.log('⚠️  Failed issues:');
+    failedIssues.forEach((failed, idx) => {
+      console.log(`   ${idx + 1}. ${failed.title}`);
+      console.log(`      Error: ${failed.error}`);
+      console.log(`      Category: ${failed.category.type}`);
+    });
+    
+    // Save failed issues to a recovery file
+    const fs = require('fs');
+    const recoveryFile = 'failed-issues.json';
+    fs.writeFileSync(recoveryFile, JSON.stringify(failedIssues, null, 2));
+    console.log('');
+    console.log(`💾 Failed issues saved to ${recoveryFile} for manual retry`);
+    console.log('   You can manually create these issues or fix the errors and re-run the script.');
+  }
+
   if (createdIssues.length < issues.length) {
     console.log('');
-    console.log('⚠️  Some issues failed to create. Check the error messages above.');
+    console.log('⚠️  Some issues failed to create. See details above.');
     process.exit(1);
   }
 

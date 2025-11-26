@@ -268,7 +268,70 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
  * @param {"sync"|"background"} [params.mode]
  */
 async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, context, mode = "sync" }) {
+    const { estimateDataTokens, checkTokenLimit, applyContextReduction } = require('./token-limit-handler.cjs');
+    
     const contextData = context || await collectAutoInsightsContext(systemId, analysisData, log, { mode });
+
+    // Estimate token usage
+    const contextTokens = estimateDataTokens(contextData);
+    const analysisTokens = estimateDataTokens(analysisData);
+    const promptBaseTokens = 1000; // Rough estimate for system prompt
+    const totalTokens = contextTokens + analysisTokens + promptBaseTokens;
+    
+    log.info('Token usage estimation', {
+        contextTokens,
+        analysisTokens,
+        promptBaseTokens,
+        totalTokens
+    });
+    
+    // Check if we're approaching token limit
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const tokenStatus = checkTokenLimit(totalTokens, model);
+    
+    if (tokenStatus.isApproachingLimit) {
+        log.warn('Approaching token limit, context may need reduction', {
+            percentUsed: tokenStatus.percentUsed,
+            remaining: tokenStatus.remaining
+        });
+        
+        // Add warning to context metadata
+        if (contextData.meta) {
+            contextData.meta.tokenWarning = {
+                percentUsed: tokenStatus.percentUsed,
+                remaining: tokenStatus.remaining,
+                message: 'Context is approaching token limit. Some data may be summarized.'
+            };
+        }
+    }
+    
+    if (tokenStatus.exceedsLimit) {
+        log.error('Token limit exceeded, applying aggressive reduction', {
+            estimatedTokens: tokenStatus.estimatedTokens,
+            limit: tokenStatus.limit
+        });
+        
+        // Apply emergency context reduction by removing less critical data
+        if (contextData.recentSnapshots && contextData.recentSnapshots.length > 10) {
+            const originalLength = contextData.recentSnapshots.length;
+            contextData.recentSnapshots = contextData.recentSnapshots.slice(-10); // Keep only last 10
+            log.info('Reduced recent snapshots to fit token limit', {
+                originalCount: originalLength,
+                reducedCount: contextData.recentSnapshots.length
+            });
+        }
+        
+        // Remove detailed analytics if still over limit
+        if (contextData.analytics && contextData.analytics.detailedMetrics) {
+            contextData.analytics.detailedMetrics = null;
+            log.info('Removed detailed analytics to fit token limit');
+        }
+        
+        if (contextData.meta) {
+            contextData.meta.tokenReduction = true;
+            contextData.meta.tokenReductionReason = 'Exceeded token limit, removed detailed data';
+        }
+    }
     const toolCatalog = buildToolCatalog();
     const { sections } = buildContextSections(contextData, analysisData);
 
