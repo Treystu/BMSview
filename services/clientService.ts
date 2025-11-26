@@ -717,6 +717,7 @@ export const streamInsights = async (
             // Build request body with resumeJobId if available
             const requestBody: any = {
                 ...payload,
+                insightMode: mode, // Include for logging consistency
                 mode: 'sync' // Explicitly use sync mode for checkpoint/resume
             };
             
