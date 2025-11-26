@@ -362,20 +362,21 @@ async function executeToolCall(toolName, parameters, log) {
 
     return result;
   } catch (error) {
-    const duration = Date.now() - startTime;
-    log.error('Tool execution failed', {
-      toolName,
-      error: error.message,
-      stack: error.stack,
-      duration: `${duration}ms`,
-      parameters
-    });
-    return {
-      error: true,
-      message: `Failed to execute ${toolName}: ${error.message}`
-    };
+      const duration = Date.now() - startTime;
+      log.error('Tool execution failed', {
+        toolName,
+        error: error.message,
+        stack: error.stack,
+        duration: `${duration}ms`,
+        parameters
+      });
+      return {
+        error: true,
+        message: `Failed to execute ${toolName}: ${error.message}`,
+        graceful_degradation: true
+      };
+    }
   }
-}
 
 /**
  * Request BMS data with specified granularity and metric filtering

@@ -1538,15 +1538,22 @@ async function executeReActLoop(params) {
                     toolCallCount++;
 
                     // Add tool result to conversation
-                    conversationHistory.push({
-                        role: 'function',
-                        parts: [{
-                            functionResponse: {
-                                name: toolName,
-                                response: { result: toolResult }
-                            }
-                        }]
-                    });
+                    if (toolResult.graceful_degradation) {
+                        conversationHistory.push({
+                            role: 'user',
+                            parts: [{ text: `The tool ${toolName} failed with the following error: ${toolResult.message}. I will try to continue without this information.` }]
+                        });
+                    } else {
+                        conversationHistory.push({
+                            role: 'function',
+                            parts: [{
+                                functionResponse: {
+                                    name: toolName,
+                                    response: { result: toolResult }
+                                }
+                            }]
+                        });
+                    }
 
                     log.info(`Tool executed successfully: ${toolName}`, {
                         turn: turnCount,
