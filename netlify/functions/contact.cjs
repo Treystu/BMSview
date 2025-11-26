@@ -90,7 +90,7 @@ exports.handler = async function(event, context) {
     log('debug', 'Mail options prepared.', { ...submissionContext, recipient: CONTACT_EMAIL_RECIPIENT });
 
     log('debug', 'Attempting to send email via nodemailer.');
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendMailWithRetry(transporter, mailOptions, log, submissionContext);
     log('info', 'Email sent successfully via nodemailer.', { ...submissionContext, messageId: info.messageId, response: info.response });
     
     return {
@@ -105,3 +105,16 @@ exports.handler = async function(event, context) {
     };
   }
 };
+
+async function sendMailWithRetry(transporter, mailOptions, log, submissionContext, retries = 3, delay = 1000) {
+  try {
+    return await transporter.sendMail(mailOptions);
+  } catch (error) {
+    if (retries > 0) {
+      log('warn', `Failed to send email. Retrying... (${retries} retries left)`, { ...submissionContext, error: error.message });
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return await sendMailWithRetry(transporter, mailOptions, log, submissionContext, retries - 1, delay * 2);
+    }
+    throw error;
+  }
+}
