@@ -93,9 +93,13 @@ ${feedback.suggestion.codeSnippets.join('\n\n')}
  * Create GitHub issue (mock implementation - would integrate with GitHub API)
  */
 async function createGitHubIssueAPI(issueData) {
+  // Get repository info from environment or use default
+  const repoOwner = process.env.GITHUB_REPO_OWNER || 'Treystu';
+  const repoName = process.env.GITHUB_REPO_NAME || 'BMSview';
+  
   // NOTE: This is a mock implementation
   // In production, this would call the GitHub API:
-  // const response = await fetch('https://api.github.com/repos/Treystu/BMSview/issues', {
+  // const response = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/issues`, {
   //   method: 'POST',
   //   headers: {
   //     'Authorization': `token ${process.env.GITHUB_TOKEN}`,
@@ -109,8 +113,8 @@ async function createGitHubIssueAPI(issueData) {
   
   return {
     number: mockIssueNumber,
-    url: `https://github.com/Treystu/BMSview/issues/${mockIssueNumber}`,
-    html_url: `https://github.com/Treystu/BMSview/issues/${mockIssueNumber}`,
+    url: `https://github.com/${repoOwner}/${repoName}/issues/${mockIssueNumber}`,
+    html_url: `https://github.com/${repoOwner}/${repoName}/issues/${mockIssueNumber}`,
     state: 'open',
     created_at: new Date().toISOString()
   };

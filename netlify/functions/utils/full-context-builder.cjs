@@ -324,6 +324,16 @@ async function calculateComputedMetrics(systemId, rawData, options) {
  * Helper functions
  */
 
+// Health score thresholds
+const HEALTH_SCORE_THRESHOLDS = {
+  CELL_VOLTAGE_DIFF_MAX: 0.1,          // Maximum acceptable cell voltage difference (V)
+  ALERT_PENALTY_PER_ITEM: 5,           // Points deducted per alert
+  SOC_LOW_THRESHOLD: 20,               // SOC percentage considered low
+  SOC_LOW_PENALTY: 15,                 // Points deducted for low SOC
+  TEMP_HIGH_THRESHOLD: 45,             // Temperature (°C) considered high
+  TEMP_HIGH_PENALTY: 10                // Points deducted for high temp
+};
+
 function getTimeRange(options) {
   const end = new Date();
   const start = new Date();
@@ -361,11 +371,19 @@ function detectStateChanges(analyses) {
 function calculateHealthScore(analysis) {
   let score = 100;
   
-  // Deduct points for issues
-  if (analysis.cellVoltageDifference > 0.1) score -= 10;
-  if (analysis.alerts && analysis.alerts.length > 0) score -= analysis.alerts.length * 5;
-  if (analysis.stateOfCharge < 20) score -= 15;
-  if (analysis.temperature > 45) score -= 10;
+  // Deduct points for issues using configurable thresholds
+  if (analysis.cellVoltageDifference > HEALTH_SCORE_THRESHOLDS.CELL_VOLTAGE_DIFF_MAX) {
+    score -= HEALTH_SCORE_THRESHOLDS.TEMP_HIGH_PENALTY;
+  }
+  if (analysis.alerts && analysis.alerts.length > 0) {
+    score -= analysis.alerts.length * HEALTH_SCORE_THRESHOLDS.ALERT_PENALTY_PER_ITEM;
+  }
+  if (analysis.stateOfCharge < HEALTH_SCORE_THRESHOLDS.SOC_LOW_THRESHOLD) {
+    score -= HEALTH_SCORE_THRESHOLDS.SOC_LOW_PENALTY;
+  }
+  if (analysis.temperature > HEALTH_SCORE_THRESHOLDS.TEMP_HIGH_THRESHOLD) {
+    score -= HEALTH_SCORE_THRESHOLDS.TEMP_HIGH_PENALTY;
+  }
   
   return Math.max(0, Math.min(100, score));
 }

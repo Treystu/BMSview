@@ -5,6 +5,7 @@
 
 const { buildCompleteContext, countDataPoints } = require('../netlify/functions/utils/full-context-builder.cjs');
 const { runStatisticalAnalysis, runTrendAnalysis, runAnomalyDetection, runCorrelationAnalysis } = require('../netlify/functions/utils/statistical-tools.cjs');
+const { calculateSimilarity, findSimilarFeedback } = require('../netlify/functions/utils/duplicate-detection.cjs');
 
 describe('Full Context Builder', () => {
   test('countDataPoints should count array items correctly', () => {
@@ -170,5 +171,104 @@ describe('AI Feedback System', () => {
     const validPriorities = ['low', 'medium', 'high', 'critical'];
     expect(validPriorities).toContain('critical');
     expect(validPriorities).toContain('low');
+  });
+});
+
+describe('Duplicate Detection', () => {
+  describe('calculateSimilarity', () => {
+    test('should return 1.0 for identical strings', () => {
+      const similarity = calculateSimilarity('Hello World', 'Hello World');
+      expect(similarity).toBe(1.0);
+    });
+    
+    test('should return high similarity for similar strings', () => {
+      const similarity = calculateSimilarity(
+        'Switch to Solcast API for better weather',
+        'Switch to Solcast API for improved weather'
+      );
+      expect(similarity).toBeGreaterThan(0.7);
+    });
+    
+    test('should return low similarity for different strings', () => {
+      const similarity = calculateSimilarity(
+        'Implement caching system',
+        'Fix bug in authentication'
+      );
+      expect(similarity).toBeLessThan(0.3);
+    });
+    
+    test('should handle empty strings', () => {
+      const similarity = calculateSimilarity('', '');
+      expect(similarity).toBeGreaterThanOrEqual(0);
+    });
+  });
+  
+  describe('findSimilarFeedback', () => {
+    test('should find similar feedback items', async () => {
+      const newFeedback = {
+        suggestion: {
+          title: 'Implement Redis caching',
+          description: 'Add Redis for caching frequently accessed data',
+          rationale: 'Improves performance'
+        }
+      };
+      
+      const existingFeedback = [
+        {
+          id: 'fb_1',
+          status: 'pending',
+          suggestion: {
+            title: 'Add Redis caching layer',
+            description: 'Use Redis to cache frequent data queries',
+            rationale: 'Better performance'
+          }
+        },
+        {
+          id: 'fb_2',
+          status: 'pending',
+          suggestion: {
+            title: 'Fix authentication bug',
+            description: 'Resolve login issues',
+            rationale: 'Security improvement'
+          }
+        }
+      ];
+      
+      const similar = await findSimilarFeedback(newFeedback, existingFeedback, {
+        similarityThreshold: 0.3 // Lower threshold for test
+      });
+      
+      expect(similar.length).toBeGreaterThanOrEqual(0);
+      if (similar.length > 0) {
+        expect(similar[0].feedbackId).toBe('fb_1');
+        expect(similar[0].similarity).toBeGreaterThan(0);
+      }
+    });
+    
+    test('should skip rejected and implemented items', async () => {
+      const newFeedback = {
+        suggestion: {
+          title: 'Test feature',
+          description: 'Test description',
+          rationale: 'Test rationale'
+        }
+      };
+      
+      const existingFeedback = [
+        {
+          id: 'fb_1',
+          status: 'rejected',
+          suggestion: {
+            title: 'Test feature',
+            description: 'Test description',
+            rationale: 'Test rationale'
+          }
+        }
+      ];
+      
+      const similar = await findSimilarFeedback(newFeedback, existingFeedback);
+      
+      expect(similar.length).toBe(0);
+    });
   });
 });

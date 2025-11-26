@@ -29,8 +29,8 @@ async function runStatisticalAnalysis(data) {
     const sum = validData.reduce((acc, val) => acc + val, 0);
     const mean = sum / validData.length;
     
-    // Calculate variance and standard deviation
-    const variance = validData.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / validData.length;
+    // Calculate variance and standard deviation (using sample variance with n-1)
+    const variance = validData.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / (validData.length - 1);
     const stdDev = Math.sqrt(variance);
     
     // Calculate percentiles
@@ -149,9 +149,10 @@ async function runTrendAnalysis(timeSeries) {
 /**
  * Detect change points in time series
  */
-function detectChangePoints(points) {
+function detectChangePoints(points, options = {}) {
   const changePoints = [];
   const windowSize = Math.max(5, Math.floor(points.length / 10));
+  const changeThreshold = options.changeThreshold || 5; // Configurable threshold
   
   for (let i = windowSize; i < points.length - windowSize; i++) {
     const beforeWindow = points.slice(i - windowSize, i);
@@ -161,9 +162,8 @@ function detectChangePoints(points) {
     const afterMean = afterWindow.reduce((acc, p) => acc + p.y, 0) / afterWindow.length;
     
     const change = Math.abs(afterMean - beforeMean);
-    const threshold = 5; // Configurable threshold
     
-    if (change > threshold) {
+    if (change > changeThreshold) {
       changePoints.push({
         index: i,
         timestamp: points[i].x,
@@ -180,8 +180,9 @@ function detectChangePoints(points) {
 /**
  * Run anomaly detection
  */
-async function runAnomalyDetection(data) {
+async function runAnomalyDetection(data, options = {}) {
   const log = createLogger('statistical-tools:anomaly');
+  const threshold = options.threshold || 3; // Default: 3 standard deviations
   
   if (!data || data.length === 0) {
     log.warn('No data provided for anomaly detection');
@@ -200,13 +201,13 @@ async function runAnomalyDetection(data) {
     const variance = validData.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / validData.length;
     const stdDev = Math.sqrt(variance);
     
-    // Detect anomalies (values beyond 3 standard deviations)
+    // Detect anomalies (values beyond threshold standard deviations)
     const anomalies = [];
-    const threshold = 3 * stdDev;
+    const deviationThreshold = threshold * stdDev;
     
     for (let i = 0; i < validData.length; i++) {
       const deviation = Math.abs(validData[i] - mean);
-      if (deviation > threshold) {
+      if (deviation > deviationThreshold) {
         anomalies.push({
           index: i,
           value: validData[i],
@@ -220,7 +221,7 @@ async function runAnomalyDetection(data) {
       anomalies: anomalies.slice(0, 20), // Limit to 20 most significant
       anomalyRate: (anomalies.length / validData.length) * 100,
       totalAnomalies: anomalies.length,
-      threshold,
+      threshold: deviationThreshold,
       mean,
       stdDev
     };

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { FeedbackAnalytics } from './FeedbackAnalytics';
 
 interface AIFeedback {
   id: string;
@@ -169,6 +170,12 @@ export const AIFeedbackDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Analytics Section */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+        <h3 className="text-xl font-semibold text-gray-900 mb-4">📊 Feedback Analytics</h3>
+        <FeedbackAnalytics />
+      </div>
+
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-start">
           <div className="flex-shrink-0">

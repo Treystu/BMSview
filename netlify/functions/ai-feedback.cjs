@@ -7,6 +7,7 @@
 const { createLogger } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { detectDuplicates } = require('./utils/duplicate-detection.cjs');
 
 /**
  * Submit AI feedback to database
@@ -27,7 +28,6 @@ async function submitFeedbackToDatabase(feedbackData, context) {
       priority: feedbackData.priority,
       status: 'pending',
       geminiModel: feedbackData.geminiModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-      contextHash: hashContent(JSON.stringify(feedbackData.content)),
       suggestion: {
         title: feedbackData.content.title,
         description: feedbackData.content.description,
@@ -45,19 +45,31 @@ async function submitFeedbackToDatabase(feedbackData, context) {
       }
     };
     
-    // Check for duplicates using contextHash
-    const existing = await feedbackCollection.findOne({
-      contextHash: feedback.contextHash,
-      status: { $in: ['pending', 'reviewed', 'accepted'] }
+    // Enhanced duplicate detection with semantic similarity
+    const duplicateCheck = await detectDuplicates(feedback, feedbackCollection, {
+      similarityThreshold: 0.7 // 70% similarity threshold
     });
     
-    if (existing) {
-      log.info('Duplicate feedback detected, skipping', {
-        existingId: existing.id,
-        contextHash: feedback.contextHash
+    if (duplicateCheck.isDuplicate) {
+      log.info('Duplicate feedback detected', {
+        existingId: duplicateCheck.existingId,
+        matchType: duplicateCheck.matchType,
+        similarity: duplicateCheck.similarity
       });
-      return { id: existing.id, isDuplicate: true };
+      return {
+        id: duplicateCheck.existingId,
+        isDuplicate: true,
+        matchType: duplicateCheck.matchType,
+        similarity: duplicateCheck.similarity,
+        similarItems: duplicateCheck.similarItems
+      };
     }
+    
+    // Add contextHash for basic deduplication
+    const crypto = require('crypto');
+    feedback.contextHash = crypto.createHash('sha256')
+      .update(JSON.stringify(feedback.suggestion))
+      .digest('hex');
     
     // Insert feedback
     await feedbackCollection.insertOne(feedback);
@@ -65,7 +77,8 @@ async function submitFeedbackToDatabase(feedbackData, context) {
     log.info('AI feedback submitted successfully', {
       feedbackId: feedback.id,
       type: feedback.feedbackType,
-      priority: feedback.priority
+      priority: feedback.priority,
+      similarItems: duplicateCheck.similarItems.length
     });
     
     // Auto-create GitHub issue if critical
@@ -74,7 +87,11 @@ async function submitFeedbackToDatabase(feedbackData, context) {
       // Future: Auto-create GitHub issue
     }
     
-    return { id: feedback.id, isDuplicate: false };
+    return {
+      id: feedback.id,
+      isDuplicate: false,
+      similarItems: duplicateCheck.similarItems
+    };
   } catch (error) {
     log.error('Failed to submit AI feedback', { error: error.message });
     throw error;
@@ -176,17 +193,6 @@ exports.handler = async (event, context) => {
 
 function generateId() {
   return `fb_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-}
-
-function hashContent(content) {
-  // Simple hash function for deduplication
-  let hash = 0;
-  for (let i = 0; i < content.length; i++) {
-    const char = content.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-  return hash.toString(36);
 }
 
 // Export for use in other modules
