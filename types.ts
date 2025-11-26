@@ -201,3 +201,31 @@ export interface InsightsRequestConfig {
   maxIterations?: number; // Max ReAct loop iterations (10 for standard, 20 for custom queries)
   isCustomQuery?: boolean; // Whether this is a custom user query
 }
+
+export enum InsightMode {
+  WITH_TOOLS = 'with-tools',      // AI "Battery Guru" with function calling (default, most comprehensive)
+  STANDARD = 'standard'           // Legacy endpoint (proxies to WITH_TOOLS for backward compatibility)
+}
+
+// Human-readable descriptions for each mode
+export const InsightModeDescriptions: Record<InsightMode, { label: string; description: string; features: string[] }> = {
+  [InsightMode.WITH_TOOLS]: {
+    label: 'Battery Guru (Recommended)',
+    description: 'Advanced AI with intelligent data querying',
+    features: [
+      'Can request specific historical data on-demand',
+      'Multi-turn conversation with AI reasoning',
+      'Comprehensive analysis with 90-day rollups',
+      'Best for all types of questions and insights'
+    ]
+  },
+  [InsightMode.STANDARD]: {
+    label: 'Legacy Endpoint',
+    description: 'Legacy endpoint (uses same engine as Battery Guru)',
+    features: [
+      'Same capabilities as Battery Guru',
+      'Maintained for backward compatibility',
+      'Recommended to use Battery Guru directly instead'
+    ]
+  }
+};
