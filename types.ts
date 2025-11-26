@@ -1,10 +1,3 @@
-/**
- * BMSview Type Definitions
- * 
- * This file contains all TypeScript type definitions for the BMSview application.
- * Synced with main branch as of 2025-11-26.
- */
-
 // Fix: Add global type definitions for Vite environment variables
 declare global {
   interface ImportMetaEnv {
@@ -209,7 +202,7 @@ export interface InsightsRequestConfig {
   isCustomQuery?: boolean; // Whether this is a custom user query
 }
 
-// Insight generation modes
+// Insight generation modes - Added for UI mode selector feature
 export enum InsightMode {
   WITH_TOOLS = 'with-tools',      // AI "Battery Guru" with function calling (default, most comprehensive)
   STANDARD = 'standard'           // Legacy endpoint (proxies to WITH_TOOLS for backward compatibility)
