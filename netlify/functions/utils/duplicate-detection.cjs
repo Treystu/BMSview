@@ -26,12 +26,22 @@ function calculateSimilarity(str1, str2) {
   // Exact match
   if (s1 === s2) return 1.0;
   
+  // Both empty - consider identical
+  if (s1.length === 0 && s2.length === 0) return 1.0;
+  
   // Calculate Jaccard similarity using word sets
-  const words1 = new Set(s1.split(/\s+/));
-  const words2 = new Set(s2.split(/\s+/));
+  const words1 = new Set(s1.split(/\s+/).filter(w => w.length > 0));
+  const words2 = new Set(s2.split(/\s+/).filter(w => w.length > 0));
+  
+  // Handle empty word sets
+  if (words1.size === 0 && words2.size === 0) return 1.0;
+  if (words1.size === 0 || words2.size === 0) return 0;
   
   const intersection = new Set([...words1].filter(x => words2.has(x)));
   const union = new Set([...words1, ...words2]);
+  
+  // Prevent division by zero (shouldn't happen after checks above, but defensive)
+  if (union.size === 0) return 0;
   
   return intersection.size / union.size;
 }

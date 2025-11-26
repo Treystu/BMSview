@@ -327,6 +327,7 @@ async function calculateComputedMetrics(systemId, rawData, options) {
 // Health score thresholds
 const HEALTH_SCORE_THRESHOLDS = {
   CELL_VOLTAGE_DIFF_MAX: 0.1,          // Maximum acceptable cell voltage difference (V)
+  CELL_VOLTAGE_DIFF_PENALTY: 10,       // Points deducted for high cell voltage difference
   ALERT_PENALTY_PER_ITEM: 5,           // Points deducted per alert
   SOC_LOW_THRESHOLD: 20,               // SOC percentage considered low
   SOC_LOW_PENALTY: 15,                 // Points deducted for low SOC
@@ -373,7 +374,7 @@ function calculateHealthScore(analysis) {
   
   // Deduct points for issues using configurable thresholds
   if (analysis.cellVoltageDifference > HEALTH_SCORE_THRESHOLDS.CELL_VOLTAGE_DIFF_MAX) {
-    score -= HEALTH_SCORE_THRESHOLDS.TEMP_HIGH_PENALTY;
+    score -= HEALTH_SCORE_THRESHOLDS.CELL_VOLTAGE_DIFF_PENALTY;
   }
   if (analysis.alerts && analysis.alerts.length > 0) {
     score -= analysis.alerts.length * HEALTH_SCORE_THRESHOLDS.ALERT_PENALTY_PER_ITEM;

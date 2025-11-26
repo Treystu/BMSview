@@ -1,3 +1,24 @@
+/**
+ * FeedbackAnalytics Component
+ * 
+ * Displays comprehensive analytics and metrics for the AI feedback system.
+ * Shows total feedback count, acceptance rates, implementation rates, and trends.
+ * Provides visual representations of feedback distribution by status, priority, and category.
+ * 
+ * @component
+ * @example
+ * ```tsx
+ * <FeedbackAnalytics />
+ * ```
+ * 
+ * Features:
+ * - Summary cards with key metrics (total, acceptance rate, implementation rate, avg review time)
+ * - Visual charts for status and priority distributions
+ * - Top categories ranking
+ * - 30-day trend analysis
+ * - Auto-refresh capability
+ * - Loading and error states
+ */
 import React, { useState, useEffect } from 'react';
 
 interface FeedbackAnalytics {
