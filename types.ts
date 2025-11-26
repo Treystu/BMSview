@@ -205,8 +205,7 @@ export interface InsightsRequestConfig {
 // Insight generation modes
 export enum InsightMode {
   WITH_TOOLS = 'with-tools',      // AI "Battery Guru" with function calling (default, most comprehensive)
-  BACKGROUND = 'background',      // Long-running insights jobs (>60s timeout)
-  STANDARD = 'standard'           // Legacy standard insights generation
+  STANDARD = 'standard'           // Legacy endpoint (proxies to WITH_TOOLS for backward compatibility)
 }
 
 // Human-readable descriptions for each mode
@@ -218,27 +217,16 @@ export const InsightModeDescriptions: Record<InsightMode, { label: string; descr
       'Can request specific historical data on-demand',
       'Multi-turn conversation with AI reasoning',
       'Comprehensive analysis with 90-day rollups',
-      'Best for complex questions and deep insights'
-    ]
-  },
-  [InsightMode.BACKGROUND]: {
-    label: 'Background Processing',
-    description: 'For very complex queries that need more time',
-    features: [
-      'Allows unlimited processing time',
-      'Best for queries analyzing large datasets',
-      'Continues processing in background',
-      'Polls for status updates'
+      'Best for all types of questions and insights'
     ]
   },
   [InsightMode.STANDARD]: {
-    label: 'Quick Insights',
-    description: 'Fast, simple insights generation',
+    label: 'Legacy Endpoint',
+    description: 'Legacy endpoint (uses same engine as Battery Guru)',
     features: [
-      'Faster processing time',
-      'Basic analysis without tool calling',
-      'Good for quick checks',
-      'Limited to standard patterns'
+      'Same capabilities as Battery Guru',
+      'Maintained for backward compatibility',
+      'Recommended to use Battery Guru directly instead'
     ]
   }
 };

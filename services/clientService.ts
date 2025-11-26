@@ -625,6 +625,20 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
     onComplete();
 };
 
+/**
+ * Select the appropriate insights endpoint based on the chosen mode
+ * Exported for testing purposes
+ */
+export function selectEndpointForMode(mode: InsightMode): string {
+    switch (mode) {
+        case InsightModeEnum.STANDARD:
+            return '/.netlify/functions/generate-insights';
+        case InsightModeEnum.WITH_TOOLS:
+        default:
+            return '/.netlify/functions/generate-insights-with-tools';
+    }
+}
+
 export const streamInsights = async (
     payload: {
         analysisData: AnalysisData;
@@ -645,20 +659,7 @@ export const streamInsights = async (
     
     // Determine endpoint based on selected mode
     const mode = payload.insightMode || InsightModeEnum.WITH_TOOLS;
-    let endpoint: string;
-    
-    switch (mode) {
-        case InsightModeEnum.BACKGROUND:
-            endpoint = '/.netlify/functions/generate-insights-background';
-            break;
-        case InsightModeEnum.STANDARD:
-            endpoint = '/.netlify/functions/generate-insights';
-            break;
-        case InsightModeEnum.WITH_TOOLS:
-        default:
-            endpoint = '/.netlify/functions/generate-insights-with-tools';
-            break;
-    }
+    const endpoint = selectEndpointForMode(mode);
 
     let contextSummarySent = false;
     

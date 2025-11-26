@@ -17,13 +17,9 @@ const InsightModeLoadingStates: Record<InsightMode, { title: string; description
     title: '🤖 AI Battery Guru Thinking...',
     description: 'Analyzing your battery data with intelligent querying. The AI can request specific historical data on-demand to answer your questions.'
   },
-  [InsightMode.BACKGROUND]: {
-    title: '⏳ Processing in Background...',
-    description: 'Processing your complex query in the background. This may take several minutes for large datasets. You can continue using the app while we work.'
-  },
   [InsightMode.STANDARD]: {
-    title: '⚡ Generating Quick Insights...',
-    description: 'Running fast analysis using standard patterns. This should complete quickly with basic insights.'
+    title: '⚡ Generating Insights...',
+    description: 'Processing your request using the legacy endpoint (same capabilities as Battery Guru).'
   }
 };
 
@@ -268,28 +264,21 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           {!circuitBreakerOpen && (
             <div className="mt-4 p-3 bg-blue-50 border border-blue-300 rounded-lg">
               <p className="text-blue-900 text-sm font-semibold mb-2">
-                💡 Suggestions based on current mode ({InsightModeDescriptions[selectedMode].label}):
+                💡 Suggestions to resolve this error:
               </p>
               <ul className="text-blue-800 text-sm space-y-1 list-disc list-inside">
                 {selectedMode === InsightMode.WITH_TOOLS && (
                   <>
-                    <li>Try switching to <strong>Quick Insights</strong> mode for faster processing</li>
                     <li>Reduce the data analysis window (currently {getContextWindowLabel(contextWindowDays)})</li>
                     <li>Ask a simpler, more specific question</li>
-                  </>
-                )}
-                {selectedMode === InsightMode.BACKGROUND && (
-                  <>
-                    <li>Check the job status - it may still be processing</li>
-                    <li>Try <strong>Battery Guru</strong> mode with a shorter time window</li>
-                    <li>Reduce the complexity of your query</li>
+                    <li>Try again in a few moments if the service is busy</li>
                   </>
                 )}
                 {selectedMode === InsightMode.STANDARD && (
                   <>
-                    <li>This mode has limited capabilities - try <strong>Battery Guru</strong> instead</li>
+                    <li>This is a legacy endpoint - use <strong>Battery Guru</strong> mode directly for better support</li>
+                    <li>Reduce the data analysis window (currently {getContextWindowLabel(contextWindowDays)})</li>
                     <li>Ensure your system has enough historical data</li>
-                    <li>Verify your system is properly configured</li>
                   </>
                 )}
               </ul>
@@ -321,26 +310,13 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           )}
           
           {!circuitBreakerOpen && (
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3">
               <button
                 onClick={() => handleGenerateInsights(customPrompt || undefined)}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
               >
                 🔄 Retry with Current Mode
               </button>
-              {selectedMode !== InsightMode.STANDARD && (
-                <button
-                  onClick={() => {
-                    // Set mode to STANDARD for UI display
-                    setSelectedMode(InsightMode.STANDARD);
-                    // Pass STANDARD mode explicitly to avoid race condition with state update
-                    handleGenerateInsights(customPrompt || undefined, InsightMode.STANDARD);
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                  ⚡ Try Quick Insights Instead
-                </button>
-              )}
             </div>
           )}
         </div>

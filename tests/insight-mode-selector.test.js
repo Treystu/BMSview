@@ -7,29 +7,25 @@
  * - Mode-specific behavior is properly configured
  */
 
-// Helper function to select endpoint based on mode (mirrors implementation in clientService.ts)
-function selectEndpointForMode(mode) {
-  switch (mode) {
-    case 'background':
-      return '/.netlify/functions/generate-insights-background';
-    case 'standard':
-      return '/.netlify/functions/generate-insights';
-    case 'with-tools':
-    default:
-      return '/.netlify/functions/generate-insights-with-tools';
-  }
-}
-
+// Import the actual endpoint selector from clientService.ts to avoid duplication
+// Note: This requires the function to be exported from clientService.ts
 describe('InsightMode Selector Functionality', () => {
   describe('Mode Selection Logic', () => {
+    // Helper function that mirrors the implementation for testing
+    // This is kept in the test to avoid circular dependencies with TypeScript imports
+    function selectEndpointForMode(mode) {
+      switch (mode) {
+        case 'standard':
+          return '/.netlify/functions/generate-insights';
+        case 'with-tools':
+        default:
+          return '/.netlify/functions/generate-insights-with-tools';
+      }
+    }
+
     test('should select correct endpoint for WITH_TOOLS mode', () => {
       const endpoint = selectEndpointForMode('with-tools');
       expect(endpoint).toBe('/.netlify/functions/generate-insights-with-tools');
-    });
-
-    test('should select correct endpoint for BACKGROUND mode', () => {
-      const endpoint = selectEndpointForMode('background');
-      expect(endpoint).toBe('/.netlify/functions/generate-insights-background');
     });
 
     test('should select correct endpoint for STANDARD mode', () => {
@@ -56,15 +52,10 @@ describe('InsightMode Selector Functionality', () => {
           endpoint: '/.netlify/functions/generate-insights-with-tools',
           features: ['function calling', 'multi-turn', 'comprehensive']
         },
-        'background': {
-          label: 'Background Processing',
-          endpoint: '/.netlify/functions/generate-insights-background',
-          features: ['unlimited time', 'large datasets', 'polling']
-        },
         'standard': {
-          label: 'Quick Insights',
+          label: 'Legacy Endpoint',
           endpoint: '/.netlify/functions/generate-insights',
-          features: ['fast', 'simple', 'basic patterns']
+          features: ['backward compatibility', 'proxies to Battery Guru']
         }
       };
 
@@ -79,7 +70,7 @@ describe('InsightMode Selector Functionality', () => {
     });
 
     test('mode values should match backend conventions', () => {
-      const validModes = ['with-tools', 'background', 'standard'];
+      const validModes = ['with-tools', 'standard'];
       
       validModes.forEach(mode => {
         expect(typeof mode).toBe('string');
@@ -89,22 +80,17 @@ describe('InsightMode Selector Functionality', () => {
   });
 
   describe('Error Handling and Fallbacks', () => {
-    test('should suggest alternative modes on error', () => {
+    test('should provide helpful error suggestions', () => {
       const errorSuggestions = {
         'with-tools': [
-          'Try switching to Quick Insights mode',
           'Reduce the data analysis window',
-          'Ask a simpler question'
-        ],
-        'background': [
-          'Check the job status',
-          'Try Battery Guru mode with shorter window',
-          'Reduce query complexity'
+          'Ask a simpler question',
+          'Try again if service is busy'
         ],
         'standard': [
-          'Try Battery Guru instead',
-          'Ensure enough historical data',
-          'Verify system configuration'
+          'Use Battery Guru mode directly for better support',
+          'Reduce the data analysis window',
+          'Ensure enough historical data'
         ]
       };
 
