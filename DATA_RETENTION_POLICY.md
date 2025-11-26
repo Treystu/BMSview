@@ -13,7 +13,7 @@ This document outlines the data retention policies for the BMSview application, 
 ## User Data (BMS Analysis)
 - **Retention Period:** Indefinite (until user deletion)
 - **Data Type:** Uploaded BMS screenshots and extracted analysis data.
-- **Storage:** MongoDB `history` collection.
+- **Storage:** MongoDB `analysis-results` collection.
 - **Mechanism:** Manual deletion by user or admin.
 - **Purpose:** Historical tracking of battery performance.
 

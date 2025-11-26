@@ -22,7 +22,6 @@ function anonymizeSystemProfile(profile) {
     // We need a consistent hash for the same system within a session, 
     // but it shouldn't be reversible to the original ID easily by the AI
     if (safeProfile.id) {
-        safeProfile.originalId = safeProfile.id; // Keep for internal reference if needed, but usually stripped later
         safeProfile.id = crypto.createHash('sha256').update(safeProfile.id).digest('hex').substring(0, 12);
     }
     
@@ -62,7 +61,8 @@ function anonymizeSystemProfile(profile) {
 function anonymizeFeedback(feedback) {
     if (!feedback) return null;
     
-    const safeFeedback = { ...feedback };
+    // Create a deep copy to avoid mutating the original
+    const safeFeedback = JSON.parse(JSON.stringify(feedback));
     
     // Remove user identifiers
     if (safeFeedback.userId) delete safeFeedback.userId;

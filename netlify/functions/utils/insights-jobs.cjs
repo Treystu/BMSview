@@ -375,6 +375,9 @@ async function ensureIndexes(log) {
     await collection.createIndex({ status: 1, createdAt: 1 });
     
     // TTL index to auto-cleanup old jobs after 30 days
+    // Note: If a TTL index with different expireAfterSeconds exists, it won't be updated.
+    // Manual cleanup required: db.insights-jobs.dropIndex({ createdAt: 1 })
+    // Then restart the application to recreate with new settings.
     await collection.createIndex(
       { createdAt: 1 },
       { expireAfterSeconds: 2592000 } // 30 days
