@@ -3,11 +3,13 @@
  * 
  * Allows manual reset of circuit breakers when services have recovered.
  * This is a diagnostic/admin tool for recovering from "stuck" circuit breaker states.
+ * Supports both global and per-tool circuit breakers.
  */
 
 const { createLogger } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { resetCircuitBreaker, resetAllCircuitBreakers } = require('./utils/retry.cjs');
+const { getRegistry } = require('./utils/tool-circuit-breakers.cjs');
 
 function validateEnvironment(log) {
   // No specific env vars required for this function, but good practice to have the hook.
@@ -34,35 +36,63 @@ exports.handler = async (event, context) => {
   try {
     // Parse request
     const body = event.body ? JSON.parse(event.body) : {};
-    const { key, resetAll } = body;
+    const { key, toolName, resetAll, resetAllTools } = body;
 
     log.info('Circuit breaker reset requested', {
       hasKey: !!key,
-      resetAll: !!resetAll
+      hasToolName: !!toolName,
+      resetAll: !!resetAll,
+      resetAllTools: !!resetAllTools
     });
 
-    let result;
+    const results = {};
 
+    // Reset global circuit breakers
     if (resetAll) {
-      // Reset all circuit breakers
-      result = resetAllCircuitBreakers();
-      log.info('All circuit breakers reset', {
-        count: result.count
+      results.global = resetAllCircuitBreakers();
+      log.info('All global circuit breakers reset', {
+        count: results.global.count
       });
     } else if (key) {
-      // Reset specific circuit breaker
-      result = resetCircuitBreaker(key);
-      log.info('Circuit breaker reset', {
+      results.global = resetCircuitBreaker(key);
+      log.info('Global circuit breaker reset', {
         key,
-        wasOpen: result.wasOpen,
-        previousFailures: result.previousFailures
+        wasOpen: results.global.wasOpen,
+        previousFailures: results.global.previousFailures
       });
-    } else {
+    }
+
+    // Reset tool-specific circuit breakers
+    const toolRegistry = getRegistry();
+    
+    if (resetAllTools) {
+      const count = toolRegistry.resetAll(log);
+      results.tools = {
+        count,
+        resetAt: new Date().toISOString()
+      };
+      log.info('All tool circuit breakers reset', { count });
+    } else if (toolName) {
+      const success = toolRegistry.resetBreaker(toolName, log);
+      results.tools = {
+        toolName,
+        success,
+        resetAt: new Date().toISOString()
+      };
+      log.info('Tool circuit breaker reset', { toolName, success });
+    }
+
+    // Check if any reset was performed
+    if (!results.global && !results.tools) {
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          error: 'Either "key" or "resetAll" must be provided'
+          error: 'At least one reset parameter must be provided',
+          validParameters: {
+            global: 'key or resetAll',
+            tools: 'toolName or resetAllTools'
+          }
         })
       };
     }
@@ -72,7 +102,7 @@ exports.handler = async (event, context) => {
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         success: true,
-        ...result
+        ...results
       })
     };
 
