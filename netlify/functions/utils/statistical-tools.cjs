@@ -25,6 +25,11 @@ async function runStatisticalAnalysis(data) {
       return null;
     }
     
+    // Need at least 2 data points for sample variance
+    if (validData.length < 2) {
+      return null;
+    }
+    
     const sorted = [...validData].sort((a, b) => a - b);
     const sum = validData.reduce((acc, val) => acc + val, 0);
     const mean = sum / validData.length;
@@ -196,9 +201,11 @@ async function runAnomalyDetection(data, options = {}) {
       return null;
     }
     
-    // Calculate mean and standard deviation
+    // Calculate mean and standard deviation (using sample variance with n-1 for consistency)
     const mean = validData.reduce((acc, val) => acc + val, 0) / validData.length;
-    const variance = validData.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / validData.length;
+    const variance = validData.length > 1
+      ? validData.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / (validData.length - 1)
+      : 0;
     const stdDev = Math.sqrt(variance);
     
     // Detect anomalies (values beyond threshold standard deviations)

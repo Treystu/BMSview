@@ -6,8 +6,7 @@
 
 const { createLogger } = require('./utils/logger.cjs');
 const { buildCompleteContext, countDataPoints } = require('./utils/full-context-builder.cjs');
-const { executeReActLoop } = require('./utils/react-loop.cjs');
-const { submitFeedbackToDatabase } = require('./ai-feedback.cjs');
+const { submitFeedbackToDatabase } = require('./utils/feedback-manager.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 const GEMINI_SYSTEM_PROMPT = `

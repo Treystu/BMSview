@@ -240,15 +240,165 @@ export interface AIFeedback {
   };
 }
 
+// Full Context Data - specific interfaces for type safety
+export interface CellDataPoint {
+  timestamp: string;
+  cellVoltages: number[];
+  highestCell?: number | null;
+  lowestCell?: number | null;
+  difference?: number | null;
+}
+
+export interface TemperatureReading {
+  timestamp: string;
+  temperature?: number | null;
+  temperatures?: number[];
+  mosTemperature?: number | null;
+}
+
+export interface VoltageReading {
+  timestamp: string;
+  voltage: number | null;
+}
+
+export interface CurrentReading {
+  timestamp: string;
+  current: number | null;
+  power?: number | null;
+}
+
+export interface AlarmEvent {
+  timestamp: string;
+  alert: string;
+}
+
+export interface StateChange {
+  timestamp: string;
+  from: string | null;
+  to: string;
+}
+
+export interface StatisticalAnalysisResult {
+  descriptive: {
+    mean: number;
+    median: number;
+    standardDeviation: number;
+    variance: number;
+    min: number;
+    max: number;
+    range: number;
+    count: number;
+  };
+  percentiles: {
+    p5: number;
+    p25: number;
+    p50: number;
+    p75: number;
+    p95: number;
+    p99: number;
+  };
+  outliers: {
+    count: number;
+    percentage: number;
+    values: Array<{ index: number; value: number; deviationFromMean: number }>;
+  };
+}
+
+export interface TrendAnalysisResult {
+  trend: 'increasing' | 'decreasing' | 'stable';
+  slope: number;
+  intercept: number;
+  rSquared: number;
+  confidence: 'high' | 'medium' | 'low';
+  changePoints: Array<{
+    index: number;
+    timestamp: number;
+    changeMagnitude: number;
+    beforeMean: number;
+    afterMean: number;
+  }>;
+}
+
+export interface AnomalyDetectionResult {
+  anomalies: Array<{
+    index: number;
+    value: number;
+    anomalyScore: number;
+    isAnomaly: boolean;
+  }>;
+  anomalyRate: number;
+  totalAnomalies: number;
+  threshold: number;
+  mean: number;
+  stdDev: number;
+}
+
+export interface CorrelationAnalysisResult {
+  matrix: Record<string, Record<string, number>>;
+  strongCorrelations: Array<{
+    var1: string;
+    var2: string;
+    correlation: number;
+    strength: string;
+    direction: string;
+  }>;
+  totalPairs: number;
+}
+
+export interface WeatherHistoryPoint {
+  timestamp: string;
+  temp?: number;
+  clouds?: number;
+  uvi?: number;
+  weather_main?: string;
+  weather_icon?: string;
+  estimated_irradiance_w_m2?: number;
+}
+
+export interface SolarProductionPoint {
+  timestamp: string;
+  predicted?: number | null;
+  actual?: number | null;
+}
+
+export interface SystemConfig {
+  name: string;
+  chemistry: string;
+  voltage: number | null;
+  capacity: number | null;
+  location: {
+    latitude: number | null;
+    longitude: number | null;
+  };
+}
+
+export interface BatterySpecs {
+  nominalVoltage: number | null;
+  capacityAh: number | null;
+  chemistry: string;
+}
+
+export interface RemainingLifeExpectancy {
+  remainingCycles: number;
+  remainingYears: number;
+  estimatedEndDate: string;
+}
+
+export interface PerformanceDegradation {
+  totalDegradation: number;
+  degradationPerYear: number;
+  timeRangeDays: number;
+}
+
 export interface FullContextData {
   raw: {
     allAnalyses: AnalysisRecord[];
-    allCellData: any[];
-    allTemperatureReadings: any[];
-    allVoltageReadings: any[];
-    allCurrentReadings: any[];
-    allAlarms: any[];
-    allStateChanges: any[];
+    allCellData: CellDataPoint[];
+    allTemperatureReadings: TemperatureReading[];
+    allVoltageReadings: VoltageReading[];
+    allCurrentReadings: CurrentReading[];
+    allAlarms: AlarmEvent[];
+    allStateChanges: StateChange[];
     timeRange: {
       start: string;
       end: string;
@@ -257,23 +407,23 @@ export interface FullContextData {
     totalDataPoints: number;
   };
   toolOutputs: {
-    statisticalAnalysis: any;
-    trendAnalysis: any;
-    anomalyDetection: any;
-    correlationAnalysis: any;
+    statisticalAnalysis: StatisticalAnalysisResult | null;
+    trendAnalysis: TrendAnalysisResult | null;
+    anomalyDetection: AnomalyDetectionResult | null;
+    correlationAnalysis: CorrelationAnalysisResult | null;
   };
   external: {
-    weatherHistory: any[];
-    solarProduction: any[];
+    weatherHistory: WeatherHistoryPoint[];
+    solarProduction: SolarProductionPoint[];
   };
   metadata: {
-    systemConfig: any;
-    batterySpecs: any;
+    systemConfig: SystemConfig | null;
+    batterySpecs: BatterySpecs | null;
   };
   computed: {
     healthScore: number | null;
-    remainingLifeExpectancy: any;
-    performanceDegradation: any;
+    remainingLifeExpectancy: RemainingLifeExpectancy | null;
+    performanceDegradation: PerformanceDegradation | null;
   };
   buildTimestamp: string;
   buildDurationMs: number;

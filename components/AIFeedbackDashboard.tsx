@@ -37,6 +37,10 @@ export const AIFeedbackDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
+  const [confirmModal, setConfirmModal] = useState<{ show: boolean; feedbackId: string | null }>({
+    show: false,
+    feedbackId: null
+  });
 
   useEffect(() => {
     fetchAIFeedback();
@@ -80,15 +84,12 @@ export const AIFeedbackDashboard: React.FC = () => {
       await fetchAIFeedback();
     } catch (err) {
       console.error('Error updating status:', err);
-      alert('Failed to update status');
+      setError(err instanceof Error ? err.message : 'Failed to update status');
     }
   };
 
   const handleCreateGitHubIssue = async (feedbackId: string) => {
     try {
-      const confirmed = confirm('Create a GitHub issue for this feedback?');
-      if (!confirmed) return;
-
       const response = await fetch('/.netlify/functions/create-github-issue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -101,13 +102,18 @@ export const AIFeedbackDashboard: React.FC = () => {
       }
 
       const data = await response.json();
-      alert(`GitHub Issue #${data.issueNumber} created successfully!`);
+      setError(null);
       
       // Refresh the list
       await fetchAIFeedback();
+      
+      // Show success message (you could use a toast notification here)
+      console.log(`GitHub Issue #${data.issueNumber} created successfully!`);
     } catch (err) {
       console.error('Error creating GitHub issue:', err);
-      alert(err instanceof Error ? err.message : 'Failed to create GitHub issue');
+      setError(err instanceof Error ? err.message : 'Failed to create GitHub issue');
+    } finally {
+      setConfirmModal({ show: false, feedbackId: null });
     }
   };
 
@@ -170,6 +176,74 @@ export const AIFeedbackDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Error Alert (non-blocking) */}
+      {error && (
+        <div role="alert" className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start">
+          <svg className="h-5 w-5 text-red-400 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+          </svg>
+          <div className="flex-1">
+            <p className="text-sm text-red-800">{error}</p>
+          </div>
+          <button
+            onClick={() => setError(null)}
+            className="ml-3 inline-flex text-red-400 hover:text-red-600"
+            aria-label="Dismiss error"
+          >
+            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmModal.show && (
+        <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onClick={() => setConfirmModal({ show: false, feedbackId: null })}></div>
+            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-green-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                      Create GitHub Issue
+                    </h3>
+                    <div className="mt-2">
+                      <p className="text-sm text-gray-500">
+                        This will create a formatted GitHub issue for this feedback. The issue will include all details, code snippets, and affected components.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick={() => confirmModal.feedbackId && handleCreateGitHubIssue(confirmModal.feedbackId)}
+                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Create Issue
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmModal({ show: false, feedbackId: null })}
+                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Analytics Section */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
         <h3 className="text-xl font-semibold text-gray-900 mb-4">📊 Feedback Analytics</h3>
@@ -260,6 +334,7 @@ export const AIFeedbackDashboard: React.FC = () => {
                     <select
                       value={feedback.status}
                       onChange={(e) => handleStatusUpdate(feedback.id, e.target.value)}
+                      aria-label={`Update status for ${feedback.suggestion.title}`}
                       className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
                     >
                       <option value="pending">Pending</option>
@@ -270,7 +345,7 @@ export const AIFeedbackDashboard: React.FC = () => {
                     </select>
                     {!feedback.githubIssue && (
                       <button
-                        onClick={() => handleCreateGitHubIssue(feedback.id)}
+                        onClick={() => setConfirmModal({ show: true, feedbackId: feedback.id })}
                         className="px-3 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
                       >
                         Create GitHub Issue

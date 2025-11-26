@@ -3,7 +3,7 @@
  * Tests for Full Context Mode and AI Feedback System
  */
 
-const { buildCompleteContext, countDataPoints } = require('../netlify/functions/utils/full-context-builder.cjs');
+const { countDataPoints } = require('../netlify/functions/utils/full-context-builder.cjs');
 const { runStatisticalAnalysis, runTrendAnalysis, runAnomalyDetection, runCorrelationAnalysis } = require('../netlify/functions/utils/statistical-tools.cjs');
 const { calculateSimilarity, findSimilarFeedback } = require('../netlify/functions/utils/duplicate-detection.cjs');
 
