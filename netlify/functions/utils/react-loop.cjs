@@ -82,6 +82,11 @@ const INITIALIZATION_BUDGET_RATIO = 0.6; // Use 60% of budget for initialization
 // Retry backoff settings - LINEAR (1s increments)
 const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
 
+// Lazy AI Detection settings
+const RECENT_TOOL_FAILURE_WINDOW = 5; // Check last 5 messages for tool failures
+const MAX_CONSECUTIVE_LAZY_RESPONSES = 2; // Fail gracefully after 2 consecutive lazy responses
+const LAZY_AI_FALLBACK_MESSAGE = "Unable to retrieve the requested data. Please try a simpler query or check the available data range.";
+
 /**
  * Analyze Gemini's response text to detect what it's struggling with
  * Uses keyword extraction to identify which tool or concept needs guidance
@@ -1484,8 +1489,8 @@ async function executeReActLoop(params) {
                     // 5. No recent tool failures (legitimate unavailability after failed attempts)
                     const isLazy = lazinessTriggers.some(t => lowerAnswer.includes(t));
                     
-                    // Check if recent tool calls failed (last 5 messages)
-                    const recentToolFailures = conversationHistory.slice(-5).some(msg =>
+                    // Check if recent tool calls failed (last N messages, where N = RECENT_TOOL_FAILURE_WINDOW)
+                    const recentToolFailures = conversationHistory.slice(-RECENT_TOOL_FAILURE_WINDOW).some(msg =>
                         msg.role === 'function' &&
                         Array.isArray(msg.parts) &&
                         msg.parts.some(p => p.functionResponse && p.functionResponse.response && p.functionResponse.response.error)
@@ -1494,12 +1499,13 @@ async function executeReActLoop(params) {
                     if (isLazy && toolCallCount === 0 && isCustomQuery && turnCount < MAX_TURNS - 1 && !recentToolFailures) {
                         consecutiveLazyResponses++;
                         
-                        if (consecutiveLazyResponses > 2) {
+                        if (consecutiveLazyResponses > MAX_CONSECUTIVE_LAZY_RESPONSES) {
                             log.error('AI repeatedly claiming no data after interventions', { 
                                 turn: turnCount,
-                                consecutiveCount: consecutiveLazyResponses 
+                                consecutiveCount: consecutiveLazyResponses,
+                                maxAllowed: MAX_CONSECUTIVE_LAZY_RESPONSES
                             });
-                            finalAnswer = "Unable to retrieve the requested data. Please try a simpler query or check the available data range.";
+                            finalAnswer = LAZY_AI_FALLBACK_MESSAGE;
                             break;
                         }
                         
