@@ -1,4 +1,5 @@
-import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData, AnalysisStory, StoryPhoto, AdminStory, AdminStoriesResponse } from '../types';
+import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData, AnalysisStory, StoryPhoto, AdminStory, AdminStoriesResponse, InsightMode } from '../types';
+import { InsightMode as InsightModeEnum } from '../types';
 
 interface PaginatedResponse<T> {
     items: T[];
@@ -624,6 +625,20 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
     onComplete();
 };
 
+/**
+ * Select the appropriate insights endpoint based on the chosen mode
+ * Exported for testing purposes
+ */
+export function selectEndpointForMode(mode: InsightMode): string {
+    switch (mode) {
+        case InsightModeEnum.STANDARD:
+            return '/.netlify/functions/generate-insights';
+        case InsightModeEnum.WITH_TOOLS:
+        default:
+            return '/.netlify/functions/generate-insights-with-tools';
+    }
+}
+
 export const streamInsights = async (
     payload: {
         analysisData: AnalysisData;
@@ -633,6 +648,7 @@ export const streamInsights = async (
         contextWindowDays?: number; // Days of historical data to retrieve
         maxIterations?: number; // Max ReAct loop iterations
         modelOverride?: string; // Optional Gemini model override
+        insightMode?: InsightMode; // Selected insight generation mode
         consentGranted?: boolean; // User consent for AI analysis
     },
     onChunk: (chunk: string) => void,
@@ -641,8 +657,10 @@ export const streamInsights = async (
     onStart?: () => void
 ) => {
     onStart?.();
-    // Always use the fully-featured ReAct loop implementation
-    const endpoint = '/.netlify/functions/generate-insights-with-tools';
+    
+    // Determine endpoint based on selected mode
+    const mode = payload.insightMode || InsightModeEnum.WITH_TOOLS;
+    const endpoint = selectEndpointForMode(mode);
 
     let contextSummarySent = false;
     
@@ -665,6 +683,7 @@ export const streamInsights = async (
         contextWindowDays: payload.contextWindowDays,
         maxIterations: payload.maxIterations,
         modelOverride: payload.modelOverride,
+        insightMode: mode, // Mode determines endpoint (see switch above)
         dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
     });
 
@@ -698,6 +717,7 @@ export const streamInsights = async (
             // Build request body with resumeJobId if available
             const requestBody: any = {
                 ...payload,
+                insightMode: mode, // Include for logging consistency
                 mode: 'sync' // Explicitly use sync mode for checkpoint/resume
             };
             
