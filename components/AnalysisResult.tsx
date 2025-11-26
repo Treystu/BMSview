@@ -111,7 +111,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
     return option ? option.label : `${days} days`;
   };
 
-  const handleGenerateInsights = async (prompt?: string) => {
+  const handleGenerateInsights = async (prompt?: string, overrideMode?: InsightMode) => {
     setIsLoading(true);
     setAnalysisStatus('initializing');
     setError(null);
@@ -128,7 +128,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           modelOverride: getEffectiveModel() || undefined, // Pass model override if selected
           // Iteration limits: 20 for custom queries, 10 for standard (matches react-loop.cjs constants)
           maxIterations: prompt ? 20 : 10,
-          insightMode: selectedMode // Pass selected insight mode
+          insightMode: overrideMode || selectedMode // Use override mode if provided, otherwise use selected mode
         },
         (chunk) => {
           setInsights(prev => prev + chunk);
@@ -331,8 +331,10 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               {selectedMode !== InsightMode.STANDARD && (
                 <button
                   onClick={() => {
+                    // Set mode to STANDARD for UI display
                     setSelectedMode(InsightMode.STANDARD);
-                    setTimeout(() => handleGenerateInsights(customPrompt || undefined), 100);
+                    // Pass STANDARD mode explicitly to avoid race condition with state update
+                    handleGenerateInsights(customPrompt || undefined, InsightMode.STANDARD);
                   }}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                 >

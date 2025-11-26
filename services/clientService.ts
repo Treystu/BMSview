@@ -681,8 +681,7 @@ export const streamInsights = async (
         contextWindowDays: payload.contextWindowDays,
         maxIterations: payload.maxIterations,
         modelOverride: payload.modelOverride,
-        insightMode: mode,
-        endpoint,
+        insightMode: mode, // Mode determines endpoint (see switch above)
         dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
     });
 
