@@ -13,6 +13,7 @@ const { toolDefinitions, executeToolCall } = require('./gemini-tools.cjs');
 const { buildGuruPrompt, collectAutoInsightsContext, buildQuickReferenceCatalog } = require('./insights-guru.cjs');
 const { createLogger } = require('./logger.cjs');
 const { validateResponseFormat, buildCorrectionPrompt } = require('./response-validator.cjs');
+const { logAIOperation, checkForAnomalies } = require('./metrics-collector.cjs');
 
 // Default iteration limits - can be overridden via params
 const DEFAULT_MAX_TURNS = 10; // Increased from 5 to 10 for standard insights
@@ -1599,6 +1600,34 @@ async function executeReActLoop(params) {
             answerLength: finalAnswer.length
         });
 
+        // Log operation metrics for successful insights generation
+        try {
+            await logAIOperation({
+                operation: 'insights',
+                systemId: systemId,
+                duration: totalDurationMs,
+                tokensUsed: 0, // Token tracking would need to be added to geminiClient
+                success: true,
+                model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+                contextWindowDays: contextWindowDays,
+                metadata: {
+                    turns: turnCount + 1,
+                    toolCalls: toolCallCount,
+                    conversationLength: conversationHistory.length,
+                    timedOut: timedOut,
+                    isCustomQuery: isCustomQuery
+                }
+            });
+
+            // Check for anomalies
+            await checkForAnomalies({
+                duration: totalDurationMs
+            });
+        } catch (metricsError) {
+            // Don't fail the operation if metrics logging fails
+            log.warn('Failed to log insights metrics', { error: metricsError.message });
+        }
+
         return {
             success: true,
             finalAnswer,
@@ -1623,6 +1652,21 @@ async function executeReActLoop(params) {
             stack: err.stack,
             durationMs: totalDurationMs
         });
+
+        // Log failed operation metrics
+        try {
+            await logAIOperation({
+                operation: 'insights',
+                systemId: systemId,
+                duration: totalDurationMs,
+                success: false,
+                error: err.message,
+                model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+                contextWindowDays: contextWindowDays
+            });
+        } catch (metricsError) {
+            log.warn('Failed to log error metrics', { error: metricsError.message });
+        }
 
         return {
             success: false,
