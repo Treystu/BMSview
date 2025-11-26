@@ -80,6 +80,7 @@ exports.handler = async (event, context) => {
     const modelOverride = body.modelOverride;
     const initializationComplete = body.initializationComplete;
     const resumeJobId = body.resumeJobId;
+    const consentGranted = body.consentGranted;
 
     // Validate input
     if (!analysisData || !systemId) {
@@ -88,6 +89,20 @@ exports.handler = async (event, context) => {
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           error: 'Either analysisData, systemId, or resumeJobId is required'
+        })
+      };
+    }
+
+    // Verify user consent for AI processing
+    if (consentGranted !== true && !resumeJobId) {
+      log.warn('Insights request rejected: Missing user consent', { systemId });
+      return {
+        statusCode: 403,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          success: false,
+          error: 'consent_required',
+          message: 'User consent is required for AI analysis. Please opt-in to continue.'
         })
       };
     }
@@ -101,7 +116,8 @@ exports.handler = async (event, context) => {
       contextWindowDays,
       maxIterations,
       modelOverride,
-      initializationComplete
+      initializationComplete,
+      consentGranted
     });
 
     // SYNC MODE: Execute ReAct loop with checkpoint/resume support

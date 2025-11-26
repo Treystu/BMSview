@@ -374,10 +374,10 @@ async function ensureIndexes(log) {
     // Index on status and creation time for cleanup queries
     await collection.createIndex({ status: 1, createdAt: 1 });
     
-    // TTL index to auto-cleanup old jobs after 24 hours
+    // TTL index to auto-cleanup old jobs after 30 days
     await collection.createIndex(
-      { createdAt: 1 }, 
-      { expireAfterSeconds: 86400 } // 24 hours
+      { createdAt: 1 },
+      { expireAfterSeconds: 2592000 } // 30 days
     );
     
     log.info('Insights jobs indexes ensured');

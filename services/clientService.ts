@@ -633,6 +633,7 @@ export const streamInsights = async (
         contextWindowDays?: number; // Days of historical data to retrieve
         maxIterations?: number; // Max ReAct loop iterations
         modelOverride?: string; // Optional Gemini model override
+        consentGranted?: boolean; // User consent for AI analysis
     },
     onChunk: (chunk: string) => void,
     onComplete: () => void,
