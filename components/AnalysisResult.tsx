@@ -11,6 +11,22 @@ import SunIcon from './icons/SunIcon';
 import ThermometerIcon from './icons/ThermometerIcon';
 import TypewriterMarkdown from './TypewriterMarkdown';
 
+// Loading state messages for each insight mode
+const InsightModeLoadingStates: Record<InsightMode, { title: string; description: string }> = {
+  [InsightMode.WITH_TOOLS]: {
+    title: '🤖 AI Battery Guru Thinking...',
+    description: 'Analyzing your battery data with intelligent querying. The AI can request specific historical data on-demand to answer your questions.'
+  },
+  [InsightMode.BACKGROUND]: {
+    title: '⏳ Processing in Background...',
+    description: 'Processing your complex query in the background. This may take several minutes for large datasets. You can continue using the app while we work.'
+  },
+  [InsightMode.STANDARD]: {
+    title: '⚡ Generating Quick Insights...',
+    description: 'Running fast analysis using standard patterns. This should complete quickly with basic insights.'
+  }
+};
+
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
   console.log(JSON.stringify({
     level: level.toUpperCase(),
@@ -231,14 +247,10 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
             </div>
             <div className="text-center space-y-2">
               <h5 className="text-lg font-bold text-gray-900">
-                {selectedMode === InsightMode.WITH_TOOLS && '🤖 AI Battery Guru Thinking...'}
-                {selectedMode === InsightMode.BACKGROUND && '⏳ Processing in Background...'}
-                {selectedMode === InsightMode.STANDARD && '⚡ Generating Quick Insights...'}
+                {InsightModeLoadingStates[selectedMode].title}
               </h5>
               <p className="text-sm text-gray-600 max-w-md">
-                {selectedMode === InsightMode.WITH_TOOLS && 'Analyzing your battery data with intelligent querying. The AI can request specific historical data on-demand to answer your questions.'}
-                {selectedMode === InsightMode.BACKGROUND && 'Processing your complex query in the background. This may take several minutes for large datasets. You can continue using the app while we work.'}
-                {selectedMode === InsightMode.STANDARD && 'Running fast analysis using standard patterns. This should complete quickly with basic insights.'}
+                {InsightModeLoadingStates[selectedMode].description}
               </p>
             </div>
           </div>

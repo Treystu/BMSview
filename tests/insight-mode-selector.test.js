@@ -7,86 +7,44 @@
  * - Mode-specific behavior is properly configured
  */
 
+// Helper function to select endpoint based on mode (mirrors implementation in clientService.ts)
+function selectEndpointForMode(mode) {
+  switch (mode) {
+    case 'background':
+      return '/.netlify/functions/generate-insights-background';
+    case 'standard':
+      return '/.netlify/functions/generate-insights';
+    case 'with-tools':
+    default:
+      return '/.netlify/functions/generate-insights-with-tools';
+  }
+}
+
 describe('InsightMode Selector Functionality', () => {
   describe('Mode Selection Logic', () => {
     test('should select correct endpoint for WITH_TOOLS mode', () => {
-      const mode = 'with-tools';
-      let endpoint;
-      
-      switch (mode) {
-        case 'background':
-          endpoint = '/.netlify/functions/generate-insights-background';
-          break;
-        case 'standard':
-          endpoint = '/.netlify/functions/generate-insights';
-          break;
-        case 'with-tools':
-        default:
-          endpoint = '/.netlify/functions/generate-insights-with-tools';
-          break;
-      }
-      
+      const endpoint = selectEndpointForMode('with-tools');
       expect(endpoint).toBe('/.netlify/functions/generate-insights-with-tools');
     });
 
     test('should select correct endpoint for BACKGROUND mode', () => {
-      const mode = 'background';
-      let endpoint;
-      
-      switch (mode) {
-        case 'background':
-          endpoint = '/.netlify/functions/generate-insights-background';
-          break;
-        case 'standard':
-          endpoint = '/.netlify/functions/generate-insights';
-          break;
-        case 'with-tools':
-        default:
-          endpoint = '/.netlify/functions/generate-insights-with-tools';
-          break;
-      }
-      
+      const endpoint = selectEndpointForMode('background');
       expect(endpoint).toBe('/.netlify/functions/generate-insights-background');
     });
 
     test('should select correct endpoint for STANDARD mode', () => {
-      const mode = 'standard';
-      let endpoint;
-      
-      switch (mode) {
-        case 'background':
-          endpoint = '/.netlify/functions/generate-insights-background';
-          break;
-        case 'standard':
-          endpoint = '/.netlify/functions/generate-insights';
-          break;
-        case 'with-tools':
-        default:
-          endpoint = '/.netlify/functions/generate-insights-with-tools';
-          break;
-      }
-      
+      const endpoint = selectEndpointForMode('standard');
       expect(endpoint).toBe('/.netlify/functions/generate-insights');
     });
 
     test('should default to WITH_TOOLS endpoint for unknown mode', () => {
-      const mode = 'unknown';
-      let endpoint;
-      
-      switch (mode) {
-        case 'background':
-          endpoint = '/.netlify/functions/generate-insights-background';
-          break;
-        case 'standard':
-          endpoint = '/.netlify/functions/generate-insights';
-          break;
-        case 'with-tools':
-        default:
-          endpoint = '/.netlify/functions/generate-insights-with-tools';
-          break;
-      }
-      
+      const endpoint = selectEndpointForMode('unknown');
       expect(endpoint).toBe('/.netlify/functions/generate-insights-with-tools');
+    });
+
+    test('should handle null/undefined mode gracefully', () => {
+      expect(selectEndpointForMode(null)).toBe('/.netlify/functions/generate-insights-with-tools');
+      expect(selectEndpointForMode(undefined)).toBe('/.netlify/functions/generate-insights-with-tools');
     });
   });
 

@@ -1,4 +1,5 @@
 import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData, AnalysisStory, StoryPhoto, AdminStory, AdminStoriesResponse, InsightMode } from '../types';
+import { InsightMode as InsightModeEnum } from '../types';
 
 interface PaginatedResponse<T> {
     items: T[];
@@ -641,9 +642,6 @@ export const streamInsights = async (
     onStart?: () => void
 ) => {
     onStart?.();
-    
-    // Import InsightMode enum
-    const { InsightMode: InsightModeEnum } = await import('../types');
     
     // Determine endpoint based on selected mode
     const mode = payload.insightMode || InsightModeEnum.WITH_TOOLS;
