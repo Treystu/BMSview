@@ -69,12 +69,12 @@ const energyBudget = require('./energy-budget.cjs');
 const toolDefinitions = [
   {
     name: 'request_bms_data',
-    description: 'PRIMARY tool for raw data. Returns time-series data arrays.\n' +
-                 '• USE "hourly_avg" for: Detailed analysis of < 30 days (e.g., "last week", "yesterday").\n' +
-                 '• USE "daily_avg" for: Long-term trends > 30 days (e.g., "last month", "battery health trends").\n' +
-                 '• USE "raw" ONLY for: Pinpoint diagnosis of specific 1-2 hour events.\n' +
-                 '• ISO DATES: Ensure time_range_start < time_range_end.\n' +
-                 '• ENERGY FIELDS: Response includes pre-calculated chargingKWh and dischargingKWh per bucket - USE THESE instead of calculating from power.',
+    description: `PRIMARY tool for raw data. Returns time-series data arrays.
+• USE "hourly_avg" for: Detailed analysis of < 30 days (e.g., "last week", "yesterday").
+• USE "daily_avg" for: Long-term trends > 30 days (e.g., "last month", "battery health trends").
+• USE "raw" ONLY for: Pinpoint diagnosis of specific 1-2 hour events.
+• ISO DATES: Ensure time_range_start < time_range_end.
+• ENERGY FIELDS: Response includes pre-calculated chargingKWh and dischargingKWh per bucket - USE THESE instead of calculating from power.`,
     parameters: {
       type: 'object',
       properties: {

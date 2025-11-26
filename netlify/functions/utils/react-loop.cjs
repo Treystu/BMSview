@@ -1162,6 +1162,7 @@ async function executeReActLoop(params) {
         let finalAnswer = null;
         let lastCheckpointTime = startTime; // Track when we last saved a checkpoint
         let timedOut = false; // Track if we exited due to timeout
+        let consecutiveLazyResponses = 0; // Track consecutive lazy AI responses to prevent infinite loops
 
         for (; turnCount < MAX_TURNS; turnCount++) {
             // Check timeout and save checkpoint if needed
@@ -1463,16 +1464,16 @@ async function executeReActLoop(params) {
                 if (textParts.length > 0) {
                     const rawAnswer = textParts.map(p => p.text).join('\n');
                     
-                    // 🚨 LAZY AI DETECTION 🚨
+                    // Lazy AI Detection: Check if AI is claiming data unavailable without attempting to fetch it
                     // Check if the AI is making excuses about missing data without having tried to fetch it
                     const lowerAnswer = rawAnswer.toLowerCase();
                     const lazinessTriggers = [
-                        "i do not have access",
-                        "provide the data",
-                        "data is unavailable",
-                        "cannot see historical",
-                        "unable to retrieve",
-                        "no historical data"
+                        "i do not have access to",
+                        "the data is unavailable",
+                        "cannot see historical data",
+                        "unable to retrieve the data",
+                        "no historical data is available",
+                        "cannot access the requested data"
                     ];
                     
                     // Only intervene if:
@@ -1480,18 +1481,39 @@ async function executeReActLoop(params) {
                     // 2. We haven't run many tools yet (it gave up too early)
                     // 3. It's a custom query (where users expect data lookup)
                     // 4. We have turns remaining
+                    // 5. No recent tool failures (legitimate unavailability after failed attempts)
                     const isLazy = lazinessTriggers.some(t => lowerAnswer.includes(t));
                     
-                    if (isLazy && toolCallCount === 0 && isCustomQuery && turnCount < MAX_TURNS - 1) {
-                        log.warn('⚠️ Detected "Lazy AI" - claiming no data without checking tools', { turn: turnCount });
+                    // Check if recent tool calls failed (last 5 messages)
+                    const recentToolFailures = conversationHistory.slice(-5).some(msg =>
+                        msg.role === 'function' &&
+                        Array.isArray(msg.parts) &&
+                        msg.parts.some(p => p.functionResponse && p.functionResponse.response && p.functionResponse.response.error)
+                    );
+
+                    if (isLazy && toolCallCount === 0 && isCustomQuery && turnCount < MAX_TURNS - 1 && !recentToolFailures) {
+                        consecutiveLazyResponses++;
                         
-                        // Hijack the loop!
-                        // We do NOT accept this as the final answer.
-                        // We push a system intervention message to force tool usage.
+                        if (consecutiveLazyResponses > 2) {
+                            log.error('AI repeatedly claiming no data after interventions', { 
+                                turn: turnCount,
+                                consecutiveCount: consecutiveLazyResponses 
+                            });
+                            finalAnswer = "Unable to retrieve the requested data. Please try a simpler query or check the available data range.";
+                            break;
+                        }
+                        
+                        log.warn('Detected "Lazy AI" - claiming no data without checking tools', { 
+                            turn: turnCount,
+                            consecutiveCount: consecutiveLazyResponses 
+                        });
+                        
+                        // Force the loop to continue by adding an intervention message without setting finalAnswer
+                        // The AI will receive this as a user message on the next iteration
                         conversationHistory.push({
                             role: 'user',
                             parts: [{
-                                text: `⛔ SYSTEM INTERVENTION: You claimed data is unavailable, but you have NOT checked the tools yet.\n\n` +
+                                text: `SYSTEM INTERVENTION: You claimed data is unavailable, but you have NOT checked the tools yet.\n\n` +
                                       `You have access to 'request_bms_data', 'getSystemAnalytics', and others.\n` +
                                       `1. Look at the "DATA AVAILABILITY" section in the first message.\n` +
                                       `2. CALL A TOOL to get the data you need (e.g. request_bms_data).\n` +
@@ -1501,6 +1523,8 @@ async function executeReActLoop(params) {
                         
                         // Continue the loop to let Gemini try again
                         continue;
+                    } else {
+                        consecutiveLazyResponses = 0; // Reset on non-lazy response
                     }
 
                     // If not lazy, accept the answer
