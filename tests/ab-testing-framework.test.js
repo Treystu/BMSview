@@ -379,7 +379,7 @@ describe('A/B Testing Framework', () => {
         );
         
         const [winnerName, winnerStats] = sorted[0];
-        const [runnerUpName, runnerUpStats] = sorted[1];
+        const runnerUpStats = sorted[1][1];
         
         // Check if difference is significant (>10% improvement)
         const improvement = winnerStats.acceptanceRate - runnerUpStats.acceptanceRate;

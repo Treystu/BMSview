@@ -257,7 +257,7 @@ describe('Comprehensive Analytics Module', () => {
       const systemId = 'test-system-health';
       const now = Date.now();
       
-      global __MOCK_DATA__ = {
+      global.__MOCK_DATA__ = {
         systems: [{ 
           id: systemId, 
           voltage: 51.2, 

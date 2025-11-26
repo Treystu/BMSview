@@ -3,10 +3,7 @@
  * Tests hourly aggregation, bucket metrics computation, and data summarization
  */
 
-const { getCollection } = require('../netlify/functions/utils/mongodb.cjs');
-
 // We need to read the actual module to test it
-const fs = require('fs');
 const path = require('path');
 
 // Mock logger
