@@ -1,4 +1,4 @@
-import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData, AnalysisStory, StoryPhoto, AdminStory, AdminStoriesResponse } from '../types';
+import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData, AnalysisStory, StoryPhoto, AdminStory, AdminStoriesResponse, InsightMode } from '../types';
 
 interface PaginatedResponse<T> {
     items: T[];
@@ -633,6 +633,7 @@ export const streamInsights = async (
         contextWindowDays?: number; // Days of historical data to retrieve
         maxIterations?: number; // Max ReAct loop iterations
         modelOverride?: string; // Optional Gemini model override
+        insightMode?: InsightMode; // Selected insight generation mode
     },
     onChunk: (chunk: string) => void,
     onComplete: () => void,
@@ -640,8 +641,26 @@ export const streamInsights = async (
     onStart?: () => void
 ) => {
     onStart?.();
-    // Always use the fully-featured ReAct loop implementation
-    const endpoint = '/.netlify/functions/generate-insights-with-tools';
+    
+    // Import InsightMode enum
+    const { InsightMode: InsightModeEnum } = await import('../types');
+    
+    // Determine endpoint based on selected mode
+    const mode = payload.insightMode || InsightModeEnum.WITH_TOOLS;
+    let endpoint: string;
+    
+    switch (mode) {
+        case InsightModeEnum.BACKGROUND:
+            endpoint = '/.netlify/functions/generate-insights-background';
+            break;
+        case InsightModeEnum.STANDARD:
+            endpoint = '/.netlify/functions/generate-insights';
+            break;
+        case InsightModeEnum.WITH_TOOLS:
+        default:
+            endpoint = '/.netlify/functions/generate-insights-with-tools';
+            break;
+    }
 
     let contextSummarySent = false;
     
@@ -664,6 +683,8 @@ export const streamInsights = async (
         contextWindowDays: payload.contextWindowDays,
         maxIterations: payload.maxIterations,
         modelOverride: payload.modelOverride,
+        insightMode: mode,
+        endpoint,
         dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
     });
 

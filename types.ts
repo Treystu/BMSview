@@ -201,3 +201,44 @@ export interface InsightsRequestConfig {
   maxIterations?: number; // Max ReAct loop iterations (10 for standard, 20 for custom queries)
   isCustomQuery?: boolean; // Whether this is a custom user query
 }
+
+// Insight generation modes
+export enum InsightMode {
+  WITH_TOOLS = 'with-tools',      // AI "Battery Guru" with function calling (default, most comprehensive)
+  BACKGROUND = 'background',      // Long-running insights jobs (>60s timeout)
+  STANDARD = 'standard'           // Legacy standard insights generation
+}
+
+// Human-readable descriptions for each mode
+export const InsightModeDescriptions: Record<InsightMode, { label: string; description: string; features: string[] }> = {
+  [InsightMode.WITH_TOOLS]: {
+    label: 'Battery Guru (Recommended)',
+    description: 'Advanced AI with intelligent data querying',
+    features: [
+      'Can request specific historical data on-demand',
+      'Multi-turn conversation with AI reasoning',
+      'Comprehensive analysis with 90-day rollups',
+      'Best for complex questions and deep insights'
+    ]
+  },
+  [InsightMode.BACKGROUND]: {
+    label: 'Background Processing',
+    description: 'For very complex queries that need more time',
+    features: [
+      'Allows unlimited processing time',
+      'Best for queries analyzing large datasets',
+      'Continues processing in background',
+      'Polls for status updates'
+    ]
+  },
+  [InsightMode.STANDARD]: {
+    label: 'Quick Insights',
+    description: 'Fast, simple insights generation',
+    features: [
+      'Faster processing time',
+      'Basic analysis without tool calling',
+      'Good for quick checks',
+      'Limited to standard patterns'
+    ]
+  }
+};

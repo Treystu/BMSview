@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { streamInsights } from '../services/clientService';
 import { hasOpenCircuitBreakers, resetAllCircuitBreakers } from '../services/circuitBreakerService';
 import type { AnalysisData, BmsSystem, DisplayableAnalysisResult, WeatherData } from '../types';
+import { InsightMode, InsightModeDescriptions } from '../types';
 import { formatError, getIsActualError } from '../utils';
+import { useAppState } from '../state/appState';
 import CloudIcon from './icons/CloudIcon';
 import SpinnerIcon from './icons/SpinnerIcon';
 import SunIcon from './icons/SunIcon';
@@ -28,6 +30,7 @@ interface AnalysisResultProps {
 }
 
 const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: string, systemName?: string }> = ({ analysisData, systemId, systemName }) => {
+  const { state, dispatch } = useAppState();
   const [insights, setInsights] = useState('');
   const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'initializing' | 'streaming' | 'complete' | 'error'>('idle');
   const [isLoading, setIsLoading] = useState(false);
@@ -44,6 +47,12 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   const [modelOverride, setModelOverride] = useState(''); // Empty = use default
   const [customModel, setCustomModel] = useState(''); // For custom model input
   const [useCustomModel, setUseCustomModel] = useState(false); // Toggle between preset and custom
+  
+  // Insight mode selection from global state
+  const selectedMode = state.selectedInsightMode;
+  const setSelectedMode = (mode: InsightMode) => {
+    dispatch({ type: 'SET_INSIGHT_MODE', payload: mode });
+  };
   
   // Available Gemini models (presets)
   const availableModels = [
@@ -102,7 +111,8 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           contextWindowDays, // Pass context window configuration
           modelOverride: getEffectiveModel() || undefined, // Pass model override if selected
           // Iteration limits: 20 for custom queries, 10 for standard (matches react-loop.cjs constants)
-          maxIterations: prompt ? 20 : 10
+          maxIterations: prompt ? 20 : 10,
+          insightMode: selectedMode // Pass selected insight mode
         },
         (chunk) => {
           setInsights(prev => prev + chunk);
@@ -273,6 +283,43 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       )}
       {!isLoading && (
         <div className="p-5 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg space-y-4 border border-gray-200">
+          {/* Insight Mode Selector */}
+          <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
+            <label htmlFor="insight-mode-selector" className="block text-sm font-semibold text-gray-700 mb-3">
+              🎯 Insight Generation Mode: <span className="text-indigo-600">{InsightModeDescriptions[selectedMode].label}</span>
+            </label>
+            <p className="text-xs text-gray-600 mb-3">
+              Choose the analysis approach that best suits your needs. Each mode offers different capabilities and processing times.
+            </p>
+            <select
+              id="insight-mode-selector"
+              value={selectedMode}
+              onChange={(e) => setSelectedMode(e.target.value as InsightMode)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 bg-white cursor-pointer mb-3"
+            >
+              {Object.entries(InsightModeDescriptions).map(([mode, info]) => (
+                <option key={mode} value={mode}>
+                  {info.label}
+                </option>
+              ))}
+            </select>
+            
+            {/* Mode Description and Features */}
+            <div className="mt-3 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+              <p className="text-sm font-medium text-indigo-900 mb-2">
+                {InsightModeDescriptions[selectedMode].description}
+              </p>
+              <ul className="text-xs text-indigo-800 space-y-1">
+                {InsightModeDescriptions[selectedMode].features.map((feature, index) => (
+                  <li key={index} className="flex items-start">
+                    <span className="mr-2">✓</span>
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          
           {/* Context Window Slider */}
           <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
             <label htmlFor="context-window-slider" className="block text-sm font-semibold text-gray-700 mb-3">
