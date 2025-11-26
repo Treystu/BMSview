@@ -625,7 +625,7 @@ async function loadSystemProfile(systemId, log) {
             }
         };
 
-        // Apply anonymization before returning to context context
+        // Apply anonymization before returning to AI context
         return anonymizeSystemProfile(profile);
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));

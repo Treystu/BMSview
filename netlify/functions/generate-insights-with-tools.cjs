@@ -94,15 +94,20 @@ exports.handler = async (event, context) => {
     }
 
     // Verify user consent for AI processing
-    if (consentGranted !== true && !resumeJobId) {
-      log.warn('Insights request rejected: Missing user consent', { systemId });
+    // Strict type checking to prevent bypass via type coercion
+    // Note: Resume requests (resumeJobId) bypass consent check because:
+    // 1. The original job was created with explicit consent
+    // 2. Resume is just continuing an already-authorized analysis
+    // 3. No new data is being submitted (just continuing from checkpoint)
+    if ((typeof consentGranted !== 'boolean' || consentGranted !== true) && !resumeJobId) {
+      log.warn('Insights request rejected: Missing or invalid user consent', { systemId, consentGranted, consentType: typeof consentGranted });
       return {
         statusCode: 403,
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           success: false,
           error: 'consent_required',
-          message: 'User consent is required for AI analysis. Please opt-in to continue.'
+          message: 'User consent is required for AI analysis. Please opt-in to continue. (consentGranted must be boolean true)'
         })
       };
     }
