@@ -20,6 +20,23 @@ const { getCollection } = require('./mongodb.cjs');
 /**
  * Generate comprehensive analytics for a battery system
  * This is the "beef up context" function that calculates EVERYTHING
+ * 
+ * @param {string} systemId - The unique identifier of the battery system
+ * @param {Object} analysisData - Current analysis data from BMS
+ * @param {Object} log - Logger instance for structured logging
+ * @returns {Promise<Object>} Comprehensive analytics object containing:
+ *   - metadata: Generation timestamp and version info
+ *   - currentState: Current battery state (voltage, current, SOC, etc.)
+ *   - loadProfile: Day/night and hourly load patterns
+ *   - energyBalance: Daily/weekly energy generation vs consumption
+ *   - solarPerformance: Solar charging efficiency and irradiance correlation
+ *   - batteryHealth: Degradation, imbalance, temperature analysis
+ *   - usagePatterns: Charge/discharge cycles and patterns
+ *   - trends: Statistical trends and forecasts using linear regression
+ *   - anomalies: Detected outliers and alert patterns
+ *   - weatherImpact: Correlation between weather and battery performance
+ *   - recommendationContext: Structured context for AI recommendations
+ * @throws {Error} If MongoDB connection fails or data retrieval errors occur
  */
 async function generateComprehensiveAnalytics(systemId, analysisData, log) {
   log.info('Generating comprehensive analytics', { systemId });
@@ -139,6 +156,26 @@ async function generateComprehensiveAnalytics(systemId, analysisData, log) {
 
 /**
  * Extract current system state from latest measurements
+ * 
+ * @param {Object} analysisData - Current analysis data from BMS
+ * @param {Array<Object>} records - Historical analysis records
+ * @param {Object} system - System configuration (voltage, capacity)
+ * @returns {Object} Current state object with:
+ *   - timestamp: ISO timestamp of latest reading
+ *   - voltage: Battery voltage in V
+ *   - current: Current in A (positive=charging, negative=discharging)
+ *   - power: Power in W
+ *   - soc: State of charge percentage (0-100)
+ *   - remainingAh/Kwh: Remaining capacity
+ *   - fullCapacityAh/Kwh: Full capacity
+ *   - mode: 'charging' | 'discharging' | 'idle'
+ *   - modeDescription: Human-readable mode description
+ *   - runtimeHours: Estimated hours until empty (if discharging)
+ *   - runtimeDescription: Human-readable runtime estimate
+ *   - temperature: Battery temperature in °C
+ *   - cellVoltageDiff: Cell imbalance in mV
+ *   - cycleCount: Battery cycle count
+ *   - alerts: Active alerts array
  */
 function extractCurrentState(analysisData, records, system) {
   const latest = records.length > 0 ? records[records.length - 1] : null;
@@ -202,6 +239,25 @@ function extractCurrentState(analysisData, records, system) {
 
 /**
  * Analyze load profile - when and how energy is consumed
+ * 
+ * Calculates energy consumption patterns by:
+ * - Hour of day (0-23)
+ * - Day of week (0-6, Sunday=0)
+ * - Daytime vs nighttime (nighttime = 6 PM to 6 AM)
+ * 
+ * Only analyzes discharge periods (current < -0.5A) to profile actual loads.
+ * 
+ * @param {Array<Object>} records - Historical analysis records
+ * @param {Object} system - System configuration with voltage
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} Load profile object containing:
+ *   - hourly: Array of 24 hourly averages (watts, amps)
+ *   - dayOfWeek: Array of 7 daily averages
+ *   - nighttime: Average nighttime load (6 PM - 6 AM)
+ *   - daytime: Average daytime load (6 AM - 6 PM)
+ *   - peakLoadHour: Hour with highest average consumption
+ *   - baseLoad: Minimum sustained load (watts)
+ * @returns {Object} {insufficient_data: true} if < 24 hours of data
  */
 async function analyzeLoadProfile(records, system, log) {
   if (records.length < 24) {
@@ -310,6 +366,24 @@ async function analyzeLoadProfile(records, system, log) {
 
 /**
  * Calculate comprehensive energy balance with kWh standardization
+ * 
+ * Analyzes daily energy generation (charging) vs consumption (discharging)
+ * to determine solar sufficiency and battery autonomy.
+ * 
+ * Calculations use trapezoidal integration between data points for accuracy.
+ * 
+ * @param {Array<Object>} records - Historical analysis records
+ * @param {Object} system - System configuration (voltage, capacity)
+ * @param {Object} currentState - Current battery state
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} Energy balance object containing:
+ *   - dailyAverages: Average daily generation and consumption in kWh
+ *   - netBalance: Daily surplus/deficit in kWh
+ *   - solarSufficiency: Percentage of consumption met by solar (0-100+)
+ *   - batteryAutonomy: Days of runtime at current load (80% DoD assumption)
+ *   - deficitDays: Count of days with net negative energy
+ *   - surplusDays: Count of days with net positive energy
+ * @returns {Object} {insufficient_data: true} if < 48 hours of data
  */
 async function calculateEnergyBalance(records, system, currentState, log) {
   if (records.length < 48) {
@@ -428,6 +502,25 @@ async function calculateEnergyBalance(records, system, currentState, log) {
 
 /**
  * Analyze solar performance with expected vs actual comparison
+ * 
+ * Calculates solar charging efficiency by comparing actual charge received
+ * against expected solar generation based on system configuration and
+ * weather data (cloud cover, irradiance).
+ * 
+ * Identifies charging periods and correlates with weather conditions to
+ * determine if solar underperformance is due to equipment or weather.
+ * 
+ * @param {Array<Object>} records - Historical records with weather data
+ * @param {Object} system - System config with maxAmpsSolarCharging
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} Solar performance object containing:
+ *   - avgDailyChargeKwh: Average daily solar charge received
+ *   - expectedDailySolarKwh: Theoretical maximum solar generation
+ *   - performanceRatio: Actual/expected percentage (0-100+)
+ *   - chargingEfficiency: Percentage of rated solar capacity achieved
+ *   - peakChargingWatts: Maximum observed charging power
+ *   - weatherCorrelation: Impact of cloud cover on charging
+ * @returns {Object} {insufficient_data: true} if missing solar config or < 24h data
  */
 async function analyzeSolarPerformance(records, system, log) {
   if (records.length < 24 || !system?.maxAmpsSolarCharging) {
@@ -531,7 +624,28 @@ async function analyzeSolarPerformance(records, system, log) {
 }
 
 /**
- * Assess battery health indicators
+ * Assess battery health through multiple indicators
+ * 
+ * Evaluates battery condition using:
+ * - Cell imbalance (voltage difference between highest and lowest cells)
+ * - Temperature patterns (average, extremes, thermal stress)
+ * - Capacity fade (comparing current to rated capacity)
+ * - Cycle count and projected remaining lifespan
+ * 
+ * Generates health score (0-100) and specific recommendations based on findings.
+ * 
+ * @param {Array<Object>} records - Historical analysis records
+ * @param {Object} system - System config (rated capacity, chemistry)
+ * @param {Object} analysisData - Current BMS data with cell voltages
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} Battery health assessment containing:
+ *   - imbalance: Cell voltage imbalance analysis (mV difference, status)
+ *   - temperature: Temperature analysis (avg, max, thermal stress events)
+ *   - capacity: Capacity fade analysis (degradation %, trend direction)
+ *   - cycleLife: Cycle count and remaining life estimate
+ *   - healthScore: Overall health score 0-100 (100=perfect)
+ *   - healthStatus: 'excellent' | 'good' | 'fair' | 'poor' | 'critical'
+ *   - recommendation: Specific actionable recommendations
  */
 async function assessBatteryHealth(records, system, analysisData, log) {
   if (records.length < 10) {
@@ -682,7 +796,19 @@ async function assessBatteryHealth(records, system, analysisData, log) {
 }
 
 /**
- * Calculate overall health score
+ * Calculate overall battery health score
+ * 
+ * Combines multiple health indicators into a single 0-100 score:
+ * - Cell imbalance (poor=-20, fair=-10, good=-5, excellent=0)
+ * - Temperature stress (poor=-15, fair=-8, good=-3, excellent=0)
+ * - Capacity fade (declining=-10, stable=-5)
+ * - Cycle life (poor=-15, fair=-10, good=-5, excellent=0)
+ * 
+ * @param {string} imbalanceStatus - 'excellent' | 'good' | 'fair' | 'poor'
+ * @param {string} tempStatus - 'excellent' | 'good' | 'fair' | 'poor'
+ * @param {string} capacityTrend - 'stable' | 'declining'
+ * @param {string} cycleLifeStatus - 'excellent' | 'good' | 'fair' | 'poor'
+ * @returns {number} Health score 0-100 (100=perfect, 0=critical)
  */
 function calculateHealthScore(imbalanceStatus, tempStatus, capacityTrend, cycleLifeStatus) {
   let score = 100;
@@ -709,7 +835,19 @@ function calculateHealthScore(imbalanceStatus, tempStatus, capacityTrend, cycleL
 }
 
 /**
- * Generate health recommendation
+ * Generate actionable health recommendations based on battery status
+ * 
+ * Analyzes health indicators and returns prioritized recommendations:
+ * - Cell imbalance: Balancing required, potential replacement
+ * - Temperature: Ventilation, cooling, or environmental changes needed
+ * - Capacity fade: Plan for replacement, reduce depth of discharge
+ * - Cycle life: Proactive replacement planning
+ * 
+ * @param {string} imbalanceStatus - Cell voltage balance status
+ * @param {string} tempStatus - Temperature management status
+ * @param {string} capacityTrend - Capacity degradation trend
+ * @param {string} cycleLifeStatus - Remaining cycle life status
+ * @returns {string} Human-readable recommendation text with prioritized actions
  */
 function generateHealthRecommendation(imbalanceStatus, tempStatus, capacityTrend, cycleLifeStatus) {
   const issues = [];
@@ -742,7 +880,24 @@ function generateHealthRecommendation(imbalanceStatus, tempStatus, capacityTrend
 }
 
 /**
- * Identify usage patterns and cycles
+ * Identify battery usage patterns and charge/discharge cycles
+ * 
+ * Analyzes historical data to identify:
+ * - Charge cycles (start SOC, end SOC, duration)
+ * - Discharge cycles (depth of discharge, duration)
+ * - Cycling frequency and patterns
+ * - Partial vs full cycles
+ * 
+ * A cycle is detected when SOC changes by >5% in a consistent direction.
+ * 
+ * @param {Array<Object>} records - Historical analysis records with SOC data
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} Usage patterns object containing:
+ *   - chargeCycles: Array of charge events with start/end SOC and timestamps
+ *   - dischargeCycles: Array of discharge events with depth and duration
+ *   - cyclingPattern: Daily frequency and average cycle depth
+ *   - partialCycles: Count and percentage of incomplete cycles (<80% DoD)
+ * @returns {Object} {insufficient_data: true} if < 48 hours of data
  */
 async function identifyUsagePatterns(records, log) {
   if (records.length < 72) {
@@ -856,7 +1011,26 @@ async function identifyUsagePatterns(records, log) {
 }
 
 /**
- * Calculate trends and forecasts
+ * Calculate statistical trends and forecasts using linear regression
+ * 
+ * Applies linear regression to key battery metrics to identify trends:
+ * - State of Charge (SOC): Is battery staying charged or declining?
+ * - Voltage: Potential degradation or charging issues
+ * - Temperature: Thermal management trends
+ * - Cell imbalance: Progressive cell imbalance development
+ * 
+ * R-squared values indicate trend confidence (>0.7=high, 0.4-0.7=medium, <0.4=low).
+ * 
+ * @param {Array<Object>} records - Historical analysis records
+ * @param {Object} system - System configuration
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} Trends object containing for each metric:
+ *   - trend: 'increasing' | 'decreasing' | 'stable'
+ *   - changePerDay: Rate of change per day
+ *   - rSquared: Confidence metric 0-1 (1=perfect fit)
+ *   - confidence: 'high' | 'medium' | 'low'
+ *   - forecast7Days: Predicted value in 7 days (if confidence high)
+ * @returns {Object} {insufficient_data: true} if < 7 days of data
  */
 async function calculateTrends(records, system, log) {
   if (records.length < 30) {
@@ -937,7 +1111,23 @@ async function calculateTrends(records, system, log) {
 }
 
 /**
- * Linear regression helper
+ * Linear regression helper - calculates best-fit line for data points
+ * 
+ * Uses least squares method to find slope and intercept.
+ * Calculates R-squared to measure goodness of fit (1=perfect, 0=no correlation).
+ * 
+ * @param {Array<{x: number, y: number}>} dataPoints - Array of {x, y} coordinates
+ * @returns {Object|null} Regression result or null if insufficient data:
+ *   - slope: Rate of change (Δy per Δx)
+ *   - intercept: Y-value when x=0
+ *   - rSquared: Goodness of fit 0-1 (1=perfect linear relationship)
+ *   - predict(x): Function to predict y for any x value
+ * 
+ * @example
+ * const data = [{x: 0, y: 10}, {x: 1, y: 12}, {x: 2, y: 14}];
+ * const result = linearRegression(data);
+ * // result.slope = 2, result.intercept = 10, result.rSquared ≈ 1
+ * // result.predict(3) = 16
  */
 function linearRegression(dataPoints) {
   if (dataPoints.length < 2) {
@@ -974,7 +1164,26 @@ function linearRegression(dataPoints) {
 }
 
 /**
- * Detect anomalies
+ * Detect anomalies and unusual patterns in battery data
+ * 
+ * Identifies statistical outliers and unusual events:
+ * - Voltage spikes/drops (>2σ from mean)
+ * - Current anomalies (unusual charge/discharge rates)
+ * - Temperature extremes
+ * - SOC inconsistencies (unexpected changes)
+ * - Alert patterns and frequencies
+ * 
+ * Uses statistical thresholds (mean ± 2 standard deviations) to flag outliers.
+ * 
+ * @param {Array<Object>} records - Historical analysis records
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} Anomalies object containing:
+ *   - voltageSpikes: Array of voltage outlier events
+ *   - currentAnomalies: Unusual current readings
+ *   - temperatureExtremes: Temperature outliers
+ *   - alertSummary: Alert frequency and most common alerts
+ *   - totalAnomalies: Count of detected anomalies
+ * @returns {Object} {insufficient_data: true} if < 24 hours of data
  */
 async function detectAnomalies(records, log) {
   if (records.length < 50) {
@@ -1081,7 +1290,25 @@ async function detectAnomalies(records, log) {
 }
 
 /**
- * Analyze weather impact
+ * Analyze weather impact on battery performance
+ * 
+ * Correlates weather conditions with battery behavior:
+ * - Cloud cover vs solar charging efficiency
+ * - Temperature vs battery performance
+ * - Irradiance vs actual charge received
+ * - Weather pattern impact on SOC trends
+ * 
+ * Requires weather data in historical records (clouds, temp, UVI).
+ * 
+ * @param {Array<Object>} records - Historical records with weather data
+ * @param {Object} system - System configuration
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} Weather impact analysis containing:
+ *   - cloudCorrelation: Relationship between clouds and charging
+ *   - temperatureImpact: How ambient temp affects battery temp
+ *   - solarEfficiency: Performance on clear vs cloudy days
+ *   - weatherPatterns: Common weather conditions and their effects
+ * @returns {Object} {insufficient_data: true} if < 7 days with weather data
  */
 async function analyzeWeatherImpact(records, system, log) {
   if (records.length < 24 || !system?.latitude || !system?.longitude) {
@@ -1197,7 +1424,28 @@ async function analyzeWeatherImpact(records, system, log) {
 }
 
 /**
- * Build recommendation context
+ * Build structured recommendation context for AI
+ * 
+ * Synthesizes all analytics into actionable insights for Gemini AI:
+ * - Priority areas (issues requiring immediate attention)
+ * - Optimization opportunities (efficiency improvements)
+ * - Maintenance schedule (proactive maintenance items)
+ * - System strengths (well-performing aspects)
+ * 
+ * This context guides AI recommendations by highlighting:
+ * - Critical issues (health score <60, severe imbalance, etc.)
+ * - Performance gaps (solar underperformance, load inefficiency)
+ * - Trending problems (degradation, increasing imbalance)
+ * - Positive aspects (good practices to continue)
+ * 
+ * @param {Object} analytics - Complete analytics object from generateComprehensiveAnalytics
+ * @param {Object} system - System configuration
+ * @returns {Object} Recommendation context containing:
+ *   - priorities: Array of critical issues requiring immediate action
+ *   - optimizations: Array of efficiency improvement opportunities
+ *   - maintenance: Array of proactive maintenance recommendations
+ *   - strengths: Array of positive aspects to maintain
+ *   - summaryContext: Human-readable summary for AI prompt
  */
 function buildRecommendationContext(analytics, system) {
   const context = {
@@ -1319,7 +1567,18 @@ function buildRecommendationContext(analytics, system) {
 }
 
 /**
- * Helper: Round to specified decimal places
+ * Helper: Round number to specified decimal places
+ * 
+ * Safely rounds numbers, handling null/undefined/Infinity gracefully.
+ * 
+ * @param {number|null|undefined} value - Number to round
+ * @param {number} decimals - Number of decimal places (0-10)
+ * @returns {number|null} Rounded value or null if input is invalid
+ * 
+ * @example
+ * roundTo(3.14159, 2)  // => 3.14
+ * roundTo(null, 2)     // => null
+ * roundTo(Infinity, 2) // => null
  */
 function roundTo(value, decimals) {
   if (value == null || !isFinite(value)) return null;
