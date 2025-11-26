@@ -1,3 +1,10 @@
+/**
+ * BMSview Type Definitions
+ * 
+ * This file contains all TypeScript type definitions for the BMSview application.
+ * Synced with main branch as of 2025-11-26.
+ */
+
 // Fix: Add global type definitions for Vite environment variables
 declare global {
   interface ImportMetaEnv {
