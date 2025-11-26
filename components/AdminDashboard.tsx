@@ -40,6 +40,7 @@ import DataManagement from './admin/DataManagement';
 import HistoryTable from './admin/HistoryTable';
 import SystemsTable from './admin/SystemsTable';
 import ReconciliationDashboard from './admin/reconciliation/ReconciliationDashboard';
+import MonitoringDashboard from './admin/MonitoringDashboard';
 import { getNestedValue } from './admin/columnDefinitions';
 
 interface NetlifyUser {
@@ -862,6 +863,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             onFixPowerSigns={handleFixPowerSigns}
                             cleanupProgress={cleanupProgress} // This prop was missing, adding it back
                         />
+                        <section id="monitoring-dashboard-section">
+                            <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">AI Feedback Monitoring</h2>
+                            <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
+                                <MonitoringDashboard />
+                            </div>
+                        </section>
                         <section id="system-diagnostics-section">
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">System Diagnostics</h2>
                             <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
