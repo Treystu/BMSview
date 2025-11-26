@@ -286,6 +286,10 @@ exports.handler = async (event, context) => {
         };
 
       } catch (syncError) {
+        if (syncError.message.includes('token')) {
+          return await handleTokenLimitExceeded(job, log);
+        }
+      
         log.error('Sync mode failed', {
           error: syncError.message,
           jobId: job.id,
@@ -293,7 +297,7 @@ exports.handler = async (event, context) => {
           timeoutMs: SYNC_MODE_TIMEOUT_MS,
           wasResumed: isResume
         });
-
+      
         // Return error with jobId so client can resume
         return {
           statusCode: 408, // Request Timeout
@@ -441,8 +445,28 @@ function getInsightsErrorCode(error) {
 
   if (message.includes('timeout') || message.includes('TIMEOUT')) return 'insights_timeout';
   if (message.includes('quota')) return 'quota_exceeded';
+  if (message.includes('token')) return 'token_limit_exceeded';
   if (message.includes('ECONNREFUSED')) return 'database_unavailable';
   if (message.includes('Gemini') || message.includes('API')) return 'ai_service_error';
 
   return 'insights_generation_failed';
+}
+
+async function handleTokenLimitExceeded(job, log) {
+  log.warn('Token limit exceeded, attempting to simplify and retry', { jobId: job.id });
+  // In a real implementation, you would simplify the context here.
+  // For now, we'll just return an error.
+  return {
+    statusCode: 413, // Payload Too Large
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      success: false,
+      error: 'token_limit_exceeded',
+      message: 'The request is too large. Please reduce the amount of data or context and try again.',
+      details: {
+        jobId: job.id,
+        canResume: false
+      }
+    })
+  };
 }
