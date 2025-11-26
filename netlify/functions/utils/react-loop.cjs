@@ -84,7 +84,7 @@ const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
 
 // Lazy AI Detection settings
 const RECENT_TOOL_FAILURE_WINDOW = 5; // Check last 5 messages for tool failures
-const MAX_CONSECUTIVE_LAZY_RESPONSES = 2; // Fail gracefully after 2 consecutive lazy responses
+const MAX_CONSECUTIVE_LAZY_RESPONSES = 2; // Threshold for lazy responses (triggers on 3rd consecutive)
 const LAZY_AI_FALLBACK_MESSAGE = "Unable to retrieve the requested data. Please try a simpler query or check the available data range.";
 
 /**
