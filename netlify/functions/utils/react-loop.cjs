@@ -1593,6 +1593,10 @@ async function executeReActLoop(params) {
                 tools: toolCalls.map(t => t.functionCall.name)
             });
 
+            // Reset consecutive lazy response counter when AI makes tool calls
+            // This indicates the intervention worked and AI is now being proactive
+            consecutiveLazyResponses = 0;
+
             for (const toolCall of toolCalls) {
                 const toolName = toolCall.functionCall.name;
                 const toolArgs = toolCall.functionCall.args;
