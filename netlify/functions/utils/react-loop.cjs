@@ -1457,10 +1457,55 @@ async function executeReActLoop(params) {
             const toolCalls = responseContent.parts.filter(p => p.functionCall);
 
             if (toolCalls.length === 0) {
-                // No tool calls → extract final answer
+                // No tool calls → this is potentially the final answer
                 const textParts = responseContent.parts.filter(p => p.text);
+                
                 if (textParts.length > 0) {
-                    finalAnswer = textParts.map(p => p.text).join('\n');
+                    const rawAnswer = textParts.map(p => p.text).join('\n');
+                    
+                    // 🚨 LAZY AI DETECTION 🚨
+                    // Check if the AI is making excuses about missing data without having tried to fetch it
+                    const lowerAnswer = rawAnswer.toLowerCase();
+                    const lazinessTriggers = [
+                        "i do not have access",
+                        "provide the data",
+                        "data is unavailable",
+                        "cannot see historical",
+                        "unable to retrieve",
+                        "no historical data"
+                    ];
+                    
+                    // Only intervene if:
+                    // 1. It's claiming data is missing
+                    // 2. We haven't run many tools yet (it gave up too early)
+                    // 3. It's a custom query (where users expect data lookup)
+                    // 4. We have turns remaining
+                    const isLazy = lazinessTriggers.some(t => lowerAnswer.includes(t));
+                    
+                    if (isLazy && toolCallCount === 0 && isCustomQuery && turnCount < MAX_TURNS - 1) {
+                        log.warn('⚠️ Detected "Lazy AI" - claiming no data without checking tools', { turn: turnCount });
+                        
+                        // Hijack the loop!
+                        // We do NOT accept this as the final answer.
+                        // We push a system intervention message to force tool usage.
+                        conversationHistory.push({
+                            role: 'user',
+                            parts: [{
+                                text: `⛔ SYSTEM INTERVENTION: You claimed data is unavailable, but you have NOT checked the tools yet.\n\n` +
+                                      `You have access to 'request_bms_data', 'getSystemAnalytics', and others.\n` +
+                                      `1. Look at the "DATA AVAILABILITY" section in the first message.\n` +
+                                      `2. CALL A TOOL to get the data you need (e.g. request_bms_data).\n` +
+                                      `3. Do not apologize. Just send the tool call JSON.`
+                            }]
+                        });
+                        
+                        // Continue the loop to let Gemini try again
+                        continue;
+                    }
+
+                    // If not lazy, accept the answer
+                    finalAnswer = rawAnswer;
+                    
                     log.info('Final answer received from Gemini', {
                         turn: turnCount,
                         answerLength: finalAnswer.length,

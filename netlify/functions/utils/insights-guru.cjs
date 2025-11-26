@@ -542,9 +542,22 @@ function buildCustomMission(customPrompt) {
     const csvRequested = /\b(csv|comma[\s\-.]?separated|spreadsheet)\b/i.test(customPrompt);
     const tableRequested = /\b(table|tabular)\b/i.test(customPrompt);
     const jsonRequested = /\b(json|javascript object)\b/i.test(customPrompt);
+
+    let approach = `**USER QUESTION:**\n"${customPrompt}"\n\n`;
+
+    // 🧠 CHAIN OF THOUGHT INJECTION
+    approach += `**🧠 MANDATORY THOUGHT PROCESS:**\n`;
+    approach += `Before calling any tool or answering, you must mentally perform these steps:\n`;
+    approach += `1. **Deconstruct**: What specific time ranges and metrics does the user need? (e.g., "last week" = specific ISO dates)\n`;
+    approach += `2. **Check Context**: Do I already have this in the "PRE-LOADED" section above? If yes, USE IT.\n`;
+    approach += `3. **Gap Analysis**: What is missing? If I need granular hourly data for a specific date, I MUST call request_bms_data.\n`;
+    approach += `4. **Tool Selection**: Which tool fills the gap? (e.g., analyze_usage_patterns for anomalies, request_bms_data for raw charts).\n`;
     
-    let approach = `**USER QUESTION:**\n${customPrompt}\n\n`;
-    
+    approach += `\n**⚠️ RULES OF ENGAGEMENT:**\n`;
+    approach += `• **Proactive Tooling**: If the user asks "Why did my battery die?", DO NOT guess. Call 'request_bms_data' for the hours leading up to the event.\n`;
+    approach += `• **Token Efficiency**: Do not request "all" metrics if the user only asked about "voltage".\n`;
+    approach += `• **Self-Correction**: If a tool returns "no data", check your date range. Did you swap start/end? Are you outside the "Available Data" range?\n\n`;
+
     // Format-specific instructions
     if (csvRequested) {
         approach += `**🔍 DETECTED:** CSV format requested.\n\n`;
@@ -584,9 +597,9 @@ function buildCustomMission(customPrompt) {
         approach += `⚠️ **CRITICAL:** DO NOT respond with "data unavailable" if the date is within the queryable range shown above. USE the tool!\n`;
     } else {
         approach += `**APPROACH:**\n`;
-        approach += `1. Review preloaded context data first - you may already have everything needed\n`;
-        approach += `2. If specific data is missing, CALL the necessary tools NOW and include the results in your answer\n`;
-        approach += `3. ⚠️ CRITICAL: NEVER recommend users run tools - they cannot access them. YOU must execute all tools.\n`;
+        approach += `1. Review preloaded context data first\n`;
+        approach += `2. If specific data is missing, CALL the necessary tools NOW\n`;
+        approach += `3. ⚠️ CRITICAL: NEVER recommend users run tools - YOU must execute them.\n`;
         approach += `4. Analyze results and deliver terse, highlight-driven answer\n`;
         approach += `5. Format: ## KEY FINDINGS → ## ANALYSIS → ## RECOMMENDATIONS\n`;
         approach += `6. Use bold labels, cite sources inline, skip fluff\n`;
