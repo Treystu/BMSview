@@ -230,10 +230,15 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               </div>
             </div>
             <div className="text-center space-y-2">
-              <h5 className="text-lg font-bold text-gray-900">🤖 AI Battery Guru Thinking...</h5>
+              <h5 className="text-lg font-bold text-gray-900">
+                {selectedMode === InsightMode.WITH_TOOLS && '🤖 AI Battery Guru Thinking...'}
+                {selectedMode === InsightMode.BACKGROUND && '⏳ Processing in Background...'}
+                {selectedMode === InsightMode.STANDARD && '⚡ Generating Quick Insights...'}
+              </h5>
               <p className="text-sm text-gray-600 max-w-md">
-                Analyzing your battery data with intelligent querying. 
-                The AI can request specific historical data on-demand to answer your questions.
+                {selectedMode === InsightMode.WITH_TOOLS && 'Analyzing your battery data with intelligent querying. The AI can request specific historical data on-demand to answer your questions.'}
+                {selectedMode === InsightMode.BACKGROUND && 'Processing your complex query in the background. This may take several minutes for large datasets. You can continue using the app while we work.'}
+                {selectedMode === InsightMode.STANDARD && 'Running fast analysis using standard patterns. This should complete quickly with basic insights.'}
               </p>
             </div>
           </div>
@@ -246,6 +251,38 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
             Error Generating Insights
           </h5>
           <p className="text-red-700 mt-1 whitespace-pre-wrap">{error}</p>
+          
+          {/* Mode-specific error suggestions */}
+          {!circuitBreakerOpen && (
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-300 rounded-lg">
+              <p className="text-blue-900 text-sm font-semibold mb-2">
+                💡 Suggestions based on current mode ({InsightModeDescriptions[selectedMode].label}):
+              </p>
+              <ul className="text-blue-800 text-sm space-y-1 list-disc list-inside">
+                {selectedMode === InsightMode.WITH_TOOLS && (
+                  <>
+                    <li>Try switching to <strong>Quick Insights</strong> mode for faster processing</li>
+                    <li>Reduce the data analysis window (currently {getContextWindowLabel(contextWindowDays)})</li>
+                    <li>Ask a simpler, more specific question</li>
+                  </>
+                )}
+                {selectedMode === InsightMode.BACKGROUND && (
+                  <>
+                    <li>Check the job status - it may still be processing</li>
+                    <li>Try <strong>Battery Guru</strong> mode with a shorter time window</li>
+                    <li>Reduce the complexity of your query</li>
+                  </>
+                )}
+                {selectedMode === InsightMode.STANDARD && (
+                  <>
+                    <li>This mode has limited capabilities - try <strong>Battery Guru</strong> instead</li>
+                    <li>Ensure your system has enough historical data</li>
+                    <li>Verify your system is properly configured</li>
+                  </>
+                )}
+              </ul>
+            </div>
+          )}
           
           {circuitBreakerOpen && (
             <div className="mt-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
@@ -272,12 +309,25 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           )}
           
           {!circuitBreakerOpen && (
-            <button
-              onClick={() => handleGenerateInsights(customPrompt || undefined)}
-              className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-            >
-              🔄 Retry
-            </button>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => handleGenerateInsights(customPrompt || undefined)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+              >
+                🔄 Retry with Current Mode
+              </button>
+              {selectedMode !== InsightMode.STANDARD && (
+                <button
+                  onClick={() => {
+                    setSelectedMode(InsightMode.STANDARD);
+                    setTimeout(() => handleGenerateInsights(customPrompt || undefined), 100);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  ⚡ Try Quick Insights Instead
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
