@@ -201,3 +201,81 @@ export interface InsightsRequestConfig {
   maxIterations?: number; // Max ReAct loop iterations (10 for standard, 20 for custom queries)
   isCustomQuery?: boolean; // Whether this is a custom user query
 }
+
+// AI Feedback System Types
+export interface AIFeedbackSuggestion {
+  title: string;
+  description: string;
+  rationale: string;
+  implementation: string;
+  expectedBenefit: string;
+  estimatedEffort: 'hours' | 'days' | 'weeks';
+  codeSnippets?: string[];
+  affectedComponents?: string[];
+}
+
+export interface AIFeedback {
+  id: string;
+  timestamp: Date;
+  systemId: string;
+  feedbackType: 'feature_request' | 'api_suggestion' | 'data_format' | 'bug_report' | 'optimization';
+  category: 'weather_api' | 'data_structure' | 'ui_ux' | 'performance' | 'integration' | 'analytics';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  status: 'pending' | 'reviewed' | 'accepted' | 'implemented' | 'rejected';
+  geminiModel: string;
+  contextHash: string;
+  suggestion: AIFeedbackSuggestion;
+  githubIssue?: {
+    number: number;
+    url: string;
+    status: string;
+  };
+  adminNotes?: string;
+  implementationDate?: Date;
+  updatedAt?: Date;
+  metrics?: {
+    viewCount: number;
+    lastViewed: Date | null;
+    discussionCount: number;
+  };
+}
+
+export interface FullContextData {
+  raw: {
+    allAnalyses: AnalysisRecord[];
+    allCellData: any[];
+    allTemperatureReadings: any[];
+    allVoltageReadings: any[];
+    allCurrentReadings: any[];
+    allAlarms: any[];
+    allStateChanges: any[];
+    timeRange: {
+      start: string;
+      end: string;
+      days: number;
+    };
+    totalDataPoints: number;
+  };
+  toolOutputs: {
+    statisticalAnalysis: any;
+    trendAnalysis: any;
+    anomalyDetection: any;
+    correlationAnalysis: any;
+  };
+  external: {
+    weatherHistory: any[];
+    solarProduction: any[];
+  };
+  metadata: {
+    systemConfig: any;
+    batterySpecs: any;
+  };
+  computed: {
+    healthScore: number | null;
+    remainingLifeExpectancy: any;
+    performanceDegradation: any;
+  };
+  buildTimestamp: string;
+  buildDurationMs: number;
+  systemId: string;
+}
