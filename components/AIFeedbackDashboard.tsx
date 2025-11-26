@@ -83,6 +83,33 @@ export const AIFeedbackDashboard: React.FC = () => {
     }
   };
 
+  const handleCreateGitHubIssue = async (feedbackId: string) => {
+    try {
+      const confirmed = confirm('Create a GitHub issue for this feedback?');
+      if (!confirmed) return;
+
+      const response = await fetch('/.netlify/functions/create-github-issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feedbackId })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to create GitHub issue');
+      }
+
+      const data = await response.json();
+      alert(`GitHub Issue #${data.issueNumber} created successfully!`);
+      
+      // Refresh the list
+      await fetchAIFeedback();
+    } catch (err) {
+      console.error('Error creating GitHub issue:', err);
+      alert(err instanceof Error ? err.message : 'Failed to create GitHub issue');
+    }
+  };
+
   const getPriorityColor = (priority: string): string => {
     const colors: Record<string, string> = {
       critical: 'bg-red-100 text-red-800 border-red-300',
@@ -222,7 +249,7 @@ export const AIFeedbackDashboard: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  <div className="ml-4">
+                  <div className="ml-4 flex flex-col space-y-2">
                     <select
                       value={feedback.status}
                       onChange={(e) => handleStatusUpdate(feedback.id, e.target.value)}
@@ -234,6 +261,14 @@ export const AIFeedbackDashboard: React.FC = () => {
                       <option value="implemented">Implemented</option>
                       <option value="rejected">Rejected</option>
                     </select>
+                    {!feedback.githubIssue && (
+                      <button
+                        onClick={() => handleCreateGitHubIssue(feedback.id)}
+                        className="px-3 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                      >
+                        Create GitHub Issue
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
