@@ -12,7 +12,8 @@ const { getGeminiClient } = require('./geminiClient.cjs');
 const { toolDefinitions, executeToolCall } = require('./gemini-tools.cjs');
 const { buildGuruPrompt, collectAutoInsightsContext, buildQuickReferenceCatalog } = require('./insights-guru.cjs');
 const { createLogger } = require('./logger.cjs');
-const { validateResponseFormat, buildCorrectionPrompt } = require('./response-validator.cjs');
+const { validateResponseFormat, buildCorrectionPrompt, detectToolSuggestions, buildToolSuggestionCorrectionPrompt } = require('./response-validator.cjs');
+const { logAIOperation, checkForAnomalies } = require('./metrics-collector.cjs');
 
 // Default iteration limits - can be overridden via params
 const DEFAULT_MAX_TURNS = 10; // Increased from 5 to 10 for standard insights
@@ -81,6 +82,11 @@ const INITIALIZATION_BUDGET_RATIO = 0.6; // Use 60% of budget for initialization
 
 // Retry backoff settings - LINEAR (1s increments)
 const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
+
+// Lazy AI Detection settings
+const RECENT_TOOL_FAILURE_WINDOW = 5; // Check last 5 messages for tool failures
+const LAZY_RESPONSE_THRESHOLD = 2; // Threshold for lazy responses (triggers on 3rd consecutive)
+const LAZY_AI_FALLBACK_MESSAGE = "Unable to retrieve the requested data. Please try a simpler query or check the available data range.";
 
 /**
  * Analyze Gemini's response text to detect what it's struggling with
@@ -1162,6 +1168,7 @@ async function executeReActLoop(params) {
         let finalAnswer = null;
         let lastCheckpointTime = startTime; // Track when we last saved a checkpoint
         let timedOut = false; // Track if we exited due to timeout
+        let consecutiveLazyResponses = 0; // Track consecutive lazy AI responses to prevent infinite loops
 
         for (; turnCount < MAX_TURNS; turnCount++) {
             // Check timeout and save checkpoint if needed
@@ -1457,10 +1464,85 @@ async function executeReActLoop(params) {
             const toolCalls = responseContent.parts.filter(p => p.functionCall);
 
             if (toolCalls.length === 0) {
-                // No tool calls → extract final answer
+                // No tool calls → this is potentially the final answer
                 const textParts = responseContent.parts.filter(p => p.text);
+                
                 if (textParts.length > 0) {
-                    finalAnswer = textParts.map(p => p.text).join('\n');
+                    const rawAnswer = textParts.map(p => p.text).join('\n');
+                    
+                    // Lazy AI Detection: Check if AI is claiming data unavailable without attempting to fetch it
+                    const lowerAnswer = rawAnswer.toLowerCase();
+                    const lazinessTriggers = [
+                        "i do not have access to",
+                        "the data is unavailable",
+                        "cannot see historical data",
+                        "unable to retrieve the data",
+                        "no historical data is available",
+                        "cannot access the requested data"
+                    ];
+                    
+                    // Only intervene if:
+                    // 1. It's claiming data is missing
+                    // 2. We haven't run many tools yet (it gave up too early)
+                    // 3. It's a custom query (where users expect data lookup)
+                    // 4. We have turns remaining
+                    // 5. No recent tool failures (legitimate unavailability after failed attempts)
+                    const isLazy = lazinessTriggers.some(t => lowerAnswer.includes(t));
+                    
+                    // Check if recent tool calls failed (last N messages, where N = RECENT_TOOL_FAILURE_WINDOW)
+                    // Tool failures can be in two forms:
+                    // 1. Tool returned error object: functionResponse.response.result.error
+                    // 2. Tool threw exception: functionResponse.response.error (boolean)
+                    const recentToolFailures = conversationHistory.slice(-RECENT_TOOL_FAILURE_WINDOW).some(msg =>
+                        msg.role === 'function' &&
+                        Array.isArray(msg.parts) &&
+                        msg.parts.some(p => 
+                            p.functionResponse && 
+                            p.functionResponse.response && 
+                            (p.functionResponse.response.error || (p.functionResponse.response.result && p.functionResponse.response.result.error))
+                        )
+                    );
+
+                    if (isLazy && toolCallCount === 0 && isCustomQuery && turnCount < MAX_TURNS - 1 && !recentToolFailures) {
+                        consecutiveLazyResponses++;
+                        
+                        if (consecutiveLazyResponses > LAZY_RESPONSE_THRESHOLD) {
+                            log.error('AI repeatedly claiming no data after interventions', { 
+                                turn: turnCount,
+                                consecutiveCount: consecutiveLazyResponses,
+                                maxAllowed: LAZY_RESPONSE_THRESHOLD
+                            });
+                            finalAnswer = LAZY_AI_FALLBACK_MESSAGE;
+                            break;
+                        }
+                        
+                        log.warn('Detected "Lazy AI" - claiming no data without checking tools', { 
+                            turn: turnCount,
+                            consecutiveCount: consecutiveLazyResponses 
+                        });
+                        
+                        // Force the loop to continue by adding an intervention message without setting finalAnswer
+                        // The AI will receive this as a user message on the next iteration
+                        conversationHistory.push({
+                            role: 'user',
+                            parts: [{
+                                text: `SYSTEM INTERVENTION: You claimed data is unavailable, but you have NOT checked the tools yet.\n\n` +
+                                      `You have access to 'request_bms_data', 'getSystemAnalytics', and others.\n` +
+                                      `1. Look at the "DATA AVAILABILITY" section in the first message.\n` +
+                                      `2. CALL A TOOL to get the data you need (e.g. request_bms_data).\n` +
+                                      `3. Do not apologize. Just send the tool call JSON.`
+                            }]
+                        });
+                        
+                        // Continue the loop to let Gemini try again
+                        continue;
+                    } else {
+                        consecutiveLazyResponses = 0; // Reset on non-lazy response
+                    }
+
+                    // If not lazy, accept the answer
+                    finalAnswer = rawAnswer;
+                    
                     log.info('Final answer received from Gemini', {
                         turn: turnCount,
                         answerLength: finalAnswer.length,
@@ -1514,6 +1596,45 @@ async function executeReActLoop(params) {
                             turn: turnCount
                         });
                     }
+
+                    // Issue 230: Validate that AI doesn't suggest tools to users
+                    // AI must EXECUTE tools itself, not tell users to run them
+                    const toolSuggestionCheck = detectToolSuggestions(finalAnswer);
+                    if (toolSuggestionCheck.containsToolSuggestions && turnCount < MAX_TURNS - 1) {
+                        log.warn('Response contains tool suggestions for users (prohibited)', {
+                            suggestions: toolSuggestionCheck.suggestions,
+                            turn: turnCount,
+                            attemptsRemaining: MAX_TURNS - turnCount - 1
+                        });
+
+                        // Request correction - AI must execute tools or remove suggestions
+                        const toolCorrectionPrompt = buildToolSuggestionCorrectionPrompt(
+                            finalAnswer,
+                            toolSuggestionCheck.suggestions
+                        );
+
+                        conversationHistory.push({
+                            role: 'user',
+                            parts: [{ text: toolCorrectionPrompt }]
+                        });
+
+                        // Clear finalAnswer to continue loop
+                        finalAnswer = null;
+
+                        log.info('Tool suggestion correction requested', {
+                            turn: turnCount,
+                            suggestionsFound: toolSuggestionCheck.suggestions.length
+                        });
+
+                        // Continue to next turn for correction
+                        continue;
+                    } else if (toolSuggestionCheck.containsToolSuggestions) {
+                        log.warn('Response contains tool suggestions but no retries left, proceeding with warning', {
+                            suggestions: toolSuggestionCheck.suggestions,
+                            turn: turnCount
+                        });
+                        // Continue with the response but log the issue
+                    }
                 }
                 break;
             }
@@ -1523,6 +1644,10 @@ async function executeReActLoop(params) {
                 turn: turnCount,
                 tools: toolCalls.map(t => t.functionCall.name)
             });
+
+            // Reset consecutive lazy response counter when AI makes tool calls
+            // This indicates the intervention worked and AI is now being proactive
+            consecutiveLazyResponses = 0;
 
             for (const toolCall of toolCalls) {
                 const toolName = toolCall.functionCall.name;
@@ -1606,6 +1731,55 @@ async function executeReActLoop(params) {
             answerLength: finalAnswer.length
         });
 
+        // Log operation metrics for successful insights generation
+        // Estimate token usage: sum all message lengths in conversationHistory plus finalAnswer, divide by 4 (approx chars per token)
+        // Handle both content-based messages and function call parts
+        const estimatedTokenCount = Math.round(
+            (conversationHistory.reduce((sum, msg) => {
+                let msgLength = 0;
+                if (msg.content) {
+                    msgLength += msg.content.length;
+                }
+                if (msg.parts && Array.isArray(msg.parts)) {
+                    msgLength += msg.parts.reduce((partSum, part) => {
+                        if (typeof part === 'string') return partSum + part.length;
+                        if (part.text) return partSum + part.text.length;
+                        // For function calls, estimate based on stringified content
+                        return partSum + JSON.stringify(part).length;
+                    }, 0);
+                }
+                return sum + msgLength;
+            }, 0) + (finalAnswer ? finalAnswer.length : 0)) / 4
+        ); // Approximate: 4 chars per token
+
+        try {
+            await logAIOperation({
+                operation: 'insights',
+                systemId: systemId,
+                duration: totalDurationMs,
+                tokensUsed: estimatedTokenCount, // Estimated; replace with actual token tracking if Gemini API supports it
+                success: true,
+                model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+                contextWindowDays: contextWindowDays,
+                metadata: {
+                    turns: turnCount + 1,
+                    toolCalls: toolCallCount,
+                    conversationLength: conversationHistory.length,
+                    timedOut: timedOut,
+                    isCustomQuery: isCustomQuery,
+                    tokenEstimationMethod: 'char_count_div_4'
+                }
+            });
+
+            // Check for anomalies
+            await checkForAnomalies({
+                duration: totalDurationMs
+            });
+        } catch (metricsError) {
+            // Don't fail the operation if metrics logging fails
+            log.warn('Failed to log insights metrics', { error: metricsError.message });
+        }
+
         return {
             success: true,
             finalAnswer,
@@ -1630,6 +1804,21 @@ async function executeReActLoop(params) {
             stack: err.stack,
             durationMs: totalDurationMs
         });
+
+        // Log failed operation metrics
+        try {
+            await logAIOperation({
+                operation: 'insights',
+                systemId: systemId,
+                duration: totalDurationMs,
+                success: false,
+                error: err.message,
+                model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+                contextWindowDays: contextWindowDays
+            });
+        } catch (metricsError) {
+            log.warn('Failed to log error metrics', { error: metricsError.message });
+        }
 
         return {
             success: false,

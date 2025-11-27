@@ -3,6 +3,12 @@
 /**
  * Shared Logger Utility
  * Provides structured logging with context and severity levels
+ * 
+ * Extended with audit logging for security events:
+ * - Rate limiting events
+ * - Input sanitization warnings
+ * - Authentication/authorization events
+ * - Data access events for compliance
  */
 
 const LOG_LEVELS = {
@@ -11,6 +17,23 @@ const LOG_LEVELS = {
   WARN: 2,
   ERROR: 3,
   CRITICAL: 4
+};
+
+// Security event types for audit logging
+const SECURITY_EVENT_TYPES = {
+  RATE_LIMIT_EXCEEDED: 'rate_limit_exceeded',
+  RATE_LIMIT_WARNING: 'rate_limit_warning',
+  INPUT_SANITIZED: 'input_sanitized',
+  INJECTION_BLOCKED: 'injection_blocked',
+  PROMPT_INJECTION_DETECTED: 'prompt_injection_detected',
+  AUTH_SUCCESS: 'auth_success',
+  AUTH_FAILURE: 'auth_failure',
+  CONSENT_GRANTED: 'consent_granted',
+  CONSENT_DENIED: 'consent_denied',
+  DATA_ACCESS: 'data_access',
+  DATA_EXPORT: 'data_export',
+  ADMIN_ACTION: 'admin_action',
+  ENCRYPTION_EVENT: 'encryption_event'
 };
 
 class Logger {
@@ -88,6 +111,113 @@ class Logger {
   metric(name, value, unit = 'ms') {
     this.info('Performance metric', { metric: name, value, unit });
   }
+
+  /**
+   * Log a security audit event
+   * These events are always logged regardless of LOG_LEVEL for compliance
+   * @param {string} eventType - Type of security event (see SECURITY_EVENT_TYPES)
+   * @param {Object} data - Event data
+   */
+  audit(eventType, data = {}) {
+    const auditData = {
+      auditEvent: true,
+      eventType,
+      clientIp: data.clientIp || this.context.clientIp || 'unknown',
+      userId: data.userId || this.context.userId || null,
+      systemId: data.systemId || null,
+      ...data
+    };
+
+    // Remove sensitive data from audit logs
+    const sanitizedData = this._sanitizeAuditData(auditData);
+    
+    // Always log audit events as INFO level, regardless of LOG_LEVEL
+    console.log(this._formatMessage('AUDIT', `Security event: ${eventType}`, sanitizedData));
+  }
+
+  /**
+   * Remove sensitive data from audit log entries
+   * @param {Object} data - Data to sanitize
+   * @returns {Object} Sanitized data
+   */
+  _sanitizeAuditData(data) {
+    const sensitiveFields = ['password', 'token', 'apiKey', 'secret', 'authorization', 'cookie'];
+    const sanitized = { ...data };
+    
+    for (const field of sensitiveFields) {
+      if (sanitized[field]) {
+        sanitized[field] = '[REDACTED]';
+      }
+    }
+    
+    // Truncate large data fields for audit logs
+    if (sanitized.analysisData && typeof sanitized.analysisData === 'object') {
+      sanitized.analysisData = '[OBJECT]';
+    }
+    if (sanitized.customPrompt && typeof sanitized.customPrompt === 'string') {
+      sanitized.customPrompt = sanitized.customPrompt.substring(0, 100) + (sanitized.customPrompt.length > 100 ? '...' : '');
+    }
+    
+    return sanitized;
+  }
+
+  /**
+   * Log a rate limit event
+   * @param {string} action - 'allowed' or 'blocked'
+   * @param {Object} data - Rate limit details
+   */
+  rateLimit(action, data = {}) {
+    const eventType = action === 'blocked' ? 
+      SECURITY_EVENT_TYPES.RATE_LIMIT_EXCEEDED : 
+      SECURITY_EVENT_TYPES.RATE_LIMIT_WARNING;
+    
+    this.audit(eventType, {
+      action,
+      remaining: data.remaining,
+      limit: data.limit,
+      endpoint: data.endpoint,
+      clientIp: data.clientIp
+    });
+  }
+
+  /**
+   * Log an input sanitization event
+   * @param {string} field - Field that was sanitized
+   * @param {string} reason - Reason for sanitization
+   * @param {Object} data - Additional context
+   */
+  sanitization(field, reason, data = {}) {
+    this.audit(SECURITY_EVENT_TYPES.INPUT_SANITIZED, {
+      field,
+      reason,
+      ...data
+    });
+  }
+
+  /**
+   * Log a consent event
+   * @param {boolean} granted - Whether consent was granted
+   * @param {Object} data - Consent context
+   */
+  consent(granted, data = {}) {
+    const eventType = granted ? 
+      SECURITY_EVENT_TYPES.CONSENT_GRANTED : 
+      SECURITY_EVENT_TYPES.CONSENT_DENIED;
+    
+    this.audit(eventType, data);
+  }
+
+  /**
+   * Log a data access event for compliance
+   * @param {string} operation - Type of data operation
+   * @param {Object} data - Access context
+   */
+  dataAccess(operation, data = {}) {
+    this.audit(SECURITY_EVENT_TYPES.DATA_ACCESS, {
+      operation,
+      ...data
+    });
+  }
 }
 
 /**
@@ -139,6 +269,11 @@ function createLogger(functionName, context = {}) {
   logFunction.dbOperation = logger.dbOperation.bind(logger);
   logFunction.apiCall = logger.apiCall.bind(logger);
   logFunction.metric = logger.metric.bind(logger);
+  logFunction.audit = logger.audit.bind(logger);
+  logFunction.rateLimit = logger.rateLimit.bind(logger);
+  logFunction.sanitization = logger.sanitization.bind(logger);
+  logFunction.consent = logger.consent.bind(logger);
+  logFunction.dataAccess = logger.dataAccess.bind(logger);
 
   return logFunction;
 }
@@ -174,4 +309,4 @@ function createTimer(log, operationName) {
   };
 }
 
-module.exports = { createLogger, createTimer, Logger };
+module.exports = { createLogger, createTimer, Logger, SECURITY_EVENT_TYPES };

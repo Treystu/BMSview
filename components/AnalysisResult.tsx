@@ -2,12 +2,30 @@ import React, { useEffect, useState } from 'react';
 import { streamInsights } from '../services/clientService';
 import { hasOpenCircuitBreakers, resetAllCircuitBreakers } from '../services/circuitBreakerService';
 import type { AnalysisData, BmsSystem, DisplayableAnalysisResult, WeatherData } from '../types';
+import { InsightMode, InsightModeDescriptions } from '../types';
 import { formatError, getIsActualError } from '../utils';
+import { useAppState } from '../state/appState';
 import CloudIcon from './icons/CloudIcon';
 import SpinnerIcon from './icons/SpinnerIcon';
 import SunIcon from './icons/SunIcon';
 import ThermometerIcon from './icons/ThermometerIcon';
 import TypewriterMarkdown from './TypewriterMarkdown';
+
+// Loading state messages for each insight mode
+const InsightModeLoadingStates: Record<InsightMode, { title: string; description: string }> = {
+  [InsightMode.WITH_TOOLS]: {
+    title: '🤖 AI Battery Guru Thinking...',
+    description: 'Analyzing your battery data with intelligent querying. The AI can request specific historical data on-demand to answer your questions.'
+  },
+  [InsightMode.FULL_CONTEXT]: {
+    title: '🧠 Full Context Mode Loading...',
+    description: 'Loading complete historical data and enabling AI feedback capability. This may take longer but provides the deepest analysis with app improvement suggestions.'
+  },
+  [InsightMode.STANDARD]: {
+    title: '⚡ Generating Insights...',
+    description: 'Processing your request using the legacy endpoint (same capabilities as Battery Guru).'
+  }
+};
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
   console.log(JSON.stringify({
@@ -28,6 +46,7 @@ interface AnalysisResultProps {
 }
 
 const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: string, systemName?: string }> = ({ analysisData, systemId, systemName }) => {
+  const { state, dispatch } = useAppState();
   const [insights, setInsights] = useState('');
   const [analysisStatus, setAnalysisStatus] = useState<'idle' | 'initializing' | 'streaming' | 'complete' | 'error'>('idle');
   const [isLoading, setIsLoading] = useState(false);
@@ -35,6 +54,10 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   const [error, setError] = useState<string | null>(null);
   const [circuitBreakerOpen, setCircuitBreakerOpen] = useState(false);
   const [isResettingCircuitBreaker, setIsResettingCircuitBreaker] = useState(false);
+  // Consent checkbox state is intentionally NOT persisted across page reloads.
+  // This is privacy-friendly and GDPR-compliant, requiring explicit consent per session.
+  // If you wish to persist consent, consider using localStorage with a timestamp and clear documentation.
+  const [consentGranted, setConsentGranted] = useState(false); // User consent for AI analysis
   const successTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   
   // Context window configuration
@@ -44,6 +67,12 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   const [modelOverride, setModelOverride] = useState(''); // Empty = use default
   const [customModel, setCustomModel] = useState(''); // For custom model input
   const [useCustomModel, setUseCustomModel] = useState(false); // Toggle between preset and custom
+  
+  // Insight mode selection from global state
+  const selectedMode = state.selectedInsightMode;
+  const setSelectedMode = (mode: InsightMode) => {
+    dispatch({ type: 'SET_INSIGHT_MODE', payload: mode });
+  };
   
   // Available Gemini models (presets)
   const availableModels = [
@@ -86,7 +115,12 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
     return option ? option.label : `${days} days`;
   };
 
-  const handleGenerateInsights = async (prompt?: string) => {
+  const handleGenerateInsights = async (prompt?: string, overrideMode?: InsightMode) => {
+    if (!consentGranted) {
+      setError('Please grant consent for AI analysis to proceed.');
+      return;
+    }
+
     setIsLoading(true);
     setAnalysisStatus('initializing');
     setError(null);
@@ -102,7 +136,9 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           contextWindowDays, // Pass context window configuration
           modelOverride: getEffectiveModel() || undefined, // Pass model override if selected
           // Iteration limits: 20 for custom queries, 10 for standard (matches react-loop.cjs constants)
-          maxIterations: prompt ? 20 : 10
+          maxIterations: prompt ? 20 : 10,
+          insightMode: overrideMode || selectedMode, // Use override mode if provided, otherwise use selected mode
+          consentGranted // Pass consent flag
         },
         (chunk) => {
           setInsights(prev => prev + chunk);
@@ -220,10 +256,11 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               </div>
             </div>
             <div className="text-center space-y-2">
-              <h5 className="text-lg font-bold text-gray-900">🤖 AI Battery Guru Thinking...</h5>
+              <h5 className="text-lg font-bold text-gray-900">
+                {InsightModeLoadingStates[selectedMode].title}
+              </h5>
               <p className="text-sm text-gray-600 max-w-md">
-                Analyzing your battery data with intelligent querying. 
-                The AI can request specific historical data on-demand to answer your questions.
+                {InsightModeLoadingStates[selectedMode].description}
               </p>
             </div>
           </div>
@@ -236,6 +273,39 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
             Error Generating Insights
           </h5>
           <p className="text-red-700 mt-1 whitespace-pre-wrap">{error}</p>
+          
+          {/* Mode-specific error suggestions */}
+          {!circuitBreakerOpen && (
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-300 rounded-lg">
+              <p className="text-blue-900 text-sm font-semibold mb-2">
+                💡 Suggestions to resolve this error:
+              </p>
+              <ul className="text-blue-800 text-sm space-y-1 list-disc list-inside">
+                {selectedMode === InsightMode.WITH_TOOLS && (
+                  <>
+                    <li>Reduce the data analysis window (currently {getContextWindowLabel(contextWindowDays)})</li>
+                    <li>Ask a simpler, more specific question</li>
+                    <li>Try again in a few moments if the service is busy</li>
+                  </>
+                )}
+                {selectedMode === InsightMode.FULL_CONTEXT && (
+                  <>
+                    <li>Full Context Mode loads ALL data upfront - this can be slower</li>
+                    <li>Consider using <strong>Battery Guru</strong> mode for faster responses</li>
+                    <li>Ensure your system has sufficient historical data</li>
+                    <li>Try again in a few moments if the service is busy</li>
+                  </>
+                )}
+                {selectedMode === InsightMode.STANDARD && (
+                  <>
+                    <li>This is a legacy endpoint - use <strong>Battery Guru</strong> mode directly for better support</li>
+                    <li>Reduce the data analysis window (currently {getContextWindowLabel(contextWindowDays)})</li>
+                    <li>Ensure your system has enough historical data</li>
+                  </>
+                )}
+              </ul>
+            </div>
+          )}
           
           {circuitBreakerOpen && (
             <div className="mt-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
@@ -262,17 +332,56 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           )}
           
           {!circuitBreakerOpen && (
-            <button
-              onClick={() => handleGenerateInsights(customPrompt || undefined)}
-              className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-            >
-              🔄 Retry
-            </button>
+            <div className="mt-3">
+              <button
+                onClick={() => handleGenerateInsights(customPrompt || undefined)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+              >
+                🔄 Retry with Current Mode
+              </button>
+            </div>
           )}
         </div>
       )}
       {!isLoading && (
         <div className="p-5 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg space-y-4 border border-gray-200">
+          {/* Insight Mode Selector */}
+          <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
+            <label htmlFor="insight-mode-selector" className="block text-sm font-semibold text-gray-700 mb-3">
+              🎯 Insight Generation Mode: <span className="text-indigo-600">{InsightModeDescriptions[selectedMode].label}</span>
+            </label>
+            <p className="text-xs text-gray-600 mb-3">
+              Choose the analysis approach that best suits your needs. Each mode offers different capabilities and processing times.
+            </p>
+            <select
+              id="insight-mode-selector"
+              value={selectedMode}
+              onChange={(e) => setSelectedMode(e.target.value as InsightMode)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 bg-white cursor-pointer mb-3"
+            >
+              {Object.entries(InsightModeDescriptions).map(([mode, info]) => (
+                <option key={mode} value={mode}>
+                  {info.label}
+                </option>
+              ))}
+            </select>
+            
+            {/* Mode Description and Features */}
+            <div className="mt-3 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+              <p className="text-sm font-medium text-indigo-900 mb-2">
+                {InsightModeDescriptions[selectedMode].description}
+              </p>
+              <ul className="text-xs text-indigo-800 space-y-1">
+                {InsightModeDescriptions[selectedMode].features.map((feature) => (
+                  <li key={feature} className="flex items-start">
+                    <span className="mr-2">✓</span>
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          
           {/* Context Window Slider */}
           <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
             <label htmlFor="context-window-slider" className="block text-sm font-semibold text-gray-700 mb-3">
@@ -358,11 +467,35 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
             )}
           </div>
           
+          {/* Consent Checkbox */}
+          <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={consentGranted}
+                onChange={(e) => setConsentGranted(e.target.checked)}
+                className="mt-1 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+              />
+              <div className="text-sm text-gray-700">
+                <span className="font-semibold text-blue-800">I agree to AI Data Analysis</span>
+                <p className="mt-1 text-xs text-gray-600">
+                  By checking this box, you consent to having your anonymized battery data processed by AI services (Gemini) to generate insights.
+                  Your data is anonymized before processing and retained for 30 days for analysis purposes.
+                </p>
+              </div>
+            </label>
+          </div>
+
           <div className="flex flex-col sm:flex-row items-center gap-4">
             <button
               type="button"
               onClick={() => handleGenerateInsights()}
-              className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 flex items-center justify-center gap-2"
+              disabled={!consentGranted}
+              className={`w-full sm:w-auto font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform flex items-center justify-center gap-2 ${
+                consentGranted
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 hover:scale-105 text-white cursor-pointer'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
             >
               <span>🔍</span>
               <span>Generate AI Insights</span>
@@ -387,8 +520,12 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
             <button
               type="button"
               onClick={() => handleGenerateInsights(customPrompt)}
-              disabled={!customPrompt.trim()}
-              className="w-full sm:w-auto bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white font-bold py-2 px-4 rounded-lg shadow-md disabled:bg-gray-400 disabled:from-gray-400 disabled:to-gray-400 transition-all duration-200 flex items-center justify-center gap-2"
+              disabled={!customPrompt.trim() || !consentGranted}
+              className={`w-full sm:w-auto font-bold py-2 px-4 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2 ${
+                customPrompt.trim() && consentGranted
+                  ? 'bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white'
+                  : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+              }`}
             >
               <span>💬</span>
               <span>Submit Custom Query</span>

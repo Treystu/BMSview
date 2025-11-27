@@ -13,6 +13,7 @@ const { generateInitialSummary } = require("./insights-summary.cjs");
 const { getCollection } = require("./mongodb.cjs");
 const { toolDefinitions, executeToolCall } = require("./gemini-tools.cjs");
 const { calculateSunriseSunset } = require("./weather-fetcher.cjs");
+const { anonymizeSystemProfile } = require("./privacy-utils.cjs");
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const RECENT_SNAPSHOT_LIMIT = 24;
@@ -268,7 +269,70 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
  * @param {"sync"|"background"} [params.mode]
  */
 async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, context, mode = "sync" }) {
+    const { estimateDataTokens, checkTokenLimit } = require('./token-limit-handler.cjs');
+    
     const contextData = context || await collectAutoInsightsContext(systemId, analysisData, log, { mode });
+
+    // Estimate token usage
+    const contextTokens = estimateDataTokens(contextData);
+    const analysisTokens = estimateDataTokens(analysisData);
+    const promptBaseTokens = 1000; // Rough estimate for system prompt
+    const totalTokens = contextTokens + analysisTokens + promptBaseTokens;
+    
+    log.info('Token usage estimation', {
+        contextTokens,
+        analysisTokens,
+        promptBaseTokens,
+        totalTokens
+    });
+    
+    // Check if we're approaching token limit
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const tokenStatus = checkTokenLimit(totalTokens, model);
+    
+    if (tokenStatus.isApproachingLimit) {
+        log.warn('Approaching token limit, context may need reduction', {
+            percentUsed: tokenStatus.percentUsed,
+            remaining: tokenStatus.remaining
+        });
+        
+        // Add warning to context metadata
+        if (contextData.meta) {
+            contextData.meta.tokenWarning = {
+                percentUsed: tokenStatus.percentUsed,
+                remaining: tokenStatus.remaining,
+                message: 'Context is approaching token limit. Some data may be summarized.'
+            };
+        }
+    }
+    
+    if (tokenStatus.exceedsLimit) {
+        log.error('Token limit exceeded, applying aggressive reduction', {
+            estimatedTokens: tokenStatus.estimatedTokens,
+            limit: tokenStatus.limit
+        });
+        
+        // Apply emergency context reduction by removing less critical data
+        if (contextData.recentSnapshots && contextData.recentSnapshots.length > 10) {
+            const originalLength = contextData.recentSnapshots.length;
+            contextData.recentSnapshots = contextData.recentSnapshots.slice(-10); // Keep only last 10
+            log.info('Reduced recent snapshots to fit token limit', {
+                originalCount: originalLength,
+                reducedCount: contextData.recentSnapshots.length
+            });
+        }
+        
+        // Remove detailed analytics if still over limit
+        if (contextData.analytics && contextData.analytics.detailedMetrics) {
+            contextData.analytics.detailedMetrics = null;
+            log.info('Removed detailed analytics to fit token limit');
+        }
+        
+        if (contextData.meta) {
+            contextData.meta.tokenReduction = true;
+            contextData.meta.tokenReductionReason = 'Exceeded token limit, removed detailed data';
+        }
+    }
     const toolCatalog = buildToolCatalog();
     const { sections } = buildContextSections(contextData, analysisData);
 
@@ -323,6 +387,28 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "• Conversion: kWh = (Ah × Voltage) / 1000\n";
     prompt += "• Exception: When discussing CAPACITY ratings, you may use Ah WITH voltage context (e.g., '660Ah @ 48V = 31.7 kWh')\n";
     prompt += "• This makes analysis comparable across different voltage systems and matches utility billing units\n";
+
+    // AI FEEDBACK CAPABILITY
+    prompt += "\n💡 AI FEEDBACK CAPABILITY - YOU CAN IMPROVE THIS APP!\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    prompt += "You have access to the **submitAppFeedback** tool to suggest improvements to BMSview.\n\n";
+    prompt += "**WHEN TO USE IT:**\n";
+    prompt += "• When you notice data format inefficiencies during analysis\n";
+    prompt += "• When a better API or data source would improve accuracy (e.g., weather, solar)\n";
+    prompt += "• When you identify UI/UX improvements based on usage patterns\n";
+    prompt += "• When missing data points limit your analysis quality\n";
+    prompt += "• When you discover bugs or issues during data processing\n";
+    prompt += "• When you have optimization ideas for performance\n\n";
+    prompt += "**HOW TO USE IT:**\n";
+    prompt += "Call submitAppFeedback with:\n";
+    prompt += "- systemId: The current system ID\n";
+    prompt += "- feedbackType: 'feature_request', 'api_suggestion', 'data_format', 'bug_report', or 'optimization'\n";
+    prompt += "- category: 'weather_api', 'data_structure', 'ui_ux', 'performance', 'integration', or 'analytics'\n";
+    prompt += "- priority: 'low', 'medium', 'high', or 'critical'\n";
+    prompt += "- content: { title, description, rationale, implementation, expectedBenefit, estimatedEffort }\n\n";
+    prompt += "**YOUR FEEDBACK GOES TO:** Admin Dashboard → AI Feedback & Suggestions panel\n";
+    prompt += "**IMPACT:** Critical feedback may auto-generate GitHub issues for implementation!\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
     // Add data availability info FIRST so Gemini knows what it can query
     if (dataAvailability) {
@@ -542,9 +628,22 @@ function buildCustomMission(customPrompt) {
     const csvRequested = /\b(csv|comma[\s\-.]?separated|spreadsheet)\b/i.test(customPrompt);
     const tableRequested = /\b(table|tabular)\b/i.test(customPrompt);
     const jsonRequested = /\b(json|javascript object)\b/i.test(customPrompt);
+
+    let approach = `**USER QUESTION:**\n"${customPrompt}"\n\n`;
+
+    // Chain of Thought injection
+    approach += `**MANDATORY THOUGHT PROCESS:**\n`;
+    approach += `Before calling any tool or answering, you must mentally perform these steps:\n`;
+    approach += `1. **Deconstruct**: What specific time ranges and metrics does the user need? (e.g., "last week" = specific ISO dates)\n`;
+    approach += `2. **Check Context**: Do I already have this in the "PRE-LOADED" section above? If yes, USE IT.\n`;
+    approach += `3. **Gap Analysis**: What is missing? If I need granular hourly data for a specific date, I MUST call request_bms_data.\n`;
+    approach += `4. **Tool Selection**: Which tool fills the gap? (e.g., analyze_usage_patterns for anomalies, request_bms_data for raw charts).\n`;
     
-    let approach = `**USER QUESTION:**\n${customPrompt}\n\n`;
-    
+    approach += `\n**RULES OF ENGAGEMENT:**\n`;
+    approach += `• **Proactive Tooling**: If the user asks "Why did my battery die?", DO NOT guess. Call 'request_bms_data' for the hours leading up to the event.\n`;
+    approach += `• **Token Efficiency**: Do not request "all" metrics if the user only asked about "voltage".\n`;
+    approach += `• **Self-Correction**: If a tool returns "no data", check your date range. Did you swap start/end? Are you outside the "Available Data" range?\n\n`;
+
     // Format-specific instructions
     if (csvRequested) {
         approach += `**🔍 DETECTED:** CSV format requested.\n\n`;
@@ -584,9 +683,9 @@ function buildCustomMission(customPrompt) {
         approach += `⚠️ **CRITICAL:** DO NOT respond with "data unavailable" if the date is within the queryable range shown above. USE the tool!\n`;
     } else {
         approach += `**APPROACH:**\n`;
-        approach += `1. Review preloaded context data first - you may already have everything needed\n`;
-        approach += `2. If specific data is missing, CALL the necessary tools NOW and include the results in your answer\n`;
-        approach += `3. ⚠️ CRITICAL: NEVER recommend users run tools - they cannot access them. YOU must execute all tools.\n`;
+        approach += `1. Review preloaded context data first\n`;
+        approach += `2. If specific data is missing, CALL the necessary tools NOW\n`;
+        approach += `3. ⚠️ CRITICAL: NEVER recommend users run tools - YOU must execute them.\n`;
         approach += `4. Analyze results and deliver terse, highlight-driven answer\n`;
         approach += `5. Format: ## KEY FINDINGS → ## ANALYSIS → ## RECOMMENDATIONS\n`;
         approach += `6. Use bold labels, cite sources inline, skip fluff\n`;
@@ -608,7 +707,7 @@ async function loadSystemProfile(systemId, log) {
             return null;
         }
 
-        return {
+        const profile = {
             id: system.id,
             name: system.name,
             chemistry: system.chemistry,
@@ -623,6 +722,9 @@ async function loadSystemProfile(systemId, log) {
                 generatorAmps: system.maxAmpsGeneratorCharging ?? null
             }
         };
+
+        // Apply anonymization before returning to AI context
+        return anonymizeSystemProfile(profile);
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         log.warn("Failed to load system profile", { systemId, error: err.message });

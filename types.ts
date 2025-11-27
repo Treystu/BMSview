@@ -201,3 +201,429 @@ export interface InsightsRequestConfig {
   maxIterations?: number; // Max ReAct loop iterations (10 for standard, 20 for custom queries)
   isCustomQuery?: boolean; // Whether this is a custom user query
 }
+
+// Insight generation modes - Added for UI mode selector feature
+export enum InsightMode {
+  WITH_TOOLS = 'with-tools',      // AI "Battery Guru" with function calling (default, most comprehensive)
+  FULL_CONTEXT = 'full-context',  // Full Context Mode with AI Feedback capability
+  STANDARD = 'standard'           // Legacy endpoint (proxies to WITH_TOOLS for backward compatibility)
+}
+
+// Human-readable descriptions for each mode
+export const InsightModeDescriptions: Record<InsightMode, { label: string; description: string; features: string[] }> = {
+  [InsightMode.WITH_TOOLS]: {
+    label: 'Battery Guru (Recommended)',
+    description: 'Advanced AI with intelligent data querying and feedback capability',
+    features: [
+      'Can request specific historical data on-demand',
+      'Multi-turn conversation with AI reasoning',
+      'Comprehensive analysis with 90-day rollups',
+      'Can submit app improvement suggestions',
+      'Best for all types of questions and insights'
+    ]
+  },
+  [InsightMode.FULL_CONTEXT]: {
+    label: 'Full Context Mode',
+    description: 'Complete data context with AI app feedback focus',
+    features: [
+      'Loads ALL historical data upfront (90+ days)',
+      'Enhanced AI feedback and suggestions',
+      'Best for app improvement recommendations',
+      'Slower initial load, deeper analysis',
+      'Suggestions appear in Admin AI Feedback panel'
+    ]
+  },
+  [InsightMode.STANDARD]: {
+    label: 'Legacy Endpoint',
+    description: 'Legacy endpoint (uses same engine as Battery Guru)',
+    features: [
+      'Same capabilities as Battery Guru',
+      'Maintained for backward compatibility',
+      'Recommended to use Battery Guru directly instead'
+    ]
+  }
+};
+
+// AI Feedback System Types
+export interface AIFeedbackSuggestion {
+  title: string;
+  description: string;
+  rationale: string;
+  implementation: string;
+  expectedBenefit: string;
+  estimatedEffort: 'hours' | 'days' | 'weeks';
+  codeSnippets?: string[];
+  affectedComponents?: string[];
+}
+
+export interface AIFeedback {
+  id: string;
+  timestamp: Date;
+  systemId: string;
+  feedbackType: 'feature_request' | 'api_suggestion' | 'data_format' | 'bug_report' | 'optimization';
+  category: 'weather_api' | 'data_structure' | 'ui_ux' | 'performance' | 'integration' | 'analytics';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  status: 'pending' | 'reviewed' | 'accepted' | 'implemented' | 'rejected';
+  geminiModel: string;
+  contextHash: string;
+  suggestion: AIFeedbackSuggestion;
+  githubIssue?: {
+    number: number;
+    url: string;
+    status: string;
+  };
+  adminNotes?: string;
+  implementationDate?: Date;
+  updatedAt?: Date;
+  metrics?: {
+    viewCount: number;
+    lastViewed: Date | null;
+    discussionCount: number;
+  };
+}
+
+// Full Context Data - specific interfaces for type safety
+export interface CellDataPoint {
+  timestamp: string;
+  cellVoltages: number[];
+  highestCell?: number | null;
+  lowestCell?: number | null;
+  difference?: number | null;
+}
+
+export interface TemperatureReading {
+  timestamp: string;
+  temperature?: number | null;
+  temperatures?: number[];
+  mosTemperature?: number | null;
+}
+
+export interface VoltageReading {
+  timestamp: string;
+  voltage: number | null;
+}
+
+export interface CurrentReading {
+  timestamp: string;
+  current: number | null;
+  power?: number | null;
+}
+
+export interface AlarmEvent {
+  timestamp: string;
+  alert: string;
+}
+
+export interface StateChange {
+  timestamp: string;
+  from: string | null;
+  to: string;
+}
+
+export interface StatisticalAnalysisResult {
+  descriptive: {
+    mean: number;
+    median: number;
+    standardDeviation: number;
+    variance: number;
+    min: number;
+    max: number;
+    range: number;
+    count: number;
+  };
+  percentiles: {
+    p5: number;
+    p25: number;
+    p50: number;
+    p75: number;
+    p95: number;
+    p99: number;
+  };
+  outliers: {
+    count: number;
+    percentage: number;
+    values: Array<{ index: number; value: number; deviationFromMean: number }>;
+  };
+}
+
+export interface TrendAnalysisResult {
+  trend: 'increasing' | 'decreasing' | 'stable';
+  slope: number;
+  intercept: number;
+  rSquared: number;
+  confidence: 'high' | 'medium' | 'low';
+  changePoints: Array<{
+    index: number;
+    timestamp: number;
+    changeMagnitude: number;
+    beforeMean: number;
+    afterMean: number;
+  }>;
+}
+
+export interface AnomalyDetectionResult {
+  anomalies: Array<{
+    index: number;
+    value: number;
+    anomalyScore: number;
+    isAnomaly: boolean;
+  }>;
+  anomalyRate: number;
+  totalAnomalies: number;
+  threshold: number;
+  mean: number;
+  stdDev: number;
+}
+
+export interface CorrelationAnalysisResult {
+  matrix: Record<string, Record<string, number>>;
+  strongCorrelations: Array<{
+    var1: string;
+    var2: string;
+    correlation: number;
+    strength: string;
+    direction: string;
+  }>;
+  totalPairs: number;
+}
+
+export interface WeatherHistoryPoint {
+  timestamp: string;
+  temp?: number;
+  clouds?: number;
+  uvi?: number;
+  weather_main?: string;
+  weather_icon?: string;
+  estimated_irradiance_w_m2?: number;
+}
+
+export interface SolarProductionPoint {
+  timestamp: string;
+  predicted?: number | null;
+  actual?: number | null;
+}
+
+export interface SystemConfig {
+  name: string;
+  chemistry: string;
+  voltage: number | null;
+  capacity: number | null;
+  location: {
+    latitude: number | null;
+    longitude: number | null;
+  };
+}
+
+export interface BatterySpecs {
+  nominalVoltage: number | null;
+  capacityAh: number | null;
+  chemistry: string;
+}
+
+export interface RemainingLifeExpectancy {
+  remainingCycles: number;
+  remainingYears: number;
+  estimatedEndDate: string;
+}
+
+export interface PerformanceDegradation {
+  totalDegradation: number;
+  degradationPerYear: number;
+  timeRangeDays: number;
+}
+
+export interface FullContextData {
+  raw: {
+    allAnalyses: AnalysisRecord[];
+    allCellData: CellDataPoint[];
+    allTemperatureReadings: TemperatureReading[];
+    allVoltageReadings: VoltageReading[];
+    allCurrentReadings: CurrentReading[];
+    allAlarms: AlarmEvent[];
+    allStateChanges: StateChange[];
+    timeRange: {
+      start: string;
+      end: string;
+      days: number;
+    };
+    totalDataPoints: number;
+  };
+  toolOutputs: {
+    statisticalAnalysis: StatisticalAnalysisResult | null;
+    trendAnalysis: TrendAnalysisResult | null;
+    anomalyDetection: AnomalyDetectionResult | null;
+    correlationAnalysis: CorrelationAnalysisResult | null;
+  };
+  external: {
+    weatherHistory: WeatherHistoryPoint[];
+    solarProduction: SolarProductionPoint[];
+  };
+  metadata: {
+    systemConfig: SystemConfig | null;
+    batterySpecs: BatterySpecs | null;
+  };
+  computed: {
+    healthScore: number | null;
+    remainingLifeExpectancy: RemainingLifeExpectancy | null;
+    performanceDegradation: PerformanceDegradation | null;
+  };
+  buildTimestamp: string;
+  buildDurationMs: number;
+  systemId: string;
+}
+// AI Feedback & Monitoring Types (for observability system)
+export interface AIFeedbackMetric {
+  id: string;
+  timestamp: string;
+  systemId?: string;
+  metricType: 'accuracy' | 'implementation_rate' | 'performance' | 'cost' | 'anomaly';
+  metricName: string;
+  value: number;
+  unit?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AIOperationLog {
+  id: string;
+  timestamp: string;
+  operation: 'analysis' | 'insights' | 'feedback_generation';
+  systemId?: string;
+  duration: number;
+  tokensUsed?: number;
+  cost?: number;
+  success: boolean;
+  error?: string;
+  model?: string;
+  contextWindowDays?: number;
+}
+
+export interface CostMetrics {
+  period: 'daily' | 'weekly' | 'monthly';
+  startDate: string;
+  endDate: string;
+  totalCost: number;
+  totalTokens: number;
+  operationBreakdown: {
+    analysis: { count: number; cost: number; tokens: number };
+    insights: { count: number; cost: number; tokens: number };
+    feedbackGeneration: { count: number; cost: number; tokens: number };
+  };
+  averageCostPerOperation: number;
+}
+
+export interface AnomalyAlert {
+  id: string;
+  timestamp: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  type: 'cost_spike' | 'error_rate' | 'latency' | 'accuracy_drop' | 'circuit_breaker';
+  message: string;
+  metadata?: Record<string, unknown>;
+  resolved?: boolean;
+  resolvedAt?: string;
+}
+
+export interface FeedbackImplementationTracking {
+  id: string;
+  feedbackId: string;
+  suggestedAt: string;
+  implementedAt?: string;
+  status: 'pending' | 'implemented' | 'rejected' | 'expired';
+  implementationType?: string;
+  implementationNotes?: string;
+  effectiveness?: number; // 0-100 score
+}
+
+export interface MonitoringDashboardData {
+  realtimeMetrics: {
+    currentOperationsPerMinute: number;
+    averageLatency: number;
+    errorRate: number;
+    circuitBreakerStatus: string;
+  };
+  costMetrics: CostMetrics;
+  recentAlerts: AnomalyAlert[];
+  performanceTrends: {
+    timestamp: string;
+    avgDuration: number;
+    errorCount: number;
+    successCount: number;
+  }[];
+  feedbackStats: {
+    totalSuggestions: number;
+    implementationRate: number;
+    averageEffectiveness: number;
+  };
+}
+
+// Security & Audit Types
+export interface SecurityAuditEvent {
+  id: string;
+  timestamp: string;
+  eventType: SecurityEventType;
+  clientIp?: string;
+  userId?: string;
+  systemId?: string;
+  endpoint?: string;
+  action?: string;
+  details?: Record<string, unknown>;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+}
+
+export type SecurityEventType = 
+  | 'rate_limit_exceeded'
+  | 'rate_limit_warning'
+  | 'input_sanitized'
+  | 'injection_blocked'
+  | 'prompt_injection_detected'
+  | 'auth_success'
+  | 'auth_failure'
+  | 'consent_granted'
+  | 'consent_denied'
+  | 'data_access'
+  | 'data_export'
+  | 'admin_action'
+  | 'encryption_event';
+
+export interface RateLimitConfig {
+  maxRequests: number;
+  windowMs: number;
+  keyPrefix: string;
+}
+
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  resetMs: number;
+  limit: number;
+  error?: string;
+}
+
+export interface SanitizationResult {
+  sanitized: unknown;
+  warnings: string[];
+  modified: boolean;
+}
+
+export interface EncryptedData {
+  encrypted: true;
+  data: string;
+  iv: string;
+  authTag: string;
+  algorithm: string;
+}
+
+export interface SecurityConfig {
+  rateLimiting: {
+    insights: RateLimitConfig;
+    feedback: RateLimitConfig;
+    analysis: RateLimitConfig;
+  };
+  encryption: {
+    enabled: boolean;
+    sensitiveFields: string[];
+  };
+  audit: {
+    enabled: boolean;
+    retentionDays: number;
+  };
+}

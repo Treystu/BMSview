@@ -1,5 +1,6 @@
 import React, { createContext, Dispatch, useContext, useReducer } from 'react';
-import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
+import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult, InsightMode } from '../types';
+import { InsightMode as InsightModeEnum } from '../types';
 
 // ***REMOVED***: JobCreationResponse is no longer needed.
 
@@ -34,6 +35,8 @@ export interface AppState {
     historyCount: number;
     cacheSizeBytes: number;
   };
+  // Selected insight generation mode
+  selectedInsightMode: InsightMode;
 }
 
 export const initialState: AppState = {
@@ -57,6 +60,8 @@ export const initialState: AppState = {
     historyCount: 0,
     cacheSizeBytes: 0,
   },
+  // Default to WITH_TOOLS mode (Battery Guru - most comprehensive)
+  selectedInsightMode: InsightModeEnum.WITH_TOOLS,
 };
 
 // 2. Actions
@@ -79,7 +84,9 @@ export type AppAction =
   // Sync status actions
   | { type: 'UPDATE_SYNC_STATUS'; payload: { isSyncing: boolean; lastSyncTime?: Record<string, number> } }
   | { type: 'SET_CACHE_STATS'; payload: { systemsCount: number; historyCount: number; cacheSizeBytes: number } }
-  | { type: 'SYNC_ERROR'; payload: string | null };
+  | { type: 'SYNC_ERROR'; payload: string | null }
+  // Insight mode selection
+  | { type: 'SET_INSIGHT_MODE'; payload: InsightMode };
 // ***REMOVED***: All job-polling actions are gone.
 
 // 3. Reducer
@@ -221,6 +228,12 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         ...state,
         syncError: action.payload,
         isSyncing: false,
+      };
+
+    case 'SET_INSIGHT_MODE':
+      return {
+        ...state,
+        selectedInsightMode: action.payload,
       };
 
     default:

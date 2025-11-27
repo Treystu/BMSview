@@ -13,7 +13,8 @@
     "test:coverage": "jest --config jest.config.cjs --coverage",
     "test:ci": "jest --config jest.config.cjs --ci --coverage --watchAll=false",
     "lint": "eslint src/ netlify/functions/ tests/",
-    "lint:fix": "eslint src/ netlify/functions/ tests/ --fix"
+    "lint:fix": "eslint src/ netlify/functions/ tests/ --fix",
+    "seed:monitoring": "node scripts/seed-monitoring-data.js"
   },
   "dependencies": {
     "@babel/plugin-transform-modules-commonjs": "^7.27.1",
