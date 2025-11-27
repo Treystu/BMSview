@@ -541,4 +541,3 @@ export interface MonitoringDashboardData {
     averageEffectiveness: number;
   };
 }
-}
