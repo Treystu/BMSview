@@ -552,10 +552,28 @@ async function calculateStatsBatch(data, options = {}) {
     }
   }
   
-  if (count < 2) {
+  // Handle edge case: single value (variance is undefined for n=1)
+  if (count === 1) {
+    return {
+      success: true,
+      stats: {
+        count,
+        sum,
+        mean: Math.round(mean * 1000) / 1000,
+        variance: 0,  // Variance undefined for single value, using 0
+        stdDev: 0,
+        min,
+        max,
+        range: 0
+      },
+      note: 'Single value dataset - variance and stdDev are 0 by convention'
+    };
+  }
+  
+  if (count < 1) {
     return {
       success: false,
-      error: 'Insufficient data for statistics (need at least 2 values)'
+      error: 'No valid numeric data found'
     };
   }
   

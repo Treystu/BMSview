@@ -19,12 +19,17 @@ const log = createLogger('utils/cache');
 
 /**
  * Default cache configuration
+ * 
+ * Caching can be disabled via:
+ * - Setting enabled: false in config when creating cache
+ * - Setting NODE_ENV=test (automatically disabled in test environment)
+ * - Setting DISABLE_CACHE=true environment variable
  */
 const DEFAULT_CONFIG = {
   maxSize: 100,           // Maximum number of entries
   defaultTTL: 300000,     // Default TTL: 5 minutes (in ms)
   cleanupInterval: 60000, // Cleanup expired entries every minute
-  enabled: true           // Can disable for testing
+  enabled: process.env.DISABLE_CACHE !== 'true' && process.env.NODE_ENV !== 'test'
 };
 
 /**

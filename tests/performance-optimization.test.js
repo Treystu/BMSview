@@ -71,6 +71,9 @@ const {
 
 describe('Performance Optimization Infrastructure', () => {
   
+  // Test configuration - explicitly enable caching in tests
+  const testCacheConfig = { cleanupInterval: 0, enabled: true };
+  
   beforeEach(() => {
     clearAllCaches();
   });
@@ -84,14 +87,14 @@ describe('Performance Optimization Infrastructure', () => {
     describe('PerformanceCache', () => {
       
       test('should create cache with default config', () => {
-        const cache = new PerformanceCache('test-namespace', { cleanupInterval: 0 });
+        const cache = new PerformanceCache('test-namespace', testCacheConfig);
         expect(cache.namespace).toBe('test-namespace');
         expect(cache.config.maxSize).toBe(100);
         cache.destroy();
       });
       
       test('should set and get values', () => {
-        const cache = new PerformanceCache('test', { cleanupInterval: 0 });
+        const cache = new PerformanceCache('test', testCacheConfig);
         
         cache.set('key1', { data: 'value1' });
         const result = cache.get('key1');
@@ -101,7 +104,7 @@ describe('Performance Optimization Infrastructure', () => {
       });
       
       test('should return null for non-existent keys', () => {
-        const cache = new PerformanceCache('test', { cleanupInterval: 0 });
+        const cache = new PerformanceCache('test', testCacheConfig);
         
         const result = cache.get('nonexistent');
         
@@ -111,8 +114,8 @@ describe('Performance Optimization Infrastructure', () => {
       
       test('should expire values after TTL', async () => {
         const cache = new PerformanceCache('test', { 
-          defaultTTL: 50, // 50ms
-          cleanupInterval: 0 
+          ...testCacheConfig,
+          defaultTTL: 50 // 50ms
         });
         
         cache.set('key1', 'value1');
@@ -127,8 +130,8 @@ describe('Performance Optimization Infrastructure', () => {
       
       test('should evict LRU when at capacity', () => {
         const cache = new PerformanceCache('test', { 
-          maxSize: 3,
-          cleanupInterval: 0 
+          ...testCacheConfig,
+          maxSize: 3
         });
         
         cache.set('key1', 'value1');
@@ -149,7 +152,7 @@ describe('Performance Optimization Infrastructure', () => {
       });
       
       test('should track cache statistics', () => {
-        const cache = new PerformanceCache('test', { cleanupInterval: 0 });
+        const cache = new PerformanceCache('test', testCacheConfig);
         
         cache.set('key1', 'value1');
         cache.get('key1'); // Hit
@@ -165,7 +168,7 @@ describe('Performance Optimization Infrastructure', () => {
       });
       
       test('should support getOrSet pattern', async () => {
-        const cache = new PerformanceCache('test', { cleanupInterval: 0 });
+        const cache = new PerformanceCache('test', testCacheConfig);
         let computeCount = 0;
         
         const computeFn = async () => {
@@ -186,7 +189,7 @@ describe('Performance Optimization Infrastructure', () => {
       });
       
       test('should invalidate by pattern', () => {
-        const cache = new PerformanceCache('test', { cleanupInterval: 0 });
+        const cache = new PerformanceCache('test', testCacheConfig);
         
         cache.set('system:123:hourly', 'data1');
         cache.set('system:123:daily', 'data2');
@@ -400,6 +403,21 @@ describe('Performance Optimization Infrastructure', () => {
         const result = await calculateStatsBatch([]);
         
         expect(result.success).toBe(false);
+      });
+      
+      test('should handle single value', async () => {
+        const data = [42];
+        
+        const result = await calculateStatsBatch(data);
+        
+        expect(result.success).toBe(true);
+        expect(result.stats.count).toBe(1);
+        expect(result.stats.mean).toBe(42);
+        expect(result.stats.min).toBe(42);
+        expect(result.stats.max).toBe(42);
+        expect(result.stats.variance).toBe(0);
+        expect(result.stats.stdDev).toBe(0);
+        expect(result.note).toBeDefined();
       });
       
       test('should filter null values', async () => {
