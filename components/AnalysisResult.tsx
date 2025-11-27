@@ -17,6 +17,10 @@ const InsightModeLoadingStates: Record<InsightMode, { title: string; description
     title: '🤖 AI Battery Guru Thinking...',
     description: 'Analyzing your battery data with intelligent querying. The AI can request specific historical data on-demand to answer your questions.'
   },
+  [InsightMode.FULL_CONTEXT]: {
+    title: '🧠 Full Context Mode Loading...',
+    description: 'Loading complete historical data and enabling AI feedback capability. This may take longer but provides the deepest analysis with app improvement suggestions.'
+  },
   [InsightMode.STANDARD]: {
     title: '⚡ Generating Insights...',
     description: 'Processing your request using the legacy endpoint (same capabilities as Battery Guru).'
@@ -281,6 +285,14 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                   <>
                     <li>Reduce the data analysis window (currently {getContextWindowLabel(contextWindowDays)})</li>
                     <li>Ask a simpler, more specific question</li>
+                    <li>Try again in a few moments if the service is busy</li>
+                  </>
+                )}
+                {selectedMode === InsightMode.FULL_CONTEXT && (
+                  <>
+                    <li>Full Context Mode loads ALL data upfront - this can be slower</li>
+                    <li>Consider using <strong>Battery Guru</strong> mode for faster responses</li>
+                    <li>Ensure your system has sufficient historical data</li>
                     <li>Try again in a few moments if the service is busy</li>
                   </>
                 )}

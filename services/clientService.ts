@@ -633,6 +633,8 @@ export function selectEndpointForMode(mode: InsightMode): string {
     switch (mode) {
         case InsightModeEnum.STANDARD:
             return '/.netlify/functions/generate-insights';
+        case InsightModeEnum.FULL_CONTEXT:
+            return '/.netlify/functions/generate-insights-full-context';
         case InsightModeEnum.WITH_TOOLS:
         default:
             return '/.netlify/functions/generate-insights-with-tools';

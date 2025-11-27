@@ -304,6 +304,86 @@ const toolDefinitions = [
       },
       required: ['systemId']
     }
+  },
+  {
+    name: 'submitAppFeedback',
+    description: `Submit feedback or suggestions for improving the BMSview application. Use this tool when you identify:
+• Data format inefficiencies or improvements
+• Better API integrations (e.g., more accurate weather/solar services)
+• UI/UX improvements based on data patterns you observe
+• New features that would benefit users based on their usage patterns
+• Missing data points that would improve analysis accuracy
+• Performance optimizations or data processing improvements
+• Bug reports or issues you notice during analysis
+
+The feedback will be saved to the AI Feedback panel in the Admin Dashboard where it can be reviewed, prioritized, and potentially auto-generate GitHub issues. This is your way to actively improve the application!`,
+    parameters: {
+      type: 'object',
+      properties: {
+        systemId: {
+          type: 'string',
+          description: 'The system ID context for this feedback (use the current system being analyzed)'
+        },
+        feedbackType: {
+          type: 'string',
+          enum: ['feature_request', 'api_suggestion', 'data_format', 'bug_report', 'optimization'],
+          description: 'Type of feedback: feature_request (new capability), api_suggestion (better external service), data_format (data structure improvement), bug_report (issue found), optimization (performance improvement)'
+        },
+        category: {
+          type: 'string',
+          enum: ['weather_api', 'data_structure', 'ui_ux', 'performance', 'integration', 'analytics'],
+          description: 'Category: weather_api, data_structure, ui_ux, performance, integration, analytics'
+        },
+        priority: {
+          type: 'string',
+          enum: ['low', 'medium', 'high', 'critical'],
+          description: 'Priority level based on impact and urgency'
+        },
+        content: {
+          type: 'object',
+          description: 'Detailed feedback content',
+          properties: {
+            title: {
+              type: 'string',
+              description: 'Brief, descriptive title (max 100 chars)'
+            },
+            description: {
+              type: 'string',
+              description: 'Detailed description of the suggestion or issue'
+            },
+            rationale: {
+              type: 'string',
+              description: 'Why this improvement matters - what problem does it solve?'
+            },
+            implementation: {
+              type: 'string',
+              description: 'How to implement it - technical approach or steps'
+            },
+            expectedBenefit: {
+              type: 'string',
+              description: 'Expected benefits - quantify if possible (e.g., "60% reduction in payload size")'
+            },
+            estimatedEffort: {
+              type: 'string',
+              enum: ['hours', 'days', 'weeks'],
+              description: 'Estimated implementation effort'
+            },
+            codeSnippets: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Example code snippets if applicable'
+            },
+            affectedComponents: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'List of components/files that would be affected'
+            }
+          },
+          required: ['title', 'description', 'rationale', 'implementation', 'expectedBenefit', 'estimatedEffort']
+        }
+      },
+      required: ['systemId', 'feedbackType', 'category', 'priority', 'content']
+    }
   }
 ];
 
@@ -355,6 +435,10 @@ async function executeToolCall(toolName, parameters, log) {
 
       case 'get_hourly_soc_predictions':
         result = await getHourlySocPredictions(parameters, log);
+        break;
+
+      case 'submitAppFeedback':
+        result = await submitAppFeedback(parameters, log);
         break;
 
       default:
@@ -1152,6 +1236,122 @@ async function calculateEnergyBudget(params, log) {
       message: `Unable to calculate ${scenario} energy budget: ${error.message}`,
       systemId,
       scenario
+    };
+  }
+}
+
+/**
+ * Submit app feedback/suggestions to the AI Feedback system
+ * This allows the Battery Guru to actively suggest improvements to BMSview
+ */
+async function submitAppFeedback(params, log) {
+  const { systemId, feedbackType, category, priority, content } = params;
+
+  log.info('Submitting app feedback', { 
+    systemId, 
+    feedbackType, 
+    category, 
+    priority,
+    title: content?.title 
+  });
+
+  try {
+    // Validate required content fields
+    if (!content || !content.title || !content.description) {
+      return {
+        error: true,
+        message: 'Missing required content fields: title and description are required',
+        systemId,
+        feedbackType
+      };
+    }
+
+    // Import the feedback manager with error handling
+    let submitFeedbackToDatabase;
+    try {
+      const feedbackManager = require('./feedback-manager.cjs');
+      submitFeedbackToDatabase = feedbackManager.submitFeedbackToDatabase;
+      if (typeof submitFeedbackToDatabase !== 'function') {
+        throw new Error('submitFeedbackToDatabase is not a function');
+      }
+    } catch (importError) {
+      log.error('Failed to load feedback manager module', {
+        error: importError.message,
+        systemId,
+        feedbackType
+      });
+      return {
+        error: true,
+        message: 'Feedback system is not available. The feedback-manager module could not be loaded.',
+        systemId,
+        feedbackType,
+        suggestion: 'This may be a configuration issue. Your feedback has been logged for manual review.'
+      };
+    }
+    
+    // Generate a unique request ID for tracing
+    const requestId = `gemini-tool-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    
+    // Prepare feedback data
+    const feedbackData = {
+      systemId: systemId || 'unknown',
+      feedbackType,
+      category,
+      priority,
+      geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      content: {
+        title: content.title,
+        description: content.description,
+        rationale: content.rationale || '',
+        implementation: content.implementation || '',
+        expectedBenefit: content.expectedBenefit || '',
+        estimatedEffort: content.estimatedEffort || 'days',
+        codeSnippets: content.codeSnippets || [],
+        affectedComponents: content.affectedComponents || []
+      }
+    };
+
+    // Submit to database with traceable request ID
+    const result = await submitFeedbackToDatabase(feedbackData, { awsRequestId: requestId });
+
+    log.info('App feedback submitted successfully', {
+      feedbackId: result.id,
+      isDuplicate: result.isDuplicate,
+      similarItems: result.similarItems?.length || 0
+    });
+
+    // Return success response that Gemini can understand
+    return {
+      success: true,
+      feedbackId: result.id,
+      isDuplicate: result.isDuplicate || false,
+      message: result.isDuplicate 
+        ? `Similar feedback already exists (ID: ${result.id}). Your suggestion has been noted but was not duplicated.`
+        : `Feedback submitted successfully! ID: ${result.id}. It will appear in the Admin Dashboard's AI Feedback panel for review.`,
+      similarItems: result.similarItems || [],
+      nextSteps: result.isDuplicate 
+        ? 'The existing feedback item will be reviewed by the admin team.'
+        : [
+            'Your feedback is now visible in Admin Dashboard → AI Feedback & Suggestions',
+            'The admin team will review and prioritize it',
+            'If marked as critical, it may auto-generate a GitHub issue'
+          ]
+    };
+
+  } catch (error) {
+    log.error('Failed to submit app feedback', {
+      error: error.message,
+      systemId,
+      feedbackType,
+      stack: error.stack
+    });
+    
+    return {
+      error: true,
+      message: `Failed to submit feedback: ${error.message}`,
+      systemId,
+      feedbackType,
+      suggestion: 'The feedback system may be temporarily unavailable. Your suggestion has been logged and can be resubmitted later.'
     };
   }
 }

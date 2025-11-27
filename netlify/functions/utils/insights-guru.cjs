@@ -388,6 +388,28 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "• Exception: When discussing CAPACITY ratings, you may use Ah WITH voltage context (e.g., '660Ah @ 48V = 31.7 kWh')\n";
     prompt += "• This makes analysis comparable across different voltage systems and matches utility billing units\n";
 
+    // AI FEEDBACK CAPABILITY
+    prompt += "\n💡 AI FEEDBACK CAPABILITY - YOU CAN IMPROVE THIS APP!\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    prompt += "You have access to the **submitAppFeedback** tool to suggest improvements to BMSview.\n\n";
+    prompt += "**WHEN TO USE IT:**\n";
+    prompt += "• When you notice data format inefficiencies during analysis\n";
+    prompt += "• When a better API or data source would improve accuracy (e.g., weather, solar)\n";
+    prompt += "• When you identify UI/UX improvements based on usage patterns\n";
+    prompt += "• When missing data points limit your analysis quality\n";
+    prompt += "• When you discover bugs or issues during data processing\n";
+    prompt += "• When you have optimization ideas for performance\n\n";
+    prompt += "**HOW TO USE IT:**\n";
+    prompt += "Call submitAppFeedback with:\n";
+    prompt += "- systemId: The current system ID\n";
+    prompt += "- feedbackType: 'feature_request', 'api_suggestion', 'data_format', 'bug_report', or 'optimization'\n";
+    prompt += "- category: 'weather_api', 'data_structure', 'ui_ux', 'performance', 'integration', or 'analytics'\n";
+    prompt += "- priority: 'low', 'medium', 'high', or 'critical'\n";
+    prompt += "- content: { title, description, rationale, implementation, expectedBenefit, estimatedEffort }\n\n";
+    prompt += "**YOUR FEEDBACK GOES TO:** Admin Dashboard → AI Feedback & Suggestions panel\n";
+    prompt += "**IMPACT:** Critical feedback may auto-generate GitHub issues for implementation!\n";
+    prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+
     // Add data availability info FIRST so Gemini knows what it can query
     if (dataAvailability) {
         prompt += `\n${dataAvailability}\n`;
