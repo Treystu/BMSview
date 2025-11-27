@@ -231,11 +231,18 @@ exports.handler = async (event, context) => {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        insights: responseText,
-        dataPointsAnalyzed: countDataPoints(fullContext),
-        feedbackSubmitted: feedbackSubmissions.length,
-        feedbackSubmissions,
-        contextSize: JSON.stringify(fullContext).length,
+        success: true,
+        insights: {
+          formattedText: responseText,
+          rawText: responseText
+        },
+        metadata: {
+          dataPointsAnalyzed: countDataPoints(fullContext),
+          feedbackSubmitted: feedbackSubmissions.length,
+          feedbackSubmissions,
+          contextSize: JSON.stringify(fullContext).length,
+          mode: 'full-context'
+        },
         systemId,
         timestamp: new Date().toISOString()
       })
