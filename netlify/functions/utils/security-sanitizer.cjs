@@ -23,26 +23,39 @@ const MAX_LENGTHS = {
   arrayLength: 100
 };
 
+// MongoDB operators that should not appear in user input
+// More specific than generic $ patterns to avoid false positives
+const MONGODB_OPERATORS = new Set([
+  '$where', '$gt', '$gte', '$lt', '$lte', '$ne', '$eq', '$in', '$nin',
+  '$and', '$or', '$not', '$nor', '$exists', '$type', '$regex', '$expr',
+  '$mod', '$text', '$all', '$elemMatch', '$size', '$slice', '$meta',
+  '$comment', '$rand', '$natural', '$hint', '$max', '$min', '$orderby',
+  '$returnKey', '$showDiskLoc', '$snapshot', '$query', '$explain'
+]);
+
 // Patterns that indicate potential NoSQL injection
 const NOSQL_INJECTION_PATTERNS = [
-  /\$(?:where|gt|gte|lt|lte|ne|eq|in|nin|and|or|not|nor|exists|type|regex|expr)/i,
-  /\{\s*["\']?\$[a-zA-Z]/,  // Object starting with $ operator
+  /\$(?:where|gt|gte|lt|lte|ne|eq|in|nin|and|or|not|nor|exists|type|regex|expr|mod|text|all|elemMatch|size|slice|meta)/i,
   /'\s*;\s*|\s*;\s*'/,      // SQL injection patterns (shouldn't appear in MongoDB queries)
   /--\s*$/                   // SQL comment
 ];
 
-// Patterns that indicate potential prompt injection
-const PROMPT_INJECTION_PATTERNS = [
+// High-confidence prompt injection patterns that should cause rejection
+const HIGH_CONFIDENCE_INJECTION_PATTERNS = [
   /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/i,
   /disregard\s+(all\s+)?(previous|prior|above)/i,
   /forget\s+(everything|all)\s+(you|that)/i,
+  /\[INST\]|\[\/INST\]/i,   // Instruction markers commonly used in jailbreaks
+  /<\|system\|>|<\|user\|>/i // Special tokens for model manipulation
+];
+
+// Lower-confidence patterns that warrant warning but not rejection
+const SUSPICIOUS_PROMPT_PATTERNS = [
   /you\s+are\s+now\s+a/i,
   /pretend\s+(to\s+be|you\s+are)/i,
   /act\s+as\s+(if|though)/i,
   /new\s+instructions?:/i,
-  /system\s+prompt:/i,
-  /\[INST\]|\[\/INST\]/i,   // Instruction markers
-  /<\|system\|>|<\|user\|>/i // Special tokens
+  /system\s+prompt:/i
 ];
 
 /**
@@ -71,15 +84,26 @@ function hasNoSqlInjection(value) {
 /**
  * Check if a prompt contains injection patterns
  * @param {string} prompt - Prompt to check
- * @returns {Object} { detected: boolean, patterns: string[] }
+ * @returns {Object} { detected: boolean, highConfidence: boolean, patterns: string[] }
  */
 function detectPromptInjection(prompt) {
   if (typeof prompt !== 'string') {
-    return { detected: false, patterns: [] };
+    return { detected: false, highConfidence: false, patterns: [] };
   }
   
   const detectedPatterns = [];
-  for (const pattern of PROMPT_INJECTION_PATTERNS) {
+  let highConfidence = false;
+  
+  // Check high-confidence patterns first
+  for (const pattern of HIGH_CONFIDENCE_INJECTION_PATTERNS) {
+    if (pattern.test(prompt)) {
+      detectedPatterns.push(pattern.source);
+      highConfidence = true;
+    }
+  }
+  
+  // Check lower-confidence patterns
+  for (const pattern of SUSPICIOUS_PROMPT_PATTERNS) {
     if (pattern.test(prompt)) {
       detectedPatterns.push(pattern.source);
     }
@@ -87,6 +111,7 @@ function detectPromptInjection(prompt) {
   
   return {
     detected: detectedPatterns.length > 0,
+    highConfidence,
     patterns: detectedPatterns
   };
 }
@@ -194,9 +219,20 @@ function sanitizeCustomPrompt(prompt, log) {
   if (injectionCheck.detected) {
     log.warn('Prompt injection patterns detected', {
       patterns: injectionCheck.patterns,
+      highConfidence: injectionCheck.highConfidence,
       promptPreview: prompt.substring(0, 50) + '...'
     });
-    warnings.push('Potential prompt injection patterns detected and sanitized');
+    
+    // Reject high-confidence injection attempts outright
+    if (injectionCheck.highConfidence) {
+      throw new SanitizationError(
+        'Prompt contains disallowed content that appears to be an injection attempt',
+        'customPrompt',
+        'prompt_injection_detected'
+      );
+    }
+    
+    warnings.push('Potential prompt injection patterns detected and filtered');
   }
   
   // Sanitize the prompt
@@ -206,8 +242,8 @@ function sanitizeCustomPrompt(prompt, log) {
     allowNewlines: true
   });
   
-  // Remove any detected injection patterns
-  for (const pattern of PROMPT_INJECTION_PATTERNS) {
+  // Remove any detected suspicious patterns (lower confidence ones)
+  for (const pattern of SUSPICIOUS_PROMPT_PATTERNS) {
     sanitized = sanitized.replace(pattern, '[FILTERED]');
   }
   

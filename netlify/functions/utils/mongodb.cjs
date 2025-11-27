@@ -26,6 +26,17 @@ const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16; // GCM mode uses 16-byte IV
 const AUTH_TAG_LENGTH = 16;
 
+// PBKDF2 configuration for secure key derivation
+// Using a fixed salt for deterministic key derivation from the same environment variable
+// The salt doesn't need to be secret, just unique to this application
+const PBKDF2_SALT = 'bmsview-encryption-v1'; // Application-specific salt
+const PBKDF2_ITERATIONS = 100000; // NIST recommends at least 10,000 for PBKDF2
+const PBKDF2_KEY_LENGTH = 32; // 256 bits for AES-256
+const PBKDF2_DIGEST = 'sha256';
+
+// Cache for derived key to avoid repeated PBKDF2 computations
+let cachedDerivedKey = null;
+
 // NOTE: Validation moved to getDb() function to prevent module-load-time errors.
 // If MONGODB_URI is missing (e.g., in CI/tests), connectToDatabase will return a mock DB.
 
@@ -302,6 +313,7 @@ async function closeConnection() {
  * ========================
  * Field-level encryption for sensitive data at rest
  * Uses AES-256-GCM for authenticated encryption
+ * Key derivation uses PBKDF2 for cryptographic security
  */
 
 /**
@@ -313,15 +325,50 @@ function isEncryptionAvailable() {
 }
 
 /**
- * Derive a proper 32-byte key from the environment variable
+ * Derive a proper 32-byte key from the environment variable using PBKDF2
+ * Uses synchronous PBKDF2 with caching to avoid repeated expensive operations
+ * 
+ * PBKDF2 (Password-Based Key Derivation Function 2) is used because:
+ * 1. It's specifically designed for deriving cryptographic keys from passwords/secrets
+ * 2. It applies many iterations of a hash function to slow down brute-force attacks
+ * 3. It's NIST-recommended and widely used in industry
+ * 
  * @returns {Buffer} 32-byte key for AES-256
  */
 function getEncryptionKey() {
     if (!ENCRYPTION_KEY) {
         throw new Error('DATA_ENCRYPTION_KEY environment variable is not set');
     }
-    // Use SHA-256 to derive a consistent 32-byte key from any length input
-    return crypto.createHash('sha256').update(ENCRYPTION_KEY).digest();
+    
+    // Return cached key if available (PBKDF2 is expensive)
+    if (cachedDerivedKey) {
+        return cachedDerivedKey;
+    }
+    
+    // Derive key using PBKDF2 with fixed salt for deterministic derivation
+    // The salt is application-specific and provides domain separation
+    cachedDerivedKey = crypto.pbkdf2Sync(
+        ENCRYPTION_KEY,           // Password/secret from environment
+        PBKDF2_SALT,              // Application-specific salt
+        PBKDF2_ITERATIONS,        // 100,000 iterations for security
+        PBKDF2_KEY_LENGTH,        // 32 bytes = 256 bits for AES-256
+        PBKDF2_DIGEST             // SHA-256 hash function
+    );
+    
+    log.info('Encryption key derived using PBKDF2', {
+        iterations: PBKDF2_ITERATIONS,
+        keyLength: PBKDF2_KEY_LENGTH,
+        digest: PBKDF2_DIGEST
+    });
+    
+    return cachedDerivedKey;
+}
+
+/**
+ * Clear the cached encryption key (useful for testing or key rotation)
+ */
+function clearEncryptionKeyCache() {
+    cachedDerivedKey = null;
 }
 
 /**
@@ -459,5 +506,6 @@ module.exports = {
     encryptFields,
     decryptFields,
     isEncryptionAvailable,
-    hashData
+    hashData,
+    clearEncryptionKeyCache // For testing and key rotation
 };
