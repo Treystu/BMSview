@@ -1,6 +1,6 @@
 # MongoDB Index Strategy for BMSview
 
-**Purpose**: Optimize query performance for sync operations and reduce rate limiting
+**Purpose**: Optimize query performance for sync operations, aggregations, and reduce rate limiting
 
 ## Index Creation
 
@@ -10,14 +10,18 @@
 // Connect to database
 use bmsview;
 
-// Analysis Results Indexes
+// ============================================
+// ANALYSIS RESULTS INDEXES
+// ============================================
+
+// Single field indexes
 db.analysis_results.createIndex({ timestamp: 1 }, { background: true });
 db.analysis_results.createIndex({ updatedAt: 1 }, { background: true });
 db.analysis_results.createIndex({ systemId: 1 }, { background: true });
 db.analysis_results.createIndex({ dlNumber: 1 }, { background: true });
 db.analysis_results.createIndex({ contentHash: 1 }, { unique: false, background: true });
 
-// Compound indexes (most important for sync)
+// Compound indexes (most important for performance optimization)
 db.analysis_results.createIndex(
   { systemId: 1, timestamp: -1 },
   { background: true, name: "idx_system_timestamp" }
@@ -27,7 +31,17 @@ db.analysis_results.createIndex(
   { background: true, name: "idx_sync_incremental" }
 );
 
-// Systems Indexes
+// Performance optimization: Time-series aggregation index
+// Critical for Full Context Mode queries with date ranges
+db.analysis_results.createIndex(
+  { systemId: 1, timestamp: 1 },
+  { background: true, name: "idx_timeseries_agg" }
+);
+
+// ============================================
+// SYSTEMS INDEXES
+// ============================================
+
 db.systems.createIndex({ name: 1 }, { background: true });
 db.systems.createIndex({ updatedAt: 1 }, { background: true });
 db.systems.createIndex(
@@ -35,12 +49,32 @@ db.systems.createIndex(
   { background: true, name: "idx_sync_incremental" }
 );
 
-// History Indexes (if using separate collection)
+// ============================================
+// HISTORY INDEXES (Optimized for aggregations)
+// ============================================
+
 db.history.createIndex({ timestamp: 1 }, { background: true });
 db.history.createIndex({ updatedAt: 1 }, { background: true });
 db.history.createIndex({ systemId: 1 }, { background: true });
 
-// Progress Events (for background jobs)
+// Performance optimization: Compound index for time-range queries
+// Used by getHourlyAveragedData and getDailyAggregatedData
+db.history.createIndex(
+  { systemId: 1, timestamp: 1 },
+  { background: true, name: "idx_system_timestamp_asc" }
+);
+
+// Performance optimization: Covering index for analytics queries
+// Includes commonly projected fields to avoid document lookups
+db.history.createIndex(
+  { systemId: 1, timestamp: 1, "analysis.overallVoltage": 1, "analysis.current": 1 },
+  { background: true, name: "idx_analytics_covering", sparse: true }
+);
+
+// ============================================
+// PROGRESS EVENTS (Background jobs)
+// ============================================
+
 db.progress_events.createIndex(
   { jobId: 1, timestamp: 1 },
   { background: true }
@@ -50,10 +84,31 @@ db.progress_events.createIndex(
   { expireAfterSeconds: 86400, background: true }  // TTL: 24 hours
 );
 
-// Idempotent Requests (deduplication)
+// ============================================
+// IDEMPOTENT REQUESTS (Deduplication)
+// ============================================
+
 db.idempotent_requests.createIndex(
   { createdAt: 1 },
   { expireAfterSeconds: 3600, background: true }  // TTL: 1 hour
+);
+
+// ============================================
+// AI FEEDBACK INDEXES
+// ============================================
+
+db.ai_feedback.createIndex({ priority: 1, status: 1 }, { background: true });
+db.ai_feedback.createIndex({ systemId: 1, timestamp: -1 }, { background: true });
+db.ai_feedback.createIndex({ contextHash: 1 }, { background: true });
+
+// ============================================
+// INSIGHTS JOBS INDEXES
+// ============================================
+
+db.insights_jobs.createIndex({ status: 1, createdAt: 1 }, { background: true });
+db.insights_jobs.createIndex(
+  { createdAt: 1 },
+  { expireAfterSeconds: 604800, background: true }  // TTL: 7 days
 );
 ```
 
