@@ -33,8 +33,46 @@ jest.mock('../netlify/functions/utils/logger.cjs', () => ({
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
-    debug: jest.fn()
+    debug: jest.fn(),
+    audit: jest.fn(),
+    rateLimit: jest.fn(),
+    sanitization: jest.fn(),
+    consent: jest.fn(),
+    dataAccess: jest.fn()
   }))
+}));
+
+// Mock rate limiter to allow all requests
+jest.mock('../netlify/functions/utils/rate-limiter.cjs', () => ({
+  applyRateLimit: jest.fn().mockResolvedValue({
+    allowed: true,
+    remaining: 10,
+    limit: 10,
+    headers: {}
+  }),
+  RateLimitError: class RateLimitError extends Error {
+    constructor(message, retryAfterMs) {
+      super(message);
+      this.name = 'RateLimitError';
+      this.retryAfterMs = retryAfterMs;
+    }
+  }
+}));
+
+// Mock security sanitizer to pass through inputs
+jest.mock('../netlify/functions/utils/security-sanitizer.cjs', () => ({
+  sanitizeInsightsRequest: jest.fn((body) => ({
+    ...body,
+    warnings: []
+  })),
+  SanitizationError: class SanitizationError extends Error {
+    constructor(message, field, type) {
+      super(message);
+      this.name = 'SanitizationError';
+      this.field = field;
+      this.type = type;
+    }
+  }
 }));
 
 // Mock insights-guru to avoid actual AI calls
@@ -371,7 +409,12 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
         info: jest.fn(),
         warn: jest.fn(),
         error: jest.fn(),
-        debug: jest.fn()
+        debug: jest.fn(),
+        audit: jest.fn(),
+        rateLimit: jest.fn(),
+        sanitization: jest.fn(),
+        consent: jest.fn(),
+        dataAccess: jest.fn()
       };
       createLogger.mockReturnValue(mockLogger);
 
@@ -401,7 +444,12 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
         info: jest.fn(),
         warn: jest.fn(),
         error: jest.fn(),
-        debug: jest.fn()
+        debug: jest.fn(),
+        audit: jest.fn(),
+        rateLimit: jest.fn(),
+        sanitization: jest.fn(),
+        consent: jest.fn(),
+        dataAccess: jest.fn()
       };
       createLogger.mockReturnValue(mockLogger);
 
@@ -431,7 +479,12 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
         info: jest.fn(),
         warn: jest.fn(),
         error: jest.fn(),
-        debug: jest.fn()
+        debug: jest.fn(),
+        audit: jest.fn(),
+        rateLimit: jest.fn(),
+        sanitization: jest.fn(),
+        consent: jest.fn(),
+        dataAccess: jest.fn()
       };
       createLogger.mockReturnValue(mockLogger);
 
