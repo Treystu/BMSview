@@ -5,10 +5,18 @@
  * This is the MAIN endpoint for generating battery insights using the ReAct loop.
  * Supports both sync and background modes with full function calling.
  * Sync mode no longer falls back to background - returns error on timeout instead.
+ * 
+ * SECURITY HARDENING:
+ * - Rate limiting per user/system
+ * - Input sanitization to prevent injection attacks
+ * - Audit logging for compliance
+ * - Consent verification
  */
 
 const { createLogger } = require('./utils/logger.cjs');
 const { executeReActLoop } = require('./utils/react-loop.cjs');
+const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
+const { sanitizeInsightsRequest, SanitizationError } = require('./utils/security-sanitizer.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -67,47 +75,160 @@ exports.handler = async (event, context) => {
   log.info('Received context', { context });
   const startTime = Date.now();
 
-  try {
-    // Parse request
-    const body = event.body ? JSON.parse(event.body) : {};
-    // Support legacy payloads where analysis data is provided directly (e.g., batteryData or the whole body)
-    const analysisData = body.analysisData || body.batteryData || body;
-    const systemId = body.systemId;
-    const customPrompt = body.customPrompt;
-    const mode = body.mode || DEFAULT_MODE;
-    const contextWindowDays = body.contextWindowDays;
-    const maxIterations = body.maxIterations;
-    const modelOverride = body.modelOverride;
-    const initializationComplete = body.initializationComplete;
-    const resumeJobId = body.resumeJobId;
-    const consentGranted = body.consentGranted;
+  // Extract client IP for security logging
+  const clientIp = event?.headers?.['x-nf-client-connection-ip'] || 'unknown';
 
-    // Validate input: Must have either (analysisData AND systemId) OR resumeJobId
-    if ((!analysisData || !systemId) && !resumeJobId) {
+  try {
+    // =====================
+    // SECURITY: Rate Limiting
+    // =====================
+    let rateLimitResult;
+    try {
+      rateLimitResult = await applyRateLimit(event, 'insights', log);
+      log.rateLimit('allowed', {
+        endpoint: 'insights',
+        clientIp,
+        remaining: rateLimitResult.remaining,
+        limit: rateLimitResult.limit
+      });
+    } catch (rateLimitError) {
+      if (rateLimitError instanceof RateLimitError) {
+        log.rateLimit('blocked', {
+          endpoint: 'insights',
+          clientIp,
+          retryAfterMs: rateLimitError.retryAfterMs
+        });
+        return {
+          statusCode: 429,
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json',
+            'Retry-After': String(Math.ceil(rateLimitError.retryAfterMs / 1000))
+          },
+          body: JSON.stringify({
+            success: false,
+            error: 'rate_limit_exceeded',
+            message: rateLimitError.message,
+            retryAfterSeconds: Math.ceil(rateLimitError.retryAfterMs / 1000)
+          })
+        };
+      }
+      // Non-rate-limit errors: log and continue (fail open)
+      log.warn('Rate limit check error, continuing', { error: rateLimitError.message });
+    }
+
+    // Add rate limit headers to response
+    const rateLimitHeaders = rateLimitResult?.headers || {};
+
+    // =====================
+    // SECURITY: Input Sanitization
+    // =====================
+    let rawBody;
+    try {
+      rawBody = event.body ? JSON.parse(event.body) : {};
+    } catch (parseError) {
+      log.warn('Invalid JSON in request body', { error: parseError.message, clientIp });
       return {
         statusCode: 400,
-        headers: { ...headers, 'Content-Type': 'application/json' },
+        headers: { ...headers, ...rateLimitHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          error: 'Either analysisData and systemId, or resumeJobId is required'
+          success: false,
+          error: 'invalid_json',
+          message: 'Request body must be valid JSON'
         })
       };
     }
 
-    // Verify user consent for AI processing
+    // Sanitize all inputs
+    let sanitizedBody;
+    try {
+      sanitizedBody = sanitizeInsightsRequest(rawBody, log);
+      
+      // Log any sanitization warnings
+      if (sanitizedBody.warnings && sanitizedBody.warnings.length > 0) {
+        log.sanitization('request', 'Input modified during sanitization', {
+          warnings: sanitizedBody.warnings,
+          clientIp
+        });
+      }
+    } catch (sanitizeError) {
+      if (sanitizeError instanceof SanitizationError) {
+        log.audit('injection_blocked', {
+          field: sanitizeError.field,
+          type: sanitizeError.type,
+          clientIp
+        });
+        return {
+          statusCode: 400,
+          headers: { ...headers, ...rateLimitHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            success: false,
+            error: 'invalid_input',
+            message: sanitizeError.message,
+            field: sanitizeError.field
+          })
+        };
+      }
+      throw sanitizeError;
+    }
+
+    // Extract sanitized values
+    // Support legacy payloads where analysis data is provided directly (e.g., batteryData)
+    // Both analysisData and batteryData are sanitized in sanitizeInsightsRequest
+    const analysisData = sanitizedBody.analysisData || sanitizedBody.batteryData || null;
+    const systemId = sanitizedBody.systemId;
+    const customPrompt = sanitizedBody.customPrompt;
+    const mode = sanitizedBody.mode || DEFAULT_MODE;
+    const contextWindowDays = sanitizedBody.contextWindowDays;
+    const maxIterations = sanitizedBody.maxIterations;
+    const modelOverride = sanitizedBody.modelOverride;
+    const initializationComplete = sanitizedBody.initializationComplete;
+    const resumeJobId = sanitizedBody.resumeJobId;
+    const consentGranted = sanitizedBody.consentGranted;
+
+    // =====================
+    // SECURITY: Consent Verification with Audit Logging
+    // =====================
+    // Verify user consent for AI processing BEFORE validating other fields
     // Strict type checking to prevent bypass via type coercion
     // Note: Resume requests (resumeJobId) bypass consent check because:
     // 1. The original job was created with explicit consent
     // 2. Resume is just continuing an already-authorized analysis
     // 3. No new data is being submitted (just continuing from checkpoint)
     if ((typeof consentGranted !== 'boolean' || consentGranted !== true) && !resumeJobId) {
+      log.consent(false, {
+        systemId,
+        clientIp,
+        consentValue: consentGranted,
+        consentType: typeof consentGranted
+      });
       log.warn('Insights request rejected: Missing or invalid user consent', { systemId, consentGranted, consentType: typeof consentGranted });
       return {
         statusCode: 403,
-        headers: { ...headers, 'Content-Type': 'application/json' },
+        headers: { ...headers, ...rateLimitHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           success: false,
           error: 'consent_required',
           message: 'User consent is required for AI analysis. Please opt-in to continue. (consentGranted must be boolean true)'
+        })
+      };
+    }
+
+    // Log successful consent
+    if (!resumeJobId) {
+      log.consent(true, {
+        systemId,
+        clientIp
+      });
+    }
+
+    // Validate input: Must have either (analysisData AND systemId) OR resumeJobId
+    if ((!analysisData || !systemId) && !resumeJobId) {
+      return {
+        statusCode: 400,
+        headers: { ...headers, ...rateLimitHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          error: 'Either analysisData and systemId, or resumeJobId is required'
         })
       };
     }
@@ -123,6 +244,17 @@ exports.handler = async (event, context) => {
       modelOverride,
       initializationComplete,
       consentGranted
+    });
+
+    // =====================
+    // SECURITY: Audit log data access
+    // =====================
+    log.dataAccess('insights_generation', {
+      systemId,
+      clientIp,
+      mode,
+      hasCustomPrompt: !!customPrompt,
+      isResume: !!resumeJobId
     });
 
     // SYNC MODE: Execute ReAct loop with checkpoint/resume support

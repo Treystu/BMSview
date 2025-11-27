@@ -2,6 +2,7 @@
 "use strict";
 
 const { MongoClient } = require("mongodb");
+const crypto = require("crypto");
 const { createLogger } = require("./logger.cjs");
 
 // Module-scoped logger for utils/mongodb (no request context available here)
@@ -11,12 +12,29 @@ const log = createLogger("utils/mongodb");
  * OPTIMIZED MongoDB Connection Manager
  * Consolidates connection pooling with aggressive resource management
  * Fixes connection overload issues by reducing pool size and improving reuse
+ * 
+ * Extended with encryption utilities for sensitive data at rest
  */
 
 // Retrieve MongoDB connection string; may be undefined in test environments.
 const MONGODB_URI = process.env.MONGODB_URI;
 // Support both MONGODB_DB_NAME and MONGODB_DB for backward compatibility
 const DB_NAME = process.env.MONGODB_DB_NAME || process.env.MONGODB_DB || "bmsview";
+// Encryption key for field-level encryption (must be 32 bytes for AES-256)
+const ENCRYPTION_KEY = process.env.DATA_ENCRYPTION_KEY || null;
+const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 16; // GCM mode uses 16-byte IV
+
+// PBKDF2 configuration for secure key derivation
+// Using a fixed salt for deterministic key derivation from the same environment variable
+// The salt doesn't need to be secret, just unique to this application
+const PBKDF2_SALT = 'bmsview-encryption-v1'; // Application-specific salt
+const PBKDF2_ITERATIONS = 100000; // NIST recommends at least 10,000 for PBKDF2
+const PBKDF2_KEY_LENGTH = 32; // 256 bits for AES-256
+const PBKDF2_DIGEST = 'sha256';
+
+// Cache for derived key to avoid repeated PBKDF2 computations
+let cachedDerivedKey = null;
 
 // NOTE: Validation moved to getDb() function to prevent module-load-time errors.
 // If MONGODB_URI is missing (e.g., in CI/tests), connectToDatabase will return a mock DB.
@@ -288,4 +306,205 @@ async function closeConnection() {
     }
 }
 
-module.exports = { connectToDatabase, getCollection, closeConnection, getDb };
+/**
+ * ========================
+ * ENCRYPTION UTILITIES
+ * ========================
+ * Field-level encryption for sensitive data at rest
+ * Uses AES-256-GCM for authenticated encryption
+ * Key derivation uses PBKDF2 for cryptographic security
+ */
+
+/**
+ * Check if encryption is available
+ * @returns {boolean} True if encryption key is configured
+ */
+function isEncryptionAvailable() {
+    return !!ENCRYPTION_KEY && ENCRYPTION_KEY.length >= 32;
+}
+
+/**
+ * Derive a proper 32-byte key from the environment variable using PBKDF2
+ * Uses synchronous PBKDF2 with caching to avoid repeated expensive operations
+ * 
+ * PBKDF2 (Password-Based Key Derivation Function 2) is used because:
+ * 1. It's specifically designed for deriving cryptographic keys from passwords/secrets
+ * 2. It applies many iterations of a hash function to slow down brute-force attacks
+ * 3. It's NIST-recommended and widely used in industry
+ * 
+ * @returns {Buffer} 32-byte key for AES-256
+ */
+function getEncryptionKey() {
+    if (!ENCRYPTION_KEY) {
+        throw new Error('DATA_ENCRYPTION_KEY environment variable is not set');
+    }
+    
+    // Return cached key if available (PBKDF2 is expensive)
+    if (cachedDerivedKey) {
+        return cachedDerivedKey;
+    }
+    
+    // Derive key using PBKDF2 with fixed salt for deterministic derivation
+    // The salt is application-specific and provides domain separation
+    cachedDerivedKey = crypto.pbkdf2Sync(
+        ENCRYPTION_KEY,           // Password/secret from environment
+        PBKDF2_SALT,              // Application-specific salt
+        PBKDF2_ITERATIONS,        // 100,000 iterations for security
+        PBKDF2_KEY_LENGTH,        // 32 bytes = 256 bits for AES-256
+        PBKDF2_DIGEST             // SHA-256 hash function
+    );
+    
+    log.info('Encryption key derived using PBKDF2', {
+        iterations: PBKDF2_ITERATIONS,
+        keyLength: PBKDF2_KEY_LENGTH,
+        digest: PBKDF2_DIGEST
+    });
+    
+    return cachedDerivedKey;
+}
+
+/**
+ * Clear the cached encryption key (useful for testing or key rotation)
+ */
+function clearEncryptionKeyCache() {
+    cachedDerivedKey = null;
+}
+
+/**
+ * Encrypt sensitive data
+ * @param {string|Object} data - Data to encrypt (will be JSON stringified if object)
+ * @returns {Object} Encrypted data with iv and authTag for decryption
+ */
+function encryptData(data) {
+    if (!isEncryptionAvailable()) {
+        log.warn('Encryption not available - DATA_ENCRYPTION_KEY not configured');
+        return { encrypted: false, data };
+    }
+
+    try {
+        const key = getEncryptionKey();
+        const iv = crypto.randomBytes(IV_LENGTH);
+        const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
+
+        const plaintext = typeof data === 'string' ? data : JSON.stringify(data);
+        let encrypted = cipher.update(plaintext, 'utf8', 'base64');
+        encrypted += cipher.final('base64');
+
+        const authTag = cipher.getAuthTag();
+
+        return {
+            encrypted: true,
+            data: encrypted,
+            iv: iv.toString('base64'),
+            authTag: authTag.toString('base64'),
+            algorithm: ENCRYPTION_ALGORITHM
+        };
+    } catch (error) {
+        log.error('Encryption failed', { error: error.message });
+        throw new Error('Failed to encrypt data: ' + error.message);
+    }
+}
+
+/**
+ * Decrypt encrypted data
+ * @param {Object} encryptedObj - Object with encrypted data, iv, and authTag
+ * @returns {*} Decrypted data (parsed from JSON if applicable)
+ */
+function decryptData(encryptedObj) {
+    if (!encryptedObj || !encryptedObj.encrypted) {
+        return encryptedObj?.data || encryptedObj;
+    }
+
+    if (!isEncryptionAvailable()) {
+        log.warn('Cannot decrypt - DATA_ENCRYPTION_KEY not configured');
+        throw new Error('Decryption not available - encryption key not configured');
+    }
+
+    try {
+        const key = getEncryptionKey();
+        const iv = Buffer.from(encryptedObj.iv, 'base64');
+        const authTag = Buffer.from(encryptedObj.authTag, 'base64');
+        const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
+        decipher.setAuthTag(authTag);
+
+        let decrypted = decipher.update(encryptedObj.data, 'base64', 'utf8');
+        decrypted += decipher.final('utf8');
+
+        // Try to parse as JSON, return as-is if not valid JSON
+        try {
+            return JSON.parse(decrypted);
+        } catch {
+            return decrypted;
+        }
+    } catch (error) {
+        log.error('Decryption failed', { error: error.message });
+        throw new Error('Failed to decrypt data: ' + error.message);
+    }
+}
+
+/**
+ * Encrypt specific fields in an object
+ * @param {Object} obj - Object containing fields to encrypt
+ * @param {string[]} fieldsToEncrypt - Array of field names to encrypt
+ * @returns {Object} Object with specified fields encrypted
+ */
+function encryptFields(obj, fieldsToEncrypt) {
+    if (!obj || typeof obj !== 'object') return obj;
+    if (!isEncryptionAvailable()) return obj;
+
+    const result = { ...obj };
+    for (const field of fieldsToEncrypt) {
+        if (result[field] !== undefined && result[field] !== null) {
+            result[field] = encryptData(result[field]);
+        }
+    }
+    return result;
+}
+
+/**
+ * Decrypt specific fields in an object
+ * @param {Object} obj - Object containing encrypted fields
+ * @param {string[]} fieldsToDecrypt - Array of field names to decrypt
+ * @returns {Object} Object with specified fields decrypted
+ */
+function decryptFields(obj, fieldsToDecrypt) {
+    if (!obj || typeof obj !== 'object') return obj;
+
+    const result = { ...obj };
+    for (const field of fieldsToDecrypt) {
+        if (result[field]?.encrypted) {
+            try {
+                result[field] = decryptData(result[field]);
+            } catch (error) {
+                log.warn('Failed to decrypt field', { field, error: error.message });
+                // Leave field as-is if decryption fails
+            }
+        }
+    }
+    return result;
+}
+
+/**
+ * Generate a secure hash for data (e.g., for deduplication without exposing raw data)
+ * @param {string|Object} data - Data to hash
+ * @returns {string} SHA-256 hash of the data
+ */
+function hashData(data) {
+    const plaintext = typeof data === 'string' ? data : JSON.stringify(data);
+    return crypto.createHash('sha256').update(plaintext).digest('hex');
+}
+
+module.exports = { 
+    connectToDatabase, 
+    getCollection, 
+    closeConnection, 
+    getDb,
+    // Encryption utilities
+    encryptData,
+    decryptData,
+    encryptFields,
+    decryptFields,
+    isEncryptionAvailable,
+    hashData,
+    clearEncryptionKeyCache // For testing and key rotation
+};

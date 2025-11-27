@@ -541,3 +541,76 @@ export interface MonitoringDashboardData {
     averageEffectiveness: number;
   };
 }
+
+// Security & Audit Types
+export interface SecurityAuditEvent {
+  id: string;
+  timestamp: string;
+  eventType: SecurityEventType;
+  clientIp?: string;
+  userId?: string;
+  systemId?: string;
+  endpoint?: string;
+  action?: string;
+  details?: Record<string, unknown>;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+}
+
+export type SecurityEventType = 
+  | 'rate_limit_exceeded'
+  | 'rate_limit_warning'
+  | 'input_sanitized'
+  | 'injection_blocked'
+  | 'prompt_injection_detected'
+  | 'auth_success'
+  | 'auth_failure'
+  | 'consent_granted'
+  | 'consent_denied'
+  | 'data_access'
+  | 'data_export'
+  | 'admin_action'
+  | 'encryption_event';
+
+export interface RateLimitConfig {
+  maxRequests: number;
+  windowMs: number;
+  keyPrefix: string;
+}
+
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  resetMs: number;
+  limit: number;
+  error?: string;
+}
+
+export interface SanitizationResult {
+  sanitized: unknown;
+  warnings: string[];
+  modified: boolean;
+}
+
+export interface EncryptedData {
+  encrypted: true;
+  data: string;
+  iv: string;
+  authTag: string;
+  algorithm: string;
+}
+
+export interface SecurityConfig {
+  rateLimiting: {
+    insights: RateLimitConfig;
+    feedback: RateLimitConfig;
+    analysis: RateLimitConfig;
+  };
+  encryption: {
+    enabled: boolean;
+    sensitiveFields: string[];
+  };
+  audit: {
+    enabled: boolean;
+    retentionDays: number;
+  };
+}
