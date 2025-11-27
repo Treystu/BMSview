@@ -17,6 +17,8 @@ describe('InsightMode Selector Functionality', () => {
       switch (mode) {
         case 'standard':
           return '/.netlify/functions/generate-insights';
+        case 'full-context':
+          return '/.netlify/functions/generate-insights-full-context';
         case 'with-tools':
         default:
           return '/.netlify/functions/generate-insights-with-tools';
@@ -26,6 +28,11 @@ describe('InsightMode Selector Functionality', () => {
     test('should select correct endpoint for WITH_TOOLS mode', () => {
       const endpoint = selectEndpointForMode('with-tools');
       expect(endpoint).toBe('/.netlify/functions/generate-insights-with-tools');
+    });
+
+    test('should select correct endpoint for FULL_CONTEXT mode', () => {
+      const endpoint = selectEndpointForMode('full-context');
+      expect(endpoint).toBe('/.netlify/functions/generate-insights-full-context');
     });
 
     test('should select correct endpoint for STANDARD mode', () => {
@@ -50,7 +57,12 @@ describe('InsightMode Selector Functionality', () => {
         'with-tools': {
           label: 'Battery Guru (Recommended)',
           endpoint: '/.netlify/functions/generate-insights-with-tools',
-          features: ['function calling', 'multi-turn', 'comprehensive']
+          features: ['function calling', 'multi-turn', 'comprehensive', 'app feedback']
+        },
+        'full-context': {
+          label: 'Full Context Mode',
+          endpoint: '/.netlify/functions/generate-insights-full-context',
+          features: ['all historical data', 'AI feedback focus', 'app improvement suggestions']
         },
         'standard': {
           label: 'Legacy Endpoint',
@@ -70,7 +82,7 @@ describe('InsightMode Selector Functionality', () => {
     });
 
     test('mode values should match backend conventions', () => {
-      const validModes = ['with-tools', 'standard'];
+      const validModes = ['with-tools', 'full-context', 'standard'];
       
       validModes.forEach(mode => {
         expect(typeof mode).toBe('string');
@@ -86,6 +98,11 @@ describe('InsightMode Selector Functionality', () => {
           'Reduce the data analysis window',
           'Ask a simpler question',
           'Try again if service is busy'
+        ],
+        'full-context': [
+          'Full Context Mode loads ALL data upfront',
+          'Consider using Battery Guru mode for faster responses',
+          'Ensure sufficient historical data'
         ],
         'standard': [
           'Use Battery Guru mode directly for better support',
@@ -104,4 +121,3 @@ describe('InsightMode Selector Functionality', () => {
     });
   });
 });
-

@@ -205,6 +205,7 @@ export interface InsightsRequestConfig {
 // Insight generation modes - Added for UI mode selector feature
 export enum InsightMode {
   WITH_TOOLS = 'with-tools',      // AI "Battery Guru" with function calling (default, most comprehensive)
+  FULL_CONTEXT = 'full-context',  // Full Context Mode with AI Feedback capability
   STANDARD = 'standard'           // Legacy endpoint (proxies to WITH_TOOLS for backward compatibility)
 }
 
@@ -212,12 +213,24 @@ export enum InsightMode {
 export const InsightModeDescriptions: Record<InsightMode, { label: string; description: string; features: string[] }> = {
   [InsightMode.WITH_TOOLS]: {
     label: 'Battery Guru (Recommended)',
-    description: 'Advanced AI with intelligent data querying',
+    description: 'Advanced AI with intelligent data querying and feedback capability',
     features: [
       'Can request specific historical data on-demand',
       'Multi-turn conversation with AI reasoning',
       'Comprehensive analysis with 90-day rollups',
+      'Can submit app improvement suggestions',
       'Best for all types of questions and insights'
+    ]
+  },
+  [InsightMode.FULL_CONTEXT]: {
+    label: 'Full Context Mode',
+    description: 'Complete data context with AI app feedback focus',
+    features: [
+      'Loads ALL historical data upfront (90+ days)',
+      'Enhanced AI feedback and suggestions',
+      'Best for app improvement recommendations',
+      'Slower initial load, deeper analysis',
+      'Suggestions appear in Admin AI Feedback panel'
     ]
   },
   [InsightMode.STANDARD]: {
