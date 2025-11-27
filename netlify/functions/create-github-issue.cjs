@@ -105,10 +105,11 @@ async function createGitHubIssueAPI(issueData) {
   const response = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/issues`, {
     method: 'POST',
     headers: {
-      'Authorization': `token ${githubToken}`,
-      'Accept': 'application/vnd.github.v3+json',
+      'Authorization': `Bearer ${githubToken}`,
+      'Accept': 'application/vnd.github+json',
       'Content-Type': 'application/json',
-      'User-Agent': 'BMSview-AI-Feedback'
+      'User-Agent': 'BMSview-AI-Feedback',
+      'X-GitHub-Api-Version': '2022-11-28'
     },
     body: JSON.stringify(issueData)
   });
