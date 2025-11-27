@@ -46,14 +46,12 @@ const {
   processBatch,
   processParallel,
   aggregateBatch,
-  mapBatch,
   filterBatch,
   createStreamProcessor,
   calculateStatsBatch
 } = require('../netlify/functions/utils/batch-processor.cjs');
 
 const {
-  QUERY_CONFIG,
   buildTimeSeriesAggregation,
   createDatePartitions
 } = require('../netlify/functions/utils/query-optimizer.cjs');

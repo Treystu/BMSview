@@ -16,6 +16,17 @@ const { getCollection } = require('./mongodb.cjs');
 const { getHistoryCache, generateCacheKey } = require('./cache.cjs');
 
 /**
+ * Cache TTL constants in milliseconds
+ * Centralized configuration for cache expiration times
+ */
+const CACHE_TTL = {
+  HOURLY_DATA: 600000,    // 10 minutes for hourly data
+  DAILY_DATA: 1800000,    // 30 minutes for daily data
+  ANALYTICS: 300000,      // 5 minutes for analytics
+  AGGREGATION: 180000     // 3 minutes for aggregations
+};
+
+/**
  * Aggregate BMS records into hourly averages
  * 
  * @param {Array} records - Array of AnalysisRecord objects sorted by timestamp
@@ -340,11 +351,11 @@ function computeBucketMetrics(records, log, options = {}) {
  * @param {Object} log - Logger instance
  * @param {Object} [options] - Additional options
  * @param {boolean} [options.useCache=true] - Whether to use caching
- * @param {number} [options.cacheTTL=600000] - Cache TTL in ms (default 10 min)
+ * @param {number} [options.cacheTTL=CACHE_TTL.HOURLY_DATA] - Cache TTL in ms (default 10 min)
  * @returns {Promise<Array>} Hourly aggregated data
  */
 async function getHourlyAveragedData(systemId, daysBack = 30, log, options = {}) {
-  const { useCache = true, cacheTTL = 600000 } = options;
+  const { useCache = true, cacheTTL = CACHE_TTL.HOURLY_DATA } = options;
   
   log.info('Fetching hourly averaged data', { systemId, daysBack, useCache });
   
@@ -634,7 +645,8 @@ function sampleDataPoints(hourlyData, maxPoints = 100, log) {
  * 
  * @param {Array} records - Array of AnalysisRecord objects sorted by timestamp
  * @param {Object} log - Logger instance
- * @param {Object} [options] - Aggregation options
+ * @param {Object} [options] - Aggregation options (reserved for future use)
+ * @param {number} [options.bucketHours] - Hours per bucket (passed to computeBucketMetrics)
  * @returns {Array} Array of daily aggregated data points
  */
 function aggregateDailyData(records, log, options = {}) {
@@ -703,10 +715,12 @@ function aggregateDailyData(records, log, options = {}) {
  * @param {number} daysBack - Number of days to look back (default: 90)
  * @param {Object} log - Logger instance
  * @param {Object} [options] - Additional options
+ * @param {boolean} [options.useCache=true] - Whether to use caching
+ * @param {number} [options.cacheTTL=CACHE_TTL.DAILY_DATA] - Cache TTL in ms (default 30 min)
  * @returns {Promise<Array>} Daily aggregated data
  */
 async function getDailyAggregatedData(systemId, daysBack = 90, log, options = {}) {
-  const { useCache = true, cacheTTL = 1800000 } = options; // 30 min default for daily data
+  const { useCache = true, cacheTTL = CACHE_TTL.DAILY_DATA } = options;
   
   log.info('Fetching daily aggregated data', { systemId, daysBack, useCache });
   
@@ -809,5 +823,6 @@ module.exports = {
   aggregateDailyData,
   getDailyAggregatedData,
   invalidateSystemCache,
-  getCacheStats
+  getCacheStats,
+  CACHE_TTL
 };
