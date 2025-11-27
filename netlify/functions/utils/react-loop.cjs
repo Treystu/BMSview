@@ -13,6 +13,7 @@ const { toolDefinitions, executeToolCall } = require('./gemini-tools.cjs');
 const { buildGuruPrompt, collectAutoInsightsContext, buildQuickReferenceCatalog } = require('./insights-guru.cjs');
 const { createLogger } = require('./logger.cjs');
 const { validateResponseFormat, buildCorrectionPrompt } = require('./response-validator.cjs');
+const { logAIOperation, checkForAnomalies } = require('./metrics-collector.cjs');
 
 // Default iteration limits - can be overridden via params
 const DEFAULT_MAX_TURNS = 10; // Increased from 5 to 10 for standard insights
@@ -1691,6 +1692,55 @@ async function executeReActLoop(params) {
             answerLength: finalAnswer.length
         });
 
+        // Log operation metrics for successful insights generation
+        // Estimate token usage: sum all message lengths in conversationHistory plus finalAnswer, divide by 4 (approx chars per token)
+        // Handle both content-based messages and function call parts
+        const estimatedTokenCount = Math.round(
+            (conversationHistory.reduce((sum, msg) => {
+                let msgLength = 0;
+                if (msg.content) {
+                    msgLength += msg.content.length;
+                }
+                if (msg.parts && Array.isArray(msg.parts)) {
+                    msgLength += msg.parts.reduce((partSum, part) => {
+                        if (typeof part === 'string') return partSum + part.length;
+                        if (part.text) return partSum + part.text.length;
+                        // For function calls, estimate based on stringified content
+                        return partSum + JSON.stringify(part).length;
+                    }, 0);
+                }
+                return sum + msgLength;
+            }, 0) + (finalAnswer ? finalAnswer.length : 0)) / 4
+        ); // Approximate: 4 chars per token
+
+        try {
+            await logAIOperation({
+                operation: 'insights',
+                systemId: systemId,
+                duration: totalDurationMs,
+                tokensUsed: estimatedTokenCount, // Estimated; replace with actual token tracking if Gemini API supports it
+                success: true,
+                model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+                contextWindowDays: contextWindowDays,
+                metadata: {
+                    turns: turnCount + 1,
+                    toolCalls: toolCallCount,
+                    conversationLength: conversationHistory.length,
+                    timedOut: timedOut,
+                    isCustomQuery: isCustomQuery,
+                    tokenEstimationMethod: 'char_count_div_4'
+                }
+            });
+
+            // Check for anomalies
+            await checkForAnomalies({
+                duration: totalDurationMs
+            });
+        } catch (metricsError) {
+            // Don't fail the operation if metrics logging fails
+            log.warn('Failed to log insights metrics', { error: metricsError.message });
+        }
+
         return {
             success: true,
             finalAnswer,
@@ -1715,6 +1765,21 @@ async function executeReActLoop(params) {
             stack: err.stack,
             durationMs: totalDurationMs
         });
+
+        // Log failed operation metrics
+        try {
+            await logAIOperation({
+                operation: 'insights',
+                systemId: systemId,
+                duration: totalDurationMs,
+                success: false,
+                error: err.message,
+                model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+                contextWindowDays: contextWindowDays
+            });
+        } catch (metricsError) {
+            log.warn('Failed to log error metrics', { error: metricsError.message });
+        }
 
         return {
             success: false,

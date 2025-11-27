@@ -458,3 +458,87 @@ export interface FullContextData {
   buildDurationMs: number;
   systemId: string;
 }
+// AI Feedback & Monitoring Types (for observability system)
+export interface AIFeedbackMetric {
+  id: string;
+  timestamp: string;
+  systemId?: string;
+  metricType: 'accuracy' | 'implementation_rate' | 'performance' | 'cost' | 'anomaly';
+  metricName: string;
+  value: number;
+  unit?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AIOperationLog {
+  id: string;
+  timestamp: string;
+  operation: 'analysis' | 'insights' | 'feedback_generation';
+  systemId?: string;
+  duration: number;
+  tokensUsed?: number;
+  cost?: number;
+  success: boolean;
+  error?: string;
+  model?: string;
+  contextWindowDays?: number;
+}
+
+export interface CostMetrics {
+  period: 'daily' | 'weekly' | 'monthly';
+  startDate: string;
+  endDate: string;
+  totalCost: number;
+  totalTokens: number;
+  operationBreakdown: {
+    analysis: { count: number; cost: number; tokens: number };
+    insights: { count: number; cost: number; tokens: number };
+    feedbackGeneration: { count: number; cost: number; tokens: number };
+  };
+  averageCostPerOperation: number;
+}
+
+export interface AnomalyAlert {
+  id: string;
+  timestamp: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  type: 'cost_spike' | 'error_rate' | 'latency' | 'accuracy_drop' | 'circuit_breaker';
+  message: string;
+  metadata?: Record<string, unknown>;
+  resolved?: boolean;
+  resolvedAt?: string;
+}
+
+export interface FeedbackImplementationTracking {
+  id: string;
+  feedbackId: string;
+  suggestedAt: string;
+  implementedAt?: string;
+  status: 'pending' | 'implemented' | 'rejected' | 'expired';
+  implementationType?: string;
+  implementationNotes?: string;
+  effectiveness?: number; // 0-100 score
+}
+
+export interface MonitoringDashboardData {
+  realtimeMetrics: {
+    currentOperationsPerMinute: number;
+    averageLatency: number;
+    errorRate: number;
+    circuitBreakerStatus: string;
+  };
+  costMetrics: CostMetrics;
+  recentAlerts: AnomalyAlert[];
+  performanceTrends: {
+    timestamp: string;
+    avgDuration: number;
+    errorCount: number;
+    successCount: number;
+  }[];
+  feedbackStats: {
+    totalSuggestions: number;
+    implementationRate: number;
+    averageEffectiveness: number;
+  };
+}
+}

@@ -11,6 +11,7 @@ const { createRetryWrapper } = require("./retry.cjs");
 const { getResponseSchema, getImageExtractionPrompt, cleanAndParseJson, mapExtractedToAnalysisData, performPostAnalysis, parseTimestamp, generateAnalysisKey, mergeAnalysisData, validateExtractionQuality } = require('./analysis-helpers.cjs');
 const { validateAnalysisData } = require('./data-validation.cjs');
 const { generateValidationFeedback, calculateQualityScore } = require('./validation-feedback.cjs');
+const { logAIOperation, checkForAnomalies } = require('./metrics-collector.cjs');
 
 const GEMINI_API_TIMEOUT_MS = 45000;
 
@@ -128,6 +129,12 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
     // ... existing code ...
     const logContext = { fileName: image.fileName, stage: 'pipeline-start' };
     log('info', 'Starting analysis pipeline.', logContext);
+
+    // Track operation start time for metrics
+    const operationStartTime = Date.now();
+    let tokensUsed = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
 
     // ... existing code ...
     const withRetry = createRetryWrapper(log);
@@ -436,6 +443,36 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
     await withRetry(() => historyCollection.insertOne(newRecord));
     // ... existing code ...
     log('info', 'Successfully saved new analysis record.', { ...logContext, recordId: newRecord.id });
+
+    // Log operation metrics
+    const operationDuration = Date.now() - operationStartTime;
+    try {
+        await logAIOperation({
+            operation: 'analysis',
+            systemId: newRecord.systemId,
+            duration: operationDuration,
+            tokensUsed: tokensUsed || 0,
+            inputTokens: inputTokens || 0,
+            outputTokens: outputTokens || 0,
+            success: true,
+            model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+            metadata: {
+                fileName: image.fileName,
+                extractionAttempts: attemptNumber,
+                qualityScore: newRecord.validationScore,
+                needsReview: newRecord.needsReview
+            }
+        });
+
+        // Check for anomalies
+        await checkForAnomalies({
+            duration: operationDuration,
+            cost: 0 // Cost will be calculated by logAIOperation
+        });
+    } catch (metricsError) {
+        // Don't fail the operation if metrics logging fails
+        log('warn', 'Failed to log operation metrics', { error: metricsError.message });
+    }
 
     return newRecord;
 };
