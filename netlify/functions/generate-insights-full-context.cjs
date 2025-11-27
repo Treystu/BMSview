@@ -166,38 +166,36 @@ exports.handler = async (event, context) => {
       If you identify any opportunities to improve the BMSview application itself, use the submitAppFeedback function.
     `;
     
-    // Execute insights generation with tools
-    const { GoogleGenAI } = require('@google/genai');
-    const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    // Execute insights generation using the existing geminiClient for consistency
+    const { getGeminiClient } = require('./utils/geminiClient.cjs');
+    const geminiClient = getGeminiClient();
     
-    // Build the config object for the API call
-    const config = {
-      systemInstruction: GEMINI_SYSTEM_PROMPT
-    };
+    // Convert tools to function declarations for the API
+    const toolDefs = tools.flatMap(t => t.function_declarations || []);
     
-    // Add tools if feedback is enabled
-    if (tools.length > 0) {
-      // Convert tools to the format expected by @google/genai SDK
-      const functionDeclarations = tools.flatMap(t => t.function_declarations || []);
-      if (functionDeclarations.length > 0) {
-        config.tools = [{ functionDeclarations }];
-      }
-    }
+    // Prepend system instruction to the prompt for context
+    const fullPrompt = `${GEMINI_SYSTEM_PROMPT}\n\n${prompt}`;
     
-    const response = await genAI.models.generateContent({
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-      contents: prompt,
-      config
-    });
+    // Call Gemini API via the existing client (handles rate limiting, circuit breaker, retries)
+    const response = await geminiClient.callAPI(fullPrompt, {
+      tools: toolDefs.length > 0 ? toolDefs : undefined,
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+    }, log);
     
-    // Process function calls (feedback submissions)
+    // Extract text from the REST API response structure
+    const responseText = response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    // Process function calls (feedback submissions) from the response
     const feedbackSubmissions = [];
-    if (response.functionCalls && response.functionCalls.length > 0) {
+    const functionCalls = response?.candidates?.[0]?.content?.parts?.filter(p => p.functionCall) || [];
+    
+    if (functionCalls.length > 0) {
       log.info('Processing AI feedback submissions', {
-        count: response.functionCalls.length
+        count: functionCalls.length
       });
       
-      for (const call of response.functionCalls) {
+      for (const part of functionCalls) {
+        const call = part.functionCall;
         if (call.name === 'submitAppFeedback') {
           try {
             const feedbackResult = await submitFeedbackToDatabase({
@@ -233,7 +231,7 @@ exports.handler = async (event, context) => {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        insights: response.text || '',
+        insights: responseText,
         dataPointsAnalyzed: countDataPoints(fullContext),
         feedbackSubmitted: feedbackSubmissions.length,
         feedbackSubmissions,
