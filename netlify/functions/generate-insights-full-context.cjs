@@ -167,17 +167,28 @@ exports.handler = async (event, context) => {
     `;
     
     // Execute insights generation with tools
-    const { GoogleGenerativeAI } = require('@google/genai');
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const { GoogleGenAI } = require('@google/genai');
+    const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     
-    const model = genAI.getGenerativeModel({
+    // Build the config object for the API call
+    const config = {
+      systemInstruction: GEMINI_SYSTEM_PROMPT
+    };
+    
+    // Add tools if feedback is enabled
+    if (tools.length > 0) {
+      // Convert tools to the format expected by @google/genai SDK
+      const functionDeclarations = tools.flatMap(t => t.function_declarations || []);
+      if (functionDeclarations.length > 0) {
+        config.tools = [{ functionDeclarations }];
+      }
+    }
+    
+    const response = await genAI.models.generateContent({
       model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-      systemInstruction: GEMINI_SYSTEM_PROMPT,
-      tools: tools.length > 0 ? tools : undefined
+      contents: prompt,
+      config
     });
-    
-    const result = await model.generateContent(prompt);
-    const response = result.response;
     
     // Process function calls (feedback submissions)
     const feedbackSubmissions = [];
@@ -222,7 +233,7 @@ exports.handler = async (event, context) => {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        insights: response.text(),
+        insights: response.text || '',
         dataPointsAnalyzed: countDataPoints(fullContext),
         feedbackSubmitted: feedbackSubmissions.length,
         feedbackSubmissions,
