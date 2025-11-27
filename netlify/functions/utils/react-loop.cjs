@@ -82,6 +82,11 @@ const INITIALIZATION_BUDGET_RATIO = 0.6; // Use 60% of budget for initialization
 // Retry backoff settings - LINEAR (1s increments)
 const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
 
+// Lazy AI Detection settings
+const RECENT_TOOL_FAILURE_WINDOW = 5; // Check last 5 messages for tool failures
+const LAZY_RESPONSE_THRESHOLD = 2; // Threshold for lazy responses (triggers on 3rd consecutive)
+const LAZY_AI_FALLBACK_MESSAGE = "Unable to retrieve the requested data. Please try a simpler query or check the available data range.";
+
 /**
  * Analyze Gemini's response text to detect what it's struggling with
  * Uses keyword extraction to identify which tool or concept needs guidance
@@ -1162,6 +1167,7 @@ async function executeReActLoop(params) {
         let finalAnswer = null;
         let lastCheckpointTime = startTime; // Track when we last saved a checkpoint
         let timedOut = false; // Track if we exited due to timeout
+        let consecutiveLazyResponses = 0; // Track consecutive lazy AI responses to prevent infinite loops
 
         for (; turnCount < MAX_TURNS; turnCount++) {
             // Check timeout and save checkpoint if needed
@@ -1457,10 +1463,85 @@ async function executeReActLoop(params) {
             const toolCalls = responseContent.parts.filter(p => p.functionCall);
 
             if (toolCalls.length === 0) {
-                // No tool calls → extract final answer
+                // No tool calls → this is potentially the final answer
                 const textParts = responseContent.parts.filter(p => p.text);
+                
                 if (textParts.length > 0) {
-                    finalAnswer = textParts.map(p => p.text).join('\n');
+                    const rawAnswer = textParts.map(p => p.text).join('\n');
+                    
+                    // Lazy AI Detection: Check if AI is claiming data unavailable without attempting to fetch it
+                    const lowerAnswer = rawAnswer.toLowerCase();
+                    const lazinessTriggers = [
+                        "i do not have access to",
+                        "the data is unavailable",
+                        "cannot see historical data",
+                        "unable to retrieve the data",
+                        "no historical data is available",
+                        "cannot access the requested data"
+                    ];
+                    
+                    // Only intervene if:
+                    // 1. It's claiming data is missing
+                    // 2. We haven't run many tools yet (it gave up too early)
+                    // 3. It's a custom query (where users expect data lookup)
+                    // 4. We have turns remaining
+                    // 5. No recent tool failures (legitimate unavailability after failed attempts)
+                    const isLazy = lazinessTriggers.some(t => lowerAnswer.includes(t));
+                    
+                    // Check if recent tool calls failed (last N messages, where N = RECENT_TOOL_FAILURE_WINDOW)
+                    // Tool failures can be in two forms:
+                    // 1. Tool returned error object: functionResponse.response.result.error
+                    // 2. Tool threw exception: functionResponse.response.error (boolean)
+                    const recentToolFailures = conversationHistory.slice(-RECENT_TOOL_FAILURE_WINDOW).some(msg =>
+                        msg.role === 'function' &&
+                        Array.isArray(msg.parts) &&
+                        msg.parts.some(p => 
+                            p.functionResponse && 
+                            p.functionResponse.response && 
+                            (p.functionResponse.response.error || (p.functionResponse.response.result && p.functionResponse.response.result.error))
+                        )
+                    );
+
+                    if (isLazy && toolCallCount === 0 && isCustomQuery && turnCount < MAX_TURNS - 1 && !recentToolFailures) {
+                        consecutiveLazyResponses++;
+                        
+                        if (consecutiveLazyResponses > LAZY_RESPONSE_THRESHOLD) {
+                            log.error('AI repeatedly claiming no data after interventions', { 
+                                turn: turnCount,
+                                consecutiveCount: consecutiveLazyResponses,
+                                maxAllowed: LAZY_RESPONSE_THRESHOLD
+                            });
+                            finalAnswer = LAZY_AI_FALLBACK_MESSAGE;
+                            break;
+                        }
+                        
+                        log.warn('Detected "Lazy AI" - claiming no data without checking tools', { 
+                            turn: turnCount,
+                            consecutiveCount: consecutiveLazyResponses 
+                        });
+                        
+                        // Force the loop to continue by adding an intervention message without setting finalAnswer
+                        // The AI will receive this as a user message on the next iteration
+                        conversationHistory.push({
+                            role: 'user',
+                            parts: [{
+                                text: `SYSTEM INTERVENTION: You claimed data is unavailable, but you have NOT checked the tools yet.\n\n` +
+                                      `You have access to 'request_bms_data', 'getSystemAnalytics', and others.\n` +
+                                      `1. Look at the "DATA AVAILABILITY" section in the first message.\n` +
+                                      `2. CALL A TOOL to get the data you need (e.g. request_bms_data).\n` +
+                                      `3. Do not apologize. Just send the tool call JSON.`
+                            }]
+                        });
+                        
+                        // Continue the loop to let Gemini try again
+                        continue;
+                    } else {
+                        consecutiveLazyResponses = 0; // Reset on non-lazy response
+                    }
+
+                    // If not lazy, accept the answer
+                    finalAnswer = rawAnswer;
+                    
                     log.info('Final answer received from Gemini', {
                         turn: turnCount,
                         answerLength: finalAnswer.length,
@@ -1523,6 +1604,10 @@ async function executeReActLoop(params) {
                 turn: turnCount,
                 tools: toolCalls.map(t => t.functionCall.name)
             });
+
+            // Reset consecutive lazy response counter when AI makes tool calls
+            // This indicates the intervention worked and AI is now being proactive
+            consecutiveLazyResponses = 0;
 
             for (const toolCall of toolCalls) {
                 const toolName = toolCall.functionCall.name;

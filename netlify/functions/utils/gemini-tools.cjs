@@ -69,7 +69,12 @@ const energyBudget = require('./energy-budget.cjs');
 const toolDefinitions = [
   {
     name: 'request_bms_data',
-    description: 'Request specific BMS data. Returns time-series data with BOTH power (W - instantaneous rate) and energy (Wh/kWh - accumulated) metrics. The response includes pre-calculated energy values like chargingKWh (energy added) and dischargingKWh (energy consumed) for each time bucket. ALWAYS use the pre-calculated energy fields rather than trying to estimate from power values. Choose granularity wisely: hourly_avg for detailed analysis (<30 days), daily_avg for trends (30-90 days with daily energy totals).',
+    description: `PRIMARY tool for raw data. Returns time-series data arrays.
+• USE "hourly_avg" for: Detailed analysis of < 30 days (e.g., "last week", "yesterday").
+• USE "daily_avg" for: Long-term trends > 30 days (e.g., "last month", "battery health trends").
+• USE "raw" ONLY for: Pinpoint diagnosis of specific 1-2 hour events.
+• ISO DATES: Ensure time_range_start < time_range_end.
+• ENERGY FIELDS: Response includes pre-calculated chargingKWh and dischargingKWh per bucket - USE THESE instead of calculating from power.`,
     parameters: {
       type: 'object',
       properties: {
@@ -197,7 +202,10 @@ const toolDefinitions = [
   },
   {
     name: 'predict_battery_trends',
-    description: 'Predict future battery performance using time series analysis and regression modeling. Use this for lifespan forecasting, capacity degradation prediction, and performance trend analysis for off-grid planning.',
+    description: 'Uses statistical regression on historical data to forecast future performance.\n' +
+                 '• USE THIS for: "How long will my battery last?", "Is my capacity degrading?", "Maintenance planning".\n' +
+                 '• DO NOT guess degradation - use this tool to get the calculated slope.\n' +
+                 '• Returns: degradation rate, days to threshold, confidence intervals.',
     parameters: {
       type: 'object',
       properties: {
