@@ -79,11 +79,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     } = state;
 
     const [cleanupProgress] = useState<string | null>(null);
-    const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
-    const [isStoryMode, setIsStoryMode] = useState(false);
-    const [storyTitle, setStoryTitle] = useState('');
-    const [storySummary, setStorySummary] = useState('');
-    const [storyUserContext, setStoryUserContext] = useState('');
+        const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
+        const [isStoryMode, setIsStoryMode] = useState(false);
+        const [storyTitle, setStoryTitle] = useState('');
+        const [storySummary, setStorySummary] = useState('');
+        const [storyUserContext, setStoryUserContext] = useState('');
+        const [confirmation, setConfirmation] = useState<{
+            isOpen: boolean;
+            message: string;
+            onConfirm: () => void;
+        }>({ isOpen: false, message: '', onConfirm: () => {} });
 
     // --- Data Fetching ---
     const fetchData = useCallback(async (page: number, type: 'systems' | 'history' | 'all') => {
@@ -288,30 +293,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     };
 
     const handleDeleteRecord = async (recordId: string) => {
-        // ***FIX: Use a custom modal/confirmation instead of window.confirm***
-        // This is a placeholder as `window.confirm` is banned.
-        // In a real app, I'd trigger a confirmation modal.
-        // For now, I'll assume 'yes'.
-        const confirmed = true; // window.confirm(`Are you sure you want to delete history record ${recordId}?`);
-        if (!confirmed) return;
-
-        log('info', 'Deleting history record.', { recordId });
-        dispatch({ type: 'ACTION_START', payload: 'deletingRecordId' });
-        try {
-            await deleteAnalysisRecord(recordId);
-            // Optimistically remove the record from local state so the UI reflects deletion immediately
-            dispatch({ type: 'REMOVE_HISTORY_RECORD', payload: recordId });
-            log('info', 'History record deleted successfully (optimistic UI update).', { recordId });
-            // Still refresh the page to ensure canonical state is synced
-            await fetchData(historyPage, 'history');
-        } catch (err) {
-            const error = err instanceof Error ? err.message : "Failed to delete record.";
-            log('error', 'Failed to delete history record.', { recordId, error });
-            dispatch({ type: 'SET_ERROR', payload: error });
-        } finally {
-            dispatch({ type: 'ACTION_END', payload: 'deletingRecordId' });
-        }
-    };
+            setConfirmation({
+                isOpen: true,
+                message: `Are you sure you want to delete history record ${recordId}?`,
+                onConfirm: async () => {
+                    log('info', 'Deleting history record.', { recordId });
+                    dispatch({ type: 'ACTION_START', payload: 'deletingRecordId' });
+                    try {
+                        await deleteAnalysisRecord(recordId);
+                        dispatch({ type: 'REMOVE_HISTORY_RECORD', payload: recordId });
+                        log('info', 'History record deleted successfully (optimistic UI update).', { recordId });
+                        await fetchData(historyPage, 'history');
+                    } catch (err) {
+                        const error = err instanceof Error ? err.message : "Failed to delete record.";
+                        log('error', 'Failed to delete history record.', { recordId, error });
+                        dispatch({ type: 'SET_ERROR', payload: error });
+                    } finally {
+                        dispatch({ type: 'ACTION_END', payload: 'deletingRecordId' });
+                        setConfirmation({ isOpen: false, message: '', onConfirm: () => {} });
+                    }
+                }
+            });
+        };
 
     const handleLinkRecord = async (record: AnalysisRecord) => {
         const systemId = state.linkSelections[record.id];
@@ -365,28 +368,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         options: { requiresConfirm?: boolean; confirmMessage?: string } = {}
     ) => {
         if (options.requiresConfirm) {
-            // This is a placeholder for a proper modal confirmation
-            const confirmed = true; // window.confirm(options.confirmMessage || `Are you sure you want to perform the action: ${actionName}?`);
-            if (!confirmed) return;
-        }
+                    setConfirmation({
+                        isOpen: true,
+                        message: options.confirmMessage || `Are you sure you want to perform the action: ${actionName}?`,
+                        onConfirm: async () => {
+                            setConfirmation({ isOpen: false, message: '', onConfirm: () => {} });
+                            await executeAction();
+                        }
+                    });
+                } else {
+                    await executeAction();
+                }
+        
+                async function executeAction() {
 
         log('info', `Starting action: ${actionName}.`);
-        dispatch({ type: 'ACTION_START', payload: actionName });
-        try {
-            const result = await actionFn();
-            log('info', `${actionName} completed successfully.`, { result });
-            // Maybe show a toast/notification here instead of just logging
-            if (refreshType !== 'none') {
-                const pageToRefresh = refreshType === 'systems' ? systemsPage : (refreshType === 'history' ? historyPage : 1);
-                await fetchData(pageToRefresh, refreshType);
+                dispatch({ type: 'ACTION_START', payload: actionName });
+                try {
+                    const result = await actionFn();
+                    log('info', `${actionName} completed successfully.`, { result });
+                    if (refreshType !== 'none') {
+                        const pageToRefresh = refreshType === 'systems' ? systemsPage : (refreshType === 'history' ? historyPage : 1);
+                        await fetchData(pageToRefresh, refreshType);
+                    }
+                } catch (err) {
+                    const error = err instanceof Error ? err.message : `Failed to execute action: ${actionName}.`;
+                    log('error', `${actionName} failed.`, { error });
+                    dispatch({ type: 'SET_ERROR', payload: error });
+                } finally {
+                    dispatch({ type: 'ACTION_END', payload: actionName });
+                }
             }
-        } catch (err) {
-            const error = err instanceof Error ? err.message : `Failed to execute action: ${actionName}.`;
-            log('error', `${actionName} failed.`, { error });
-            dispatch({ type: 'SET_ERROR', payload: error });
-        } finally {
-            dispatch({ type: 'ACTION_END', payload: actionName });
-        }
     };
 
     const handleScanForDuplicates = async () => {
@@ -1017,14 +1029,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             )}
 
             <DiagnosticsModal
-                isOpen={state.isDiagnosticsModalOpen}
-                onClose={() => dispatch({ type: 'CLOSE_DIAGNOSTICS_MODAL' })}
-                results={state.diagnosticResults}
-                isLoading={state.actionStatus.isRunningDiagnostics}
-                selectedTests={state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS}
-            />
-        </div>
-    );
-};
+                            isOpen={state.isDiagnosticsModalOpen}
+                            onClose={() => dispatch({ type: 'CLOSE_DIAGNOSTICS_MODAL' })}
+                            results={state.diagnosticResults}
+                            isLoading={state.actionStatus.isRunningDiagnostics}
+                            selectedTests={state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS}
+                        />
+            
+                        {confirmation.isOpen && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                                <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
+                                    <h2 className="text-lg font-bold mb-4">Confirm Action</h2>
+                                    <p>{confirmation.message}</p>
+                                    <div className="mt-6 flex justify-end gap-4">
+                                        <button
+                                            onClick={() => setConfirmation({ isOpen: false, message: '', onConfirm: () => {} })}
+                                            className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={confirmation.onConfirm}
+                                            className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+                                        >
+                                            Confirm
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
 
 export default AdminDashboard;

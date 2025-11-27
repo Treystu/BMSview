@@ -286,10 +286,10 @@ function calculateFailureRisk(measurements, maintenanceHistory) {
   else level = 'Very Low';
 
   return {
-    level,
-    confidence: Math.min(95, 50 + riskScore),
-    factors: riskFactors
-  };
+      level,
+      confidence: null,
+      factors: riskFactors
+    };
 }
 
 function identifyWeakComponents(components, measurements) {
@@ -465,10 +465,10 @@ async function generateAIInsights(systemData, timeHorizon, log) {
     log.debug('Received AI insights from Gemini', { insightsLength: insights.length });
 
     return {
-      text: insights,
-      processedAt: new Date().toISOString(),
-      confidence: 85 // Placeholder confidence score
-    };
+          text: insights,
+          processedAt: new Date().toISOString(),
+          confidence: null // Placeholder confidence score
+        };
   } catch (error) {
     log.error('Error generating AI insights', { error: error.message, stack: error.stack });
     return {
@@ -516,8 +516,8 @@ function calculateCellEfficiency(component, measurements) {
   if (component.originalCapacity && component.remainingCapacity) {
     return component.remainingCapacity / component.originalCapacity;
   }
-  // Fallback to a mock calculation if capacity is not available
-  return 0.8 + Math.random() * 0.2;
+  // Fallback to null if capacity is not available
+  return null;
 }
 
 function generateComponentRecommendation(type, riskLevel) {

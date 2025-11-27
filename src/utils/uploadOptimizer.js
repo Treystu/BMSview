@@ -285,8 +285,9 @@ class UploadOptimizer {
       error: error?.message
     };
 
+    import { telemetry } from './telemetry';
     // In production, this would go to a monitoring service
-    console.log('Upload Metrics:', JSON.stringify(metrics, null, 2));
+        telemetry.log('info', 'Upload Metrics', metrics);
 
     // Store in telemetry only if enabled (opt-in). Default: no persistent storage in prod.
     // Telemetry is an ES module, so we can't use require() in a .js file

@@ -626,7 +626,7 @@ async function getSystemHistory(params, log) {
 }
 
 /**
- * Get weather data for a location (placeholder - calls external service)
+ * Get weather data for a location by calling the weather Netlify function
  */
 async function getWeatherData(params, log) {
     const { latitude, longitude, timestamp, type = 'historical' } = params;
@@ -635,24 +635,32 @@ async function getWeatherData(params, log) {
         throw new Error('latitude and longitude are required');
     }
 
-    // In actual implementation, would call weather service
     log.info('Weather data requested', { latitude, longitude, timestamp, type });
 
-    // Placeholder return
-    return {
-        latitude,
-        longitude,
-        timestamp: timestamp || new Date().toISOString(),
-        type,
-        temp: null,
-        clouds: null,
-        uvi: null,
-        note: 'Weather service integration pending'
-    };
+    // This is a simplified fetch to our own Netlify function.
+    // It assumes we're running in the same Netlify environment.
+    // The URL is relative to the function's execution context.
+    const weatherFunctionUrl = '/.netlify/functions/weather';
+
+    const response = await fetch(weatherFunctionUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ lat: latitude, lon: longitude, timestamp, type }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+        throw new Error(result.error || `Weather service responded with status: ${response.status}`);
+    }
+
+    return result;
 }
 
 /**
- * Get solar energy estimates (placeholder - calls external service)
+ * Get solar energy estimates by calling the solar-estimate Netlify function
  */
 async function getSolarEstimate(params, log) {
     const { location, panelWatts, startDate, endDate } = params;
@@ -663,15 +671,22 @@ async function getSolarEstimate(params, log) {
 
     log.info('Solar estimate requested', { location, panelWatts, startDate, endDate });
 
-    // Placeholder return
-    return {
-        location,
-        panelWatts,
-        startDate,
-        endDate,
-        estimatedWh: null,
-        note: 'Solar service integration pending'
-    };
+    const solarFunctionUrl = `/.netlify/functions/solar-estimate?location=${encodeURIComponent(location)}&panelWatts=${panelWatts}&startDate=${startDate}&endDate=${endDate}`;
+
+    const response = await fetch(solarFunctionUrl, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json',
+        },
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+        throw new Error(result.error || `Solar estimate service responded with status: ${response.status}`);
+    }
+
+    return result;
 }
 
 /**
@@ -881,8 +896,10 @@ async function getSystemAnalytics(params, log) {
     }
 }
 
+const { predictCapacityDegradation, predictEfficiency, predictLifetime } = require('./forecasting.cjs');
+
 /**
- * Predict battery trends using forecasting models (placeholder)
+ * Predict battery trends using forecasting models
  */
 async function predictBatteryTrends(params, log) {
     const { systemId, metric, forecastDays = 30, confidenceLevel = true } = params;
@@ -893,19 +910,20 @@ async function predictBatteryTrends(params, log) {
 
     log.info('Battery trend prediction requested', { systemId, metric, forecastDays });
 
-    // Placeholder return
-    return {
-        systemId,
-        metric,
-        forecastDays,
-        prediction: null,
-        confidence: null,
-        note: 'Forecasting module integration pending'
-    };
+    switch (metric) {
+        case 'capacity':
+            return predictCapacityDegradation(systemId, forecastDays, confidenceLevel, log);
+        case 'efficiency':
+            return predictEfficiency(systemId, forecastDays, confidenceLevel, log);
+        case 'lifetime':
+            return predictLifetime(systemId, confidenceLevel, log);
+        default:
+            throw new Error(`Unsupported metric for predict_battery_trends: ${metric}`);
+    }
 }
 
 /**
- * Analyze usage patterns (placeholder)
+ * Analyze usage patterns using MongoDB aggregation
  */
 async function analyzeUsagePatterns(params, log) {
     const { systemId, patternType = 'daily', timeRange = '30d' } = params;
@@ -916,18 +934,74 @@ async function analyzeUsagePatterns(params, log) {
 
     log.info('Usage pattern analysis requested', { systemId, patternType, timeRange });
 
-    // Placeholder return
+    const days = parseInt(timeRange.replace('d', ''), 10);
+    if (isNaN(days) || days <= 0) {
+        throw new Error('Invalid timeRange. Use format like "30d".');
+    }
+
+    const patterns = await aggregateUsagePatterns(systemId, days, patternType, log);
+
     return {
         systemId,
         patternType,
         timeRange,
-        patterns: null,
-        note: 'Pattern analysis integration pending'
+        patterns,
+        note: `Usage patterns aggregated from ${patterns.length} data points.`
     };
 }
 
+async function aggregateUsagePatterns(systemId, days, patternType, log) {
+    const collection = await getCollection('history');
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const matchStage = {
+        $match: {
+            systemId,
+            timestamp: { $gte: startDate.toISOString() }
+        }
+    };
+
+    let groupStage;
+    if (patternType === 'daily') {
+        groupStage = {
+            $group: {
+                _id: { $dateToString: { format: "%Y-%m-%d", date: { $toDate: "$timestamp" } } },
+                avgSoc: { $avg: "$analysis.stateOfCharge" },
+                avgPower: { $avg: "$analysis.power" },
+                avgCurrent: { $avg: "$analysis.current" },
+                avgTemp: { $avg: "$analysis.temperature" },
+                count: { $sum: 1 }
+            }
+        };
+    } else if (patternType === 'hourly') {
+        groupStage = {
+            $group: {
+                _id: { $hour: { $toDate: "$timestamp" } },
+                avgSoc: { $avg: "$analysis.stateOfCharge" },
+                avgPower: { $avg: "$analysis.power" },
+                avgCurrent: { $avg: "$analysis.current" },
+                avgTemp: { $avg: "$analysis.temperature" },
+                count: { $sum: 1 }
+            }
+        };
+    } else {
+        throw new Error(`Unsupported patternType: ${patternType}`);
+    }
+
+    const sortStage = { $sort: { _id: 1 } };
+
+    const pipeline = [matchStage, groupStage, sortStage];
+    log.debug('Executing aggregation pipeline for usage patterns', { pipeline });
+
+    const results = await collection.aggregate(pipeline).toArray();
+    return results;
+}
+
+const { calculateCurrentBudget, calculateWorstCase, calculateAverage, calculateEmergencyBackup } = require('./energy-budget.cjs');
+
 /**
- * Calculate energy budget for scenarios (placeholder)
+ * Calculate energy budget for scenarios
  */
 async function calculateEnergyBudget(params, log) {
     const { systemId, scenario, includeWeather = true, timeframe = '30d' } = params;
@@ -938,14 +1012,18 @@ async function calculateEnergyBudget(params, log) {
 
     log.info('Energy budget calculation requested', { systemId, scenario, timeframe });
 
-    // Placeholder return
-    return {
-        systemId,
-        scenario,
-        timeframe,
-        budget: null,
-        note: 'Energy budget calculation integration pending'
-    };
+    switch (scenario) {
+        case 'current':
+            return calculateCurrentBudget(systemId, timeframe, includeWeather, log);
+        case 'worst_case':
+            return calculateWorstCase(systemId, timeframe, includeWeather, log);
+        case 'average':
+            return calculateAverage(systemId, timeframe, includeWeather, log);
+        case 'emergency':
+            return calculateEmergencyBackup(systemId, timeframe, log);
+        default:
+            throw new Error(`Unsupported scenario for calculate_energy_budget: ${scenario}`);
+    }
 }
 
 module.exports = {
