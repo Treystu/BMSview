@@ -458,7 +458,6 @@ export interface FullContextData {
   buildDurationMs: number;
   systemId: string;
 }
-
 // AI Feedback & Monitoring Types (for observability system)
 export interface AIFeedbackMetric {
   id: string;
