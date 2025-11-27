@@ -498,6 +498,7 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
       const event = {
         body: JSON.stringify({
           systemId: 'test-system-123',
+          analysisData: { voltage: 48.5, current: -10 },
           consentGranted: true
         })
       };
@@ -531,8 +532,9 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
       expect(result.error).toContain('Either analysisData and systemId, or resumeJobId is required');
     });
 
-    test('should check for required fields before validating consent', async () => {
-      // This tests the current behavior where validation happens before consent check
+    test('should check consent before validating required fields', async () => {
+      // Consent verification now happens before required field validation
+      // This is a security improvement - reject unauthorized requests early
       const event = {
         body: JSON.stringify({
           consentGranted: false
@@ -543,9 +545,9 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
       const response = await handler(event, mockContext);
       const result = JSON.parse(response.body);
 
-      // Current implementation validates required fields first
-      expect(response.statusCode).toBe(400);
-      expect(result.error).toContain('Either analysisData and systemId, or resumeJobId is required');
+      // Consent is checked first, so we expect 403 before 400
+      expect(response.statusCode).toBe(403);
+      expect(result.error).toBe('consent_required');
     });
 
     test('should handle malformed JSON gracefully', async () => {

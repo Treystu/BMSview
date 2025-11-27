@@ -24,7 +24,6 @@ const DB_NAME = process.env.MONGODB_DB_NAME || process.env.MONGODB_DB || "bmsvie
 const ENCRYPTION_KEY = process.env.DATA_ENCRYPTION_KEY || null;
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16; // GCM mode uses 16-byte IV
-const AUTH_TAG_LENGTH = 16;
 
 // PBKDF2 configuration for secure key derivation
 // Using a fixed salt for deterministic key derivation from the same environment variable

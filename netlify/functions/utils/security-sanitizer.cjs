@@ -23,16 +23,6 @@ const MAX_LENGTHS = {
   arrayLength: 100
 };
 
-// MongoDB operators that should not appear in user input
-// More specific than generic $ patterns to avoid false positives
-const MONGODB_OPERATORS = new Set([
-  '$where', '$gt', '$gte', '$lt', '$lte', '$ne', '$eq', '$in', '$nin',
-  '$and', '$or', '$not', '$nor', '$exists', '$type', '$regex', '$expr',
-  '$mod', '$text', '$all', '$elemMatch', '$size', '$slice', '$meta',
-  '$comment', '$rand', '$natural', '$hint', '$max', '$min', '$orderby',
-  '$returnKey', '$showDiskLoc', '$snapshot', '$query', '$explain'
-]);
-
 // Patterns that indicate potential NoSQL injection
 const NOSQL_INJECTION_PATTERNS = [
   /\$(?:where|gt|gte|lt|lte|ne|eq|in|nin|and|or|not|nor|exists|type|regex|expr|mod|text|all|elemMatch|size|slice|meta)/i,
@@ -258,8 +248,11 @@ function sanitizeCustomPrompt(prompt, log) {
   });
   
   // Remove any detected suspicious patterns (lower confidence ones)
+  // Ensure global replacement of all occurrences
   for (const pattern of SUSPICIOUS_PROMPT_PATTERNS) {
-    sanitized = sanitized.replace(pattern, '[FILTERED]');
+    const flags = pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g';
+    const globalPattern = new RegExp(pattern.source, flags);
+    sanitized = sanitized.replace(globalPattern, '[FILTERED]');
   }
   
   if (sanitized.length !== prompt.length) {
@@ -407,6 +400,11 @@ function sanitizeInsightsRequest(body, log) {
   
   if (body.analysisData) {
     sanitized.analysisData = sanitizeAnalysisData(body.analysisData, log);
+  }
+  
+  // Also sanitize batteryData (legacy field name) to prevent bypass
+  if (body.batteryData) {
+    sanitized.batteryData = sanitizeAnalysisData(body.batteryData, log);
   }
   
   if (body.customPrompt) {

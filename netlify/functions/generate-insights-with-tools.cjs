@@ -173,8 +173,9 @@ exports.handler = async (event, context) => {
     }
 
     // Extract sanitized values
-    // Support legacy payloads where analysis data is provided directly (e.g., batteryData or the whole body)
-    const analysisData = sanitizedBody.analysisData || rawBody.batteryData || rawBody;
+    // Support legacy payloads where analysis data is provided directly (e.g., batteryData)
+    // Both analysisData and batteryData are sanitized in sanitizeInsightsRequest
+    const analysisData = sanitizedBody.analysisData || sanitizedBody.batteryData || null;
     const systemId = sanitizedBody.systemId;
     const customPrompt = sanitizedBody.customPrompt;
     const mode = sanitizedBody.mode || DEFAULT_MODE;
@@ -185,21 +186,10 @@ exports.handler = async (event, context) => {
     const resumeJobId = sanitizedBody.resumeJobId;
     const consentGranted = sanitizedBody.consentGranted;
 
-    // Validate input: Must have either (analysisData AND systemId) OR resumeJobId
-    if ((!analysisData || !systemId) && !resumeJobId) {
-      return {
-        statusCode: 400,
-        headers: { ...headers, ...rateLimitHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          error: 'Either analysisData and systemId, or resumeJobId is required'
-        })
-      };
-    }
-
     // =====================
     // SECURITY: Consent Verification with Audit Logging
     // =====================
-    // Verify user consent for AI processing
+    // Verify user consent for AI processing BEFORE validating other fields
     // Strict type checking to prevent bypass via type coercion
     // Note: Resume requests (resumeJobId) bypass consent check because:
     // 1. The original job was created with explicit consent
@@ -230,6 +220,17 @@ exports.handler = async (event, context) => {
         systemId,
         clientIp
       });
+    }
+
+    // Validate input: Must have either (analysisData AND systemId) OR resumeJobId
+    if ((!analysisData || !systemId) && !resumeJobId) {
+      return {
+        statusCode: 400,
+        headers: { ...headers, ...rateLimitHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          error: 'Either analysisData and systemId, or resumeJobId is required'
+        })
+      };
     }
 
     log.info('Insights request received', {
