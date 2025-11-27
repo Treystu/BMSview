@@ -90,33 +90,53 @@ ${feedback.suggestion.codeSnippets.join('\n\n')}
 }
 
 /**
- * Create GitHub issue (mock implementation - would integrate with GitHub API)
+ * Create GitHub issue using the GitHub API
  */
 async function createGitHubIssueAPI(issueData) {
   // Get repository info from environment or use default
   const repoOwner = process.env.GITHUB_REPO_OWNER || 'Treystu';
   const repoName = process.env.GITHUB_REPO_NAME || 'BMSview';
+  const githubToken = process.env.GITHUB_TOKEN;
   
-  // NOTE: This is a mock implementation
-  // In production, this would call the GitHub API:
-  // const response = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/issues`, {
-  //   method: 'POST',
-  //   headers: {
-  //     'Authorization': `token ${process.env.GITHUB_TOKEN}`,
-  //     'Accept': 'application/vnd.github.v3+json'
-  //   },
-  //   body: JSON.stringify(issueData)
-  // });
+  if (!githubToken) {
+    throw new Error('GITHUB_TOKEN environment variable is not configured. Please set it in Netlify environment variables.');
+  }
   
-  // For now, return mock data
-  const mockIssueNumber = Math.floor(Math.random() * 1000) + 300;
+  const response = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/issues`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `token ${githubToken}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'BMSview-AI-Feedback'
+    },
+    body: JSON.stringify(issueData)
+  });
+  
+  if (!response.ok) {
+    const errorBody = await response.text();
+    let errorMessage = `GitHub API error: ${response.status} ${response.statusText}`;
+    
+    try {
+      const errorJson = JSON.parse(errorBody);
+      if (errorJson.message) {
+        errorMessage = `GitHub API error: ${errorJson.message}`;
+      }
+    } catch {
+      // Use the default error message if JSON parsing fails
+    }
+    
+    throw new Error(errorMessage);
+  }
+  
+  const result = await response.json();
   
   return {
-    number: mockIssueNumber,
-    url: `https://github.com/${repoOwner}/${repoName}/issues/${mockIssueNumber}`,
-    html_url: `https://github.com/${repoOwner}/${repoName}/issues/${mockIssueNumber}`,
-    state: 'open',
-    created_at: new Date().toISOString()
+    number: result.number,
+    url: result.url,
+    html_url: result.html_url,
+    state: result.state,
+    created_at: result.created_at
   };
 }
 
