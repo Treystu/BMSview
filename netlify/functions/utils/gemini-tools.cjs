@@ -1266,8 +1266,31 @@ async function submitAppFeedback(params, log) {
       };
     }
 
-    // Import the feedback manager
-    const { submitFeedbackToDatabase } = require('./feedback-manager.cjs');
+    // Import the feedback manager with error handling
+    let submitFeedbackToDatabase;
+    try {
+      const feedbackManager = require('./feedback-manager.cjs');
+      submitFeedbackToDatabase = feedbackManager.submitFeedbackToDatabase;
+      if (typeof submitFeedbackToDatabase !== 'function') {
+        throw new Error('submitFeedbackToDatabase is not a function');
+      }
+    } catch (importError) {
+      log.error('Failed to load feedback manager module', {
+        error: importError.message,
+        systemId,
+        feedbackType
+      });
+      return {
+        error: true,
+        message: 'Feedback system is not available. The feedback-manager module could not be loaded.',
+        systemId,
+        feedbackType,
+        suggestion: 'This may be a configuration issue. Your feedback has been logged for manual review.'
+      };
+    }
+    
+    // Generate a unique request ID for tracing
+    const requestId = `gemini-tool-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     
     // Prepare feedback data
     const feedbackData = {
@@ -1288,8 +1311,8 @@ async function submitAppFeedback(params, log) {
       }
     };
 
-    // Submit to database
-    const result = await submitFeedbackToDatabase(feedbackData, { awsRequestId: 'gemini-tool-call' });
+    // Submit to database with traceable request ID
+    const result = await submitFeedbackToDatabase(feedbackData, { awsRequestId: requestId });
 
     log.info('App feedback submitted successfully', {
       feedbackId: result.id,
