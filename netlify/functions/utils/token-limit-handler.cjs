@@ -7,8 +7,6 @@
 
 "use strict";
 
-const { createLogger } = require('./logger.cjs');
-
 // Token limits for different Gemini models
 const MODEL_TOKEN_LIMITS = {
   'gemini-2.5-flash': 1048576, // 1M input tokens

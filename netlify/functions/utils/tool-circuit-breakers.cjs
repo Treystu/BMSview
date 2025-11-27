@@ -7,8 +7,6 @@
 
 "use strict";
 
-const { createLogger } = require('./logger.cjs');
-
 // Circuit breaker configuration per tool type
 const TOOL_BREAKER_CONFIGS = {
   // Gemini API - already has circuit breaker in geminiClient.cjs
@@ -264,7 +262,7 @@ class CircuitBreakerRegistry {
    */
   getAllStatus() {
     const statuses = [];
-    for (const [toolName, breaker] of this.breakers.entries()) {
+    for (const breaker of this.breakers.values()) {
       statuses.push(breaker.getStatus());
     }
     return statuses;
@@ -287,7 +285,7 @@ class CircuitBreakerRegistry {
    */
   resetAll(log) {
     let count = 0;
-    for (const [toolName, breaker] of this.breakers.entries()) {
+    for (const breaker of this.breakers.values()) {
       breaker.reset(log);
       count++;
     }

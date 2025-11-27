@@ -606,9 +606,14 @@ async function main() {
     // Save failed issues to a recovery file
     const fs = require('fs');
     const recoveryFile = 'failed-issues.json';
-    fs.writeFileSync(recoveryFile, JSON.stringify(failedIssues, null, 2));
-    console.log('');
-    console.log(`💾 Failed issues saved to ${recoveryFile} for manual retry`);
+    try {
+      fs.writeFileSync(recoveryFile, JSON.stringify(failedIssues, null, 2));
+      console.log('');
+      console.log(`💾 Failed issues saved to ${recoveryFile} for manual retry`);
+    } catch (writeError) {
+      console.error('⚠️  Could not save failed issues to file:', writeError.message);
+      console.error('   Failed issues:', JSON.stringify(failedIssues, null, 2));
+    }
     console.log('   You can manually create these issues or fix the errors and re-run the script.');
   }
 

@@ -60,6 +60,7 @@ exports.handler = async (event, context) => {
         summary: {
           total: globalStatus.total,
           open: globalStatus.open,
+          halfOpen: globalStatus.halfOpen || 0,
           closed: globalStatus.closed,
           anyOpen: globalStatus.anyOpen
         }

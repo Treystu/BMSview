@@ -397,8 +397,29 @@ async function executeToolCall(toolName, parameters, log) {
  * @param {Error} error - The error that occurred
  * @param {string} toolName - Name of the tool that failed
  * @returns {Object} Error categorization
+ * @property {string} category - Error category (network, rate_limit, database, invalid_parameters, no_data, token_limit, circuit_open, unknown)
+ * @property {boolean} isRetriable - Whether the error should be retried
+ * @property {boolean} canContinue - Whether system can continue with partial results (internal use only)
+ * @property {string} suggestedAction - Human-readable suggested action
  */
 function categorizeToolError(error, toolName) {
+  // Check error code first for more reliable categorization
+  if (error.code) {
+    const errorCode = error.code.toString().toUpperCase();
+    
+    // Network error codes
+    if (errorCode === 'ETIMEDOUT' || errorCode === 'ECONNREFUSED' || 
+        errorCode === 'ENOTFOUND' || errorCode === 'ECONNRESET' ||
+        errorCode === 'EPIPE' || errorCode === 'EHOSTUNREACH') {
+      return {
+        category: 'network',
+        isRetriable: true,
+        canContinue: true,
+        suggestedAction: 'Retry with exponential backoff. System can continue with partial data.'
+      };
+    }
+  }
+  
   const errorMessage = error.message?.toLowerCase() || '';
   
   // Network/connectivity errors - retriable

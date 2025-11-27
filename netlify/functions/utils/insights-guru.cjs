@@ -268,7 +268,7 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
  * @param {"sync"|"background"} [params.mode]
  */
 async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, context, mode = "sync" }) {
-    const { estimateDataTokens, checkTokenLimit, applyContextReduction } = require('./token-limit-handler.cjs');
+    const { estimateDataTokens, checkTokenLimit } = require('./token-limit-handler.cjs');
     
     const contextData = context || await collectAutoInsightsContext(systemId, analysisData, log, { mode });
 

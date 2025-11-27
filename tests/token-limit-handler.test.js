@@ -11,8 +11,7 @@ const {
   applyContextReduction,
   createTokenLimitMessage,
   handleTokenLimitExceeded,
-  MODEL_TOKEN_LIMITS,
-  TOKEN_SAFETY_MARGIN
+  MODEL_TOKEN_LIMITS
 } = require('../netlify/functions/utils/token-limit-handler.cjs');
 
 describe('Token Limit Handler', () => {
