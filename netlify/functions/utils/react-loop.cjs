@@ -1601,12 +1601,32 @@ async function executeReActLoop(params) {
         });
 
         // Log operation metrics for successful insights generation
+        // Estimate token usage: sum all message lengths in conversationHistory plus finalAnswer, divide by 4 (approx chars per token)
+        // Handle both content-based messages and function call parts
+        const estimatedTokenCount = Math.round(
+            (conversationHistory.reduce((sum, msg) => {
+                let msgLength = 0;
+                if (msg.content) {
+                    msgLength += msg.content.length;
+                }
+                if (msg.parts && Array.isArray(msg.parts)) {
+                    msgLength += msg.parts.reduce((partSum, part) => {
+                        if (typeof part === 'string') return partSum + part.length;
+                        if (part.text) return partSum + part.text.length;
+                        // For function calls, estimate based on stringified content
+                        return partSum + JSON.stringify(part).length;
+                    }, 0);
+                }
+                return sum + msgLength;
+            }, 0) + (finalAnswer ? finalAnswer.length : 0)) / 4
+        ); // Approximate: 4 chars per token
+
         try {
             await logAIOperation({
                 operation: 'insights',
                 systemId: systemId,
                 duration: totalDurationMs,
-                tokensUsed: 0, // Token tracking would need to be added to geminiClient
+                tokensUsed: estimatedTokenCount, // Estimated; replace with actual token tracking if Gemini API supports it
                 success: true,
                 model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
                 contextWindowDays: contextWindowDays,
@@ -1615,7 +1635,8 @@ async function executeReActLoop(params) {
                     toolCalls: toolCallCount,
                     conversationLength: conversationHistory.length,
                     timedOut: timedOut,
-                    isCustomQuery: isCustomQuery
+                    isCustomQuery: isCustomQuery,
+                    tokenEstimationMethod: 'char_count_div_4'
                 }
             });
 

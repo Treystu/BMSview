@@ -124,7 +124,8 @@ function generateSampleFeedback(count = 20) {
       id: uuidv4(),
       feedbackId: `feedback-${uuidv4().slice(0, 8)}`,
       suggestedAt: suggestedAt.toISOString(),
-      status
+      status,
+      metadata: { sample: true }
     };
 
     if (status === 'implemented') {
@@ -190,7 +191,7 @@ async function seedData() {
     console.log('\n🧹 Clearing existing sample data...');
     await db.collection('ai_operations').deleteMany({ 'metadata.sample': true });
     await db.collection('anomaly_alerts').deleteMany({ 'metadata.sample': true });
-    await db.collection('feedback_tracking').deleteMany({});
+    await db.collection('feedback_tracking').deleteMany({ 'metadata.sample': true });
     await db.collection('ai_metrics').deleteMany({ 'metadata.sample': true });
 
     // Seed AI operations

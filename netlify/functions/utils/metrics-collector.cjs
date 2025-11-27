@@ -235,12 +235,13 @@ async function getCostMetrics(period = 'daily', startDate = null, endDate = null
     const end = endDate || new Date();
     const start = startDate || new Date(end.getTime() - 24 * 60 * 60 * 1000);
 
+    // Include all operations for cost tracking (both success and failed)
+    // Failed operations may still incur API costs
     const operations = await collection.find({
       timestamp: {
         $gte: start.toISOString(),
         $lte: end.toISOString()
-      },
-      success: true
+      }
     }).toArray();
 
     const breakdown = {
@@ -252,9 +253,16 @@ async function getCostMetrics(period = 'daily', startDate = null, endDate = null
     let totalCost = 0;
     let totalTokens = 0;
 
+    // Explicit operation type mapping to handle both naming conventions
+    const operationTypeMap = {
+      'analysis': 'analysis',
+      'insights': 'insights',
+      'feedback_generation': 'feedbackGeneration',
+      'feedbackGeneration': 'feedbackGeneration'
+    };
+
     operations.forEach(op => {
-      const category = op.operation === 'analysis' ? 'analysis' :
-                      op.operation === 'insights' ? 'insights' : 'feedbackGeneration';
+      const category = operationTypeMap[op.operation] || 'feedbackGeneration';
       
       breakdown[category].count++;
       breakdown[category].cost += op.cost || 0;
@@ -288,11 +296,10 @@ async function checkForAnomalies(metrics) {
   try {
     const collection = await getCollection('ai_operations');
     
-    // Get historical baseline (last 7 days)
+    // Get historical baseline (last 7 days) - include ALL operations for proper error rate calculation
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const historical = await collection.find({
-      timestamp: { $gte: sevenDaysAgo.toISOString() },
-      success: true
+      timestamp: { $gte: sevenDaysAgo.toISOString() }
     }).toArray();
 
     if (historical.length < 10) {
@@ -300,13 +307,28 @@ async function checkForAnomalies(metrics) {
       return;
     }
 
-    // Calculate baseline metrics
-    const avgDuration = historical.reduce((sum, op) => sum + op.duration, 0) / historical.length;
-    const avgCost = historical.reduce((sum, op) => sum + (op.cost || 0), 0) / historical.length;
-    const errorRate = historical.filter(op => !op.success).length / historical.length;
+    // Calculate baseline metrics in a single pass through historical data
+    let totalDuration = 0;
+    let totalCost = 0;
+    let successCount = 0;
+    let failureCount = 0;
+    
+    for (const op of historical) {
+      if (op.success) {
+        totalDuration += op.duration || 0;
+        totalCost += op.cost || 0;
+        successCount++;
+      } else {
+        failureCount++;
+      }
+    }
+
+    const avgDuration = successCount > 0 ? totalDuration / successCount : 0;
+    const avgCost = successCount > 0 ? totalCost / successCount : 0;
+    const errorRate = failureCount / historical.length;
 
     // Check for cost spike (3x average)
-    if (metrics.cost && metrics.cost > avgCost * 3) {
+    if (metrics.cost && avgCost > 0 && metrics.cost > avgCost * 3) {
       await createAlert({
         severity: 'high',
         type: 'cost_spike',
@@ -316,7 +338,7 @@ async function checkForAnomalies(metrics) {
     }
 
     // Check for latency spike (2x average)
-    if (metrics.duration && metrics.duration > avgDuration * 2) {
+    if (metrics.duration && avgDuration > 0 && metrics.duration > avgDuration * 2) {
       await createAlert({
         severity: 'medium',
         type: 'latency',

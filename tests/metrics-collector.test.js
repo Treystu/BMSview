@@ -218,7 +218,7 @@ describe('Metrics Collector', () => {
     });
 
     test('defaults to medium severity if not specified', async () => {
-      const alertId = await createAlert({
+      await createAlert({
         type: 'latency',
         message: 'High latency detected'
       });
@@ -268,7 +268,7 @@ describe('Metrics Collector', () => {
     });
 
     test('tracks implemented feedback with effectiveness', async () => {
-      const trackingId = await trackFeedbackImplementation({
+      await trackFeedbackImplementation({
         feedbackId: 'feedback-456',
         status: 'implemented',
         implementedAt: new Date().toISOString(),

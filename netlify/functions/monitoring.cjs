@@ -104,7 +104,9 @@ async function handleCostMetrics(log, headers, params) {
 async function handleAlerts(log, headers, params) {
   const collection = await getCollection('anomaly_alerts');
   const resolved = params.resolved === 'true';
-  const limit = parseInt(params.limit || '50');
+  // Validate limit to prevent excessive queries (1-1000 range)
+  const parsedLimit = parseInt(params.limit || '50', 10);
+  const limit = Number.isNaN(parsedLimit) ? 50 : Math.max(1, Math.min(parsedLimit, 1000));
   
   const alerts = await collection
     .find({ resolved })
@@ -126,7 +128,9 @@ async function handleAlerts(log, headers, params) {
  */
 async function handleTrends(log, headers, params) {
   const collection = await getCollection('ai_operations');
-  const hours = parseInt(params.hours || '24');
+  // Validate hours to prevent excessive queries (max 168 hours / 7 days)
+  const parsedHours = parseInt(params.hours || '24', 10);
+  const hours = Number.isNaN(parsedHours) ? 24 : Math.min(parsedHours, 168);
   const startDate = new Date(Date.now() - hours * 60 * 60 * 1000);
   
   // Aggregate by hour
@@ -180,23 +184,58 @@ async function handleTrends(log, headers, params) {
 async function handleFeedbackStats(log, headers) {
   const collection = await getCollection('feedback_tracking');
   
-  const allFeedback = await collection.find({}).toArray();
-  const implemented = allFeedback.filter(f => f.status === 'implemented');
-  
-  const stats = {
-    totalSuggestions: allFeedback.length,
-    implementationRate: allFeedback.length > 0 
-      ? implemented.length / allFeedback.length 
-      : 0,
-    averageEffectiveness: implemented.length > 0
-      ? implemented.reduce((sum, f) => sum + (f.effectiveness || 0), 0) / implemented.length
-      : 0,
-    statusBreakdown: {
-      pending: allFeedback.filter(f => f.status === 'pending').length,
-      implemented: implemented.length,
-      rejected: allFeedback.filter(f => f.status === 'rejected').length,
-      expired: allFeedback.filter(f => f.status === 'expired').length
+  // Use aggregation pipeline for efficient stats calculation
+  // Only consider feedback from the last 90 days to prevent loading all historical data
+  const now = new Date();
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+  const pipeline = [
+    { $match: { suggestedAt: { $gte: ninetyDaysAgo.toISOString() } } },
+    { $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        effectivenessSum: {
+          $sum: {
+            $cond: [
+              { $eq: ['$status', 'implemented'] },
+              { $ifNull: ['$effectiveness', 0] },
+              0
+            ]
+          }
+        }
+      }
     }
+  ];
+
+  const results = await collection.aggregate(pipeline).toArray();
+
+  // Calculate stats from aggregation results
+  let totalSuggestions = 0;
+  let implementedCount = 0;
+  let effectivenessSum = 0;
+  const statusBreakdown = {
+    pending: 0,
+    implemented: 0,
+    rejected: 0,
+    expired: 0
+  };
+
+  for (const r of results) {
+    totalSuggestions += r.count;
+    if (r._id === 'implemented') {
+      implementedCount = r.count;
+      effectivenessSum = r.effectivenessSum;
+    }
+    if (Object.prototype.hasOwnProperty.call(statusBreakdown, r._id)) {
+      statusBreakdown[r._id] = r.count;
+    }
+  }
+
+  const stats = {
+    totalSuggestions,
+    implementationRate: totalSuggestions > 0 ? implementedCount / totalSuggestions : 0,
+    averageEffectiveness: implementedCount > 0 ? effectivenessSum / implementedCount : 0,
+    statusBreakdown
   };
   
   log.info('Feedback stats retrieved', { stats });
@@ -250,14 +289,43 @@ async function handleDashboard(log, headers, params) {
       }),
     getCollection('feedback_tracking')
       .then(async col => {
-        const allFeedback = await col.find({}).toArray();
-        const implemented = allFeedback.filter(f => f.status === 'implemented');
+        // Use aggregation pipeline for efficient stats calculation (last 90 days)
+        const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+        const pipeline = [
+          { $match: { suggestedAt: { $gte: ninetyDaysAgo.toISOString() } } },
+          { $group: {
+              _id: '$status',
+              count: { $sum: 1 },
+              effectivenessSum: {
+                $sum: {
+                  $cond: [
+                    { $eq: ['$status', 'implemented'] },
+                    { $ifNull: ['$effectiveness', 0] },
+                    0
+                  ]
+                }
+              }
+            }
+          }
+        ];
+        const results = await col.aggregate(pipeline).toArray();
+        
+        let totalSuggestions = 0;
+        let implementedCount = 0;
+        let effectivenessSum = 0;
+        
+        for (const r of results) {
+          totalSuggestions += r.count;
+          if (r._id === 'implemented') {
+            implementedCount = r.count;
+            effectivenessSum = r.effectivenessSum;
+          }
+        }
+        
         return {
-          totalSuggestions: allFeedback.length,
-          implementationRate: allFeedback.length > 0 ? implemented.length / allFeedback.length : 0,
-          averageEffectiveness: implemented.length > 0
-            ? implemented.reduce((sum, f) => sum + (f.effectiveness || 0), 0) / implemented.length
-            : 0
+          totalSuggestions,
+          implementationRate: totalSuggestions > 0 ? implementedCount / totalSuggestions : 0,
+          averageEffectiveness: implementedCount > 0 ? effectivenessSum / implementedCount : 0
         };
       })
   ]);
