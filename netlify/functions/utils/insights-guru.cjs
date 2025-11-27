@@ -545,15 +545,15 @@ function buildCustomMission(customPrompt) {
 
     let approach = `**USER QUESTION:**\n"${customPrompt}"\n\n`;
 
-    // 🧠 CHAIN OF THOUGHT INJECTION
-    approach += `**🧠 MANDATORY THOUGHT PROCESS:**\n`;
+    // Chain of Thought injection
+    approach += `**MANDATORY THOUGHT PROCESS:**\n`;
     approach += `Before calling any tool or answering, you must mentally perform these steps:\n`;
     approach += `1. **Deconstruct**: What specific time ranges and metrics does the user need? (e.g., "last week" = specific ISO dates)\n`;
     approach += `2. **Check Context**: Do I already have this in the "PRE-LOADED" section above? If yes, USE IT.\n`;
     approach += `3. **Gap Analysis**: What is missing? If I need granular hourly data for a specific date, I MUST call request_bms_data.\n`;
     approach += `4. **Tool Selection**: Which tool fills the gap? (e.g., analyze_usage_patterns for anomalies, request_bms_data for raw charts).\n`;
     
-    approach += `\n**⚠️ RULES OF ENGAGEMENT:**\n`;
+    approach += `\n**RULES OF ENGAGEMENT:**\n`;
     approach += `• **Proactive Tooling**: If the user asks "Why did my battery die?", DO NOT guess. Call 'request_bms_data' for the hours leading up to the event.\n`;
     approach += `• **Token Efficiency**: Do not request "all" metrics if the user only asked about "voltage".\n`;
     approach += `• **Self-Correction**: If a tool returns "no data", check your date range. Did you swap start/end? Are you outside the "Available Data" range?\n\n`;
