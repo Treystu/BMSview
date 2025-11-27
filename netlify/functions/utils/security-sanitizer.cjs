@@ -143,10 +143,25 @@ function sanitizeString(str, options = {}) {
   result = result.replace(/\0/g, '');
   
   // Strip HTML if not allowed
+  // Using a simple but robust approach: remove all tags and encode remaining angle brackets
   if (!allowHtml) {
-    result = result
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      .replace(/<[^>]*>/g, '');
+    // Remove all HTML-style tags repeatedly until none remain
+    // This handles nested and malformed tags
+    let previousResult;
+    let iterations = 0;
+    const maxIterations = 10; // Prevent infinite loops on malicious input
+    
+    do {
+      previousResult = result;
+      // Remove anything that looks like an HTML tag (opening or closing)
+      // Use a permissive pattern that catches variations in spacing
+      result = result.replace(/<\/?[a-zA-Z][^>]*>/gi, '');
+      iterations++;
+    } while (result !== previousResult && result.includes('<') && iterations < maxIterations);
+    
+    // Final safety: encode any remaining < or > characters to prevent XSS
+    // This catches malformed tags that weren't removed above
+    result = result.replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
   
   // Normalize newlines or remove them
