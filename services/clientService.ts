@@ -1303,8 +1303,46 @@ const pollInsightsJobCompletion = async (
 
                 // Check if failed
                 if (status.status === 'failed') {
-                    const error = new Error(status.error || 'Background job failed');
-                    log('error', 'Background insights job failed', { jobId, error: status.error });
+                    // Issue 236: Use enhanced error context from backend
+                    let errorMessage = status.error || 'Background job failed';
+                    
+                    // Build detailed error message from backend's enhanced fields
+                    if (status.failureReason) {
+                        errorMessage = `❌ Analysis Failed\n\n`;
+                        errorMessage += `**Reason:** ${status.failureReason}\n\n`;
+                        
+                        if (status.failureCategory) {
+                            errorMessage += `**Category:** ${status.failureCategory}\n\n`;
+                        }
+                        
+                        if (status.suggestions && status.suggestions.length > 0) {
+                            errorMessage += `**Suggestions:**\n`;
+                            for (const suggestion of status.suggestions) {
+                                errorMessage += `• ${suggestion}\n`;
+                            }
+                            errorMessage += '\n';
+                        }
+                        
+                        if (status.lastProgressEvent) {
+                            const lastEvent = status.lastProgressEvent;
+                            const eventDesc = formatProgressEvent(lastEvent);
+                            if (eventDesc) {
+                                errorMessage += `**Last Activity:** ${eventDesc}\n`;
+                            }
+                        }
+                        
+                        if (status.progressCount) {
+                            errorMessage += `\n_Completed ${status.progressCount} steps before failure_`;
+                        }
+                    }
+                    
+                    const error = new Error(errorMessage);
+                    log('error', 'Background insights job failed', { 
+                        jobId, 
+                        error: status.error,
+                        failureReason: status.failureReason,
+                        failureCategory: status.failureCategory
+                    });
                     reject(error);
                     return;
                 }
