@@ -240,9 +240,9 @@ function detectToolSuggestions(response) {
     }
 
     const suggestions = [];
-    const lowerResponse = response.toLowerCase();
 
     // Tool names that should NEVER be suggested to users
+    // Using lowercase for case-insensitive matching
     const toolNames = [
         'calculate_energy_budget',
         'predict_battery_trends',
@@ -254,20 +254,24 @@ function detectToolSuggestions(response) {
         'get_hourly_soc_predictions'
     ];
 
+    // Build dynamic regex pattern from tool names to avoid duplication
+    const toolNamesPattern = toolNames.join('|');
+
     // Patterns indicating tool suggestions to users (bad!)
+    // All patterns use the toolNamesPattern to ensure consistency
     const suggestionPatterns = [
         // Direct suggestions to use tools
-        /\b(use|run|execute|try|utilize)\s+(the\s+)?['"`]?(calculate_energy_budget|predict_battery_trends|request_bms_data|analyze_usage_patterns|getweatherdata|getsolarestimate|getsystemanalytics|get_hourly_soc_predictions)/gi,
-        // Recommendation to run tools
-        /\b(recommend|suggest|advise)\s+(using|running|calling|executing)\s+(the\s+)?['"`]?(\w+_\w+|get\w+)/gi,
-        // "you can use" or "you could use" 
-        /\byou\s+(can|could|should|might)\s+use\s+(the\s+)?['"`]?(\w+_\w+|get\w+)/gi,
-        // "using the X tool"
-        /\busing\s+the\s+['"`]?(\w+_\w+|get\w+)['"`]?\s+(tool|function)/gi,
-        // Backtick tool mentions with "use" nearby
-        /\buse\s+`(\w+_\w+|get\w+)`/gi,
-        // "I recommend X tool"
-        /\bi\s+recommend\s+(the\s+)?['"`]?(\w+_\w+|get\w+)/gi
+        new RegExp(`\\b(use|run|execute|try|utilize)\\s+(the\\s+)?['"\`]?(${toolNamesPattern})`, 'gi'),
+        // Recommendation to run tools (specific to known tools)
+        new RegExp(`\\b(recommend|suggest|advise)\\s+(using|running|calling|executing)\\s+(the\\s+)?['"\`]?(${toolNamesPattern})`, 'gi'),
+        // "you can use" or "you could use" (specific to known tools)
+        new RegExp(`\\byou\\s+(can|could|should|might)\\s+use\\s+(the\\s+)?['"\`]?(${toolNamesPattern})`, 'gi'),
+        // "using the X tool" (specific to known tools)
+        new RegExp(`\\busing\\s+the\\s+['"\`]?(${toolNamesPattern})['"\`]?\\s+(tool|function)`, 'gi'),
+        // Backtick tool mentions with "use" nearby (specific to known tools)
+        new RegExp(`\\buse\\s+\`(${toolNamesPattern})\``, 'gi'),
+        // "I recommend X tool" (specific to known tools)
+        new RegExp(`\\bi\\s+recommend\\s+(the\\s+)?['"\`]?(${toolNamesPattern})`, 'gi')
     ];
 
     // Check for each pattern

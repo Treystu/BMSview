@@ -287,15 +287,18 @@ function formatCurrentStage(lastEvent) {
  * @returns {string} - Human-readable name
  */
 function formatToolName(toolName) {
+  // Normalize tool name to lowercase for consistent matching
+  const normalizedName = (toolName || '').toLowerCase();
+  
   const nameMap = {
     'request_bms_data': 'BMS historical data',
     'calculate_energy_budget': 'energy budget',
     'predict_battery_trends': 'trend predictions',
     'analyze_usage_patterns': 'usage patterns',
-    'getWeatherData': 'weather data',
-    'getSolarEstimate': 'solar estimates',
-    'getSystemAnalytics': 'system analytics',
+    'getweatherdata': 'weather data',
+    'getsolarestimate': 'solar estimates',
+    'getsystemanalytics': 'system analytics',
     'get_hourly_soc_predictions': 'SOC predictions'
   };
-  return nameMap[toolName] || toolName;
+  return nameMap[normalizedName] || toolName;
 }
