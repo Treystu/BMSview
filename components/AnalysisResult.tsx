@@ -50,6 +50,10 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   const [error, setError] = useState<string | null>(null);
   const [circuitBreakerOpen, setCircuitBreakerOpen] = useState(false);
   const [isResettingCircuitBreaker, setIsResettingCircuitBreaker] = useState(false);
+  // Consent checkbox state is intentionally NOT persisted across page reloads.
+  // This is privacy-friendly and GDPR-compliant, requiring explicit consent per session.
+  // If you wish to persist consent, consider using localStorage with a timestamp and clear documentation.
+  const [consentGranted, setConsentGranted] = useState(false); // User consent for AI analysis
   const successTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   
   // Context window configuration
@@ -108,6 +112,11 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   };
 
   const handleGenerateInsights = async (prompt?: string, overrideMode?: InsightMode) => {
+    if (!consentGranted) {
+      setError('Please grant consent for AI analysis to proceed.');
+      return;
+    }
+
     setIsLoading(true);
     setAnalysisStatus('initializing');
     setError(null);
@@ -124,7 +133,8 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           modelOverride: getEffectiveModel() || undefined, // Pass model override if selected
           // Iteration limits: 20 for custom queries, 10 for standard (matches react-loop.cjs constants)
           maxIterations: prompt ? 20 : 10,
-          insightMode: overrideMode || selectedMode // Use override mode if provided, otherwise use selected mode
+          insightMode: overrideMode || selectedMode, // Use override mode if provided, otherwise use selected mode
+          consentGranted // Pass consent flag
         },
         (chunk) => {
           setInsights(prev => prev + chunk);
@@ -350,8 +360,8 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                 {InsightModeDescriptions[selectedMode].description}
               </p>
               <ul className="text-xs text-indigo-800 space-y-1">
-                {InsightModeDescriptions[selectedMode].features.map((feature, index) => (
-                  <li key={index} className="flex items-start">
+                {InsightModeDescriptions[selectedMode].features.map((feature) => (
+                  <li key={feature} className="flex items-start">
                     <span className="mr-2">✓</span>
                     <span>{feature}</span>
                   </li>
@@ -445,11 +455,35 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
             )}
           </div>
           
+          {/* Consent Checkbox */}
+          <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={consentGranted}
+                onChange={(e) => setConsentGranted(e.target.checked)}
+                className="mt-1 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+              />
+              <div className="text-sm text-gray-700">
+                <span className="font-semibold text-blue-800">I agree to AI Data Analysis</span>
+                <p className="mt-1 text-xs text-gray-600">
+                  By checking this box, you consent to having your anonymized battery data processed by AI services (Gemini) to generate insights.
+                  Your data is anonymized before processing and retained for 30 days for analysis purposes.
+                </p>
+              </div>
+            </label>
+          </div>
+
           <div className="flex flex-col sm:flex-row items-center gap-4">
             <button
               type="button"
               onClick={() => handleGenerateInsights()}
-              className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform hover:scale-105 flex items-center justify-center gap-2"
+              disabled={!consentGranted}
+              className={`w-full sm:w-auto font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform flex items-center justify-center gap-2 ${
+                consentGranted
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 hover:scale-105 text-white cursor-pointer'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
             >
               <span>🔍</span>
               <span>Generate AI Insights</span>
@@ -474,8 +508,12 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
             <button
               type="button"
               onClick={() => handleGenerateInsights(customPrompt)}
-              disabled={!customPrompt.trim()}
-              className="w-full sm:w-auto bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white font-bold py-2 px-4 rounded-lg shadow-md disabled:bg-gray-400 disabled:from-gray-400 disabled:to-gray-400 transition-all duration-200 flex items-center justify-center gap-2"
+              disabled={!customPrompt.trim() || !consentGranted}
+              className={`w-full sm:w-auto font-bold py-2 px-4 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2 ${
+                customPrompt.trim() && consentGranted
+                  ? 'bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white'
+                  : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+              }`}
             >
               <span>💬</span>
               <span>Submit Custom Query</span>
