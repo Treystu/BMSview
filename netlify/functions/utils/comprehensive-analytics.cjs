@@ -250,14 +250,15 @@ function extractCurrentState(analysisData, records, system) {
  * @param {Array<Object>} records - Historical analysis records
  * @param {Object} system - System configuration with voltage
  * @param {Object} log - Logger instance
- * @returns {Promise<Object>} Load profile object containing:
- *   - hourly: Array of 24 hourly averages (watts, amps)
- *   - dayOfWeek: Array of 7 daily averages
- *   - nighttime: Average nighttime load (6 PM - 6 AM)
- *   - daytime: Average daytime load (6 AM - 6 PM)
- *   - peakLoadHour: Hour with highest average consumption
- *   - baseLoad: Minimum sustained load (watts)
- * @returns {Object} {insufficient_data: true} if < 24 hours of data
+ * @returns {Promise<Object>} Either:
+ *   - Load profile object containing:
+ *       - hourly: Array of 24 hourly averages (watts, amps)
+ *       - dayOfWeek: Array of 7 daily averages
+ *       - nighttime: Average nighttime load (6 PM - 6 AM)
+ *       - daytime: Average daytime load (6 AM - 6 PM)
+ *       - peakLoadHour: Hour with highest average consumption
+ *       - baseLoad: Minimum sustained load (watts)
+ *   - OR {insufficient_data: true, message: string} if < 24 hours of data
  */
 async function analyzeLoadProfile(records, system, log) {
   if (records.length < 24) {
@@ -376,14 +377,15 @@ async function analyzeLoadProfile(records, system, log) {
  * @param {Object} system - System configuration (voltage, capacity)
  * @param {Object} currentState - Current battery state
  * @param {Object} log - Logger instance
- * @returns {Promise<Object>} Energy balance object containing:
- *   - dailyAverages: Average daily generation and consumption in kWh
- *   - netBalance: Daily surplus/deficit in kWh
- *   - solarSufficiency: Percentage of consumption met by solar (0-100+)
- *   - batteryAutonomy: Days of runtime at current load (80% DoD assumption)
- *   - deficitDays: Count of days with net negative energy
- *   - surplusDays: Count of days with net positive energy
- * @returns {Object} {insufficient_data: true} if < 48 hours of data
+ * @returns {Promise<Object>} Either:
+ *   - Energy balance object containing:
+ *       - dailyAverages: Average daily generation and consumption in kWh
+ *       - netBalance: Daily surplus/deficit in kWh
+ *       - solarSufficiency: Percentage of consumption met by solar (0-100+)
+ *       - batteryAutonomy: Days of runtime at current load (80% DoD assumption)
+ *       - deficitDays: Count of days with net negative energy
+ *       - surplusDays: Count of days with net positive energy
+ *   - OR {insufficient_data: true, message: string} if < 48 hours of data
  */
 async function calculateEnergyBalance(records, system, currentState, log) {
   if (records.length < 48) {
@@ -513,14 +515,15 @@ async function calculateEnergyBalance(records, system, currentState, log) {
  * @param {Array<Object>} records - Historical records with weather data
  * @param {Object} system - System config with maxAmpsSolarCharging
  * @param {Object} log - Logger instance
- * @returns {Promise<Object>} Solar performance object containing:
- *   - avgDailyChargeKwh: Average daily solar charge received
- *   - expectedDailySolarKwh: Theoretical maximum solar generation
- *   - performanceRatio: Actual/expected percentage (0-100+)
- *   - chargingEfficiency: Percentage of rated solar capacity achieved
- *   - peakChargingWatts: Maximum observed charging power
- *   - weatherCorrelation: Impact of cloud cover on charging
- * @returns {Object} {insufficient_data: true} if missing solar config or < 24h data
+ * @returns {Promise<Object>} Either:
+ *   - Solar performance object containing:
+ *       - avgDailyChargeKwh: Average daily solar charge received
+ *       - expectedDailySolarKwh: Theoretical maximum solar generation
+ *       - performanceRatio: Actual/expected percentage (0-100+)
+ *       - chargingEfficiency: Percentage of rated solar capacity achieved
+ *       - peakChargingWatts: Maximum observed charging power
+ *       - weatherCorrelation: Impact of cloud cover on charging
+ *   - OR {insufficient_data: true, message: string} if missing solar config or < 24h data
  */
 async function analyzeSolarPerformance(records, system, log) {
   if (records.length < 24 || !system?.maxAmpsSolarCharging) {
@@ -892,12 +895,13 @@ function generateHealthRecommendation(imbalanceStatus, tempStatus, capacityTrend
  * 
  * @param {Array<Object>} records - Historical analysis records with SOC data
  * @param {Object} log - Logger instance
- * @returns {Promise<Object>} Usage patterns object containing:
- *   - chargeCycles: Array of charge events with start/end SOC and timestamps
- *   - dischargeCycles: Array of discharge events with depth and duration
- *   - cyclingPattern: Daily frequency and average cycle depth
- *   - partialCycles: Count and percentage of incomplete cycles (<80% DoD)
- * @returns {Object} {insufficient_data: true} if < 48 hours of data
+ * @returns {Promise<Object>} Either:
+ *   - Usage patterns object containing:
+ *       - chargeCycles: Array of charge events with start/end SOC and timestamps
+ *       - dischargeCycles: Array of discharge events with depth and duration
+ *       - cyclingPattern: Daily frequency and average cycle depth
+ *       - partialCycles: Count and percentage of incomplete cycles (<80% DoD)
+ *   - OR {insufficient_data: true, message: string} if < 48 hours of data
  */
 async function identifyUsagePatterns(records, log) {
   if (records.length < 72) {
@@ -1024,13 +1028,14 @@ async function identifyUsagePatterns(records, log) {
  * @param {Array<Object>} records - Historical analysis records
  * @param {Object} system - System configuration
  * @param {Object} log - Logger instance
- * @returns {Promise<Object>} Trends object containing for each metric:
- *   - trend: 'increasing' | 'decreasing' | 'stable'
- *   - changePerDay: Rate of change per day
- *   - rSquared: Confidence metric 0-1 (1=perfect fit)
- *   - confidence: 'high' | 'medium' | 'low'
- *   - forecast7Days: Predicted value in 7 days (if confidence high)
- * @returns {Object} {insufficient_data: true} if < 7 days of data
+ * @returns {Promise<Object>} Either:
+ *   - Trends object with metrics (soc, voltage, temperature, cellImbalance) where each contains:
+ *       - trend: 'increasing' | 'decreasing' | 'stable'
+ *       - changePerDay: Rate of change per day
+ *       - rSquared: Confidence metric 0-1 (1=perfect fit)
+ *       - confidence: 'high' | 'medium' | 'low'
+ *       - forecast7Days: Predicted value in 7 days (if confidence high)
+ *   - OR {insufficient_data: true, message: string} if < 30 data points
  */
 async function calculateTrends(records, system, log) {
   if (records.length < 30) {
@@ -1116,18 +1121,21 @@ async function calculateTrends(records, system, log) {
  * Uses least squares method to find slope and intercept.
  * Calculates R-squared to measure goodness of fit (1=perfect, 0=no correlation).
  * 
- * @param {Array<{x: number, y: number}>} dataPoints - Array of {x, y} coordinates
+ * @param {Array<{timestamp: number, value: number}>} dataPoints - Array of {timestamp, value} objects
  * @returns {Object|null} Regression result or null if insufficient data:
- *   - slope: Rate of change (Δy per Δx)
- *   - intercept: Y-value when x=0
+ *   - slope: Rate of change (Δvalue per Δtimestamp)
+ *   - intercept: Value when timestamp=0
  *   - rSquared: Goodness of fit 0-1 (1=perfect linear relationship)
- *   - predict(x): Function to predict y for any x value
  * 
  * @example
- * const data = [{x: 0, y: 10}, {x: 1, y: 12}, {x: 2, y: 14}];
+ * const data = [
+ *   {timestamp: 1609459200000, value: 10},
+ *   {timestamp: 1609545600000, value: 12},
+ *   {timestamp: 1609632000000, value: 14}
+ * ];
  * const result = linearRegression(data);
- * // result.slope = 2, result.intercept = 10, result.rSquared ≈ 1
- * // result.predict(3) = 16
+ * // result.slope = 0.00000002314... (2 per day in milliseconds)
+ * // result.intercept = ..., result.rSquared ≈ 1
  */
 function linearRegression(dataPoints) {
   if (dataPoints.length < 2) {
@@ -1177,13 +1185,14 @@ function linearRegression(dataPoints) {
  * 
  * @param {Array<Object>} records - Historical analysis records
  * @param {Object} log - Logger instance
- * @returns {Promise<Object>} Anomalies object containing:
- *   - voltageSpikes: Array of voltage outlier events
- *   - currentAnomalies: Unusual current readings
- *   - temperatureExtremes: Temperature outliers
- *   - alertSummary: Alert frequency and most common alerts
- *   - totalAnomalies: Count of detected anomalies
- * @returns {Object} {insufficient_data: true} if < 24 hours of data
+ * @returns {Promise<Object>} Either:
+ *   - Anomalies object containing:
+ *       - voltageSpikes: Array of voltage outlier events
+ *       - currentAnomalies: Unusual current readings
+ *       - temperatureExtremes: Temperature outliers
+ *       - alertSummary: Alert frequency and most common alerts
+ *       - totalAnomalies: Count of detected anomalies
+ *   - OR {insufficient_data: true, message: string} if < 24 hours of data
  */
 async function detectAnomalies(records, log) {
   if (records.length < 50) {
@@ -1303,12 +1312,13 @@ async function detectAnomalies(records, log) {
  * @param {Array<Object>} records - Historical records with weather data
  * @param {Object} system - System configuration
  * @param {Object} log - Logger instance
- * @returns {Promise<Object>} Weather impact analysis containing:
- *   - cloudCorrelation: Relationship between clouds and charging
- *   - temperatureImpact: How ambient temp affects battery temp
- *   - solarEfficiency: Performance on clear vs cloudy days
- *   - weatherPatterns: Common weather conditions and their effects
- * @returns {Object} {insufficient_data: true} if < 7 days with weather data
+ * @returns {Promise<Object>} Either:
+ *   - Weather impact analysis containing:
+ *       - cloudCorrelation: Relationship between clouds and charging
+ *       - temperatureImpact: How ambient temp affects battery temp
+ *       - solarEfficiency: Performance on clear vs cloudy days
+ *       - weatherPatterns: Common weather conditions and their effects
+ *   - OR {insufficient_data: true, message: string} if < 7 days with weather data
  */
 async function analyzeWeatherImpact(records, system, log) {
   if (records.length < 24 || !system?.latitude || !system?.longitude) {

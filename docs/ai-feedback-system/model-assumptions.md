@@ -39,7 +39,7 @@ Tolerance: ±50W or 10% (whichever is larger)
 
 Formula: |power - (current × voltage)| ≤ max(50, 0.1 × power)
 
-Why: Ohm's law fundamental relationship
+Why: Fundamental power relationship (P = V × I)
 Limitation: Doesn't account for conversion losses
 ```
 
