@@ -228,7 +228,113 @@ function buildCorrectionPrompt(originalResponse, validationError, formatType, us
     return prompt;
 }
 
+/**
+ * Check if a response contains tool suggestions meant for users
+ * (which is prohibited - AI must execute tools itself, not suggest them)
+ * @param {string} response - The response text from Gemini
+ * @returns {{ containsToolSuggestions: boolean, suggestions: string[] }}
+ */
+function detectToolSuggestions(response) {
+    if (!response || typeof response !== 'string') {
+        return { containsToolSuggestions: false, suggestions: [] };
+    }
+
+    const suggestions = [];
+
+    // Tool names that should NEVER be suggested to users
+    // Using lowercase for case-insensitive matching
+    const toolNames = [
+        'calculate_energy_budget',
+        'predict_battery_trends',
+        'request_bms_data',
+        'analyze_usage_patterns',
+        'getweatherdata',
+        'getsolarestimate',
+        'getsystemanalytics',
+        'get_hourly_soc_predictions'
+    ];
+
+    // Build dynamic regex pattern from tool names to avoid duplication
+    const toolNamesPattern = toolNames.join('|');
+
+    // Patterns indicating tool suggestions to users (bad!)
+    // All patterns use the toolNamesPattern to ensure consistency
+    const suggestionPatterns = [
+        // Direct suggestions to use tools
+        new RegExp(`\\b(use|run|execute|try|utilize)\\s+(the\\s+)?['"\`]?(${toolNamesPattern})`, 'gi'),
+        // Recommendation to run tools (specific to known tools)
+        new RegExp(`\\b(recommend|suggest|advise)\\s+(using|running|calling|executing)\\s+(the\\s+)?['"\`]?(${toolNamesPattern})`, 'gi'),
+        // "you can use" or "you could use" (specific to known tools)
+        new RegExp(`\\byou\\s+(can|could|should|might)\\s+use\\s+(the\\s+)?['"\`]?(${toolNamesPattern})`, 'gi'),
+        // "using the X tool" (specific to known tools)
+        new RegExp(`\\busing\\s+the\\s+['"\`]?(${toolNamesPattern})['"\`]?\\s+(tool|function)`, 'gi'),
+        // Backtick tool mentions with "use" nearby (specific to known tools)
+        new RegExp(`\\buse\\s+\`(${toolNamesPattern})\``, 'gi'),
+        // "I recommend X tool" (specific to known tools)
+        new RegExp(`\\bi\\s+recommend\\s+(the\\s+)?['"\`]?(${toolNamesPattern})`, 'gi')
+    ];
+
+    // Check for each pattern
+    for (const pattern of suggestionPatterns) {
+        const matches = response.matchAll(pattern);
+        for (const match of matches) {
+            const suggestion = match[0];
+            // Avoid duplicates
+            if (!suggestions.some(s => s.toLowerCase() === suggestion.toLowerCase())) {
+                suggestions.push(suggestion);
+            }
+        }
+    }
+
+    // Also check for explicit tool name mentions in recommendation context
+    for (const tool of toolNames) {
+        // Match patterns like "tool_name with scenario='X'" which indicate suggestions
+        const toolInContextPattern = new RegExp(`\\b${tool}\\s+(with|using|to get|to calculate|to predict)`, 'gi');
+        const matches = response.matchAll(toolInContextPattern);
+        for (const match of matches) {
+            const suggestion = match[0];
+            if (!suggestions.some(s => s.toLowerCase() === suggestion.toLowerCase())) {
+                suggestions.push(suggestion);
+            }
+        }
+    }
+
+    return {
+        containsToolSuggestions: suggestions.length > 0,
+        suggestions
+    };
+}
+
+/**
+ * Build a correction prompt when AI suggests tools to users
+ * @param {string} originalResponse - The response with tool suggestions
+ * @param {string[]} detectedSuggestions - List of detected tool suggestions
+ * @returns {string} - Correction prompt
+ */
+function buildToolSuggestionCorrectionPrompt(originalResponse, detectedSuggestions) {
+    let prompt = `🚨 CRITICAL ERROR: Your response suggests tools for users to run, but users CANNOT execute tools.\n\n`;
+    prompt += `**DETECTED VIOLATIONS:**\n`;
+    for (const suggestion of detectedSuggestions.slice(0, 5)) {
+        prompt += `- "${suggestion}"\n`;
+    }
+    prompt += `\n`;
+    prompt += `**THE RULE:** You are the ONLY entity that can use tools. Users CANNOT run calculate_energy_budget, predict_battery_trends, etc.\n\n`;
+    prompt += `**WHAT TO DO:**\n`;
+    prompt += `1. If you need data from a tool, CALL THE TOOL NOW using function calling\n`;
+    prompt += `2. Present the RESULTS to the user, not the tool name\n`;
+    prompt += `3. NEVER say "use the X tool" or "run Y with parameters" - users literally cannot do this\n\n`;
+    prompt += `**YOUR PREVIOUS RESPONSE (excerpt):**\n${originalResponse.substring(0, 400)}...\n\n`;
+    prompt += `**INSTRUCTIONS:** Rewrite your response. Either:\n`;
+    prompt += `- CALL the necessary tools NOW and include their results, OR\n`;
+    prompt += `- Provide analysis based on the data you already have\n`;
+    prompt += `- Remove ALL tool suggestions and replace with actual findings or calculations\n`;
+    
+    return prompt;
+}
+
 module.exports = {
     validateResponseFormat,
-    buildCorrectionPrompt
+    buildCorrectionPrompt,
+    detectToolSuggestions,
+    buildToolSuggestionCorrectionPrompt
 };

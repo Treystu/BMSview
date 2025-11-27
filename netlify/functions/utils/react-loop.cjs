@@ -12,7 +12,7 @@ const { getGeminiClient } = require('./geminiClient.cjs');
 const { toolDefinitions, executeToolCall } = require('./gemini-tools.cjs');
 const { buildGuruPrompt, collectAutoInsightsContext, buildQuickReferenceCatalog } = require('./insights-guru.cjs');
 const { createLogger } = require('./logger.cjs');
-const { validateResponseFormat, buildCorrectionPrompt } = require('./response-validator.cjs');
+const { validateResponseFormat, buildCorrectionPrompt, detectToolSuggestions, buildToolSuggestionCorrectionPrompt } = require('./response-validator.cjs');
 const { logAIOperation, checkForAnomalies } = require('./metrics-collector.cjs');
 
 // Default iteration limits - can be overridden via params
@@ -1595,6 +1595,45 @@ async function executeReActLoop(params) {
                             formatType: validation.formatType,
                             turn: turnCount
                         });
+                    }
+
+                    // Issue 230: Validate that AI doesn't suggest tools to users
+                    // AI must EXECUTE tools itself, not tell users to run them
+                    const toolSuggestionCheck = detectToolSuggestions(finalAnswer);
+                    if (toolSuggestionCheck.containsToolSuggestions && turnCount < MAX_TURNS - 1) {
+                        log.warn('Response contains tool suggestions for users (prohibited)', {
+                            suggestions: toolSuggestionCheck.suggestions,
+                            turn: turnCount,
+                            attemptsRemaining: MAX_TURNS - turnCount - 1
+                        });
+
+                        // Request correction - AI must execute tools or remove suggestions
+                        const toolCorrectionPrompt = buildToolSuggestionCorrectionPrompt(
+                            finalAnswer,
+                            toolSuggestionCheck.suggestions
+                        );
+
+                        conversationHistory.push({
+                            role: 'user',
+                            parts: [{ text: toolCorrectionPrompt }]
+                        });
+
+                        // Clear finalAnswer to continue loop
+                        finalAnswer = null;
+
+                        log.info('Tool suggestion correction requested', {
+                            turn: turnCount,
+                            suggestionsFound: toolSuggestionCheck.suggestions.length
+                        });
+
+                        // Continue to next turn for correction
+                        continue;
+                    } else if (toolSuggestionCheck.containsToolSuggestions) {
+                        log.warn('Response contains tool suggestions but no retries left, proceeding with warning', {
+                            suggestions: toolSuggestionCheck.suggestions,
+                            turn: turnCount
+                        });
+                        // Continue with the response but log the issue
                     }
                 }
                 break;

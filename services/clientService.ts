@@ -1303,8 +1303,54 @@ const pollInsightsJobCompletion = async (
 
                 // Check if failed
                 if (status.status === 'failed') {
-                    const error = new Error(status.error || 'Background job failed');
-                    log('error', 'Background insights job failed', { jobId, error: status.error });
+                    // Issue 236: Use enhanced error context from backend
+                    let errorMessage = status.error || 'Background job failed';
+                    
+                    // Build detailed error message from backend's enhanced fields
+                    if (status.failureReason) {
+                        errorMessage = `❌ Analysis Failed\n\n`;
+                        // Sanitize backend fields to prevent any potential injection
+                        const sanitize = (text: string): string => 
+                            String(text || '').replace(/[<>]/g, '').substring(0, 500);
+                        
+                        errorMessage += `**Reason:** ${sanitize(status.failureReason)}\n\n`;
+                        
+                        if (status.failureCategory) {
+                            errorMessage += `**Category:** ${sanitize(status.failureCategory)}\n\n`;
+                        }
+                        
+                        if (status.suggestions && Array.isArray(status.suggestions) && status.suggestions.length > 0) {
+                            errorMessage += `**Suggestions:**\n`;
+                            // Limit to 5 suggestions max, sanitize each
+                            const safeSuggestions = status.suggestions
+                                .slice(0, 5)
+                                .map((s: unknown) => sanitize(String(s)));
+                            for (const suggestion of safeSuggestions) {
+                                errorMessage += `• ${suggestion}\n`;
+                            }
+                            errorMessage += '\n';
+                        }
+                        
+                        if (status.lastProgressEvent) {
+                            const lastEvent = status.lastProgressEvent;
+                            const eventDesc = formatProgressEvent(lastEvent);
+                            if (eventDesc) {
+                                errorMessage += `**Last Activity:** ${sanitize(eventDesc)}\n`;
+                            }
+                        }
+                        
+                        if (typeof status.progressCount === 'number' && status.progressCount > 0) {
+                            errorMessage += `\n_Completed ${Math.min(status.progressCount, 999)} steps before failure_`;
+                        }
+                    }
+                    
+                    const error = new Error(errorMessage);
+                    log('error', 'Background insights job failed', { 
+                        jobId, 
+                        error: status.error,
+                        failureReason: status.failureReason,
+                        failureCategory: status.failureCategory
+                    });
                     reject(error);
                     return;
                 }
