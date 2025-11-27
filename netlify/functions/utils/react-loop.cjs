@@ -84,7 +84,7 @@ const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
 
 // Lazy AI Detection settings
 const RECENT_TOOL_FAILURE_WINDOW = 5; // Check last 5 messages for tool failures
-const MAX_CONSECUTIVE_LAZY_RESPONSES = 2; // Threshold for lazy responses (triggers on 3rd consecutive)
+const LAZY_RESPONSE_THRESHOLD = 2; // Threshold for lazy responses (triggers on 3rd consecutive)
 const LAZY_AI_FALLBACK_MESSAGE = "Unable to retrieve the requested data. Please try a simpler query or check the available data range.";
 
 /**
@@ -1470,7 +1470,6 @@ async function executeReActLoop(params) {
                     const rawAnswer = textParts.map(p => p.text).join('\n');
                     
                     // Lazy AI Detection: Check if AI is claiming data unavailable without attempting to fetch it
-                    // Check if the AI is making excuses about missing data without having tried to fetch it
                     const lowerAnswer = rawAnswer.toLowerCase();
                     const lazinessTriggers = [
                         "i do not have access to",
@@ -1490,20 +1489,27 @@ async function executeReActLoop(params) {
                     const isLazy = lazinessTriggers.some(t => lowerAnswer.includes(t));
                     
                     // Check if recent tool calls failed (last N messages, where N = RECENT_TOOL_FAILURE_WINDOW)
+                    // Tool failures can be in two forms:
+                    // 1. Tool returned error object: functionResponse.response.result.error
+                    // 2. Tool threw exception: functionResponse.response.error (boolean)
                     const recentToolFailures = conversationHistory.slice(-RECENT_TOOL_FAILURE_WINDOW).some(msg =>
                         msg.role === 'function' &&
                         Array.isArray(msg.parts) &&
-                        msg.parts.some(p => p.functionResponse && p.functionResponse.response && p.functionResponse.response.error)
+                        msg.parts.some(p => 
+                            p.functionResponse && 
+                            p.functionResponse.response && 
+                            (p.functionResponse.response.error || (p.functionResponse.response.result && p.functionResponse.response.result.error))
+                        )
                     );
 
                     if (isLazy && toolCallCount === 0 && isCustomQuery && turnCount < MAX_TURNS - 1 && !recentToolFailures) {
                         consecutiveLazyResponses++;
                         
-                        if (consecutiveLazyResponses > MAX_CONSECUTIVE_LAZY_RESPONSES) {
+                        if (consecutiveLazyResponses > LAZY_RESPONSE_THRESHOLD) {
                             log.error('AI repeatedly claiming no data after interventions', { 
                                 turn: turnCount,
                                 consecutiveCount: consecutiveLazyResponses,
-                                maxAllowed: MAX_CONSECUTIVE_LAZY_RESPONSES
+                                maxAllowed: LAZY_RESPONSE_THRESHOLD
                             });
                             finalAnswer = LAZY_AI_FALLBACK_MESSAGE;
                             break;
