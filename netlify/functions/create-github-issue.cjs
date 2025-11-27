@@ -7,6 +7,7 @@
 const { createLogger } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { retryAsync } = require('./utils/retry.cjs');
 
 /**
  * Format feedback as GitHub issue
@@ -90,33 +91,110 @@ ${feedback.suggestion.codeSnippets.join('\n\n')}
 }
 
 /**
- * Create GitHub issue (mock implementation - would integrate with GitHub API)
+ * Create GitHub issue using the GitHub API
+ * @param {object} issueData - The issue data with title, body, and labels
+ * @param {object} log - Logger instance for structured logging
  */
-async function createGitHubIssueAPI(issueData) {
+async function createGitHubIssueAPI(issueData, log) {
+  // Validate required fields
+  if (!issueData || typeof issueData !== 'object') {
+    throw new Error('issueData must be an object');
+  }
+  
+  if (!issueData.title || typeof issueData.title !== 'string') {
+    throw new Error('issueData.title is required and must be a string');
+  }
+  
+  if (!issueData.body || typeof issueData.body !== 'string') {
+    throw new Error('issueData.body is required and must be a string');
+  }
+  
   // Get repository info from environment or use default
   const repoOwner = process.env.GITHUB_REPO_OWNER || 'Treystu';
   const repoName = process.env.GITHUB_REPO_NAME || 'BMSview';
+  const githubToken = process.env.GITHUB_TOKEN;
   
-  // NOTE: This is a mock implementation
-  // In production, this would call the GitHub API:
-  // const response = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/issues`, {
-  //   method: 'POST',
-  //   headers: {
-  //     'Authorization': `token ${process.env.GITHUB_TOKEN}`,
-  //     'Accept': 'application/vnd.github.v3+json'
-  //   },
-  //   body: JSON.stringify(issueData)
-  // });
+  if (!githubToken) {
+    throw new Error('GITHUB_TOKEN environment variable is not configured. Please set it in Netlify environment variables.');
+  }
   
-  // For now, return mock data
-  const mockIssueNumber = Math.floor(Math.random() * 1000) + 300;
+  log.info('Calling GitHub API to create issue', {
+    repoOwner,
+    repoName,
+    title: issueData.title,
+    labelsCount: issueData.labels?.length || 0
+  });
+  
+  // Wrap the fetch call with retry logic for transient failures
+  const response = await retryAsync(async () => {
+    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/issues`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${githubToken}`,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'BMSview-AI-Feedback',
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      body: JSON.stringify(issueData)
+    });
+    
+    // Check for retryable errors (rate limit, server errors)
+    if (!res.ok && (res.status === 429 || res.status >= 500)) {
+      const error = new Error(`GitHub API error: ${res.status}`);
+      error.status = res.status;
+      throw error;
+    }
+    
+    return res;
+  }, {
+    retries: 3,
+    baseDelayMs: 500,
+    jitterMs: 200,
+    shouldRetry: (e) => {
+      // Retry on network errors (TypeError from fetch)
+      if (e instanceof TypeError) return true;
+      // Retry on rate limit or server errors
+      if (e.status === 429 || e.status >= 500) return true;
+      return false;
+    },
+    log
+  });
+  
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => ({}));
+    
+    const errorDetails = {
+      status: response.status,
+      message: errorJson.message || response.statusText,
+      documentation_url: errorJson.documentation_url,
+      errors: errorJson.errors
+    };
+    
+    let errorMessage = `GitHub API error (${response.status}): ${errorDetails.message}`;
+    if (errorDetails.documentation_url) {
+      errorMessage += `\nSee: ${errorDetails.documentation_url}`;
+    }
+    
+    const error = new Error(errorMessage);
+    error.status = response.status;
+    error.details = errorDetails;
+    throw error;
+  }
+  
+  const result = await response.json();
+  
+  log.info('GitHub issue created successfully', {
+    issueNumber: result.number,
+    issueUrl: result.html_url
+  });
   
   return {
-    number: mockIssueNumber,
-    url: `https://github.com/${repoOwner}/${repoName}/issues/${mockIssueNumber}`,
-    html_url: `https://github.com/${repoOwner}/${repoName}/issues/${mockIssueNumber}`,
-    state: 'open',
-    created_at: new Date().toISOString()
+    number: result.number,
+    url: result.url,
+    html_url: result.html_url,
+    state: result.state,
+    created_at: result.created_at
   };
 }
 
@@ -188,7 +266,7 @@ exports.handler = async (event, context) => {
     const issueData = formatGitHubIssue(feedbackData);
     
     // Create GitHub issue
-    const githubIssue = await createGitHubIssueAPI(issueData);
+    const githubIssue = await createGitHubIssueAPI(issueData, log);
     
     // Update feedback with GitHub issue info
     if (feedbackId) {
@@ -238,3 +316,4 @@ exports.handler = async (event, context) => {
 
 // Export for testing
 module.exports.formatGitHubIssue = formatGitHubIssue;
+module.exports.createGitHubIssueAPI = createGitHubIssueAPI;
