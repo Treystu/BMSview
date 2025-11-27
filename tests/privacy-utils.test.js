@@ -27,10 +27,10 @@ describe('Privacy Utils - anonymizeSystemProfile', () => {
 
     const anonymized = anonymizeSystemProfile(profile);
     
-    // ID should be hashed (SHA-256 truncated to 12 chars)
+    // ID should be hashed (SHA-256 truncated to 16 chars for better collision resistance)
     expect(anonymized.id).not.toBe('system-12345');
-    expect(anonymized.id).toHaveLength(12);
-    expect(anonymized.id).toMatch(/^[a-f0-9]{12}$/);
+    expect(anonymized.id).toHaveLength(16);
+    expect(anonymized.id).toMatch(/^[a-f0-9]{16}$/);
     
     // originalId should NOT be present
     expect(anonymized.originalId).toBeUndefined();

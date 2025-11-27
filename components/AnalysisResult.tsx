@@ -50,6 +50,9 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   const [error, setError] = useState<string | null>(null);
   const [circuitBreakerOpen, setCircuitBreakerOpen] = useState(false);
   const [isResettingCircuitBreaker, setIsResettingCircuitBreaker] = useState(false);
+  // Consent checkbox state is intentionally NOT persisted across page reloads.
+  // This is privacy-friendly and GDPR-compliant, requiring explicit consent per session.
+  // If you wish to persist consent, consider using localStorage with a timestamp and clear documentation.
   const [consentGranted, setConsentGranted] = useState(false); // User consent for AI analysis
   const successTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   
