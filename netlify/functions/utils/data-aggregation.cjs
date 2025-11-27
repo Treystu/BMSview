@@ -4,10 +4,27 @@
  * This module provides functions to aggregate and prepare BMS data for AI analysis.
  * Implements hourly averaging and data summarization to optimize token usage.
  * 
+ * Performance optimizations:
+ * - Caching layer for frequently accessed data
+ * - Batch processing for large datasets
+ * - Query optimization with proper indexing hints
+ * 
  * @module netlify/functions/utils/data-aggregation
  */
 
 const { getCollection } = require('./mongodb.cjs');
+const { getHistoryCache, generateCacheKey } = require('./cache.cjs');
+
+/**
+ * Cache TTL constants in milliseconds
+ * Centralized configuration for cache expiration times
+ */
+const CACHE_TTL = {
+  HOURLY_DATA: 600000,    // 10 minutes for hourly data
+  DAILY_DATA: 1800000,    // 30 minutes for daily data
+  ANALYTICS: 300000,      // 5 minutes for analytics
+  AGGREGATION: 180000     // 3 minutes for aggregations
+};
 
 /**
  * Aggregate BMS records into hourly averages
@@ -324,14 +341,41 @@ function computeBucketMetrics(records, log, options = {}) {
 /**
  * Get hourly averaged data for a time range
  * 
+ * Performance optimized with:
+ * - In-memory caching (10 minute TTL for historical data)
+ * - Efficient query projection (only fetches needed fields)
+ * - Indexed query on systemId and timestamp
+ * 
  * @param {string} systemId - System ID to query
  * @param {number} daysBack - Number of days to look back (default: 30)
  * @param {Object} log - Logger instance
+ * @param {Object} [options] - Additional options
+ * @param {boolean} [options.useCache=true] - Whether to use caching
+ * @param {number} [options.cacheTTL=CACHE_TTL.HOURLY_DATA] - Cache TTL in ms (default 10 min)
  * @returns {Promise<Array>} Hourly aggregated data
  */
-async function getHourlyAveragedData(systemId, daysBack = 30, log) {
-  log.info('Fetching hourly averaged data', { systemId, daysBack });
-
+async function getHourlyAveragedData(systemId, daysBack = 30, log, options = {}) {
+  const { useCache = true, cacheTTL = CACHE_TTL.HOURLY_DATA } = options;
+  
+  log.info('Fetching hourly averaged data', { systemId, daysBack, useCache });
+  
+  // Check cache first
+  if (useCache) {
+    const cache = getHistoryCache();
+    const cacheKey = generateCacheKey('hourlyAvg', { systemId, daysBack });
+    
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      log.info('Cache hit for hourly averaged data', { 
+        systemId, 
+        daysBack,
+        cachedRecords: cached.length 
+      });
+      return cached;
+    }
+  }
+  
+  const startTime = Date.now();
   const historyCollection = await getCollection('history');
 
   // Calculate date range
@@ -343,7 +387,7 @@ async function getHourlyAveragedData(systemId, daysBack = 30, log) {
     endDate: endDate.toISOString()
   });
 
-  // Query database
+  // Query database - optimized projection for minimal data transfer
   const query = {
     systemId,
     timestamp: {
@@ -357,7 +401,11 @@ async function getHourlyAveragedData(systemId, daysBack = 30, log) {
     .sort({ timestamp: 1 })
     .toArray();
 
-  log.info('Raw records fetched from database', { count: records.length });
+  const queryDuration = Date.now() - startTime;
+  log.info('Raw records fetched from database', { 
+    count: records.length,
+    queryDurationMs: queryDuration 
+  });
 
   if (records.length === 0) {
     log.warn('No records found for time range');
@@ -366,6 +414,18 @@ async function getHourlyAveragedData(systemId, daysBack = 30, log) {
 
   // Aggregate into hourly buckets
   const hourlyData = aggregateHourlyData(records, log);
+  
+  // Cache the result
+  if (useCache && hourlyData.length > 0) {
+    const cache = getHistoryCache();
+    const cacheKey = generateCacheKey('hourlyAvg', { systemId, daysBack });
+    cache.set(cacheKey, hourlyData, cacheTTL);
+    log.debug('Cached hourly averaged data', { 
+      systemId, 
+      daysBack,
+      records: hourlyData.length 
+    });
+  }
 
   return hourlyData;
 }
@@ -579,11 +639,190 @@ function sampleDataPoints(hourlyData, maxPoints = 100, log) {
   return sampled;
 }
 
+/**
+ * Aggregate records into daily summaries
+ * Optimized for batch processing of large datasets
+ * 
+ * @param {Array} records - Array of AnalysisRecord objects sorted by timestamp
+ * @param {Object} log - Logger instance
+ * @param {Object} [options] - Aggregation options (reserved for future use)
+ * @param {number} [options.bucketHours] - Hours per bucket (passed to computeBucketMetrics)
+ * @returns {Array} Array of daily aggregated data points
+ */
+function aggregateDailyData(records, log, options = {}) {
+  try {
+    if (!records || records.length === 0) {
+      log.debug('No records to aggregate for daily data');
+      return [];
+    }
+
+    log.info('Starting daily aggregation', { totalRecords: records.length });
+
+    // Group records by day bucket
+    const dailyBuckets = new Map();
+
+    for (const record of records) {
+      if (!record.timestamp || !record.analysis) continue;
+
+      // Get day bucket (truncate to day)
+      const timestamp = new Date(record.timestamp);
+      const dayBucket = new Date(timestamp);
+      dayBucket.setHours(0, 0, 0, 0);
+      const bucketKey = dayBucket.toISOString().split('T')[0];
+
+      if (!dailyBuckets.has(bucketKey)) {
+        dailyBuckets.set(bucketKey, []);
+      }
+      dailyBuckets.get(bucketKey).push(record);
+    }
+
+    log.debug('Records grouped into day buckets', { bucketCount: dailyBuckets.size });
+
+    // Compute averages for each bucket
+    const dailyData = [];
+
+    for (const [bucketKey, bucketRecords] of dailyBuckets.entries()) {
+      const aggregated = {
+        date: bucketKey,
+        timestamp: `${bucketKey}T00:00:00.000Z`,
+        dataPoints: bucketRecords.length,
+        // Pass bucketHours: 24 for daily aggregation
+        metrics: computeBucketMetrics(bucketRecords, log, { bucketHours: 24 })
+      };
+      dailyData.push(aggregated);
+    }
+
+    // Sort by date ascending
+    dailyData.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    log.info('Daily aggregation complete', {
+      outputDays: dailyData.length,
+      inputRecords: records.length,
+      compressionRatio: (records.length / dailyData.length).toFixed(2)
+    });
+
+    return dailyData;
+  } catch (error) {
+    log.error('Error in aggregateDailyData', { error: error.message, stack: error.stack });
+    return [];
+  }
+}
+
+/**
+ * Get daily aggregated data for a time range with caching
+ * 
+ * @param {string} systemId - System ID to query
+ * @param {number} daysBack - Number of days to look back (default: 90)
+ * @param {Object} log - Logger instance
+ * @param {Object} [options] - Additional options
+ * @param {boolean} [options.useCache=true] - Whether to use caching
+ * @param {number} [options.cacheTTL=CACHE_TTL.DAILY_DATA] - Cache TTL in ms (default 30 min)
+ * @returns {Promise<Array>} Daily aggregated data
+ */
+async function getDailyAggregatedData(systemId, daysBack = 90, log, options = {}) {
+  const { useCache = true, cacheTTL = CACHE_TTL.DAILY_DATA } = options;
+  
+  log.info('Fetching daily aggregated data', { systemId, daysBack, useCache });
+  
+  // Check cache first
+  if (useCache) {
+    const cache = getHistoryCache();
+    const cacheKey = generateCacheKey('dailyAgg', { systemId, daysBack });
+    
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      log.info('Cache hit for daily aggregated data', { 
+        systemId, 
+        daysBack,
+        cachedDays: cached.length 
+      });
+      return cached;
+    }
+  }
+  
+  const startTime = Date.now();
+  const historyCollection = await getCollection('history');
+
+  // Calculate date range
+  const endDate = new Date();
+  const startDate = new Date(endDate.getTime() - daysBack * 24 * 60 * 60 * 1000);
+
+  // Query database
+  const query = {
+    systemId,
+    timestamp: {
+      $gte: startDate.toISOString(),
+      $lte: endDate.toISOString()
+    }
+  };
+
+  const records = await historyCollection
+    .find(query, { projection: { _id: 0, timestamp: 1, analysis: 1 } })
+    .sort({ timestamp: 1 })
+    .toArray();
+
+  const queryDuration = Date.now() - startTime;
+  log.info('Raw records fetched for daily aggregation', { 
+    count: records.length,
+    queryDurationMs: queryDuration 
+  });
+
+  if (records.length === 0) {
+    log.warn('No records found for daily aggregation time range');
+    return [];
+  }
+
+  // Aggregate into daily buckets
+  const dailyData = aggregateDailyData(records, log);
+  
+  // Cache the result
+  if (useCache && dailyData.length > 0) {
+    const cache = getHistoryCache();
+    const cacheKey = generateCacheKey('dailyAgg', { systemId, daysBack });
+    cache.set(cacheKey, dailyData, cacheTTL);
+    log.debug('Cached daily aggregated data', { 
+      systemId, 
+      daysBack,
+      days: dailyData.length 
+    });
+  }
+
+  return dailyData;
+}
+
+/**
+ * Invalidate cache for a specific system
+ * Call this when new data is added for a system
+ * 
+ * @param {string} systemId - System ID to invalidate cache for
+ */
+function invalidateSystemCache(systemId) {
+  const cache = getHistoryCache();
+  const pattern = new RegExp(`systemId=${systemId}`);
+  const invalidated = cache.invalidateByPattern(pattern);
+  return invalidated;
+}
+
+/**
+ * Get cache statistics for monitoring
+ * 
+ * @returns {Object} Cache statistics
+ */
+function getCacheStats() {
+  const cache = getHistoryCache();
+  return cache.getStats();
+}
+
 module.exports = {
   aggregateHourlyData,
   getHourlyAveragedData,
   formatHourlyDataForAI,
   computeBucketMetrics,
   createCompactSummary,
-  sampleDataPoints
+  sampleDataPoints,
+  aggregateDailyData,
+  getDailyAggregatedData,
+  invalidateSystemCache,
+  getCacheStats,
+  CACHE_TTL
 };
