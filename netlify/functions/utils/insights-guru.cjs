@@ -13,6 +13,7 @@ const { generateInitialSummary } = require("./insights-summary.cjs");
 const { getCollection } = require("./mongodb.cjs");
 const { toolDefinitions, executeToolCall } = require("./gemini-tools.cjs");
 const { calculateSunriseSunset } = require("./weather-fetcher.cjs");
+const { anonymizeSystemProfile } = require("./privacy-utils.cjs");
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const RECENT_SNAPSHOT_LIMIT = 24;
@@ -608,7 +609,7 @@ async function loadSystemProfile(systemId, log) {
             return null;
         }
 
-        return {
+        const profile = {
             id: system.id,
             name: system.name,
             chemistry: system.chemistry,
@@ -623,6 +624,9 @@ async function loadSystemProfile(systemId, log) {
                 generatorAmps: system.maxAmpsGeneratorCharging ?? null
             }
         };
+
+        // Apply anonymization before returning to AI context
+        return anonymizeSystemProfile(profile);
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         log.warn("Failed to load system profile", { systemId, error: err.message });

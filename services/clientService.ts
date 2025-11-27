@@ -649,6 +649,7 @@ export const streamInsights = async (
         maxIterations?: number; // Max ReAct loop iterations
         modelOverride?: string; // Optional Gemini model override
         insightMode?: InsightMode; // Selected insight generation mode
+        consentGranted?: boolean; // User consent for AI analysis
     },
     onChunk: (chunk: string) => void,
     onComplete: () => void,
@@ -716,6 +717,7 @@ export const streamInsights = async (
             // Build request body with resumeJobId if available
             const requestBody: any = {
                 ...payload,
+                insightMode: mode, // Include for logging consistency
                 mode: 'sync' // Explicitly use sync mode for checkpoint/resume
             };
             

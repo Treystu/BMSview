@@ -80,14 +80,34 @@ exports.handler = async (event, context) => {
     const modelOverride = body.modelOverride;
     const initializationComplete = body.initializationComplete;
     const resumeJobId = body.resumeJobId;
+    const consentGranted = body.consentGranted;
 
-    // Validate input
-    if (!analysisData || !systemId) {
+    // Validate input: Must have either (analysisData AND systemId) OR resumeJobId
+    if ((!analysisData || !systemId) && !resumeJobId) {
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          error: 'Either analysisData, systemId, or resumeJobId is required'
+          error: 'Either analysisData and systemId, or resumeJobId is required'
+        })
+      };
+    }
+
+    // Verify user consent for AI processing
+    // Strict type checking to prevent bypass via type coercion
+    // Note: Resume requests (resumeJobId) bypass consent check because:
+    // 1. The original job was created with explicit consent
+    // 2. Resume is just continuing an already-authorized analysis
+    // 3. No new data is being submitted (just continuing from checkpoint)
+    if ((typeof consentGranted !== 'boolean' || consentGranted !== true) && !resumeJobId) {
+      log.warn('Insights request rejected: Missing or invalid user consent', { systemId, consentGranted, consentType: typeof consentGranted });
+      return {
+        statusCode: 403,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          success: false,
+          error: 'consent_required',
+          message: 'User consent is required for AI analysis. Please opt-in to continue. (consentGranted must be boolean true)'
         })
       };
     }
@@ -101,7 +121,8 @@ exports.handler = async (event, context) => {
       contextWindowDays,
       maxIterations,
       modelOverride,
-      initializationComplete
+      initializationComplete,
+      consentGranted
     });
 
     // SYNC MODE: Execute ReAct loop with checkpoint/resume support
