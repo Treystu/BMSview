@@ -357,8 +357,8 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                 {InsightModeDescriptions[selectedMode].description}
               </p>
               <ul className="text-xs text-indigo-800 space-y-1">
-                {InsightModeDescriptions[selectedMode].features.map((feature, index) => (
-                  <li key={index} className="flex items-start">
+                {InsightModeDescriptions[selectedMode].features.map((feature) => (
+                  <li key={feature} className="flex items-start">
                     <span className="mr-2">✓</span>
                     <span>{feature}</span>
                   </li>
