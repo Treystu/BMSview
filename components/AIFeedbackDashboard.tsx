@@ -36,6 +36,7 @@ export const AIFeedbackDashboard: React.FC = () => {
   const [filter, setFilter] = useState<string>('pending');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null); // Non-blocking errors for actions
   const [totalCount, setTotalCount] = useState(0);
   const [confirmModal, setConfirmModal] = useState<{ show: boolean; feedbackId: string | null }>({
     show: false,
@@ -70,6 +71,7 @@ export const AIFeedbackDashboard: React.FC = () => {
 
   const handleStatusUpdate = async (feedbackId: string, newStatus: string, adminNotes?: string) => {
     try {
+      setActionError(null);
       const response = await fetch('/.netlify/functions/update-feedback-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -84,12 +86,13 @@ export const AIFeedbackDashboard: React.FC = () => {
       await fetchAIFeedback();
     } catch (err) {
       console.error('Error updating status:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update status');
+      setActionError(err instanceof Error ? err.message : 'Failed to update status');
     }
   };
 
   const handleCreateGitHubIssue = async (feedbackId: string) => {
     try {
+      setActionError(null);
       const response = await fetch('/.netlify/functions/create-github-issue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,7 +105,6 @@ export const AIFeedbackDashboard: React.FC = () => {
       }
 
       const data = await response.json();
-      setError(null);
       
       // Refresh the list
       await fetchAIFeedback();
@@ -111,7 +113,7 @@ export const AIFeedbackDashboard: React.FC = () => {
       console.log(`GitHub Issue #${data.issueNumber} created successfully!`);
     } catch (err) {
       console.error('Error creating GitHub issue:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create GitHub issue');
+      setActionError(err instanceof Error ? err.message : 'Failed to create GitHub issue');
     } finally {
       setConfirmModal({ show: false, feedbackId: null });
     }
@@ -176,17 +178,17 @@ export const AIFeedbackDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Error Alert (non-blocking) */}
-      {error && (
+      {/* Action Error Alert (non-blocking) */}
+      {actionError && (
         <div role="alert" className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start">
           <svg className="h-5 w-5 text-red-400 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
           </svg>
           <div className="flex-1">
-            <p className="text-sm text-red-800">{error}</p>
+            <p className="text-sm text-red-800">{actionError}</p>
           </div>
           <button
-            onClick={() => setError(null)}
+            onClick={() => setActionError(null)}
             className="ml-3 inline-flex text-red-400 hover:text-red-600"
             aria-label="Dismiss error"
           >
