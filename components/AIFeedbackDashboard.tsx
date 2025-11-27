@@ -176,7 +176,7 @@ export const AIFeedbackDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Action Error Alert - dismissable error for failed operations */}
+      {/* Error Alert (non-blocking) */}
       {error && (
         <div role="alert" className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start">
           <svg className="h-5 w-5 text-red-400 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">

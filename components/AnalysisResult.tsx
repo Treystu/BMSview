@@ -333,17 +333,13 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           {/* Insight Mode Selector */}
           <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
             <label htmlFor="insight-mode-selector" className="block text-sm font-semibold text-gray-700 mb-3">
-              🎯 Insight Generation Mode
+              🎯 Insight Generation Mode: <span className="text-indigo-600">{InsightModeDescriptions[selectedMode].label}</span>
             </label>
-            <p id="current-mode-desc" className="text-xs text-indigo-600 mb-2">
-              Current: {InsightModeDescriptions[selectedMode].label}
-            </p>
             <p className="text-xs text-gray-600 mb-3">
               Choose the analysis approach that best suits your needs. Each mode offers different capabilities and processing times.
             </p>
             <select
               id="insight-mode-selector"
-              aria-describedby="current-mode-desc"
               value={selectedMode}
               onChange={(e) => setSelectedMode(e.target.value as InsightMode)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 bg-white cursor-pointer mb-3"
