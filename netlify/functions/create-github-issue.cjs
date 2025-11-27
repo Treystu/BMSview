@@ -151,7 +151,13 @@ async function createGitHubIssueAPI(issueData, log) {
     retries: 3,
     baseDelayMs: 500,
     jitterMs: 200,
-    shouldRetry: (e) => e.status === 429 || e.status >= 500 || e instanceof TypeError,
+    shouldRetry: (e) => {
+      // Retry on network errors (TypeError from fetch)
+      if (e instanceof TypeError) return true;
+      // Retry on rate limit or server errors
+      if (e.status === 429 || e.status >= 500) return true;
+      return false;
+    },
     log
   });
   
