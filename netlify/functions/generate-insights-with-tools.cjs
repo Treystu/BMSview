@@ -80,14 +80,34 @@ exports.handler = async (event, context) => {
     const modelOverride = body.modelOverride;
     const initializationComplete = body.initializationComplete;
     const resumeJobId = body.resumeJobId;
+    const consentGranted = body.consentGranted;
 
-    // Validate input
-    if (!analysisData || !systemId) {
+    // Validate input: Must have either (analysisData AND systemId) OR resumeJobId
+    if ((!analysisData || !systemId) && !resumeJobId) {
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          error: 'Either analysisData, systemId, or resumeJobId is required'
+          error: 'Either analysisData and systemId, or resumeJobId is required'
+        })
+      };
+    }
+
+    // Verify user consent for AI processing
+    // Strict type checking to prevent bypass via type coercion
+    // Note: Resume requests (resumeJobId) bypass consent check because:
+    // 1. The original job was created with explicit consent
+    // 2. Resume is just continuing an already-authorized analysis
+    // 3. No new data is being submitted (just continuing from checkpoint)
+    if ((typeof consentGranted !== 'boolean' || consentGranted !== true) && !resumeJobId) {
+      log.warn('Insights request rejected: Missing or invalid user consent', { systemId, consentGranted, consentType: typeof consentGranted });
+      return {
+        statusCode: 403,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          success: false,
+          error: 'consent_required',
+          message: 'User consent is required for AI analysis. Please opt-in to continue. (consentGranted must be boolean true)'
         })
       };
     }
@@ -101,7 +121,8 @@ exports.handler = async (event, context) => {
       contextWindowDays,
       maxIterations,
       modelOverride,
-      initializationComplete
+      initializationComplete,
+      consentGranted
     });
 
     // SYNC MODE: Execute ReAct loop with checkpoint/resume support
@@ -286,6 +307,10 @@ exports.handler = async (event, context) => {
         };
 
       } catch (syncError) {
+        if (syncError.message.includes('token')) {
+          return await handleTokenLimitExceeded(job, log);
+        }
+      
         log.error('Sync mode failed', {
           error: syncError.message,
           jobId: job.id,
@@ -293,7 +318,7 @@ exports.handler = async (event, context) => {
           timeoutMs: SYNC_MODE_TIMEOUT_MS,
           wasResumed: isResume
         });
-
+      
         // Return error with jobId so client can resume
         return {
           statusCode: 408, // Request Timeout
@@ -441,8 +466,28 @@ function getInsightsErrorCode(error) {
 
   if (message.includes('timeout') || message.includes('TIMEOUT')) return 'insights_timeout';
   if (message.includes('quota')) return 'quota_exceeded';
+  if (message.includes('token')) return 'token_limit_exceeded';
   if (message.includes('ECONNREFUSED')) return 'database_unavailable';
   if (message.includes('Gemini') || message.includes('API')) return 'ai_service_error';
 
   return 'insights_generation_failed';
+}
+
+async function handleTokenLimitExceeded(job, log) {
+  log.warn('Token limit exceeded, attempting to simplify and retry', { jobId: job.id });
+  // In a real implementation, you would simplify the context here.
+  // For now, we'll just return an error.
+  return {
+    statusCode: 413, // Payload Too Large
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      success: false,
+      error: 'token_limit_exceeded',
+      message: 'The request is too large. Please reduce the amount of data or context and try again.',
+      details: {
+        jobId: job.id,
+        canResume: false
+      }
+    })
+  };
 }

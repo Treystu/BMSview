@@ -399,9 +399,18 @@ function makeGitHubRequest(path, method, data) {
 /**
  * Create a single GitHub issue
  */
-async function createIssue(issueData) {
+async function createIssue(issueData, retries = 3, delay = 1000) {
   const path = `/repos/${REPO_OWNER}/${REPO_NAME}/issues`;
-  return await makeGitHubRequest(path, 'POST', issueData);
+  try {
+    return await makeGitHubRequest(path, 'POST', issueData);
+  } catch (error) {
+    if (retries > 0) {
+      console.log(`   Retrying... (${retries} retries left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return await createIssue(issueData, retries - 1, delay * 2);
+    }
+    throw error;
+  }
 }
 
 /**
