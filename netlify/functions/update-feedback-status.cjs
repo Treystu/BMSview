@@ -1,7 +1,7 @@
 // @ts-nocheck
 /**
  * Update AI Feedback Status Endpoint
- * Allows admins to update feedback status
+ * Allows admins to update feedback status with implementation tracking
  */
 
 const { createLogger } = require('./utils/logger.cjs');
@@ -27,7 +27,18 @@ exports.handler = async (event, context) => {
     }
     
     const body = JSON.parse(event.body);
-    const { feedbackId, status, adminNotes } = body;
+    const { 
+      feedbackId, 
+      status, 
+      adminNotes,
+      // New implementation tracking fields
+      actualEffortHours,
+      actualBenefitScore,
+      performanceImprovementPercent,
+      userSatisfactionChange,
+      implementationNotes,
+      stabilityScore
+    } = body;
     
     if (!feedbackId || !status) {
       return {
@@ -61,6 +72,32 @@ exports.handler = async (event, context) => {
     
     if (status === 'implemented') {
       updateData.implementationDate = new Date();
+      
+      // Track implementation metrics
+      if (actualEffortHours !== undefined) {
+        updateData.actualEffortHours = actualEffortHours;
+      }
+      if (actualBenefitScore !== undefined) {
+        updateData.actualBenefitScore = Math.min(100, Math.max(0, actualBenefitScore));
+      }
+      if (performanceImprovementPercent !== undefined) {
+        updateData.performanceImprovementPercent = performanceImprovementPercent;
+      }
+      if (userSatisfactionChange !== undefined) {
+        updateData.userSatisfactionChange = Math.min(100, Math.max(-100, userSatisfactionChange));
+      }
+      if (implementationNotes) {
+        updateData.implementationNotes = implementationNotes;
+      }
+      if (stabilityScore !== undefined) {
+        updateData.stabilityScore = Math.min(100, Math.max(0, stabilityScore));
+      }
+      
+      // Calculate initial effectiveness score
+      const effectivenessScore = calculateBasicEffectivenessScore(updateData);
+      if (effectivenessScore !== null) {
+        updateData.effectivenessScore = effectivenessScore;
+      }
     }
     
     const result = await feedbackCollection.updateOne(
@@ -76,7 +113,11 @@ exports.handler = async (event, context) => {
       };
     }
     
-    log.info('Feedback status updated', { feedbackId, status });
+    log.info('Feedback status updated', { 
+      feedbackId, 
+      status,
+      hasImplementationMetrics: status === 'implemented' && (actualEffortHours !== undefined || actualBenefitScore !== undefined)
+    });
     
     return {
       statusCode: 200,
@@ -84,7 +125,8 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         success: true,
         feedbackId,
-        status
+        status,
+        effectivenessScore: updateData.effectivenessScore || null
       })
     };
   } catch (error) {
@@ -99,3 +141,43 @@ exports.handler = async (event, context) => {
     };
   }
 };
+
+/**
+ * Calculate basic effectiveness score based on available metrics
+ */
+function calculateBasicEffectivenessScore(updateData) {
+  let totalScore = 0;
+  let count = 0;
+
+  // ROI/Benefit score
+  if (updateData.actualBenefitScore !== undefined) {
+    totalScore += updateData.actualBenefitScore;
+    count++;
+  }
+
+  // Stability score
+  if (updateData.stabilityScore !== undefined) {
+    totalScore += updateData.stabilityScore;
+    count++;
+  }
+
+  // Performance improvement (convert to 0-100 scale)
+  if (updateData.performanceImprovementPercent !== undefined) {
+    // Cap at 100, negative improvements score lower
+    const perfScore = Math.min(100, Math.max(0, 50 + updateData.performanceImprovementPercent));
+    totalScore += perfScore;
+    count++;
+  }
+
+  // User satisfaction change (convert to 0-100 scale)
+  if (updateData.userSatisfactionChange !== undefined) {
+    const satScore = 50 + (updateData.userSatisfactionChange / 2);
+    totalScore += Math.min(100, Math.max(0, satScore));
+    count++;
+  }
+
+  return count > 0 ? Math.round(totalScore / count) : null;
+}
+
+// Export for testing
+module.exports.calculateBasicEffectivenessScore = calculateBasicEffectivenessScore;
