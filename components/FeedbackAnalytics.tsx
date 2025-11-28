@@ -115,7 +115,28 @@ export const FeedbackAnalytics: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/.netlify/functions/feedback-analytics');
+      // Build headers with Netlify Identity token for authentication
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Add Netlify Identity token if available (admin-only endpoint)
+      if (typeof window !== 'undefined' && (window as any).netlifyIdentity?.currentUser) {
+        try {
+          const token = await (window as any).netlifyIdentity.currentUser()?.jwt();
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+        } catch (tokenErr) {
+          console.warn('Could not get auth token:', tokenErr);
+        }
+      }
+
+      const response = await fetch('/.netlify/functions/feedback-analytics', { headers });
+
+      if (response.status === 401) {
+        throw new Error('Authentication required. Please ensure you are logged in to the Admin Dashboard.');
+      }
 
       if (!response.ok) {
         throw new Error('Failed to fetch analytics');

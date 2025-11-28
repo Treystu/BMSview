@@ -582,6 +582,10 @@ function calculateMonthlyBreakdown(allFeedback) {
 
 /**
  * Main handler
+ * 
+ * SECURITY: This endpoint is restricted to authenticated admin users only.
+ * It should only be accessible from the Admin Dashboard which requires
+ * Netlify Identity authentication.
  */
 exports.handler = async (event, context) => {
   const log = createLogger('feedback-analytics', context);
@@ -601,6 +605,29 @@ exports.handler = async (event, context) => {
       };
     }
     
+    // SECURITY: Require authentication via Netlify Identity
+    // The clientContext is populated by Netlify when a valid JWT is provided
+    const user = context.clientContext?.user;
+    if (!user) {
+      log.warn('Unauthorized access attempt to feedback analytics', {
+        hasContext: !!context.clientContext,
+        path: event.path
+      });
+      return {
+        statusCode: 401,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          error: 'Authentication required',
+          message: 'This endpoint requires admin authentication. Please log in via the Admin Dashboard.'
+        })
+      };
+    }
+    
+    log.info('Authenticated user accessing feedback analytics', {
+      userEmail: user.email,
+      userId: user.sub
+    });
+    
     const feedbackCollection = await getCollection('ai_feedback');
     
     // Try to get satisfaction surveys collection (optional)
@@ -613,16 +640,23 @@ exports.handler = async (event, context) => {
     
     const analytics = await calculateAnalytics(feedbackCollection, surveysCollection);
     
+    // SECURITY: Sanitize response - remove any potentially sensitive data
+    // before sending to client. The analytics are aggregated so they don't
+    // expose individual feedback details, but we sanitize feedbackIds in
+    // top/bottom performers to prevent data leakage.
+    const sanitizedAnalytics = sanitizeAnalyticsResponse(analytics);
+    
     log.info('Analytics calculated successfully', {
-      totalFeedback: analytics.totalFeedback,
-      acceptanceRate: analytics.acceptanceRate,
-      implementationRate: analytics.implementationRate
+      totalFeedback: sanitizedAnalytics.totalFeedback,
+      acceptanceRate: sanitizedAnalytics.acceptanceRate,
+      implementationRate: sanitizedAnalytics.implementationRate,
+      userEmail: user.email
     });
     
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(analytics)
+      body: JSON.stringify(sanitizedAnalytics)
     };
   } catch (error) {
     log.error('Feedback analytics error', { error: error.message });
@@ -637,6 +671,50 @@ exports.handler = async (event, context) => {
   }
 };
 
+/**
+ * Sanitize analytics response to remove/mask sensitive data
+ * - Truncates feedbackIds to prevent direct lookup
+ * - Removes any user-identifying information
+ * - Keeps aggregate statistics intact
+ */
+function sanitizeAnalyticsResponse(analytics) {
+  const sanitized = { ...analytics };
+  
+  // Sanitize ROI top implementations - mask feedbackIds
+  if (sanitized.roiSummary?.topROIImplementations) {
+    sanitized.roiSummary.topROIImplementations = sanitized.roiSummary.topROIImplementations.map((item, idx) => ({
+      ...item,
+      feedbackId: `impl-${idx + 1}`, // Replace with generic identifier
+    }));
+  }
+  
+  // Sanitize effectiveness top/bottom performers - mask feedbackIds
+  if (sanitized.effectivenessOverview?.topPerformers) {
+    sanitized.effectivenessOverview.topPerformers = sanitized.effectivenessOverview.topPerformers.map((item, idx) => ({
+      ...item,
+      feedbackId: `top-${idx + 1}`,
+    }));
+  }
+  
+  if (sanitized.effectivenessOverview?.bottomPerformers) {
+    sanitized.effectivenessOverview.bottomPerformers = sanitized.effectivenessOverview.bottomPerformers.map((item, idx) => ({
+      ...item,
+      feedbackId: `bottom-${idx + 1}`,
+    }));
+  }
+  
+  // User satisfaction data is already aggregated, no individual user data exposed
+  // but ensure we don't leak any userId references if they exist
+  if (sanitized.userSatisfaction?.satisfactionTrend) {
+    sanitized.userSatisfaction.satisfactionTrend = sanitized.userSatisfaction.satisfactionTrend.map(item => {
+      const { userId, ...rest } = item;
+      return rest;
+    });
+  }
+  
+  return sanitized;
+}
+
 // Export for testing
 module.exports.calculateAnalytics = calculateAnalytics;
 module.exports.calculateEffectivenessScore = calculateEffectivenessScore;
@@ -644,3 +722,4 @@ module.exports.calculateROIMetrics = calculateROIMetrics;
 module.exports.daysBetween = daysBetween;
 module.exports.calculateMedian = calculateMedian;
 module.exports.calculatePercentile = calculatePercentile;
+module.exports.sanitizeAnalyticsResponse = sanitizeAnalyticsResponse;

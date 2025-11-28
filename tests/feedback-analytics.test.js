@@ -7,6 +7,7 @@
  * - Time-to-implementation metrics
  * - Effectiveness scoring
  * - User satisfaction metrics
+ * - Data sanitization for privacy
  */
 
 const {
@@ -15,7 +16,8 @@ const {
   calculateROIMetrics,
   daysBetween,
   calculateMedian,
-  calculatePercentile
+  calculatePercentile,
+  sanitizeAnalyticsResponse
 } = require('../netlify/functions/feedback-analytics.cjs');
 
 const {
@@ -435,5 +437,94 @@ describe('Feedback Analytics - Full Analytics Calculation', () => {
     expect(analytics.userSatisfaction.surveyCount).toBe(1);
     expect(analytics.userSatisfaction.averageScore).toBe(4);
     expect(analytics.userSatisfaction.recommendations).toBe(1);
+  });
+});
+
+describe('Feedback Analytics - Data Sanitization', () => {
+  describe('sanitizeAnalyticsResponse', () => {
+    it('should mask feedbackIds in ROI top implementations', () => {
+      const analytics = {
+        roiSummary: {
+          topROIImplementations: [
+            { feedbackId: 'sensitive-id-123', feedbackTitle: 'Test', category: 'performance' },
+            { feedbackId: 'sensitive-id-456', feedbackTitle: 'Test 2', category: 'ui_ux' }
+          ]
+        }
+      };
+      
+      const sanitized = sanitizeAnalyticsResponse(analytics);
+      
+      expect(sanitized.roiSummary.topROIImplementations[0].feedbackId).toBe('impl-1');
+      expect(sanitized.roiSummary.topROIImplementations[1].feedbackId).toBe('impl-2');
+      // Other fields should be preserved
+      expect(sanitized.roiSummary.topROIImplementations[0].feedbackTitle).toBe('Test');
+    });
+
+    it('should mask feedbackIds in effectiveness top performers', () => {
+      const analytics = {
+        effectivenessOverview: {
+          topPerformers: [
+            { feedbackId: 'top-secret-1', totalScore: 95 }
+          ],
+          bottomPerformers: [
+            { feedbackId: 'bottom-secret-1', totalScore: 25 }
+          ]
+        }
+      };
+      
+      const sanitized = sanitizeAnalyticsResponse(analytics);
+      
+      expect(sanitized.effectivenessOverview.topPerformers[0].feedbackId).toBe('top-1');
+      expect(sanitized.effectivenessOverview.bottomPerformers[0].feedbackId).toBe('bottom-1');
+      // Scores should be preserved
+      expect(sanitized.effectivenessOverview.topPerformers[0].totalScore).toBe(95);
+    });
+
+    it('should remove userId from satisfaction trend data', () => {
+      const analytics = {
+        userSatisfaction: {
+          satisfactionTrend: [
+            { month: '2024-01', avgScore: 4.5, count: 10, userId: 'user-123' },
+            { month: '2024-02', avgScore: 4.2, count: 8 }
+          ]
+        }
+      };
+      
+      const sanitized = sanitizeAnalyticsResponse(analytics);
+      
+      expect(sanitized.userSatisfaction.satisfactionTrend[0].userId).toBeUndefined();
+      expect(sanitized.userSatisfaction.satisfactionTrend[0].month).toBe('2024-01');
+      expect(sanitized.userSatisfaction.satisfactionTrend[0].avgScore).toBe(4.5);
+    });
+
+    it('should preserve aggregate statistics unchanged', () => {
+      const analytics = {
+        totalFeedback: 100,
+        acceptanceRate: 75.5,
+        implementationRate: 60,
+        byStatus: { pending: 20, implemented: 60, rejected: 20 },
+        byPriority: { high: 30, medium: 50, low: 20 }
+      };
+      
+      const sanitized = sanitizeAnalyticsResponse(analytics);
+      
+      expect(sanitized.totalFeedback).toBe(100);
+      expect(sanitized.acceptanceRate).toBe(75.5);
+      expect(sanitized.implementationRate).toBe(60);
+      expect(sanitized.byStatus).toEqual(analytics.byStatus);
+      expect(sanitized.byPriority).toEqual(analytics.byPriority);
+    });
+
+    it('should handle missing optional fields gracefully', () => {
+      const analytics = {
+        totalFeedback: 50
+        // No roiSummary, effectivenessOverview, or userSatisfaction
+      };
+      
+      const sanitized = sanitizeAnalyticsResponse(analytics);
+      
+      expect(sanitized.totalFeedback).toBe(50);
+      expect(sanitized.roiSummary).toBeUndefined();
+    });
   });
 });
