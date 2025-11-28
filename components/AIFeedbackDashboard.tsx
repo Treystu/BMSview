@@ -25,10 +25,22 @@ interface AIFeedback {
     url: string;
   };
   adminNotes?: string;
+  effectivenessScore?: number;
+  actualBenefitScore?: number;
+  actualEffortHours?: number;
   metrics?: {
     viewCount: number;
     lastViewed: Date | null;
   };
+}
+
+interface ImplementationMetrics {
+  actualEffortHours?: number;
+  actualBenefitScore?: number;
+  performanceImprovementPercent?: number;
+  userSatisfactionChange?: number;
+  stabilityScore?: number;
+  implementationNotes?: string;
 }
 
 export const AIFeedbackDashboard: React.FC = () => {
@@ -41,6 +53,16 @@ export const AIFeedbackDashboard: React.FC = () => {
     show: false,
     feedbackId: null
   });
+  const [implementModal, setImplementModal] = useState<{ 
+    show: boolean; 
+    feedbackId: string | null;
+    feedbackTitle: string;
+  }>({
+    show: false,
+    feedbackId: null,
+    feedbackTitle: ''
+  });
+  const [implementMetrics, setImplementMetrics] = useState<ImplementationMetrics>({});
 
   useEffect(() => {
     fetchAIFeedback();
@@ -68,12 +90,30 @@ export const AIFeedbackDashboard: React.FC = () => {
     }
   };
 
-  const handleStatusUpdate = async (feedbackId: string, newStatus: string, adminNotes?: string) => {
+  const handleStatusUpdate = async (
+    feedbackId: string, 
+    newStatus: string, 
+    adminNotes?: string,
+    metrics?: ImplementationMetrics
+  ) => {
     try {
+      const body: Record<string, unknown> = { feedbackId, status: newStatus };
+      if (adminNotes) body.adminNotes = adminNotes;
+      
+      // Include implementation metrics if provided
+      if (metrics) {
+        if (metrics.actualEffortHours !== undefined) body.actualEffortHours = metrics.actualEffortHours;
+        if (metrics.actualBenefitScore !== undefined) body.actualBenefitScore = metrics.actualBenefitScore;
+        if (metrics.performanceImprovementPercent !== undefined) body.performanceImprovementPercent = metrics.performanceImprovementPercent;
+        if (metrics.userSatisfactionChange !== undefined) body.userSatisfactionChange = metrics.userSatisfactionChange;
+        if (metrics.stabilityScore !== undefined) body.stabilityScore = metrics.stabilityScore;
+        if (metrics.implementationNotes) body.implementationNotes = metrics.implementationNotes;
+      }
+
       const response = await fetch('/.netlify/functions/update-feedback-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ feedbackId, status: newStatus, adminNotes })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
@@ -85,6 +125,24 @@ export const AIFeedbackDashboard: React.FC = () => {
     } catch (err) {
       console.error('Error updating status:', err);
       setError(err instanceof Error ? err.message : 'Failed to update status');
+    }
+  };
+
+  const handleStatusChange = (feedbackId: string, newStatus: string, feedbackTitle: string) => {
+    if (newStatus === 'implemented') {
+      // Open implementation metrics modal
+      setImplementMetrics({});
+      setImplementModal({ show: true, feedbackId, feedbackTitle });
+    } else {
+      handleStatusUpdate(feedbackId, newStatus);
+    }
+  };
+
+  const handleImplementSubmit = async () => {
+    if (implementModal.feedbackId) {
+      await handleStatusUpdate(implementModal.feedbackId, 'implemented', undefined, implementMetrics);
+      setImplementModal({ show: false, feedbackId: null, feedbackTitle: '' });
+      setImplementMetrics({});
     }
   };
 
@@ -244,6 +302,200 @@ export const AIFeedbackDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Implementation Metrics Modal */}
+      {implementModal.show && (
+        <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="implement-modal-title" role="dialog" aria-modal="true">
+          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div 
+              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" 
+              aria-hidden="true" 
+              onClick={(e) => {
+                // Only close if clicking directly on backdrop, not bubbled from child
+                if (e.target === e.currentTarget) {
+                  setImplementModal({ show: false, feedbackId: null, feedbackTitle: '' });
+                }
+              }}
+            ></div>
+            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left flex-1">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900" id="implement-modal-title">
+                      Mark as Implemented
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1 truncate" title={implementModal.feedbackTitle}>
+                      {implementModal.feedbackTitle}
+                    </p>
+                    <div className="mt-4 space-y-4">
+                      <p className="text-sm text-gray-600">
+                        Track implementation metrics to calculate effectiveness and ROI.
+                      </p>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="actualEffortHours" className="block text-sm font-medium text-gray-700">
+                            Actual Effort (hours)
+                          </label>
+                          <input
+                            id="actualEffortHours"
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            aria-describedby="actualEffortHours-help"
+                            value={implementMetrics.actualEffortHours || ''}
+                            onChange={(e) => setImplementMetrics({
+                              ...implementMetrics,
+                              actualEffortHours: e.target.value ? parseFloat(e.target.value) : undefined
+                            })}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                            placeholder="e.g., 4"
+                          />
+                          <p id="actualEffortHours-help" className="text-xs text-gray-500 mt-1">
+                            Total hours spent implementing
+                          </p>
+                        </div>
+                        
+                        <div>
+                          <label htmlFor="actualBenefitScore" className="block text-sm font-medium text-gray-700">
+                            Benefit Score (0-100)
+                          </label>
+                          <input
+                            id="actualBenefitScore"
+                            type="number"
+                            min="0"
+                            max="100"
+                            aria-describedby="actualBenefitScore-help"
+                            value={implementMetrics.actualBenefitScore || ''}
+                            onChange={(e) => setImplementMetrics({
+                              ...implementMetrics,
+                              actualBenefitScore: e.target.value ? parseInt(e.target.value) : undefined
+                            })}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                            placeholder="e.g., 75"
+                          />
+                          <p id="actualBenefitScore-help" className="text-xs text-gray-500 mt-1">
+                            Overall benefit rating
+                          </p>
+                        </div>
+                        
+                        <div>
+                          <label htmlFor="performanceChange" className="block text-sm font-medium text-gray-700">
+                            Performance Change (%)
+                          </label>
+                          <input
+                            id="performanceChange"
+                            type="number"
+                            step="1"
+                            aria-describedby="performanceChange-help"
+                            value={implementMetrics.performanceImprovementPercent || ''}
+                            onChange={(e) => setImplementMetrics({
+                              ...implementMetrics,
+                              performanceImprovementPercent: e.target.value ? parseInt(e.target.value) : undefined
+                            })}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                            placeholder="e.g., 15"
+                          />
+                          <p id="performanceChange-help" className="text-xs text-gray-500 mt-1">
+                            Positive = improvement
+                          </p>
+                        </div>
+                        
+                        <div>
+                          <label htmlFor="stabilityScore" className="block text-sm font-medium text-gray-700">
+                            Stability Score (0-100)
+                          </label>
+                          <input
+                            id="stabilityScore"
+                            type="number"
+                            min="0"
+                            max="100"
+                            aria-describedby="stabilityScore-help"
+                            value={implementMetrics.stabilityScore || ''}
+                            onChange={(e) => setImplementMetrics({
+                              ...implementMetrics,
+                              stabilityScore: e.target.value ? parseInt(e.target.value) : undefined
+                            })}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                            placeholder="e.g., 90"
+                          />
+                          <p id="stabilityScore-help" className="text-xs text-gray-500 mt-1">
+                            Post-implementation stability
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <label htmlFor="userSatisfactionChange" className="block text-sm font-medium text-gray-700">
+                          User Satisfaction Change (-100 to +100)
+                        </label>
+                        <input
+                          id="userSatisfactionChange"
+                          type="number"
+                          min="-100"
+                          max="100"
+                          aria-describedby="userSatisfactionChange-help"
+                          value={implementMetrics.userSatisfactionChange || ''}
+                          onChange={(e) => setImplementMetrics({
+                            ...implementMetrics,
+                            userSatisfactionChange: e.target.value ? parseInt(e.target.value) : undefined
+                          })}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                          placeholder="e.g., 20"
+                        />
+                        <p id="userSatisfactionChange-help" className="text-xs text-gray-500 mt-1">
+                          Positive = improvement, negative = decline
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Implementation Notes
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={implementMetrics.implementationNotes || ''}
+                          onChange={(e) => setImplementMetrics({
+                            ...implementMetrics,
+                            implementationNotes: e.target.value
+                          })}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                          placeholder="Optional notes about the implementation..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick={handleImplementSubmit}
+                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Mark Implemented
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImplementModal({ show: false, feedbackId: null, feedbackTitle: '' });
+                    setImplementMetrics({});
+                  }}
+                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Analytics Section */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
         <h3 className="text-xl font-semibold text-gray-900 mb-4">📊 Feedback Analytics</h3>
@@ -333,7 +585,7 @@ export const AIFeedbackDashboard: React.FC = () => {
                   <div className="ml-4 flex flex-col space-y-2">
                     <select
                       value={feedback.status}
-                      onChange={(e) => handleStatusUpdate(feedback.id, e.target.value)}
+                      onChange={(e) => handleStatusChange(feedback.id, e.target.value, feedback.suggestion.title)}
                       aria-label={`Update status for ${feedback.suggestion.title}`}
                       className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
                     >
@@ -343,6 +595,17 @@ export const AIFeedbackDashboard: React.FC = () => {
                       <option value="implemented">Implemented</option>
                       <option value="rejected">Rejected</option>
                     </select>
+                    {feedback.effectivenessScore !== undefined && (
+                      <div className="text-xs text-center">
+                        <span className="text-gray-500">Effectiveness:</span>{' '}
+                        <span className={`font-bold ${
+                          feedback.effectivenessScore >= 70 ? 'text-green-600' : 
+                          feedback.effectivenessScore >= 50 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {feedback.effectivenessScore}/100
+                        </span>
+                      </div>
+                    )}
                     {!feedback.githubIssue && (
                       <button
                         onClick={() => setConfirmModal({ show: true, feedbackId: feedback.id })}

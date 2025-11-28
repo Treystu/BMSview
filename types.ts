@@ -533,6 +533,94 @@ export interface FeedbackImplementationTracking {
   effectiveness?: number; // 0-100 score
 }
 
+// Feedback Loop Metrics & Analytics Types
+export interface FeedbackROIMetrics {
+  feedbackId: string;
+  feedbackTitle: string;
+  category: string;
+  estimatedEffort: 'hours' | 'days' | 'weeks';
+  actualEffortHours?: number;
+  estimatedBenefit?: string;
+  actualBenefitScore?: number; // 0-100 scale
+  costSavingsEstimate?: number;
+  performanceImprovementPercent?: number;
+  userSatisfactionChange?: number; // -100 to +100
+  implementedAt?: string;
+}
+
+export interface UserSatisfactionSurvey {
+  id: string;
+  feedbackId: string;
+  userId?: string;
+  surveyDate: string;
+  satisfactionScore: number; // 1-5 scale
+  impactRating: number; // 1-5 scale
+  usabilityImprovement: number; // 1-5 scale
+  wouldRecommend: boolean;
+  freeformFeedback?: string;
+}
+
+export interface FeedbackEffectivenessScore {
+  feedbackId: string;
+  totalScore: number; // 0-100 overall effectiveness
+  implementationSpeed: number; // Score based on time-to-implementation
+  userSatisfaction: number; // Average satisfaction score
+  roiScore: number; // ROI-based score
+  adoptionRate: number; // How widely the change was adopted
+  stabilityScore: number; // Post-implementation stability
+  calculatedAt: string;
+}
+
+export interface FeedbackLoopAnalytics {
+  overview: {
+    totalSuggestions: number;
+    implementedCount: number;
+    rejectedCount: number;
+    pendingCount: number;
+    implementationRate: number;
+    averageTimeToImplementationDays: number | null;
+    averageEffectivenessScore: number | null;
+  };
+  implementationMetrics: {
+    byPriority: Record<string, { total: number; implemented: number; rate: number }>;
+    byCategory: Record<string, { total: number; implemented: number; rate: number }>;
+    byEffort: Record<string, { total: number; implemented: number; avgDays: number | null }>;
+  };
+  roiSummary: {
+    totalEstimatedSavings: number;
+    averageROIScore: number;
+    topROIImplementations: FeedbackROIMetrics[];
+  };
+  timeToImplementation: {
+    averageDays: number | null;
+    medianDays: number | null;
+    p90Days: number | null;
+    byPriority: Record<string, number | null>;
+    trend: Array<{ month: string; avgDays: number | null; count: number }>;
+  };
+  effectivenessOverview: {
+    averageScore: number | null;
+    scoreDistribution: { range: string; count: number }[];
+    topPerformers: FeedbackEffectivenessScore[];
+    bottomPerformers: FeedbackEffectivenessScore[];
+  };
+  userSatisfaction: {
+    averageScore: number | null;
+    surveyCount: number;
+    satisfactionTrend: Array<{ month: string; avgScore: number | null; count: number }>;
+    impactRating: number | null;
+    recommendations: number; // Count of "would recommend"
+  };
+  monthlyBreakdown: Array<{
+    month: string;
+    newSuggestions: number;
+    implemented: number;
+    avgTimeToImplement: number | null;
+    avgEffectiveness: number | null;
+  }>;
+  lastUpdated: string;
+}
+
 export interface MonitoringDashboardData {
   realtimeMetrics: {
     currentOperationsPerMinute: number;
