@@ -123,9 +123,12 @@ export const FeedbackAnalytics: React.FC = () => {
       // Add Netlify Identity token if available (admin-only endpoint)
       if (typeof window !== 'undefined' && (window as any).netlifyIdentity?.currentUser) {
         try {
-          const token = await (window as any).netlifyIdentity.currentUser()?.jwt();
-          if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
+          const user = (window as any).netlifyIdentity.currentUser();
+          if (user) {
+            const token = await user.jwt();
+            if (token) {
+              headers['Authorization'] = `Bearer ${token}`;
+            }
           }
         } catch (tokenErr) {
           console.warn('Could not get auth token:', tokenErr);
@@ -538,12 +541,21 @@ export const FeedbackAnalytics: React.FC = () => {
                 const colors = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-500'];
                 return (
                   <div key={bucket.range} className="flex flex-col items-center">
-                    <div 
-                      className={`w-12 ${colors[idx]} rounded-t`}
-                      style={{ height: `${Math.max(heightPercent, 5)}%` }}
-                    ></div>
+                    {bucket.count > 0 ? (
+                      <div 
+                        className={`w-12 ${colors[idx]} rounded-t`}
+                        style={{ height: `${heightPercent}%` }}
+                      ></div>
+                    ) : (
+                      <div 
+                        className="w-12 bg-gray-600/40 rounded-t flex items-center justify-center"
+                        style={{ height: '8px' }}
+                      >
+                        {/* Empty bar for zero count */}
+                      </div>
+                    )}
                     <div className="text-xs text-gray-400 mt-2">{bucket.range}</div>
-                    <div className="text-sm text-white font-medium">{bucket.count}</div>
+                    <div className={`text-sm font-medium ${bucket.count > 0 ? 'text-white' : 'text-gray-500'}`}>{bucket.count}</div>
                   </div>
                 );
               })}

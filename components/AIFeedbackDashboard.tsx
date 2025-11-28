@@ -306,7 +306,16 @@ export const AIFeedbackDashboard: React.FC = () => {
       {implementModal.show && (
         <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="implement-modal-title" role="dialog" aria-modal="true">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onClick={() => setImplementModal({ show: false, feedbackId: null, feedbackTitle: '' })}></div>
+            <div 
+              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" 
+              aria-hidden="true" 
+              onClick={(e) => {
+                // Only close if clicking directly on backdrop, not bubbled from child
+                if (e.target === e.currentTarget) {
+                  setImplementModal({ show: false, feedbackId: null, feedbackTitle: '' });
+                }
+              }}
+            ></div>
             <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
@@ -330,13 +339,15 @@ export const AIFeedbackDashboard: React.FC = () => {
                       
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700">
+                          <label htmlFor="actualEffortHours" className="block text-sm font-medium text-gray-700">
                             Actual Effort (hours)
                           </label>
                           <input
+                            id="actualEffortHours"
                             type="number"
                             min="0"
                             step="0.5"
+                            aria-describedby="actualEffortHours-help"
                             value={implementMetrics.actualEffortHours || ''}
                             onChange={(e) => setImplementMetrics({
                               ...implementMetrics,
@@ -345,16 +356,21 @@ export const AIFeedbackDashboard: React.FC = () => {
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                             placeholder="e.g., 4"
                           />
+                          <p id="actualEffortHours-help" className="text-xs text-gray-500 mt-1">
+                            Total hours spent implementing
+                          </p>
                         </div>
                         
                         <div>
-                          <label className="block text-sm font-medium text-gray-700">
+                          <label htmlFor="actualBenefitScore" className="block text-sm font-medium text-gray-700">
                             Benefit Score (0-100)
                           </label>
                           <input
+                            id="actualBenefitScore"
                             type="number"
                             min="0"
                             max="100"
+                            aria-describedby="actualBenefitScore-help"
                             value={implementMetrics.actualBenefitScore || ''}
                             onChange={(e) => setImplementMetrics({
                               ...implementMetrics,
@@ -363,15 +379,20 @@ export const AIFeedbackDashboard: React.FC = () => {
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                             placeholder="e.g., 75"
                           />
+                          <p id="actualBenefitScore-help" className="text-xs text-gray-500 mt-1">
+                            Overall benefit rating
+                          </p>
                         </div>
                         
                         <div>
-                          <label className="block text-sm font-medium text-gray-700">
+                          <label htmlFor="performanceChange" className="block text-sm font-medium text-gray-700">
                             Performance Change (%)
                           </label>
                           <input
+                            id="performanceChange"
                             type="number"
                             step="1"
+                            aria-describedby="performanceChange-help"
                             value={implementMetrics.performanceImprovementPercent || ''}
                             onChange={(e) => setImplementMetrics({
                               ...implementMetrics,
@@ -380,16 +401,21 @@ export const AIFeedbackDashboard: React.FC = () => {
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                             placeholder="e.g., 15"
                           />
+                          <p id="performanceChange-help" className="text-xs text-gray-500 mt-1">
+                            Positive = improvement
+                          </p>
                         </div>
                         
                         <div>
-                          <label className="block text-sm font-medium text-gray-700">
+                          <label htmlFor="stabilityScore" className="block text-sm font-medium text-gray-700">
                             Stability Score (0-100)
                           </label>
                           <input
+                            id="stabilityScore"
                             type="number"
                             min="0"
                             max="100"
+                            aria-describedby="stabilityScore-help"
                             value={implementMetrics.stabilityScore || ''}
                             onChange={(e) => setImplementMetrics({
                               ...implementMetrics,
@@ -398,25 +424,33 @@ export const AIFeedbackDashboard: React.FC = () => {
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                             placeholder="e.g., 90"
                           />
+                          <p id="stabilityScore-help" className="text-xs text-gray-500 mt-1">
+                            Post-implementation stability
+                          </p>
                         </div>
                       </div>
                       
                       <div>
-                        <label className="block text-sm font-medium text-gray-700">
+                        <label htmlFor="userSatisfactionChange" className="block text-sm font-medium text-gray-700">
                           User Satisfaction Change (-100 to +100)
                         </label>
                         <input
+                          id="userSatisfactionChange"
                           type="number"
                           min="-100"
                           max="100"
+                          aria-describedby="userSatisfactionChange-help"
                           value={implementMetrics.userSatisfactionChange || ''}
                           onChange={(e) => setImplementMetrics({
                             ...implementMetrics,
                             userSatisfactionChange: e.target.value ? parseInt(e.target.value) : undefined
                           })}
                           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                          placeholder="e.g., 20 (positive = improvement)"
+                          placeholder="e.g., 20"
                         />
+                        <p id="userSatisfactionChange-help" className="text-xs text-gray-500 mt-1">
+                          Positive = improvement, negative = decline
+                        </p>
                       </div>
                       
                       <div>

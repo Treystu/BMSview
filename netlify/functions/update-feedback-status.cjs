@@ -73,8 +73,15 @@ exports.handler = async (event, context) => {
     if (status === 'implemented') {
       updateData.implementationDate = new Date();
       
-      // Track implementation metrics
+      // Track implementation metrics with validation
       if (actualEffortHours !== undefined) {
+        if (actualEffortHours < 0) {
+          return {
+            statusCode: 400,
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ error: 'actualEffortHours must be non-negative' })
+          };
+        }
         updateData.actualEffortHours = actualEffortHours;
       }
       if (actualBenefitScore !== undefined) {

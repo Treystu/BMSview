@@ -44,6 +44,42 @@ function calculatePercentile(arr, percentile) {
 }
 
 /**
+ * Generate month buckets for the last N months
+ * Utility function to avoid repeated date calculations across functions
+ * @param {number} monthsBack - Number of months to go back
+ * @returns {Array<{monthStr: string, monthStart: Date, monthEnd: Date}>}
+ */
+function generateMonthBuckets(monthsBack) {
+  const buckets = [];
+  const now = new Date();
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+    const monthStr = monthStart.toISOString().slice(0, 7);
+    buckets.push({ monthStr, monthStart, monthEnd });
+  }
+  return buckets;
+}
+
+/**
+ * Group items by month for efficient trend calculation
+ * @param {Array} items - Array of items with date field
+ * @param {string} dateField - Name of the date field to group by
+ * @returns {Object} - Map of month strings to arrays of items
+ */
+function groupByMonth(items, dateField) {
+  const byMonth = {};
+  items.forEach(item => {
+    if (item[dateField]) {
+      const month = new Date(item[dateField]).toISOString().slice(0, 7);
+      if (!byMonth[month]) byMonth[month] = [];
+      byMonth[month].push(item);
+    }
+  });
+  return byMonth;
+}
+
+/**
  * Calculate effectiveness score for a feedback item
  */
 function calculateEffectivenessScore(feedback, satisfactionSurveys = []) {
@@ -87,8 +123,66 @@ function calculateEffectivenessScore(feedback, satisfactionSurveys = []) {
   appliedWeights += weights.stabilityScore;
 
   // Normalize if not all weights applied
-  return appliedWeights > 0 ? Math.round((totalScore / appliedWeights) * 10) / 10 : null;
+  if (appliedWeights === 0) {
+    return null;
+  }
+  return Math.round((totalScore / appliedWeights) * 10) / 10;
 }
+
+// ============================================================================
+// ROI CONFIGURATION
+// These values are estimates and may need adjustment for your organization.
+// If these don't match your actual costs, submit a feature request to make
+// them configurable via environment variables or admin settings.
+// ============================================================================
+
+/**
+ * Developer hourly rate estimate (USD)
+ * Based on average market rates for mid-senior developers.
+ * NOTE: This is a placeholder value. Actual rates vary significantly by region,
+ * experience level, and organization. Consider configuring via environment variable.
+ */
+const DEV_HOURLY_RATE = parseInt(process.env.DEV_HOURLY_RATE || '100', 10);
+
+/**
+ * Estimated effort hours for different time estimates
+ * - hours: Quick fixes, typically 2 hours
+ * - days: Medium complexity, typically 2 work days (16 hours)
+ * - weeks: Large features, typically 2 work weeks (80 hours)
+ */
+const EFFORT_HOURS_ESTIMATE = {
+  hours: 2,
+  days: 16,
+  weeks: 80
+};
+
+/**
+ * Category savings multipliers represent the estimated long-term value multiplier
+ * based on the type of improvement vs. implementation cost.
+ * 
+ * Higher multipliers indicate improvements with ongoing/compounding benefits:
+ * - bug_report (3.0): Bug fixes prevent future incidents and customer impact
+ * - performance (2.5): Performance improvements have ongoing user experience benefits
+ * - optimization (2.0): Optimizations reduce operational costs over time
+ * - data_structure (2.2): Data improvements enable future features
+ * - integration (2.0): Integration improvements reduce maintenance burden
+ * - weather_api (1.8): API improvements affect data quality
+ * - ui_ux (1.5): UX improvements have moderate long-term impact
+ * - analytics (1.5): Analytics improvements help decision-making
+ * 
+ * NOTE: These are estimated values. Actual ROI varies significantly.
+ * Consider submitting a feature request if these don't match your needs.
+ */
+const CATEGORY_SAVINGS_MULTIPLIERS = {
+  performance: 2.5,
+  bug_report: 3.0,
+  optimization: 2.0,
+  ui_ux: 1.5,
+  integration: 2.0,
+  analytics: 1.5,
+  weather_api: 1.8,
+  data_structure: 2.2
+};
 
 /**
  * Calculate ROI metrics for implemented feedback
@@ -96,30 +190,14 @@ function calculateEffectivenessScore(feedback, satisfactionSurveys = []) {
 function calculateROIMetrics(implementedFeedback) {
   const roiMetrics = implementedFeedback.map(fb => {
     // Estimate cost savings based on effort and category
-    const effortHours = {
-      hours: 2,
-      days: 16,
-      weeks: 80
-    };
-    const baseHours = effortHours[fb.suggestion?.estimatedEffort] || 8;
+    const baseHours = EFFORT_HOURS_ESTIMATE[fb.suggestion?.estimatedEffort] || 8;
     const actualHours = fb.actualEffortHours || baseHours;
     
-    // Estimate hourly rate for developer time
-    const hourlyRate = 100;
-    const devCost = actualHours * hourlyRate;
+    // Calculate developer cost
+    const devCost = actualHours * DEV_HOURLY_RATE;
     
-    // Calculate potential savings (simplified model)
-    const categorySavingsMultiplier = {
-      performance: 2.5,
-      bug_report: 3.0,
-      optimization: 2.0,
-      ui_ux: 1.5,
-      integration: 2.0,
-      analytics: 1.5,
-      weather_api: 1.8,
-      data_structure: 2.2
-    };
-    const multiplier = categorySavingsMultiplier[fb.category] || 1.5;
+    // Calculate potential savings using category multipliers
+    const multiplier = CATEGORY_SAVINGS_MULTIPLIERS[fb.category] || 1.5;
     const estimatedSavings = Math.round(devCost * multiplier);
 
     return {
@@ -412,29 +490,23 @@ function calculateTimeToImplementationMetrics(allFeedback, implementedFeedback) 
     byPriority[priority] = days.length > 0 ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : null;
   });
 
-  // Monthly trend
-  const trend = [];
-  const now = new Date();
-  for (let i = 5; i >= 0; i--) {
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-    const monthStr = monthStart.toISOString().slice(0, 7);
-    
-    const monthImplemented = implementedFeedback.filter(fb => {
-      const implDate = new Date(fb.implementationDate);
-      return implDate >= monthStart && implDate <= monthEnd;
-    });
-    
+  // Group implementations by month first for O(n) instead of O(n*m) complexity
+  const implByMonth = groupByMonth(implementedFeedback, 'implementationDate');
+  
+  // Monthly trend using pre-grouped data
+  const monthBuckets = generateMonthBuckets(6);
+  const trend = monthBuckets.map(({ monthStr }) => {
+    const monthImplemented = implByMonth[monthStr] || [];
     const monthDays = monthImplemented
       .map(fb => daysBetween(fb.timestamp, fb.implementationDate))
       .filter(d => d !== null);
     
-    trend.push({
+    return {
       month: monthStr,
       avgDays: monthDays.length > 0 ? Math.round(monthDays.reduce((a, b) => a + b, 0) / monthDays.length) : null,
       count: monthImplemented.length
-    });
-  }
+    };
+  });
 
   return {
     averageDays: implDays.length > 0 ? Math.round(implDays.reduce((a, b) => a + b, 0) / implDays.length) : null,
@@ -506,27 +578,21 @@ function calculateUserSatisfactionMetrics(surveys) {
   const avgImpact = surveys.reduce((sum, s) => sum + (s.impactRating || 0), 0) / surveys.length;
   const recommendations = surveys.filter(s => s.wouldRecommend).length;
 
-  // Monthly trend
-  const trend = [];
-  const now = new Date();
-  for (let i = 5; i >= 0; i--) {
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-    const monthStr = monthStart.toISOString().slice(0, 7);
-    
-    const monthSurveys = surveys.filter(s => {
-      const surveyDate = new Date(s.surveyDate);
-      return surveyDate >= monthStart && surveyDate <= monthEnd;
-    });
-    
-    trend.push({
+  // Group surveys by month first for O(n) complexity
+  const surveysByMonth = groupByMonth(surveys, 'surveyDate');
+  
+  // Monthly trend using pre-grouped data
+  const monthBuckets = generateMonthBuckets(6);
+  const trend = monthBuckets.map(({ monthStr }) => {
+    const monthSurveys = surveysByMonth[monthStr] || [];
+    return {
       month: monthStr,
       avgScore: monthSurveys.length > 0 
         ? Math.round(monthSurveys.reduce((sum, s) => sum + (s.satisfactionScore || 0), 0) / monthSurveys.length * 10) / 10 
         : null,
       count: monthSurveys.length
-    });
-  }
+    };
+  });
 
   return {
     averageScore: Math.round(avgScore * 10) / 10,
@@ -541,24 +607,19 @@ function calculateUserSatisfactionMetrics(surveys) {
  * Calculate monthly breakdown
  */
 function calculateMonthlyBreakdown(allFeedback) {
-  const breakdown = [];
-  const now = new Date();
+  // Pre-group feedback by creation and implementation month for O(n) complexity
+  const feedbackByCreationMonth = groupByMonth(allFeedback, 'timestamp');
+  const feedbackByImplMonth = groupByMonth(
+    allFeedback.filter(fb => fb.implementationDate), 
+    'implementationDate'
+  );
   
-  for (let i = 11; i >= 0; i--) {
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-    const monthStr = monthStart.toISOString().slice(0, 7);
-    
-    const newInMonth = allFeedback.filter(fb => {
-      const created = new Date(fb.timestamp);
-      return created >= monthStart && created <= monthEnd;
-    });
-    
-    const implementedInMonth = allFeedback.filter(fb => {
-      if (!fb.implementationDate) return false;
-      const implemented = new Date(fb.implementationDate);
-      return implemented >= monthStart && implemented <= monthEnd;
-    });
+  // Generate 12 month buckets
+  const monthBuckets = generateMonthBuckets(12);
+  
+  return monthBuckets.map(({ monthStr }) => {
+    const newInMonth = feedbackByCreationMonth[monthStr] || [];
+    const implementedInMonth = feedbackByImplMonth[monthStr] || [];
     
     const implDays = implementedInMonth
       .map(fb => daysBetween(fb.timestamp, fb.implementationDate))
@@ -568,16 +629,14 @@ function calculateMonthlyBreakdown(allFeedback) {
       .map(fb => fb.effectivenessScore)
       .filter(s => s !== null && s !== undefined);
 
-    breakdown.push({
+    return {
       month: monthStr,
       newSuggestions: newInMonth.length,
       implemented: implementedInMonth.length,
       avgTimeToImplement: implDays.length > 0 ? Math.round(implDays.reduce((a, b) => a + b, 0) / implDays.length) : null,
       avgEffectiveness: effScores.length > 0 ? Math.round(effScores.reduce((a, b) => a + b, 0) / effScores.length) : null
-    });
-  }
-  
-  return breakdown;
+    };
+  });
 }
 
 /**
@@ -623,7 +682,25 @@ exports.handler = async (event, context) => {
       };
     }
     
-    log.info('Authenticated user accessing feedback analytics', {
+    // Add admin role verification
+    const isAdmin = (user.app_metadata?.roles?.includes('admin')) || (user.user_metadata?.role === 'admin');
+    if (!isAdmin) {
+      log.warn('Non-admin user attempted to access feedback analytics', {
+        userEmail: user.email,
+        userId: user.sub,
+        path: event.path
+      });
+      return {
+        statusCode: 403,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          error: 'Forbidden',
+          message: 'This endpoint requires admin privileges.'
+        })
+      };
+    }
+
+    log.info('Authenticated admin accessing feedback analytics', {
       userEmail: user.email,
       userId: user.sub
     });
@@ -632,9 +709,11 @@ exports.handler = async (event, context) => {
     
     // Try to get satisfaction surveys collection (optional)
     let surveysCollection = null;
+    let surveysAvailable = true;
     try {
       surveysCollection = await getCollection('satisfaction_surveys');
     } catch (e) {
+      surveysAvailable = false;
       log.info('Satisfaction surveys collection not available', { error: e.message });
     }
     
@@ -646,10 +725,14 @@ exports.handler = async (event, context) => {
     // top/bottom performers to prevent data leakage.
     const sanitizedAnalytics = sanitizeAnalyticsResponse(analytics);
     
+    // Add surveysAvailable flag to help consumers understand data availability
+    sanitizedAnalytics.surveysAvailable = surveysAvailable;
+    
     log.info('Analytics calculated successfully', {
       totalFeedback: sanitizedAnalytics.totalFeedback,
       acceptanceRate: sanitizedAnalytics.acceptanceRate,
       implementationRate: sanitizedAnalytics.implementationRate,
+      surveysAvailable,
       userEmail: user.email
     });
     

@@ -528,3 +528,584 @@ describe('Feedback Analytics - Data Sanitization', () => {
     });
   });
 });
+
+describe('Feedback Analytics - Authentication & Authorization', () => {
+  let handler;
+  let mockGetCollection;
+  let mockLogger;
+  
+  // Sample feedback data for comprehensive testing
+  const sampleFeedback = [
+    {
+      id: 'fb-001',
+      status: 'implemented',
+      priority: 'critical',
+      category: 'bug_report',
+      timestamp: '2024-01-01T00:00:00Z',
+      implementationDate: '2024-01-03T00:00:00Z',
+      suggestion: { title: 'Fix memory leak', estimatedEffort: 'days', expectedBenefit: 'Stability' },
+      actualBenefitScore: 90,
+      stabilityScore: 95,
+      effectivenessScore: 88
+    },
+    {
+      id: 'fb-002',
+      status: 'implemented',
+      priority: 'high',
+      category: 'performance',
+      timestamp: '2024-01-05T00:00:00Z',
+      implementationDate: '2024-01-08T00:00:00Z',
+      suggestion: { title: 'Optimize queries', estimatedEffort: 'hours', expectedBenefit: 'Speed' },
+      actualBenefitScore: 75,
+      stabilityScore: 85,
+      effectivenessScore: 72
+    },
+    {
+      id: 'fb-003',
+      status: 'pending',
+      priority: 'medium',
+      category: 'ui_ux',
+      timestamp: '2024-01-10T00:00:00Z',
+      suggestion: { title: 'Improve dashboard', estimatedEffort: 'weeks', expectedBenefit: 'UX' }
+    },
+    {
+      id: 'fb-004',
+      status: 'rejected',
+      priority: 'low',
+      category: 'analytics',
+      timestamp: '2024-01-12T00:00:00Z',
+      suggestion: { title: 'Add tracking', estimatedEffort: 'days', expectedBenefit: 'Insights' }
+    }
+  ];
+
+  const sampleSurveys = [
+    { feedbackId: 'fb-001', surveyDate: '2024-01-10T00:00:00Z', satisfactionScore: 5, impactRating: 5, wouldRecommend: true },
+    { feedbackId: 'fb-002', surveyDate: '2024-01-15T00:00:00Z', satisfactionScore: 4, impactRating: 4, wouldRecommend: true }
+  ];
+
+  beforeEach(() => {
+    jest.resetModules();
+    
+    // Create comprehensive MongoDB mock
+    mockGetCollection = jest.fn().mockImplementation((collectionName) => {
+      const collections = {
+        'ai_feedback': sampleFeedback,
+        'satisfaction_surveys': sampleSurveys
+      };
+      
+      return Promise.resolve({
+        find: jest.fn(() => ({
+          toArray: jest.fn().mockResolvedValue(collections[collectionName] || [])
+        }))
+      });
+    });
+    
+    jest.doMock('../netlify/functions/utils/mongodb.cjs', () => ({
+      getCollection: mockGetCollection
+    }));
+    
+    // Mock CORS with realistic headers
+    jest.doMock('../netlify/functions/utils/cors.cjs', () => ({
+      getCorsHeaders: jest.fn().mockReturnValue({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS'
+      })
+    }));
+    
+    // Track logger calls for audit verification
+    mockLogger = {
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn()
+    };
+    
+    jest.doMock('../netlify/functions/utils/logger.cjs', () => ({
+      createLogger: jest.fn().mockReturnValue(mockLogger)
+    }));
+    
+    handler = require('../netlify/functions/feedback-analytics.cjs').handler;
+  });
+
+  afterEach(() => {
+    jest.resetModules();
+  });
+
+  const mockEvent = {
+    httpMethod: 'GET',
+    path: '/.netlify/functions/feedback-analytics'
+  };
+
+  describe('Authentication Checks', () => {
+    it('should reject unauthenticated requests with 401 and proper error message', async () => {
+      const context = {}; // No clientContext
+      
+      const response = await handler(mockEvent, context);
+      
+      expect(response.statusCode).toBe(401);
+      expect(response.headers['Content-Type']).toBe('application/json');
+      
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('Authentication required');
+      expect(body.message).toContain('admin authentication');
+      expect(body.message).toContain('Admin Dashboard');
+      
+      // Verify audit log was called
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Unauthorized access attempt to feedback analytics',
+        expect.objectContaining({
+          hasContext: false,
+          path: expect.any(String)
+        })
+      );
+      
+      // Verify DB was NOT accessed
+      expect(mockGetCollection).not.toHaveBeenCalled();
+    });
+
+    it('should reject requests with null user', async () => {
+      const context = { clientContext: { user: null } };
+      
+      const response = await handler(mockEvent, context);
+      
+      expect(response.statusCode).toBe(401);
+      expect(mockGetCollection).not.toHaveBeenCalled();
+    });
+
+    it('should reject requests with undefined clientContext', async () => {
+      const context = { clientContext: undefined };
+      
+      const response = await handler(mockEvent, context);
+      
+      expect(response.statusCode).toBe(401);
+    });
+  });
+
+  describe('Authorization Checks (Admin Role)', () => {
+    it('should reject authenticated non-admin users with 403', async () => {
+      const context = {
+        clientContext: {
+          user: { 
+            email: 'regular.user@example.com', 
+            sub: 'user-regular-123',
+            app_metadata: { roles: ['viewer', 'editor'] }, // No admin
+            user_metadata: { role: 'member' }
+          }
+        }
+      };
+      
+      const response = await handler(mockEvent, context);
+      
+      expect(response.statusCode).toBe(403);
+      
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('Forbidden');
+      expect(body.message).toContain('admin privileges');
+      
+      // Verify security audit log
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Non-admin user attempted to access feedback analytics',
+        expect.objectContaining({
+          userEmail: 'regular.user@example.com',
+          userId: 'user-regular-123'
+        })
+      );
+      
+      // Verify DB was NOT accessed
+      expect(mockGetCollection).not.toHaveBeenCalled();
+    });
+
+    it('should reject user with empty metadata', async () => {
+      const context = {
+        clientContext: {
+          user: { 
+            email: 'empty@example.com', 
+            sub: 'user-empty',
+            app_metadata: {},
+            user_metadata: {}
+          }
+        }
+      };
+      
+      const response = await handler(mockEvent, context);
+      
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('should reject user with null metadata', async () => {
+      const context = {
+        clientContext: {
+          user: { 
+            email: 'null@example.com', 
+            sub: 'user-null',
+            app_metadata: null,
+            user_metadata: null
+          }
+        }
+      };
+      
+      const response = await handler(mockEvent, context);
+      
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('should allow admin via app_metadata.roles array', async () => {
+      const context = {
+        clientContext: {
+          user: { 
+            email: 'admin.roles@example.com', 
+            sub: 'admin-roles-123',
+            app_metadata: { roles: ['editor', 'admin', 'reviewer'] },
+            user_metadata: {}
+          }
+        }
+      };
+      
+      const response = await handler(mockEvent, context);
+      
+      expect(response.statusCode).toBe(200);
+      expect(mockGetCollection).toHaveBeenCalledWith('ai_feedback');
+      
+      // Verify success audit log
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Authenticated admin accessing feedback analytics',
+        expect.objectContaining({
+          userEmail: 'admin.roles@example.com',
+          userId: 'admin-roles-123'
+        })
+      );
+    });
+
+    it('should allow admin via user_metadata.role string', async () => {
+      const context = {
+        clientContext: {
+          user: { 
+            email: 'admin.metadata@example.com', 
+            sub: 'admin-metadata-456',
+            app_metadata: {},
+            user_metadata: { role: 'admin' }
+          }
+        }
+      };
+      
+      const response = await handler(mockEvent, context);
+      
+      expect(response.statusCode).toBe(200);
+      expect(mockGetCollection).toHaveBeenCalledWith('ai_feedback');
+    });
+
+    it('should allow admin with both metadata paths set', async () => {
+      const context = {
+        clientContext: {
+          user: { 
+            email: 'super.admin@example.com', 
+            sub: 'super-admin-789',
+            app_metadata: { roles: ['admin', 'super_admin'] },
+            user_metadata: { role: 'admin' }
+          }
+        }
+      };
+      
+      const response = await handler(mockEvent, context);
+      
+      expect(response.statusCode).toBe(200);
+    });
+  });
+
+  describe('Successful Response Structure', () => {
+    const adminContext = {
+      clientContext: {
+        user: { 
+          email: 'admin@example.com', 
+          sub: 'admin-test',
+          app_metadata: { roles: ['admin'] },
+          user_metadata: {}
+        }
+      }
+    };
+
+    it('should return complete analytics structure for admin', async () => {
+      const response = await handler(mockEvent, adminContext);
+      
+      expect(response.statusCode).toBe(200);
+      
+      const body = JSON.parse(response.body);
+      
+      // Verify top-level structure
+      expect(body).toHaveProperty('totalFeedback');
+      expect(body).toHaveProperty('acceptanceRate');
+      expect(body).toHaveProperty('implementationRate');
+      expect(body).toHaveProperty('surveysAvailable');
+      expect(body).toHaveProperty('lastUpdated');
+      
+      // Verify nested structures
+      expect(body).toHaveProperty('byStatus');
+      expect(body).toHaveProperty('byPriority');
+      expect(body).toHaveProperty('implementationMetrics');
+      expect(body).toHaveProperty('roiSummary');
+      expect(body).toHaveProperty('timeToImplementation');
+      expect(body).toHaveProperty('effectivenessOverview');
+      expect(body).toHaveProperty('monthlyBreakdown');
+    });
+
+    it('should include surveysAvailable flag indicating data availability', async () => {
+      const response = await handler(mockEvent, adminContext);
+      const body = JSON.parse(response.body);
+      
+      expect(typeof body.surveysAvailable).toBe('boolean');
+      expect(body.surveysAvailable).toBe(true); // Mock returns survey data
+    });
+
+    it('should calculate correct statistics from sample data', async () => {
+      const response = await handler(mockEvent, adminContext);
+      const body = JSON.parse(response.body);
+      
+      // 4 total feedback items
+      expect(body.totalFeedback).toBe(4);
+      
+      // 2 implemented out of 4 = 50% acceptance
+      // Actually: 2 implemented + 0 accepted = 2 accepted/implemented, 1 rejected, 1 pending
+      expect(body.byStatus.implemented).toBe(2);
+      expect(body.byStatus.pending).toBe(1);
+      expect(body.byStatus.rejected).toBe(1);
+    });
+
+    it('should sanitize feedbackIds in ROI data for security', async () => {
+      const response = await handler(mockEvent, adminContext);
+      const body = JSON.parse(response.body);
+      
+      if (body.roiSummary?.topROIImplementations?.length > 0) {
+        body.roiSummary.topROIImplementations.forEach((impl, idx) => {
+          // Should be masked as impl-1, impl-2, etc.
+          expect(impl.feedbackId).toBe(`impl-${idx + 1}`);
+          // Original IDs should NOT be present
+          expect(impl.feedbackId).not.toMatch(/^fb-/);
+        });
+      }
+    });
+
+    it('should sanitize feedbackIds in effectiveness data', async () => {
+      const response = await handler(mockEvent, adminContext);
+      const body = JSON.parse(response.body);
+      
+      if (body.effectivenessOverview?.topPerformers?.length > 0) {
+        body.effectivenessOverview.topPerformers.forEach((perf, idx) => {
+          expect(perf.feedbackId).toBe(`top-${idx + 1}`);
+        });
+      }
+      
+      if (body.effectivenessOverview?.bottomPerformers?.length > 0) {
+        body.effectivenessOverview.bottomPerformers.forEach((perf, idx) => {
+          expect(perf.feedbackId).toBe(`bottom-${idx + 1}`);
+        });
+      }
+    });
+
+    it('should include user satisfaction metrics when surveys available', async () => {
+      const response = await handler(mockEvent, adminContext);
+      const body = JSON.parse(response.body);
+      
+      expect(body.userSatisfaction).toBeDefined();
+      expect(body.userSatisfaction.surveyCount).toBe(2);
+      expect(body.userSatisfaction.averageScore).toBeCloseTo(4.5, 1);
+      expect(body.userSatisfaction.recommendations).toBe(2);
+    });
+  });
+
+  describe('HTTP Method Handling', () => {
+    it('should handle OPTIONS preflight requests without auth', async () => {
+      const optionsEvent = { ...mockEvent, httpMethod: 'OPTIONS' };
+      const context = {}; // No auth needed for preflight
+      
+      const response = await handler(optionsEvent, context);
+      
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['Access-Control-Allow-Origin']).toBeDefined();
+    });
+
+    it('should reject POST requests with 405', async () => {
+      const postEvent = { ...mockEvent, httpMethod: 'POST', body: '{}' };
+      const context = {};
+      
+      const response = await handler(postEvent, context);
+      
+      expect(response.statusCode).toBe(405);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('Method not allowed');
+    });
+
+    it('should reject PUT requests with 405', async () => {
+      const putEvent = { ...mockEvent, httpMethod: 'PUT', body: '{}' };
+      const context = {};
+      
+      const response = await handler(putEvent, context);
+      
+      expect(response.statusCode).toBe(405);
+    });
+
+    it('should reject DELETE requests with 405', async () => {
+      const deleteEvent = { ...mockEvent, httpMethod: 'DELETE' };
+      const context = {};
+      
+      const response = await handler(deleteEvent, context);
+      
+      expect(response.statusCode).toBe(405);
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should return 500 with error details when MongoDB fails', async () => {
+      // Override mock to simulate DB failure
+      jest.resetModules();
+      jest.doMock('../netlify/functions/utils/mongodb.cjs', () => ({
+        getCollection: jest.fn().mockRejectedValue(new Error('Connection timeout'))
+      }));
+      jest.doMock('../netlify/functions/utils/cors.cjs', () => ({
+        getCorsHeaders: jest.fn().mockReturnValue({ 'Access-Control-Allow-Origin': '*' })
+      }));
+      jest.doMock('../netlify/functions/utils/logger.cjs', () => ({
+        createLogger: jest.fn().mockReturnValue(mockLogger)
+      }));
+      
+      const failHandler = require('../netlify/functions/feedback-analytics.cjs').handler;
+      
+      const adminContext = {
+        clientContext: {
+          user: { 
+            email: 'admin@example.com', 
+            sub: 'admin-error',
+            app_metadata: { roles: ['admin'] }
+          }
+        }
+      };
+      
+      const response = await failHandler(mockEvent, adminContext);
+      
+      expect(response.statusCode).toBe(500);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('Failed to calculate feedback analytics');
+      expect(body.message).toContain('Connection timeout');
+      
+      // Verify error was logged
+      expect(mockLogger.error).toHaveBeenCalled();
+    });
+
+    it('should handle surveys collection unavailable gracefully', async () => {
+      jest.resetModules();
+      
+      // Mock where ai_feedback works but satisfaction_surveys fails
+      jest.doMock('../netlify/functions/utils/mongodb.cjs', () => ({
+        getCollection: jest.fn().mockImplementation((name) => {
+          if (name === 'ai_feedback') {
+            return Promise.resolve({
+              find: jest.fn(() => ({
+                toArray: jest.fn().mockResolvedValue(sampleFeedback)
+              }))
+            });
+          }
+          // Surveys collection fails
+          return Promise.reject(new Error('Collection not found'));
+        })
+      }));
+      jest.doMock('../netlify/functions/utils/cors.cjs', () => ({
+        getCorsHeaders: jest.fn().mockReturnValue({ 'Access-Control-Allow-Origin': '*' })
+      }));
+      jest.doMock('../netlify/functions/utils/logger.cjs', () => ({
+        createLogger: jest.fn().mockReturnValue(mockLogger)
+      }));
+      
+      const gracefulHandler = require('../netlify/functions/feedback-analytics.cjs').handler;
+      
+      const adminContext = {
+        clientContext: {
+          user: { 
+            email: 'admin@example.com', 
+            sub: 'admin-graceful',
+            app_metadata: { roles: ['admin'] }
+          }
+        }
+      };
+      
+      const response = await gracefulHandler(mockEvent, adminContext);
+      
+      // Should still succeed, just without survey data
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.surveysAvailable).toBe(false);
+      expect(body.userSatisfaction.surveyCount).toBe(0);
+    });
+  });
+
+  describe('Audit Logging', () => {
+    it('should log successful admin access with user details', async () => {
+      const adminContext = {
+        clientContext: {
+          user: { 
+            email: 'audit.admin@example.com', 
+            sub: 'audit-admin-123',
+            app_metadata: { roles: ['admin'] }
+          }
+        }
+      };
+      
+      await handler(mockEvent, adminContext);
+      
+      // Verify access was logged
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Authenticated admin accessing feedback analytics',
+        expect.objectContaining({
+          userEmail: 'audit.admin@example.com',
+          userId: 'audit-admin-123'
+        })
+      );
+      
+      // Verify success was logged
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Analytics calculated successfully',
+        expect.objectContaining({
+          totalFeedback: expect.any(Number),
+          userEmail: 'audit.admin@example.com',
+          surveysAvailable: expect.any(Boolean)
+        })
+      );
+    });
+
+    it('should log failed auth attempts with request details', async () => {
+      const context = {};
+      
+      await handler(mockEvent, context);
+      
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Unauthorized access attempt to feedback analytics',
+        expect.objectContaining({
+          hasContext: false,
+          path: expect.stringContaining('feedback-analytics')
+        })
+      );
+    });
+
+    it('should log non-admin access attempts with user info', async () => {
+      const nonAdminContext = {
+        clientContext: {
+          user: { 
+            email: 'sneaky.user@example.com', 
+            sub: 'sneaky-123',
+            app_metadata: { roles: ['viewer'] }
+          }
+        }
+      };
+      
+      await handler(mockEvent, nonAdminContext);
+      
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Non-admin user attempted to access feedback analytics',
+        expect.objectContaining({
+          userEmail: 'sneaky.user@example.com',
+          userId: 'sneaky-123',
+          path: expect.any(String)
+        })
+      );
+    });
+  });
+});
