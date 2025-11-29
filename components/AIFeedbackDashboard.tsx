@@ -88,7 +88,17 @@ const getTypeLabel = (type: string): string => {
     bug_report: 'Bug Report',
     optimization: 'Optimization'
   };
-  return labels[type] || type.replace('_', ' ');
+  return labels[type] || type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+};
+
+// Helper function to format elapsed time
+const formatElapsedTime = (startTime: number | null): string => {
+  if (!startTime) return '';
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  if (elapsed < 60) return `${elapsed}s`;
+  const minutes = Math.floor(elapsed / 60);
+  const seconds = elapsed % 60;
+  return `${minutes}m ${seconds}s`;
 };
 
 // Helper function to capitalize strings
@@ -124,12 +134,28 @@ export const AIFeedbackDashboard: React.FC = () => {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [selectedFeedbackIds, setSelectedFeedbackIds] = useState<Set<string>>(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [bulkStatusValue, setBulkStatusValue] = useState('');
   const [analysisProgress, setAnalysisProgress] = useState<{
     isRunning: boolean;
     message: string;
     progress: number;
     startTime: number | null;
   }>({ isRunning: false, message: '', progress: 0, startTime: null });
+  const [elapsedTime, setElapsedTime] = useState('');
+
+  // Update elapsed time while running
+  useEffect(() => {
+    if (!analysisProgress.isRunning || !analysisProgress.startTime) {
+      setElapsedTime('');
+      return;
+    }
+    
+    const interval = setInterval(() => {
+      setElapsedTime(formatElapsedTime(analysisProgress.startTime));
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [analysisProgress.isRunning, analysisProgress.startTime]);
 
   // Load notification preferences from localStorage on mount
   useEffect(() => {
@@ -224,6 +250,7 @@ export const AIFeedbackDashboard: React.FC = () => {
     if (selectedFeedbackIds.size === 0) return;
     
     setBulkActionLoading(true);
+    setBulkStatusValue('');
     setAnalysisProgress({
       isRunning: true,
       message: `Updating ${selectedFeedbackIds.size} items to ${newStatus}...`,
@@ -235,15 +262,19 @@ export const AIFeedbackDashboard: React.FC = () => {
       const ids = Array.from(selectedFeedbackIds);
       let completed = 0;
 
-      for (const feedbackId of ids) {
-        await handleStatusUpdate(feedbackId, newStatus);
-        completed++;
-        setAnalysisProgress(prev => ({
-          ...prev,
-          progress: Math.round((completed / ids.length) * 100),
-          message: `Updated ${completed}/${ids.length} items...`
-        }));
-      }
+      // Run all status updates concurrently, updating progress as each completes
+      await Promise.all(
+        ids.map(feedbackId =>
+          handleStatusUpdate(feedbackId, newStatus).then(() => {
+            completed++;
+            setAnalysisProgress(prev => ({
+              ...prev,
+              progress: Math.round((completed / ids.length) * 100),
+              message: `Updated ${completed}/${ids.length} items...`
+            }));
+          })
+        )
+      );
 
       setSelectedFeedbackIds(new Set());
       setAnalysisProgress({
@@ -286,15 +317,19 @@ export const AIFeedbackDashboard: React.FC = () => {
       const ids = Array.from(selectedFeedbackIds);
       let completed = 0;
 
-      for (const feedbackId of ids) {
-        await handleStatusUpdate(feedbackId, 'rejected');
-        completed++;
-        setAnalysisProgress(prev => ({
-          ...prev,
-          progress: Math.round((completed / ids.length) * 100),
-          message: `Rejecting ${completed}/${ids.length} items...`
-        }));
-      }
+      // Run all status updates concurrently, updating progress as each completes
+      await Promise.all(
+        ids.map(feedbackId =>
+          handleStatusUpdate(feedbackId, 'rejected').then(() => {
+            completed++;
+            setAnalysisProgress(prev => ({
+              ...prev,
+              progress: Math.round((completed / ids.length) * 100),
+              message: `Rejecting ${completed}/${ids.length} items...`
+            }));
+          })
+        )
+      );
 
       setSelectedFeedbackIds(new Set());
       setAnalysisProgress({
@@ -784,8 +819,13 @@ export const AIFeedbackDashboard: React.FC = () => {
               </svg>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-blue-900">{analysisProgress.message}</p>
-              <div className="mt-2 w-full bg-blue-200 rounded-full h-2">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-sm font-medium text-blue-900">{analysisProgress.message}</p>
+                {elapsedTime && (
+                  <span className="text-xs text-blue-600">Running for {elapsedTime}</span>
+                )}
+              </div>
+              <div className="w-full bg-blue-200 rounded-full h-2">
                 <div
                   className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${analysisProgress.progress}%` }}
@@ -919,6 +959,31 @@ export const AIFeedbackDashboard: React.FC = () => {
                     ))}
                   </div>
                 </div>
+
+                {/* Type Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Notify for Types
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {TYPES.map(type => (
+                      <label key={type} className="inline-flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={notificationPrefs.types.includes(type)}
+                          onChange={(e) => {
+                            const newTypes = e.target.checked
+                              ? [...notificationPrefs.types, type]
+                              : notificationPrefs.types.filter(t => t !== type);
+                            saveNotificationPrefs({ ...notificationPrefs, types: newTypes });
+                          }}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="ml-2 text-sm text-gray-600">{getTypeLabel(type)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </>
             )}
           </div>
@@ -1048,14 +1113,14 @@ export const AIFeedbackDashboard: React.FC = () => {
                 value={searchFilters.dateFrom}
                 onChange={(e) => setSearchFilters({ ...searchFilters, dateFrom: e.target.value })}
                 className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                placeholder="From"
+                aria-label="From date"
               />
               <input
                 type="date"
                 value={searchFilters.dateTo}
                 onChange={(e) => setSearchFilters({ ...searchFilters, dateTo: e.target.value })}
                 className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                placeholder="To"
+                aria-label="To date"
               />
             </div>
           </div>
@@ -1097,7 +1162,7 @@ export const AIFeedbackDashboard: React.FC = () => {
                 `}
               >
                 <span className="hidden sm:inline">{tab.label}</span>
-                <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
+                <span className="sm:hidden">{tab.label.split(' ')[0] || tab.label}</span>
                 <span className="ml-1">({count})</span>
               </button>
             );
@@ -1122,10 +1187,11 @@ export const AIFeedbackDashboard: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
             <select
+              value={bulkStatusValue}
               onChange={(e) => {
-                if (e.target.value) {
-                  handleBulkStatusUpdate(e.target.value);
-                  e.target.value = '';
+                const newValue = e.target.value;
+                if (newValue) {
+                  handleBulkStatusUpdate(newValue);
                 }
               }}
               disabled={bulkActionLoading}
