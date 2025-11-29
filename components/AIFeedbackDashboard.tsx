@@ -79,6 +79,23 @@ const CATEGORIES = ['weather_api', 'data_structure', 'ui_ux', 'performance', 'in
 const PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const TYPES = ['feature_request', 'api_suggestion', 'data_format', 'bug_report', 'optimization'];
 
+// Helper function for type labels
+const getTypeLabel = (type: string): string => {
+  const labels: Record<string, string> = {
+    feature_request: 'Feature Request',
+    api_suggestion: 'API Suggestion',
+    data_format: 'Data Format',
+    bug_report: 'Bug Report',
+    optimization: 'Optimization'
+  };
+  return labels[type] || type.replace('_', ' ');
+};
+
+// Helper function to capitalize strings
+const capitalize = (str: string): string => {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
+
 export const AIFeedbackDashboard: React.FC = () => {
   const [feedbacks, setFeedbacks] = useState<AIFeedback[]>([]);
   const [filter, setFilter] = useState<string>('pending');
@@ -248,19 +265,19 @@ export const AIFeedbackDashboard: React.FC = () => {
     }
   };
 
-  // Handle bulk delete
-  const handleBulkDelete = async () => {
+  // Handle bulk reject (marks items as rejected)
+  const handleBulkReject = async () => {
     if (selectedFeedbackIds.size === 0) return;
     
     const confirmed = window.confirm(
-      `Are you sure you want to delete ${selectedFeedbackIds.size} feedback items? This cannot be undone.`
+      `Are you sure you want to reject ${selectedFeedbackIds.size} feedback items? They will be marked as rejected and hidden from the default view.`
     );
     if (!confirmed) return;
 
     setBulkActionLoading(true);
     setAnalysisProgress({
       isRunning: true,
-      message: `Deleting ${selectedFeedbackIds.size} items...`,
+      message: `Rejecting ${selectedFeedbackIds.size} items...`,
       progress: 0,
       startTime: Date.now()
     });
@@ -270,19 +287,19 @@ export const AIFeedbackDashboard: React.FC = () => {
       let completed = 0;
 
       for (const feedbackId of ids) {
-        await handleStatusUpdate(feedbackId, 'rejected'); // Mark as rejected instead of actual delete
+        await handleStatusUpdate(feedbackId, 'rejected');
         completed++;
         setAnalysisProgress(prev => ({
           ...prev,
           progress: Math.round((completed / ids.length) * 100),
-          message: `Deleted ${completed}/${ids.length} items...`
+          message: `Rejecting ${completed}/${ids.length} items...`
         }));
       }
 
       setSelectedFeedbackIds(new Set());
       setAnalysisProgress({
         isRunning: false,
-        message: `Successfully deleted ${ids.length} items`,
+        message: `Successfully rejected ${ids.length} items`,
         progress: 100,
         startTime: null
       });
@@ -294,7 +311,7 @@ export const AIFeedbackDashboard: React.FC = () => {
 
       await fetchAIFeedback();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bulk delete failed');
+      setError(err instanceof Error ? err.message : 'Bulk reject failed');
       setAnalysisProgress({ isRunning: false, message: '', progress: 0, startTime: null });
     } finally {
       setBulkActionLoading(false);
@@ -1000,7 +1017,7 @@ export const AIFeedbackDashboard: React.FC = () => {
                 className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm h-24"
               >
                 {PRIORITIES.map(p => (
-                  <option key={p} value={p} className="capitalize">{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                  <option key={p} value={p}>{capitalize(p)}</option>
                 ))}
               </select>
             </div>
@@ -1018,7 +1035,7 @@ export const AIFeedbackDashboard: React.FC = () => {
                 className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm h-24"
               >
                 {TYPES.map(t => (
-                  <option key={t} value={t}>{t.replace('_', ' ')}</option>
+                  <option key={t} value={t}>{getTypeLabel(t)}</option>
                 ))}
               </select>
             </div>
@@ -1123,11 +1140,11 @@ export const AIFeedbackDashboard: React.FC = () => {
               <option value="rejected">Set to Rejected</option>
             </select>
             <button
-              onClick={handleBulkDelete}
+              onClick={handleBulkReject}
               disabled={bulkActionLoading}
               className="px-3 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-300 rounded-md hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
             >
-              Delete Selected
+              Reject Selected
             </button>
             <button
               onClick={deselectAllFeedbacks}
@@ -1206,7 +1223,7 @@ export const AIFeedbackDashboard: React.FC = () => {
                         {getCategoryLabel(feedback.category)}
                       </span>
                       <span className="text-gray-500 hidden sm:inline">
-                        {feedback.feedbackType.replace('_', ' ')}
+                        {getTypeLabel(feedback.feedbackType)}
                       </span>
                     </div>
                   </div>
