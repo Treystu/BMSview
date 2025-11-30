@@ -4,11 +4,20 @@ import remarkGfm from 'remark-gfm';
 
 /**
  * Chart configuration interface for Visual Guru Expert mode
+ * Supports responsive charts with optional dimension constraints
  */
 export interface ChartConfig {
   chartType: 'line' | 'bar' | 'area' | 'gauge' | 'stacked_bar';
   title: string;
   description?: string;
+  // Dimension constraints - charts are responsive by default
+  // These provide hints for optimal rendering
+  dimensions?: {
+    aspectRatio?: '16:9' | '4:3' | '1:1' | '2:1' | '3:2'; // Common aspect ratios
+    minHeight?: number; // Minimum height in pixels (default: 200)
+    maxHeight?: number; // Maximum height in pixels (default: 400)
+    preferredWidth?: 'full' | 'half' | 'third'; // Width relative to container
+  };
   xAxis?: {
     label: string;
     type?: 'datetime' | 'category';
@@ -161,11 +170,46 @@ const GaugeChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
 };
 
 /**
+ * Helper to calculate chart height based on aspect ratio and container width
+ */
+const getChartDimensions = (dimensions?: ChartConfig['dimensions']) => {
+  const aspectRatioMap: Record<string, number> = {
+    '16:9': 16 / 9,
+    '4:3': 4 / 3,
+    '1:1': 1,
+    '2:1': 2,
+    '3:2': 3 / 2
+  };
+  
+  const aspectRatio = dimensions?.aspectRatio ? aspectRatioMap[dimensions.aspectRatio] : 16 / 9;
+  const minHeight = dimensions?.minHeight || 200;
+  const maxHeight = dimensions?.maxHeight || 400;
+  const preferredWidth = dimensions?.preferredWidth || 'full';
+  
+  // Calculate height class based on aspect ratio (approximate for CSS)
+  let heightClass = 'h-48'; // Default ~192px
+  if (aspectRatio <= 1) {
+    heightClass = 'h-64'; // Square-ish, taller
+  } else if (aspectRatio >= 2) {
+    heightClass = 'h-40'; // Wide, shorter
+  }
+  
+  // Width class based on preferred width
+  const widthClass = preferredWidth === 'half' ? 'w-full md:w-1/2' : 
+                     preferredWidth === 'third' ? 'w-full md:w-1/3' : 'w-full';
+  
+  return { heightClass, widthClass, minHeight, maxHeight, aspectRatio };
+};
+
+/**
  * Simple line/bar chart component using CSS
  * For production, this would integrate with a charting library like Recharts
  */
 const SimpleChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
-  const { chartType, title, description, series = [], xAxis, yAxis, insights } = config;
+  const { chartType, title, description, series = [], xAxis, yAxis, insights, dimensions } = config;
+  
+  // Get dimension settings
+  const { heightClass, widthClass, minHeight, maxHeight } = getChartDimensions(dimensions);
   
   // Get all data points
   const allData = series.flatMap(s => s.data);
@@ -184,11 +228,14 @@ const SimpleChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
   const colors = ['#3B82F6', '#22C55E', '#EAB308', '#EF4444', '#8B5CF6'];
   
   return (
-    <div className="bg-white rounded-xl p-6 shadow-lg border border-gray-200">
+    <div className={`bg-white rounded-xl p-6 shadow-lg border border-gray-200 ${widthClass}`}>
       <h4 className="text-lg font-bold text-gray-800 mb-2">{title}</h4>
       {description && <p className="text-sm text-gray-600 mb-4">{description}</p>}
       
-      <div className="relative h-48 bg-gray-50 rounded-lg p-4">
+      <div 
+        className={`relative ${heightClass} bg-gray-50 rounded-lg p-4`}
+        style={{ minHeight: `${minHeight}px`, maxHeight: `${maxHeight}px` }}
+      >
         {/* Y-axis labels */}
         <div className="absolute left-0 top-0 bottom-0 w-12 flex flex-col justify-between text-xs text-gray-500 py-2">
           <span>{maxValue.toFixed(1)}</span>

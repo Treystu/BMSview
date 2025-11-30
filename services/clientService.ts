@@ -695,6 +695,7 @@ export const streamInsights = async (
 
     // Iterative retry loop to avoid stack overflow with many attempts
     // Using while loop instead of recursion for safety and performance
+    const startTime = Date.now(); // Track actual elapsed time
     try {
         while (attemptCount < MAX_RESUME_ATTEMPTS) {
             attemptCount++;
@@ -1008,7 +1009,13 @@ export const streamInsights = async (
 
         // If we exit the loop, we've exceeded max attempts
         // Build DYNAMIC error message based on actual error context
-        const totalTimeMinutes = Math.round((MAX_RESUME_ATTEMPTS * BACKEND_FUNCTION_TIMEOUT_S) / 60);
+        const actualElapsedMs = Date.now() - startTime;
+        const actualElapsedSeconds = Math.round(actualElapsedMs / 1000);
+        const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
+        const remainingSeconds = actualElapsedSeconds % 60;
+        const elapsedTimeStr = actualElapsedMinutes > 0 
+            ? `${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''} ${remainingSeconds > 0 ? `${remainingSeconds} seconds` : ''}`
+            : `${actualElapsedSeconds} seconds`;
         const contextWindowDays = payload.contextWindowDays || 30;
 
         // Build contextual error message based on last error
@@ -1027,7 +1034,7 @@ export const streamInsights = async (
                     break;
                 case 'rate_limited':
                 case 'http_429':
-                    errorReason = `API rate limit reached after ${attemptCount} attempts`;
+                    errorReason = `API rate limit reached after ${attemptCount} attempts (${elapsedTimeStr} elapsed)`;
                     suggestions = [
                         'Wait a few minutes before trying again',
                         'Consider reducing query frequency'
@@ -1045,7 +1052,7 @@ export const streamInsights = async (
                 case 'http_504':
                 case 'client_timeout':
                 case 'insights_timeout':
-                    errorReason = `Analysis hit the maximum retry limit of ${attemptCount} attempts (approx. ${totalTimeMinutes} minutes elapsed).`;
+                    errorReason = `Analysis timed out after ${attemptCount} attempt${attemptCount !== 1 ? 's' : ''} (${elapsedTimeStr} elapsed).`;
                     suggestions = [
                         `Reduce the time range (currently: ${contextWindowDays} days)`,
                         'Ask a more specific question',

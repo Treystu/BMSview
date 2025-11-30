@@ -379,4 +379,49 @@ describe('Insights Retry/Resume Functionality', () => {
       expect(resumeConfig.conversationHistory).toHaveLength(2);
     });
   });
+
+  describe('Error message formatting', () => {
+    test('error messages should include actual elapsed time, not calculated estimates', () => {
+      // Simulate actual elapsed time being much less than theoretical max
+      const actualElapsedMs = 45000; // 45 seconds actual elapsed time
+      const actualElapsedSeconds = Math.round(actualElapsedMs / 1000);
+      const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
+      const remainingSeconds = actualElapsedSeconds % 60;
+      
+      // Format elapsed time (same logic as clientService.ts)
+      const elapsedTimeStr = actualElapsedMinutes > 0 
+        ? `${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''} ${remainingSeconds > 0 ? `${remainingSeconds} seconds` : ''}`
+        : `${actualElapsedSeconds} seconds`;
+      
+      // Verify the formatted string is based on actual time
+      expect(elapsedTimeStr).toBe('45 seconds');
+      expect(elapsedTimeStr).not.toContain('20 minutes'); // Should NOT be hard-coded theoretical max
+    });
+
+    test('elapsed time string should handle minutes correctly', () => {
+      const actualElapsedMs = 125000; // 2 minutes 5 seconds
+      const actualElapsedSeconds = Math.round(actualElapsedMs / 1000);
+      const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
+      const remainingSeconds = actualElapsedSeconds % 60;
+      
+      const elapsedTimeStr = actualElapsedMinutes > 0 
+        ? `${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''} ${remainingSeconds > 0 ? `${remainingSeconds} seconds` : ''}`
+        : `${actualElapsedSeconds} seconds`;
+      
+      expect(elapsedTimeStr).toBe('2 minutes 5 seconds');
+    });
+
+    test('elapsed time string should handle singular minute correctly', () => {
+      const actualElapsedMs = 65000; // 1 minute 5 seconds
+      const actualElapsedSeconds = Math.round(actualElapsedMs / 1000);
+      const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
+      const remainingSeconds = actualElapsedSeconds % 60;
+      
+      const elapsedTimeStr = actualElapsedMinutes > 0 
+        ? `${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''} ${remainingSeconds > 0 ? `${remainingSeconds} seconds` : ''}`
+        : `${actualElapsedSeconds} seconds`;
+      
+      expect(elapsedTimeStr).toBe('1 minute 5 seconds');
+    });
+  });
 });

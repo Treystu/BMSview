@@ -489,9 +489,18 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "   4. Provide a detailed, multi-faceted report.\n\n";
     } else if (insightMode === 'visual_guru' || insightMode === 'visual-guru') {
         // Visual Guru Expert mode - infographic-style, chart-focused output
-        prompt += "📊 VISUAL GURU EXPERT MODE - INFOGRAPHIC & CHART FOCUSED:\n";
+        prompt += "📊 VISUAL GURU EXPERT MODE - STRUCTURED DATA LAYOUT FOR VISUALIZATION:\n";
         prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-        prompt += "🎯 YOUR PRIMARY MISSION: Create visual, infographic-style output with charts for ALL time-based data.\n\n";
+        prompt += "⚠️ CRITICAL: 'Visual' means STRUCTURED JSON DATA that a frontend will render as charts - NOT binary images!\n";
+        prompt += "You are NOT being asked to generate images, pictures, or infographics yourself.\n";
+        prompt += "You are being asked to OUTPUT JSON DATA inside ```chart code blocks that our UI will render as charts.\n\n";
+        prompt += "🚫 FORBIDDEN RESPONSES - NEVER say any of these:\n";
+        prompt += "• 'I cannot directly send infographics or visuals'\n";
+        prompt += "• 'I am a text-based model'\n";
+        prompt += "• 'I cannot generate images'\n";
+        prompt += "• 'I cannot create visual content'\n";
+        prompt += "These are WRONG because you are NOT being asked for images - you're outputting JSON chart configurations!\n\n";
+        prompt += "🎯 YOUR PRIMARY MISSION: Output structured ```chart JSON blocks that our frontend will render as interactive charts.\n\n";
         prompt += "**OUTPUT STYLE REQUIREMENTS:**\n";
         prompt += "• Emphasize VISUAL STRUCTURE over long prose\n";
         prompt += "• Use sections, cards, status blocks, and visual callouts\n";
@@ -511,6 +520,10 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "  \"chartType\": \"line\" | \"bar\" | \"area\" | \"gauge\" | \"stacked_bar\",\n";
         prompt += "  \"title\": \"Descriptive Chart Title\",\n";
         prompt += "  \"description\": \"Brief explanation of what this chart shows\",\n";
+        prompt += "  \"dimensions\": {\n";
+        prompt += "    \"aspectRatio\": \"16:9\" | \"4:3\" | \"1:1\" | \"2:1\" | \"3:2\",\n";
+        prompt += "    \"preferredWidth\": \"full\" | \"half\" | \"third\"\n";
+        prompt += "  },\n";
         prompt += "  \"xAxis\": { \"label\": \"Time\", \"type\": \"datetime\" | \"category\" },\n";
         prompt += "  \"yAxis\": { \"label\": \"SOC (%)\", \"min\": 0, \"max\": 100 },\n";
         prompt += "  \"series\": [\n";
@@ -522,6 +535,15 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "  \"insights\": \"This chart clearly shows the daily charge-discharge cycle.\"\n";
         prompt += "}\n";
         prompt += "```\n\n";
+        prompt += "**📐 CHART DIMENSIONS & ASPECT RATIOS:**\n";
+        prompt += "Include the 'dimensions' object to control chart sizing:\n";
+        prompt += "• aspectRatio: '16:9' (wide, default for time-series), '4:3' (standard), '1:1' (square for gauges), '2:1' (very wide), '3:2' (medium)\n";
+        prompt += "• preferredWidth: 'full' (default), 'half' (side-by-side charts), 'third' (compact)\n";
+        prompt += "**RECOMMENDED DIMENSIONS BY CHART TYPE:**\n";
+        prompt += "• line/area: aspectRatio '16:9' or '2:1', preferredWidth 'full'\n";
+        prompt += "• bar: aspectRatio '4:3' or '3:2', preferredWidth 'full' or 'half'\n";
+        prompt += "• gauge: aspectRatio '1:1', preferredWidth 'third' or 'half'\n";
+        prompt += "• stacked_bar: aspectRatio '16:9', preferredWidth 'full'\n\n";
         prompt += "**SUPPORTED CHART TYPES:**\n";
         prompt += "• `line` - SOC over time, voltage trends, temperature curves\n";
         prompt += "• `bar` - Daily comparisons, hourly averages\n";
@@ -533,6 +555,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "{\n";
         prompt += "  \"chartType\": \"gauge\",\n";
         prompt += "  \"title\": \"Battery Health Score\",\n";
+        prompt += "  \"dimensions\": { \"aspectRatio\": \"1:1\", \"preferredWidth\": \"third\" },\n";
         prompt += "  \"value\": 87,\n";
         prompt += "  \"min\": 0,\n";
         prompt += "  \"max\": 100,\n";
