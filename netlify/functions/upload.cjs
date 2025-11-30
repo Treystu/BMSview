@@ -1,5 +1,6 @@
 const { getCollection } = require('./utils/mongodb.cjs');
-const { createLogger, createTimer } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { getCorsHeaders } = require('./utils/cors.cjs');
 const multiparty = require('multiparty');
 
 function validateEnvironment(log) {
@@ -13,35 +14,23 @@ const { XMLParser } = require('fast-xml-parser');
 const fs = require('fs');
 
 exports.handler = async (event, context) => {
-  const log = createLogger('upload', context);
-  const timer = createTimer(log, 'upload-handler');
-  log.entry({ method: event.httpMethod, path: event.path });
-  
-  // Enable CORS
   const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    ...getCorsHeaders(event),
     'Content-Type': 'application/json'
   };
 
-  const clientIp = event.headers['x-nf-client-connection-ip'];
-  const logContext = { clientIp, httpMethod: event.httpMethod };
-
   // Handle preflight requests
   if (event.httpMethod === 'OPTIONS') {
-    log.debug('OPTIONS preflight request', logContext);
-    const durationMs = timer.end();
-    log.exit(200);
-    return {
-      statusCode: 200,
-      headers
-    };
+    return { statusCode: 200, headers };
   }
 
+  const log = createLoggerFromEvent('upload', event, context);
+  log.entry({ method: event.httpMethod, path: event.path });
+  const timer = createTimer(log, 'upload-handler');
+
   if (event.httpMethod !== 'POST') {
-    log.warn('Method not allowed', { ...logContext, allowedMethods: ['POST'] });
-    const durationMs = timer.end();
+    log.warn('Method not allowed', { allowedMethods: ['POST'] });
+    timer.end({ error: 'method_not_allowed' });
     log.exit(405);
     return {
       statusCode: 405,
@@ -51,17 +40,16 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    log.debug('Parsing multipart form data', logContext);
+    log.debug('Parsing multipart form data');
     // Parse multipart form data
     const formData = await parseMultipartData(event, log);
     const { file, userId } = formData;
     
-    const requestContext = { ...logContext, fileName: file?.name, userId, fileSize: file?.size };
-    log('info', 'Processing upload request', requestContext);
+    log.info('Processing upload request', { fileName: file?.name, userId, fileSize: file?.size });
     
     if (!file || !userId) {
-      log.warn('Missing required fields', requestContext);
-      const durationMs = timer.end();
+      log.warn('Missing required fields', { hasFile: !!file, hasUserId: !!userId });
+      timer.end({ error: 'missing_fields' });
       log.exit(400);
       return {
         statusCode: 400,
@@ -70,7 +58,7 @@ exports.handler = async (event, context) => {
       };
     }
 
-    log.debug('Checking for duplicate file', requestContext);
+    log.debug('Checking for duplicate file', { fileName: file.name, userId });
     // Check for duplicate file
     const uploadsCollection = await getCollection('uploads');
     const existing = await uploadsCollection.findOne({
@@ -80,8 +68,8 @@ exports.handler = async (event, context) => {
     });
 
     if (existing) {
-      log.info('Duplicate file detected', { ...requestContext, existingId: existing._id });
-      const durationMs = timer.end();
+      log.info('Duplicate file detected', { fileName: file.name, existingId: existing._id });
+      timer.end({ error: 'duplicate' });
       log.exit(409);
       return {
         statusCode: 409,
@@ -89,13 +77,12 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({
           error: 'Duplicate file',
           message: `File ${file.name} has already been uploaded`,
-          existingId: existing._id,
-          requestContext
+          existingId: existing._id
         })
       };
     }
 
-    log.info('Creating upload record', requestContext);
+    log.info('Creating upload record', { fileName: file.name, userId });
     // Insert upload record in processing state
     const uploadRecord = await uploadsCollection.insertOne({
       filename: file.name,
@@ -106,11 +93,11 @@ exports.handler = async (event, context) => {
       contentType: file.type
     });
 
-    log.info('Processing file', { ...requestContext, uploadId: uploadRecord.insertedId });
+    log.info('Processing file', { uploadId: uploadRecord.insertedId, fileName: file.name });
     // Process the file
     const processingResult = await processFile(file, uploadRecord.insertedId, log);
 
-    log.debug('Updating upload record with processing results', { ...requestContext, uploadId: uploadRecord.insertedId, success: processingResult.success });
+    log.debug('Updating upload record with processing results', { uploadId: uploadRecord.insertedId, success: processingResult.success });
     // Update record with processing results
     await uploadsCollection.updateOne(
       { _id: uploadRecord.insertedId },
@@ -125,8 +112,8 @@ exports.handler = async (event, context) => {
     );
 
     if (processingResult.success) {
-      log.info('File processed successfully', { ...requestContext, uploadId: uploadRecord.insertedId, recordsProcessed: processingResult.recordsProcessed });
-      const durationMs = timer.end({ success: true });
+      log.info('File processed successfully', { uploadId: uploadRecord.insertedId, recordsProcessed: processingResult.recordsProcessed });
+      timer.end({ success: true, recordsProcessed: processingResult.recordsProcessed });
       log.exit(200, { uploadId: uploadRecord.insertedId });
       return {
         statusCode: 200,
@@ -140,8 +127,8 @@ exports.handler = async (event, context) => {
         })
       };
     } else {
-      log.error('File processing failed', { ...requestContext, uploadId: uploadRecord.insertedId, error: processingResult.error });
-      const durationMs = timer.end({ success: false });
+      log.error('File processing failed', { uploadId: uploadRecord.insertedId, error: processingResult.error });
+      timer.end({ success: false });
       log.exit(500, { uploadId: uploadRecord.insertedId });
       return {
         statusCode: 500,
@@ -155,8 +142,8 @@ exports.handler = async (event, context) => {
     }
 
   } catch (error) {
-    log.error('Upload handler error', { ...logContext, error: error.message, stack: error.stack });
-    const durationMs = timer.end({ success: false });
+    timer.end({ error: true });
+    log.error('Upload handler error', { error: error.message, stack: error.stack });
     log.exit(500);
     return {
       statusCode: 500,
