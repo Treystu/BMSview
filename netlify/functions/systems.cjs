@@ -44,6 +44,7 @@ exports.handler = async function(event, context) {
     const timer = createTimer(log, 'systems');
     
     if (!validateEnvironment(log)) {
+        timer.end({ error: 'env_validation_failed' });
         log.exit(500);
         return respond(500, { error: 'Server configuration error' }, headers);
     }

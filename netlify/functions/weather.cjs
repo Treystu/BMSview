@@ -12,7 +12,7 @@ function validateEnvironment(log) {
 const fetchWithRetry = async (url, log, retries = 3, initialDelay = 500) => {
   for (let i = 0; i < retries; i++) {
     const attempt = i + 1;
-    log.debug('Fetching URL', { url: url.replace(/appid=\w+/, 'appid=***'), attempt, maxRetries: retries });
+    log.debug('Fetching URL', { url: url.replace(/appid=[^&]+/, 'appid=***'), attempt, maxRetries: retries });
     try {
       const response = await fetch(url);
       if (response.ok) {

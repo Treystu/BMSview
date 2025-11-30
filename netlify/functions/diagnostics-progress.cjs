@@ -27,14 +27,15 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers };
   }
   
-  // Get testId early for logging
-  const testId = event.queryStringParameters?.testId;
+  // Get testId early for logging (may be undefined)
+  const testId = event.queryStringParameters?.testId || undefined;
   
   const logger = createLoggerFromEvent('diagnostics-progress', event, context, { jobId: testId });
-  logger.entry({ method: event.httpMethod, path: event.path, testId });
+  logger.entry({ method: event.httpMethod, path: event.path, testId: testId || 'not_provided' });
   const timer = createTimer(logger, 'diagnostics-progress');
   
   if (!validateEnvironment(logger)) {
+    timer.end({ error: 'env_validation_failed' });
     logger.exit(500);
     return {
       statusCode: 500,

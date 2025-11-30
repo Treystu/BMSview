@@ -142,7 +142,7 @@ exports.handler = async (event, context) => {
     }
 
   } catch (error) {
-    timer.end({ error: true });
+    timer.end({ error: true, errorType: error.constructor?.name });
     log.error('Upload handler error', { error: error.message, stack: error.stack });
     log.exit(500);
     return {
