@@ -208,8 +208,11 @@ const getChartDimensions = (dimensions?: ChartConfig['dimensions']) => {
 const SimpleChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
   const { chartType, title, description, series = [], xAxis, yAxis, insights, dimensions } = config;
   
-  // Get dimension settings
-  const { heightClass, widthClass, minHeight, maxHeight } = getChartDimensions(dimensions);
+  // Memoize dimension settings to avoid recalculating on every render
+  const { heightClass, widthClass, minHeight, maxHeight } = useMemo(
+    () => getChartDimensions(dimensions),
+    [dimensions]
+  );
   
   // Get all data points
   const allData = series.flatMap(s => s.data);

@@ -388,10 +388,17 @@ describe('Insights Retry/Resume Functionality', () => {
       const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
       const remainingSeconds = actualElapsedSeconds % 60;
       
-      // Format elapsed time (same logic as clientService.ts)
-      const elapsedTimeStr = actualElapsedMinutes > 0 
-        ? `${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''} ${remainingSeconds > 0 ? `${remainingSeconds} seconds` : ''}`
-        : `${actualElapsedSeconds} seconds`;
+      // Format elapsed time (same logic as clientService.ts - no trailing spaces)
+      const elapsedTimeParts = [];
+      if (actualElapsedMinutes > 0) {
+        elapsedTimeParts.push(`${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''}`);
+        if (remainingSeconds > 0) {
+          elapsedTimeParts.push(`${remainingSeconds} seconds`);
+        }
+      } else {
+        elapsedTimeParts.push(`${actualElapsedSeconds} seconds`);
+      }
+      const elapsedTimeStr = elapsedTimeParts.join(' ');
       
       // Verify the formatted string is based on actual time
       expect(elapsedTimeStr).toBe('45 seconds');
@@ -404,9 +411,16 @@ describe('Insights Retry/Resume Functionality', () => {
       const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
       const remainingSeconds = actualElapsedSeconds % 60;
       
-      const elapsedTimeStr = actualElapsedMinutes > 0 
-        ? `${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''} ${remainingSeconds > 0 ? `${remainingSeconds} seconds` : ''}`
-        : `${actualElapsedSeconds} seconds`;
+      const elapsedTimeParts = [];
+      if (actualElapsedMinutes > 0) {
+        elapsedTimeParts.push(`${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''}`);
+        if (remainingSeconds > 0) {
+          elapsedTimeParts.push(`${remainingSeconds} seconds`);
+        }
+      } else {
+        elapsedTimeParts.push(`${actualElapsedSeconds} seconds`);
+      }
+      const elapsedTimeStr = elapsedTimeParts.join(' ');
       
       expect(elapsedTimeStr).toBe('2 minutes 5 seconds');
     });
@@ -417,11 +431,39 @@ describe('Insights Retry/Resume Functionality', () => {
       const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
       const remainingSeconds = actualElapsedSeconds % 60;
       
-      const elapsedTimeStr = actualElapsedMinutes > 0 
-        ? `${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''} ${remainingSeconds > 0 ? `${remainingSeconds} seconds` : ''}`
-        : `${actualElapsedSeconds} seconds`;
+      const elapsedTimeParts = [];
+      if (actualElapsedMinutes > 0) {
+        elapsedTimeParts.push(`${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''}`);
+        if (remainingSeconds > 0) {
+          elapsedTimeParts.push(`${remainingSeconds} seconds`);
+        }
+      } else {
+        elapsedTimeParts.push(`${actualElapsedSeconds} seconds`);
+      }
+      const elapsedTimeStr = elapsedTimeParts.join(' ');
       
       expect(elapsedTimeStr).toBe('1 minute 5 seconds');
+    });
+
+    test('elapsed time string should handle exact minutes without trailing space', () => {
+      const actualElapsedMs = 120000; // 2 minutes exactly
+      const actualElapsedSeconds = Math.round(actualElapsedMs / 1000);
+      const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
+      const remainingSeconds = actualElapsedSeconds % 60;
+      
+      const elapsedTimeParts = [];
+      if (actualElapsedMinutes > 0) {
+        elapsedTimeParts.push(`${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''}`);
+        if (remainingSeconds > 0) {
+          elapsedTimeParts.push(`${remainingSeconds} seconds`);
+        }
+      } else {
+        elapsedTimeParts.push(`${actualElapsedSeconds} seconds`);
+      }
+      const elapsedTimeStr = elapsedTimeParts.join(' ');
+      
+      expect(elapsedTimeStr).toBe('2 minutes');
+      expect(elapsedTimeStr).not.toMatch(/\s$/); // No trailing whitespace
     });
   });
 });

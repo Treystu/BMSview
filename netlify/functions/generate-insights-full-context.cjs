@@ -163,42 +163,50 @@ exports.handler = async (event, context) => {
       });
     }
     
-    // Build existing feedback section to prevent duplicates
+    // Build existing feedback section to prevent duplicates (trimmed to avoid extra whitespace)
     const existingFeedbackSection = fullContext.existingFeedback?.length > 0
-      ? `
-      ⚠️ EXISTING FEEDBACK (DO NOT DUPLICATE):
-      The following feedback has already been submitted. DO NOT create similar suggestions:
-      ${fullContext.existingFeedback.map(fb => `
-        - [${fb.status}] ${fb.title} (${fb.type}/${fb.category}, priority: ${fb.priority})
-          ${fb.description ? `Description: ${fb.description}` : ''}
-      `).join('')}
-      
-      Before submitting ANY new feedback, check this list carefully. Only submit genuinely NEW ideas.
-      `
+      ? [
+          '⚠️ EXISTING FEEDBACK (DO NOT DUPLICATE):',
+          'The following feedback has already been submitted. DO NOT create similar suggestions:',
+          ...fullContext.existingFeedback.map(fb => 
+            `- [${fb.status}] ${fb.title} (${fb.type}/${fb.category}, priority: ${fb.priority})${fb.description ? `\n  Description: ${fb.description}` : ''}`
+          ),
+          '',
+          'Before submitting ANY new feedback, check this list carefully. Only submit genuinely NEW ideas.'
+        ].join('\n')
       : '';
     
-    // Create comprehensive prompt
-    const prompt = customPrompt || `
-      Analyze this COMPLETE battery management system data:
-      
-      System ID: ${systemId}
-      Data Points Analyzed: ${countDataPoints(fullContext)}
-      Time Range: ${fullContext.raw?.timeRange?.days || 90} days
-      ${existingFeedbackSection}
-      FULL CONTEXT:
-      ${JSON.stringify(fullContext, null, 2)}
-      
-      Provide:
-      1. Comprehensive insights based on ALL data
-      2. Predictions and trends
-      3. Actionable recommendations
-      4. Any app improvements that would enhance analysis capabilities
-      
-      Remember: You have access to EVERY data point. Use them all for the most accurate analysis.
-      
-      If you identify any opportunities to improve the BMSview application itself, use the submitAppFeedback function.
-      ⚠️ IMPORTANT: Check the EXISTING FEEDBACK section above before submitting. Do NOT duplicate existing suggestions.
-    `;
+    // Create comprehensive prompt (using array join to avoid template literal whitespace)
+    const promptLines = [
+      'Analyze this COMPLETE battery management system data:',
+      '',
+      `System ID: ${systemId}`,
+      `Data Points Analyzed: ${countDataPoints(fullContext)}`,
+      `Time Range: ${fullContext.raw?.timeRange?.days || 90} days`,
+    ];
+    
+    if (existingFeedbackSection) {
+      promptLines.push('', existingFeedbackSection);
+    }
+    
+    promptLines.push(
+      '',
+      'FULL CONTEXT:',
+      JSON.stringify(fullContext, null, 2),
+      '',
+      'Provide:',
+      '1. Comprehensive insights based on ALL data',
+      '2. Predictions and trends',
+      '3. Actionable recommendations',
+      '4. Any app improvements that would enhance analysis capabilities',
+      '',
+      'Remember: You have access to EVERY data point. Use them all for the most accurate analysis.',
+      '',
+      'If you identify any opportunities to improve the BMSview application itself, use the submitAppFeedback function.',
+      '⚠️ IMPORTANT: Check the EXISTING FEEDBACK section above before submitting. Do NOT duplicate existing suggestions.'
+    );
+    
+    const prompt = customPrompt || promptLines.join('\n');
     
     // Execute insights generation using the existing geminiClient for consistency
     log.debug('Initializing Gemini client');

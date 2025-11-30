@@ -1249,6 +1249,7 @@ async function executeReActLoop(params) {
         let lastCheckpointTime = startTime; // Track when we last saved a checkpoint
         let timedOut = false; // Track if we exited due to timeout
         let consecutiveLazyResponses = 0; // Track consecutive lazy AI responses to prevent infinite loops
+        let consecutiveVisualDisclaimers = 0; // Track consecutive visual disclaimer responses
 
         for (; turnCount < MAX_TURNS; turnCount++) {
             // Check timeout and save checkpoint if needed
@@ -1628,9 +1629,36 @@ async function executeReActLoop(params) {
                             (/** @type {string} */ trigger) => lowerAnswer.includes(trigger)
                         );
                         
-                        if (hasVisualDisclaimer && turnCount < MAX_TURNS - 1) {
+                        if (hasVisualDisclaimer) {
+                            consecutiveVisualDisclaimers++;
+                            
+                            // Check if we've exceeded the threshold or are on the last turn
+                            if (consecutiveVisualDisclaimers > VISUAL_DISCLAIMER_THRESHOLD) {
+                                log.error('Visual Guru repeatedly refused to provide charts after interventions', {
+                                    turn: turnCount,
+                                    consecutiveCount: consecutiveVisualDisclaimers,
+                                    maxAllowed: VISUAL_DISCLAIMER_THRESHOLD
+                                });
+                                // Accept the response but with a warning - let user see what AI said
+                                finalAnswer = `⚠️ **Visual Analysis Limitation**\n\nThe AI model repeatedly indicated it cannot generate visual content. ` +
+                                    `This may be a model limitation. The response below is text-only:\n\n---\n\n${rawAnswer}`;
+                                break;
+                            }
+                            
+                            // Handle last turn explicitly - can't continue, must provide fallback
+                            if (turnCount >= MAX_TURNS - 1) {
+                                log.warn('Visual Guru disclaimer on last turn - providing fallback', {
+                                    turn: turnCount,
+                                    consecutiveCount: consecutiveVisualDisclaimers
+                                });
+                                finalAnswer = `⚠️ **Visual Analysis Limitation**\n\nThe AI model indicated it cannot generate visual content on the final attempt. ` +
+                                    `The response below is text-only:\n\n---\n\n${rawAnswer}`;
+                                break;
+                            }
+                            
                             log.warn('Visual Guru received disclaimer response - requesting chart JSON instead', {
                                 turn: turnCount,
+                                consecutiveCount: consecutiveVisualDisclaimers,
                                 answerPreview: rawAnswer.substring(0, 200)
                             });
                             
@@ -1650,6 +1678,9 @@ async function executeReActLoop(params) {
                             
                             // Continue loop to let Gemini try again
                             continue;
+                        } else {
+                            // Reset counter on non-disclaimer response
+                            consecutiveVisualDisclaimers = 0;
                         }
                     }
 

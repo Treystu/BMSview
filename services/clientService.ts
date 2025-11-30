@@ -1013,9 +1013,18 @@ export const streamInsights = async (
         const actualElapsedSeconds = Math.round(actualElapsedMs / 1000);
         const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
         const remainingSeconds = actualElapsedSeconds % 60;
-        const elapsedTimeStr = actualElapsedMinutes > 0 
-            ? `${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''} ${remainingSeconds > 0 ? `${remainingSeconds} seconds` : ''}`
-            : `${actualElapsedSeconds} seconds`;
+        
+        // Build elapsed time string without trailing spaces
+        const elapsedTimeParts: string[] = [];
+        if (actualElapsedMinutes > 0) {
+            elapsedTimeParts.push(`${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''}`);
+            if (remainingSeconds > 0) {
+                elapsedTimeParts.push(`${remainingSeconds} seconds`);
+            }
+        } else {
+            elapsedTimeParts.push(`${actualElapsedSeconds} seconds`);
+        }
+        const elapsedTimeStr = elapsedTimeParts.join(' ');
         const contextWindowDays = payload.contextWindowDays || 30;
 
         // Build contextual error message based on last error

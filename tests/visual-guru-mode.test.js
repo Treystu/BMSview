@@ -204,18 +204,28 @@ describe('Visual Guru Expert Mode', () => {
   });
 
   describe('selectEndpointForMode', () => {
+    // Import the actual function to test routing
+    const { selectEndpointForMode } = require('../services/clientService');
+    const { InsightMode } = require('../types');
+
     it('should route VISUAL_GURU to generate-insights-with-tools endpoint', () => {
-      // We need to test the clientService function
-      // For now, just verify the mode is properly handled
-      const { InsightMode } = require('../types');
-      expect(InsightMode.VISUAL_GURU).toBe('visual-guru');
+      const endpoint = selectEndpointForMode(InsightMode.VISUAL_GURU);
+      expect(endpoint).toBe('/.netlify/functions/generate-insights-with-tools');
     });
 
     it('should route FULL_CONTEXT to generate-insights-full-context endpoint', () => {
-      const { InsightMode } = require('../types');
-      expect(InsightMode.FULL_CONTEXT).toBe('full-context');
-      // The actual routing test would need the selectEndpointForMode function
-      // which is in the frontend service - verify the mode exists
+      const endpoint = selectEndpointForMode(InsightMode.FULL_CONTEXT);
+      expect(endpoint).toBe('/.netlify/functions/generate-insights-full-context');
+    });
+
+    it('should route STANDARD to generate-insights endpoint', () => {
+      const endpoint = selectEndpointForMode(InsightMode.STANDARD);
+      expect(endpoint).toBe('/.netlify/functions/generate-insights');
+    });
+
+    it('should route WITH_TOOLS to generate-insights-with-tools endpoint', () => {
+      const endpoint = selectEndpointForMode(InsightMode.WITH_TOOLS);
+      expect(endpoint).toBe('/.netlify/functions/generate-insights-with-tools');
     });
   });
 });
