@@ -64,7 +64,7 @@ describe('Visual Guru Expert Mode', () => {
       });
 
       expect(result.prompt).toContain('VISUAL GURU EXPERT MODE');
-      expect(result.prompt).toContain('INFOGRAPHIC & CHART FOCUSED');
+      expect(result.prompt).toContain('STRUCTURED DATA LAYOUT FOR VISUALIZATION');
       expect(result.prompt).toContain('chartType');
       expect(result.prompt).toContain('```chart');
     });
@@ -145,14 +145,87 @@ describe('Visual Guru Expert Mode', () => {
       expect(result.prompt).toContain('IF NO TIME-SERIES DATA AVAILABLE');
       expect(result.prompt).toContain('status badges');
     });
+
+    it('should include forbidden responses guidance to prevent disclaimers', async () => {
+      const result = await buildGuruPrompt({
+        analysisData: sampleAnalysisData,
+        systemId: undefined,
+        customPrompt: undefined,
+        log: mockLog,
+        context: null,
+        mode: 'sync',
+        insightMode: 'visual_guru'
+      });
+
+      // Check for explicit guidance about forbidden responses
+      expect(result.prompt).toContain('FORBIDDEN RESPONSES');
+      expect(result.prompt).toContain('I cannot directly send infographics or visuals');
+      expect(result.prompt).toContain('I cannot generate images');
+      // Check it explains WHY these are forbidden
+      expect(result.prompt).toContain('NOT being asked for images');
+      expect(result.prompt).toContain('JSON chart configurations');
+    });
+
+    it('should clarify that visual means JSON data not binary images', async () => {
+      const result = await buildGuruPrompt({
+        analysisData: sampleAnalysisData,
+        systemId: undefined,
+        customPrompt: undefined,
+        log: mockLog,
+        context: null,
+        mode: 'sync',
+        insightMode: 'visual_guru'
+      });
+
+      expect(result.prompt).toContain('STRUCTURED JSON DATA');
+      expect(result.prompt).toContain('NOT binary images');
+    });
+
+    it('should include dimension and aspect ratio guidance', async () => {
+      const result = await buildGuruPrompt({
+        analysisData: sampleAnalysisData,
+        systemId: undefined,
+        customPrompt: undefined,
+        log: mockLog,
+        context: null,
+        mode: 'sync',
+        insightMode: 'visual_guru'
+      });
+
+      // Check for dimension guidance
+      expect(result.prompt).toContain('CHART DIMENSIONS & ASPECT RATIOS');
+      expect(result.prompt).toContain('aspectRatio');
+      expect(result.prompt).toContain('preferredWidth');
+      // Check for recommended dimensions by chart type
+      expect(result.prompt).toContain('RECOMMENDED DIMENSIONS BY CHART TYPE');
+      expect(result.prompt).toContain("'16:9'");
+      expect(result.prompt).toContain("'1:1'");
+    });
   });
 
   describe('selectEndpointForMode', () => {
+    // Import the actual function to test routing
+    const { selectEndpointForMode } = require('../services/clientService');
+    const { InsightMode } = require('../types');
+
     it('should route VISUAL_GURU to generate-insights-with-tools endpoint', () => {
-      // We need to test the clientService function
-      // For now, just verify the mode is properly handled
-      const { InsightMode } = require('../types');
-      expect(InsightMode.VISUAL_GURU).toBe('visual-guru');
+      const endpoint = selectEndpointForMode(InsightMode.VISUAL_GURU);
+      expect(endpoint).toBe('/.netlify/functions/generate-insights-with-tools');
+    });
+
+    it('should route FULL_CONTEXT to generate-insights-full-context endpoint', () => {
+      const endpoint = selectEndpointForMode(InsightMode.FULL_CONTEXT);
+      expect(endpoint).toBe('/.netlify/functions/generate-insights-full-context');
+    });
+
+    it('should route STANDARD to generate-insights endpoint', () => {
+      const endpoint = selectEndpointForMode(InsightMode.STANDARD);
+      expect(endpoint).toBe('/.netlify/functions/generate-insights');
+    });
+
+    it('should route WITH_TOOLS to generate-insights-with-tools endpoint', () => {
+      const endpoint = selectEndpointForMode(InsightMode.WITH_TOOLS);
+      expect(endpoint).toBe('/.netlify/functions/generate-insights-with-tools');
     });
   });
 });
@@ -170,6 +243,49 @@ describe('VisualInsightsRenderer component', () => {
       const path = require('path');
       const componentPath = path.join(__dirname, '../components/VisualInsightsRenderer.tsx');
       expect(fs.existsSync(componentPath)).toBe(true);
+    });
+
+    it('should export ChartConfig interface with dimensions property', () => {
+      // Verify the component exports the expected interface structure
+      const fs = require('fs');
+      const path = require('path');
+      const componentPath = path.join(__dirname, '../components/VisualInsightsRenderer.tsx');
+      const content = fs.readFileSync(componentPath, 'utf8');
+      
+      // Check for dimensions property in ChartConfig interface
+      expect(content).toContain('dimensions?:');
+      expect(content).toContain('aspectRatio');
+      expect(content).toContain('preferredWidth');
+      expect(content).toContain('minHeight');
+      expect(content).toContain('maxHeight');
+    });
+  });
+
+  describe('Dimension handling', () => {
+    it('should support common aspect ratios', () => {
+      // The ChartConfig should support these aspect ratios
+      const supportedRatios = ['16:9', '4:3', '1:1', '2:1', '3:2'];
+      
+      const fs = require('fs');
+      const path = require('path');
+      const componentPath = path.join(__dirname, '../components/VisualInsightsRenderer.tsx');
+      const content = fs.readFileSync(componentPath, 'utf8');
+      
+      supportedRatios.forEach(ratio => {
+        expect(content).toContain(`'${ratio}'`);
+      });
+    });
+
+    it('should support width preferences', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const componentPath = path.join(__dirname, '../components/VisualInsightsRenderer.tsx');
+      const content = fs.readFileSync(componentPath, 'utf8');
+      
+      // Check for width preferences in type definition
+      expect(content).toContain("'full'");
+      expect(content).toContain("'half'");
+      expect(content).toContain("'third'");
     });
   });
 });

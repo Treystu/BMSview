@@ -149,6 +149,22 @@ const RECENT_TOOL_FAILURE_WINDOW = 5; // Check last 5 messages for tool failures
 const LAZY_RESPONSE_THRESHOLD = 2; // Threshold for lazy responses (triggers on 3rd consecutive)
 const LAZY_AI_FALLBACK_MESSAGE = "Unable to retrieve the requested data. Please try a simpler query or check the available data range.";
 
+// Visual Guru Disclaimer Detection - prevents AI from refusing visual output
+const VISUAL_DISCLAIMER_TRIGGERS = [
+    "i cannot directly send infographics",
+    "i cannot send infographics",
+    "i cannot generate images",
+    "i cannot create visual content",
+    "i cannot produce visuals",
+    "i am a text-based model",
+    "as a text-based ai",
+    "i don't have the ability to create images",
+    "cannot directly provide visual",
+    "unable to generate graphical",
+    "cannot create infographic"
+];  // All triggers are lowercase - comparison is done against lowerAnswer
+const VISUAL_DISCLAIMER_THRESHOLD = 1; // Fail fast - intervene on first disclaimer
+
 /**
  * Analyze Gemini's response text to detect what it's struggling with
  * Uses keyword extraction to identify which tool or concept needs guidance
@@ -1233,6 +1249,7 @@ async function executeReActLoop(params) {
         let lastCheckpointTime = startTime; // Track when we last saved a checkpoint
         let timedOut = false; // Track if we exited due to timeout
         let consecutiveLazyResponses = 0; // Track consecutive lazy AI responses to prevent infinite loops
+        let consecutiveVisualDisclaimers = 0; // Track consecutive visual disclaimer responses
 
         for (; turnCount < MAX_TURNS; turnCount++) {
             // Check timeout and save checkpoint if needed
@@ -1602,6 +1619,69 @@ async function executeReActLoop(params) {
                         continue;
                     } else {
                         consecutiveLazyResponses = 0; // Reset on non-lazy response
+                    }
+
+                    // Visual Guru Disclaimer Detection: Prevent AI from refusing visual output
+                    // Only applies to visual-guru mode
+                    const isVisualGuruMode = insightMode === 'visual-guru' || insightMode === 'visual_guru';
+                    if (isVisualGuruMode) {
+                        const hasVisualDisclaimer = VISUAL_DISCLAIMER_TRIGGERS.some(
+                            (/** @type {string} */ trigger) => lowerAnswer.includes(trigger)
+                        );
+                        
+                        if (hasVisualDisclaimer) {
+                            consecutiveVisualDisclaimers++;
+                            
+                            // Check if we've exceeded the threshold or are on the last turn
+                            if (consecutiveVisualDisclaimers > VISUAL_DISCLAIMER_THRESHOLD) {
+                                log.error('Visual Guru repeatedly refused to provide charts after interventions', {
+                                    turn: turnCount,
+                                    consecutiveCount: consecutiveVisualDisclaimers,
+                                    maxAllowed: VISUAL_DISCLAIMER_THRESHOLD
+                                });
+                                // Accept the response but with a warning - let user see what AI said
+                                finalAnswer = `⚠️ **Visual Analysis Limitation**\n\nThe AI model repeatedly indicated it cannot generate visual content. ` +
+                                    `This may be a model limitation. The response below is text-only:\n\n---\n\n${rawAnswer}`;
+                                break;
+                            }
+                            
+                            // Handle last turn explicitly - can't continue, must provide fallback
+                            if (turnCount >= MAX_TURNS - 1) {
+                                log.warn('Visual Guru disclaimer on last turn - providing fallback', {
+                                    turn: turnCount,
+                                    consecutiveCount: consecutiveVisualDisclaimers
+                                });
+                                finalAnswer = `⚠️ **Visual Analysis Limitation**\n\nThe AI model indicated it cannot generate visual content on the final attempt. ` +
+                                    `The response below is text-only:\n\n---\n\n${rawAnswer}`;
+                                break;
+                            }
+                            
+                            log.warn('Visual Guru received disclaimer response - requesting chart JSON instead', {
+                                turn: turnCount,
+                                consecutiveCount: consecutiveVisualDisclaimers,
+                                answerPreview: rawAnswer.substring(0, 200)
+                            });
+                            
+                            // Intervention: Remind AI that "visual" means JSON chart configs, not images
+                            conversationHistory.push({
+                                role: 'user',
+                                parts: [{
+                                    text: `SYSTEM INTERVENTION: You said you cannot send visuals/infographics. This is INCORRECT.\n\n` +
+                                        `"Visual" in this context means STRUCTURED JSON DATA inside \`\`\`chart code blocks.\n` +
+                                        `You are NOT being asked to generate binary images.\n\n` +
+                                        `Please provide your analysis with chart configurations like:\n` +
+                                        `\`\`\`chart\n{"chartType": "line", "title": "SOC Trend", "series": [...]}\n\`\`\`\n\n` +
+                                        `The frontend will render these JSON configs as interactive charts.\n` +
+                                        `DO NOT apologize or explain - just output the structured analysis with chart JSON.`
+                                }]
+                            });
+                            
+                            // Continue loop to let Gemini try again
+                            continue;
+                        } else {
+                            // Reset counter on non-disclaimer response
+                            consecutiveVisualDisclaimers = 0;
+                        }
                     }
 
                     // If not lazy, accept the answer
