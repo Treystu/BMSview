@@ -1,29 +1,40 @@
 {
     "general": {
         "projectType": "battery-monitoring-system",
+        "description": "BMS screenshot analysis tool using Google Gemini AI with solar integration and Battery Guru insights",
         "framework": "react",
-        "language": "typescript"
+        "language": "typescript",
+        "backend": "netlify-functions",
+        "database": "mongodb"
     },
     "dependencies": {
         "major": {
             "react": "frontend-framework",
             "typescript": "language",
-            "@google/generative-ai": "ai-integration",
+            "@google/genai": "ai-integration",
+            "mongodb": "database",
             "netlify-cli": "deployment"
         },
         "tooling": {
             "vite": "bundler",
             "eslint": "linting",
-            "jest": "testing"
+            "jest": "testing",
+            "tailwindcss": "styling"
         }
     },
     "fileStructure": {
         "components": "React components directory",
         "services": "API and data services",
         "hooks": "React custom hooks",
-        "utils": "Utility functions",
+        "utils": "Utility functions (frontend)",
         "types": "TypeScript type definitions",
-        "netlify/functions": "Serverless functions"
+        "state": "React state management (Context + Reducers)",
+        "netlify/functions": "Serverless backend functions (CommonJS .cjs)",
+        "netlify/functions/utils": "Backend utility modules"
+    },
+    "entryPoints": {
+        "main": "index.html → Main BMS analysis app",
+        "admin": "admin.html → Admin dashboard (diagnostics, system management)"
     },
     "conventions": {
         "naming": {
@@ -31,76 +42,172 @@
             "hooks": "camelCase with 'use' prefix",
             "services": "camelCase",
             "types": "PascalCase",
-            "functions": "camelCase"
+            "functions": "camelCase",
+            "netlifyfunctions": "kebab-case.cjs"
         },
         "files": {
             "components": ".tsx",
             "services": ".ts",
             "types": ".ts",
             "hooks": ".ts",
-            "tests": ".test.ts"
+            "tests": ".test.js or .test.cjs",
+            "backendFunctions": ".cjs (CommonJS)",
+            "backendUtils": ".cjs (CommonJS)"
+        },
+        "moduleSystems": {
+            "frontend": "ES modules (import/export) - .ts/.tsx files",
+            "backend": "CommonJS (require/module.exports) - .cjs files",
+            "exception": "solar-estimate.ts (TypeScript, bundled by Netlify)"
         }
     },
     "features": {
-        "batteryMonitoring": {
+        "bmsAnalysis": {
+            "description": "Screenshot-based BMS data extraction using Gemini AI",
             "measurements": [
                 "voltage",
                 "current",
                 "temperature",
-                "stateOfCharge"
+                "stateOfCharge",
+                "cellVoltages",
+                "power",
+                "capacity"
             ],
             "analysis": [
                 "health",
                 "performance",
                 "efficiency",
-                "recommendations"
+                "recommendations",
+                "anomalyDetection"
             ],
             "alerts": [
                 "temperature",
                 "voltage",
-                "degradation"
+                "degradation",
+                "cellImbalance"
+            ],
+            "deduplication": "SHA-256 content hashing for duplicate detection"
+        },
+        "solarIntegration": {
+            "description": "Solar energy estimation and battery charging correlation",
+            "features": [
+                "solarEstimate",
+                "chargingCorrelation",
+                "efficiencyAnalysis",
+                "weatherCorrelation"
+            ]
+        },
+        "batteryGuru": {
+            "description": "AI-powered insights generation with multi-turn tool calling",
+            "model": "gemini-2.5-flash",
+            "modes": [
+                "standard",
+                "deep_analysis",
+                "visual_guru"
+            ],
+            "features": [
+                "toolCalling",
+                "historicalAnalysis",
+                "energyBudget",
+                "predictiveOutlook"
             ]
         },
         "dataVisualization": {
             "charts": [
                 "historical",
                 "real-time",
-                "comparison"
+                "comparison",
+                "solarEfficiency"
             ],
             "metrics": [
+                "hourly",
                 "daily",
                 "weekly",
                 "monthly"
+            ],
+            "rollups": [
+                "hourlyAverages",
+                "dailyAggregations",
+                "90-day-rollups"
             ]
         },
         "administration": {
             "systemManagement": true,
-            "userManagement": true,
-            "analytics": true
+            "diagnostics": true,
+            "analytics": true,
+            "fullContextMode": true,
+            "aiFeedback": true
         }
+    },
+    "database": {
+        "name": "bmsview",
+        "collections": {
+            "analysis-results": "Analyzed BMS screenshots with metrics",
+            "systems": "Registered BMS systems",
+            "history": "Legacy analysis history",
+            "insights-jobs": "Background insights jobs with checkpoint/resume support",
+            "idempotent-requests": "Request deduplication cache",
+            "hourly-weather": "Hourly weather data for solar analysis",
+            "hourly-solar-irradiance": "Calculated solar irradiance data",
+            "progress-events": "Legacy job progress tracking (mostly unused)"
+        },
+        "connectionHelper": "getCollection() from utils/mongodb.cjs"
+    },
+    "pathAliases": {
+        "components": "components/*",
+        "services": "services/*",
+        "state": "state/*",
+        "hooks": "hooks/*",
+        "utils": "utils/*"
     },
     "copilot": {
         "contextAwareness": {
             "fileTypes": {
-                ".tsx": "React component with TypeScript",
-                ".ts": "TypeScript module",
-                ".cjs": "CommonJS module",
-                ".test.ts": "Jest test file"
+                ".tsx": "React component with TypeScript (ES modules)",
+                ".ts": "TypeScript module (ES modules)",
+                ".cjs": "CommonJS backend module (require/exports)",
+                ".test.js": "Jest test file",
+                ".test.cjs": "Jest test file for CommonJS"
             },
             "patterns": {
                 "hooks": "Functions starting with 'use'",
                 "components": "Files in components/ directory",
-                "types": "Type definitions and interfaces",
-                "tests": "Files ending in .test.ts",
-                "services": "API and data manipulation logic"
+                "types": "Type definitions and interfaces in types.ts",
+                "tests": "Files in tests/ directory",
+                "services": "API clients in services/ directory",
+                "state": "React context and reducers in state/ directory",
+                "netlifyfunctions": "Serverless handlers in netlify/functions/",
+                "backendUtils": "Shared backend utilities in netlify/functions/utils/"
+            },
+            "criticalFiles": {
+                "types.ts": "Central type definitions - all TypeScript types",
+                "state/appState.tsx": "Main app state management",
+                "state/adminState.tsx": "Admin dashboard state",
+                "netlify/functions/analyze.cjs": "Main BMS analysis endpoint",
+                "netlify/functions/generate-insights-with-tools.cjs": "Battery Guru AI insights",
+                "netlify/functions/utils/mongodb.cjs": "Database connection helper",
+                "netlify/functions/utils/logger.cjs": "Structured JSON logging"
             }
         },
         "suggestions": {
             "preferredStyles": {
                 "typescript": "strict",
                 "react": "functional-components",
-                "testing": "jest-with-rtl"
-            }
+                "testing": "jest",
+                "styling": "tailwindcss"
+            },
+            "antiPatterns": [
+                "Don't mix ES modules and CommonJS in the same file",
+                "Don't create manual MongoDB clients - use getCollection()",
+                "Don't use job-based flows for analysis - use sync mode",
+                "Don't hardcode Gemini model names - use process.env.GEMINI_MODEL"
+            ]
+        },
+        "commands": {
+            "dev": "npm run dev (frontend only, port 5173)",
+            "fullstack": "netlify dev (frontend + functions, port 8888)",
+            "test": "npm test",
+            "build": "npm run build",
+            "lint": "npm run lint"
         }
     }
 }
