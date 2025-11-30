@@ -73,18 +73,51 @@ async function getOrCreateResumableJob(params, log) {
       // Fall through to create new job
     } else {
       // Job exists and is resumable
+      const checkpoint = existingJob.checkpointState;
+      const previousTurn = checkpoint?.turnCount || 0;
+      const previousRetryCount = checkpoint?.sameCheckpointRetryCount || 0;
+      
       log.info('Found resumable job', { 
         resumeJobId,
         status: existingJob.status,
-        hasCheckpoint: !!existingJob.checkpointState,
-        checkpointTurnCount: existingJob.checkpointState?.turnCount
+        hasCheckpoint: !!checkpoint,
+        checkpointTurnCount: previousTurn,
+        previousRetryCount
       });
+      
+      // STALL DETECTION: If we're resuming from the same turn multiple times,
+      // the model may be too slow for our timeout budget (e.g., gemini-2.5-pro)
+      // After 5 retries at the same turn, fail with helpful message
+      const MAX_SAME_TURN_RETRIES = 5;
+      if (previousRetryCount >= MAX_SAME_TURN_RETRIES) {
+        log.error('Job stalled - no progress after multiple retries at same checkpoint', {
+          resumeJobId,
+          turnCount: previousTurn,
+          retryCount: previousRetryCount,
+          maxRetries: MAX_SAME_TURN_RETRIES
+        });
+        
+        return {
+          job: existingJob,
+          isResume: false,
+          isComplete: false,
+          isStalled: true,
+          stalledReason: `The AI model is too slow for the current timeout configuration. After ${previousRetryCount} attempts, no progress was made beyond turn ${previousTurn}. Try using a faster model (gemini-2.5-flash) or reduce the complexity of your query.`
+        };
+      }
+      
+      // Increment retry count if resuming at same turn
+      // This helps detect if we're stuck at the same point
+      if (checkpoint) {
+        checkpoint.sameCheckpointRetryCount = (checkpoint.sameCheckpointRetryCount || 0) + 1;
+        checkpoint.lastResumeAttempt = new Date().toISOString();
+      }
       
       return {
         job: existingJob,
         isResume: true,
         isComplete: false,
-        checkpoint: existingJob.checkpointState
+        checkpoint
       };
     }
   }
@@ -121,11 +154,17 @@ async function getOrCreateResumableJob(params, log) {
  * @param {number} state.startTime - Loop start time
  * @returns {Object} Checkpoint state
  */
-function createCheckpointState(state) {
+function createCheckpointState(state, previousCheckpoint = null) {
   const { conversationHistory, turnCount, toolCallCount, contextSummary, startTime } = state;
   
   // Compress conversation history if too large
   const compressedHistory = compressConversationHistory(conversationHistory, turnCount);
+  
+  // Track retry count at same turn for stall detection
+  // Reset to 0 if progress was made (turn advanced), otherwise keep previous count
+  const previousTurn = previousCheckpoint?.turnCount || 0;
+  const madeProgress = turnCount > previousTurn;
+  const sameCheckpointRetryCount = madeProgress ? 0 : (previousCheckpoint?.sameCheckpointRetryCount || 0);
   
   return {
     conversationHistory: compressedHistory,
@@ -134,6 +173,7 @@ function createCheckpointState(state) {
     contextSummary,
     checkpointedAt: new Date().toISOString(),
     elapsedMs: Date.now() - startTime,
+    sameCheckpointRetryCount, // Track stalled retries
     version: '1.0' // For future compatibility
   };
 }

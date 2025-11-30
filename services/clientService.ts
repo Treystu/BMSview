@@ -790,6 +790,23 @@ export const streamInsights = async (
 
                     // Provide user-friendly error messages for common status codes
                     if (response.status === 504) {
+                        // Check if this is a model_timeout error from our stall detection
+                        try {
+                            const errorData = await response.json();
+                            if (errorData.error === 'model_timeout') {
+                                errorMessage = errorData.message || 'The AI model is consistently timing out.';
+                                errorCode = 'model_timeout';
+                                // Don't retry - this is a definitive failure
+                                lastErrorDetails = {
+                                    code: errorCode,
+                                    message: errorMessage,
+                                    status: response.status
+                                };
+                                throw new Error(errorMessage);
+                            }
+                        } catch (parseErr) {
+                            // Not a JSON response, use default message
+                        }
                         errorMessage = 'Request timed out. The AI took too long to process your query. Try:\n' +
                             '• Asking a simpler question\n' +
                             '• Requesting a smaller time range\n' +

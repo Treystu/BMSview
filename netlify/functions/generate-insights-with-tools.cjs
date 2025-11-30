@@ -263,7 +263,7 @@ exports.handler = async (event, context) => {
     // SYNC MODE: Execute ReAct loop with checkpoint/resume support
     if (mode === 'sync') {
       // Get or create resumable job
-      const { job, isResume, isComplete, checkpoint } = await getOrCreateResumableJob({
+      const { job, isResume, isComplete, checkpoint, isStalled, stalledReason } = await getOrCreateResumableJob({
         resumeJobId,
         analysisData,
         systemId,
@@ -272,6 +272,25 @@ exports.handler = async (event, context) => {
         maxIterations,
         modelOverride
       }, log);
+
+      // STALL DETECTION: If job is stalled (no progress after multiple retries), fail early
+      if (isStalled) {
+        log.error('Job stalled - returning error to client', { jobId: job?.id, stalledReason });
+        return {
+          statusCode: 504,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            success: false,
+            error: 'model_timeout',
+            message: stalledReason || 'The AI model is consistently timing out. Try using gemini-2.5-flash or reduce query complexity.',
+            details: {
+              jobId: job?.id,
+              canResume: false,
+              suggestion: 'Switch to a faster model or simplify your query'
+            }
+          })
+        };
+      }
 
       // If job already complete, return results immediately
       if (isComplete) {
@@ -306,7 +325,8 @@ exports.handler = async (event, context) => {
           log.info('Resuming from checkpoint', {
             jobId: job.id,
             checkpointTurn: checkpoint.turnCount,
-            remainingTurns: resumeConfig.maxRemainingTurns
+            remainingTurns: resumeConfig.maxRemainingTurns,
+            retryCount: checkpoint.sameCheckpointRetryCount || 0
           });
         }
       }
