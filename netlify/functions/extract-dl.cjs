@@ -1,46 +1,42 @@
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { getCorsHeaders } = require('./utils/cors.cjs');
 
-function validateEnvironment(log) {
-  // No specific env vars required for this function, but good practice to have the hook.
-  return true;
-}
-
-const respond = (statusCode, body) => ({
+const respond = (statusCode, body, headers = {}) => ({
     statusCode,
     body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
 });
 
 exports.handler = async function(event, context) {
-    const log = createLogger('extract-dl', context);
+    const headers = getCorsHeaders(event);
     
-    if (!validateEnvironment(log)) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: 'Server configuration error' })
-      };
+    // Handle preflight
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers };
     }
     
-    const clientIp = event.headers['x-nf-client-connection-ip'];
-    const { httpMethod, body } = event;
-    const logContext = { clientIp, httpMethod };
+    const log = createLoggerFromEvent('extract-dl', event, context);
+    log.entry({ method: event.httpMethod, path: event.path });
+    const timer = createTimer(log, 'extract-dl');
 
-    log('info', 'Extract DL function invoked.', { ...logContext, path: event.path });
-
-    if (httpMethod !== 'POST') {
-        log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
-        return respond(405, { error: 'Method Not Allowed' });
+    if (event.httpMethod !== 'POST') {
+        log.warn('Method not allowed', { method: event.httpMethod });
+        timer.end({ error: 'method_not_allowed' });
+        log.exit(405);
+        return respond(405, { error: 'Method Not Allowed' }, headers);
     }
 
     try {
-        const parsedBody = JSON.parse(body);
+        log.debug('Parsing request body');
+        const parsedBody = JSON.parse(event.body);
         const { text } = parsedBody;
-        const requestLogContext = { ...logContext, textLength: text?.length };
-        log('info', 'Processing DL extraction request.', requestLogContext);
+        log.info('Processing DL extraction request', { textLength: text?.length });
 
         if (!text || typeof text !== 'string') {
-            log('warn', 'Missing or invalid text in request body.', requestLogContext);
-            return respond(400, { error: 'Missing or invalid text field.' });
+            log.warn('Missing or invalid text in request body');
+            timer.end({ error: 'invalid_text' });
+            log.exit(400);
+            return respond(400, { error: 'Missing or invalid text field.' }, headers);
         }
 
         // Extract DL numbers using regex patterns
@@ -69,24 +65,26 @@ exports.handler = async function(event, context) {
 
         const dlNumbers = Array.from(extractedDLs);
         
-        log('info', 'DL extraction completed.', { 
-            ...requestLogContext, 
+        timer.end({ dlCount: dlNumbers.length });
+        log.info('DL extraction completed', { 
             dlCount: dlNumbers.length,
             dlNumbers: dlNumbers.slice(0, 5) // Log first 5 to avoid logging too much
         });
+        log.exit(200);
 
         return respond(200, { 
             dlNumbers,
             count: dlNumbers.length,
             success: true
-        });
+        }, headers);
 
     } catch (error) {
-        log('error', 'Critical error in extract-dl function.', { 
-            ...logContext, 
-            errorMessage: error.message, 
+        timer.end({ error: true });
+        log.error('Critical error in extract-dl function', { 
+            error: error.message, 
             stack: error.stack 
         });
-        return respond(500, { error: 'Internal server error during DL extraction.' });
+        log.exit(500);
+        return respond(500, { error: 'Internal server error during DL extraction.' }, headers);
     }
 };
