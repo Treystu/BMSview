@@ -1469,26 +1469,57 @@ async function executeReActLoop(params) {
             }
 
             const responseContent = geminiResponse.candidates[0]?.content;
+            const finishReason = geminiResponse.candidates[0]?.finishReason;
+            
             if (!responseContent) {
                 log.error('Gemini response candidate missing content', {
                     turn: turnCount,
                     candidate: JSON.stringify(geminiResponse.candidates[0]).substring(0, 1000),
-                    finishReason: geminiResponse.candidates[0]?.finishReason,
+                    finishReason: finishReason,
                     customPrompt: customPrompt ? customPrompt.substring(0, 200) : null
                 });
 
                 // Check finish reason for context
-                const finishReason = geminiResponse.candidates[0]?.finishReason;
                 if (finishReason === 'SAFETY') {
                     finalAnswer = `Your request triggered content safety filters. Please rephrase to avoid sensitive topics.`;
+                    break;
                 } else if (finishReason === 'MAX_TOKENS') {
                     finalAnswer = `The response exceeded token limits. Try asking for a shorter or more focused answer.`;
+                    break;
                 } else if (finishReason === 'RECITATION') {
                     finalAnswer = `The AI detected potential copyrighted content. Please rephrase your request.`;
+                    break;
+                } else if (finishReason === 'MALFORMED_FUNCTION_CALL' && turnCount < MAX_TURNS) {
+                    // RECOVERABLE ERROR: Gemini tried to make a function call but the JSON was malformed
+                    // Common cause: Gemini outputting Python code like "data = default_api.request_bms_data(...)"
+                    // Add guidance and retry instead of failing immediately
+                    log.warn('MALFORMED_FUNCTION_CALL detected, adding recovery guidance', {
+                        turn: turnCount,
+                        attemptsRemaining: MAX_TURNS - turnCount - 1,
+                        candidate: JSON.stringify(geminiResponse.candidates[0]).substring(0, 500)
+                    });
+                    
+                    // Add intervention message to guide Gemini on proper function call format
+                    // Be very explicit about NOT using Python code syntax
+                    conversationHistory.push({
+                        role: 'user',
+                        parts: [{
+                            text: `SYSTEM INTERVENTION: Your last response had a MALFORMED_FUNCTION_CALL error.\n\n` +
+                                `⚠️ CRITICAL: Do NOT output Python code like "data = default_api.request_bms_data(...)" or "print(data)".\n` +
+                                `⚠️ Do NOT use code blocks for function calls.\n\n` +
+                                `To call a function, simply respond with your analysis text. The Gemini API handles function calls automatically through its built-in function calling mechanism.\n\n` +
+                                `If you need BMS data, just proceed with your analysis using the data already provided in the context, or state what specific data you would need.\n\n` +
+                                `Provide your response as plain text analysis with markdown formatting for sections, bullets, and emphasis. Use \`\`\`chart blocks ONLY for chart JSON configurations, not for function calls.\n\n` +
+                                `Try again now - provide your analysis directly without attempting to call functions via code.`
+                        }]
+                    });
+                    
+                    // Continue to next iteration for retry
+                    continue;
                 } else {
                     finalAnswer = `Unable to generate response. Finish reason: ${finishReason || 'unknown'}. Please try rephrasing your question.`;
+                    break;
                 }
-                break;
             }
 
             if (!responseContent.parts || !Array.isArray(responseContent.parts)) {
@@ -1535,14 +1566,46 @@ async function executeReActLoop(params) {
                 partCount: responseContent.parts.length,
                 partTypes: responseContent.parts.map((/** @type {{[key: string]: any}} */ p) => Object.keys(p)[0]),
                 hasText: responseContent.parts.some((/** @type {{text?: string}} */ p) => p.text),
-                hasFunctionCall: responseContent.parts.some((/** @type {{functionCall?: object}} */ p) => p.functionCall)
+                hasFunctionCall: responseContent.parts.some((/** @type {{functionCall?: object}} */ p) => p.functionCall),
+                finishReason: finishReason
             });
 
             // Add model response to conversation history
             conversationHistory.push(responseContent);
 
             // Step 5: Check for tool calls in response
-            const toolCalls = responseContent.parts.filter((/** @type {{functionCall?: object}} */ p) => p.functionCall);
+            // Also validate that function calls are well-formed (have name property)
+            const toolCalls = responseContent.parts.filter((/** @type {{functionCall?: {name?: string}}} */ p) => 
+                p.functionCall && typeof p.functionCall.name === 'string'
+            );
+            
+            // Detect malformed function calls (functionCall exists but no valid name)
+            const malformedCalls = responseContent.parts.filter((/** @type {{functionCall?: {name?: string}}} */ p) => 
+                p.functionCall && typeof p.functionCall.name !== 'string'
+            );
+            
+            if (malformedCalls.length > 0 && turnCount < MAX_TURNS) {
+                log.warn('Detected malformed function calls in response parts, requesting correction', {
+                    turn: turnCount,
+                    malformedCount: malformedCalls.length,
+                    malformedCalls: JSON.stringify(malformedCalls).substring(0, 500)
+                });
+                
+                // Add intervention to guide Gemini
+                conversationHistory.push({
+                    role: 'user',
+                    parts: [{
+                        text: `SYSTEM INTERVENTION: Your function call was malformed (missing or invalid function name).\n\n` +
+                            `Please ensure your function calls include a valid function name. Available functions include:\n` +
+                            `- request_bms_data: Get historical BMS data\n` +
+                            `- getWeatherData: Get weather information\n` +
+                            `- getSolarEstimate: Get solar energy estimates\n` +
+                            `- getSystemAnalytics: Get system performance analytics\n\n` +
+                            `Try again with a properly formatted function call.`
+                    }]
+                });
+                continue;
+            }
 
             if (toolCalls.length === 0) {
                 // No tool calls → this is potentially the final answer

@@ -790,11 +790,38 @@ export const streamInsights = async (
 
                     // Provide user-friendly error messages for common status codes
                     if (response.status === 504) {
-                        errorMessage = 'Request timed out. The AI took too long to process your query. Try:\n' +
-                            '• Asking a simpler question\n' +
-                            '• Requesting a smaller time range\n' +
-                            '• Breaking complex queries into multiple questions';
-                        errorCode = 'gateway_timeout';
+                        // Check if this is a model_timeout error from our stall detection
+                        let isModelTimeout = false;
+                        try {
+                            const errorData = await response.json();
+                            if (errorData.error === 'model_timeout') {
+                                errorMessage = errorData.message || 'The AI model is consistently timing out.';
+                                errorCode = 'model_timeout';
+                                isModelTimeout = true;
+                                // Track error details for model_timeout - this is a definitive failure
+                                lastErrorDetails = {
+                                    code: errorCode,
+                                    message: errorMessage,
+                                    status: response.status
+                                };
+                            }
+                        } catch (parseErr) {
+                            // Not a JSON response or different error format
+                            // Log for debugging but continue with default gateway timeout handling
+                            log('warn', 'Failed to parse 504 response as JSON', {
+                                error: parseErr instanceof Error ? parseErr.message : 'Unknown parse error',
+                                status: response.status
+                            });
+                        }
+                        
+                        // If not a model_timeout, use default gateway timeout message
+                        if (!isModelTimeout) {
+                            errorMessage = 'Request timed out. The AI took too long to process your query. Try:\n' +
+                                '• Asking a simpler question\n' +
+                                '• Requesting a smaller time range\n' +
+                                '• Breaking complex queries into multiple questions';
+                            errorCode = 'gateway_timeout';
+                        }
                     } else if (response.status === 503) {
                         errorMessage = 'Service temporarily unavailable. Please try again in a few moments.';
                         errorCode = 'service_unavailable';
@@ -1055,6 +1082,15 @@ export const streamInsights = async (
                     suggestions = [
                         'The service may be undergoing maintenance',
                         'Try again in a few minutes'
+                    ];
+                    break;
+                case 'model_timeout':
+                    // Model is too slow for timeout configuration - don't suggest retrying
+                    errorReason = lastErrorDetails.message || 'The AI model is consistently timing out and cannot complete the analysis.';
+                    suggestions = [
+                        'Switch to a faster model (gemini-2.5-flash)',
+                        'Reduce query complexity or time range',
+                        'Break complex analysis into smaller parts'
                     ];
                     break;
                 case 'gateway_timeout':
