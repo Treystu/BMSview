@@ -18,15 +18,20 @@ function validateEnvironment(log) {
 }
 
 exports.handler = async (event, context) => {
+  const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+  const log = createLoggerFromEvent('get-hourly-soc-predictions', event, context);
+  const timer = createTimer(log, 'get-hourly-soc-predictions-handler');
   const headers = getCorsHeaders(event);
+  
+  log.entry({ method: event.httpMethod, path: event.path });
   
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
+    log.debug('OPTIONS preflight request');
+    timer.end();
+    log.exit(200);
     return { statusCode: 200, headers };
   }
-
-  const log = createLogger('get-hourly-soc-predictions', context);
-  const startTime = Date.now();
 
   try {
     // Parse request
@@ -35,6 +40,9 @@ exports.handler = async (event, context) => {
 
     // Validate input
     if (!systemId) {
+      log.warn('Missing systemId parameter');
+      timer.end();
+      log.exit(400);
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -50,14 +58,14 @@ exports.handler = async (event, context) => {
     // Get predictions
     const predictions = await predictHourlySoc(systemId, hoursBack, log);
 
-    const durationMs = Date.now() - startTime;
-
     log.info('Hourly SOC predictions completed', {
       systemId,
       hoursBack,
-      durationMs,
       predictionsCount: predictions.predictions?.length || 0
     });
+
+    timer.end({ success: true });
+    log.exit(200, { systemId, predictionsCount: predictions.predictions?.length || 0 });
 
     return {
       statusCode: 200,
@@ -66,12 +74,13 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
-    const durationMs = Date.now() - startTime;
     log.error('Hourly SOC predictions failed', {
       error: error.message,
-      stack: error.stack,
-      durationMs
+      stack: error.stack
     });
+    
+    timer.end({ success: false, error: error.message });
+    log.exit(500);
 
     return {
       statusCode: 500,

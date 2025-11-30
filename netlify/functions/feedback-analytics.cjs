@@ -647,16 +647,26 @@ function calculateMonthlyBreakdown(allFeedback) {
  * Netlify Identity authentication.
  */
 exports.handler = async (event, context) => {
-  const log = createLogger('feedback-analytics', context);
+  const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+  const log = createLoggerFromEvent('feedback-analytics', event, context);
+  const timer = createTimer(log, 'feedback-analytics-handler');
   const headers = getCorsHeaders(event);
+  
+  log.entry({ method: event.httpMethod, path: event.path });
   
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
+    log.debug('OPTIONS preflight request');
+    timer.end();
+    log.exit(200);
     return { statusCode: 200, headers };
   }
   
   try {
     if (event.httpMethod !== 'GET') {
+      log.warn('Method not allowed', { method: event.httpMethod });
+      timer.end();
+      log.exit(405);
       return {
         statusCode: 405,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -736,6 +746,9 @@ exports.handler = async (event, context) => {
       userEmail: user.email
     });
     
+    timer.end({ success: true });
+    log.exit(200, { totalFeedback: sanitizedAnalytics.totalFeedback });
+    
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -743,6 +756,8 @@ exports.handler = async (event, context) => {
     };
   } catch (error) {
     log.error('Feedback analytics error', { error: error.message });
+    timer.end({ success: false, error: error.message });
+    log.exit(500);
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },

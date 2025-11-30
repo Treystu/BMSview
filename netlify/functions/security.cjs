@@ -172,9 +172,15 @@ const checkSecurity = async (request, log) => {
 };
 
 exports.handler = async function(event, context) {
-    const log = createLogger('security-handler', context);
+    const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+    const log = createLoggerFromEvent('security-handler', event, context);
+    const timer = createTimer(log, 'security-handler');
+    
+    log.entry({ method: event.httpMethod, path: event.path });
     
     if (!validateEnvironment(log)) {
+      timer.end({ success: false, error: 'configuration' });
+      log.exit(500);
       return {
         statusCode: 500,
         body: JSON.stringify({ error: 'Server configuration error' })
@@ -186,6 +192,9 @@ exports.handler = async function(event, context) {
 
     try {
         await checkSecurity(event, log);
+        log.info('Security check passed', logContext);
+        timer.end({ success: true });
+        log.exit(200);
         return {
             statusCode: 200,
             body: JSON.stringify({ message: 'Security check passed' }),
@@ -193,13 +202,18 @@ exports.handler = async function(event, context) {
         };
     } catch (error) {
         if (error instanceof HttpError) {
+            log.warn('Security check failed', { ...logContext, statusCode: error.statusCode });
+            timer.end({ success: false, statusCode: error.statusCode });
+            log.exit(error.statusCode);
             return {
                 statusCode: error.statusCode,
                 body: JSON.stringify({ error: error.message }),
                 headers: { 'Content-Type': 'application/json' }
             };
         }
-        log('error', 'Security handler error', { ...logContext, error: error.message });
+        log.error('Security handler error', { ...logContext, error: error.message });
+        timer.end({ success: false, error: error.message });
+        log.exit(500);
         return {
             statusCode: 500,
             body: JSON.stringify({ error: 'Internal server error' }),

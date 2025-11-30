@@ -202,16 +202,26 @@ async function createGitHubIssueAPI(issueData, log) {
  * Main handler
  */
 exports.handler = async (event, context) => {
-  const log = createLogger('create-github-issue', context);
+  const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+  const log = createLoggerFromEvent('create-github-issue', event, context);
+  const timer = createTimer(log, 'create-github-issue-handler');
   const headers = getCorsHeaders(event);
+  
+  log.entry({ method: event.httpMethod, path: event.path });
   
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
+    log.debug('OPTIONS preflight request');
+    timer.end();
+    log.exit(200);
     return { statusCode: 200, headers };
   }
   
   try {
     if (event.httpMethod !== 'POST') {
+      log.warn('Method not allowed', { method: event.httpMethod });
+      timer.end();
+      log.exit(405);
       return {
         statusCode: 405,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -291,6 +301,9 @@ exports.handler = async (event, context) => {
       issueNumber: githubIssue.number
     });
     
+    timer.end({ success: true });
+    log.exit(200, { issueNumber: githubIssue.number });
+    
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -303,6 +316,8 @@ exports.handler = async (event, context) => {
     };
   } catch (error) {
     log.error('Create GitHub issue error', { error: error.message, stack: error.stack });
+    timer.end({ success: false, error: error.message });
+    log.exit(500);
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },

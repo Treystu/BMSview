@@ -164,19 +164,25 @@ async function ensureDeletedRecordsIndexes(log) {
 }
 
 exports.handler = async function (event, context) {
-    const log = createLogger("migrate-add-sync-fields", context);
+    const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+    const log = createLoggerFromEvent("migrate-add-sync-fields", event, context);
+    const timer = createTimer(log, 'migrate-add-sync-fields-handler');
+    
+    log.entry({ method: event.httpMethod, path: event.path });
     
     if (!validateEnvironment(log)) {
+      timer.end({ success: false, error: 'configuration' });
+      log.exit(500);
       return {
         statusCode: 500,
         body: JSON.stringify({ error: 'Server configuration error' })
       };
     }
-    
-    log.entry({ method: event.httpMethod, path: event.path });
 
     if (event.httpMethod !== "POST") {
         log.warn("Method not allowed", { method: event.httpMethod });
+        timer.end();
+        log.exit(405);
         return jsonResponse(405, { error: "Method Not Allowed" });
     }
 
@@ -194,6 +200,7 @@ exports.handler = async function (event, context) {
         await ensureDeletedRecordsIndexes(log);
 
         log.exit(200, { migratedCollections: TARGET_COLLECTIONS.length });
+        timer.end({ success: true, migratedCollections: TARGET_COLLECTIONS.length });
 
         return jsonResponse(200, {
             success: true,
@@ -204,6 +211,7 @@ exports.handler = async function (event, context) {
     } catch (error) {
         log.error("Migration failed", { message: error.message, stack: error.stack });
         log.exit(500, {});
+        timer.end({ success: false, error: error.message });
         return errorResponse(500, "migration_error", "Failed to perform sync field migration.");
     }
 };

@@ -13,8 +13,29 @@ export const handler: Handler = async (
   event: HandlerEvent,
   context: HandlerContext
 ) => {
+  const startTime = Date.now();
+  const requestId = event.headers['x-request-id'] || event.headers['x-correlation-id'] || crypto.randomUUID();
+  
+  const logEntry = (level: string, message: string, data?: object) => {
+    console.log(JSON.stringify({
+      level,
+      timestamp: new Date().toISOString(),
+      functionName: 'solar-estimate',
+      requestId,
+      message,
+      ...data
+    }));
+  };
+
+  logEntry('info', 'Solar estimate request received', { 
+    method: event.httpMethod, 
+    path: event.path,
+    query: event.queryStringParameters 
+  });
+
   // Only allow GET requests
   if (event.httpMethod !== "GET") {
+    logEntry('warn', 'Method not allowed', { method: event.httpMethod });
     return {
       statusCode: 405,
       body: JSON.stringify({ error: "Method not allowed" }),
@@ -27,6 +48,7 @@ export const handler: Handler = async (
 
     // Validation
     if (!location) {
+      logEntry('warn', 'Missing location parameter');
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "Location is required (zip code or lat,lon)" }),
@@ -34,6 +56,7 @@ export const handler: Handler = async (
     }
 
     if (!panelWatts || isNaN(Number(panelWatts)) || Number(panelWatts) <= 0) {
+      logEntry('warn', 'Invalid panelWatts parameter', { panelWatts });
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "Valid panel wattage is required" }),
@@ -41,6 +64,7 @@ export const handler: Handler = async (
     }
 
     if (!startDate || !endDate) {
+      logEntry('warn', 'Missing date parameters', { startDate, endDate });
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "Start date and end date are required (YYYY-MM-DD format)" }),
@@ -50,6 +74,7 @@ export const handler: Handler = async (
     // Validate date format (basic check)
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+      logEntry('warn', 'Invalid date format', { startDate, endDate });
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "Invalid date format. Use YYYY-MM-DD" }),
@@ -63,7 +88,7 @@ export const handler: Handler = async (
     apiUrl.searchParams.append("startDate", startDate);
     apiUrl.searchParams.append("endDate", endDate);
 
-    console.log(`[Solar Estimate] Fetching data from: ${apiUrl.toString()}`);
+    logEntry('debug', 'Calling external solar API', { url: apiUrl.toString() });
 
     // Make the request to the external Solar API
     const response = await fetch(apiUrl.toString(), {
@@ -73,10 +98,16 @@ export const handler: Handler = async (
       },
     });
 
+    const apiDurationMs = Date.now() - startTime;
+
     // Handle non-200 responses
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[Solar Estimate] API Error (${response.status}):`, errorText);
+      logEntry('error', 'External API error', { 
+        status: response.status, 
+        errorText: errorText.substring(0, 500),
+        apiDurationMs 
+      });
       
       let errorMessage = "Failed to fetch solar estimate";
       try {
@@ -96,7 +127,12 @@ export const handler: Handler = async (
     // Parse and return the successful response
     const data = await response.json();
     
-    console.log(`[Solar Estimate] Success: ${data.dailyEstimates?.length || 0} daily estimates returned`);
+    const durationMs = Date.now() - startTime;
+    logEntry('info', 'Solar estimate completed successfully', { 
+      dailyEstimatesCount: data.dailyEstimates?.length || 0,
+      durationMs,
+      apiDurationMs
+    });
 
     return {
       statusCode: 200,
@@ -108,7 +144,12 @@ export const handler: Handler = async (
     };
 
   } catch (error) {
-    console.error("[Solar Estimate] Unexpected error:", error);
+    const durationMs = Date.now() - startTime;
+    logEntry('error', 'Unexpected error in solar estimate', { 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      durationMs
+    });
     
     return {
       statusCode: 500,

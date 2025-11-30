@@ -17,25 +17,32 @@ const respond = (statusCode, body) => ({
 });
 
 exports.handler = async function (event, context) {
-    const log = createLogger('system-analytics', context);
+    const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+    const log = createLoggerFromEvent('system-analytics', event, context);
+    const timer = createTimer(log, 'system-analytics-handler');
     const withRetry = createRetryWrapper(log);
     const { httpMethod, queryStringParameters } = event;
-    const logContext = { httpMethod };
-
-    log('info', 'System analytics function invoked.', { ...logContext, queryStringParameters, path: event.path });
+    
+    log.entry({ method: httpMethod, path: event.path, query: queryStringParameters });
 
     if (httpMethod !== 'GET') {
+        log.warn('Method not allowed', { method: httpMethod });
+        timer.end();
+        log.exit(405);
         return respond(405, { error: 'Method Not Allowed' });
     }
 
     try {
         const { systemId } = queryStringParameters || {};
         if (!systemId) {
+            log.warn('Missing systemId parameter');
+            timer.end();
+            log.exit(400);
             return respond(400, { error: 'systemId is required.' });
         }
 
-        const requestLogContext = { ...logContext, systemId };
-        log('info', 'Starting system analytics processing.', requestLogContext);
+        const requestLogContext = { systemId };
+        log.info('Starting system analytics processing.', requestLogContext);
 
         const historyCollection = await getCollection("history");
         const allHistory = await withRetry(() => historyCollection.find({}).toArray());
@@ -187,11 +194,15 @@ exports.handler = async function (event, context) {
             alertAnalysis: { alertCounts, totalAlerts },
         };
 
-        log('info', 'Successfully generated system analytics.', requestLogContext);
+        log.info('Successfully generated system analytics.', requestLogContext);
+        timer.end({ success: true });
+        log.exit(200, { systemId });
         return respond(200, analyticsData);
 
     } catch (error) {
-        log('error', 'Critical error in system-analytics function.', { ...logContext, errorMessage: error.message, stack: error.stack });
+        log.error('Critical error in system-analytics function.', { errorMessage: error.message, stack: error.stack });
+        timer.end({ success: false, error: error.message });
+        log.exit(500);
         return respond(500, { error: "An internal server error occurred." });
     }
 };

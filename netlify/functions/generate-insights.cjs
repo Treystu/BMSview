@@ -5,7 +5,7 @@
  * to the new fully-featured generate-insights-with-tools endpoint.
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -26,9 +26,14 @@ const { handler: newHandler } = require('./generate-insights-with-tools.cjs');
  * Legacy handler - proxies to new implementation
  */
 const handler = async (event, context) => {
-  const log = createLogger('generate-insights-legacy', context);
+  const log = createLoggerFromEvent('generate-insights-legacy', event, context);
+  const timer = createTimer(log, 'generate-insights-legacy-handler');
+  
+  log.entry({ method: event.httpMethod, path: event.path });
   
   if (!validateEnvironment(log)) {
+    timer.end({ success: false, error: 'configuration' });
+    log.exit(500);
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },
@@ -43,12 +48,19 @@ const handler = async (event, context) => {
     });
 
     // Simply delegate to the new handler
-    return await newHandler(event, context);
+    const result = await newHandler(event, context);
+    
+    timer.end({ success: true, statusCode: result.statusCode });
+    log.exit(result.statusCode);
+    
+    return result;
   } catch (error) {
     log.error('Error in legacy generate-insights proxy', {
       error: error.message,
       stack: error.stack
     });
+    timer.end({ success: false, error: error.message });
+    log.exit(500);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Internal server error' })

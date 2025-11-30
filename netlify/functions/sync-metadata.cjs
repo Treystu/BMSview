@@ -149,20 +149,27 @@ async function calculateChecksum(payload) {
 }
 
 exports.handler = async function (event, context) {
-    const log = createLogger("sync-metadata", context);
+    const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+    const log = createLoggerFromEvent("sync-metadata", event, context);
+    const timer = createTimer(log, 'sync-metadata-handler');
+    
+    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
     
     if (!validateEnvironment(log)) {
+      timer.end({ success: false, error: 'configuration' });
+      log.exit(500);
       return {
         statusCode: 500,
         body: JSON.stringify({ error: 'Server configuration error' })
       };
     }
     
-    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
     const requestStartedAt = Date.now();
 
     if (event.httpMethod !== "GET") {
         log.warn("Method not allowed", { method: event.httpMethod });
+        timer.end();
+        log.exit(405);
         return jsonResponse(405, { error: "Method Not Allowed" });
     }
 
@@ -209,6 +216,7 @@ exports.handler = async function (event, context) {
             durationMs: Date.now() - requestStartedAt
         });
         log.exit(200, { collection: collectionKey, recordCount });
+        timer.end({ success: true, recordCount });
 
         return jsonResponse(200, {
             collection: collectionKey,
@@ -225,6 +233,7 @@ exports.handler = async function (event, context) {
             durationMs: Date.now() - requestStartedAt
         });
         log.exit(500, { collection: collectionKey });
+        timer.end({ success: false, error: error.message });
         return errorResponse(500, "metadata_error", "Failed to compute metadata for the requested collection.");
     }
 };
