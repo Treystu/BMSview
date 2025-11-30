@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.cjs");
-const { createLogger } = require("./utils/logger.cjs");
+const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { getCorsHeaders } = require('./utils/cors.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -24,32 +25,44 @@ const SystemSchema = z.object({
   location: z.string().optional()
 });
 
-const respond = (statusCode, body) => ({
+const respond = (statusCode, body, headers = {}) => ({
     statusCode,
     body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
 });
 
 exports.handler = async function(event, context) {
-    const log = createLogger('systems', context);
-    const clientIp = event.headers['x-nf-client-connection-ip'];
-    const { httpMethod, queryStringParameters, body } = event;
-    const logContext = { clientIp, httpMethod };
-    log('info', 'Systems function invoked.', { ...logContext, queryStringParameters, path: event.path });
+    const headers = getCorsHeaders(event);
+    
+    // Handle preflight
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers };
+    }
+    
+    const log = createLoggerFromEvent('systems', event, context);
+    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+    const timer = createTimer(log, 'systems');
+    
+    if (!validateEnvironment(log)) {
+        log.exit(500);
+        return respond(500, { error: 'Server configuration error' }, headers);
+    }
     
     try {
         const systemsCollection = await getCollection("systems");
         const historyCollection = await getCollection("history");
 
-        if (httpMethod === 'GET') {
-            const { systemId, page = '1', limit = '25' } = queryStringParameters || {};
+        if (event.httpMethod === 'GET') {
+            const { systemId, page = '1', limit = '25' } = event.queryStringParameters || {};
             if (systemId) {
-                log('debug', 'Fetching single system by ID.', { ...logContext, systemId });
+                log.debug('Fetching single system by ID', { systemId });
                 const system = await systemsCollection.findOne({ id: systemId }, { projection: { _id: 0 } });
-                return system ? respond(200, system) : respond(404, { error: "System not found." });
+                timer.end({ found: !!system });
+                log.exit(system ? 200 : 404);
+                return system ? respond(200, system, headers) : respond(404, { error: "System not found." }, headers);
             }
             
-            log('debug', 'Fetching paginated systems.', { ...logContext, page, limit });
+            log.debug('Fetching paginated systems', { page, limit });
             const pageNum = parseInt(page, 10);
             const limitNum = parseInt(limit, 10);
             const skip = (pageNum - 1) * limitNum;
@@ -180,41 +193,53 @@ exports.handler = async function(event, context) {
             }
         }
 
-        if (httpMethod === 'DELETE') {
-            const { systemId } = queryStringParameters || {};
-            const deleteLogContext = { ...logContext, systemId };
+        if (event.httpMethod === 'DELETE') {
+            const { systemId } = event.queryStringParameters || {};
             
             if (!systemId) {
-                return respond(400, { error: 'System ID is required for deletion.' });
+                log.warn('System ID missing for deletion');
+                timer.end({ error: 'missing_systemId' });
+                log.exit(400);
+                return respond(400, { error: 'System ID is required for deletion.' }, headers);
             }
             
-            log('info', 'Attempting to delete system.', deleteLogContext);
+            log.info('Attempting to delete system', { systemId });
             
             // Check if system has linked records
             const linkedCount = await historyCollection.countDocuments({ systemId });
             
             if (linkedCount > 0) {
-                log('warn', 'Cannot delete system with linked records.', { ...deleteLogContext, linkedCount });
+                log.warn('Cannot delete system with linked records', { systemId, linkedCount });
+                timer.end({ error: 'has_linked_records' });
+                log.exit(400);
                 return respond(400, { 
                     error: `Cannot delete system with ${linkedCount} linked records. Please unlink or delete the records first.` 
-                });
+                }, headers);
             }
             
             const result = await systemsCollection.deleteOne({ id: systemId });
             
             if (result.deletedCount === 0) {
-                log('warn', 'System not found for deletion.', deleteLogContext);
-                return respond(404, { error: 'System not found.' });
+                log.warn('System not found for deletion', { systemId });
+                timer.end({ found: false });
+                log.exit(404);
+                return respond(404, { error: 'System not found.' }, headers);
             }
             
-            log('info', 'System deleted successfully.', deleteLogContext);
-            return respond(200, { success: true, message: 'System deleted successfully.' });
+            timer.end({ deleted: true });
+            log.info('System deleted successfully', { systemId });
+            log.exit(200);
+            return respond(200, { success: true, message: 'System deleted successfully.' }, headers);
         }
 
-        log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
-        return respond(405, { error: 'Method Not Allowed' });
+        log.warn('Method not allowed', { method: event.httpMethod });
+        timer.end({ error: 'method_not_allowed' });
+        log.exit(405);
+        return respond(405, { error: 'Method Not Allowed' }, headers);
     } catch (error) {
-        log('error', 'Critical error in systems function.', { ...logContext, errorMessage: error.message, stack: error.stack });
-        return respond(500, { error: "An internal server error occurred: " + error.message });
+        timer.end({ error: true });
+        log.error('Critical error in systems function', { error: error.message, stack: error.stack });
+        log.exit(500);
+        return respond(500, { error: "An internal server error occurred: " + error.message }, headers);
     }
 };
