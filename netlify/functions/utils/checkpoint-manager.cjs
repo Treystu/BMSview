@@ -106,18 +106,19 @@ async function getOrCreateResumableJob(params, log) {
         };
       }
       
-      // Increment retry count if resuming at same turn
+      // Create a new checkpoint object with incremented retry count
       // This helps detect if we're stuck at the same point
-      if (checkpoint) {
-        checkpoint.sameCheckpointRetryCount = (checkpoint.sameCheckpointRetryCount || 0) + 1;
-        checkpoint.lastResumeAttempt = new Date().toISOString();
-      }
+      const updatedCheckpoint = checkpoint ? {
+        ...checkpoint,
+        sameCheckpointRetryCount: (checkpoint.sameCheckpointRetryCount || 0) + 1,
+        lastResumeAttempt: new Date().toISOString()
+      } : null;
       
       return {
         job: existingJob,
         isResume: true,
         isComplete: false,
-        checkpoint
+        checkpoint: updatedCheckpoint
       };
     }
   }
@@ -269,10 +270,12 @@ function validateCheckpoint(checkpoint, log) {
  * @param {string} jobId - Job ID to save checkpoint for
  * @param {number} timeoutMs - Timeout threshold in milliseconds
  * @param {Object} log - Logger instance
+ * @param {Object} initialCheckpoint - Initial checkpoint state (for tracking retry count)
  * @returns {Function} Checkpoint callback function
  */
-function createCheckpointCallback(jobId, timeoutMs, log) {
+function createCheckpointCallback(jobId, timeoutMs, log, initialCheckpoint = null) {
   let lastCheckpointTime = Date.now();
+  let previousCheckpoint = initialCheckpoint;
   
   return async function(currentState) {
     const now = Date.now();
@@ -291,9 +294,10 @@ function createCheckpointCallback(jobId, timeoutMs, log) {
       timeSinceLastCheckpoint
     });
     
-    const checkpoint = createCheckpointState(currentState);
+    const checkpoint = createCheckpointState(currentState, previousCheckpoint);
     await saveCheckpoint(jobId, checkpoint, log);
     lastCheckpointTime = now;
+    previousCheckpoint = checkpoint; // Update reference for next save
     
     return true; // Checkpoint saved
   };

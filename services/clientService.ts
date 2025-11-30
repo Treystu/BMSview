@@ -805,7 +805,14 @@ export const streamInsights = async (
                                 throw new Error(errorMessage);
                             }
                         } catch (parseErr) {
-                            // Not a JSON response, use default message
+                            // Not a JSON response or different error format
+                            // Log for debugging but continue with default gateway timeout handling
+                            if (parseErr instanceof Error && parseErr.message !== errorMessage) {
+                                log('warn', 'Failed to parse 504 response as JSON', {
+                                    error: parseErr.message,
+                                    status: response.status
+                                });
+                            }
                         }
                         errorMessage = 'Request timed out. The AI took too long to process your query. Try:\n' +
                             '• Asking a simpler question\n' +

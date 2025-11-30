@@ -336,8 +336,8 @@ exports.handler = async (event, context) => {
           jobId: job.id
         });
 
-        // Create checkpoint callback for this job
-        const checkpointCallback = createCheckpointCallback(job.id, SYNC_MODE_TIMEOUT_MS, log);
+        // Create checkpoint callback for this job, passing the initial checkpoint for retry tracking
+        const checkpointCallback = createCheckpointCallback(job.id, SYNC_MODE_TIMEOUT_MS, log, checkpoint);
 
         // CRITICAL: Do NOT use Promise.race here!
         // The ReAct loop handles its own timeout internally and saves checkpoints properly.
