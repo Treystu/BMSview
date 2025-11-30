@@ -240,6 +240,7 @@ exports.handler = async (event, context) => {
       hasCustomPrompt: !!customPrompt,
       hasResumeJobId: !!resumeJobId,
       mode,
+      insightMode,
       contextWindowDays,
       maxIterations,
       modelOverride,
@@ -254,6 +255,7 @@ exports.handler = async (event, context) => {
       systemId,
       clientIp,
       mode,
+      insightMode,
       hasCustomPrompt: !!customPrompt,
       isResume: !!resumeJobId
     });
