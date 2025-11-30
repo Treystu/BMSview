@@ -1,6 +1,6 @@
 const { getCollection } = require('./utils/mongodb.cjs');
 const { ObjectId } = require('mongodb');
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
 const { v4: uuidv4 } = require('uuid');
@@ -12,18 +12,20 @@ const { v4: uuidv4 } = require('uuid');
  */
 
 exports.handler = async (event, context) => {
-  const log = createLogger('admin-stories', context);
   const headers = getCorsHeaders(event);
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
 
-  try {
-    log.entry({ method: event.httpMethod, path: event.path });
+  const log = createLoggerFromEvent('admin-stories', event, context);
+  log.entry({ method: event.httpMethod, path: event.path });
+  const timer = createTimer(log, 'admin-stories');
 
+  try {
     if (!process.env.MONGODB_URI) {
       log.error('MONGODB_URI is not set');
+      log.exit(500);
       return errorResponse(500, 'server_error', 'Server configuration error', null, headers);
     }
 
@@ -41,10 +43,13 @@ exports.handler = async (event, context) => {
         
         if (!story) {
           log.warn('Story not found', { id });
+          timer.end({ found: false });
+          log.exit(404);
           return errorResponse(404, 'not_found', 'Story not found', { id }, headers);
         }
 
         log.info('Successfully fetched story', { id, title: story.title });
+        timer.end({ found: true });
         log.exit(200);
 
         return {
@@ -323,10 +328,15 @@ exports.handler = async (event, context) => {
       };
     }
 
+    log.warn('Method not allowed', { method: event.httpMethod });
+    timer.end({ error: 'method_not_allowed' });
+    log.exit(405);
     return errorResponse(405, 'method_not_allowed', `Method ${event.httpMethod} not allowed`, null, headers);
 
   } catch (error) {
+    timer.end({ error: true });
     log.error('Error in admin-stories endpoint', { error: error.message, stack: error.stack });
+    log.exit(500);
     return errorResponse(500, 'internal_error', 'Failed to process request', { message: error.message }, headers);
   }
 };

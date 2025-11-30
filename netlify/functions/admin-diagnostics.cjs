@@ -1,6 +1,7 @@
 const { getDb, getCollection } = require('./utils/mongodb.cjs');
 const { ObjectId } = require('mongodb');
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createLogger, createTimer } = require('./utils/logger.cjs');
+const { getCorsHeaders } = require('./utils/cors.cjs');
 
 /**
  * @param {import('./utils/logger.cjs').LogFunction} log
@@ -3718,45 +3719,39 @@ const sendSSEMessage = (data, event = 'message') => {
  * @returns {Promise<import('@netlify/functions').HandlerResponse>}
 */
 exports.handler = async (event, context) => {
+  const headers = getCorsHeaders(event);
+  
+  // Handle CORS preflight early
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers };
+  }
+  
   const requestStartTime = Date.now();
   let testId = 'unknown';
+
+  // Create logger with full event context for correlation
+  logger = createLoggerFromEvent('admin-diagnostics', event, context);
+  logger.entry({ method: event.httpMethod, path: event.path });
+  const timer = createTimer(logger, 'admin-diagnostics');
 
   try {
     // Wrap EVERYTHING in try-catch to prevent unhandled exceptions
     testId = generateTestId(context);
 
-    // Update logger with actual request context
-    logger = createLogger('admin-diagnostics', context);
-
     if (!validateEnvironment(logger)) {
+      logger.exit(500);
       return {
         statusCode: 500,
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ error: 'Server configuration error' })
       };
     }
 
-    logger.info('========================================');
-    logger.info('ADMIN DIAGNOSTICS STARTED');
-    logger.info('========================================');
-    logger.info('Diagnostic run initiated', {
+    logger.info('Admin diagnostics started', {
       testId,
       timestamp: new Date().toISOString(),
-      method: event.httpMethod,
-      requestId: context.awsRequestId,
       environment: process.env.NODE_ENV || 'production'
     });
-    // Handle CORS
-    if (event.httpMethod === 'OPTIONS') {
-      return {
-        statusCode: 200,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
-        },
-        body: ''
-      };
-    }
 
     // Parse request - support both query parameter scope and POST body selectedTests
     let selectedTests = Object.keys(diagnosticTests);
@@ -4004,20 +3999,25 @@ exports.handler = async (event, context) => {
       }
     };
 
-    logger.info('========================================');
-    logger.info('DIAGNOSTICS COMPLETED', {
+    const durationMs = timer.end({ 
+      overallStatus,
+      testsRun: selectedTests.length,
+      success: summary.success,
+      errors: summary.errors
+    });
+    logger.info('Diagnostics completed', {
       overallStatus,
       summary,
-      duration: Date.now() - requestStartTime,
+      durationMs,
       testId
     });
-    logger.info('========================================\n');
+    logger.exit(200, { testId, status: overallStatus });
 
     return {
       statusCode: 200,
       headers: {
+        ...headers,
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
         'X-Diagnostic-Id': testId,
         'X-Diagnostic-Status': overallStatus
       },
@@ -4025,15 +4025,14 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
+    timer.end({ error: true });
     const err = /** @type {Error} */ (error);
     const errorDetails = formatError(err, {
       testId,
       elapsed: Date.now() - requestStartTime
     });
 
-    logger.error('========================================');
-    logger.error('CRITICAL: DIAGNOSTICS SYSTEM FAILURE', errorDetails);
-    logger.error('========================================\n');
+    logger.error('Critical diagnostics system failure', errorDetails);
 
     // Attempt cleanup even after failure
     try {
@@ -4064,11 +4063,12 @@ exports.handler = async (event, context) => {
       }
     };
 
+    logger.exit(200, { testId, status: 'error' });
     return {
       statusCode: 200,  // Return 200 for handled errors so frontend can parse response
       headers: {
+        ...headers,
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
         'X-Diagnostic-Id': testId,
         'X-Diagnostic-Status': 'error'
       },
