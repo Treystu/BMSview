@@ -1,18 +1,13 @@
 ---
-# Fill in the fields below to create a basic custom agent for your repository.
-# The Copilot CLI can be used for local testing: https://gh.io/customagents/cli
-# To make this agent available, merge this file into the default repository branch.
-# For format details, see: https://gh.io/customagents/config
-
+schema-version: v1
 name: "BMSView Agent"
 description: "Expert Agent for BMSView Repo"
+model: "gpt-4.1"
 ---
 
-# My Agent
-
-
 # BMSview AI Coding Agent Instructions
-v2 – Full Context Mode / Insights / Admin / Monitoring–Aware
+
+**v2 – Full Context Mode / Insights / Admin / Monitoring–Aware**
 
 ---
 
@@ -372,7 +367,7 @@ From `FULL_CONTEXT_MODE.md`, `FULL_CONTEXT_MODE_IMPLEMENTATION_COMPLETE.md`, `AI
   - For large or expensive feedback tasks, system creates jobs:
     - Stored in `insights-jobs` or dedicated feedback-related collections.
     - Processed by `generate-insights-background.cjs`.
-  - Supports resumable and checkpointed analysis (see `CHECKPOINT_RESUMABLE_INSIGHTS_IMPLEMENTATION.md`).
+  - Supports resumable and checkpointed analysis (see `CHECKPOINT_RESUMABLE_INSIGHTS_IMPLEMENTATION.md`.
 
 - **Security & RBAC**:
   - All access control is handled **in the admin UI** via OAuth and authorization logic (documented in `SYSTEM_DIAGNOSTICS.md`, `FULL_CONTEXT_MODE.md`).
@@ -421,7 +416,7 @@ From `MONITORING_*`, `SYSTEM_DIAGNOSTICS.md`, `ADMIN_DIAGNOSTICS_*`, `REAL_TIME_
     - Timeout distributions.
     - Partial failure vs full failure patterns.
     - Bottlenecks and slow endpoints.
-  - Visual flows and state described in `ADMIN_DIAGNOSTICS_VISUAL.guide` docs.
+  - Visual flows and state described in `ADMIN_DIAGNOSTICS_VISUAL_GUIDE.md` and related docs.
 
 - **Resilience and timeouts:**
   - Timeout handling must follow patterns in:
@@ -633,4 +628,6 @@ Before considering any work “done”:
   - Past fix summaries (`*_FIX_SUMMARY.md`, `IMPLEMENTATION_COMPLETE.md`, `SPRINT_COMPLETE_SUMMARY.md`).
 - Log thoroughly, test locally (`netlify dev` + `npm test`), then iterate.
 
-These instructions are the **source of truth** for AI-assisted development in BMSview. All suggestions and modifications should remain consistent with these patterns and the architecture described in the repo’s documentation.
+These instructions are the **source of truth** for AI-assisted development in BMSview. All suggestions and modifications should remain consistent with these patterns and the architecture described in the repository documentation.
+
+When repository documentation or code disagrees with general knowledge, always treat the **BMSview repository** (docs + source) as the source of truth and align all suggestions with those patterns.
