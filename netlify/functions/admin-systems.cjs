@@ -1,5 +1,6 @@
 const { MongoClient } = require('mongodb');
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { getCorsHeaders } = require('./utils/cors.cjs');
 
 // Validate environment variables
 function validateEnvironment(log) {
@@ -11,40 +12,38 @@ function validateEnvironment(log) {
 }
 
 exports.handler = async (event, context) => {
-  const log = createLogger('admin-systems', context);
+  const headers = getCorsHeaders(event);
+  
+  // Handle preflight
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers };
+  }
+  
+  const log = createLoggerFromEvent('admin-systems', event, context);
+  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+  const timer = createTimer(log, 'admin-systems');
   
   if (!validateEnvironment(log)) {
+    log.exit(500);
     return {
       statusCode: 500,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: 'Server configuration error' })
     };
   }
 
   const client = new MongoClient(process.env.MONGODB_URI);
   const database = client.db('battery-analysis');
-  
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Content-Type': 'application/json'
-  };
-
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers
-    };
-  }
 
   try {
+    log.debug('Connecting to MongoDB');
     await client.connect();
     
-    const { httpMethod } = event;
     const queryStringParameters = event.queryStringParameters || {};
     const { userId, filter = 'unadopted' } = queryStringParameters;
 
-    if (httpMethod === 'GET') {
+    if (event.httpMethod === 'GET') {
+      log.debug('Fetching systems', { filter, userId });
       let systems;
       
       switch (filter) {
@@ -61,39 +60,52 @@ exports.handler = async (event, context) => {
           systems = await getUnadoptedSystems(database, log);
       }
 
+      timer.end({ filter, systemCount: systems.length });
+      log.info('Systems fetched', { filter, count: systems.length });
+      log.exit(200);
       return {
         statusCode: 200,
-        headers,
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify(systems)
       };
     }
 
-    if (httpMethod === 'POST') {
-      const { systemId, userId } = JSON.parse(event.body);
+    if (event.httpMethod === 'POST') {
+      const { systemId, userId: adoptUserId } = JSON.parse(event.body);
       
-      if (!systemId || !userId) {
+      if (!systemId || !adoptUserId) {
+        log.warn('Missing systemId or userId');
+        timer.end({ error: 'missing_params' });
+        log.exit(400);
         return {
           statusCode: 400,
-          headers,
+          headers: { ...headers, 'Content-Type': 'application/json' },
           body: JSON.stringify({ error: 'Missing systemId or userId' })
         };
       }
 
-      const result = await adoptSystem(database, systemId, userId, log);
+      log.info('Adopting system', { systemId, userId: adoptUserId });
+      const result = await adoptSystem(database, systemId, adoptUserId, log);
       
       if (result.success) {
+        timer.end({ adopted: true });
+        log.info('System adopted successfully', { systemId });
+        log.exit(200);
         return {
           statusCode: 200,
-          headers,
+          headers: { ...headers, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             success: true,
             message: 'System adopted successfully'
           })
         };
       } else {
+        timer.end({ adopted: false });
+        log.warn('Failed to adopt system', { systemId, error: result.error });
+        log.exit(400);
         return {
           statusCode: 400,
-          headers,
+          headers: { ...headers, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             error: result.error || 'Failed to adopt system'
           })
@@ -101,17 +113,22 @@ exports.handler = async (event, context) => {
       }
     }
 
+    log.warn('Method not allowed', { method: event.httpMethod });
+    timer.end({ error: 'method_not_allowed' });
+    log.exit(405);
     return {
       statusCode: 405,
-      headers,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: 'Method not allowed' })
     };
 
   } catch (error) {
-    log.error('Admin systems error:', { error: error.message, stack: error.stack });
+    timer.end({ error: true });
+    log.error('Admin systems error', { error: error.message, stack: error.stack });
+    log.exit(500);
     return {
       statusCode: 500,
-      headers,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         error: 'Internal server error',
         details: error.message
@@ -123,6 +140,7 @@ exports.handler = async (event, context) => {
 };
 
 async function getUnadoptedSystems(database, log) {
+  log.debug('Querying unadopted systems');
   const systems = await database.collection('systems').aggregate([
     { $match: { adopted: false } },
     { $lookup: {
@@ -150,6 +168,7 @@ async function getUnadoptedSystems(database, log) {
 }
 
 async function getAdoptedSystems(database, userId, log) {
+  log.debug('Querying adopted systems', { userId });
   const systems = await database.collection('systems').aggregate([
     { $match: { 
         adopted: true,
@@ -180,6 +199,7 @@ async function getAdoptedSystems(database, userId, log) {
 }
 
 async function getAllSystems(database, log) {
+  log.debug('Querying all systems');
   const systems = await database.collection('systems').aggregate([
     { $lookup: {
         from: 'records',
@@ -208,6 +228,7 @@ async function getAllSystems(database, log) {
 async function adoptSystem(database, systemId, userId, log) {
   try {
     // Check if system exists and is unadopted
+    log.debug('Checking system for adoption', { systemId });
     const system = await database.collection('systems').findOne({
       _id: systemId,
       adopted: false
@@ -243,10 +264,10 @@ async function adoptSystem(database, systemId, userId, log) {
       action: 'adopted'
     });
 
+    log.debug('System adoption recorded', { systemId, userId });
     return { success: true };
   } catch (error) {
-    console.error('Error adopting system:', error);
+    log.error('Error adopting system', { error: error.message, systemId });
     return { success: false, error: error.message };
   }
 }
-

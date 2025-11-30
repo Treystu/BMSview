@@ -36,11 +36,70 @@ const SECURITY_EVENT_TYPES = {
   ENCRYPTION_EVENT: 'encryption_event'
 };
 
+/**
+ * Generate a simple unique ID for request correlation
+ * Uses crypto.randomUUID() if available, falls back to timestamp-based ID
+ * @returns {string} Unique correlation ID
+ */
+function generateCorrelationId() {
+  try {
+    // Node 14.17+ has crypto.randomUUID()
+    const crypto = require('crypto');
+    if (crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    // Fallback for older Node versions
+    return crypto.randomBytes(16).toString('hex');
+  } catch (e) {
+    // Ultimate fallback
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  }
+}
+
+/**
+ * Extract correlation ID from request headers
+ * Checks common correlation header names (case-insensitive)
+ * @param {Object} headers - Request headers object
+ * @returns {string|null} Correlation ID if found, null otherwise
+ */
+function extractCorrelationIdFromHeaders(headers) {
+  if (!headers || typeof headers !== 'object') {
+    return null;
+  }
+  
+  // Common correlation ID header names to check
+  const correlationHeaderNames = [
+    'x-request-id',
+    'x-correlation-id', 
+    'x-trace-id',
+    'request-id',
+    'correlation-id'
+  ];
+  
+  // Convert correlation header names to a Set for O(1) lookup
+  const correlationHeaderSet = new Set(correlationHeaderNames);
+  
+  // Iterate through headers once (more efficient)
+  for (const [key, value] of Object.entries(headers)) {
+    const lowerKey = key.toLowerCase();
+    if (correlationHeaderSet.has(lowerKey) && value && typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  
+  return null;
+}
+
 class Logger {
   constructor(functionName, context = {}) {
     this.functionName = functionName;
     this.context = context;
-    this.requestId = context.requestId || context.awsRequestId || 'unknown';
+    // Priority: explicit requestId > awsRequestId > headers correlation > generated
+    this.requestId = context.requestId || 
+                     context.awsRequestId || 
+                     extractCorrelationIdFromHeaders(context.headers) ||
+                     generateCorrelationId();
+    this.jobId = context.jobId || null;
     this.startTime = Date.now();
   }
 
@@ -48,16 +107,30 @@ class Logger {
     const timestamp = new Date().toISOString();
     const elapsed = Date.now() - this.startTime;
 
-    return JSON.stringify({
+    const logEntry = {
       timestamp,
       level,
       function: this.functionName,
       requestId: this.requestId,
       elapsed: `${elapsed}ms`,
       message,
-      ...data,
-      context: this.context
-    });
+      ...data
+    };
+    
+    // Include jobId if present (for background/async operations)
+    if (this.jobId) {
+      logEntry.jobId = this.jobId;
+    }
+    
+    // Include context but filter out headers to avoid log bloat
+    if (this.context && Object.keys(this.context).length > 0) {
+      const { headers, ...contextWithoutHeaders } = this.context;
+      if (Object.keys(contextWithoutHeaders).length > 0) {
+        logEntry.context = contextWithoutHeaders;
+      }
+    }
+
+    return JSON.stringify(logEntry);
   }
 
   debug(message, data) {
@@ -309,4 +382,46 @@ function createTimer(log, operationName) {
   };
 }
 
-module.exports = { createLogger, createTimer, Logger, SECURITY_EVENT_TYPES };
+/**
+ * Create a logger from a Netlify event with automatic correlation ID extraction
+ * This is the preferred way to create loggers in Netlify functions
+ * 
+ * @param {string} functionName - Name of the function
+ * @param {Object} event - Netlify event object
+ * @param {Object} context - Netlify context object  
+ * @param {Object} options - Additional options
+ * @param {string} options.jobId - Job ID for background operations
+ * @returns {LogFunction} Logger instance
+ * 
+ * @example
+ * const log = createLoggerFromEvent('my-function', event, context);
+ * log.entry({ method: event.httpMethod, path: event.path });
+ * log.debug('Processing request', { body: event.body?.length });
+ * log.exit(200);
+ */
+function createLoggerFromEvent(functionName, event, context = {}, options = {}) {
+  const headers = event?.headers || {};
+  const clientIp = headers['x-nf-client-connection-ip'] || 'unknown';
+  
+  // Build enhanced context with headers for correlation ID extraction
+  const enhancedContext = {
+    ...context,
+    headers,
+    clientIp,
+    httpMethod: event?.httpMethod,
+    path: event?.path,
+    ...(options.jobId && { jobId: options.jobId })
+  };
+  
+  return createLogger(functionName, enhancedContext);
+}
+
+module.exports = { 
+  createLogger, 
+  createLoggerFromEvent,
+  createTimer, 
+  Logger, 
+  SECURITY_EVENT_TYPES,
+  generateCorrelationId,
+  extractCorrelationIdFromHeaders
+};

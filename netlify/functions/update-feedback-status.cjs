@@ -4,21 +4,30 @@
  * Allows admins to update feedback status with implementation tracking
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 exports.handler = async (event, context) => {
-  const log = createLogger('update-feedback-status', context);
+  const log = createLoggerFromEvent('update-feedback-status', event, context);
+  const timer = createTimer(log, 'update-feedback-status-handler');
   const headers = getCorsHeaders(event);
+  
+  log.entry({ method: event.httpMethod, path: event.path });
   
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
+    log.debug('OPTIONS preflight request');
+    timer.end();
+    log.exit(200);
     return { statusCode: 200, headers };
   }
   
   try {
     if (event.httpMethod !== 'POST') {
+      log.warn('Method not allowed', { method: event.httpMethod });
+      timer.end();
+      log.exit(405);
       return {
         statusCode: 405,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -126,6 +135,9 @@ exports.handler = async (event, context) => {
       hasImplementationMetrics: status === 'implemented' && (actualEffortHours !== undefined || actualBenefitScore !== undefined)
     });
     
+    timer.end({ success: true });
+    log.exit(200, { feedbackId, status });
+    
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -138,6 +150,8 @@ exports.handler = async (event, context) => {
     };
   } catch (error) {
     log.error('Update feedback status error', { error: error.message });
+    timer.end({ success: false, error: error.message });
+    log.exit(500);
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },

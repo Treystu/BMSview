@@ -4,7 +4,7 @@
  * Stores AI-generated feedback and suggestions for app improvements
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { submitFeedbackToDatabase } = require('./utils/feedback-manager.cjs');
 
@@ -12,7 +12,6 @@ const { submitFeedbackToDatabase } = require('./utils/feedback-manager.cjs');
  * Main handler
  */
 exports.handler = async (event, context) => {
-  const log = createLogger('ai-feedback', context);
   const headers = getCorsHeaders(event);
   
   // Handle preflight
@@ -20,8 +19,14 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers };
   }
   
+  const log = createLoggerFromEvent('ai-feedback', event, context);
+  log.entry({ method: event.httpMethod, path: event.path });
+  const timer = createTimer(log, 'ai-feedback');
+  
   try {
     if (event.httpMethod !== 'POST') {
+      log.warn('Method not allowed', { method: event.httpMethod });
+      log.exit(405);
       return {
         statusCode: 405,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -29,11 +34,20 @@ exports.handler = async (event, context) => {
       };
     }
     
+    log.debug('Parsing request body');
     const body = JSON.parse(event.body);
     const { systemId, feedbackType, content, priority, category } = body;
     
     // Validate required fields
     if (!systemId || !feedbackType || !content || !priority || !category) {
+      log.warn('Missing required fields', { 
+        hasSystemId: !!systemId, 
+        hasFeedbackType: !!feedbackType,
+        hasContent: !!content,
+        hasPriority: !!priority,
+        hasCategory: !!category
+      });
+      log.exit(400);
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -49,6 +63,8 @@ exports.handler = async (event, context) => {
     const validPriorities = ['low', 'medium', 'high', 'critical'];
     
     if (!validFeedbackTypes.includes(feedbackType)) {
+      log.warn('Invalid feedbackType', { feedbackType });
+      log.exit(400);
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -57,6 +73,8 @@ exports.handler = async (event, context) => {
     }
     
     if (!validCategories.includes(category)) {
+      log.warn('Invalid category', { category });
+      log.exit(400);
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -65,6 +83,8 @@ exports.handler = async (event, context) => {
     }
     
     if (!validPriorities.includes(priority)) {
+      log.warn('Invalid priority', { priority });
+      log.exit(400);
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -73,8 +93,12 @@ exports.handler = async (event, context) => {
     }
     
     // Submit feedback
+    log.info('Submitting AI feedback', { systemId, feedbackType, priority, category });
     const result = await submitFeedbackToDatabase(body, context);
     
+    timer.end({ success: true, isDuplicate: result.isDuplicate });
+    log.info('AI feedback submitted', { feedbackId: result.id, isDuplicate: result.isDuplicate });
+    log.exit(200);
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -85,7 +109,9 @@ exports.handler = async (event, context) => {
       })
     };
   } catch (error) {
-    log.error('AI feedback endpoint error', { error: error.message });
+    timer.end({ error: true });
+    log.error('AI feedback endpoint error', { error: error.message, stack: error.stack });
+    log.exit(500);
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },

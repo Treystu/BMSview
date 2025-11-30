@@ -12,7 +12,7 @@
  */
 
 const { getCollection } = require('./utils/mongodb.cjs');
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -169,17 +169,28 @@ async function exportFullBackup(log) {
  * Main handler
  */
 exports.handler = async (event, context) => {
+    const log = createLoggerFromEvent('export-data', event, context);
+    const timer = createTimer(log, 'export-data-handler');
+    
     const headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'GET, OPTIONS'
     };
     
+    log.entry({ method: event.httpMethod, path: event.path });
+    
     if (event.httpMethod === 'OPTIONS') {
+        log.debug('OPTIONS preflight request');
+        timer.end();
+        log.exit(200);
         return { statusCode: 200, headers };
     }
     
     if (event.httpMethod !== 'GET') {
+        log.warn('Method not allowed', { method: event.httpMethod });
+        timer.end();
+        log.exit(405);
         return {
             statusCode: 405,
             headers,
@@ -187,7 +198,6 @@ exports.handler = async (event, context) => {
         };
     }
     
-    const log = createLogger('export-data', context);
     const params = event.queryStringParameters || {};
     const type = params.type || 'history'; // history, systems, full
     const format = params.format || 'csv'; // csv, json
@@ -224,6 +234,8 @@ exports.handler = async (event, context) => {
         }
         
         log.info('Export completed', { type, format, size: data.length });
+        timer.end({ success: true });
+        log.exit(200, { type, format, size: data.length });
         
         return {
             statusCode: 200,
@@ -237,6 +249,8 @@ exports.handler = async (event, context) => {
         
     } catch (error) {
         log.error('Export failed', { error: error.message, stack: error.stack });
+        timer.end({ success: false, error: error.message });
+        log.exit(500);
         return {
             statusCode: 500,
             headers,

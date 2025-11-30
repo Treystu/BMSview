@@ -1,7 +1,8 @@
 "use strict";
 
 const { getCollection } = require("./utils/mongodb.cjs");
-const { createLogger } = require("./utils/logger.cjs");
+const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { getCorsHeaders } = require("./utils/cors.cjs");
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -146,12 +147,21 @@ function normalizeRecordTimestamps(records, fallbackFields, serverTime, log, col
 }
 
 exports.handler = async function (event, context) {
-    const log = createLogger("sync-incremental", context);
+    const headers = getCorsHeaders(event);
+    
+    // Handle preflight
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers };
+    }
+    
+    const log = createLoggerFromEvent("sync-incremental", event, context);
     log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
-    const requestStartedAt = Date.now();
+    const timer = createTimer(log, "sync-incremental");
 
     if (event.httpMethod !== "GET") {
         log.warn("Method not allowed", { method: event.httpMethod });
+        timer.end({ error: 'method_not_allowed' });
+        log.exit(405);
         return jsonResponse(405, { error: "Method Not Allowed" });
     }
 
@@ -161,16 +171,22 @@ exports.handler = async function (event, context) {
 
     if (!collectionKey) {
         log.warn("Missing collection query parameter");
+        timer.end({ error: 'missing_collection' });
+        log.exit(400);
         return errorResponse(400, "missing_collection", "The 'collection' query parameter is required.");
     }
 
     if (!since) {
         log.warn("Missing since query parameter", { collection: collectionKey });
+        timer.end({ error: 'missing_since' });
+        log.exit(400);
         return errorResponse(400, "missing_since", "The 'since' query parameter is required.");
     }
 
     if (!ISO_UTC_REGEX.test(since)) {
         log.warn("Invalid since timestamp format", { since });
+        timer.end({ error: 'invalid_since' });
+        log.exit(400);
         return errorResponse(400, "invalid_since", "The 'since' parameter must be an ISO 8601 UTC timestamp with milliseconds.");
     }
 

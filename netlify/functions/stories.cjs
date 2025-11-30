@@ -1,10 +1,9 @@
 const { getCollection } = require('./utils/mongodb.cjs');
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
 
 exports.handler = async (event, context) => {
-  const log = createLogger('stories', context);
   const headers = getCorsHeaders(event);
 
   if (event.httpMethod === 'OPTIONS') {
@@ -14,11 +13,15 @@ exports.handler = async (event, context) => {
     };
   }
 
-  try {
-    log.entry({ method: event.httpMethod, path: event.path });
+  const log = createLoggerFromEvent('stories', event, context);
+  log.entry({ method: event.httpMethod, path: event.path });
+  const timer = createTimer(log, 'stories');
 
+  try {
     if (!process.env.MONGODB_URI) {
       log.error('MONGODB_URI is not set');
+      timer.end({ error: 'missing_mongodb' });
+      log.exit(500);
       return errorResponse(500, 'server_error', 'Server configuration error', null, headers);
     }
 
@@ -35,6 +38,8 @@ exports.handler = async (event, context) => {
         
         if (!story) {
           log.warn('Story not found', { id });
+          timer.end({ found: false });
+          log.exit(404);
           return errorResponse(404, 'not_found', 'Story not found', { id }, headers);
         }
 
@@ -110,10 +115,15 @@ exports.handler = async (event, context) => {
     }
 
     // Unsupported method
+    log.warn('Method not allowed', { method: event.httpMethod });
+    timer.end({ error: 'method_not_allowed' });
+    log.exit(405);
     return errorResponse(405, 'method_not_allowed', `Method ${event.httpMethod} not allowed`, null, headers);
 
   } catch (error) {
+    timer.end({ error: true });
     log.error('Error in stories endpoint', { error: error.message, stack: error.stack });
+    log.exit(500);
     return errorResponse(500, 'internal_error', 'Failed to process request', { message: error.message }, headers);
   }
 };

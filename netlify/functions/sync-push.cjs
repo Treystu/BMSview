@@ -1,7 +1,7 @@
 "use strict";
 
 const { getCollection } = require("./utils/mongodb.cjs");
-const { createLogger } = require("./utils/logger.cjs");
+const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -51,20 +51,26 @@ function sanitizeItem(rawItem, serverTime) {
 }
 
 exports.handler = async function (event, context) {
-    const log = createLogger("sync-push", context);
+    const log = createLoggerFromEvent("sync-push", event, context);
+    const timer = createTimer(log, 'sync-push-handler');
+    
+    log.entry({ method: event.httpMethod, path: event.path });
     
     if (!validateEnvironment(log)) {
+      timer.end({ success: false, error: 'configuration' });
+      log.exit(500);
       return {
         statusCode: 500,
         body: JSON.stringify({ error: 'Server configuration error' })
       };
     }
     
-    log.entry({ method: event.httpMethod, path: event.path });
     const requestStartedAt = Date.now();
 
     if (event.httpMethod !== "POST") {
         log.warn("Method not allowed", { method: event.httpMethod });
+        timer.end();
+        log.exit(405);
         return jsonResponse(405, { error: "Method Not Allowed" });
     }
 
@@ -161,6 +167,7 @@ exports.handler = async function (event, context) {
             durationMs: Date.now() - requestStartedAt
         });
         log.exit(200, { collection: collectionKey, processed, inserted, updated });
+        timer.end({ success: true, processed, inserted, updated });
 
         return jsonResponse(200, {
             success: true,
@@ -179,6 +186,7 @@ exports.handler = async function (event, context) {
             durationMs: Date.now() - requestStartedAt
         });
         log.exit(500, { collection: collectionKey });
+        timer.end({ success: false, error: error.message });
         return errorResponse(500, "sync_push_error", "Failed to persist items for the requested collection.");
     }
 };

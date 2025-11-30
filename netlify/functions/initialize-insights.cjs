@@ -8,7 +8,7 @@
  * function can use to continue the analysis.
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getGeminiClient } = require('./utils/geminiClient.cjs');
 const { toolDefinitions, executeToolCall } = require('./utils/gemini-tools.cjs');
 
@@ -34,16 +34,23 @@ const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
  * Main handler for initialization
  */
 exports.handler = async (event, context) => {
+  const log = createLoggerFromEvent('initialize-insights', event, context);
+  const timer = createTimer(log, 'initialize-insights-handler');
   const headers = getCorsHeaders(event);
+  
+  log.entry({ method: event.httpMethod, path: event.path });
   
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
+    log.debug('OPTIONS preflight request');
+    timer.end();
+    log.exit(200);
     return { statusCode: 200, headers };
   }
 
-  const log = createLogger('initialize-insights', context);
-  
   if (!validateEnvironment(log)) {
+    timer.end({ success: false, error: 'configuration' });
+    log.exit(500);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Server configuration error' })
@@ -294,6 +301,9 @@ Execute the initialization now.`;
           durationMs
         });
         
+        timer.end({ success: true, dataPoints });
+        log.exit(200, { dataPoints, attempts: attempts + 1 });
+        
         // Return success with session data for handoff
         return {
           statusCode: 200,
@@ -336,6 +346,9 @@ Execute the initialization now.`;
       durationMs
     });
 
+    timer.end({ success: false, attempts });
+    log.exit(500);
+
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -356,6 +369,9 @@ Execute the initialization now.`;
       stack: err.stack,
       durationMs
     });
+
+    timer.end({ success: false, error: err.message });
+    log.exit(500);
 
     return {
       statusCode: 500,

@@ -1,6 +1,6 @@
 const { getCollection } = require('./utils/mongodb.cjs');
 const { v4: uuidv4 } = require("uuid");
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -13,10 +13,16 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
 
 exports.handler = async (event, context) => {
-  const log = createLogger('upload-story-photo', context);
+  const log = createLoggerFromEvent('upload-story-photo', event, context);
+  const timer = createTimer(log, 'upload-story-photo-handler');
   const headers = getCorsHeaders(event);
 
+  log.entry({ method: event.httpMethod, path: event.path });
+
   if (event.httpMethod === 'OPTIONS') {
+    log.debug('OPTIONS preflight request');
+    timer.end();
+    log.exit(200);
     return {
       statusCode: 200,
       headers,
@@ -24,10 +30,10 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    log.entry({ method: event.httpMethod, path: event.path });
-
     if (!process.env.MONGODB_URI) {
       log.error('MONGODB_URI is not set');
+      timer.end({ success: false, error: 'configuration' });
+      log.exit(500);
       return errorResponse(500, 'server_error', 'Server configuration error', null, headers);
     }
 
@@ -66,11 +72,14 @@ exports.handler = async (event, context) => {
 
     if (updateResult.modifiedCount === 0) {
       log.warn('Story not found or no changes made', { storyId });
+      timer.end({ success: false });
+      log.exit(404);
       return errorResponse(404, 'not_found', 'Story not found', { storyId }, headers);
     }
 
     log.info('Successfully added photo to story', { storyId, photoId });
-    log.exit(200);
+    timer.end({ success: true });
+    log.exit(200, { storyId, photoId });
 
     return {
       statusCode: 200,
@@ -79,6 +88,8 @@ exports.handler = async (event, context) => {
     };
   } catch (error) {
     log.error('Error uploading story photo', { error: error.message, stack: error.stack });
+    timer.end({ success: false, error: error.message });
+    log.exit(500);
     return errorResponse(500, 'internal_error', 'Failed to upload photo', { message: error.message }, headers);
   }
 };

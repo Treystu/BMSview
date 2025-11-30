@@ -1,60 +1,77 @@
 const nodemailer = require('nodemailer');
-const { createLogger } = require("./utils/logger.cjs");
+const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { getCorsHeaders } = require('./utils/cors.cjs');
 
 function validateEnvironment(log) {
   const required = ['EMAIL_HOST', 'EMAIL_PORT', 'EMAIL_USER', 'EMAIL_PASS', 'CONTACT_EMAIL_RECIPIENT'];
   const missing = required.filter(v => !process.env[v]);
   if (missing.length > 0) {
-    log.error(`Missing required environment variables: ${missing.join(', ')}`);
+    log.error('Missing required environment variables', { missing });
     return false;
   }
   return true;
 }
 
 exports.handler = async function(event, context) {
-  const log = createLogger('contact', context);
+  const headers = getCorsHeaders(event);
+  
+  // Handle preflight
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers };
+  }
+  
+  const log = createLoggerFromEvent('contact', event, context);
+  log.entry({ method: event.httpMethod, path: event.path });
+  const timer = createTimer(log, 'contact-form');
   
   if (!validateEnvironment(log)) {
+    log.exit(500);
     return {
       statusCode: 500,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: 'Server configuration error' })
     };
   }
-  const clientIp = event.headers['x-nf-client-connection-ip'];
-  const logContext = { clientIp, httpMethod: event.httpMethod };
-
-  log('debug', 'Function invoked.', { ...logContext, headers: event.headers });
 
   if (event.httpMethod !== 'POST') {
-    log('warn', `Method Not Allowed: ${event.httpMethod}`, logContext);
-    return { statusCode: 405, body: 'Method Not Allowed' };
+    log.warn('Method not allowed', { method: event.httpMethod });
+    log.exit(405);
+    return { statusCode: 405, headers, body: 'Method Not Allowed' };
   }
 
   try {
     let body;
     try {
         const bodyLength = event.body ? event.body.length : 0;
-        log('debug', 'Attempting to parse request body.', { ...logContext, bodyLength });
+        log.debug('Parsing request body', { bodyLength });
         body = JSON.parse(event.body);
-        log('debug', 'Request body parsed successfully.', logContext);
+        log.debug('Request body parsed successfully');
     } catch (e) {
-        log('error', 'Failed to parse request body.', { ...logContext, error: e.message, body: event.body });
-        return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON in request body.' }) };
+        log.error('Failed to parse request body', { error: e.message });
+        log.exit(400);
+        return { 
+          statusCode: 400, 
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ error: 'Invalid JSON in request body.' }) 
+        };
     }
     
     const { name, email, message } = body;
-    const submissionContext = { ...logContext, senderName: name, senderEmail: email };
-    log('info', 'Processing contact form submission.', submissionContext);
+    log.info('Processing contact form submission', { senderName: name, senderEmail: email });
 
     if (!name || !email || !message) {
-      log('warn', 'Missing required form fields.', submissionContext);
-      return { statusCode: 400, body: JSON.stringify({ error: 'Missing required form fields.' }) };
+      log.warn('Missing required form fields');
+      log.exit(400);
+      return { 
+        statusCode: 400, 
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Missing required form fields.' }) 
+      };
     }
     
     const { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, CONTACT_EMAIL_RECIPIENT } = process.env;
     
-    log('debug', 'Nodemailer environment variables loaded.', {
-      ...submissionContext,
+    log.debug('Nodemailer environment loaded', {
       hasHost: !!EMAIL_HOST,
       hasPort: !!EMAIL_PORT,
       hasUser: !!EMAIL_USER,
@@ -71,7 +88,7 @@ exports.handler = async function(event, context) {
         pass: EMAIL_PASS,
       },
     };
-    log('debug', 'Creating nodemailer transporter.', { ...submissionContext, host: EMAIL_HOST, port: EMAIL_PORT, user: EMAIL_USER });
+    log.debug('Creating nodemailer transporter', { host: EMAIL_HOST, port: EMAIL_PORT });
 
     const transporter = nodemailer.createTransport(transportConfig);
 
@@ -87,33 +104,40 @@ exports.handler = async function(event, context) {
              <p><strong>Message:</strong></p>
              <p>${message.replace(/\n/g, '<br>')}</p>`,
     };
-    log('debug', 'Mail options prepared.', { ...submissionContext, recipient: CONTACT_EMAIL_RECIPIENT });
+    log.debug('Mail options prepared', { recipient: CONTACT_EMAIL_RECIPIENT });
 
-    log('debug', 'Attempting to send email via nodemailer.');
-    const info = await sendMailWithRetry(transporter, mailOptions, log, submissionContext);
-    log('info', 'Email sent successfully via nodemailer.', { ...submissionContext, messageId: info.messageId, response: info.response });
+    log.debug('Attempting to send email via nodemailer');
+    const info = await sendMailWithRetry(transporter, mailOptions, log);
+    
+    timer.end({ success: true });
+    log.info('Email sent successfully', { messageId: info.messageId });
+    log.exit(200);
     
     return {
       statusCode: 200,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'Message sent successfully!' }),
     };
   } catch (error) {
-    log('error', 'Failed to send email.', { ...logContext, errorMessage: error.message, stack: error.stack });
+    timer.end({ error: true });
+    log.error('Failed to send email', { error: error.message, stack: error.stack });
+    log.exit(500);
     return {
       statusCode: 500,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: 'Failed to send message.' }),
     };
   }
 };
 
-async function sendMailWithRetry(transporter, mailOptions, log, submissionContext, retries = 3, delay = 1000) {
+async function sendMailWithRetry(transporter, mailOptions, log, retries = 3, delay = 1000) {
   try {
     return await transporter.sendMail(mailOptions);
   } catch (error) {
     if (retries > 0) {
-      log('warn', `Failed to send email. Retrying... (${retries} retries left)`, { ...submissionContext, error: error.message });
+      log.warn('Failed to send email, retrying', { error: error.message, retriesLeft: retries });
       await new Promise(resolve => setTimeout(resolve, delay));
-      return await sendMailWithRetry(transporter, mailOptions, log, submissionContext, retries - 1, delay * 2);
+      return await sendMailWithRetry(transporter, mailOptions, log, retries - 1, delay * 2);
     }
     throw error;
   }

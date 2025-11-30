@@ -1,5 +1,6 @@
 const { getDb } = require('./utils/mongodb.cjs');
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { getCorsHeaders } = require('./utils/cors.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -19,51 +20,48 @@ function validateEnvironment(log) {
  * - testId: The diagnostic run ID to check progress for
  */
 exports.handler = async (event, context) => {
-  const logger = createLogger('diagnostics-progress', context);
+  const headers = getCorsHeaders(event);
+  
+  // Handle CORS preflight
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers };
+  }
+  
+  // Get testId early for logging (may be undefined)
+  const testId = event.queryStringParameters?.testId || undefined;
+  
+  const logger = createLoggerFromEvent('diagnostics-progress', event, context, { jobId: testId });
+  logger.entry({ method: event.httpMethod, path: event.path, testId: testId || 'not_provided' });
+  const timer = createTimer(logger, 'diagnostics-progress');
   
   if (!validateEnvironment(logger)) {
+    timer.end({ error: 'env_validation_failed' });
+    logger.exit(500);
     return {
       statusCode: 500,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: 'Server configuration error' })
     };
   }
   
   try {
-    // Handle CORS
-    if (event.httpMethod === 'OPTIONS') {
-      return {
-        statusCode: 200,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type',
-          'Access-Control-Allow-Methods': 'GET, OPTIONS'
-        },
-        body: ''
-      };
-    }
-
     // Only support GET
     if (event.httpMethod !== 'GET') {
+      logger.warn('Method not allowed', { method: event.httpMethod });
+      logger.exit(405);
       return {
         statusCode: 405,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Content-Type': 'application/json'
-        },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ error: 'Method not allowed. Use GET.' })
       };
     }
-
-    // Get testId from query parameters
-    const testId = event.queryStringParameters?.testId;
     
     if (!testId) {
+      logger.warn('Missing testId query parameter');
+      logger.exit(400);
       return {
         statusCode: 400,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Content-Type': 'application/json'
-        },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           error: 'Missing testId query parameter',
           usage: '/.netlify/functions/diagnostics-progress?testId=<testId>' 
@@ -71,19 +69,19 @@ exports.handler = async (event, context) => {
       };
     }
 
-    logger.info('Fetching diagnostic progress', { testId });
+    logger.debug('Querying progress from database', { testId });
 
     // Query the progress document
     const db = await getDb();
     const progressDoc = await db.collection('diagnostics-runs').findOne({ testId });
 
     if (!progressDoc) {
+      logger.warn('Diagnostic run not found', { testId });
+      timer.end({ found: false });
+      logger.exit(404);
       return {
         statusCode: 404,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Content-Type': 'application/json'
-        },
+        headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           error: 'Diagnostic run not found',
           testId 
@@ -114,17 +112,19 @@ exports.handler = async (event, context) => {
       isComplete
     };
 
+    timer.end({ completed: completedCount, total: totalTests, isComplete });
     logger.info('Progress fetched', { 
       testId, 
       completed: completedCount, 
       total: totalTests,
       isComplete 
     });
+    logger.exit(200);
 
     return {
       statusCode: 200,
       headers: {
-        'Access-Control-Allow-Origin': '*',
+        ...headers,
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache, no-store, must-revalidate'
       },
@@ -132,17 +132,16 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
+    timer.end({ error: true });
     logger.error('Error fetching diagnostic progress', {
-      message: error.message,
+      error: error.message,
       stack: error.stack
     });
+    logger.exit(500);
 
     return {
       statusCode: 500,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Content-Type': 'application/json'
-      },
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         error: 'Failed to fetch diagnostic progress',
         message: error.message

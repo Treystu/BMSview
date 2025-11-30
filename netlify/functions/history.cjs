@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.cjs");
-const { createLogger } = require("./utils/logger.cjs");
+const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { getCorsHeaders } = require('./utils/cors.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -13,47 +14,62 @@ const { ObjectId } = require('mongodb'); // Needed for BulkWrite operations
 const { fetchHistoricalWeather, fetchHourlyWeather, getDaylightHours } = require("./utils/weather-fetcher.cjs");
 const { mergeBmsAndCloudData, downsampleMergedData } = require('./utils/data-merge.cjs');
 
-const respond = (statusCode, body) => ({
+const respond = (statusCode, body, headers = {}) => ({
     statusCode,
     body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
 });
 
 
 exports.handler = async function(event, context) {
-    const log = createLogger('history', context);
-    const clientIp = event.headers['x-nf-client-connection-ip'];
-    const { httpMethod, queryStringParameters, body } = event;
-    const logContext = { clientIp, httpMethod };
-    log('debug', 'Function invoked.', { ...logContext, queryStringParameters, headers: event.headers });
+    const headers = getCorsHeaders(event);
+    
+    // Handle preflight
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers };
+    }
+    
+    const log = createLoggerFromEvent('history', event, context);
+    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+    const timer = createTimer(log, 'history');
+    
+    if (!validateEnvironment(log)) {
+        log.exit(500);
+        return respond(500, { error: 'Server configuration error' }, headers);
+    }
 
     try {
         const historyCollection = await getCollection("history");
         const systemsCollection = await getCollection("systems");
 
         // --- GET Request Handler ---
-        if (httpMethod === 'GET') {
-            const { id, systemId, all, page = '1', limit = '25', merged, startDate, endDate, downsample } = queryStringParameters || {};
+        if (event.httpMethod === 'GET') {
+            const { id, systemId, all, page = '1', limit = '25', merged, startDate, endDate, downsample } = event.queryStringParameters || {};
 
             if (id) {
                 // Fetch single record by ID
+                log.debug('Fetching single record by ID', { id });
                 const record = await historyCollection.findOne({ id }, { projection: { _id: 0 } });
-                return record ? respond(200, record) : respond(404, { error: "Record not found." });
+                timer.end({ found: !!record });
+                log.exit(record ? 200 : 404);
+                return record ? respond(200, record, headers) : respond(404, { error: "Record not found." }, headers);
             }
 
             // Merged timeline data (BMS + Cloud)
             if (merged === 'true' && systemId && startDate && endDate) {
-                log('info', 'Fetching merged timeline data.', { ...logContext, systemId, startDate, endDate });
+                log.info('Fetching merged timeline data', { systemId, startDate, endDate });
                 
                 try {
                     let mergedData = await mergeBmsAndCloudData(systemId, startDate, endDate, log);
                     
                     // Apply downsampling if requested
                     if (downsample === 'true') {
-                        const maxPoints = parseInt(queryStringParameters.maxPoints) || 2000;
+                        const maxPoints = parseInt(event.queryStringParameters.maxPoints) || 2000;
                         mergedData = downsampleMergedData(mergedData, maxPoints, log);
                     }
                     
+                    timer.end({ merged: true, dataPoints: mergedData.length });
+                    log.exit(200);
                     return respond(200, {
                         systemId,
                         startDate,
@@ -849,20 +865,26 @@ exports.handler = async function(event, context) {
                     return respond(404, { error: 'Record not found.' });
                 }
             }
-            log('warn', 'Missing parameters for DELETE request.', deleteLogContext);
-            return respond(400, { error: "Missing 'id' or 'unlinked=true' parameter for DELETE." });
+            log.warn('Missing parameters for DELETE request');
+            timer.end({ error: 'missing_params' });
+            log.exit(400);
+            return respond(400, { error: "Missing 'id' or 'unlinked=true' parameter for DELETE." }, headers);
         }
 
         // --- Fallback for unsupported methods ---
-        log('warn', `Method Not Allowed: ${httpMethod}`, logContext);
-        return respond(405, { error: 'Method Not Allowed' });
+        log.warn('Method not allowed', { method: event.httpMethod });
+        timer.end({ error: 'method_not_allowed' });
+        log.exit(405);
+        return respond(405, { error: 'Method Not Allowed' }, headers);
 
     } catch (error) {
-        log('error', 'Critical error in history function.', { ...logContext, errorMessage: error.message, stack: error.stack });
+        timer.end({ error: true });
+        log.error('Critical error in history function', { error: error.message, stack: error.stack });
+        log.exit(error instanceof SyntaxError ? 400 : 500);
         // Distinguish between client errors (like bad JSON) and server errors
         if (error instanceof SyntaxError) {
-             return respond(400, { error: "Invalid JSON in request body." });
+             return respond(400, { error: "Invalid JSON in request body." }, headers);
         }
-        return respond(500, { error: "An internal server error occurred: " + error.message });
+        return respond(500, { error: "An internal server error occurred: " + error.message }, headers);
     }
 };

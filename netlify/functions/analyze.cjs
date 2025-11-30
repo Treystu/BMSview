@@ -23,7 +23,7 @@
 
 const { errorResponse } = require('./utils/errors.cjs');
 const { parseJsonBody, validateAnalyzeRequest, validateImagePayload } = require('./utils/validation.cjs');
-const { createLogger, createTimer } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 const { sha256HexFromBase64 } = require('./utils/hash.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
@@ -135,13 +135,16 @@ exports.handler = async (event, context) => {
   }
 
   // Logger and request-scoped context
-  const log = createLogger('analyze', context);
+  const log = createLoggerFromEvent('analyze', event, context);
   log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+  const timer = createTimer(log, 'analyze');
 
   // Validate environment before processing
   const envValidation = validateEnvironment(log);
   if (!envValidation.ok) {
     log.error('Environment validation failed', envValidation);
+    timer.end({ error: 'env_validation_failed' });
+    log.exit(503);
     return errorResponse(503, 'service_unavailable', envValidation.error, envValidation.details, headers);
   }
 
@@ -156,19 +159,29 @@ exports.handler = async (event, context) => {
     const parsed = parseJsonBody(event, log);
     if (!parsed.ok) {
       log.warn('Invalid JSON body for analyze request.', { error: parsed.error });
+      timer.end({ error: 'invalid_json' });
       log.exit(400);
       return errorResponse(400, 'invalid_request', parsed.error, undefined, headers);
     }
 
+    log.debug('Processing analysis', { isSync, forceReanalysis, hasIdemKey: !!idemKey });
+
     if (isSync) {
       // Synchronous analysis path with comprehensive error handling
-      return await handleSyncAnalysis(parsed.value, idemKey, forceReanalysis, headers, log, context);
+      const result = await handleSyncAnalysis(parsed.value, idemKey, forceReanalysis, headers, log, context);
+      timer.end({ mode: 'sync', statusCode: result.statusCode });
+      log.exit(result.statusCode);
+      return result;
     }
 
     // Legacy asynchronous analysis path
-    return await handleLegacyAnalysis(parsed.value, headers, log, requestContext);
+    const result = await handleLegacyAnalysis(parsed.value, headers, log, requestContext);
+    timer.end({ mode: 'async', statusCode: result.statusCode });
+    log.exit(result.statusCode);
+    return result;
 
   } catch (error) {
+    timer.end({ error: true });
     log.error('Analyze function failed.', {
       error: error && error.message ? error.message : String(error),
       stack: error.stack,

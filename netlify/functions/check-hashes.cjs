@@ -1,19 +1,24 @@
 "use strict";
 
 const { getCollection } = require('./utils/mongodb.cjs');
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
 
 exports.handler = async (event, context) => {
-    const log = createLogger('check-hashes', context);
     const headers = getCorsHeaders(event);
 
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers };
     }
 
+    const log = createLoggerFromEvent('check-hashes', event, context);
+    log.entry({ method: event.httpMethod, path: event.path });
+    const timer = createTimer(log, 'check-hashes');
+
     if (event.httpMethod !== 'POST') {
+        log.warn('Method not allowed', { method: event.httpMethod });
+        log.exit(405);
         return errorResponse(405, 'method_not_allowed', 'Method Not Allowed', null, headers);
     }
 
@@ -21,10 +26,12 @@ exports.handler = async (event, context) => {
         const { hashes } = JSON.parse(event.body);
 
         if (!Array.isArray(hashes) || hashes.length === 0) {
+            log.warn('Invalid hashes array in request');
+            log.exit(400);
             return errorResponse(400, 'bad_request', 'Missing or invalid "hashes" array in request body.', null, headers);
         }
 
-        log.info(`Checking ${hashes.length} hashes for existence.`);
+        log.info('Checking hashes for existence', { hashCount: hashes.length });
 
         const collection = await getCollection('analysis-results');
 
@@ -78,8 +85,19 @@ exports.handler = async (event, context) => {
             upgrades: [...upgrades],
         };
 
-        log.info(`Checked ${hashes.length} hashes: ${duplicates.size} duplicates, ${upgrades.size} require upgrade.`);
+        const durationMs = timer.end({ 
+            hashesChecked: hashes.length, 
+            duplicatesFound: duplicates.length,
+            upgradesNeeded: upgrades.size
+        });
+        log.info('Hash check complete', { 
+            hashesChecked: hashes.length, 
+            duplicatesFound: duplicates.length, 
+            upgradesNeeded: upgrades.size,
+            durationMs
+        });
 
+        log.exit(200);
         return {
             statusCode: 200,
             headers,
@@ -87,7 +105,9 @@ exports.handler = async (event, context) => {
         };
 
     } catch (error) {
-        log.error('Error checking hashes.', { error: error.message, stack: error.stack });
+        timer.end({ error: true });
+        log.error('Error checking hashes', { error: error.message, stack: error.stack });
+        log.exit(500);
         return errorResponse(500, 'internal_error', 'An internal error occurred while checking hashes.', null, headers);
     }
 };
