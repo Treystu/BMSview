@@ -4,7 +4,7 @@
  * Enhanced version that provides complete context and enables AI feedback
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { buildCompleteContext, countDataPoints } = require('./utils/full-context-builder.cjs');
 const { submitFeedbackToDatabase } = require('./utils/feedback-manager.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
@@ -44,7 +44,6 @@ When you identify improvement opportunities, use the submitAppFeedback function 
  * Main handler for full context insights
  */
 exports.handler = async (event, context) => {
-  const log = createLogger('generate-insights-full-context', context);
   const headers = getCorsHeaders(event);
   
   // Handle preflight
@@ -52,8 +51,14 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers };
   }
   
+  const log = createLoggerFromEvent('generate-insights-full-context', event, context);
+  log.entry({ method: event.httpMethod, path: event.path });
+  const timer = createTimer(log, 'full-context-insights');
+  
   try {
     if (event.httpMethod !== 'POST') {
+      log.warn('Method not allowed', { method: event.httpMethod });
+      log.exit(405);
       return {
         statusCode: 405,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -61,10 +66,13 @@ exports.handler = async (event, context) => {
       };
     }
     
+    log.debug('Parsing request body');
     const body = JSON.parse(event.body);
     const { systemId, enableFeedback = true, contextWindowDays = 90, customPrompt } = body;
     
     if (!systemId) {
+      log.warn('Missing systemId in request');
+      log.exit(400);
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -80,9 +88,12 @@ exports.handler = async (event, context) => {
     });
     
     // Build complete context with ALL data
+    log.debug('Building complete context', { systemId, contextWindowDays });
+    const contextTimer = createTimer(log, 'context-building');
     const fullContext = await buildCompleteContext(systemId, {
       contextWindowDays
     });
+    contextTimer.end({ dataPoints: countDataPoints(fullContext) });
     
     // Prepare tools for Gemini
     const tools = [];
@@ -167,23 +178,33 @@ exports.handler = async (event, context) => {
     `;
     
     // Execute insights generation using the existing geminiClient for consistency
+    log.debug('Initializing Gemini client');
     const { getGeminiClient } = require('./utils/geminiClient.cjs');
     const geminiClient = getGeminiClient();
     
     // Convert tools to function declarations for the API
     const toolDefs = tools.flatMap(t => t.function_declarations || []);
+    log.debug('Tool definitions prepared', { toolCount: toolDefs.length });
     
     // Prepend system instruction to the prompt for context
     const fullPrompt = `${GEMINI_SYSTEM_PROMPT}\n\n${prompt}`;
     
     // Call Gemini API via the existing client (handles rate limiting, circuit breaker, retries)
+    log.debug('Calling Gemini API', { 
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      promptLength: fullPrompt.length,
+      hasTools: toolDefs.length > 0
+    });
+    const geminiTimer = createTimer(log, 'gemini-api-call');
     const response = await geminiClient.callAPI(fullPrompt, {
       tools: toolDefs.length > 0 ? toolDefs : undefined,
       model: process.env.GEMINI_MODEL || 'gemini-2.5-flash'
     }, log);
+    geminiTimer.end({ hasResponse: !!response });
     
     // Extract text from the REST API response structure
     const responseText = response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    log.debug('Gemini response received', { responseLength: responseText.length });
     
     // Process function calls (feedback submissions) from the response
     const feedbackSubmissions = [];
@@ -220,13 +241,21 @@ exports.handler = async (event, context) => {
       }
     }
     
+    const durationMs = timer.end({ 
+      systemId,
+      dataPointsAnalyzed: countDataPoints(fullContext),
+      feedbackSubmitted: feedbackSubmissions.length 
+    });
+    
     log.info('Full context insights generated', {
       systemId,
       dataPointsAnalyzed: countDataPoints(fullContext),
       contextSizeBytes: JSON.stringify(fullContext).length,
-      feedbackSubmitted: feedbackSubmissions.length
+      feedbackSubmitted: feedbackSubmissions.length,
+      durationMs
     });
     
+    log.exit(200, { systemId, durationMs });
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -248,7 +277,13 @@ exports.handler = async (event, context) => {
       })
     };
   } catch (error) {
-    log.error('Full context insights error', { error: error.message, stack: error.stack });
+    timer.end({ error: true });
+    log.error('Full context insights error', { 
+      error: error.message, 
+      stack: error.stack,
+      errorType: error.constructor?.name
+    });
+    log.exit(500);
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },

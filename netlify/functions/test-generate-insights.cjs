@@ -4,30 +4,42 @@
  * This test validates the new function calling implementation
  */
 
+const { createLoggerFromEvent } = require('./utils/logger.cjs');
+const { getCorsHeaders } = require('./utils/cors.cjs');
+
 exports.handler = async (event, context) => {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = getCorsHeaders(event);
+  
+  // Handle preflight
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers };
+  }
+  
+  const log = createLoggerFromEvent('test-generate-insights', event, context);
+  log.entry({ method: event.httpMethod, path: event.path });
+  
   try {
+    log.info('Starting integration tests');
     await runAllTests();
+    log.info('All tests passed');
+    log.exit(200);
     return {
       statusCode: 200,
-      headers,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ success: true, message: 'All tests passed' })
     };
   } catch (error) {
+    log.error('Integration tests failed', { error: error.message, stack: error.stack });
+    log.exit(500);
     return {
       statusCode: 500,
-      headers,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ success: false, message: error.message })
     };
   }
 };
 
-function validateEnvironment(log) {
-  // No specific env vars required for this function, but good practice to have the hook.
-  return true;
-}
-
-// Mock logger for testing
+// Mock logger for internal test functions
 const mockLogger = {
   debug: (msg, ctx) => console.log(`[DEBUG] ${msg}`, ctx || ''),
   info: (msg, ctx) => console.log(`[INFO] ${msg}`, ctx || ''),
