@@ -43,7 +43,7 @@
             "services": "camelCase",
             "types": "PascalCase",
             "functions": "camelCase",
-            "netlifyfunctions": "kebab-case"
+            "netlifyfunctions": "kebab-case.cjs"
         },
         "files": {
             "components": ".tsx",
@@ -144,8 +144,11 @@
             "analysis-results": "Analyzed BMS screenshots with metrics",
             "systems": "Registered BMS systems",
             "history": "Legacy analysis history",
-            "insights-jobs": "Background AI insights jobs",
-            "idempotent-requests": "Request deduplication cache"
+            "insights-jobs": "Background insights jobs with checkpoint/resume support",
+            "idempotent-requests": "Request deduplication cache",
+            "hourly-weather": "Hourly weather data for solar analysis",
+            "hourly-solar-irradiance": "Calculated solar irradiance data",
+            "progress-events": "Legacy job progress tracking (mostly unused)"
         },
         "connectionHelper": "getCollection() from utils/mongodb.cjs"
     },
