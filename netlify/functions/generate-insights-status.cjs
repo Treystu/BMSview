@@ -16,6 +16,25 @@ function validateEnvironment(log) {
   return true;
 }
 
+/**
+ * Extract jobId from event (POST body or query params)
+ * @param {Object} event - Netlify event
+ * @returns {string|null} jobId if found
+ */
+function extractJobId(event) {
+  try {
+    if (event.httpMethod === 'POST' && event.body) {
+      const body = JSON.parse(event.body);
+      return body.jobId || null;
+    } else if (event.queryStringParameters) {
+      return event.queryStringParameters.jobId || null;
+    }
+  } catch (e) {
+    // Parse error - return null
+  }
+  return null;
+}
+
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
   
@@ -24,18 +43,8 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers };
   }
 
-  // Extract jobId early for logging context
-  let jobId = null;
-  try {
-    if (event.httpMethod === 'POST' && event.body) {
-      const body = JSON.parse(event.body);
-      jobId = body.jobId;
-    } else if (event.queryStringParameters) {
-      jobId = event.queryStringParameters.jobId;
-    }
-  } catch (e) {
-    // Will handle parse error later
-  }
+  // Extract jobId for logging context
+  const jobId = extractJobId(event);
 
   const log = createLoggerFromEvent('generate-insights-status', event, context, { jobId });
   log.entry({ method: event.httpMethod, path: event.path, jobId });
@@ -51,16 +60,6 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    // Re-parse request if jobId wasn't extracted
-    if (!jobId) {
-      if (event.httpMethod === 'POST' && event.body) {
-        const body = JSON.parse(event.body);
-        jobId = body.jobId;
-      } else if (event.queryStringParameters) {
-        jobId = event.queryStringParameters.jobId;
-      }
-    }
-
     if (!jobId) {
       log.warn('Missing jobId in request');
       log.exit(400);

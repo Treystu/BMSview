@@ -67,8 +67,8 @@ function extractCorrelationIdFromHeaders(headers) {
     return null;
   }
   
-  // Check common correlation ID header names (case-insensitive)
-  const correlationHeaders = [
+  // Common correlation ID header names to check
+  const correlationHeaderNames = [
     'x-request-id',
     'x-correlation-id', 
     'x-trace-id',
@@ -76,10 +76,13 @@ function extractCorrelationIdFromHeaders(headers) {
     'correlation-id'
   ];
   
-  // Headers may be lowercase in Netlify
-  for (const headerName of correlationHeaders) {
-    const value = headers[headerName] || headers[headerName.toLowerCase()];
-    if (value && typeof value === 'string' && value.trim()) {
+  // Convert correlation header names to a Set for O(1) lookup
+  const correlationHeaderSet = new Set(correlationHeaderNames);
+  
+  // Iterate through headers once (more efficient)
+  for (const [key, value] of Object.entries(headers)) {
+    const lowerKey = key.toLowerCase();
+    if (correlationHeaderSet.has(lowerKey) && value && typeof value === 'string' && value.trim()) {
       return value.trim();
     }
   }
