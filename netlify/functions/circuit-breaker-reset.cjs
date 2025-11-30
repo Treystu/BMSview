@@ -6,26 +6,12 @@
  * Supports both global and per-tool circuit breakers.
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { resetCircuitBreaker, resetAllCircuitBreakers } = require('./utils/retry.cjs');
 const { getRegistry } = require('./utils/tool-circuit-breakers.cjs');
 
-function validateEnvironment(log) {
-  // No specific env vars required for this function, but good practice to have the hook.
-  return true;
-}
-
 exports.handler = async (event, context) => {
-  const log = createLogger('circuit-breaker-reset', context);
-  
-  if (!validateEnvironment(log)) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'Server configuration error' })
-    };
-  }
-  
   const headers = getCorsHeaders(event);
   
   // Handle preflight
@@ -33,8 +19,13 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers };
   }
 
+  const log = createLoggerFromEvent('circuit-breaker-reset', event, context);
+  log.entry({ method: event.httpMethod, path: event.path });
+  const timer = createTimer(log, 'circuit-breaker-reset');
+
   try {
     // Parse request
+    log.debug('Parsing request body');
     const body = event.body ? JSON.parse(event.body) : {};
     const { key, toolName, resetAll, resetAllTools } = body;
 
@@ -84,6 +75,8 @@ exports.handler = async (event, context) => {
 
     // Check if any reset was performed
     if (!results.global && !results.tools) {
+      log.warn('No reset parameters provided');
+      log.exit(400);
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -97,6 +90,11 @@ exports.handler = async (event, context) => {
       };
     }
 
+    timer.end({ 
+      globalReset: !!results.global, 
+      toolsReset: !!results.tools 
+    });
+    log.exit(200);
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -107,10 +105,12 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
+    timer.end({ error: true });
     log.error('Failed to reset circuit breaker', {
       error: error.message,
       stack: error.stack
     });
+    log.exit(500);
 
     return {
       statusCode: 500,

@@ -6,26 +6,12 @@
  * Now includes both global and per-tool circuit breakers.
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { getCircuitBreakerStatus } = require('./utils/retry.cjs');
 const { getRegistry } = require('./utils/tool-circuit-breakers.cjs');
 
-function validateEnvironment(log) {
-  // No specific env vars required for this function, but good practice to have the hook.
-  return true;
-}
-
 exports.handler = async (event, context) => {
-  const log = createLogger('circuit-breaker-status', context);
-
-  if (!validateEnvironment(log)) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'Server configuration error' })
-    };
-  }
-
   const headers = getCorsHeaders(event);
   
   // Handle preflight
@@ -33,8 +19,12 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers };
   }
 
+  const log = createLoggerFromEvent('circuit-breaker-status', event, context);
+  log.entry({ method: event.httpMethod, path: event.path });
+  const timer = createTimer(log, 'circuit-breaker-status');
+
   try {
-    log.info('Circuit breaker status requested');
+    log.debug('Fetching circuit breaker status');
 
     // Get current status of global circuit breakers (legacy retry.cjs)
     const globalStatus = getCircuitBreakerStatus();
@@ -92,6 +82,10 @@ exports.handler = async (event, context) => {
       }
     };
 
+    timer.end({ 
+      totalBreakers: response.overall.totalBreakers,
+      anyOpen: response.overall.anyOpen
+    });
     log.info('Circuit breaker status retrieved', {
       globalTotal: response.global.summary.total,
       globalOpen: response.global.summary.open,
@@ -100,6 +94,7 @@ exports.handler = async (event, context) => {
       anyOpen: response.overall.anyOpen
     });
 
+    log.exit(200);
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -107,10 +102,12 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
+    timer.end({ error: true });
     log.error('Failed to retrieve circuit breaker status', {
       error: error.message,
       stack: error.stack
     });
+    log.exit(500);
 
     return {
       statusCode: 500,

@@ -1,52 +1,48 @@
-const { createLogger } = require("./utils/logger.cjs");
-
-function validateEnvironment(log) {
-  // No specific env vars required for this function, but good practice to have the hook.
-  return true;
-}
+const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { getCorsHeaders } = require('./utils/cors.cjs');
 
 exports.handler = async function(event, context) {
-  const log = createLogger('get-ip', context);
+  const headers = getCorsHeaders(event);
   
-  if (!validateEnvironment(log)) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'Server configuration error' })
-    };
+  // Handle preflight
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers };
   }
   
+  const log = createLoggerFromEvent('get-ip', event, context);
+  log.entry({ method: event.httpMethod, path: event.path });
+  
   try {
-    log.entry({ method: event.httpMethod, path: event.path });
-    
     const ip = event.headers['x-nf-client-connection-ip'];
-    const logContext = { clientIp: ip };
     
-    log.debug('Function invoked', { ...logContext, headers: event.headers });
+    log.debug('Getting client IP from headers');
     
     if (!ip) {
-        log.error('Could not determine client IP address from headers', logContext);
+        log.error('Could not determine client IP address from headers');
         log.exit(500);
         return {
             statusCode: 500,
+            headers: { ...headers, 'Content-Type': 'application/json' },
             body: JSON.stringify({ error: 'Could not determine client IP address.' }),
-            headers: { 'Content-Type': 'application/json' },
         };
     }
 
-    log.info('Successfully determined client IP address', logContext);
+    log.info('Successfully determined client IP address', { ip });
     log.exit(200, { ip });
     return {
       statusCode: 200,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ip }),
-      headers: { 'Content-Type': 'application/json' },
     };
   } catch (error) {
     log.error('Error in get-ip function', {
       error: error.message,
       stack: error.stack
     });
+    log.exit(500);
     return {
       statusCode: 500,
+      headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: 'Internal server error' })
     };
   }
