@@ -1,4 +1,4 @@
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const {
@@ -17,7 +17,6 @@ const {
  * - endDate: ISO date string
  */
 exports.handler = async (event, context) => {
-  const log = createLogger('monitoring', context);
   const headers = {
     ...getCorsHeaders(event),
     'Content-Type': 'application/json'
@@ -28,34 +27,51 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers };
   }
 
-  log.info('Monitoring endpoint called', { queryParams: event.queryStringParameters });
+  const log = createLoggerFromEvent('monitoring', event, context);
+  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+  const timer = createTimer(log, 'monitoring');
 
   try {
     const params = event.queryStringParameters || {};
     const type = params.type || 'dashboard';
 
+    log.debug('Processing monitoring request', { type });
+
+    let result;
     switch (type) {
       case 'realtime':
-        return await handleRealtimeMetrics(log, headers);
+        result = await handleRealtimeMetrics(log, headers);
+        break;
       
       case 'cost':
-        return await handleCostMetrics(log, headers, params);
+        result = await handleCostMetrics(log, headers, params);
+        break;
       
       case 'alerts':
-        return await handleAlerts(log, headers, params);
+        result = await handleAlerts(log, headers, params);
+        break;
       
       case 'trends':
-        return await handleTrends(log, headers, params);
+        result = await handleTrends(log, headers, params);
+        break;
       
       case 'feedback':
-        return await handleFeedbackStats(log, headers);
+        result = await handleFeedbackStats(log, headers);
+        break;
       
       case 'dashboard':
       default:
-        return await handleDashboard(log, headers, params);
+        result = await handleDashboard(log, headers, params);
+        break;
     }
+
+    timer.end({ type });
+    log.exit(result.statusCode);
+    return result;
   } catch (error) {
+    timer.end({ error: true });
     log.error('Monitoring endpoint error', { error: error.message, stack: error.stack });
+    log.exit(500);
     return {
       statusCode: 500,
       headers,
