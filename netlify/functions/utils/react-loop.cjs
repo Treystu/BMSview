@@ -1489,7 +1489,7 @@ async function executeReActLoop(params) {
                 } else if (finishReason === 'RECITATION') {
                     finalAnswer = `The AI detected potential copyrighted content. Please rephrase your request.`;
                     break;
-                } else if (finishReason === 'MALFORMED_FUNCTION_CALL' && turnCount < MAX_TURNS - 1) {
+                } else if (finishReason === 'MALFORMED_FUNCTION_CALL' && turnCount < MAX_TURNS) {
                     // RECOVERABLE ERROR: Gemini tried to make a function call but the JSON was malformed
                     // Common cause: Gemini outputting Python code like "data = default_api.request_bms_data(...)"
                     // Add guidance and retry instead of failing immediately
@@ -1584,7 +1584,7 @@ async function executeReActLoop(params) {
                 p.functionCall && typeof p.functionCall.name !== 'string'
             );
             
-            if (malformedCalls.length > 0 && turnCount < MAX_TURNS - 1) {
+            if (malformedCalls.length > 0 && turnCount < MAX_TURNS) {
                 log.warn('Detected malformed function calls in response parts, requesting correction', {
                     turn: turnCount,
                     malformedCount: malformedCalls.length,

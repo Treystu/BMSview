@@ -89,7 +89,7 @@ async function getOrCreateResumableJob(params, log) {
       // the model may be too slow for our timeout budget (e.g., gemini-2.5-pro)
       // After 5 retries at the same turn, fail with helpful message
       const MAX_SAME_TURN_RETRIES = 5;
-      if (previousRetryCount >= MAX_SAME_TURN_RETRIES) {
+      if (previousRetryCount > MAX_SAME_TURN_RETRIES) {
         log.error('Job stalled - no progress after multiple retries at same checkpoint', {
           resumeJobId,
           turnCount: previousTurn,
