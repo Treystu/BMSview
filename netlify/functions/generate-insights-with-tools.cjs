@@ -13,7 +13,7 @@
  * - Consent verification
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { executeReActLoop } = require('./utils/react-loop.cjs');
 const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
 const { sanitizeInsightsRequest, SanitizationError } = require('./utils/security-sanitizer.cjs');
@@ -70,9 +70,9 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers };
   }
 
-  const log = createLogger('generate-insights-with-tools', context);
-  log.info('Received event', { event });
-  log.info('Received context', { context });
+  const log = createLoggerFromEvent('generate-insights-with-tools', event, context);
+  log.entry({ method: event.httpMethod, path: event.path });
+  const timer = createTimer(log, 'generate-insights-with-tools');
   const startTime = Date.now();
 
   // Extract client IP for security logging
@@ -540,6 +540,8 @@ exports.handler = async (event, context) => {
       });
     });
 
+    log.info('Background job started', { jobId: job.id });
+    log.exit(202, { jobId: job.id });
     return {
       statusCode: 202,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -553,6 +555,7 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
+    timer.end({ error: true });
     log.error('Insights generation failed', {
       error: error.message,
       stack: error.stack,
@@ -564,6 +567,7 @@ exports.handler = async (event, context) => {
     const statusCode = getInsightsErrorStatusCode(error);
     const errorCode = getInsightsErrorCode(error);
 
+    log.exit(statusCode, { errorCode });
     return {
       statusCode,
       headers: { ...headers, 'Content-Type': 'application/json' },
