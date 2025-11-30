@@ -1,4 +1,4 @@
-import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData, AnalysisStory, StoryPhoto, AdminStory, AdminStoriesResponse, InsightMode } from '../types';
+import type { AdminStoriesResponse, AdminStory, AnalysisData, AnalysisRecord, AnalysisStory, BmsSystem, InsightMode, StoryPhoto, WeatherData } from '../types';
 import { InsightMode as InsightModeEnum } from '../types';
 
 interface PaginatedResponse<T> {
@@ -434,7 +434,7 @@ const defaultApiFetch = async <T>(endpoint: string, options: RequestInit = {}): 
                 errorData = JSON.parse(errorText);
             } catch {
                 // If JSON parse fails, use the text or a detailed error message
-                errorData = { 
+                errorData = {
                     error: errorText || `HTTP ${response.status} ${response.statusText}`,
                     statusCode: response.status,
                     statusText: response.statusText
@@ -634,7 +634,8 @@ export function selectEndpointForMode(mode: InsightMode): string {
         case InsightModeEnum.STANDARD:
             return '/.netlify/functions/generate-insights';
         case InsightModeEnum.FULL_CONTEXT:
-            return '/.netlify/functions/generate-insights-full-context';
+            // Consolidated: Use the robust tools-based endpoint for full context too
+            return '/.netlify/functions/generate-insights-with-tools';
         case InsightModeEnum.WITH_TOOLS:
         default:
             return '/.netlify/functions/generate-insights-with-tools';
@@ -659,21 +660,21 @@ export const streamInsights = async (
     onStart?: () => void
 ) => {
     onStart?.();
-    
+
     // Determine endpoint based on selected mode
     const mode = payload.insightMode || InsightModeEnum.WITH_TOOLS;
     const endpoint = selectEndpointForMode(mode);
 
     let contextSummarySent = false;
-    
+
     // CRITICAL: Backend timeout configuration
     // Default is 20s for Pro/Business, but can be configured via NETLIFY_FUNCTION_TIMEOUT_MS
     // Since we can't read env vars directly in the browser, we use the default
     const BACKEND_FUNCTION_TIMEOUT_S = 20; // 20 seconds (configurable on backend)
-    
+
     // CRITICAL: With Netlify's configurable timeout, each attempt is shorter
     // Allow 15 attempts (15 * 20s default = 300s = 5 minutes total processing time)
-    const MAX_RESUME_ATTEMPTS = 15; // Maximum 15 attempts for complex queries
+    const MAX_RESUME_ATTEMPTS = 60; // Maximum 60 attempts for complex queries (20-30 mins)
     let resumeJobId: string | undefined = undefined;
     let attemptCount = 0;
     let lastErrorDetails: { code?: string; message?: string; status?: number } | null = null;
@@ -695,393 +696,394 @@ export const streamInsights = async (
         while (attemptCount < MAX_RESUME_ATTEMPTS) {
             attemptCount++;
 
-        // Show retry progress to user - CALM UI approach
-        // Only show initial message, hide retry spam from user
-        if (attemptCount > 1) {
-            // Log retry for debugging, but don't spam user with attempt counts
-            log('info', 'Resuming insights generation silently', { attemptCount, resumeJobId });
-            // No visible message to user - the processing indicator continues smoothly
-        } else {
-            // First attempt - log, but don't send an init message via onChunk
-            log('info', 'Starting initial insights generation', { attemptCount });
-        }
-
-        // Timeout for insights request: 30 seconds (allows for Netlify 20s + network overhead)
-        // This is MUCH shorter than the old 90s since each backend attempt is now only ~20s
-        const controller = new AbortController();
-        const REQUEST_TIMEOUT_MS = 30000; // 30 seconds per attempt
-        const timeoutId = setTimeout(() => {
-            controller.abort();
-            log('warn', `Insights request timed out after ${REQUEST_TIMEOUT_MS}ms.`);
-        }, REQUEST_TIMEOUT_MS);
-
-        try {
-            // Build request body with resumeJobId if available
-            const requestBody: any = {
-                ...payload,
-                insightMode: mode, // Include for logging consistency
-                mode: 'sync' // Explicitly use sync mode for checkpoint/resume
-            };
-            
-            if (resumeJobId) {
-                requestBody.resumeJobId = resumeJobId;
+            // Show retry progress to user - CALM UI approach
+            // Only show initial message, hide retry spam from user
+            if (attemptCount > 1) {
+                // Log retry for debugging, but don't spam user with attempt counts
+                log('info', 'Resuming insights generation silently', { attemptCount, resumeJobId });
+                // No visible message to user - the processing indicator continues smoothly
+            } else {
+                // First attempt - log, but don't send an init message via onChunk
+                log('info', 'Starting initial insights generation', { attemptCount });
             }
 
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody),
-                signal: controller.signal,
-            });
+            // Timeout for insights request: 30 seconds (allows for Netlify 20s + network overhead)
+            // This is MUCH shorter than the old 90s since each backend attempt is now only ~20s
+            const controller = new AbortController();
+            const REQUEST_TIMEOUT_MS = 30000; // 30 seconds per attempt
+            const timeoutId = setTimeout(() => {
+                controller.abort();
+                log('warn', `Insights request timed out after ${REQUEST_TIMEOUT_MS}ms.`);
+            }, REQUEST_TIMEOUT_MS);
 
-            clearTimeout(timeoutId);
-
-            // Handle 408 timeout response with resumeJobId
-            if (response.status === 408) {
-                try {
-                    const errorData = await response.json();
-                    
-                    // Track error details for dynamic error messages
-                    lastErrorDetails = {
-                        code: errorData.error || 'insights_timeout',
-                        message: errorData.message || 'Request timed out',
-                        status: 408
-                    };
-                    
-                    log('info', 'Received 408 timeout response', {
-                        hasJobId: !!errorData.details?.jobId,
-                        canResume: errorData.details?.canResume,
-                        attemptCount
-                    });
-
-                    // Check if we can resume
-                    if (errorData.details?.canResume && errorData.details?.jobId) {
-                        // Save jobId and continue loop for retry
-                        resumeJobId = errorData.details.jobId;
-                        log('info', 'Automatic retry scheduled', {
-                            attemptCount,
-                            maxAttempts: MAX_RESUME_ATTEMPTS,
-                            jobId: resumeJobId
-                        });
-                        
-                        // Continue to next iteration
-                        continue;
-                    } else {
-                        // Can't resume - throw original error
-                        throw new Error(errorData.message || 'Insights generation timed out and cannot be resumed');
-                    }
-                } catch (parseError) {
-                    lastErrorDetails = { code: 'parse_error', message: 'Failed to parse timeout response', status: 408 };
-                    log('error', 'Failed to parse 408 response', { error: parseError });
-                    throw new Error('Insights generation timed out');
-                }
-            }
-
-            if (!response.ok) {
-                let errorMessage = `Request failed: ${response.status}`;
-                let errorCode = `http_${response.status}`;
-
-                // Provide user-friendly error messages for common status codes
-                if (response.status === 504) {
-                    errorMessage = 'Request timed out. The AI took too long to process your query. Try:\n' +
-                        '• Asking a simpler question\n' +
-                        '• Requesting a smaller time range\n' +
-                        '• Breaking complex queries into multiple questions';
-                    errorCode = 'gateway_timeout';
-                } else if (response.status === 503) {
-                    errorMessage = 'Service temporarily unavailable. Please try again in a few moments.';
-                    errorCode = 'service_unavailable';
-                } else if (response.status === 500) {
-                    try {
-                        const errorData = await response.json();
-                        if (errorData.message) {
-                            errorMessage = errorData.message;
-                        }
-                        if (errorData.error) {
-                            errorCode = errorData.error;
-                        }
-                    } catch {
-                        errorMessage = 'Internal server error. Please try again.';
-                    }
-                } else if (response.status === 404) {
-                    errorCode = 'not_found';
-                    errorMessage = 'AI model or endpoint not found. This may be a configuration issue.';
-                } else if (response.status === 429) {
-                    errorCode = 'rate_limited';
-                    errorMessage = 'Rate limit exceeded. Please wait a moment before trying again.';
-                } else {
-                    try {
-                        const errorText = await response.text();
-                        errorMessage = errorText || errorMessage;
-                    } catch {
-                        // Use default error message
-                    }
-                }
-
-                // Track error details for dynamic error messages
-                lastErrorDetails = {
-                    code: errorCode,
-                    message: errorMessage,
-                    status: response.status
+            try {
+                // Build request body with resumeJobId if available
+                const requestBody: any = {
+                    ...payload,
+                    insightMode: mode, // Include for logging consistency
+                    mode: 'sync' // Explicitly use sync mode for checkpoint/resume
                 };
 
-                log('error', 'Insights request failed', {
-                    status: response.status,
-                    statusText: response.statusText,
-                    errorMessage,
-                    errorCode
-                });
-
-                throw new Error(errorMessage);
-            }
-
-            const result = await response.json();
-
-            // Log response structure for debugging
-            log('info', 'Insights response received', {
-                hasJobId: !!result.jobId,
-                hasInsights: !!result.insights,
-                hasSuccess: !!result.success,
-                hasStatus: !!result.status,
-                responseKeys: Object.keys(result),
-                jobId: result.jobId?.substring?.(0, 20) || 'none',
-                status: result.status,
-                mode: result.metadata?.mode,
-                wasResumed: result.metadata?.wasResumed,
-                attemptCount
-            });
-
-            if (result.contextSummary && !contextSummarySent) {
-                const summaryText = formatContextSummary(result.contextSummary);
-                if (summaryText) {
-                    onChunk(summaryText);
-                    contextSummarySent = true;
+                if (resumeJobId) {
+                    requestBody.resumeJobId = resumeJobId;
                 }
-            }
 
-            // Handle BACKGROUND MODE: Response contains jobId (async processing)
-            if (result.jobId && !result.insights) {
-                log('info', 'Background insights job started', {
-                    jobId: result.jobId,
-                    status: result.status
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody),
+                    signal: controller.signal,
                 });
 
-                // Stream initial summary if available
-                if (result.initialSummary) {
-                    const summaryText = formatInitialSummary(result.initialSummary);
-                    if (summaryText) {
-                        onChunk(summaryText);
+                clearTimeout(timeoutId);
+
+                // Handle 408 timeout response with resumeJobId
+                if (response.status === 408) {
+                    try {
+                        const errorData = await response.json();
+
+                        // Track error details for dynamic error messages
+                        lastErrorDetails = {
+                            code: errorData.error || 'insights_timeout',
+                            message: errorData.message || 'Request timed out',
+                            status: 408
+                        };
+
+                        log('info', 'Received 408 timeout response', {
+                            hasJobId: !!errorData.details?.jobId,
+                            canResume: errorData.details?.canResume,
+                            attemptCount
+                        });
+
+                        // Check if we can resume
+                        if (errorData.details?.canResume && errorData.details?.jobId) {
+                            // Save jobId and continue loop for retry
+                            resumeJobId = errorData.details.jobId;
+                            log('info', 'Automatic retry scheduled', {
+                                attemptCount,
+                                maxAttempts: MAX_RESUME_ATTEMPTS,
+                                jobId: resumeJobId
+                            });
+
+                            // Continue to next iteration
+                            continue;
+                        } else {
+                            // Can't resume - throw original error
+                            throw new Error(errorData.message || 'Insights generation timed out and cannot be resumed');
+                        }
+                    } catch (parseError) {
+                        lastErrorDetails = { code: 'parse_error', message: 'Failed to parse timeout response', status: 408 };
+                        log('error', 'Failed to parse 408 response', { error: parseError });
+                        throw new Error('Insights generation timed out');
                     }
                 }
 
-                // Start polling for job completion
-                await pollInsightsJobCompletion(
-                    result.jobId,
-                    onChunk,
-                    onError,
-                    600,
-                    2000,
-                    contextSummarySent ? undefined : result.contextSummary,
-                    payload.contextWindowDays
-                );
-                onComplete();
-                return;
-            }
+                if (!response.ok) {
+                    let errorMessage = `Request failed: ${response.status}`;
+                    let errorCode = `http_${response.status}`;
 
-            // Handle SYNC MODE: Response contains insights directly
-            if (result.success && result.insights) {
-                // Check for warnings (e.g., max iterations reached)
-                if (result.warning) {
-                    log('warn', 'Insights generation warning', { warning: result.warning });
+                    // Provide user-friendly error messages for common status codes
+                    if (response.status === 504) {
+                        errorMessage = 'Request timed out. The AI took too long to process your query. Try:\n' +
+                            '• Asking a simpler question\n' +
+                            '• Requesting a smaller time range\n' +
+                            '• Breaking complex queries into multiple questions';
+                        errorCode = 'gateway_timeout';
+                    } else if (response.status === 503) {
+                        errorMessage = 'Service temporarily unavailable. Please try again in a few moments.';
+                        errorCode = 'service_unavailable';
+                    } else if (response.status === 500) {
+                        try {
+                            const errorData = await response.json();
+                            if (errorData.message) {
+                                errorMessage = errorData.message;
+                            }
+                            if (errorData.error) {
+                                errorCode = errorData.error;
+                            }
+                        } catch {
+                            errorMessage = 'Internal server error. Please try again.';
+                        }
+                    } else if (response.status === 404) {
+                        errorCode = 'not_found';
+                        errorMessage = 'AI model or endpoint not found. This may be a configuration issue.';
+                    } else if (response.status === 429) {
+                        errorCode = 'rate_limited';
+                        errorMessage = 'Rate limit exceeded. Please wait a moment before trying again.';
+                    } else {
+                        try {
+                            const errorText = await response.text();
+                            errorMessage = errorText || errorMessage;
+                        } catch {
+                            // Use default error message
+                        }
+                    }
+
+                    // Track error details for dynamic error messages
+                    lastErrorDetails = {
+                        code: errorCode,
+                        message: errorMessage,
+                        status: response.status
+                    };
+
+                    log('error', 'Insights request failed', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        errorMessage,
+                        errorCode
+                    });
+
+                    throw new Error(errorMessage);
                 }
 
-                if (!contextSummarySent && result.insights.contextSummary) {
-                    const summaryText = formatContextSummary(result.insights.contextSummary);
+                const result = await response.json();
+
+                // Log response structure for debugging
+                log('info', 'Insights response received', {
+                    hasJobId: !!result.jobId,
+                    hasInsights: !!result.insights,
+                    hasSuccess: !!result.success,
+                    hasStatus: !!result.status,
+                    responseKeys: Object.keys(result),
+                    jobId: result.jobId?.substring?.(0, 20) || 'none',
+                    status: result.status,
+                    mode: result.metadata?.mode,
+                    wasResumed: result.metadata?.wasResumed,
+                    attemptCount
+                });
+
+                if (result.contextSummary && !contextSummarySent) {
+                    const summaryText = formatContextSummary(result.contextSummary);
                     if (summaryText) {
                         onChunk(summaryText);
                         contextSummarySent = true;
                     }
                 }
 
-                onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis completed');
-
-                // Log performance metrics if available
-                if (result.metadata) {
-                    log('info', 'Insights generation metrics', {
-                        iterations: result.metadata.turns,
-                        toolCallsUsed: result.metadata.toolCalls,
-                        durationMs: result.metadata.durationMs,
-                        wasResumed: result.metadata.wasResumed,
-                        totalAttempts: attemptCount
+                // Handle BACKGROUND MODE: Response contains jobId (async processing)
+                if (result.jobId && !result.insights) {
+                    log('info', 'Background insights job started', {
+                        jobId: result.jobId,
+                        status: result.status
                     });
-                }
-                onComplete();
-                return;
-            }
 
-            if (result.error && result.insights) {
-                // Handle error case where insights contains error message
-                log('warn', 'Insights generated with error', { result });
-                onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis failed');
-                onComplete();
-                return;
-            }
-
-            // Unknown response format - provide detailed error message for debugging
-            log('warn', 'Unexpected insights response format', {
-                result,
-                detail: {
-                    hasJobId: !!result.jobId,
-                    hasInsights: !!result.insights,
-                    hasSuccess: !!result.success,
-                    hasStatus: !!result.status,
-                    allKeys: Object.keys(result),
-                    responseJSON: JSON.stringify(result)
-                }
-            });
-
-            // Fallback: Try to detect mode even with unexpected structure
-            if (result.jobId && result.status === 'processing') {
-                log('info', 'Detected background mode from status field', { jobId: result.jobId });
-                if (result.initialSummary) {
-                    const summaryText = formatInitialSummary(result.initialSummary);
-                    if (summaryText) {
-                        onChunk(summaryText);
+                    // Stream initial summary if available
+                    if (result.initialSummary) {
+                        const summaryText = formatInitialSummary(result.initialSummary);
+                        if (summaryText) {
+                            onChunk(summaryText);
+                        }
                     }
+
+                    // Start polling for job completion
+                    await pollInsightsJobCompletion(
+                        result.jobId,
+                        onChunk,
+                        onError,
+                        600,
+                        2000,
+                        contextSummarySent ? undefined : result.contextSummary,
+                        payload.contextWindowDays
+                    );
+                    onComplete();
+                    return;
                 }
-                await pollInsightsJobCompletion(
-                    result.jobId,
-                    onChunk,
-                    onError,
-                    600,
-                    2000,
-                    contextSummarySent ? undefined : result.contextSummary,
-                    payload.contextWindowDays
-                );
-                onComplete();
-                return;
-            }
 
-            throw new Error('Server returned unexpected response format');
-        } catch (err) {
-            clearTimeout(timeoutId);
+                // Handle SYNC MODE: Response contains insights directly
+                if (result.success && result.insights) {
+                    // Check for warnings (e.g., max iterations reached)
+                    if (result.warning) {
+                        log('warn', 'Insights generation warning', { warning: result.warning });
+                    }
 
-            const error = err instanceof Error ? err : new Error(String(err));
+                    if (!contextSummarySent && result.insights.contextSummary) {
+                        const summaryText = formatContextSummary(result.insights.contextSummary);
+                        if (summaryText) {
+                            onChunk(summaryText);
+                            contextSummarySent = true;
+                        }
+                    }
 
-            // CRITICAL FIX: Treat AbortError as a retry signal, not a fatal error
-            // This is the "Starter Motor" approach - keep trying instead of showing error
-            if (error.name === 'AbortError') {
-                // Client-side timeout - the function took too long to respond
-                // Instead of showing error, treat this like a 408 and retry
-                lastErrorDetails = {
-                    code: 'client_timeout',
-                    message: 'Request timed out on client side',
-                    status: 408
-                };
-                
-                log('warn', 'Client-side timeout occurred, treating as retry signal', { 
-                    attemptCount,
-                    maxAttempts: MAX_RESUME_ATTEMPTS,
-                    timeoutMs: REQUEST_TIMEOUT_MS
+                    onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis completed');
+
+                    // Log performance metrics if available
+                    if (result.metadata) {
+                        log('info', 'Insights generation metrics', {
+                            iterations: result.metadata.turns,
+                            toolCallsUsed: result.metadata.toolCalls,
+                            durationMs: result.metadata.durationMs,
+                            wasResumed: result.metadata.wasResumed,
+                            totalAttempts: attemptCount
+                        });
+                    }
+                    onComplete();
+                    return;
+                }
+
+                if (result.error && result.insights) {
+                    // Handle error case where insights contains error message
+                    log('warn', 'Insights generated with error', { result });
+                    onChunk(result.insights.formattedText || result.insights.rawText || 'Analysis failed');
+                    onComplete();
+                    return;
+                }
+
+                // Unknown response format - provide detailed error message for debugging
+                log('warn', 'Unexpected insights response format', {
+                    result,
+                    detail: {
+                        hasJobId: !!result.jobId,
+                        hasInsights: !!result.insights,
+                        hasSuccess: !!result.success,
+                        hasStatus: !!result.status,
+                        allKeys: Object.keys(result),
+                        responseJSON: JSON.stringify(result)
+                    }
                 });
-                
-                // Continue to next iteration if we haven't hit max attempts
-                // The while loop will handle the retry
-                continue;
-            } else {
-                // Non-timeout error - track details and throw immediately
-                lastErrorDetails = {
-                    code: 'unknown_error',
-                    message: error.message,
-                    status: undefined
-                };
-                throw error;
+
+                // Fallback: Try to detect mode even with unexpected structure
+                if (result.jobId && result.status === 'processing') {
+                    log('info', 'Detected background mode from status field', { jobId: result.jobId });
+                    if (result.initialSummary) {
+                        const summaryText = formatInitialSummary(result.initialSummary);
+                        if (summaryText) {
+                            onChunk(summaryText);
+                        }
+                    }
+                    await pollInsightsJobCompletion(
+                        result.jobId,
+                        onChunk,
+                        onError,
+                        600,
+                        2000,
+                        contextSummarySent ? undefined : result.contextSummary,
+                        payload.contextWindowDays
+                    );
+                    onComplete();
+                    return;
+                }
+
+                throw new Error('Server returned unexpected response format');
+            } catch (err) {
+                clearTimeout(timeoutId);
+
+                const error = err instanceof Error ? err : new Error(String(err));
+
+                // CRITICAL FIX: Treat AbortError as a retry signal, not a fatal error
+                // This is the "Starter Motor" approach - keep trying instead of showing error
+                if (error.name === 'AbortError') {
+                    // Client-side timeout - the function took too long to respond
+                    // Instead of showing error, treat this like a 408 and retry
+                    lastErrorDetails = {
+                        code: 'client_timeout',
+                        message: 'Request timed out on client side',
+                        status: 408
+                    };
+
+                    log('warn', 'Client-side timeout occurred, treating as retry signal', {
+                        attemptCount,
+                        maxAttempts: MAX_RESUME_ATTEMPTS,
+                        timeoutMs: REQUEST_TIMEOUT_MS
+                    });
+
+                    // Continue to next iteration if we haven't hit max attempts
+                    // The while loop will handle the retry
+                    continue;
+                } else {
+                    // Non-timeout error - track details and throw immediately
+                    lastErrorDetails = {
+                        code: 'unknown_error',
+                        message: error.message,
+                        status: undefined
+                    };
+                    throw error;
+                }
             }
         }
-    }
-    
-    // If we exit the loop, we've exceeded max attempts
-    // Build DYNAMIC error message based on actual error context
-    const totalTimeMinutes = Math.round((MAX_RESUME_ATTEMPTS * BACKEND_FUNCTION_TIMEOUT_S) / 60);
-    const contextWindowDays = payload.contextWindowDays || 30;
-    
-    // Build contextual error message based on last error
-    let errorReason = 'The analysis server is experiencing high load.';
-    let suggestions: string[] = [];
-    
-    if (lastErrorDetails) {
-        switch (lastErrorDetails.code) {
-            case 'not_found':
-            case 'http_404':
-                errorReason = `AI model configuration error (${lastErrorDetails.code}): ${lastErrorDetails.message || 'Model not found'}`;
-                suggestions = [
-                    'This appears to be a server configuration issue',
-                    'Please contact support if this persists'
-                ];
-                break;
-            case 'rate_limited':
-            case 'http_429':
-                errorReason = `API rate limit reached after ${attemptCount} attempts`;
-                suggestions = [
-                    'Wait a few minutes before trying again',
-                    'Consider reducing query frequency'
-                ];
-                break;
-            case 'service_unavailable':
-            case 'http_503':
-                errorReason = 'The AI service is temporarily unavailable';
-                suggestions = [
-                    'The service may be undergoing maintenance',
-                    'Try again in a few minutes'
-                ];
-                break;
-            case 'gateway_timeout':
-            case 'http_504':
-            case 'client_timeout':
-            case 'insights_timeout':
-                errorReason = `Analysis timed out after ${attemptCount} attempts (${totalTimeMinutes} minutes total)`;
-                suggestions = [
-                    `Reduce the time range (currently: ${contextWindowDays} days)`,
-                    'Ask a more specific question',
-                    'Break your query into multiple smaller questions'
-                ];
-                break;
-            default:
-                if (lastErrorDetails.message) {
-                    errorReason = `Last error: ${lastErrorDetails.message}`;
-                }
-                suggestions = [
-                    `Reduce the time range (currently: ${contextWindowDays} days)`,
-                    'Ask a more specific question',
-                    'Try again in a few moments'
-                ];
+
+        // If we exit the loop, we've exceeded max attempts
+        // Build DYNAMIC error message based on actual error context
+        const totalTimeMinutes = Math.round((MAX_RESUME_ATTEMPTS * BACKEND_FUNCTION_TIMEOUT_S) / 60);
+        const contextWindowDays = payload.contextWindowDays || 30;
+
+        // Build contextual error message based on last error
+        let errorReason = 'The analysis server is experiencing high load.';
+        let suggestions: string[] = [];
+
+        if (lastErrorDetails) {
+            switch (lastErrorDetails.code) {
+                case 'not_found':
+                case 'http_404':
+                    errorReason = `AI model configuration error (${lastErrorDetails.code}): ${lastErrorDetails.message || 'Model not found'}`;
+                    suggestions = [
+                        'This appears to be a server configuration issue',
+                        'Please contact support if this persists'
+                    ];
+                    break;
+                case 'rate_limited':
+                case 'http_429':
+                    errorReason = `API rate limit reached after ${attemptCount} attempts`;
+                    suggestions = [
+                        'Wait a few minutes before trying again',
+                        'Consider reducing query frequency'
+                    ];
+                    break;
+                case 'service_unavailable':
+                case 'http_503':
+                    errorReason = 'The AI service is temporarily unavailable';
+                    suggestions = [
+                        'The service may be undergoing maintenance',
+                        'Try again in a few minutes'
+                    ];
+                    break;
+                case 'gateway_timeout':
+                case 'http_504':
+                case 'client_timeout':
+                case 'insights_timeout':
+                    errorReason = `Analysis hit the maximum retry limit of ${attemptCount} attempts (approx. ${totalTimeMinutes} minutes elapsed).`;
+                    suggestions = [
+                        `Reduce the time range (currently: ${contextWindowDays} days)`,
+                        'Ask a more specific question',
+                        'Break your query into multiple smaller questions',
+                        'Use the background analysis mode for very large datasets'
+                    ];
+                    break;
+                default:
+                    if (lastErrorDetails.message) {
+                        errorReason = `Last error: ${lastErrorDetails.message}`;
+                    }
+                    suggestions = [
+                        `Reduce the time range (currently: ${contextWindowDays} days)`,
+                        'Ask a more specific question',
+                        'Try again in a few moments'
+                    ];
+            }
+        } else {
+            // Default suggestions if no error details available
+            suggestions = [
+                `Reduce the time range (currently: ${contextWindowDays} days)`,
+                'Ask a more specific question',
+                'Break your query into multiple smaller questions'
+            ];
         }
-    } else {
-        // Default suggestions if no error details available
-        suggestions = [
-            `Reduce the time range (currently: ${contextWindowDays} days)`,
-            'Ask a more specific question',
-            'Break your query into multiple smaller questions'
-        ];
+
+        const suggestionList = suggestions.map(s => `• ${s}`).join('\n');
+        const maxRetriesError = new Error(
+            `Analysis could not complete after ${attemptCount} attempts.\n\n` +
+            `${errorReason}\n\n` +
+            `Suggestions:\n${suggestionList}`
+        );
+        throw maxRetriesError;
+    } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        log('error', 'Insights generation failed after retries', {
+            error: err.message,
+            attemptCount
+        });
+        onError(err);
     }
-    
-    const suggestionList = suggestions.map(s => `• ${s}`).join('\n');
-    const maxRetriesError = new Error(
-        `Analysis could not complete after ${attemptCount} attempts.\n\n` +
-        `${errorReason}\n\n` +
-        `Suggestions:\n${suggestionList}`
-    );
-    throw maxRetriesError;
-} catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    log('error', 'Insights generation failed after retries', { 
-        error: err.message,
-        attemptCount 
-    });
-    onError(err);
-}
 };
 
 /**
@@ -1091,7 +1093,7 @@ const formatInitialSummary = (summary: any): string => {
     if (!summary) return '';
 
     const parts: string[] = ['🤖 Initializing Advanced Insights Generation..\n'];
-    
+
     // Describe what data is being packaged for Gemini
     parts.push('📦 Packaging the data from this analysis (now)');
 
@@ -1307,20 +1309,20 @@ const pollInsightsJobCompletion = async (
                 if (status.status === 'failed') {
                     // Issue 236: Use enhanced error context from backend
                     let errorMessage = status.error || 'Background job failed';
-                    
+
                     // Build detailed error message from backend's enhanced fields
                     if (status.failureReason) {
                         errorMessage = `❌ Analysis Failed\n\n`;
                         // Sanitize backend fields to prevent any potential injection
-                        const sanitize = (text: string): string => 
+                        const sanitize = (text: string): string =>
                             String(text || '').replace(/[<>]/g, '').substring(0, 500);
-                        
+
                         errorMessage += `**Reason:** ${sanitize(status.failureReason)}\n\n`;
-                        
+
                         if (status.failureCategory) {
                             errorMessage += `**Category:** ${sanitize(status.failureCategory)}\n\n`;
                         }
-                        
+
                         if (status.suggestions && Array.isArray(status.suggestions) && status.suggestions.length > 0) {
                             errorMessage += `**Suggestions:**\n`;
                             // Limit to 5 suggestions max, sanitize each
@@ -1332,7 +1334,7 @@ const pollInsightsJobCompletion = async (
                             }
                             errorMessage += '\n';
                         }
-                        
+
                         if (status.lastProgressEvent) {
                             const lastEvent = status.lastProgressEvent;
                             const eventDesc = formatProgressEvent(lastEvent);
@@ -1340,15 +1342,15 @@ const pollInsightsJobCompletion = async (
                                 errorMessage += `**Last Activity:** ${sanitize(eventDesc)}\n`;
                             }
                         }
-                        
+
                         if (typeof status.progressCount === 'number' && status.progressCount > 0) {
                             errorMessage += `\n_Completed ${Math.min(status.progressCount, 999)} steps before failure_`;
                         }
                     }
-                    
+
                     const error = new Error(errorMessage);
-                    log('error', 'Background insights job failed', { 
-                        jobId, 
+                    log('error', 'Background insights job failed', {
+                        jobId,
                         error: status.error,
                         failureReason: status.failureReason,
                         failureCategory: status.failureCategory
@@ -1359,14 +1361,14 @@ const pollInsightsJobCompletion = async (
 
                 // Continue polling
                 attempts++;
-                
+
                 // "Starter Motor" approach: After many attempts, show informative message
                 // but don't reject - the background job may still be running
                 if (attempts >= maxAttempts) {
                     // Calculate actual elapsed time
                     const actualElapsedMs = Date.now() - pollingStartTime;
                     const actualMinutes = Math.round(actualElapsedMs / 60000);
-                    
+
                     const warning = `\n\n⚠️ **Analysis taking longer than expected (${actualMinutes} minutes elapsed)**\n\n` +
                         `Your analysis is still processing in the background. This typically means:\n` +
                         `• Very large dataset being analyzed (${contextWindowDays || 30}+ days)\n` +
@@ -1376,25 +1378,25 @@ const pollInsightsJobCompletion = async (
                         `• Wait for completion (recommended)\n` +
                         `• Reduce the time window and try again\n` +
                         `• Refresh the page to check status later\n`;
-                    
-                    log('warn', 'Background insights polling exceeded expected time', { 
-                        jobId, 
+
+                    log('warn', 'Background insights polling exceeded expected time', {
+                        jobId,
                         attempts,
                         actualElapsedMs,
                         actualMinutes,
                         contextWindowDays
                     });
-                    
+
                     // Show warning but continue polling (don't reject)
                     onChunk(warning);
                 }
-                
+
                 // Always continue polling with backoff
                 currentInterval = Math.min(currentInterval * backoffMultiplier, maxInterval);
                 setTimeout(poll, currentInterval);
             } catch (err) {
                 const error = err instanceof Error ? err : new Error(String(err));
-                
+
                 // "Starter Motor" approach: Log network errors but keep polling
                 // Only reject on catastrophic errors (404, 403, 401)
                 // For HTTP errors, check if response was attached with status
@@ -1404,27 +1406,27 @@ const pollInsightsJobCompletion = async (
                 } else if (typeof (error as any).status === 'number') {
                     status = (error as any).status;
                 }
-                
+
                 const isCatastrophic = status === 404 || status === 403 || status === 401;
-                
+
                 if (isCatastrophic) {
-                    log('error', 'Catastrophic error polling insights job status', { 
-                        jobId, 
+                    log('error', 'Catastrophic error polling insights job status', {
+                        jobId,
                         error: error.message,
                         status
                     });
                     reject(error);
                     return;
                 }
-                
+
                 // For transient errors (network issues, 500s, timeouts), just log and retry
-                log('warn', 'Transient error polling insights job status, retrying', { 
-                    jobId, 
+                log('warn', 'Transient error polling insights job status, retrying', {
+                    jobId,
                     error: error.message,
                     status,
                     attempt: attempts
                 });
-                
+
                 // Increase backoff and continue
                 attempts++;
                 currentInterval = Math.min(currentInterval * backoffMultiplier * ERROR_BACKOFF_MULTIPLIER, maxInterval);
@@ -1954,8 +1956,8 @@ export const clearHistoryStore = async (): Promise<{ message: string; details: a
     });
 };
 
-export const backfillWeatherData = async (): Promise<{ 
-    success: boolean; 
+export const backfillWeatherData = async (): Promise<{
+    success: boolean;
     updatedCount: number;
     errorCount?: number;
     processedCount?: number;
@@ -1963,8 +1965,8 @@ export const backfillWeatherData = async (): Promise<{
     message?: string;
 }> => {
     log('info', 'Sending request to backfill weather data.');
-    return apiFetch<{ 
-        success: boolean; 
+    return apiFetch<{
+        success: boolean;
         updatedCount: number;
         errorCount?: number;
         processedCount?: number;
@@ -1979,8 +1981,8 @@ export const backfillWeatherData = async (): Promise<{
     });
 };
 
-export const backfillHourlyCloudData = async (): Promise<{ 
-    success: boolean; 
+export const backfillHourlyCloudData = async (): Promise<{
+    success: boolean;
     processedDays: number;
     hoursInserted: number;
     errors: number;
@@ -1989,8 +1991,8 @@ export const backfillHourlyCloudData = async (): Promise<{
     message?: string;
 }> => {
     log('info', 'Sending request to backfill hourly cloud data.');
-    return apiFetch<{ 
-        success: boolean; 
+    return apiFetch<{
+        success: boolean;
         processedDays: number;
         hoursInserted: number;
         errors: number;
@@ -2227,8 +2229,8 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
         } as RequestInit);
 
         // Log response details for debugging
-        log('info', 'Diagnostics response received.', { 
-            status: response.status, 
+        log('info', 'Diagnostics response received.', {
+            status: response.status,
             ok: response.ok,
             statusText: response.statusText,
             contentType: response.headers.get('content-type')
@@ -2237,40 +2239,40 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
         if (!response.ok) {
             // Clone response before reading so we can try multiple parse methods
             const errorText = await response.text();
-            log('error', 'Diagnostics API returned error status.', { 
-                status: response.status, 
+            log('error', 'Diagnostics API returned error status.', {
+                status: response.status,
                 statusText: response.statusText,
                 bodyPreview: errorText.substring(0, 500)
             });
-            
+
             let errorData: any;
             try {
                 errorData = JSON.parse(errorText);
             } catch (parseError) {
-                log('error', 'Failed to parse error response as JSON.', { 
-                    text: errorText.substring(0, 500) 
+                log('error', 'Failed to parse error response as JSON.', {
+                    text: errorText.substring(0, 500)
                 });
                 // Even if parse fails, create a detailed error message
                 const detailedError = `HTTP ${response.status} ${response.statusText}${errorText ? '\n\n' + errorText.substring(0, 500) : ''}`;
-                errorData = { 
+                errorData = {
                     error: detailedError,
                     statusCode: response.status,
                     statusText: response.statusText
                 };
             }
-            
+
             // If the error response includes results, use them!
             // The backend may return 200 with error status and results
             if (errorData.results && Array.isArray(errorData.results) && errorData.results.length > 0) {
-                log('info', 'Error response includes results, returning them.', { 
-                    resultsCount: errorData.results.length 
+                log('info', 'Error response includes results, returning them.', {
+                    resultsCount: errorData.results.length
                 });
                 return errorData as DiagnosticsResponse;
             }
-            
+
             const error = (errorData as any).error ? String((errorData as any).error) : `Server responded with HTTP ${response.status}: ${response.statusText}`;
             log('error', 'Diagnostics API fetch failed.', { status: response.status, error, errorData });
-            
+
             // Create a detailed error result instead of empty array
             const errorResult = {
                 name: 'HTTP Request',
@@ -2283,7 +2285,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
                     errorData: errorData
                 }
             };
-            
+
             // Return structured error response WITH a result entry
             return {
                 status: 'error',
@@ -2303,8 +2305,8 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
         let data;
         try {
             data = await response.json();
-            log('info', 'Diagnostics response parsed successfully.', { 
-                status: response.status, 
+            log('info', 'Diagnostics response parsed successfully.', {
+                status: response.status,
                 hasResults: !!data.results,
                 resultsCount: data.results?.length,
                 dataStatus: data.status
@@ -2312,7 +2314,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
         } catch (parseError) {
             const errorMessage = parseError instanceof Error ? parseError.message : 'Unknown JSON parse error';
             log('error', 'Failed to parse diagnostics response as JSON.', { error: errorMessage });
-            
+
             // Create a detailed error result instead of empty array
             const errorResult = {
                 name: 'Response Parsing',
@@ -2323,7 +2325,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
                     parseError: errorMessage
                 }
             };
-            
+
             return {
                 status: 'error',
                 timestamp: new Date().toISOString(),
@@ -2338,7 +2340,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
                 error: `Failed to parse response: ${errorMessage}`
             };
         }
-        
+
         return data as DiagnosticsResponse;
     } catch (error) {
         // Provide a more helpful error message for timeout
@@ -2346,7 +2348,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
             if (error.name === 'AbortError') {
                 const timeoutError = 'Diagnostics request timed out after 120 seconds. This may indicate the tests are taking too long or the server is unresponsive.';
                 log('error', 'Diagnostics timed out.', { error: timeoutError });
-                
+
                 // Create a detailed error result instead of empty array
                 const errorResult = {
                     name: 'Request Timeout',
@@ -2358,7 +2360,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
                         note: 'The request exceeded the maximum allowed time. Tests may still be running on the server.'
                     }
                 };
-                
+
                 return {
                     status: 'error',
                     timestamp: new Date().toISOString(),
@@ -2373,9 +2375,9 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
                     error: timeoutError
                 };
             }
-            
+
             log('error', 'Diagnostics encountered an error.', { error: error.message, stack: error.stack });
-            
+
             // Create a detailed error result instead of empty array
             const errorResult = {
                 name: 'Client Error',
@@ -2388,7 +2390,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
                     stack: error.stack
                 }
             };
-            
+
             return {
                 status: 'error',
                 timestamp: new Date().toISOString(),
@@ -2445,16 +2447,16 @@ export const getDiagnosticProgress = async (testId: string): Promise<{
 
     if (!response.ok) {
         const errorText = await response.text();
-        log('error', 'Diagnostic progress poll failed.', { 
-            status: response.status, 
+        log('error', 'Diagnostic progress poll failed.', {
+            status: response.status,
             statusText: response.statusText,
-            error: errorText 
+            error: errorText
         });
         throw new Error(`Failed to get diagnostic progress: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    log('info', 'Diagnostic progress received.', { 
+    log('info', 'Diagnostic progress received.', {
         testId,
         completed: data.progress?.completed,
         total: data.progress?.total,
@@ -2542,7 +2544,7 @@ export const getAdminStories = async (page = 1, limit = 20, options: { isActive?
     if (options.isActive !== undefined) params.append('isActive', String(options.isActive));
     if (options.systemIdentifier) params.append('systemIdentifier', options.systemIdentifier);
     if (options.tags) params.append('tags', options.tags);
-    
+
     log('info', 'Fetching admin stories.', { page, limit, ...options });
     return apiFetch<AdminStoriesResponse>(`admin-stories?${params.toString()}`);
 };
@@ -2645,30 +2647,30 @@ export const runSingleDiagnosticTest = async (testScope: string): Promise<Diagno
             signal: controller.signal,
         } as RequestInit);
 
-        log('info', 'Single diagnostic test response received.', { 
+        log('info', 'Single diagnostic test response received.', {
             testScope,
-            status: response.status, 
+            status: response.status,
             ok: response.ok
         });
 
         if (!response.ok) {
             const errorText = await response.text();
-            log('error', 'Single diagnostic test API error.', { 
+            log('error', 'Single diagnostic test API error.', {
                 testScope,
-                status: response.status, 
+                status: response.status,
                 errorText: errorText.substring(0, 500)
             });
-            
+
             throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
         }
 
         const data = await response.json() as DiagnosticsResponse;
-        
+
         // Extract the single test result from the response
         if (data.results && data.results.length > 0) {
             return data.results[0];
         }
-        
+
         // If no results, return error
         return {
             name: testScope,
@@ -2687,12 +2689,12 @@ export const runSingleDiagnosticTest = async (testScope: string): Promise<Diagno
                     duration: 120000
                 };
             }
-            
-            log('error', 'Single diagnostic test failed.', { 
+
+            log('error', 'Single diagnostic test failed.', {
                 testScope,
-                error: error.message 
+                error: error.message
             });
-            
+
             return {
                 name: testScope,
                 status: 'error',
@@ -2700,7 +2702,7 @@ export const runSingleDiagnosticTest = async (testScope: string): Promise<Diagno
                 duration: 0
             };
         }
-        
+
         return {
             name: testScope,
             status: 'error',
@@ -2817,7 +2819,7 @@ export const getMergedTimelineData = async (
     }
 
     const data = await response.json();
-    
+
     log('info', 'Merged timeline data received', {
         totalPoints: data.totalPoints,
         downsampled: data.downsampled

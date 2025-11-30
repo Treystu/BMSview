@@ -31,7 +31,7 @@ const RESPONSE_BUFFER_MS = 2000; // Reserve 2s for formatting and returning resp
 const MIN_SYNC_CONTEXT_BUDGET_MS = 5000; // Minimum 5s for context collection
 const MIN_SYNC_TOTAL_BUDGET_MS = 8000; // Minimum 8s total processing time
 const MIN_CHECKPOINT_FREQUENCY_MS = 4000; // Minimum 4s between checkpoints
-const MIN_GEMINI_CALL_TIMEOUT_MS = 3000; // Minimum 3s for Gemini API call
+const MIN_GEMINI_CALL_TIMEOUT_MS = 10000; // Minimum 10s for Gemini API call (increased from 3s)
 const ITERATION_SAFETY_BUFFER_MS = 1000; // 1s safety margin per iteration
 const CHECKPOINT_FREQUENCY_DIVISOR = 3; // Save checkpoint every 1/3 of timeout
 
@@ -637,8 +637,8 @@ Execute the initialization now.`;
         contextWindowDays,
         dateRange: `${startDate.toISOString()} to ${endDate.toISOString()}`
     });
-    
-    if(stream) stream.write(JSON.stringify({ type: 'status', message: 'Initializing analysis and fetching historical data...' }) + '\n');
+
+    if (stream) stream.write(JSON.stringify({ type: 'status', message: 'Initializing analysis and fetching historical data...' }) + '\n');
 
     let attempts = 0;
     let toolCallsUsed = 0;
@@ -655,7 +655,7 @@ Execute the initialization now.`;
                 budgetMs: totalBudgetMs * INITIALIZATION_BUDGET_RATIO,
                 ratio: INITIALIZATION_BUDGET_RATIO
             });
-            if(stream) stream.write(JSON.stringify({ type: 'error', message: 'Initialization timed out.' }) + '\n');
+            if (stream) stream.write(JSON.stringify({ type: 'error', message: 'Initialization timed out.' }) + '\n');
             return {
                 success: false,
                 attempts,
@@ -676,8 +676,8 @@ Execute the initialization now.`;
         }
 
         log.info(`Initialization attempt ${attempts + 1}`, { elapsedMs });
-        if(stream) stream.write(JSON.stringify({ type: 'status', message: `Attempting to retrieve data (attempt ${attempts + 1})...` }) + '\n');
-        
+        if (stream) stream.write(JSON.stringify({ type: 'status', message: `Attempting to retrieve data (attempt ${attempts + 1})...` }) + '\n');
+
         // Log the conversation history for debugging
         log.info('Conversation history before Gemini call in initialization', {
             turn: attempts + 1,
@@ -696,7 +696,7 @@ Execute the initialization now.`;
                 // Wait 10 seconds for circuit to transition to HALF_OPEN
                 await new Promise(resolve => setTimeout(resolve, 10000));
             }
-            
+
             geminiResponse = await geminiClient.callAPI(null, {
                 history: conversationHistory,
                 tools: toolDefinitions,
@@ -705,24 +705,24 @@ Execute the initialization now.`;
             }, log);
         } catch (geminiError) {
             const err = geminiError instanceof Error ? geminiError : new Error(String(geminiError));
-            
+
             // Detect circuit breaker errors and handle specially
-            const isCircuitOpen = err.message.includes('Circuit breaker') || 
-                                  err.message.includes('circuit_open') ||
-                                  err.message.includes('OPEN');
-            
+            const isCircuitOpen = err.message.includes('Circuit breaker') ||
+                err.message.includes('circuit_open') ||
+                err.message.includes('OPEN');
+
             log.error('Gemini API call failed during initialization', {
                 attempt: attempts + 1,
                 error: err.message,
                 isCircuitOpen
             });
-            
+
             if (isCircuitOpen) {
                 // For circuit breaker errors, wait longer before retry
-                if(stream) stream.write(JSON.stringify({ type: 'status', message: 'AI service recovering, please wait...' }) + '\n');
+                if (stream) stream.write(JSON.stringify({ type: 'status', message: 'AI service recovering, please wait...' }) + '\n');
                 await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10s for circuit reset
             } else {
-                if(stream) stream.write(JSON.stringify({ type: 'status', message: 'Retrying connection...' }) + '\n');
+                if (stream) stream.write(JSON.stringify({ type: 'status', message: 'Retrying connection...' }) + '\n');
                 // On other API errors, retry with linear backoff (add 1 second per attempt)
                 const delayMs = Math.min(RETRY_LINEAR_INCREMENT_MS * (attempts + 1), 10000); // Cap at 10 seconds
                 await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -764,7 +764,7 @@ Execute the initialization now.`;
                 responseText: responseText.substring(0, 500),
                 responseLength: responseText.length
             });
-            if(stream) stream.write(JSON.stringify({ type: 'status', message: 'AI is not calling the required tools. Retrying...' }) + '\n');
+            if (stream) stream.write(JSON.stringify({ type: 'status', message: 'AI is not calling the required tools. Retrying...' }) + '\n');
 
             // Log the full response for debugging
             log.info('Full Gemini response without tool call', {
@@ -818,7 +818,7 @@ Execute the initialization now.`;
                 attempt: attempts + 1,
                 toolArgs: JSON.stringify(toolArgs).substring(0, 500)
             });
-            if(stream) stream.write(JSON.stringify({ type: 'status', message: `Calling tool: ${toolName}...` }) + '\n');
+            if (stream) stream.write(JSON.stringify({ type: 'status', message: `Calling tool: ${toolName}...` }) + '\n');
 
             toolCallsUsed++;
 
@@ -846,13 +846,13 @@ Execute the initialization now.`;
                             dataPoints,
                             attempt: attempts + 1
                         });
-                        if(stream) stream.write(JSON.stringify({ type: 'status', message: `Successfully retrieved ${dataPoints} data points.` }) + '\n');
+                        if (stream) stream.write(JSON.stringify({ type: 'status', message: `Successfully retrieved ${dataPoints} data points.` }) + '\n');
                     } else {
                         log.warn('request_bms_data returned 0 data points', {
                             attempt: attempts + 1,
                             toolResult: JSON.stringify(toolResult).substring(0, 1000)
                         });
-                        if(stream) stream.write(JSON.stringify({ type: 'status', message: 'Data query returned no results. Retrying...' }) + '\n');
+                        if (stream) stream.write(JSON.stringify({ type: 'status', message: 'Data query returned no results. Retrying...' }) + '\n');
                     }
                 } else if (toolResult && toolResult.error) {
                     // Tool returned an error - log it for improvement
@@ -862,7 +862,7 @@ Execute the initialization now.`;
                         attempt: attempts + 1,
                         fullResult: JSON.stringify(toolResult).substring(0, 1000)
                     });
-                    if(stream) stream.write(JSON.stringify({ type: 'error', message: `Tool ${toolName} failed: ${toolResult.message}` }) + '\n');
+                    if (stream) stream.write(JSON.stringify({ type: 'error', message: `Tool ${toolName} failed: ${toolResult.message}` }) + '\n');
                 }
             } catch (toolError) {
                 const err = toolError instanceof Error ? toolError : new Error(String(toolError));
@@ -872,7 +872,7 @@ Execute the initialization now.`;
                     stack: err.stack,
                     attempt: attempts + 1
                 });
-                if(stream) stream.write(JSON.stringify({ type: 'error', message: `Tool ${toolName} threw an exception: ${err.message}` }) + '\n');
+                if (stream) stream.write(JSON.stringify({ type: 'error', message: `Tool ${toolName} threw an exception: ${err.message}` }) + '\n');
 
                 // Add error to conversation
                 conversationHistory.push({
@@ -899,7 +899,7 @@ Execute the initialization now.`;
                 turnsUsed,
                 durationMs: Date.now() - startTime
             });
-            if(stream) stream.write(JSON.stringify({ type: 'status', message: 'Initialization complete. Generating insights...' }) + '\n');
+            if (stream) stream.write(JSON.stringify({ type: 'status', message: 'Initialization complete. Generating insights...' }) + '\n');
 
             // Ask Gemini to acknowledge initialization completion
             conversationHistory.push({
@@ -934,7 +934,7 @@ Execute the initialization now.`;
         attempts,
         maxRetries: INITIALIZATION_MAX_RETRIES
     });
-     if(stream) stream.write(JSON.stringify({ type: 'error', message: 'Initialization failed after multiple retries.' }) + '\n');
+    if (stream) stream.write(JSON.stringify({ type: 'error', message: 'Initialization failed after multiple retries.' }) + '\n');
 
     return {
         success: false,
@@ -956,6 +956,11 @@ Execute the initialization now.`;
  * 5. Return final answer when Gemini stops requesting tools
  * 6. Save checkpoint on timeout for resuming
  */
+ * @param { boolean } [params.skipInitialization] - Skip initialization if already done
+    * @param { Object } [params.checkpointState] - Resume from checkpoint
+        * @param { Function } [params.onCheckpoint] - Callback to save checkpoint
+            * @param { string } [params.insightMode] - Insight mode(standard, full_context, etc.)
+                */
 async function executeReActLoop(params) {
     const {
         analysisData,
@@ -968,7 +973,9 @@ async function executeReActLoop(params) {
         modelOverride, // Optional model override (e.g., "gemini-2.5-pro")
         skipInitialization = false, // Skip initialization if already done separately
         checkpointState = null, // Resume from checkpoint if provided
-        onCheckpoint = null // Callback to save checkpoint before timeout
+        checkpointState = null, // Resume from checkpoint if provided
+        onCheckpoint = null, // Callback to save checkpoint before timeout
+        insightMode = 'with_tools' // Insight mode (standard, full_context, etc.)
     } = params;
 
     const log = externalLog || createLogger('react-loop');
@@ -996,7 +1003,9 @@ async function executeReActLoop(params) {
         modelOverride,
         skipInitialization,
         isResuming,
-        checkpointTurn: checkpointState?.startTurnCount || 0
+        isResuming,
+        checkpointTurn: checkpointState?.startTurnCount || 0,
+        insightMode
     });
 
     try {
@@ -1071,7 +1080,8 @@ async function executeReActLoop(params) {
                 customPrompt,
                 log,
                 context: preloadedContext,
-                mode
+                mode,
+                insightMode // Pass insight mode to prompt builder
             });
 
             const initialPrompt = promptResult.prompt;
@@ -1288,7 +1298,7 @@ async function executeReActLoop(params) {
                     // Wait 10 seconds for circuit to transition to HALF_OPEN
                     await new Promise(resolve => setTimeout(resolve, 10000));
                 }
-                
+
                 const geminiCallPromise = geminiClient.callAPI(null, {
                     history: conversationHistory,
                     tools: toolDefinitions,
@@ -1307,11 +1317,11 @@ async function executeReActLoop(params) {
                 ]);
             } catch (geminiError) {
                 const err = geminiError instanceof Error ? geminiError : new Error(String(geminiError));
-                
+
                 // Detect circuit breaker errors
-                const isCircuitOpen = err.message.includes('Circuit breaker') || 
-                                      err.message.includes('circuit_open') ||
-                                      err.message.includes('OPEN');
+                const isCircuitOpen = err.message.includes('Circuit breaker') ||
+                    err.message.includes('circuit_open') ||
+                    err.message.includes('OPEN');
 
                 // EDGE CASE PROTECTION #3: Detect iteration timeout vs Gemini error
                 if (err.message === 'ITERATION_TIMEOUT') {
@@ -1337,7 +1347,7 @@ async function executeReActLoop(params) {
                     timedOut = true;
                     break;
                 }
-                
+
                 // Handle circuit breaker errors - wait and retry instead of throwing
                 if (isCircuitOpen && turnCount < MAX_TURNS - 1) {
                     log.warn('Circuit breaker error, waiting before retry', {
@@ -1466,10 +1476,10 @@ async function executeReActLoop(params) {
             if (toolCalls.length === 0) {
                 // No tool calls → this is potentially the final answer
                 const textParts = responseContent.parts.filter(p => p.text);
-                
+
                 if (textParts.length > 0) {
                     const rawAnswer = textParts.map(p => p.text).join('\n');
-                    
+
                     // Lazy AI Detection: Check if AI is claiming data unavailable without attempting to fetch it
                     const lowerAnswer = rawAnswer.toLowerCase();
                     const lazinessTriggers = [
@@ -1480,7 +1490,7 @@ async function executeReActLoop(params) {
                         "no historical data is available",
                         "cannot access the requested data"
                     ];
-                    
+
                     // Only intervene if:
                     // 1. It's claiming data is missing
                     // 2. We haven't run many tools yet (it gave up too early)
@@ -1488,7 +1498,7 @@ async function executeReActLoop(params) {
                     // 4. We have turns remaining
                     // 5. No recent tool failures (legitimate unavailability after failed attempts)
                     const isLazy = lazinessTriggers.some(t => lowerAnswer.includes(t));
-                    
+
                     // Check if recent tool calls failed (last N messages, where N = RECENT_TOOL_FAILURE_WINDOW)
                     // Tool failures can be in two forms:
                     // 1. Tool returned error object: functionResponse.response.result.error
@@ -1496,18 +1506,18 @@ async function executeReActLoop(params) {
                     const recentToolFailures = conversationHistory.slice(-RECENT_TOOL_FAILURE_WINDOW).some(msg =>
                         msg.role === 'function' &&
                         Array.isArray(msg.parts) &&
-                        msg.parts.some(p => 
-                            p.functionResponse && 
-                            p.functionResponse.response && 
+                        msg.parts.some(p =>
+                            p.functionResponse &&
+                            p.functionResponse.response &&
                             (p.functionResponse.response.error || (p.functionResponse.response.result && p.functionResponse.response.result.error))
                         )
                     );
 
                     if (isLazy && toolCallCount === 0 && isCustomQuery && turnCount < MAX_TURNS - 1 && !recentToolFailures) {
                         consecutiveLazyResponses++;
-                        
+
                         if (consecutiveLazyResponses > LAZY_RESPONSE_THRESHOLD) {
-                            log.error('AI repeatedly claiming no data after interventions', { 
+                            log.error('AI repeatedly claiming no data after interventions', {
                                 turn: turnCount,
                                 consecutiveCount: consecutiveLazyResponses,
                                 maxAllowed: LAZY_RESPONSE_THRESHOLD
@@ -1515,25 +1525,25 @@ async function executeReActLoop(params) {
                             finalAnswer = LAZY_AI_FALLBACK_MESSAGE;
                             break;
                         }
-                        
-                        log.warn('Detected "Lazy AI" - claiming no data without checking tools', { 
+
+                        log.warn('Detected "Lazy AI" - claiming no data without checking tools', {
                             turn: turnCount,
-                            consecutiveCount: consecutiveLazyResponses 
+                            consecutiveCount: consecutiveLazyResponses
                         });
-                        
+
                         // Force the loop to continue by adding an intervention message without setting finalAnswer
                         // The AI will receive this as a user message on the next iteration
                         conversationHistory.push({
                             role: 'user',
                             parts: [{
                                 text: `SYSTEM INTERVENTION: You claimed data is unavailable, but you have NOT checked the tools yet.\n\n` +
-                                      `You have access to 'request_bms_data', 'getSystemAnalytics', and others.\n` +
-                                      `1. Look at the "DATA AVAILABILITY" section in the first message.\n` +
-                                      `2. CALL A TOOL to get the data you need (e.g. request_bms_data).\n` +
-                                      `3. Do not apologize. Just send the tool call JSON.`
+                                    `You have access to 'request_bms_data', 'getSystemAnalytics', and others.\n` +
+                                    `1. Look at the "DATA AVAILABILITY" section in the first message.\n` +
+                                    `2. CALL A TOOL to get the data you need (e.g. request_bms_data).\n` +
+                                    `3. Do not apologize. Just send the tool call JSON.`
                             }]
                         });
-                        
+
                         // Continue the loop to let Gemini try again
                         continue;
                     } else {
@@ -1542,7 +1552,7 @@ async function executeReActLoop(params) {
 
                     // If not lazy, accept the answer
                     finalAnswer = rawAnswer;
-                    
+
                     log.info('Final answer received from Gemini', {
                         turn: turnCount,
                         answerLength: finalAnswer.length,
@@ -1705,6 +1715,35 @@ async function executeReActLoop(params) {
                         }]
                     });
                 }
+            }
+
+            // EDGE CASE PROTECTION #5: Check if we have enough time for another iteration AFTER tool execution
+            // Heavy tools (like request_bms_data) consume significant time. We must check budget again.
+            const postToolElapsedMs = Date.now() - startTime;
+            const postToolTimeRemaining = totalBudgetMs - postToolElapsedMs;
+            const MIN_POST_TOOL_TIME = MIN_GEMINI_CALL_TIMEOUT_MS + CHECKPOINT_SAVE_BUFFER_MS + RESPONSE_BUFFER_MS;
+
+            if (postToolTimeRemaining < MIN_POST_TOOL_TIME) {
+                log.warn('Insufficient time for next iteration after tool execution, saving checkpoint', {
+                    turn: turnCount,
+                    postToolTimeRemaining,
+                    minRequired: MIN_POST_TOOL_TIME,
+                    elapsedMs: postToolElapsedMs
+                });
+
+                if (onCheckpoint) {
+                    await onCheckpoint({
+                        conversationHistory,
+                        turnCount: turnCount + 1, // Advance turn count since we finished this turn's tools
+                        toolCallCount,
+                        contextSummary,
+                        startTime
+                    });
+                }
+
+                finalAnswer = buildTimeoutMessage();
+                timedOut = true;
+                break;
             }
         }
 

@@ -62,7 +62,7 @@ const { PassThrough } = require('stream');
 
 exports.handler = async (event, context) => {
   const stream = new PassThrough();
-  
+
   const headers = getCorsHeaders(event);
 
   // Handle preflight
@@ -143,7 +143,7 @@ exports.handler = async (event, context) => {
     let sanitizedBody;
     try {
       sanitizedBody = sanitizeInsightsRequest(rawBody, log);
-      
+
       // Log any sanitization warnings
       if (sanitizedBody.warnings && sanitizedBody.warnings.length > 0) {
         log.sanitization('request', 'Input modified during sanitization', {
@@ -179,6 +179,7 @@ exports.handler = async (event, context) => {
     const systemId = sanitizedBody.systemId;
     const customPrompt = sanitizedBody.customPrompt;
     const mode = sanitizedBody.mode || DEFAULT_MODE;
+    const insightMode = sanitizedBody.insightMode || 'with_tools';
     const contextWindowDays = sanitizedBody.contextWindowDays;
     const maxIterations = sanitizedBody.maxIterations;
     const modelOverride = sanitizedBody.modelOverride;
@@ -331,7 +332,8 @@ exports.handler = async (event, context) => {
           skipInitialization: resumeConfig?.skipInitialization || initializationComplete,
           checkpointState: resumeConfig, // Pass resume config if available
           onCheckpoint: checkpointCallback, // Auto-save checkpoints
-          stream
+          stream,
+          insightMode // Pass insight mode for specialized behavior
         };
         log.info('Calling executeReActLoop with params', params);
         const result = await executeReActLoop(params);
@@ -442,7 +444,7 @@ exports.handler = async (event, context) => {
         if (syncError.message.includes('token')) {
           return await handleTokenLimitExceeded(job, log);
         }
-      
+
         log.error('Sync mode failed', {
           error: syncError.message,
           jobId: job.id,
@@ -450,7 +452,7 @@ exports.handler = async (event, context) => {
           timeoutMs: SYNC_MODE_TIMEOUT_MS,
           wasResumed: isResume
         });
-      
+
         // Return error with jobId so client can resume
         return {
           statusCode: 408, // Request Timeout

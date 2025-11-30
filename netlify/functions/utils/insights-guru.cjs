@@ -30,13 +30,13 @@ const ASYNC_CONTEXT_BUDGET_MS = 45000;
 async function collectAutoInsightsContext(systemId, analysisData, log, options = {}) {
     const start = Date.now();
     const maxMs = options.maxMs || (options.mode === "background" ? ASYNC_CONTEXT_BUDGET_MS : SYNC_CONTEXT_BUDGET_MS);
-    
+
     // In sync mode, skip expensive analytics and rely on ReAct loop instead
     const skipExpensiveOps = options.skipExpensiveOps !== undefined ? options.skipExpensiveOps : (options.mode === "sync");
-    
-    log.info('Starting context collection', { 
-        mode: options.mode, 
-        maxMs, 
+
+    log.info('Starting context collection', {
+        mode: options.mode,
+        maxMs,
         skipExpensiveOps,
         hasSystemId: !!systemId
     });
@@ -112,7 +112,7 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
     if (systemId && !skipExpensiveOps) {
         // These are expensive operations - skip in sync mode, let Gemini request via ReAct loop
         log.info('Loading full context (async mode)', { skipExpensiveOps });
-        
+
         // NEW: Generate comprehensive analytics (includes solar-aware load analysis)
         try {
             const { generateComprehensiveAnalytics } = require('./comprehensive-analytics.cjs');
@@ -125,23 +125,23 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
                     .sort({ timestamp: -1 })
                     .limit(2000)
                     .toArray();
-                
+
                 return await generateComprehensiveAnalytics(systemId, analysisData, log);
             });
         } catch (error) {
             log.warn('Failed to generate comprehensive analytics', { error: error.message });
         }
-        
+
         // Load 90-day daily rollup for comprehensive trend analysis
         context.dailyRollup90d = await runStep("dailyRollup90d", () => load90DayDailyRollup(systemId, log));
-        
+
         // NEW: Add comparative periods for week-over-week and month-over-month analysis
         if (context.dailyRollup90d && context.dailyRollup90d.length > 0) {
-            context.comparativePeriods = await runStep("comparativePeriods", () => 
+            context.comparativePeriods = await runStep("comparativePeriods", () =>
                 calculateComparativePeriods(context.dailyRollup90d, log)
             );
         }
-        
+
         context.analytics = await runStep("analytics", async () => {
             const result = await executeToolCall("getSystemAnalytics", { systemId }, log);
             return normalizeToolResult(result);
@@ -230,11 +230,11 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
                         { 'events.systemId': systemId }
                     ]
                 }).sort({ updatedAt: -1 }).limit(5).toArray();
-                
+
                 if (activeStories.length === 0) {
                     return null;
                 }
-                
+
                 return buildStoryContextSummary(activeStories, log);
             } catch (error) {
                 log.warn('Failed to load story context', { error: error.message });
@@ -244,7 +244,7 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
     }
 
     context.meta.durationMs = Date.now() - start;
-    
+
     log.info('Context collection complete', {
         durationMs: context.meta.durationMs,
         durationSec: (context.meta.durationMs / 1000).toFixed(1),
@@ -254,7 +254,7 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
         stepsSucceeded: context.meta.steps.filter(s => s.success).length,
         stepsFailed: context.meta.steps.filter(s => !s.success).length
     });
-    
+
     return context;
 }
 
@@ -268,9 +268,9 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
  * @param {Object|undefined} params.context
  * @param {"sync"|"background"} [params.mode]
  */
-async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, context, mode = "sync" }) {
+async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, context, mode = "sync", insightMode = "with_tools" }) {
     const { estimateDataTokens, checkTokenLimit } = require('./token-limit-handler.cjs');
-    
+
     const contextData = context || await collectAutoInsightsContext(systemId, analysisData, log, { mode });
 
     // Estimate token usage
@@ -278,24 +278,24 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     const analysisTokens = estimateDataTokens(analysisData);
     const promptBaseTokens = 1000; // Rough estimate for system prompt
     const totalTokens = contextTokens + analysisTokens + promptBaseTokens;
-    
+
     log.info('Token usage estimation', {
         contextTokens,
         analysisTokens,
         promptBaseTokens,
         totalTokens
     });
-    
+
     // Check if we're approaching token limit
     const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     const tokenStatus = checkTokenLimit(totalTokens, model);
-    
+
     if (tokenStatus.isApproachingLimit) {
         log.warn('Approaching token limit, context may need reduction', {
             percentUsed: tokenStatus.percentUsed,
             remaining: tokenStatus.remaining
         });
-        
+
         // Add warning to context metadata
         if (contextData.meta) {
             contextData.meta.tokenWarning = {
@@ -305,13 +305,13 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
             };
         }
     }
-    
+
     if (tokenStatus.exceedsLimit) {
         log.error('Token limit exceeded, applying aggressive reduction', {
             estimatedTokens: tokenStatus.estimatedTokens,
             limit: tokenStatus.limit
         });
-        
+
         // Apply emergency context reduction by removing less critical data
         if (contextData.recentSnapshots && contextData.recentSnapshots.length > 10) {
             const originalLength = contextData.recentSnapshots.length;
@@ -321,13 +321,13 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
                 reducedCount: contextData.recentSnapshots.length
             });
         }
-        
+
         // Remove detailed analytics if still over limit
         if (contextData.analytics && contextData.analytics.detailedMetrics) {
             contextData.analytics.detailedMetrics = null;
             log.info('Removed detailed analytics to fit token limit');
         }
-        
+
         if (contextData.meta) {
             contextData.meta.tokenReduction = true;
             contextData.meta.tokenReductionReason = 'Exceeded token limit, removed detailed data';
@@ -338,7 +338,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
 
     const executionGuidance = buildExecutionGuidance(mode, contextData);
     const missionStatement = customPrompt ? buildCustomMission(customPrompt) : buildDefaultMission();
-    
+
     // Build data availability summary
     const dataAvailability = await buildDataAvailabilitySummary(systemId, contextData, log);
 
@@ -350,7 +350,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "When analysis requires tool data, you MUST CALL THE TOOL YOURSELF and present the results. NEVER tell users to 'use the X tool' or 'run Y calculation' - they literally cannot do this.\n";
     prompt += "If you need energy budget data, call calculate_energy_budget NOW and include the results in your response. If you need predictions, call predict_battery_trends NOW.\n";
     prompt += "Recommendations like 'Use the calculate_energy_budget tool with scenario=worst_case' are USELESS to users - only YOU can execute tools!\n\n";
-    
+
     // ENHANCED ENERGY CALCULATION GUIDANCE
     prompt += "⚡ CRITICAL: POWER vs ENERGY - DO NOT CONFUSE THESE!\n";
     prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
@@ -379,7 +379,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "   If values go from 145 Ah to 524 Ah, that's INCREASING (going UP), not decreasing.\n";
     prompt += "   Always double-check: larger number at end = increasing trend.\n\n";
     prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-    
+
     prompt += "⚡ ENERGY UNITS MANDATE:\n";
     prompt += "• ALWAYS use kWh (kilowatt-hours) for energy values - this is the INDUSTRY STANDARD\n";
     prompt += "• NEVER use Ah (amp-hours) alone without context - Ah varies wildly by voltage (12V, 24V, 48V systems)\n";
@@ -426,7 +426,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
 
     // Remove hard-coded context - let Gemini query data dynamically
     // Battery condition can be determined from analytics if needed
-    
+
     prompt += "\n**RESPONSE FORMAT**\n\n";
     prompt += "When you have gathered enough information, provide your analysis in clean, well-formatted MARKDOWN.\n\n";
     prompt += "⚠️ CRITICAL FORMAT RULES:\n";
@@ -458,7 +458,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "• Bold important values and metrics\n";
     prompt += "• Include specific numbers, not vague statements\n";
     prompt += "• Test your format mentally before responding - ensure it's parseable by the expected format\n\n";
-    
+
     // Mode-specific guidance on tool usage
     if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
         prompt += "DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. You likely have ALL the data needed already. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range). IMPORTANT: Prefer to analyze with existing data rather than requesting more.\n\n";
@@ -478,6 +478,15 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "   3. ALWAYS call request_bms_data for any historical data requests\n";
         prompt += "   4. NEVER claim 'data not available' without trying the tool first\n";
         prompt += "   5. You have ALL the tools needed - use them confidently!\n\n";
+    } else if (insightMode === 'full_context') {
+        // Full context mode - encourage deep analysis and tool usage
+        prompt += "🎯 FULL CONTEXT MODE - DEEP ANALYSIS REQUIRED:\n";
+        prompt += "You are performing a comprehensive system audit. Do not settle for surface-level insights.\n\n";
+        prompt += "MANDATORY ANALYSIS STEPS:\n";
+        prompt += "   1. Check the 'DATA AVAILABILITY' section carefully.\n";
+        prompt += "   2. If you need more granularity (e.g., hourly data for a specific anomaly), CALL request_bms_data.\n";
+        prompt += "   3. Correlate multiple factors: Weather vs Solar, Load vs SOC, Temperature vs Efficiency.\n";
+        prompt += "   4. Provide a detailed, multi-faceted report.\n\n";
     } else {
         prompt += "DATA GATHERING INSTRUCTIONS:\n";
         prompt += "⚠️ YOU ARE THE ONLY ONE WHO CAN USE TOOLS - users cannot execute calculate_energy_budget, predict_battery_trends, etc.\n";
@@ -488,12 +497,12 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "NEVER say 'use the X tool' or 'run Y with parameters' - users literally cannot do this. YOU must execute all tools.\n";
         prompt += "Keep tool calls focused on specific data needed. Maximum 2-3 tool calls recommended.\n\n";
     }
-    
+
     prompt += "ITERATION BUDGET: You have a MAXIMUM of 5 function calling iterations. Each tool call uses one iteration. Plan carefully:\n";
     prompt += "- With comprehensive preloaded data: Provide final answer immediately (no tools needed)\n";
     prompt += "- Need 1-2 data points: Request them, then provide final answer\n";
     prompt += "- Never use more than 3-4 iterations total\n\n";
-    
+
     prompt += "CONTENT GUIDELINES:\n";
     prompt += "• WRITING STYLE: Concise, data-driven analysis. Lead with KEY FINDINGS in bold. Avoid verbose explanations.\n";
     prompt += "• FORMATTING: Use blank lines between sections. Keep paragraphs short (2-3 sentences). Break long text with bullets.\n";
@@ -564,7 +573,7 @@ function buildContextSections(context, analysisData) {
 
     const dailyRollupSection = formatDailyRollupSection(context.dailyRollup90d);
     if (dailyRollupSection) sections.push(dailyRollupSection);
-    
+
     const comparativePeriodsSection = formatComparativePeriodsSection(context.comparativePeriods);
     if (comparativePeriodsSection) sections.push(comparativePeriodsSection);
 
@@ -623,7 +632,7 @@ function buildDefaultMission() {
 function buildCustomMission(customPrompt) {
     // Detect if the query involves date comparisons or specific time periods
     const hasDateReference = /\b(yesterday|last (week|month|tuesday|wednesday|thursday|friday|saturday|sunday|monday)|compare.*to|vs\.|versus|october|november|december|january|february|march|april|may|june|july|august|september|\d{1,2}\/\d{1,2}|on the \d+)/i.test(customPrompt);
-    
+
     // Detect format requests
     const csvRequested = /\b(csv|comma[\s\-.]?separated|spreadsheet)\b/i.test(customPrompt);
     const tableRequested = /\b(table|tabular)\b/i.test(customPrompt);
@@ -638,7 +647,7 @@ function buildCustomMission(customPrompt) {
     approach += `2. **Check Context**: Do I already have this in the "PRE-LOADED" section above? If yes, USE IT.\n`;
     approach += `3. **Gap Analysis**: What is missing? If I need granular hourly data for a specific date, I MUST call request_bms_data.\n`;
     approach += `4. **Tool Selection**: Which tool fills the gap? (e.g., analyze_usage_patterns for anomalies, request_bms_data for raw charts).\n`;
-    
+
     approach += `\n**RULES OF ENGAGEMENT:**\n`;
     approach += `• **Proactive Tooling**: If the user asks "Why did my battery die?", DO NOT guess. Call 'request_bms_data' for the hours leading up to the event.\n`;
     approach += `• **Token Efficiency**: Do not request "all" metrics if the user only asked about "voltage".\n`;
@@ -670,7 +679,7 @@ function buildCustomMission(customPrompt) {
         approach += `3. Use arrays for time series data\n`;
         approach += `4. Include timestamp, value, and unit fields\n\n`;
     }
-    
+
     if (hasDateReference) {
         approach += `**🔍 DETECTED:** This question requires historical data comparison.\n\n`;
         approach += `**MANDATORY STEPS:**\n`;
@@ -690,7 +699,7 @@ function buildCustomMission(customPrompt) {
         approach += `5. Format: ## KEY FINDINGS → ## ANALYSIS → ## RECOMMENDATIONS\n`;
         approach += `6. Use bold labels, cite sources inline, skip fluff\n`;
     }
-    
+
     return approach;
 }
 
@@ -851,7 +860,7 @@ function formatAnalyticsSection(analytics) {
         const topAlert = analytics.alertAnalysis.alertCounts?.[0];
         const totalEvents = analytics.alertAnalysis.totalEvents;
         const totalOccurrences = analytics.alertAnalysis.totalAlerts;
-        
+
         if (topAlert) {
             lines.push(`- Alert events: ${totalEvents} distinct events from ${totalOccurrences} screenshot occurrences (top: ${topAlert.alert} - ${topAlert.count} events, ${topAlert.occurrences} occurrences${topAlert.avgDurationHours ? `, avg ${formatNumber(topAlert.avgDurationHours, "h", 1)}` : ""}).`);
         } else {
@@ -1010,7 +1019,7 @@ function formatNightDischargeSection(nightDischarge, systemProfile) {
     if (!aggregate.avgCurrent && !aggregate.totalAh) return null;
 
     const lines = ["**OVERNIGHT LOAD ANALYSIS**"];
-    
+
     // Report average overnight draw
     if (isFiniteNumber(aggregate.avgCurrent)) {
         const wattsText = isFiniteNumber(aggregate.avgWatts)
@@ -1018,23 +1027,23 @@ function formatNightDischargeSection(nightDischarge, systemProfile) {
             : "";
         lines.push(`- Average overnight draw: ${formatNumber(aggregate.avgCurrent, " A", 1)}${wattsText}.`);
     }
-    
+
     // NEW: Report actual night duration and projected consumption
     if (isFiniteNumber(aggregate.actualNightHours) && isFiniteNumber(aggregate.projectedNightAh)) {
-        const geoNote = aggregate.usedGeoLocation 
+        const geoNote = aggregate.usedGeoLocation
             ? " (based on location's actual sunrise/sunset times)"
             : " (estimated using standard 12-hour night)";
-        
+
         const projectedKwhText = isFiniteNumber(aggregate.projectedNightKwh)
             ? ` (~${formatNumber(aggregate.projectedNightKwh, " kWh", 2)})`
             : "";
-        
+
         lines.push(`- Full night duration: ${formatNumber(aggregate.actualNightHours, " hours", 1)}${geoNote}.`);
         lines.push(`- Projected overnight consumption: ${formatNumber(aggregate.projectedNightAh, " Ah", 1)}${projectedKwhText} for the entire ${formatNumber(aggregate.actualNightHours, "-hour", 1)} night.`);
-        
+
         // If we have partial coverage, note the measurement window
         if (isFiniteNumber(aggregate.totalHours) && aggregate.totalHours > 0 && aggregate.totalHours < aggregate.actualNightHours) {
-            const coverage = isFiniteNumber(aggregate.measurementCoverage) 
+            const coverage = isFiniteNumber(aggregate.measurementCoverage)
                 ? formatNumber(aggregate.measurementCoverage, "%", 0)
                 : "partial";
             lines.push(`- Measurement basis: ${formatNumber(aggregate.totalAh, " Ah", 1)} observed over ${formatNumber(aggregate.totalHours, " hours", 1)} of nighttime data (${coverage} coverage).`);
@@ -1130,36 +1139,36 @@ function formatSolarVarianceSection(variance) {
  */
 function formatDailyRollupSection(dailyRollup) {
     if (!Array.isArray(dailyRollup) || dailyRollup.length === 0) return null;
-    
+
     const lines = ["**90-DAY HISTORICAL TREND DATA**"];
-    
+
     // Calculate overall statistics
     const totalDays = dailyRollup.length;
     const totalDataPoints = dailyRollup.reduce((sum, day) => sum + day.dataPoints, 0);
     const avgPointsPerDay = (totalDataPoints / totalDays).toFixed(1);
-    
+
     const startDate = dailyRollup[0].date;
     const endDate = dailyRollup[dailyRollup.length - 1].date;
-    
+
     lines.push(`- Time range: ${startDate} to ${endDate} (${totalDays} days)`);
     lines.push(`- Data coverage: ${totalDataPoints} total readings (avg ${avgPointsPerDay} per day)`);
-    
+
     // Calculate trend statistics
     const allDailySummaries = dailyRollup.map(d => d.dailySummary).filter(Boolean);
-    
+
     if (allDailySummaries.length > 0) {
         const avgSocValues = allDailySummaries.map(d => d.avgSoc).filter(isFiniteNumber);
         const avgVoltageValues = allDailySummaries.map(d => d.avgVoltage).filter(isFiniteNumber);
         const avgCurrentValues = allDailySummaries.map(d => d.avgCurrent).filter(isFiniteNumber);
         const totalAlertsCount = allDailySummaries.reduce((sum, d) => sum + (d.totalAlerts || 0), 0);
-        
+
         if (avgSocValues.length > 0) {
             const overallAvgSoc = average(avgSocValues);
             const minSoc = Math.min(...avgSocValues);
             const maxSoc = Math.max(...avgSocValues);
             const socStdDev = standardDeviation(avgSocValues);
             lines.push(`- SOC range: ${formatPercent(minSoc, 0)} to ${formatPercent(maxSoc, 0)} (avg ${formatPercent(overallAvgSoc, 0)}, σ ${formatPercent(socStdDev, 1)})`);
-            
+
             // Calculate SOC trend (linear regression) with explicit direction
             const socTrend = calculateLinearTrend(avgSocValues);
             if (socTrend) {
@@ -1170,12 +1179,12 @@ function formatDailyRollupSection(dailyRollup) {
                 }
             }
         }
-        
+
         if (avgVoltageValues.length > 0) {
             const overallAvgVoltage = average(avgVoltageValues);
             const voltageStdDev = standardDeviation(avgVoltageValues);
             lines.push(`- Average voltage: ${formatNumber(overallAvgVoltage, " V", 2)} (σ ${formatNumber(voltageStdDev, 'V', 2)})`);
-            
+
             // Calculate voltage trend with explicit direction
             const voltageTrend = calculateLinearTrend(avgVoltageValues);
             if (voltageTrend) {
@@ -1186,13 +1195,13 @@ function formatDailyRollupSection(dailyRollup) {
                 }
             }
         }
-        
+
         if (avgCurrentValues.length > 0) {
             const overallAvgCurrent = average(avgCurrentValues);
             const chargingDays = avgCurrentValues.filter(c => c > 0.5).length;
             const dischargingDays = avgCurrentValues.filter(c => c < -0.5).length;
             lines.push(`- Average current: ${formatNumber(overallAvgCurrent, " A", 1)} (${chargingDays} charging days, ${dischargingDays} discharging days)`);
-            
+
             // Calculate energy balance trend with explicit direction
             const netEnergyTrend = calculateLinearTrend(avgCurrentValues);
             if (netEnergyTrend) {
@@ -1200,11 +1209,11 @@ function formatDailyRollupSection(dailyRollup) {
                 lines.push(`- Energy balance trend: ${balanceStatus} (${formatNumber(netEnergyTrend.firstValue, 'A', 1)} → ${formatNumber(netEnergyTrend.lastValue, 'A', 1)}, change: ${formatSigned(netEnergyTrend.absoluteChange, 'A', 2)} over period)`);
             }
         }
-        
+
         if (totalAlertsCount > 0) {
             const alertsPerDay = totalAlertsCount / totalDays;
             lines.push(`- Total alerts across period: ${totalAlertsCount} (avg ${formatNumber(alertsPerDay, '/day', 1)})`);
-            
+
             // Calculate alert frequency trend
             const dailyAlertCounts = allDailySummaries.map(d => d.totalAlerts || 0);
             const alertTrend = calculateLinearTrend(dailyAlertCounts);
@@ -1214,7 +1223,7 @@ function formatDailyRollupSection(dailyRollup) {
             }
         }
     }
-    
+
     // OPTIMIZATION: Only include recent 7 days with SAMPLED hourly detail (not all hours)
     const recentDays = dailyRollup.slice(-7);
     if (recentDays.length > 0) {
@@ -1222,20 +1231,20 @@ function formatDailyRollupSection(dailyRollup) {
         for (const day of recentDays) {
             const summary = day.dailySummary;
             if (!summary) continue;
-            
+
             const socRange = isFiniteNumber(summary.minSoc) && isFiniteNumber(summary.maxSoc)
                 ? `${formatPercent(summary.minSoc, 0)}-${formatPercent(summary.maxSoc, 0)}`
                 : 'n/a';
-            
+
             lines.push(`  - ${day.date}: ${day.hours}h coverage (${day.dataPoints} points), SOC ${socRange}, ${summary.totalAlerts || 0} alerts`);
-            
+
             // REMOVED: Hourly compact format - too verbose, causes token overflow
             // AI should use request_bms_data tool if it needs hourly data
         }
     }
-    
+
     lines.push("\n- **Usage notes:** For detailed hourly data, use request_bms_data tool with specific metrics and time ranges. This summary provides high-level context only.");
-    
+
     return lines.join("\n");
 }
 
@@ -1254,48 +1263,48 @@ function formatDailyRollupSection(dailyRollup) {
 function calculateLinearTrend(values) {
     const filtered = values.filter(v => isFiniteNumber(v));
     if (filtered.length < 3) return null; // Need at least 3 points for meaningful trend
-    
+
     const n = filtered.length;
-    const indices = Array.from({length: n}, (_, i) => i);
-    
+    const indices = Array.from({ length: n }, (_, i) => i);
+
     // Calculate means
     const xMean = (n - 1) / 2; // indices are 0, 1, 2, ..., n-1
     const yMean = filtered.reduce((sum, v) => sum + v, 0) / n;
-    
+
     // Calculate slope and intercept
     let numerator = 0;
     let denominator = 0;
-    
+
     for (let i = 0; i < n; i++) {
         const xDiff = i - xMean;
         const yDiff = filtered[i] - yMean;
         numerator += xDiff * yDiff;
         denominator += xDiff * xDiff;
     }
-    
+
     if (denominator === 0) return null;
-    
+
     const slope = numerator / denominator;
     const intercept = yMean - slope * xMean;
-    
+
     // Calculate R² (coefficient of determination)
     let ssTotal = 0;
     let ssResidual = 0;
-    
+
     for (let i = 0; i < n; i++) {
         const predicted = slope * i + intercept;
         ssTotal += Math.pow(filtered[i] - yMean, 2);
         ssResidual += Math.pow(filtered[i] - predicted, 2);
     }
-    
+
     const rSquared = ssTotal > 0 ? 1 - (ssResidual / ssTotal) : 0;
-    
+
     // Explicitly determine direction with SANITY CHECK
     // If first value is 145 and last is 524, that's INCREASING (going UP)
     const firstValue = filtered[0];
     const lastValue = filtered[n - 1];
     const actualDelta = lastValue - firstValue;
-    
+
     // Direction is determined by slope sign:
     // Positive slope = INCREASING = values going UP over time
     // Negative slope = DECREASING = values going DOWN over time
@@ -1310,19 +1319,19 @@ function calculateLinearTrend(values) {
         direction = 'stable';
         directionEmoji = '➡️';
     }
-    
+
     // SANITY CHECK: Verify direction matches actual first→last delta
     // This catches potential calculation errors
     // Use a tolerance for delta, similar to slope threshold
     const DELTA_TOLERANCE = 0.01;
     const deltaDirection =
         actualDelta > DELTA_TOLERANCE ? 'increasing' :
-        actualDelta < -DELTA_TOLERANCE ? 'decreasing' :
-        'stable';
+            actualDelta < -DELTA_TOLERANCE ? 'decreasing' :
+                'stable';
     const directionMismatch =
         (direction === 'increasing' && deltaDirection === 'decreasing') ||
         (direction === 'decreasing' && deltaDirection === 'increasing');
-    
+
     return {
         slope: roundNumber(slope, 4),
         intercept: roundNumber(intercept, 2),
@@ -1338,7 +1347,7 @@ function calculateLinearTrend(values) {
         lastValue: roundNumber(lastValue, 2),
         absoluteChange: roundNumber(actualDelta, 2),
         // Warning if direction seems contradictory (likely data issue, not calculation error)
-        directionNote: directionMismatch 
+        directionNote: directionMismatch
             ? `Note: Trend slope suggests ${direction}, but first→last delta is ${deltaDirection}. This may indicate non-linear patterns.`
             : null
     };
@@ -1406,7 +1415,7 @@ function formatStoryContextSection(storyContext) {
     const lines = ["**📖 HISTORICAL CONTEXT (Admin Stories)**"];
     lines.push(`Active stories providing context: ${storyContext.totalStories}`);
     lines.push("");
-    
+
     for (const story of storyContext.stories) {
         lines.push(`### "${story.title}"`);
         if (story.description) {
@@ -1419,7 +1428,7 @@ function formatStoryContextSection(storyContext) {
             lines.push(`Time Period: ${new Date(story.dateRange.start).toLocaleDateString()} to ${new Date(story.dateRange.end).toLocaleDateString()}`);
         }
         lines.push(`Events: ${story.eventCount}`);
-        
+
         // Include event annotations that provide causal context
         if (story.events && story.events.length > 0) {
             lines.push("Key Context Notes:");
@@ -1432,11 +1441,11 @@ function formatStoryContextSection(storyContext) {
         }
         lines.push("");
     }
-    
+
     lines.push("⚠️ IMPORTANT: Use this admin-provided context to inform your analysis.");
     lines.push("Stories explain maintenance events, environmental factors, and system interventions.");
     lines.push("Correlate story context with BMS data patterns when providing insights.");
-    
+
     return lines.join("\n");
 }
 
@@ -1485,13 +1494,13 @@ async function load90DayDailyRollup(systemId, log) {
     try {
         const collection = await getCollection("history");
         const daysBack = 90;
-        
+
         // Calculate date range
         const endDate = new Date();
         const startDate = new Date(endDate.getTime() - daysBack * 24 * 60 * 60 * 1000);
-        
+
         log.info('Loading 90-day daily rollup', { systemId, startDate: startDate.toISOString(), endDate: endDate.toISOString() });
-        
+
         // Query database for all records in 90-day window
         const query = {
             systemId,
@@ -1500,7 +1509,7 @@ async function load90DayDailyRollup(systemId, log) {
                 $lte: endDate.toISOString()
             }
         };
-        
+
         const records = await collection
             .find(query, {
                 projection: {
@@ -1512,50 +1521,50 @@ async function load90DayDailyRollup(systemId, log) {
             })
             .sort({ timestamp: 1 })
             .toArray();
-        
+
         log.info('Records fetched for 90-day rollup', { count: records.length });
-        
+
         if (records.length === 0) {
             return [];
         }
-        
+
         // Group records by day
         const dailyBuckets = new Map();
-        
+
         for (const record of records) {
             if (!record.timestamp || !record.analysis) continue;
-            
+
             const timestamp = new Date(record.timestamp);
             const dayBucket = new Date(timestamp);
             dayBucket.setHours(0, 0, 0, 0);
             const bucketKey = dayBucket.toISOString().split('T')[0]; // YYYY-MM-DD
-            
+
             if (!dailyBuckets.has(bucketKey)) {
                 dailyBuckets.set(bucketKey, []);
             }
             dailyBuckets.get(bucketKey).push(record);
         }
-        
+
         log.debug('Records grouped into daily buckets', { dayCount: dailyBuckets.size });
-        
+
         // Process each day: create hourly averages within the day
         const dailyRollups = [];
-        
+
         for (const [dayKey, dayRecords] of dailyBuckets.entries()) {
             // Group this day's records by hour
             const hourlyBuckets = new Map();
-            
+
             for (const record of dayRecords) {
                 const timestamp = new Date(record.timestamp);
                 const hour = timestamp.getHours();
                 const hourKey = `${dayKey}T${hour.toString().padStart(2, '0')}:00:00.000Z`;
-                
+
                 if (!hourlyBuckets.has(hourKey)) {
                     hourlyBuckets.set(hourKey, []);
                 }
                 hourlyBuckets.get(hourKey).push(record);
             }
-            
+
             // Calculate hourly averages for this day
             const hourlyAverages = [];
             for (const [hourKey, hourRecords] of hourlyBuckets.entries()) {
@@ -1566,13 +1575,13 @@ async function load90DayDailyRollup(systemId, log) {
                     ...hourlyMetrics
                 });
             }
-            
+
             // Sort hourly averages by time
             hourlyAverages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-            
+
             // Calculate daily summary from hourly data
             const dailySummary = computeDailySummary(hourlyAverages, dayRecords);
-            
+
             dailyRollups.push({
                 date: dayKey,
                 dataPoints: dayRecords.length,
@@ -1581,16 +1590,16 @@ async function load90DayDailyRollup(systemId, log) {
                 dailySummary
             });
         }
-        
+
         // Sort by date ascending
         dailyRollups.sort((a, b) => new Date(a.date) - new Date(b.date));
-        
+
         log.info('90-day rollup complete', {
             days: dailyRollups.length,
             totalDataPoints: records.length,
             avgPointsPerDay: (records.length / dailyRollups.length).toFixed(1)
         });
-        
+
         return dailyRollups;
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
@@ -1612,28 +1621,28 @@ function computeHourlyMetrics(records) {
         temperature: [],
         alertCount: 0
     };
-    
+
     for (const record of records) {
         const a = record.analysis;
         if (!a) continue;
-        
+
         if (isFiniteNumber(a.overallVoltage)) metrics.voltage.push(a.overallVoltage);
         if (isFiniteNumber(a.current)) metrics.current.push(a.current);
         if (isFiniteNumber(a.power)) metrics.power.push(a.power);
         if (isFiniteNumber(a.stateOfCharge)) metrics.soc.push(a.stateOfCharge);
         if (isFiniteNumber(a.remainingCapacity)) metrics.capacity.push(a.remainingCapacity);
-        
+
         if (Array.isArray(a.temperatures) && a.temperatures.length > 0) {
             const avgTemp = a.temperatures.reduce((sum, t) => sum + t, 0) / a.temperatures.length;
             if (isFiniteNumber(avgTemp)) metrics.temperature.push(avgTemp);
         }
-        
+
         if (Array.isArray(a.alerts) || Array.isArray(record.alerts)) {
             const alerts = a.alerts || record.alerts;
             metrics.alertCount += alerts.filter(Boolean).length;
         }
     }
-    
+
     return {
         voltage: average(metrics.voltage),
         current: average(metrics.current),
@@ -1655,7 +1664,7 @@ function computeHourlyMetrics(records) {
 function standardDeviation(values) {
     const filtered = values.filter(v => isFiniteNumber(v));
     if (filtered.length < 2) return null;
-    
+
     const avg = filtered.reduce((sum, v) => sum + v, 0) / filtered.length;
     const squaredDiffs = filtered.map(v => Math.pow(v - avg, 2));
     const variance = squaredDiffs.reduce((sum, v) => sum + v, 0) / filtered.length;
@@ -1672,7 +1681,7 @@ function computeDailySummary(hourlyAverages, dayRecords) {
     const allSoc = hourlyAverages.map(h => h.soc).filter(isFiniteNumber);
     const allCapacity = hourlyAverages.map(h => h.capacity).filter(isFiniteNumber);
     const allTemp = hourlyAverages.map(h => h.temperature).filter(isFiniteNumber);
-    
+
     return {
         avgVoltage: average(allVoltage),
         avgCurrent: average(allCurrent),
@@ -1818,11 +1827,11 @@ function analyzeNightDischargePatterns({ snapshots = [], analysisData = {}, syst
     // Use the latest segment's timestamp as reference
     let actualNightHours = 12; // Default fallback
     let usedGeoLocation = false;
-    
+
     if (targetSegments.length > 0) {
         const latestSegment = targetSegments[targetSegments.length - 1];
         const referenceDate = new Date(latestSegment.end || latestSegment.start);
-        
+
         const nightCalc = calculateNightDuration(referenceDate, latitude, longitude);
         actualNightHours = nightCalc.nightDurationHours;
         usedGeoLocation = !nightCalc.usedFallback;
@@ -2037,7 +2046,7 @@ function calculateNightDuration(date, latitude, longitude) {
     if (latitude != null && longitude != null && isFiniteNumber(latitude) && isFiniteNumber(longitude)) {
         try {
             const { sunrise, sunset, isPolarNight, isPolarDay } = calculateSunriseSunset(latitude, longitude, date);
-            
+
             // Handle polar extremes
             if (isPolarNight) {
                 return { nightDurationHours: 24, sunrise: null, sunset: null, usedFallback: false };
@@ -2045,23 +2054,23 @@ function calculateNightDuration(date, latitude, longitude) {
             if (isPolarDay) {
                 return { nightDurationHours: 0, sunrise: null, sunset: null, usedFallback: false };
             }
-            
+
             if (sunrise && sunset) {
                 // Calculate night as time from sunset to sunrise next day
                 // Night spans from sunset of previous day to sunrise of current day
                 const prevDaySunset = new Date(sunset);
                 prevDaySunset.setDate(prevDaySunset.getDate() - 1);
-                
+
                 const nightMs = sunrise.getTime() - prevDaySunset.getTime();
                 const nightHours = nightMs / (1000 * 60 * 60);
-                
+
                 // Sanity check - night should be between 0 and 24 hours
                 if (nightHours > 0 && nightHours <= 24) {
-                    return { 
-                        nightDurationHours: roundNumber(nightHours, 2), 
-                        sunrise, 
+                    return {
+                        nightDurationHours: roundNumber(nightHours, 2),
+                        sunrise,
                         sunset,
-                        usedFallback: false 
+                        usedFallback: false
                     };
                 }
             }
@@ -2069,13 +2078,13 @@ function calculateNightDuration(date, latitude, longitude) {
             // Fall through to fallback if calculation fails
         }
     }
-    
+
     // Fallback: assume standard 12-hour night (6 PM to 6 AM)
-    return { 
-        nightDurationHours: 12, 
-        sunrise: null, 
+    return {
+        nightDurationHours: 12,
+        sunrise: null,
         sunset: null,
-        usedFallback: true 
+        usedFallback: true
     };
 }
 
@@ -2090,20 +2099,20 @@ function isNightHour(timestamp, latitude = null, longitude = null) {
     if (!timestamp) return false;
     const date = new Date(timestamp);
     if (Number.isNaN(date.getTime())) return false;
-    
+
     // If we have location data, use precise sunrise/sunset
     if (latitude != null && longitude != null && isFiniteNumber(latitude) && isFiniteNumber(longitude)) {
         try {
             const { sunrise, sunset, isPolarNight, isPolarDay } = calculateSunriseSunset(latitude, longitude, date);
-            
+
             if (isPolarNight) return true;
             if (isPolarDay) return false;
-            
+
             if (sunrise && sunset) {
                 const hour = date.getHours();
                 const sunriseHour = sunrise.getHours();
                 const sunsetHour = sunset.getHours();
-                
+
                 // Night is before sunrise or after sunset
                 return hour < sunriseHour || hour >= sunsetHour;
             }
@@ -2111,7 +2120,7 @@ function isNightHour(timestamp, latitude = null, longitude = null) {
             // Fall through to simple calculation
         }
     }
-    
+
     // Fallback: use simple hour-based check (6 PM to 6 AM)
     const hour = date.getHours();
     return hour >= 18 || hour < 6;
@@ -2303,7 +2312,7 @@ function formatPercent(value, digits = 0) {
 async function getActualDataRange(systemId, log) {
     try {
         const collection = await getCollection("history");
-        
+
         // Get the earliest and latest timestamps for this system
         const [oldestRecord] = await collection
             .find({ systemId })
@@ -2311,17 +2320,17 @@ async function getActualDataRange(systemId, log) {
             .limit(1)
             .project({ timestamp: 1, _id: 0 })
             .toArray();
-        
+
         const [newestRecord] = await collection
             .find({ systemId })
             .sort({ timestamp: -1 })
             .limit(1)
             .project({ timestamp: 1, _id: 0 })
             .toArray();
-        
+
         // Count total records
         const totalRecords = await collection.countDocuments({ systemId });
-        
+
         if (oldestRecord && newestRecord) {
             log.info('Retrieved actual data range from database', {
                 systemId,
@@ -2329,14 +2338,14 @@ async function getActualDataRange(systemId, log) {
                 maxDate: newestRecord.timestamp,
                 totalRecords
             });
-            
+
             return {
                 minDate: oldestRecord.timestamp,
                 maxDate: newestRecord.timestamp,
                 totalRecords
             };
         }
-        
+
         log.warn('No data found for system', { systemId });
         return null;
     } catch (error) {
@@ -2360,20 +2369,20 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
 
     const lines = ["**DATA AVAILABILITY - What You Can Query**"];
     lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    
+
     // Query the database for the ACTUAL full date range of available data
     const actualRange = await getActualDataRange(systemId, log);
-    
+
     let minDate = null;
     let maxDate = null;
     let totalRecords = 0;
-    
+
     if (actualRange) {
         // Use the actual database range
         minDate = actualRange.minDate;
         maxDate = actualRange.maxDate;
         totalRecords = actualRange.totalRecords;
-        
+
         log.info('Using actual database date range for data availability', {
             systemId,
             minDate,
@@ -2384,26 +2393,26 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     } else {
         // Fallback to recent snapshots/daily rollup if database query fails
         log.warn('Falling back to context data for date range', { systemId });
-        
+
         if (contextData?.recentSnapshots && contextData.recentSnapshots.length > 0) {
             const timestamps = contextData.recentSnapshots
                 .map(s => s.timestamp)
                 .filter(t => t)
                 .sort();
-            
+
             if (timestamps.length > 0) {
                 minDate = timestamps[0];
                 maxDate = timestamps[timestamps.length - 1];
                 totalRecords = timestamps.length;
             }
         }
-        
+
         if (contextData?.dailyRollup90d?.daily && contextData.dailyRollup90d.daily.length > 0) {
             const dailyTimestamps = contextData.dailyRollup90d.daily
                 .map(d => d.date)
                 .filter(t => t)
                 .sort();
-            
+
             if (dailyTimestamps.length > 0 && (!minDate || dailyTimestamps[0] < minDate)) {
                 minDate = dailyTimestamps[0];
             }
@@ -2412,7 +2421,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
             }
         }
     }
-    
+
     // System info
     if (contextData?.systemProfile) {
         const profile = contextData.systemProfile;
@@ -2423,13 +2432,13 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     } else {
         lines.push(`\n📋 SYSTEM: ${systemId}`);
     }
-    
+
     // Date range - emphasize FULL data access
     if (minDate && maxDate) {
         const minDateStr = new Date(minDate).toISOString().split('T')[0];
         const maxDateStr = new Date(maxDate).toISOString().split('T')[0];
         const daysDiff = Math.floor((new Date(maxDate) - new Date(minDate)) / (1000 * 60 * 60 * 24));
-        
+
         lines.push(`\n📅 FULL DATA RANGE AVAILABLE: ${minDateStr} to ${maxDateStr} (${daysDiff} days)`);
         lines.push(`   ✅ Total Records: ${totalRecords} BMS snapshots queryable`);
         lines.push(`   ✅ ALL historical data accessible via request_bms_data tool`);
@@ -2439,7 +2448,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
         lines.push(`\n📅 DATA RANGE: Current snapshot only`);
         lines.push(`   No historical data available for this system`);
     }
-    
+
     // Available metrics
     lines.push(`\n🔍 QUERYABLE METRICS (via request_bms_data):`);
     lines.push(`   • voltage - Battery pack voltage over time`);
@@ -2450,7 +2459,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push(`   • temperature - Battery temperature`);
     lines.push(`   • cell_voltage_difference - Cell imbalance (mV)`);
     lines.push(`   • all - All metrics (use sparingly - large dataset)`);
-    
+
     // Available tools
     lines.push(`\n🛠️ ANALYSIS TOOLS AVAILABLE:`);
     lines.push(`   • getSystemAnalytics - Comprehensive stats, trends, degradation`);
@@ -2458,7 +2467,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push(`   • calculate_energy_budget - Solar contribution, autonomy days`);
     lines.push(`   • predict_battery_trends - Capacity forecasts, lifetime estimates`);
     lines.push(`   • getWeatherData - Historical weather correlation`);
-    
+
     // Data that's already pre-loaded
     if (contextData?.analytics && !contextData.analytics.error) {
         lines.push(`\n✓ PRE-LOADED: System analytics (no need to request)`);
@@ -2490,7 +2499,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     if (contextData?.weather) {
         lines.push(`✓ PRE-LOADED: Current weather data`);
     }
-    
+
     // Comprehensive data source catalog
     lines.push("\n📊 COMPLETE DATA SOURCE CATALOG:");
     lines.push("\n1️⃣ **BMS Screenshot Data** (from user uploads):");
@@ -2510,14 +2519,14 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push("   • alerts[] - Active BMS alerts/warnings");
     lines.push("   • timestamp - Screenshot timestamp (ISO 8601)");
     lines.push("   • dlNumber - Data logger identifier");
-    
+
     lines.push("\n2️⃣ **Weather Data** (OpenWeather API):");
     lines.push("   • temp (°C) - Ambient temperature");
     lines.push("   • clouds (%) - Cloud cover percentage");
     lines.push("   • uvi - UV index (solar intensity)");
     lines.push("   • weather_main - Weather condition (Clear, Clouds, Rain, etc.)");
     lines.push("   • Historical weather correlations available via getWeatherData tool");
-    
+
     lines.push("\n3️⃣ **Calculated/Derived Metrics** (computed from BMS data):");
     lines.push("   • Linear trends: SOC, voltage, current, alerts (with R² confidence)");
     lines.push("   • Standard deviation: All metrics for variability analysis");
@@ -2530,7 +2539,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push("   • Degradation rate: Capacity loss per day (Ah/day)");
     lines.push("   • Autonomy days: Runtime at current load before depletion");
     lines.push("   • Service life estimate: Months/years until 80% retention");
-    
+
     lines.push("\n4️⃣ **Time-Based Calculations Available:**");
     lines.push("   • Hourly averages: All metrics aggregated by hour");
     lines.push("   • Daily averages: All metrics aggregated by day");
@@ -2539,14 +2548,14 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push("   • Cycle count correlation: Performance vs cycle count");
     lines.push("   • Temperature impact: Metrics vs temperature correlation");
     lines.push("   • Seasonal patterns: Month-over-month variations");
-    
+
     lines.push("\n5️⃣ **Advanced Analytics Available via Tools:**");
     lines.push("   • getSystemAnalytics: Hourly patterns, sunny-day baselines, alert grouping");
     lines.push("   • predict_battery_trends: Regression forecasts for capacity, efficiency, lifetime");
     lines.push("   • analyze_usage_patterns: Daily/weekly/seasonal patterns, anomaly detection");
     lines.push("   • calculate_energy_budget: Solar sufficiency, autonomy, worst-case scenarios");
     lines.push("   • getSolarEstimate: Expected solar production for location/date range");
-    
+
     lines.push("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     lines.push("🎯 HOW TO REQUEST HISTORICAL DATA (CRITICAL FOR COMPARISONS):");
     lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -2558,7 +2567,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push("   • time_range_start: (required) ISO timestamp e.g. '2025-10-01T00:00:00Z'");
     lines.push("   • time_range_end: (required) ISO timestamp e.g. '2025-11-15T23:59:59Z'");
     lines.push("   • granularity: (optional) 'hourly_avg' (default), 'daily_avg', or 'raw'");
-    
+
     if (minDate && maxDate) {
         const minDateStr = new Date(minDate).toISOString().split('T')[0];
         const maxDateStr = new Date(maxDate).toISOString().split('T')[0];
@@ -2570,7 +2579,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
         lines.push(`✅ ALL ${totalRecords} BMS snapshots are accessible via request_bms_data`);
         lines.push(`✅ Historical comparisons, trend analysis, and multi-day queries are FULLY SUPPORTED`);
     }
-    
+
     lines.push("\n**EXAMPLE: How to use request_bms_data tool**");
     lines.push("You can call the request_bms_data function with these parameters:");
     lines.push("   • systemId: (required) The exact system ID shown above");
@@ -2578,12 +2587,12 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push("   • time_range_start: ISO timestamp like '2025-11-01T00:00:00Z'");
     lines.push("   • time_range_end: ISO timestamp like '2025-11-15T23:59:59Z'");
     lines.push("   • granularity: 'hourly_avg', 'daily_avg', or 'raw'");
-    
+
     lines.push("\n⛔ NEVER RESPOND WITH 'DATA UNAVAILABLE' OR 'LIMITED TO X DAYS' IF:");
     lines.push("   1. The requested date is within the queryable range shown above");
     lines.push("   2. You haven't actually CALLED request_bms_data yet");
     lines.push("   3. The data exists - you just need to request it with the correct tool call");
-    
+
     lines.push("\n🚫 COMMON MISTAKES TO AVOID:");
     lines.push("   ❌ Claiming 'insufficient data' without calling request_bms_data");
     lines.push("   ❌ Using wrong date format (must be ISO 8601)");
@@ -2591,7 +2600,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push("   ❌ Using incorrect systemId (copy EXACTLY from above)");
     lines.push("   ❌ Requesting 'all' metrics for large time ranges (causes timeout)");
     lines.push("   ✅ ALWAYS call request_bms_data BEFORE claiming data unavailable!");
-    
+
     lines.push("\n💡 QUICK START EXAMPLES:");
     lines.push(`\n**Example 1: Get last 7 days of SOC data**`);
     if (minDate && maxDate) {
@@ -2605,7 +2614,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
         lines.push(`   time_range_end: "${exampleEnd.toISOString()}"`);
         lines.push(`   granularity: "daily_avg"`);
     }
-    
+
     lines.push(`\n**Example 2: Get yesterday's hourly current data**`);
     if (minDate && maxDate) {
         const yesterday = new Date(maxDate);
@@ -2621,7 +2630,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
         lines.push(`   time_range_end: "${yesterdayEnd.toISOString()}"`);
         lines.push(`   granularity: "hourly_avg"`);
     }
-    
+
     lines.push(`\n**Example 3: Get full historical voltage trend**`);
     if (minDate && maxDate) {
         lines.push(`Call request_bms_data with:`);
@@ -2631,7 +2640,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
         lines.push(`   time_range_end: "${new Date(maxDate).toISOString()}"`);
         lines.push(`   granularity: "daily_avg" (use daily for long ranges)`);
     }
-    
+
     lines.push("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     lines.push("🎓 REMEMBER:");
     lines.push("   • You have COMPLETE access to all historical data");
@@ -2640,7 +2649,7 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
     lines.push("   • Copy the systemId EXACTLY as shown above");
     lines.push("   • Use ISO 8601 date format: YYYY-MM-DDTHH:mm:ss.sssZ");
     lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-    
+
     return lines.join("\n");
 }
 
@@ -2650,21 +2659,21 @@ async function buildDataAvailabilitySummary(systemId, contextData, log) {
  */
 function buildQuickReferenceCatalog(systemId, startDate, endDate, totalRecords = 0) {
     const lines = [];
-    
+
     lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     lines.push("📚 QUICK REFERENCE: DATA ACCESS CATALOG");
     lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    
+
     lines.push(`\n🔑 YOUR SYSTEM ID: "${systemId}"`);
     lines.push("   ☝️ USE THIS EXACT VALUE IN ALL TOOL CALLS");
-    
+
     if (startDate && endDate) {
         const days = Math.floor((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24));
         lines.push(`\n📅 FULL QUERYABLE RANGE: ${startDate} to ${endDate}`);
         lines.push(`   📊 ${days} days | ${totalRecords || 'Many'} snapshots available`);
         lines.push(`   ✅ ALL DATA ACCESSIBLE - You can query ANY date in this range!`);
     }
-    
+
     lines.push("\n🛠️ PRIMARY DATA ACCESS TOOL: request_bms_data");
     lines.push("   Required parameters:");
     lines.push(`     • systemId: "${systemId}" ← COPY THIS EXACTLY`);
@@ -2672,7 +2681,7 @@ function buildQuickReferenceCatalog(systemId, startDate, endDate, totalRecords =
     lines.push(`     • time_range_start: ISO format, e.g., "${startDate}"`);
     lines.push(`     • time_range_end: ISO format, e.g., "${endDate}"`);
     lines.push("     • granularity: 'hourly_avg' (detailed) or 'daily_avg' (trends)");
-    
+
     lines.push("\n📖 COMPLETE TOOL LIST:");
     lines.push("   1. request_bms_data - Get historical BMS data (voltage, current, SOC, etc.)");
     lines.push("   2. getWeatherData - Weather data for location/timestamp");
@@ -2682,7 +2691,7 @@ function buildQuickReferenceCatalog(systemId, startDate, endDate, totalRecords =
     lines.push("   6. analyze_usage_patterns - Detect patterns and anomalies");
     lines.push("   7. calculate_energy_budget - Solar sufficiency and autonomy");
     lines.push("   8. get_hourly_soc_predictions - Hourly SOC predictions with interpolation");
-    
+
     lines.push("\n⚡ WORKING EXAMPLE:");
     lines.push("   To get last 30 days of SOC data:");
     if (endDate) {
@@ -2697,16 +2706,16 @@ function buildQuickReferenceCatalog(systemId, startDate, endDate, totalRecords =
         lines.push(`     "granularity": "daily_avg"`);
         lines.push("   }");
     }
-    
+
     lines.push("\n🚨 CRITICAL RULES:");
     lines.push("   ❌ NEVER say 'data unavailable' without calling the tool first");
     lines.push("   ❌ NEVER use wrong systemId or date format");
     lines.push("   ✅ ALWAYS call request_bms_data for historical data");
     lines.push("   ✅ ALWAYS use exact systemId shown above");
     lines.push("   ✅ ALWAYS use ISO 8601 date format (YYYY-MM-DDTHH:mm:ss.sssZ)");
-    
+
     lines.push("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-    
+
     return lines.join("\n");
 }
 
@@ -2744,23 +2753,23 @@ function calculateComparativePeriods(dailyRollup, log) {
         log.debug('Insufficient data for comparative periods', { days: dailyRollup?.length });
         return null;
     }
-    
+
     try {
         // Get most recent data points
         const allDays = dailyRollup.map(d => d.dailySummary).filter(Boolean);
-        
+
         // Last 7 days
         const last7Days = allDays.slice(-7);
         // Previous 7 days (8-14 days ago)
         const previous7Days = allDays.slice(-14, -7);
-        
+
         // Last 30 days
         const last30Days = allDays.slice(-30);
         // Previous 30 days (31-60 days ago)
         const previous30Days = allDays.slice(-60, -30);
-        
+
         const comparisons = {};
-        
+
         // Week-over-week comparison
         if (last7Days.length >= 7 && previous7Days.length >= 7) {
             comparisons.weekOverWeek = calculatePeriodComparison(
@@ -2769,7 +2778,7 @@ function calculateComparativePeriods(dailyRollup, log) {
                 'Week-over-Week'
             );
         }
-        
+
         // Month-over-month comparison
         if (last30Days.length >= 28 && previous30Days.length >= 28) {
             comparisons.monthOverMonth = calculatePeriodComparison(
@@ -2778,7 +2787,7 @@ function calculateComparativePeriods(dailyRollup, log) {
                 'Month-over-Month'
             );
         }
-        
+
         return comparisons;
     } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
@@ -2797,7 +2806,7 @@ function calculatePeriodComparison(previousPeriod, currentPeriod, label) {
         current: { previous: [], current: [] },
         alerts: { previous: 0, current: 0 }
     };
-    
+
     // Extract metrics from previous period
     for (const day of previousPeriod) {
         if (isFiniteNumber(day.avgSoc)) metrics.soc.previous.push(day.avgSoc);
@@ -2805,7 +2814,7 @@ function calculatePeriodComparison(previousPeriod, currentPeriod, label) {
         if (isFiniteNumber(day.avgCurrent)) metrics.current.previous.push(day.avgCurrent);
         metrics.alerts.previous += day.totalAlerts || 0;
     }
-    
+
     // Extract metrics from current period
     for (const day of currentPeriod) {
         if (isFiniteNumber(day.avgSoc)) metrics.soc.current.push(day.avgSoc);
@@ -2813,7 +2822,7 @@ function calculatePeriodComparison(previousPeriod, currentPeriod, label) {
         if (isFiniteNumber(day.avgCurrent)) metrics.current.current.push(day.avgCurrent);
         metrics.alerts.current += day.totalAlerts || 0;
     }
-    
+
     // Calculate averages and deltas
     const result = {
         label,
@@ -2825,12 +2834,12 @@ function calculatePeriodComparison(previousPeriod, currentPeriod, label) {
             previous: metrics.alerts.previous,
             current: metrics.alerts.current,
             delta: metrics.alerts.current - metrics.alerts.previous,
-            percentChange: metrics.alerts.previous > 0 
+            percentChange: metrics.alerts.previous > 0
                 ? ((metrics.alerts.current - metrics.alerts.previous) / metrics.alerts.previous) * 100
                 : null
         }
     };
-    
+
     return result;
 }
 
@@ -2840,14 +2849,14 @@ function calculatePeriodComparison(previousPeriod, currentPeriod, label) {
 function calculateMetricDelta(previousValues, currentValues, unit) {
     const prevAvg = average(previousValues);
     const currAvg = average(currentValues);
-    
+
     if (prevAvg === null || currAvg === null) {
         return null;
     }
-    
+
     const delta = currAvg - prevAvg;
     const percentChange = prevAvg !== 0 ? (delta / prevAvg) * 100 : null;
-    
+
     return {
         previous: roundNumber(prevAvg, 2),
         current: roundNumber(currAvg, 2),
@@ -2864,14 +2873,14 @@ function calculateMetricDelta(previousValues, currentValues, unit) {
  */
 function formatComparativePeriodsSection(comparativePeriods) {
     if (!comparativePeriods) return null;
-    
+
     const lines = ["**COMPARATIVE PERIOD ANALYSIS**"];
-    
+
     const formatComparison = (comparison) => {
         if (!comparison) return [];
-        
+
         const compLines = [`\n- **${comparison.label}** (${comparison.periodDays} days each):`];
-        
+
         // SOC comparison
         if (comparison.soc) {
             const c = comparison.soc;
@@ -2879,7 +2888,7 @@ function formatComparativePeriodsSection(comparativePeriods) {
             const significance = c.significant ? ' (SIGNIFICANT)' : '';
             compLines.push(`  - SOC: ${formatNumber(c.previous, c.unit, 1)} → ${formatNumber(c.current, c.unit, 1)} ${arrow} ${formatSigned(c.delta, c.unit, 1)} (${formatSigned(c.percentChange, '%', 1)} change${significance})`);
         }
-        
+
         // Voltage comparison
         if (comparison.voltage) {
             const c = comparison.voltage;
@@ -2887,7 +2896,7 @@ function formatComparativePeriodsSection(comparativePeriods) {
             const significance = c.significant ? ' (SIGNIFICANT)' : '';
             compLines.push(`  - Voltage: ${formatNumber(c.previous, c.unit, 2)} → ${formatNumber(c.current, c.unit, 2)} ${arrow} ${formatSigned(c.delta, c.unit, 2)} (${formatSigned(c.percentChange, '%', 1)} change${significance})`);
         }
-        
+
         // Current comparison
         if (comparison.current) {
             const c = comparison.current;
@@ -2895,7 +2904,7 @@ function formatComparativePeriodsSection(comparativePeriods) {
             const significance = c.significant ? ' (SIGNIFICANT)' : '';
             compLines.push(`  - Avg Current: ${formatNumber(c.previous, c.unit, 1)} → ${formatNumber(c.current, c.unit, 1)} ${arrow} ${formatSigned(c.delta, c.unit, 1)} (${formatSigned(c.percentChange, '%', 1)} change${significance})`);
         }
-        
+
         // Alert comparison
         if (comparison.alerts) {
             const a = comparison.alerts;
@@ -2903,24 +2912,24 @@ function formatComparativePeriodsSection(comparativePeriods) {
             const significance = Math.abs(a.delta) > 5 ? ' (SIGNIFICANT)' : '';
             compLines.push(`  - Alerts: ${a.previous} → ${a.current} ${arrow} ${formatSigned(a.delta, '', 0)} (${formatSigned(a.percentChange, '%', 0)} change${significance})`);
         }
-        
+
         return compLines;
     };
-    
+
     if (comparativePeriods.weekOverWeek) {
         lines.push(...formatComparison(comparativePeriods.weekOverWeek));
     }
-    
+
     if (comparativePeriods.monthOverMonth) {
         lines.push(...formatComparison(comparativePeriods.monthOverMonth));
     }
-    
+
     lines.push("\n- **Analysis Notes:**");
     lines.push("  - Changes >5% are flagged as SIGNIFICANT");
     lines.push("  - For SOC/Voltage: higher is better (📈 improving)");
     lines.push("  - For Current: lower absolute value suggests less load or better charging (✅ improving)");
     lines.push("  - Use these comparisons to identify emerging trends and validate observations");
-    
+
     return lines.join("\n");
 }
 
