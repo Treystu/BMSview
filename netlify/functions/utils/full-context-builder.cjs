@@ -7,6 +7,11 @@
 const { createLogger } = require('./logger.cjs');
 const { getCollection } = require('./mongodb.cjs');
 
+// Configuration constants for feedback context
+const FEEDBACK_RETENTION_DAYS = 90; // Days of feedback history to include
+const FEEDBACK_DESCRIPTION_TRUNCATE_LENGTH = 200; // Max chars for description in context
+const FEEDBACK_QUERY_LIMIT = 50; // Maximum feedback items to fetch
+
 /**
  * Build complete context with all available data points
  * @param {string} systemId - BMS system ID
@@ -77,30 +82,39 @@ async function getExistingFeedback(systemId, options = {}) {
   try {
     const feedbackCollection = await getCollection('ai_feedback');
     
-    // Get recent feedback (last 90 days) that hasn't been rejected
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    // Get recent feedback that hasn't been rejected
+    const retentionDate = new Date();
+    retentionDate.setDate(retentionDate.getDate() - FEEDBACK_RETENTION_DAYS);
     
     const existingFeedback = await feedbackCollection.find({
       $or: [
         { systemId }, // System-specific feedback
         { systemId: { $exists: false } } // Global feedback
       ],
-      timestamp: { $gte: ninetyDaysAgo },
+      timestamp: { $gte: retentionDate },
       status: { $nin: ['rejected', 'implemented'] } // Only pending/approved items
-    }).sort({ timestamp: -1 }).limit(50).toArray();
+    }).sort({ timestamp: -1 }).limit(FEEDBACK_QUERY_LIMIT).toArray();
     
     // Return summarized feedback for context (reduce token usage)
-    return existingFeedback.map(fb => ({
-      id: fb.id,
-      type: fb.feedbackType,
-      category: fb.category,
-      priority: fb.priority,
-      status: fb.status,
-      title: fb.suggestion?.title,
-      description: fb.suggestion?.description?.substring(0, 200), // Truncate for context
-      timestamp: fb.timestamp
-    }));
+    return existingFeedback.map(fb => {
+      const description = fb.suggestion?.description;
+      const truncatedDescription = description 
+        ? (description.length > FEEDBACK_DESCRIPTION_TRUNCATE_LENGTH 
+            ? description.substring(0, FEEDBACK_DESCRIPTION_TRUNCATE_LENGTH) + '...'
+            : description)
+        : null;
+      
+      return {
+        id: fb.id,
+        type: fb.feedbackType,
+        category: fb.category,
+        priority: fb.priority,
+        status: fb.status,
+        title: fb.suggestion?.title,
+        description: truncatedDescription,
+        timestamp: fb.timestamp
+      };
+    });
   } catch (error) {
     log.warn('Failed to fetch existing feedback, continuing without', { error: error.message });
     return []; // Non-fatal - continue without existing feedback

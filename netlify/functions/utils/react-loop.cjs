@@ -162,7 +162,7 @@ const VISUAL_DISCLAIMER_TRIGGERS = [
     "cannot directly provide visual",
     "unable to generate graphical",
     "cannot create infographic"
-];
+];  // All triggers are lowercase - comparison is done against lowerAnswer
 const VISUAL_DISCLAIMER_THRESHOLD = 1; // Fail fast - intervene on first disclaimer
 
 /**

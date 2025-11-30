@@ -170,7 +170,7 @@ exports.handler = async (event, context) => {
       The following feedback has already been submitted. DO NOT create similar suggestions:
       ${fullContext.existingFeedback.map(fb => `
         - [${fb.status}] ${fb.title} (${fb.type}/${fb.category}, priority: ${fb.priority})
-          ${fb.description ? `Description: ${fb.description}...` : ''}
+          ${fb.description ? `Description: ${fb.description}` : ''}
       `).join('')}
       
       Before submitting ANY new feedback, check this list carefully. Only submit genuinely NEW ideas.
