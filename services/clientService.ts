@@ -634,8 +634,8 @@ export function selectEndpointForMode(mode: InsightMode): string {
         case InsightModeEnum.STANDARD:
             return '/.netlify/functions/generate-insights';
         case InsightModeEnum.FULL_CONTEXT:
-            // Consolidated: Use the robust tools-based endpoint for full context too
-            return '/.netlify/functions/generate-insights-with-tools';
+            // Full Context Mode with AI Feedback capability - uses dedicated endpoint
+            return '/.netlify/functions/generate-insights-full-context';
         case InsightModeEnum.VISUAL_GURU:
             // Visual Guru uses the same endpoint but with different prompt behavior
             return '/.netlify/functions/generate-insights-with-tools';

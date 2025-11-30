@@ -35,12 +35,16 @@ async function buildCompleteContext(systemId, options = {}) {
     // Calculate computed metrics
     const computed = await calculateComputedMetrics(systemId, raw, options);
     
+    // Get existing feedback to prevent duplicates
+    const existingFeedback = await getExistingFeedback(systemId, options);
+    
     const context = {
       raw,
       toolOutputs,
       external,
       metadata,
       computed,
+      existingFeedback, // Include existing feedback for deduplication
       buildTimestamp: new Date().toISOString(),
       buildDurationMs: Date.now() - startTime,
       systemId
@@ -49,6 +53,7 @@ async function buildCompleteContext(systemId, options = {}) {
     log.info('Complete context built successfully', {
       systemId,
       rawDataPoints: countDataPoints(raw),
+      existingFeedbackCount: existingFeedback.length,
       totalSize: JSON.stringify(context).length,
       durationMs: Date.now() - startTime
     });
@@ -57,6 +62,48 @@ async function buildCompleteContext(systemId, options = {}) {
   } catch (error) {
     log.error('Failed to build complete context', { systemId, error: error.message });
     throw error;
+  }
+}
+
+/**
+ * Get existing feedback items to prevent duplicates
+ * @param {string} systemId - BMS system ID
+ * @param {Object} options - Configuration options
+ * @returns {Promise<Array>} List of existing feedback items
+ */
+async function getExistingFeedback(systemId, options = {}) {
+  const log = createLogger('full-context-builder:existing-feedback');
+  
+  try {
+    const feedbackCollection = await getCollection('ai_feedback');
+    
+    // Get recent feedback (last 90 days) that hasn't been rejected
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    
+    const existingFeedback = await feedbackCollection.find({
+      $or: [
+        { systemId }, // System-specific feedback
+        { systemId: { $exists: false } } // Global feedback
+      ],
+      timestamp: { $gte: ninetyDaysAgo },
+      status: { $nin: ['rejected', 'implemented'] } // Only pending/approved items
+    }).sort({ timestamp: -1 }).limit(50).toArray();
+    
+    // Return summarized feedback for context (reduce token usage)
+    return existingFeedback.map(fb => ({
+      id: fb.id,
+      type: fb.feedbackType,
+      category: fb.category,
+      priority: fb.priority,
+      status: fb.status,
+      title: fb.suggestion?.title,
+      description: fb.suggestion?.description?.substring(0, 200), // Truncate for context
+      timestamp: fb.timestamp
+    }));
+  } catch (error) {
+    log.warn('Failed to fetch existing feedback, continuing without', { error: error.message });
+    return []; // Non-fatal - continue without existing feedback
   }
 }
 

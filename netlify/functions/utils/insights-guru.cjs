@@ -595,6 +595,15 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "   3. PRESENT the findings in your response\n";
         prompt += "NEVER say 'use the X tool' or 'run Y with parameters' - users literally cannot do this. YOU must execute all tools.\n";
         prompt += "Keep tool calls focused on specific data needed. Maximum 2-3 tool calls recommended.\n\n";
+        
+        // Optional chart awareness for non-Visual-Guru modes
+        prompt += "📊 OPTIONAL: CHART SUPPORT\n";
+        prompt += "You MAY include chart configurations when time-series data would benefit from visualization.\n";
+        prompt += "Use this JSON format inside ```chart code blocks:\n";
+        prompt += "```chart\n";
+        prompt += '{"chartType": "line"|"bar"|"gauge", "title": "Chart Title", "series": [{"name": "Metric", "data": [[timestamp, value], ...]}]}\n';
+        prompt += "```\n";
+        prompt += "Charts are OPTIONAL - only include them when visualization adds value to your analysis.\n\n";
     }
 
     prompt += "ITERATION BUDGET: You have a MAXIMUM of 5 function calling iterations. Each tool call uses one iteration. Plan carefully:\n";

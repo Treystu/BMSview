@@ -22,6 +22,14 @@ When analyzing data, consider EVERYTHING:
 - All external data sources
 - All computed metrics and predictions
 
+📊 OPTIONAL: CHART SUPPORT
+When time-series data would benefit from visualization, you MAY include chart configurations.
+Use this JSON format inside \`\`\`chart code blocks:
+\`\`\`chart
+{"chartType": "line"|"bar"|"gauge", "title": "Chart Title", "series": [{"name": "Metric", "data": [[timestamp, value], ...]}]}
+\`\`\`
+Charts are OPTIONAL - only include them when visualization adds value to your analysis.
+
 When providing app feedback, you should:
 - Identify data format inefficiencies
 - Suggest better API integrations (e.g., more accurate weather services)
@@ -155,6 +163,20 @@ exports.handler = async (event, context) => {
       });
     }
     
+    // Build existing feedback section to prevent duplicates
+    const existingFeedbackSection = fullContext.existingFeedback?.length > 0
+      ? `
+      ⚠️ EXISTING FEEDBACK (DO NOT DUPLICATE):
+      The following feedback has already been submitted. DO NOT create similar suggestions:
+      ${fullContext.existingFeedback.map(fb => `
+        - [${fb.status}] ${fb.title} (${fb.type}/${fb.category}, priority: ${fb.priority})
+          ${fb.description ? `Description: ${fb.description}...` : ''}
+      `).join('')}
+      
+      Before submitting ANY new feedback, check this list carefully. Only submit genuinely NEW ideas.
+      `
+      : '';
+    
     // Create comprehensive prompt
     const prompt = customPrompt || `
       Analyze this COMPLETE battery management system data:
@@ -162,7 +184,7 @@ exports.handler = async (event, context) => {
       System ID: ${systemId}
       Data Points Analyzed: ${countDataPoints(fullContext)}
       Time Range: ${fullContext.raw?.timeRange?.days || 90} days
-      
+      ${existingFeedbackSection}
       FULL CONTEXT:
       ${JSON.stringify(fullContext, null, 2)}
       
@@ -175,6 +197,7 @@ exports.handler = async (event, context) => {
       Remember: You have access to EVERY data point. Use them all for the most accurate analysis.
       
       If you identify any opportunities to improve the BMSview application itself, use the submitAppFeedback function.
+      ⚠️ IMPORTANT: Check the EXISTING FEEDBACK section above before submitting. Do NOT duplicate existing suggestions.
     `;
     
     // Execute insights generation using the existing geminiClient for consistency

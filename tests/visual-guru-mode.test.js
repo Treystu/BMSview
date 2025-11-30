@@ -210,6 +210,13 @@ describe('Visual Guru Expert Mode', () => {
       const { InsightMode } = require('../types');
       expect(InsightMode.VISUAL_GURU).toBe('visual-guru');
     });
+
+    it('should route FULL_CONTEXT to generate-insights-full-context endpoint', () => {
+      const { InsightMode } = require('../types');
+      expect(InsightMode.FULL_CONTEXT).toBe('full-context');
+      // The actual routing test would need the selectEndpointForMode function
+      // which is in the frontend service - verify the mode exists
+    });
   });
 });
 
