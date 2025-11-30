@@ -10,7 +10,7 @@
  * - Audit logging for compliance
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
 const { getInsightsJob, failJob } = require('./utils/insights-jobs.cjs');
 const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
@@ -30,7 +30,6 @@ function validateEnvironment(log) {
  * Can be triggered via HTTP or direct invocation
  */
 exports.handler = async (event, context) => {
-  const log = createLogger('generate-insights-background', context);
   const headers = getCorsHeaders(event);
   
   // Handle preflight
@@ -38,7 +37,21 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers };
   }
   
+  // Extract jobId early for logging context
+  let jobId = null;
+  try {
+    const body = event.body ? JSON.parse(event.body) : {};
+    jobId = body.jobId;
+  } catch (e) {
+    // Will handle parse error later
+  }
+  
+  const log = createLoggerFromEvent('generate-insights-background', event, context, { jobId });
+  log.entry({ method: event.httpMethod, path: event.path, jobId });
+  const timer = createTimer(log, 'background-insights');
+  
   if (!validateEnvironment(log)) {
+    log.exit(500);
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -53,6 +66,7 @@ exports.handler = async (event, context) => {
     // =====================
     // SECURITY: Rate Limiting
     // =====================
+    log.debug('Checking rate limits', { endpoint: 'insights-background', clientIp });
     let rateLimitResult;
     try {
       rateLimitResult = await applyRateLimit(event, 'insights', log);
@@ -69,6 +83,8 @@ exports.handler = async (event, context) => {
           clientIp,
           retryAfterMs: rateLimitError.retryAfterMs
         });
+        timer.end({ rateLimited: true });
+        log.exit(429);
         return {
           statusCode: 429,
           headers: {
@@ -250,6 +266,8 @@ exports.handler = async (event, context) => {
     });
 
     // Process the insights job
+    log.debug('Starting background processing', { jobId });
+    const processingTimer = createTimer(log, 'background-processing');
     const result = await processInsightsInBackground(
       jobId,
       analysisData,
@@ -257,12 +275,16 @@ exports.handler = async (event, context) => {
       customPrompt,
       log
     );
+    processingTimer.end({ jobId, success: result.success });
 
+    const durationMs = timer.end({ jobId, success: result.success });
     log.info('Background job completed', {
       jobId,
-      success: result.success
+      success: result.success,
+      durationMs
     });
 
+    log.exit(200, { jobId, success: result.success });
     return {
       statusCode: 200,
       headers: { ...headers, ...rateLimitHeaders, 'Content-Type': 'application/json' },
@@ -274,37 +296,39 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
+    timer.end({ error: true });
     log.error('Background job failed', {
       error: error.message,
       stack: error.stack,
       name: error.name,
-      code: error.code
+      code: error.code,
+      errorType: error.constructor?.name
     });
 
     // Try to mark job as failed if we have a jobId
-    let jobId;
+    let errorJobId;
     try {
       if (event.body) {
         const body = JSON.parse(event.body);
         if (body.jobId) {
           // Re-sanitize for safety
           try {
-            jobId = sanitizeJobId(body.jobId, log);
+            errorJobId = sanitizeJobId(body.jobId, log);
           } catch {
             // Ignore sanitization errors in error handler
           }
         }
       } else if (event.jobId) {
         try {
-          jobId = sanitizeJobId(event.jobId, log);
+          errorJobId = sanitizeJobId(event.jobId, log);
         } catch {
           // Ignore sanitization errors in error handler
         }
       }
       
-      if (jobId) {
-        await failJob(jobId, error.message, log);
-        log.info('Job marked as failed', { jobId });
+      if (errorJobId) {
+        await failJob(errorJobId, error.message, log);
+        log.info('Job marked as failed', { jobId: errorJobId });
       }
     } catch (failError) {
       log.error('Failed to mark job as failed', {
@@ -314,13 +338,14 @@ exports.handler = async (event, context) => {
       });
     }
 
+    log.exit(200, { error: true, jobId: errorJobId });
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         success: false,
         error: error.message,
-        jobId
+        jobId: errorJobId
       })
     };
   }

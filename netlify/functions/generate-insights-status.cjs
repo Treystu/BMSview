@@ -4,7 +4,7 @@
  * Allows clients to poll for the status of background insights jobs.
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getInsightsJob } = require('./utils/insights-jobs.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
@@ -24,20 +24,47 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers };
   }
 
-  const log = createLogger('generate-insights-status', context);
-
+  // Extract jobId early for logging context
+  let jobId = null;
   try {
-    // Parse request - support both POST with body and GET with query params
-    let jobId;
-    
     if (event.httpMethod === 'POST' && event.body) {
       const body = JSON.parse(event.body);
       jobId = body.jobId;
     } else if (event.queryStringParameters) {
       jobId = event.queryStringParameters.jobId;
     }
+  } catch (e) {
+    // Will handle parse error later
+  }
+
+  const log = createLoggerFromEvent('generate-insights-status', event, context, { jobId });
+  log.entry({ method: event.httpMethod, path: event.path, jobId });
+  const timer = createTimer(log, 'status-check');
+
+  if (!validateEnvironment(log)) {
+    log.exit(500);
+    return {
+      statusCode: 500,
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Server configuration error' })
+    };
+  }
+
+  try {
+    // Re-parse request if jobId wasn't extracted
+    if (!jobId) {
+      if (event.httpMethod === 'POST' && event.body) {
+        const body = JSON.parse(event.body);
+        jobId = body.jobId;
+      } else if (event.queryStringParameters) {
+        jobId = event.queryStringParameters.jobId;
+      }
+    }
 
     if (!jobId) {
+      log.warn('Missing jobId in request');
+      log.exit(400);
+      timer.end({ error: 'missing_jobId' });
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -47,12 +74,17 @@ exports.handler = async (event, context) => {
       };
     }
 
-    log.info('Status check requested', { jobId });
+    log.debug('Fetching job status', { jobId });
 
     // Get job from database
+    const dbTimer = createTimer(log, 'database-lookup');
     const job = await getInsightsJob(jobId, log);
+    dbTimer.end({ found: !!job });
 
     if (!job) {
+      log.warn('Job not found', { jobId });
+      log.exit(404, { jobId });
+      timer.end({ status: 'not_found' });
       return {
         statusCode: 404,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -62,6 +94,8 @@ exports.handler = async (event, context) => {
         })
       };
     }
+
+    log.info('Job status retrieved', { jobId, status: job.status });
 
     // Build response based on job status
     const response = {
@@ -107,11 +141,14 @@ exports.handler = async (event, context) => {
       }
     }
 
+    const durationMs = timer.end({ jobId, status: job.status });
     log.info('Status check completed', { 
       jobId, 
-      status: job.status 
+      status: job.status,
+      durationMs
     });
 
+    log.exit(200, { jobId, status: job.status });
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -119,11 +156,15 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
+    timer.end({ error: true });
     log.error('Status check failed', {
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
+      jobId,
+      errorType: error.constructor?.name
     });
 
+    log.exit(500);
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },
