@@ -10,6 +10,7 @@ import SpinnerIcon from './icons/SpinnerIcon';
 import SunIcon from './icons/SunIcon';
 import ThermometerIcon from './icons/ThermometerIcon';
 import TypewriterMarkdown from './TypewriterMarkdown';
+import VisualInsightsRenderer from './VisualInsightsRenderer';
 
 // Loading state messages for each insight mode
 const InsightModeLoadingStates: Record<InsightMode, { title: string; description: string }> = {
@@ -24,6 +25,10 @@ const InsightModeLoadingStates: Record<InsightMode, { title: string; description
   [InsightMode.STANDARD]: {
     title: '⚡ Generating Insights...',
     description: 'Processing your request using the legacy endpoint (same capabilities as Battery Guru).'
+  },
+  [InsightMode.VISUAL_GURU]: {
+    title: '📊 Visual Guru Expert Analyzing...',
+    description: 'Generating infographic-style insights with charts for time-based metrics. Optimized for visual clarity and dashboard-ready output.'
   }
 };
 
@@ -233,15 +238,24 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
                 <span className="text-green-600 text-lg">✓</span>
               </div>
-              <h5 className="text-lg font-semibold text-gray-800">Analysis Complete</h5>
+              <h5 className="text-lg font-semibold text-gray-800">
+                {selectedMode === InsightMode.VISUAL_GURU ? 'Visual Analysis Complete' : 'Analysis Complete'}
+              </h5>
             </div>
           )}
-          <TypewriterMarkdown
-            content={insights}
-            speed={30}
-            interval={40}
-            className="insights-content"
-          />
+          {selectedMode === InsightMode.VISUAL_GURU ? (
+            <VisualInsightsRenderer
+              content={insights}
+              className="visual-insights-content"
+            />
+          ) : (
+            <TypewriterMarkdown
+              content={insights}
+              speed={30}
+              interval={40}
+              className="insights-content"
+            />
+          )}
         </div>
       )}
       

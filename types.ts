@@ -206,7 +206,8 @@ export interface InsightsRequestConfig {
 export enum InsightMode {
   WITH_TOOLS = 'with-tools',      // AI "Battery Guru" with function calling (default, most comprehensive)
   FULL_CONTEXT = 'full-context',  // Full Context Mode with AI Feedback capability
-  STANDARD = 'standard'           // Legacy endpoint (proxies to WITH_TOOLS for backward compatibility)
+  STANDARD = 'standard',          // Legacy endpoint (proxies to WITH_TOOLS for backward compatibility)
+  VISUAL_GURU = 'visual-guru'     // Visual Guru Expert mode - infographic-style, chart-focused output
 }
 
 // Human-readable descriptions for each mode
@@ -240,6 +241,17 @@ export const InsightModeDescriptions: Record<InsightMode, { label: string; descr
       'Same capabilities as Battery Guru',
       'Maintained for backward compatibility',
       'Recommended to use Battery Guru directly instead'
+    ]
+  },
+  [InsightMode.VISUAL_GURU]: {
+    label: 'Visual Guru Expert',
+    description: 'Infographic-style output with charts for time-based metrics',
+    features: [
+      'Emphasizes visual representations over prose',
+      'Generates chart configurations for time-series data',
+      'Structured sections with status blocks and gauges',
+      'Short, affirmative phrases about visual clarity',
+      'Best for dashboards and visual reports'
     ]
   }
 };
