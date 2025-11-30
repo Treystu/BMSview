@@ -35,9 +35,70 @@ const MIN_GEMINI_CALL_TIMEOUT_MS = 10000; // Minimum 10s for Gemini API call (in
 const ITERATION_SAFETY_BUFFER_MS = 1000; // 1s safety margin per iteration
 const CHECKPOINT_FREQUENCY_DIVISOR = 3; // Save checkpoint every 1/3 of timeout
 
+/**
+ * @typedef {Object} CheckpointState
+ * @property {Array<any>} conversationHistory
+ * @property {number} startTurnCount
+ * @property {number} startToolCallCount
+ * @property {Object} [contextSummary]
+ */
+
+/**
+ * @typedef {Object} ContextData
+ * @property {string} [systemId]
+ * @property {string} [startDate]
+ * @property {string} [endDate]
+ * @property {number} [totalRecords]
+ * @property {number} [latitude]
+ * @property {number} [longitude]
+ * @property {string} [weatherTimestamp]
+ * @property {number} [panelWatts]
+ */
+
+/**
+ * @typedef {Object} ReActLoopParams
+ * @property {Object} analysisData
+ * @property {string} systemId
+ * @property {string} [customPrompt]
+ * @property {import('./logger.cjs').LogFunction} [log]
+ * @property {'sync'|'background'} [mode]
+ * @property {string} [requestId]
+ * @property {boolean} [skipInitialization]
+ * @property {CheckpointState} [checkpointState]
+ * @property {Function} [onCheckpoint]
+ * @property {string} [insightMode]
+ * @property {number} [contextWindowDays]
+ * @property {number} [maxIterations]
+ * @property {string} [modelOverride]
+ * @property {any} [stream]
+ */
+
+/**
+ * @typedef {Object} InitializationParams
+ * @property {string} systemId
+ * @property {number} contextWindowDays
+ * @property {Array<any>} conversationHistory
+ * @property {any} geminiClient - Gemini API client
+ * @property {import('./logger.cjs').LogFunction} log
+ * @property {number} startTime
+ * @property {number} totalBudgetMs
+ * @property {string} [modelOverride]
+ * @property {any} [stream]
+ */
+
+/**
+ * @typedef {Object} InitializationResult
+ * @property {boolean} success
+ * @property {number} attempts
+ * @property {number} [dataPoints]
+ * @property {string} [error]
+ * @property {number} [toolCallsUsed]
+ * @property {number} [turnsUsed]
+ */
+
 // Calculate actual budgets with safety minimums
 // If mode is background, use 14 minute timeout
-const getBudgets = (mode) => {
+const getBudgets = (/** @type {string} */ mode) => {
     const isBackground = mode === 'background';
     const TIMEOUT_MS = isBackground ? 14 * 60 * 1000 : NETLIFY_TIMEOUT_MS;
 
@@ -97,6 +158,7 @@ const LAZY_AI_FALLBACK_MESSAGE = "Unable to retrieve the requested data. Please 
  */
 function detectStrugglingConcepts(responseText) {
     const lowercaseText = responseText.toLowerCase();
+    /** @type {string[]} */
     const detectedConcepts = [];
 
     // Keyword mappings for each tool/concept
@@ -164,8 +226,8 @@ function detectStrugglingConcepts(responseText) {
  * Uses the data catalog from insights-guru.cjs to avoid duplication
  * 
  * @param {Array<string>} detectedConcepts - Concepts detected from response analysis
- * @param {Object} contextData - Context data (systemId, dates, etc.)
- * @returns {string} Combined guidance prompt
+ * @param {{systemId?: string, startDate?: string, endDate?: string, totalRecords?: number, latitude?: number, longitude?: number, weatherTimestamp?: string, panelWatts?: number}} [contextData] - Context data
+ * @returns {string|null} Combined guidance prompt
  */
 function buildContextAwareGuidance(detectedConcepts, contextData = {}) {
     if (detectedConcepts.length === 0) {
@@ -207,7 +269,7 @@ function buildContextAwareGuidance(detectedConcepts, contextData = {}) {
 
         for (const concept of toolSpecificConcepts) {
             guidance += `**Issue detected with: ${concept}**\n`;
-            guidance += buildDetailedToolGuidance(concept, null, null, contextData);
+            guidance += buildDetailedToolGuidance(concept, null, null, /** @type {ContextData} */(contextData));
             guidance += "\n\n";
         }
     }
@@ -555,7 +617,7 @@ ${errorResult ? JSON.stringify(errorResult, null, 2) : 'Tool was not called'}
 Call calculate_energy_budget NOW and include results in your response.`
     };
 
-    return guidanceMap[toolName] || `
+    return (/** @type {any} */ (guidanceMap))[toolName] || `
 📖 TOOL GUIDANCE: ${toolName}
 
 The tool "${toolName}" failed or was not called correctly.
@@ -583,14 +645,7 @@ Review the tool definition in the AVAILABLE TOOLS section and try again with cor
  * This prevents "insufficient data" errors by ensuring Gemini actually calls
  * the data retrieval tools and verifies successful data access.
  * 
- * @param {Object} params
- * @param {string} params.systemId - System ID to query
- * @param {number} params.contextWindowDays - Days of historical data to retrieve
- * @param {Array} params.conversationHistory - Conversation history to update
- * @param {Object} params.geminiClient - Gemini API client
- * @param {Object} params.log - Logger instance
- * @param {number} params.startTime - Loop start timestamp
- * @param {number} params.totalBudgetMs - Total time budget
+ * @param {InitializationParams} params
  * @returns {Promise<{success: boolean, attempts: number, dataPoints?: number, error?: string, toolCallsUsed?: number, turnsUsed?: number}>}
  */
 async function executeInitializationSequence(params) {
@@ -752,12 +807,12 @@ Execute the initialization now.`;
         conversationHistory.push(responseContent);
 
         // Check for tool calls
-        const toolCalls = responseContent.parts.filter(p => p.functionCall);
+        const toolCalls = responseContent.parts.filter((/** @type {{functionCall?: object}} */ p) => p.functionCall);
 
         if (toolCalls.length === 0) {
             // No tool call - check if Gemini claims initialization is complete
-            const textParts = responseContent.parts.filter(p => p.text);
-            const responseText = textParts.map(p => p.text).join(' ');
+            const textParts = responseContent.parts.filter((/** @type {{text?: string}} */ p) => p.text);
+            const responseText = textParts.map((/** @type {{text: string}} */ p) => p.text).join(' ');
 
             log.warn('Gemini did not call request_bms_data during initialization', {
                 attempt: attempts + 1,
@@ -955,12 +1010,8 @@ Execute the initialization now.`;
  * 4. Loop: Call Gemini → check for tool calls → execute tools → add results → continue
  * 5. Return final answer when Gemini stops requesting tools
  * 6. Save checkpoint on timeout for resuming
+ * @param {ReActLoopParams} params
  */
- * @param { boolean } [params.skipInitialization] - Skip initialization if already done
-    * @param { Object } [params.checkpointState] - Resume from checkpoint
-        * @param { Function } [params.onCheckpoint] - Callback to save checkpoint
-            * @param { string } [params.insightMode] - Insight mode(standard, full_context, etc.)
-                */
 async function executeReActLoop(params) {
     const {
         analysisData,
@@ -972,7 +1023,6 @@ async function executeReActLoop(params) {
         maxIterations, // Optional override for iteration limit
         modelOverride, // Optional model override (e.g., "gemini-2.5-pro")
         skipInitialization = false, // Skip initialization if already done separately
-        checkpointState = null, // Resume from checkpoint if provided
         checkpointState = null, // Resume from checkpoint if provided
         onCheckpoint = null, // Callback to save checkpoint before timeout
         insightMode = 'with_tools' // Insight mode (standard, full_context, etc.)
@@ -1002,7 +1052,6 @@ async function executeReActLoop(params) {
         totalBudgetMs,
         modelOverride,
         skipInitialization,
-        isResuming,
         isResuming,
         checkpointTurn: checkpointState?.startTurnCount || 0,
         insightMode
@@ -1081,6 +1130,7 @@ async function executeReActLoop(params) {
                 log,
                 context: preloadedContext,
                 mode,
+                // @ts-ignore - insightMode is not in the type definition but is handled by the function
                 insightMode // Pass insight mode to prompt builder
             });
 
@@ -1105,7 +1155,8 @@ async function executeReActLoop(params) {
         // Force Gemini to retrieve historical data before analysis
         const geminiClient = getGeminiClient();
 
-        let initResult = { toolCallsUsed: 0, turnsUsed: 0 };
+        /** @type {InitializationResult} */
+        let initResult = { success: true, attempts: 0, toolCallsUsed: 0, turnsUsed: 0 };
         if (!skipInitialization && !isResuming && systemId) {
             initResult = await executeInitializationSequence({
                 systemId,
@@ -1157,9 +1208,12 @@ async function executeReActLoop(params) {
                 };
             }
 
+            const error = (/** @type {any} */ (initResult)).error;
+            const dataPoints = (/** @type {any} */ (initResult)).dataPoints;
             log.info('Initialization sequence completed successfully', {
                 attempts: initResult.attempts,
-                dataPointsRetrieved: initResult.dataPoints,
+                dataPointsRetrieved: dataPoints,
+                error: error,
                 durationMs: Date.now() - startTime
             });
 
@@ -1206,7 +1260,7 @@ async function executeReActLoop(params) {
                     });
                 }
 
-                finalAnswer = buildTimeoutMessage();
+                const circuitState = geminiClient.getCircuitState ? geminiClient.getCircuitState() : null;
                 timedOut = true; // Mark as timed out
                 break;
             }
@@ -1232,7 +1286,7 @@ async function executeReActLoop(params) {
                     });
                 }
 
-                finalAnswer = buildTimeoutMessage();
+                finalAnswer = buildTimeoutMessage(MAX_TURNS);
                 timedOut = true;
                 break;
             }
@@ -1343,7 +1397,7 @@ async function executeReActLoop(params) {
                     }
 
                     // Return timeout to trigger retry
-                    finalAnswer = buildTimeoutMessage();
+                    finalAnswer = buildTimeoutMessage(MAX_TURNS);
                     timedOut = true;
                     break;
                 }
@@ -1462,23 +1516,23 @@ async function executeReActLoop(params) {
             log.debug('Gemini response received', {
                 turn: turnCount,
                 partCount: responseContent.parts.length,
-                partTypes: responseContent.parts.map(p => Object.keys(p)[0]),
-                hasText: responseContent.parts.some(p => p.text),
-                hasFunctionCall: responseContent.parts.some(p => p.functionCall)
+                partTypes: responseContent.parts.map((/** @type {{[key: string]: any}} */ p) => Object.keys(p)[0]),
+                hasText: responseContent.parts.some((/** @type {{text?: string}} */ p) => p.text),
+                hasFunctionCall: responseContent.parts.some((/** @type {{functionCall?: object}} */ p) => p.functionCall)
             });
 
             // Add model response to conversation history
             conversationHistory.push(responseContent);
 
             // Step 5: Check for tool calls in response
-            const toolCalls = responseContent.parts.filter(p => p.functionCall);
+            const toolCalls = responseContent.parts.filter((/** @type {{functionCall?: object}} */ p) => p.functionCall);
 
             if (toolCalls.length === 0) {
                 // No tool calls → this is potentially the final answer
-                const textParts = responseContent.parts.filter(p => p.text);
+                const textParts = responseContent.parts.filter((/** @type {{text?: string}} */ p) => p.text);
 
                 if (textParts.length > 0) {
-                    const rawAnswer = textParts.map(p => p.text).join('\n');
+                    const rawAnswer = textParts.map((/** @type {{text: string}} */ p) => p.text).join('\n');
 
                     // Lazy AI Detection: Check if AI is claiming data unavailable without attempting to fetch it
                     const lowerAnswer = rawAnswer.toLowerCase();
@@ -1497,16 +1551,16 @@ async function executeReActLoop(params) {
                     // 3. It's a custom query (where users expect data lookup)
                     // 4. We have turns remaining
                     // 5. No recent tool failures (legitimate unavailability after failed attempts)
-                    const isLazy = lazinessTriggers.some(t => lowerAnswer.includes(t));
+                    const isLazy = lazinessTriggers.some((/** @type {any} */ t) => lowerAnswer.includes(t));
 
                     // Check if recent tool calls failed (last N messages, where N = RECENT_TOOL_FAILURE_WINDOW)
                     // Tool failures can be in two forms:
                     // 1. Tool returned error object: functionResponse.response.result.error
                     // 2. Tool threw exception: functionResponse.response.error (boolean)
-                    const recentToolFailures = conversationHistory.slice(-RECENT_TOOL_FAILURE_WINDOW).some(msg =>
+                    const recentToolFailures = conversationHistory.slice(-RECENT_TOOL_FAILURE_WINDOW).some((/** @type {any} */ msg) =>
                         msg.role === 'function' &&
                         Array.isArray(msg.parts) &&
-                        msg.parts.some(p =>
+                        msg.parts.some((/** @type {any} */ p) =>
                             p.functionResponse &&
                             p.functionResponse.response &&
                             (p.functionResponse.response.error || (p.functionResponse.response.result && p.functionResponse.response.result.error))
@@ -1673,10 +1727,11 @@ async function executeReActLoop(params) {
                     toolCallCount++;
 
                     // Add tool result to conversation
-                    if (toolResult.graceful_degradation) {
+                    if ((/** @type {any} */ (toolResult)).graceful_degradation) {
+                        const degradationMsg = (/** @type {any} */ (toolResult)).message || 'AI service is degraded';
                         conversationHistory.push({
                             role: 'user',
-                            parts: [{ text: `The tool ${toolName} failed with the following error: ${toolResult.message}. I will try to continue without this information.` }]
+                            parts: [{ text: `The tool ${toolName} failed with the following error: ${degradationMsg}. I will try to continue without this information.` }]
                         });
                     } else {
                         conversationHistory.push({
@@ -1741,7 +1796,7 @@ async function executeReActLoop(params) {
                     });
                 }
 
-                finalAnswer = buildTimeoutMessage();
+                finalAnswer = buildTimeoutMessage(MAX_TURNS);
                 timedOut = true;
                 break;
             }
@@ -1773,22 +1828,25 @@ async function executeReActLoop(params) {
         // Log operation metrics for successful insights generation
         // Estimate token usage: sum all message lengths in conversationHistory plus finalAnswer, divide by 4 (approx chars per token)
         // Handle both content-based messages and function call parts
+        const historyLength = conversationHistory.reduce((/** @type {number} */ sum, /** @type {any} */ msg) => {
+            let msgLength = 0;
+            if (msg.content) {
+                msgLength += msg.content.length;
+            }
+            if (msg.parts && Array.isArray(msg.parts)) {
+                const partsLength = (msg.parts || []).reduce((/** @type {number} */ partSum, /** @type {any} */ part) => {
+                    if (typeof part === 'string') return partSum + part.length;
+                    if (part.text) return partSum + part.text.length;
+                    // For function calls, estimate based on stringified content
+                    return partSum + JSON.stringify(part).length;
+                }, 0);
+                msgLength += partsLength;
+            }
+            return sum + msgLength;
+        }, 0);
+
         const estimatedTokenCount = Math.round(
-            (conversationHistory.reduce((sum, msg) => {
-                let msgLength = 0;
-                if (msg.content) {
-                    msgLength += msg.content.length;
-                }
-                if (msg.parts && Array.isArray(msg.parts)) {
-                    msgLength += msg.parts.reduce((partSum, part) => {
-                        if (typeof part === 'string') return partSum + part.length;
-                        if (part.text) return partSum + part.text.length;
-                        // For function calls, estimate based on stringified content
-                        return partSum + JSON.stringify(part).length;
-                    }, 0);
-                }
-                return sum + msgLength;
-            }, 0) + (finalAnswer ? finalAnswer.length : 0)) / 4
+            (historyLength + (finalAnswer ? finalAnswer.length : 0)) / 4
         ); // Approximate: 4 chars per token
 
         try {
@@ -1856,7 +1914,8 @@ async function executeReActLoop(params) {
                 contextWindowDays: contextWindowDays
             });
         } catch (metricsError) {
-            log.warn('Failed to log error metrics', { error: metricsError.message });
+            const err = metricsError instanceof Error ? metricsError : new Error(String(metricsError));
+            log.warn('Failed to log AI operation metrics', { error: err.message });
         }
 
         return {
@@ -1870,7 +1929,7 @@ async function executeReActLoop(params) {
 /**
  * Build timeout message when budget is exceeded
  */
-function buildTimeoutMessage() {
+function buildTimeoutMessage(/** @type {number} */ maxTurns) {
     return `I've reached my analysis time budget during investigation. Here's what I gathered before timeout:
 
 **Status:** Partial analysis completed due to time constraints.

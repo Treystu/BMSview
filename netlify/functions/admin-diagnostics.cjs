@@ -56,6 +56,8 @@ let REAL_BMS_DATA = null;
  * @property {string|import('mongodb').ObjectId} [_sourceRecordId]
  * @property {string} [_sourceTimestamp]
  * @property {string} [_note]
+ * @property {string} [_sourceCollection]
+ * @property {string} [_sourceFileName]
  */
 
 // Helper function to get REAL production BMS data from the database
@@ -108,7 +110,7 @@ const getRealProductionData = async () => {
     if (earliestMonthlyAnalysis && earliestMonthlyAnalysis.length > 0 && earliestMonthlyAnalysis[0].analysis) {
       const record = earliestMonthlyAnalysis[0];
       const isFromCurrentMonth = record.timestamp >= monthStart.toISOString() && record.timestamp < monthEnd.toISOString();
-      
+
       logger.info('Using REAL production BMS data from database', {
         recordId: record._id || record.id,
         timestamp: record.timestamp,
@@ -117,7 +119,7 @@ const getRealProductionData = async () => {
         voltage: record.analysis.voltage,
         soc: record.analysis.stateOfCharge
       });
-      
+
       // Map the analysis data to the expected BmsData format
       const bmsData = {
         voltage: record.analysis.voltage || record.analysis.overallVoltage,
@@ -143,7 +145,7 @@ const getRealProductionData = async () => {
         _sourceCollection: 'history',
         _sourceFileName: record.fileName
       };
-      
+
       return bmsData;
     }
 
@@ -793,14 +795,14 @@ const diagnosticTests = {
         const db = await getDb();
         const historyCollection = db.collection('history');
         const count = await historyCollection.countDocuments({});
-        
+
         testResults.stages.push({
           stage: 'database_check',
           status: 'success',
           totalRecords: count,
           time: Date.now() - startTime
         });
-        
+
         logger.info('Database connectivity verified', { totalRecords: count });
       } catch (dbError) {
         const err = /** @type {Error} */ (dbError);
@@ -818,7 +820,7 @@ const diagnosticTests = {
       const bmsData = getBmsDataForTest();
       try {
         logger.info('Stage 2/4: Verifying real production data availability...');
-        
+
         if (!bmsData._isRealProductionData) {
           // No real production data - but this is now informational, not a failure
           logger.warn('No real production data found in database', {
@@ -862,7 +864,7 @@ const diagnosticTests = {
       // Stage 3: Validate BMS data structure and integrity
       try {
         logger.info('Stage 3/4: Validating BMS data structure...');
-        
+
         const validationChecks = {
           hasVoltage: typeof bmsData.voltage === 'number' && bmsData.voltage > 0,
           hasSOC: typeof bmsData.soc === 'number' && bmsData.soc >= 0 && bmsData.soc <= 100,
@@ -879,8 +881,8 @@ const diagnosticTests = {
         const totalChecks = Object.keys(validationChecks).length;
         const validationScore = Math.round((passedChecks / totalChecks) * 100);
 
-        const validationStatus = validationScore >= 70 ? 'success' : 
-                                 validationScore >= 50 ? 'warning' : 'error';
+        const validationStatus = validationScore >= 70 ? 'success' :
+          validationScore >= 50 ? 'warning' : 'error';
 
         testResults.stages.push({
           stage: 'data_validation',
@@ -911,7 +913,7 @@ const diagnosticTests = {
       // Stage 4: Summary and data quality assessment
       try {
         logger.info('Stage 4/4: Generating data quality summary...');
-        
+
         // Get sample data for reporting
         const sampleData = bmsData._isRealProductionData ? {
           voltage: bmsData.voltage,
@@ -963,7 +965,7 @@ const diagnosticTests = {
           power: bmsData.power,
           capacity: bmsData.capacity
         } : null,
-        note: bmsData._isRealProductionData 
+        note: bmsData._isRealProductionData
           ? 'Test used real production data from history collection'
           : 'No real production data available - using fallback test data. Upload BMS screenshots to enable real data testing.'
       };
@@ -1401,11 +1403,11 @@ const diagnosticTests = {
       const errorDetails = formatError(err, { testId });
       logger.error('========== ASYNC TEST FAILED ==========', errorDetails);
 
-      // Attempt cleanup even on failure
+      // Attempt cleanup
       try {
         if (jobId) {
-          const db = await getDb();
-          await db.collection('insights-jobs').deleteOne({ id: jobId });
+          const jobsCollection = await getCollection('insights-jobs');
+          await jobsCollection.deleteOne({ id: jobId });
           logger.info('Test insights job cleaned up after error');
         }
       } catch (cleanupError) {
@@ -2161,7 +2163,7 @@ const diagnosticTests = {
 
       // Stage 3: Analyze trends
       logger.info('Stage 3/4: Analyzing degradation trends...');
-      const socTrend = trendData.map(r => r.data.soc);
+      const socTrend = trendData.map((/** @type {any} */ r) => r.data.soc);
       // Calculate average SOC degradation per day across the trend period
       const avgDegradation = socTrend.length > 1 ?
         (socTrend[0] - socTrend[socTrend.length - 1]) / (socTrend.length - 1) : 0;
@@ -3255,7 +3257,7 @@ const diagnosticTests = {
           testResults.conflicts.push({
             collection: collectionName,
             count: conflicts.length,
-            records: conflicts.map(c => ({
+            records: conflicts.map((/** @type {any} */ c) => ({
               id: c._id.toString(),
               updatedAt: c.updatedAt,
               conflictReason: c.conflictReason || 'Unknown'
@@ -3429,7 +3431,7 @@ const diagnosticTests = {
           .toArray();
 
         // Generate SHA-256 checksum from record IDs and updatedAt timestamps
-        const checksumData = records.map(r =>
+        const checksumData = records.map((/** @type {any} */ r) =>
           `${r._id}:${r.updatedAt || 'no-timestamp'}`
         ).join('|');
 
@@ -3640,7 +3642,7 @@ const diagnosticTests = {
         // Estimate cache size (sample-based)
         const sampleDocs = await collection.find({}).limit(10).toArray();
         const avgDocSize = sampleDocs.length > 0
-          ? sampleDocs.reduce((sum, doc) => sum + JSON.stringify(doc).length, 0) / sampleDocs.length
+          ? sampleDocs.reduce((/** @type {number} */ sum, /** @type {any} */ doc) => sum + JSON.stringify(doc).length, 0) / sampleDocs.length
           : 0;
         const estimatedSize = avgDocSize * total;
 
@@ -3725,7 +3727,7 @@ exports.handler = async (event, context) => {
 
     // Update logger with actual request context
     logger = createLogger('admin-diagnostics', context);
-    
+
     if (!validateEnvironment(logger)) {
       return {
         statusCode: 500,
@@ -3975,7 +3977,7 @@ exports.handler = async (event, context) => {
     // Calculate comprehensive summary
     const summary = {
       total: results.length,
-      success: results.filter(r => r.status === 'success').length,
+      success: results.filter(r => /** @type {any} */(r).status === 'success').length,
       partial: results.filter(r => r.status === 'partial').length,
       warnings: results.filter(r => r.status === 'warning').length,
       errors: results.filter(r => r.status === 'error').length
