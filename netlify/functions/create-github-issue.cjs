@@ -4,7 +4,7 @@
  * Auto-generates GitHub issues from AI feedback
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { retryAsync } = require('./utils/retry.cjs');
@@ -202,7 +202,6 @@ async function createGitHubIssueAPI(issueData, log) {
  * Main handler
  */
 exports.handler = async (event, context) => {
-  const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
   const log = createLoggerFromEvent('create-github-issue', event, context);
   const timer = createTimer(log, 'create-github-issue-handler');
   const headers = getCorsHeaders(event);

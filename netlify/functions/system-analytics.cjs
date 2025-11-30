@@ -1,5 +1,5 @@
 const { getCollection } = require("./utils/mongodb.cjs");
-const { createLogger } = require("./utils/logger.cjs");
+const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { createRetryWrapper } = require("./utils/retry.cjs");
 
 function validateEnvironment(log) {
@@ -17,7 +17,6 @@ const respond = (statusCode, body) => ({
 });
 
 exports.handler = async function (event, context) {
-    const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
     const log = createLoggerFromEvent('system-analytics', event, context);
     const timer = createTimer(log, 'system-analytics-handler');
     const withRetry = createRetryWrapper(log);

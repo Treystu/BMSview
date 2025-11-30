@@ -4,12 +4,11 @@
  * Retrieves AI feedback with filtering and pagination
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 exports.handler = async (event, context) => {
-  const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
   const log = createLoggerFromEvent('get-ai-feedback', event, context);
   const timer = createTimer(log, 'get-ai-feedback-handler');
   const headers = getCorsHeaders(event);

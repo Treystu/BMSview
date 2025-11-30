@@ -8,7 +8,7 @@
  * function can use to continue the analysis.
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getGeminiClient } = require('./utils/geminiClient.cjs');
 const { toolDefinitions, executeToolCall } = require('./utils/gemini-tools.cjs');
 
@@ -34,7 +34,6 @@ const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
  * Main handler for initialization
  */
 exports.handler = async (event, context) => {
-  const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
   const log = createLoggerFromEvent('initialize-insights', event, context);
   const timer = createTimer(log, 'initialize-insights-handler');
   const headers = getCorsHeaders(event);

@@ -2,7 +2,7 @@
 // This fix eliminates the $expr in upsert error and adds comprehensive logging
 
 const { getCollection } = require("./utils/mongodb.cjs");
-const { createLogger } = require("./utils/logger.cjs");
+const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -172,7 +172,6 @@ const checkSecurity = async (request, log) => {
 };
 
 exports.handler = async function(event, context) {
-    const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
     const log = createLoggerFromEvent('security-handler', event, context);
     const timer = createTimer(log, 'security-handler');
     

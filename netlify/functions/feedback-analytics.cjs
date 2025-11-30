@@ -9,7 +9,7 @@
  * - User satisfaction tracking
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
@@ -647,7 +647,6 @@ function calculateMonthlyBreakdown(allFeedback) {
  * Netlify Identity authentication.
  */
 exports.handler = async (event, context) => {
-  const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
   const log = createLoggerFromEvent('feedback-analytics', event, context);
   const timer = createTimer(log, 'feedback-analytics-handler');
   const headers = getCorsHeaders(event);

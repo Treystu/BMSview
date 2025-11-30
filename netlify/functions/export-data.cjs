@@ -12,7 +12,7 @@
  */
 
 const { getCollection } = require('./utils/mongodb.cjs');
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -169,7 +169,6 @@ async function exportFullBackup(log) {
  * Main handler
  */
 exports.handler = async (event, context) => {
-    const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
     const log = createLoggerFromEvent('export-data', event, context);
     const timer = createTimer(log, 'export-data-handler');
     

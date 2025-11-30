@@ -1,5 +1,5 @@
 const { getCollection } = require("./utils/mongodb.cjs");
-const { createLogger } = require("./utils/logger.cjs");
+const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -38,7 +38,6 @@ const respond = (statusCode, body) => ({
 });
 
 exports.handler = async function(event, context) {
-    const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
     const log = createLoggerFromEvent('ip-admin', event, context);
     const timer = createTimer(log, 'ip-admin-handler');
     

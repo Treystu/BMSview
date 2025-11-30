@@ -1,7 +1,7 @@
 "use strict";
 
 const { getCollection } = require("./utils/mongodb.cjs");
-const { createLogger } = require("./utils/logger.cjs");
+const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -51,7 +51,6 @@ function sanitizeItem(rawItem, serverTime) {
 }
 
 exports.handler = async function (event, context) {
-    const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
     const log = createLoggerFromEvent("sync-push", event, context);
     const timer = createTimer(log, 'sync-push-handler');
     

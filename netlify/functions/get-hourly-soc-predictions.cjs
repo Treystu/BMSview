@@ -5,7 +5,7 @@
  * Combines actual BMS data with interpolated predictions based on patterns.
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { predictHourlySoc } = require('./utils/forecasting.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
@@ -18,7 +18,6 @@ function validateEnvironment(log) {
 }
 
 exports.handler = async (event, context) => {
-  const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
   const log = createLoggerFromEvent('get-hourly-soc-predictions', event, context);
   const timer = createTimer(log, 'get-hourly-soc-predictions-handler');
   const headers = getCorsHeaders(event);

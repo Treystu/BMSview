@@ -1,6 +1,6 @@
 const { getCollection } = require('./utils/mongodb.cjs');
 const { v4: uuidv4 } = require("uuid");
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -13,7 +13,6 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
 
 exports.handler = async (event, context) => {
-  const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
   const log = createLoggerFromEvent('upload-story-photo', event, context);
   const timer = createTimer(log, 'upload-story-photo-handler');
   const headers = getCorsHeaders(event);

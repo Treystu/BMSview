@@ -1,4 +1,4 @@
-const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { createLoggerFromEvent } = require("./utils/logger.cjs");
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 exports.handler = async function(event, context) {

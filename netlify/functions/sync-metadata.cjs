@@ -10,7 +10,7 @@ function validateEnvironment(log) {
   }
   return true;
 }
-const { createLogger } = require("./utils/logger.cjs");
+const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { errorResponse } = require("./utils/errors.cjs");
 
 const JSON_HEADERS = {
@@ -149,7 +149,6 @@ async function calculateChecksum(payload) {
 }
 
 exports.handler = async function (event, context) {
-    const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
     const log = createLoggerFromEvent("sync-metadata", event, context);
     const timer = createTimer(log, 'sync-metadata-handler');
     

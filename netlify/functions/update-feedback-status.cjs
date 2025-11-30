@@ -4,12 +4,11 @@
  * Allows admins to update feedback status with implementation tracking
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 exports.handler = async (event, context) => {
-  const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
   const log = createLoggerFromEvent('update-feedback-status', event, context);
   const timer = createTimer(log, 'update-feedback-status-handler');
   const headers = getCorsHeaders(event);

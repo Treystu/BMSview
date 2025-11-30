@@ -1,6 +1,6 @@
 const { getDb, getCollection } = require('./utils/mongodb.cjs');
 const { ObjectId } = require('mongodb');
-const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 /**
