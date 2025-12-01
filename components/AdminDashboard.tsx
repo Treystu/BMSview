@@ -207,9 +207,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'ACTION_START', payload: 'isBulkLoading' });
         setShowRateLimitWarning(false); // Reset warning
 
-        // ***FIX: Create a Set of existing filenames from the history cache for fast duplicate checking***
-        const fileNameHistorySet = new Set(state.historyCache.map(record => record.fileName));
-        log('info', 'Created filename history set for duplicate checking.', { cachedRecordCount: fileNameHistorySet.size });
+        // ***ISSUE 4 FIX: Warn if cache is still building***
+        if (state.isCacheBuilding) {
+            log('warn', 'Duplicate check may be incomplete - history cache still building.', { 
+                cachedRecordCount: state.historyCache.length 
+            });
+        }
 
         const initialResults: DisplayableAnalysisResult[] = files.map(f => ({
             fileName: f.name, data: null, error: 'Queued', file: f, submittedAt: Date.now()
@@ -217,48 +220,60 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults }); // Clear previous and set new ones
 
         try {
+            let retryCount = 0;
             // Process each file one by one
             for (const file of files) {
-
-                // ***FIX: Check for duplicates BEFORE making the API call***
-                if (fileNameHistorySet.has(file.name)) {
-                    log('info', 'Skipping file (already in history).', { fileName: file.name });
-                    dispatch({
-                        type: 'UPDATE_BULK_JOB_SKIPPED',
-                        payload: { fileName: file.name, reason: 'Skipped (already in history)' }
-                    });
-                    continue; // Skip to the next file
-                }
-
                 try {
                     // 1. Mark this specific file as "Processing"
                     dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: 'Processing' } });
 
-                    // 2. Call the *new* synchronous service
+                    // 2. Call the synchronous service - backend handles duplicate detection via content hash
                     const analysisData = await analyzeBmsScreenshot(file);
 
-                    // 3. Got data! Update the state for this one file.
-                    log('info', 'Processing synchronous analysis result.', { fileName: file.name });
-                    // We create a temporary record for display. The backend `analyze` function
-                    // is now responsible for saving to history.
+                    // 3. Got data! Check if backend detected a duplicate
+                    const isDuplicate = analysisData._isDuplicate || false;
+                    log('info', 'Processing synchronous analysis result.', { fileName: file.name, isDuplicate });
+
+                    // ***ISSUE 3 FIX: Let backend handle duplicate detection***
+                    if (isDuplicate) {
+                        dispatch({
+                            type: 'UPDATE_BULK_JOB_SKIPPED',
+                            payload: { fileName: file.name, reason: 'Duplicate content detected (same image)' }
+                        });
+                        continue;
+                    }
+
+                    // ***ISSUE 1 FIX: Use real record ID from backend instead of temporary ID***
                     const tempRecord: AnalysisRecord = {
-                        id: `local-${Date.now()}`,
-                        timestamp: new Date().toISOString(),
+                        id: analysisData._recordId || `local-${Date.now()}`,
+                        timestamp: analysisData._timestamp || new Date().toISOString(),
                         analysis: analysisData,
                         fileName: file.name
                     };
 
                     dispatch({
-                        type: 'UPDATE_BULK_JOB_COMPLETED', // This action name is now a bit of a misnomer, but it works
-                        payload: { record: tempRecord, fileName: file.name } // Pass fileName for matching
+                        type: 'UPDATE_BULK_JOB_COMPLETED',
+                        payload: { record: tempRecord, fileName: file.name }
                     });
+                    
+                    // Reset retry count on success
+                    retryCount = 0;
                 } catch (err) {
                     // 4. Handle error for this specific file
                     const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
                     log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
 
+                    // ***ISSUE 5 FIX: Add exponential backoff for rate limit errors***
                     if (errorMessage.includes('429')) {
                         setShowRateLimitWarning(true);
+                        retryCount++;
+                        const backoffMs = Math.min(2000 * Math.pow(2, retryCount - 1), 30000); // Max 30 seconds
+                        log('warn', 'Rate limit detected, applying exponential backoff.', { 
+                            retryCount, 
+                            backoffMs,
+                            fileName: file.name 
+                        });
+                        await new Promise(resolve => setTimeout(resolve, backoffMs));
                     }
 
                     dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: `Failed: ${errorMessage}` } });
