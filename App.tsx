@@ -13,7 +13,7 @@ import {
   linkAnalysisToSystem,
   registerBmsSystem
 } from './services/clientService';
-import { analyzeBmsScreenshot } from './services/geminiService';
+import { analyzeBmsScreenshot, checkFileDuplicate } from './services/geminiService';
 import { useAppState } from './state/appState';
 import type { BmsSystem, DisplayableAnalysisResult } from './types';
 // ***REMOVED***: No longer need job polling
@@ -77,96 +77,177 @@ function App() {
   };
 
   /**
-   * ***MODIFIED***: This is the new, simpler analysis handler.
-   * It processes files one by one and gets results immediately.
+   * ***MODIFIED***: This is the new, simpler analysis handler with two-phase duplicate checking.
+   * Phase 1: Check ALL files for duplicates upfront
+   * Phase 2: Analyze only non-duplicate files
    */
   const handleAnalyze = async (files: File[], options?: { forceFileName?: string; forceReanalysis?: boolean }) => {
     log('info', 'Analysis process initiated.', { fileCount: files.length, forceFileName: options?.forceFileName, forceReanalysis: options?.forceReanalysis });
-
-    // Prepare the UI by setting all files to a "Submitting" state
-    const initialResults: DisplayableAnalysisResult[] = files.map(f => ({
-      fileName: f.name, data: null, error: 'Submitting', file: f, submittedAt: Date.now()
-    }));
-
-    dispatch({ type: 'PREPARE_ANALYSIS', payload: initialResults });
-    setTimeout(() => document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
 
     if (files.length === 0) {
       dispatch({ type: 'ANALYSIS_COMPLETE' });
       return;
     }
 
-    // Process each file one by one
-    for (const file of files) {
-      try {
-        const fileWithData = file as File & { _isDuplicate?: boolean; _analysisData?: any };
+    // Prepare the UI by setting all files to "Checking for duplicates..." state
+    const initialResults: DisplayableAnalysisResult[] = files.map(f => ({
+      fileName: f.name, data: null, error: 'Checking for duplicates...', file: f, submittedAt: Date.now()
+    }));
 
-        if (fileWithData._isDuplicate && fileWithData._analysisData) {
-            log('info', 'Processing pre-identified duplicate file.', { fileName: file.name });
-            dispatch({
-                type: 'SYNC_ANALYSIS_COMPLETE',
-                payload: {
-                    fileName: file.name,
-                    isDuplicate: true,
-                    record: {
-                        id: fileWithData._analysisData._recordId || `local-duplicate-${Date.now()}`,
-                        timestamp: fileWithData._analysisData._timestamp || new Date().toISOString(),
-                        analysis: fileWithData._analysisData,
-                        fileName: file.name,
-                    },
-                },
-            });
-            continue;
-        }
-        // 1. Mark this specific file as "Processing"
-        dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
+    dispatch({ type: 'PREPARE_ANALYSIS', payload: initialResults });
+    setTimeout(() => document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
 
-        // 2. Call the *new* synchronous service
-        const analysisData = await analyzeBmsScreenshot(file, options?.forceReanalysis || false);
-
-        // 3. Got data! Update the state for this one file.
-        const isDuplicate = analysisData._isDuplicate || false;
-        log('info', 'Processing synchronous analysis result.', { fileName: file.name, isDuplicate });
-        dispatch({
-          type: 'SYNC_ANALYSIS_COMPLETE',
-          payload: {
-            fileName: file.name,
-            isDuplicate,
-            // This creates a minimal record for display.
-            // The full record saving is now handled by a *different* process
-            // (or could be added to the 'analyze' function).
-            record: {
-              id: analysisData._recordId || `local-${Date.now()}`,
-              timestamp: analysisData._timestamp || new Date().toISOString(),
-              analysis: analysisData,
-              fileName: file.name
+    try {
+      // ***PHASE 1: Check ALL files for duplicates upfront (unless forcing reanalysis)***
+      if (!options?.forceReanalysis) {
+        log('info', 'Phase 1: Checking all files for duplicates upfront.', { fileCount: files.length });
+        
+        const duplicateCheckResults = await Promise.all(
+          files.map(async (file) => {
+            // Check for pre-identified duplicates from file upload hook
+            const fileWithData = file as File & { _isDuplicate?: boolean; _analysisData?: any };
+            if (fileWithData._isDuplicate && fileWithData._analysisData) {
+              return { 
+                file, 
+                isDuplicate: true, 
+                recordId: fileWithData._analysisData._recordId,
+                timestamp: fileWithData._analysisData._timestamp,
+                analysisData: fileWithData._analysisData
+              };
             }
-          }
+
+            // Otherwise check via API
+            try {
+              const result = await checkFileDuplicate(file);
+              return { file, ...result };
+            } catch (err) {
+              log('warn', 'Duplicate check failed for file, will analyze anyway.', { fileName: file.name });
+              return { file, isDuplicate: false };
+            }
+          })
+        );
+
+        // Separate duplicates from files to analyze
+        const duplicates = duplicateCheckResults.filter(r => r.isDuplicate);
+        const filesToAnalyze = duplicateCheckResults.filter(r => !r.isDuplicate);
+
+        log('info', 'Duplicate check complete.', { 
+          totalFiles: files.length,
+          duplicates: duplicates.length,
+          toAnalyze: filesToAnalyze.length
         });
 
-      } catch (err) {
-        // 4. Handle error for this specific file
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-        log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
-
-        if (errorMessage.toLowerCase().includes('duplicate')) {
+        // Mark all duplicates immediately
+        for (const dup of duplicates) {
           dispatch({
             type: 'SYNC_ANALYSIS_COMPLETE',
             payload: {
-              fileName: file.name,
+              fileName: dup.file.name,
               isDuplicate: true,
               record: {
-                id: `local-duplicate-${Date.now()}`,
-                timestamp: new Date().toISOString(),
-                analysis: null,
-                fileName: file.name,
+                id: dup.recordId || `local-duplicate-${Date.now()}`,
+                timestamp: dup.timestamp || new Date().toISOString(),
+                analysis: dup.analysisData || null,
+                fileName: dup.file.name,
               },
             },
           });
-        } else {
-          dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${errorMessage}` } });
+        }
+
+        // Update remaining files to "Queued" status
+        for (const item of filesToAnalyze) {
+          dispatch({ 
+            type: 'UPDATE_ANALYSIS_STATUS', 
+            payload: { fileName: item.file.name, status: 'Queued' } 
+          });
+        }
+
+        // ***PHASE 2: Analyze non-duplicate files***
+        log('info', 'Phase 2: Starting analysis of non-duplicate files.', { count: filesToAnalyze.length });
+        
+        for (const item of filesToAnalyze) {
+          const file = item.file;
+          try {
+            // 1. Mark this specific file as "Processing"
+            dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
+
+            // 2. Call the synchronous service
+            const analysisData = await analyzeBmsScreenshot(file, false);
+
+            // 3. Got data! Update the state for this one file.
+            log('info', 'Processing synchronous analysis result.', { fileName: file.name });
+            dispatch({
+              type: 'SYNC_ANALYSIS_COMPLETE',
+              payload: {
+                fileName: file.name,
+                isDuplicate: false,
+                record: {
+                  id: analysisData._recordId || `local-${Date.now()}`,
+                  timestamp: analysisData._timestamp || new Date().toISOString(),
+                  analysis: analysisData,
+                  fileName: file.name
+                }
+              }
+            });
+
+          } catch (err) {
+            // 4. Handle error for this specific file
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+            log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
+
+            if (errorMessage.toLowerCase().includes('duplicate')) {
+              dispatch({
+                type: 'SYNC_ANALYSIS_COMPLETE',
+                payload: {
+                  fileName: file.name,
+                  isDuplicate: true,
+                  record: {
+                    id: `local-duplicate-${Date.now()}`,
+                    timestamp: new Date().toISOString(),
+                    analysis: null,
+                    fileName: file.name,
+                  },
+                },
+              });
+            } else {
+              dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${errorMessage}` } });
+            }
+          }
+        }
+      } else {
+        // When forcing reanalysis, skip duplicate check and analyze all files
+        log('info', 'Force reanalysis mode - skipping duplicate check.', { fileCount: files.length });
+        
+        for (const file of files) {
+          try {
+            dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
+            const analysisData = await analyzeBmsScreenshot(file, true);
+            
+            log('info', 'Processing synchronous analysis result.', { fileName: file.name });
+            dispatch({
+              type: 'SYNC_ANALYSIS_COMPLETE',
+              payload: {
+                fileName: file.name,
+                isDuplicate: false,
+                record: {
+                  id: analysisData._recordId || `local-${Date.now()}`,
+                  timestamp: analysisData._timestamp || new Date().toISOString(),
+                  analysis: analysisData,
+                  fileName: file.name
+                }
+              }
+            });
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+            log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
+            dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${errorMessage}` } });
+          }
         }
       }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error during analysis.';
+      log('error', 'Analysis process failed.', { error: errorMessage });
+      dispatch({ type: 'SET_ERROR', payload: errorMessage });
     }
 
     // All files are processed

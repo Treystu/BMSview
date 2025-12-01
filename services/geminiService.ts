@@ -236,3 +236,60 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
         throw new Error(errorMessage);
     }
 };
+
+/**
+ * Check if a file is a duplicate without performing full analysis.
+ * This is a lightweight check using the backend's content hash detection.
+ * @param file - The file to check
+ * @returns Promise with isDuplicate flag and optional recordId/timestamp of existing record
+ */
+export const checkFileDuplicate = async (file: File): Promise<{ isDuplicate: boolean; recordId?: string; timestamp?: string }> => {
+    const checkContext = { fileName: file.name, fileSize: file.size };
+    log('info', 'Checking file for duplicates.', checkContext);
+
+    try {
+        const imagePayload = await fileWithMetadataToBase64(file);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            log('warn', 'Duplicate check timed out after 10 seconds.');
+            controller.abort();
+        }, 10000); // Shorter timeout for duplicate check
+
+        const dataToSend = {
+            image: imagePayload,
+            checkOnly: true // Signal to backend to only check for duplicates
+        };
+
+        const response = await fetch('/.netlify/functions/analyze?sync=true&check=true', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dataToSend),
+            signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            // If the check endpoint isn't available, fall back to assuming not duplicate
+            log('warn', 'Duplicate check endpoint returned error, assuming not duplicate.', { status: response.status });
+            return { isDuplicate: false };
+        }
+
+        const result: { isDuplicate?: boolean; recordId?: string; timestamp?: string } = await response.json();
+        
+        log('info', 'Duplicate check complete.', { fileName: file.name, isDuplicate: !!result.isDuplicate });
+        
+        return {
+            isDuplicate: result.isDuplicate || false,
+            recordId: result.recordId,
+            timestamp: result.timestamp
+        };
+
+    } catch (error) {
+        // If duplicate check fails, assume not duplicate and let full analysis handle it
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        log('warn', 'Duplicate check failed, assuming not duplicate.', { ...checkContext, error: errorMessage });
+        return { isDuplicate: false };
+    }
+};

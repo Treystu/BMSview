@@ -24,7 +24,7 @@ import {
     streamAllHistory,
     updateBmsSystem
 } from '../services/clientService';
-import { analyzeBmsScreenshot } from '../services/geminiService';
+import { analyzeBmsScreenshot, checkFileDuplicate } from '../services/geminiService';
 import { useAdminState } from '../state/adminState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
 import BulkUpload from './BulkUpload';
@@ -215,33 +215,70 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         }
 
         const initialResults: DisplayableAnalysisResult[] = files.map(f => ({
-            fileName: f.name, data: null, error: 'Queued', file: f, submittedAt: Date.now()
+            fileName: f.name, data: null, error: 'Checking for duplicates...', file: f, submittedAt: Date.now()
         }));
-        dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults }); // Clear previous and set new ones
+        dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults });
 
         try {
+            // ***PHASE 1: Check ALL files for duplicates upfront***
+            log('info', 'Phase 1: Checking all files for duplicates upfront.', { fileCount: files.length });
+            
+            const duplicateCheckResults = await Promise.all(
+                files.map(async (file) => {
+                    try {
+                        const result = await checkFileDuplicate(file);
+                        return { file, ...result };
+                    } catch (err) {
+                        log('warn', 'Duplicate check failed for file, will analyze anyway.', { fileName: file.name });
+                        return { file, isDuplicate: false };
+                    }
+                })
+            );
+
+            // Separate duplicates from files to analyze
+            const duplicates = duplicateCheckResults.filter(r => r.isDuplicate);
+            const filesToAnalyze = duplicateCheckResults.filter(r => !r.isDuplicate);
+
+            log('info', 'Duplicate check complete.', { 
+                totalFiles: files.length,
+                duplicates: duplicates.length,
+                toAnalyze: filesToAnalyze.length
+            });
+
+            // Mark all duplicates as skipped immediately
+            for (const dup of duplicates) {
+                dispatch({
+                    type: 'UPDATE_BULK_JOB_SKIPPED',
+                    payload: { 
+                        fileName: dup.file.name, 
+                        reason: 'Duplicate content detected (same image)' 
+                    }
+                });
+            }
+
+            // Update remaining files to "Queued" status
+            for (const item of filesToAnalyze) {
+                dispatch({ 
+                    type: 'UPDATE_BULK_UPLOAD_RESULT', 
+                    payload: { fileName: item.file.name, error: 'Queued' } 
+                });
+            }
+
+            // ***PHASE 2: Analyze non-duplicate files***
+            log('info', 'Phase 2: Starting analysis of non-duplicate files.', { count: filesToAnalyze.length });
+            
             let retryCount = 0;
-            // Process each file one by one
-            for (const file of files) {
+            for (const item of filesToAnalyze) {
+                const file = item.file;
                 try {
                     // 1. Mark this specific file as "Processing"
                     dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: 'Processing' } });
 
-                    // 2. Call the synchronous service - backend handles duplicate detection via content hash
+                    // 2. Call the synchronous service
                     const analysisData = await analyzeBmsScreenshot(file);
 
-                    // 3. Got data! Check if backend detected a duplicate
-                    const isDuplicate = analysisData._isDuplicate || false;
-                    log('info', 'Processing synchronous analysis result.', { fileName: file.name, isDuplicate });
-
-                    // ***ISSUE 3 FIX: Let backend handle duplicate detection***
-                    if (isDuplicate) {
-                        dispatch({
-                            type: 'UPDATE_BULK_JOB_SKIPPED',
-                            payload: { fileName: file.name, reason: 'Duplicate content detected (same image)' }
-                        });
-                        continue;
-                    }
+                    // 3. Got data! Create record with real backend ID
+                    log('info', 'Processing synchronous analysis result.', { fileName: file.name });
 
                     // ***ISSUE 1 FIX: Use real record ID from backend instead of temporary ID***
                     const tempRecord: AnalysisRecord = {

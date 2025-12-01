@@ -461,7 +461,8 @@ async function checkExistingAnalysis(contentHash, log) {
       log.info('Dedupe: existing analysis found for content hash.', {
         contentHash: contentHash.substring(0, 16) + '...',
         needsReview: existing.needsReview,
-        validationScore: existing.validationScore
+        validationScore: existing.validationScore,
+        extractionAttempts: existing.extractionAttempts || 1
       });
 
       const criticalFields = [
@@ -477,9 +478,40 @@ async function checkExistingAnalysis(contentHash, log) {
         existing.analysis[field] !== undefined
       );
 
+      // ***NEW REQUIREMENT: Check if this record has already been retried with no improvement***
+      // If validationScore < 100 AND extractionAttempts >= 2 AND _previousQuality equals _newQuality,
+      // it means we already tried to upgrade but got the same limited score - skip further retries
+      const hasBeenRetriedWithNoImprovement = 
+        existing.validationScore < 100 &&
+        (existing.extractionAttempts || 1) >= 2 &&
+        existing._wasUpgraded &&
+        existing._previousQuality === existing._newQuality;
+
+      if (hasBeenRetriedWithNoImprovement) {
+        log.info('Existing record was already retried with identical results - assuming full extraction.', {
+          contentHash: contentHash.substring(0, 16) + '...',
+          validationScore: existing.validationScore,
+          extractionAttempts: existing.extractionAttempts,
+          previousQuality: existing._previousQuality,
+          newQuality: existing._newQuality
+        });
+        return existing; // Return as-is, no further retry needed
+      }
+
       if (!hasAllCriticalFields) {
         log.warn('Existing record is missing critical fields. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
+          extractionAttempts: existing.extractionAttempts || 1
+        });
+        return { _isUpgrade: true, _existingRecord: existing };
+      }
+
+      // ***NEW REQUIREMENT: Auto-retry if confidence score < 100% (unless already retried)***
+      if (existing.validationScore < 100 && (existing.extractionAttempts || 1) < 2) {
+        log.warn('Existing record has low confidence score. Will re-analyze to improve.', {
+          contentHash: contentHash.substring(0, 16) + '...',
+          validationScore: existing.validationScore,
+          extractionAttempts: existing.extractionAttempts || 1
         });
         return { _isUpgrade: true, _existingRecord: existing };
       }
@@ -551,34 +583,48 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
 
     // If upgrading, update the existing record instead of inserting
     if (isUpgrade && existingRecordToUpgrade) {
+      const previousAttempts = existingRecordToUpgrade.extractionAttempts || 1;
+      const newAttempts = previousAttempts + 1;
+      const previousQuality = existingRecordToUpgrade.validationScore;
+      const newQuality = record.validationScore;
+
+      // ***CRITICAL FIX: Preserve the original record ID to avoid duplicates***
+      const originalId = existingRecordToUpgrade.id || existingRecordToUpgrade._id;
+
       const updateResult = await resultsCol.updateOne(
         { contentHash },
         {
           $set: {
-            id: record.id,
+            // Keep the original ID - do NOT overwrite with new UUID
+            id: originalId,
             fileName: record.fileName,
             timestamp: record.timestamp,
             analysis: record.analysis,
             updatedAt: new Date(),
             _wasUpgraded: true,
-            _previousQuality: existingRecordToUpgrade.validationScore,
-            _newQuality: record.validationScore,
+            _previousQuality: previousQuality,
+            _newQuality: newQuality,
             needsReview: record.needsReview,
             validationWarnings: record.validationWarnings,
-            validationScore: record.validationScore,
-            extractionAttempts: record.extractionAttempts
+            validationScore: newQuality,
+            extractionAttempts: newAttempts
           }
         }
       );
 
       log.info('Analysis results upgraded with improved quality', {
-        recordId: record.id,
+        recordId: originalId, // Log the original ID
         contentHash: contentHash.substring(0, 16) + '...',
-        previousQuality: existingRecordToUpgrade.validationScore,
-        newQuality: record.validationScore,
+        previousQuality,
+        newQuality,
+        extractionAttempts: newAttempts,
+        qualityImproved: newQuality > previousQuality,
         matchedCount: updateResult.matchedCount,
         modifiedCount: updateResult.modifiedCount
       });
+
+      // ***CRITICAL FIX: Update the record object to return the original ID to the caller***
+      record.id = originalId;
     } else {
       // New record - insert
       await resultsCol.insertOne({
@@ -592,7 +638,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         needsReview: record.needsReview,
         validationWarnings: record.validationWarnings,
         validationScore: record.validationScore,
-        extractionAttempts: record.extractionAttempts
+        extractionAttempts: 1
       });
 
       log.info('Analysis results stored for deduplication', {
