@@ -258,9 +258,9 @@ export const checkFileDuplicate = async (file: File): Promise<{
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
-            log('warn', 'Duplicate check timed out after 10 seconds.', { fileName: file.name });
+            log('warn', 'Duplicate check timed out after 20 seconds.', { fileName: file.name });
             controller.abort();
-        }, 10000); // Shorter timeout for duplicate check
+        }, 20000); // 20-second timeout for duplicate check (increased from 10s to handle batch checks better)
 
         const dataToSend = {
             image: imagePayload

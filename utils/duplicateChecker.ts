@@ -32,18 +32,38 @@ export async function checkFilesForDuplicates(
 ): Promise<CategorizedFiles> {
     log('info', 'Phase 1: Checking all files for duplicates upfront.', { fileCount: files.length });
     
-    // Check all files in parallel
-    const checkResults = await Promise.all(
-        files.map(async (file) => {
+    // Check all files in parallel using allSettled to prevent entire operation from failing
+    // if some checks fail (e.g., network errors, timeouts)
+    const settledResults = await Promise.allSettled(
+        files.map(async (file, index) => {
             try {
                 const result = await checkFileDuplicate(file);
-                return { file, ...result };
+                return { file, index, ...result };
             } catch (err) {
-                log('warn', 'Duplicate check failed for file, will analyze anyway.', { fileName: file.name });
-                return { file, isDuplicate: false, needsUpgrade: false };
+                log('warn', 'Duplicate check failed for file, will analyze anyway.', { 
+                    fileName: file.name,
+                    error: err instanceof Error ? err.message : String(err)
+                });
+                return { file, index, isDuplicate: false, needsUpgrade: false };
             }
         })
     );
+
+    // Extract values from settled promises, handling both fulfilled and rejected cases
+    const checkResults = settledResults.map((result, index) => {
+        if (result.status === 'fulfilled') {
+            return result.value;
+        } else {
+            // Fallback for unexpected rejections (shouldn't happen due to try-catch above)
+            const file = files[index];
+            log('error', 'Unexpected rejection in duplicate check', { 
+                fileName: file?.name,
+                error: result.reason instanceof Error ? result.reason.message : String(result.reason)
+            });
+            // Return a safe default - treat as a new file that needs analysis
+            return { file, index, isDuplicate: false, needsUpgrade: false };
+        }
+    });
 
     // Categorize results into three groups
     const trueDuplicates = checkResults.filter(r => r.isDuplicate && !r.needsUpgrade);
