@@ -252,13 +252,12 @@ export const checkFileDuplicate = async (file: File): Promise<{ isDuplicate: boo
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
-            log('warn', 'Duplicate check timed out after 10 seconds.');
+            log('warn', 'Duplicate check timed out after 10 seconds.', { fileName: file.name });
             controller.abort();
         }, 10000); // Shorter timeout for duplicate check
 
         const dataToSend = {
-            image: imagePayload,
-            checkOnly: true // Signal to backend to only check for duplicates
+            image: imagePayload
         };
 
         const response = await fetch('/.netlify/functions/analyze?sync=true&check=true', {
@@ -271,8 +270,14 @@ export const checkFileDuplicate = async (file: File): Promise<{ isDuplicate: boo
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-            // If the check endpoint isn't available, fall back to assuming not duplicate
-            log('warn', 'Duplicate check endpoint returned error, assuming not duplicate.', { status: response.status });
+            // Differentiate between expected and unexpected failures
+            if (response.status === 404 || response.status === 501) {
+                // Endpoint not implemented - expected, fall back gracefully
+                log('info', 'Duplicate check endpoint not available, will perform full analysis.', { status: response.status });
+            } else {
+                // Unexpected error - log as warning
+                log('warn', 'Duplicate check endpoint returned error, assuming not duplicate.', { status: response.status });
+            }
             return { isDuplicate: false };
         }
 
@@ -287,9 +292,14 @@ export const checkFileDuplicate = async (file: File): Promise<{ isDuplicate: boo
         };
 
     } catch (error) {
-        // If duplicate check fails, assume not duplicate and let full analysis handle it
+        // Detect timeout errors specifically
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        log('warn', 'Duplicate check failed, assuming not duplicate.', { ...checkContext, error: errorMessage });
+        const isTimeout = error instanceof Error && error.name === 'AbortError';
+        log('warn', 'Duplicate check failed, assuming not duplicate.', { 
+            ...checkContext, 
+            error: errorMessage,
+            isTimeout 
+        });
         return { isDuplicate: false };
     }
 };

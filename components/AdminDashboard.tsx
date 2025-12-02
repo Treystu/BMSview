@@ -267,9 +267,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             // ***PHASE 2: Analyze non-duplicate files***
             log('info', 'Phase 2: Starting analysis of non-duplicate files.', { count: filesToAnalyze.length });
             
-            let retryCount = 0;
             for (const item of filesToAnalyze) {
                 const file = item.file;
+                let retryCount = 0; // Move inside loop for per-file retry tracking
                 try {
                     // 1. Mark this specific file as "Processing"
                     dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: 'Processing' } });
@@ -292,9 +292,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         type: 'UPDATE_BULK_JOB_COMPLETED',
                         payload: { record: tempRecord, fileName: file.name }
                     });
-                    
-                    // Reset retry count on success
-                    retryCount = 0;
                 } catch (err) {
                     // 4. Handle error for this specific file
                     const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
@@ -304,6 +301,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     if (errorMessage.includes('429')) {
                         setShowRateLimitWarning(true);
                         retryCount++;
+                        
+                        // Stop processing after too many consecutive 429 errors
+                        if (retryCount >= 5) {
+                            log('error', 'Too many consecutive rate limit errors, stopping batch.', { 
+                                filesRemaining: filesToAnalyze.length,
+                                fileName: file.name 
+                            });
+                            dispatch({ 
+                                type: 'SET_ERROR', 
+                                payload: 'Rate limit exceeded. Please wait a few minutes before uploading more files.' 
+                            });
+                            break; // Stop processing remaining files
+                        }
+                        
                         const backoffMs = Math.min(2000 * Math.pow(2, retryCount - 1), 30000); // Max 30 seconds
                         log('warn', 'Rate limit detected, applying exponential backoff.', { 
                             retryCount, 

@@ -150,6 +150,7 @@ exports.handler = async (event, context) => {
 
   const isSync = (event.queryStringParameters && event.queryStringParameters.sync === 'true');
   const forceReanalysis = (event.queryStringParameters && event.queryStringParameters.force === 'true');
+  const checkOnly = (event.queryStringParameters && event.queryStringParameters.check === 'true');
   const headersIn = event.headers || {};
   const idemKey = headersIn['Idempotency-Key'] || headersIn['idempotency-key'] || headersIn['IDEMPOTENCY-KEY'];
   let requestContext = { jobId: undefined };
@@ -164,11 +165,11 @@ exports.handler = async (event, context) => {
       return errorResponse(400, 'invalid_request', parsed.error, undefined, headers);
     }
 
-    log.debug('Processing analysis', { isSync, forceReanalysis, hasIdemKey: !!idemKey });
+    log.debug('Processing analysis', { isSync, forceReanalysis, checkOnly, hasIdemKey: !!idemKey });
 
     if (isSync) {
       // Synchronous analysis path with comprehensive error handling
-      const result = await handleSyncAnalysis(parsed.value, idemKey, forceReanalysis, headers, log, context);
+      const result = await handleSyncAnalysis(parsed.value, idemKey, forceReanalysis, checkOnly, headers, log, context);
       timer.end({ mode: 'sync', statusCode: result.statusCode });
       log.exit(result.statusCode);
       return result;
@@ -225,11 +226,12 @@ exports.handler = async (event, context) => {
  * @param {Object} requestBody - Parsed request body
  * @param {string} idemKey - Idempotency key if provided
  * @param {boolean} forceReanalysis - Whether to bypass duplicate detection
+ * @param {boolean} checkOnly - Whether to only check for duplicates without full analysis
  * @param {Object} headers - Response headers
  * @param {Object} log - Logger instance
  * @param {Object} context - Lambda context
  */
-async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers, log, context) {
+async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOnly, headers, log, context) {
   const timer = createTimer(log, 'sync-analysis');
 
   // Story Mode is admin-only - requires explicit isAdmin flag
@@ -256,6 +258,37 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, headers
 
     // Calculate content hash for deduplication
     const contentHash = sha256HexFromBase64(imagePayload.image);
+
+    // ***NEW: Check-only mode - return duplicate status without full analysis***
+    if (checkOnly) {
+      try {
+        const existingAnalysis = await checkExistingAnalysis(contentHash, log);
+        const isDuplicate = !!existingAnalysis && !existingAnalysis._isUpgrade;
+        
+        const checkResponse = {
+          isDuplicate,
+          recordId: existingAnalysis?.id || existingAnalysis?._id,
+          timestamp: existingAnalysis?.timestamp
+        };
+
+        const durationMs = timer.end({ checkOnly: true, isDuplicate });
+        log.info('Check-only request complete', { isDuplicate, durationMs });
+        log.exit(200);
+        
+        return {
+          statusCode: 200,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify(checkResponse)
+        };
+      } catch (checkError) {
+        log.warn('Check-only request failed', { error: checkError.message });
+        return {
+          statusCode: 200,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isDuplicate: false })
+        };
+      }
+    }
 
     // Check idempotency cache (skip if force=true)
     if (idemKey && !forceReanalysis) {
@@ -478,14 +511,24 @@ async function checkExistingAnalysis(contentHash, log) {
         existing.analysis[field] !== undefined
       );
 
-      // ***NEW REQUIREMENT: Check if this record has already been retried with no improvement***
-      // If validationScore < 100 AND extractionAttempts >= 2 AND _previousQuality equals _newQuality,
-      // it means we already tried to upgrade but got the same limited score - skip further retries
+      // Check for missing critical fields first (highest priority)
+      if (!hasAllCriticalFields) {
+        log.warn('Existing record is missing critical fields. Will re-analyze to improve.', {
+          contentHash: contentHash.substring(0, 16) + '...',
+          extractionAttempts: existing.extractionAttempts || 1
+        });
+        return { _isUpgrade: true, _existingRecord: existing };
+      }
+
+      // ***FIXED: Check if this record has already been retried with no improvement***
+      // Use epsilon comparison for floating point and validate both quality scores exist
       const hasBeenRetriedWithNoImprovement = 
-        existing.validationScore < 100 &&
+        (existing.validationScore !== undefined && existing.validationScore < 100) &&
         (existing.extractionAttempts || 1) >= 2 &&
         existing._wasUpgraded &&
-        existing._previousQuality === existing._newQuality;
+        existing._previousQuality !== undefined &&
+        existing._newQuality !== undefined &&
+        Math.abs(existing._previousQuality - existing._newQuality) < 0.01; // Epsilon comparison
 
       if (hasBeenRetriedWithNoImprovement) {
         log.info('Existing record was already retried with identical results - assuming full extraction.', {
@@ -498,19 +541,12 @@ async function checkExistingAnalysis(contentHash, log) {
         return existing; // Return as-is, no further retry needed
       }
 
-      if (!hasAllCriticalFields) {
-        log.warn('Existing record is missing critical fields. Will re-analyze to improve.', {
-          contentHash: contentHash.substring(0, 16) + '...',
-          extractionAttempts: existing.extractionAttempts || 1
-        });
-        return { _isUpgrade: true, _existingRecord: existing };
-      }
-
-      // ***NEW REQUIREMENT: Auto-retry if confidence score < 100% (unless already retried)***
-      if (existing.validationScore < 100 && (existing.extractionAttempts || 1) < 2) {
+      // ***FIXED: Auto-retry if confidence score < 100% with proper undefined handling***
+      const validationScore = existing.validationScore ?? 0; // Default to 0 if undefined
+      if (validationScore < 100 && (existing.extractionAttempts || 1) < 2) {
         log.warn('Existing record has low confidence score. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
-          validationScore: existing.validationScore,
+          validationScore: validationScore,
           extractionAttempts: existing.extractionAttempts || 1
         });
         return { _isUpgrade: true, _existingRecord: existing };
@@ -588,9 +624,13 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
       const previousQuality = existingRecordToUpgrade.validationScore;
       const newQuality = record.validationScore;
 
-      // ***CRITICAL FIX: Preserve the original record ID to avoid duplicates***
-      const originalId = existingRecordToUpgrade.id || existingRecordToUpgrade._id;
+      // ***CRITICAL FIX: Preserve the original record ID and handle ObjectId properly***
+      const originalId = existingRecordToUpgrade.id || 
+        (existingRecordToUpgrade._id?.toString ? existingRecordToUpgrade._id.toString() : existingRecordToUpgrade._id);
 
+      // ***SECURITY NOTE: This update uses contentHash only for filtering***
+      // TODO: Add tenant/user scoping to prevent cross-user record modifications
+      // Should filter by { contentHash, userId: authenticatedUserId } to ensure proper isolation
       const updateResult = await resultsCol.updateOne(
         { contentHash },
         {
