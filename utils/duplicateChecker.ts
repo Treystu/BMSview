@@ -38,13 +38,13 @@ export async function checkFilesForDuplicates(
         files.map(async (file, index) => {
             try {
                 const result = await checkFileDuplicate(file);
-                return { file, index, ...result };
+                return { file, ...result };
             } catch (err) {
                 log('warn', 'Duplicate check failed for file, will analyze anyway.', { 
                     fileName: file.name,
                     error: err instanceof Error ? err.message : String(err)
                 });
-                return { file, index, isDuplicate: false, needsUpgrade: false };
+                return { file, isDuplicate: false, needsUpgrade: false };
             }
         })
     );
@@ -61,7 +61,7 @@ export async function checkFilesForDuplicates(
                 error: result.reason instanceof Error ? result.reason.message : String(result.reason)
             });
             // Return a safe default - treat as a new file that needs analysis
-            return { file, index, isDuplicate: false, needsUpgrade: false };
+            return { file, isDuplicate: false, needsUpgrade: false };
         }
     });
 

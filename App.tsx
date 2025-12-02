@@ -100,7 +100,7 @@ function App() {
 
     try {
       // ***PHASE 1: Check ALL files for duplicates upfront (unless forcing reanalysis)***
-      let filesToAnalyze: { file: File; needsUpgrade?: boolean }[];
+      let filesToAnalyze: { file: File; needsUpgrade?: boolean }[] = [];
       
       if (!options?.forceReanalysis) {
         try {

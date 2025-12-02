@@ -46,8 +46,8 @@ describe('Duplicate Check State Fix - Code Validation', () => {
       // Should use index to access the correct file from the files array
       expect(source).toMatch(/files\[index\]/);
       
-      // Should include index in the returned results
-      expect(source).toMatch(/index,.*isDuplicate/);
+      // File reference should be preserved in returned results
+      expect(source).toMatch(/file,.*isDuplicate/);
     });
   });
 
