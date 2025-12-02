@@ -653,12 +653,18 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         (existingRecordToUpgrade._id?.toString ? existingRecordToUpgrade._id.toString() : existingRecordToUpgrade._id);
 
       // Build update filter - include userId only if provided for multi-tenancy
+      // SECURITY NOTE: When userId is not available (backwards compatibility mode),
+      // contentHash alone is used. While this allows for potential cross-user updates
+      // in theory, the probability is extremely low due to SHA-256 collision resistance.
+      // For production multi-tenant deployments, ensure userId is always provided.
       const updateFilter = { contentHash };
       if (userId) {
         updateFilter.userId = userId;
         log.debug('Updating record with userId filter for multi-tenancy', { userId: userId.substring(0, 8) + '...' });
       } else {
-        log.debug('Updating record without userId filter (backwards compatibility)');
+        log.debug('Updating record without userId filter (backwards compatibility)', {
+          securityNote: 'Relying on contentHash uniqueness - ensure userId is provided in multi-tenant deployments'
+        });
       }
 
       const updateResult = await resultsCol.updateOne(

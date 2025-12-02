@@ -30,11 +30,11 @@ PR #271 introduced a **breaking change** in `netlify/functions/analyze.cjs` that
 1. **Added userId requirement** to `checkExistingAnalysis()` and `storeAnalysisResults()`
 2. **Early return when userId missing** - skipped duplicate checks and storage entirely
 3. **Result:** 
-   - ✅ Historical records NOT showing in admin pane
-   - ✅ Gemini CANNOT access any records  
-   - ✅ New analyses NOT being stored in database
-   - ✅ Duplicate detection completely BROKEN
-   - ✅ Entire application effectively non-functional
+   - ❌ Historical records NOT showing in admin pane (WAS BROKEN)
+   - ❌ Gemini CANNOT access any records (WAS BROKEN)
+   - ❌ New analyses NOT being stored in database (WAS BROKEN)
+   - ❌ Duplicate detection completely BROKEN (WAS BROKEN)
+   - ❌ Entire application effectively non-functional (WAS BROKEN)
 
 ### Code Changes That Broke the System
 
