@@ -460,9 +460,9 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
     prompt += "• Test your format mentally before responding - ensure it's parseable by the expected format\n\n";
 
     // Mode-specific guidance on tool usage
-    if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
-        prompt += "DATA AVAILABILITY: Comprehensive analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above. Review the preloaded data FIRST. You likely have ALL the data needed already. Only call tools if you need ADDITIONAL specific data not already provided (e.g., hourly breakdown of a specific metric over a custom date range). IMPORTANT: Prefer to analyze with existing data rather than requesting more.\n\n";
-    } else if (customPrompt) {
+    // Enhanced mode-specific prompt differentiation based on insightMode parameter
+    
+    if (customPrompt) {
         // For custom queries in sync mode, encourage tool usage
         prompt += "🎯 CUSTOM QUERY MODE - FULL DATA ACCESS ENABLED:\n";
         prompt += "You are answering a specific user question with COMPLETE access to all historical data.\n\n";
@@ -478,15 +478,73 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "   3. ALWAYS call request_bms_data for any historical data requests\n";
         prompt += "   4. NEVER claim 'data not available' without trying the tool first\n";
         prompt += "   5. You have ALL the tools needed - use them confidently!\n\n";
-    } else if (insightMode === 'full_context') {
+    } else if (insightMode === 'full_context' || insightMode === 'full-context') {
         // Full context mode - encourage deep analysis and tool usage
         prompt += "🎯 FULL CONTEXT MODE - DEEP ANALYSIS REQUIRED:\n";
+        prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
         prompt += "You are performing a comprehensive system audit. Do not settle for surface-level insights.\n\n";
-        prompt += "MANDATORY ANALYSIS STEPS:\n";
-        prompt += "   1. Check the 'DATA AVAILABILITY' section carefully.\n";
-        prompt += "   2. If you need more granularity (e.g., hourly data for a specific anomaly), CALL request_bms_data.\n";
-        prompt += "   3. Correlate multiple factors: Weather vs Solar, Load vs SOC, Temperature vs Efficiency.\n";
-        prompt += "   4. Provide a detailed, multi-faceted report.\n\n";
+        prompt += "**ANALYSIS SCOPE:**\n";
+        prompt += "• Analyze ALL historical data (90+ days when available)\n";
+        prompt += "• Focus on long-term trends and degradation patterns\n";
+        prompt += "• Identify systemic issues, not just point-in-time anomalies\n";
+        prompt += "• Prioritize actionable insights that improve system reliability\n\n";
+        prompt += "**MANDATORY ANALYSIS STEPS:**\n";
+        prompt += "   1. Review the 'DATA AVAILABILITY' section - you have access to the COMPLETE historical range\n";
+        prompt += "   2. Check pre-loaded 90-day rollups for trend identification\n";
+        prompt += "   3. If you need more granularity (e.g., hourly data for a specific anomaly), CALL request_bms_data\n";
+        prompt += "   4. Correlate multiple factors: Weather vs Solar, Load vs SOC, Temperature vs Efficiency\n";
+        prompt += "   5. Use submitAppFeedback tool to suggest improvements to BMSview when you identify:\n";
+        prompt += "      - Missing data points that limit your analysis quality\n";
+        prompt += "      - Better APIs or data sources that would improve accuracy\n";
+        prompt += "      - UI/UX improvements based on usage patterns\n";
+        prompt += "      - Data format inefficiencies discovered during analysis\n";
+        prompt += "   6. Provide a detailed, multi-faceted report with specific numeric recommendations\n\n";
+        prompt += "**APP FEEDBACK PRIORITY:**\n";
+        prompt += "In Full Context Mode, you should actively use submitAppFeedback when you notice:\n";
+        prompt += "• Gaps in data that prevent accurate analysis\n";
+        prompt += "• Inefficient data structures that slow processing\n";
+        prompt += "• Missing integrations (weather APIs, solar calculators, etc.)\n";
+        prompt += "• Opportunities to improve user experience\n";
+        prompt += "Your feedback goes directly to the Admin AI Feedback panel and may generate GitHub issues.\n\n";
+        prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    } else if (insightMode === 'with-tools' || insightMode === 'with_tools' || insightMode === 'standard') {
+        // Battery Guru mode (WITH_TOOLS) - balanced analysis with intelligent tool usage
+        // Note: STANDARD mode redirects to WITH_TOOLS for backward compatibility
+        prompt += "🔋 BATTERY GURU MODE - INTELLIGENT ANALYSIS:\n";
+        prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        prompt += "You are the AI Battery Guru - provide comprehensive, data-driven insights.\n\n";
+        prompt += "**ANALYSIS APPROACH:**\n";
+        prompt += "• Review pre-loaded context data first (available in sections above)\n";
+        prompt += "• Request additional data via tools ONLY when needed for deeper analysis\n";
+        prompt += "• Balance thoroughness with efficiency - avoid redundant tool calls\n";
+        prompt += "• Focus on actionable recommendations with specific numeric targets\n\n";
+        prompt += "**TOOL USAGE STRATEGY:**\n";
+        prompt += "   1. Check what data is ALREADY PRELOADED in the context above\n";
+        prompt += "   2. For background mode: Most analytics/trends/budgets are preloaded - use them!\n";
+        prompt += "   3. For sync mode: Request specific data points needed via request_bms_data\n";
+        prompt += "   4. Only call tools when you genuinely need additional data not already provided\n";
+        prompt += "   5. Keep tool calls focused - maximum 2-3 calls recommended\n\n";
+        prompt += "**OUTPUT REQUIREMENTS:**\n";
+        prompt += "• Lead with KEY FINDINGS (2-4 critical insights with data citations)\n";
+        prompt += "• Follow with TREND ANALYSIS (statistical patterns, improvement/degradation trajectory)\n";
+        prompt += "• Conclude with RECOMMENDATIONS (prioritized by urgency: 🔴/🟡/🟢)\n";
+        prompt += "• Every recommendation must include SPECIFIC numbers and validation criteria\n";
+        prompt += "• ⚠️ Recommend PHYSICAL ACTIONS users can take, NEVER 'use tool X' (users can't run tools)\n\n";
+        prompt += "**WHEN TO SUBMIT APP FEEDBACK (OPTIONAL):**\n";
+        prompt += "If you notice data quality issues, missing integrations, or UX problems during analysis,\n";
+        prompt += "you MAY use submitAppFeedback to suggest improvements. This is optional in Battery Guru mode\n";
+        prompt += "(prioritized in Full Context Mode). Your feedback helps improve the platform.\n\n";
+        prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+        
+        // Add mode-specific data preload check
+        if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
+            prompt += "📊 BACKGROUND MODE - COMPREHENSIVE DATA PRELOADED:\n";
+            prompt += "Analytics, trends, budgets, and predictions are ALREADY PRELOADED in the context above.\n";
+            prompt += "Review the preloaded data FIRST. You likely have ALL the data needed already.\n";
+            prompt += "Only call tools if you need ADDITIONAL specific data not already provided\n";
+            prompt += "(e.g., hourly breakdown of a specific metric over a custom date range).\n";
+            prompt += "IMPORTANT: Prefer to analyze with existing data rather than requesting more.\n\n";
+        }
     } else if (insightMode === 'visual_guru' || insightMode === 'visual-guru') {
         // Visual Guru Expert mode - infographic-style, chart-focused output
         prompt += "📊 VISUAL GURU EXPERT MODE - STRUCTURED DATA LAYOUT FOR VISUALIZATION:\n";
