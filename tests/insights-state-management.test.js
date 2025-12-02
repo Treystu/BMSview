@@ -116,6 +116,37 @@ describe('Insights State Management', () => {
       });
     });
 
+    test('INSIGHTS_TIMEOUT increments attempts for duplicate timeouts', () => {
+      let state = initialState;
+
+      // First timeout
+      state = appReducer(state, {
+        type: 'INSIGHTS_TIMEOUT',
+        payload: {
+          recordId: 'test-record-1',
+          resumeJobId: 'job-first',
+        },
+      });
+
+      expect(state.pendingResumes).toHaveLength(1);
+      expect(state.pendingResumes[0].attempts).toBe(1);
+      expect(state.pendingResumes[0].resumeJobId).toBe('job-first');
+
+      // Second timeout for same record
+      state = appReducer(state, {
+        type: 'INSIGHTS_TIMEOUT',
+        payload: {
+          recordId: 'test-record-1',
+          resumeJobId: 'job-second',
+        },
+      });
+
+      expect(state.pendingResumes).toHaveLength(1); // Still only 1 entry
+      expect(state.pendingResumes[0].attempts).toBe(2); // Attempts incremented
+      expect(state.pendingResumes[0].resumeJobId).toBe('job-second'); // Job ID updated
+      expect(state.pendingResumes[0].recordId).toBe('test-record-1');
+    });
+
     test('Multiple insight states can coexist for different records', () => {
       let state = initialState;
 
@@ -240,7 +271,7 @@ describe('Insights State Management', () => {
       expect(newState.circuitBreakers.lastTripped).toEqual(stateWithTripped.circuitBreakers.lastTripped);
     });
 
-    test('RESET_CIRCUIT_BREAKERS resets all breakers to closed', () => {
+    test('RESET_CIRCUIT_BREAKERS resets all breakers to closed but preserves lastTripped', () => {
       const stateWithOpen = {
         ...initialState,
         circuitBreakers: {
@@ -257,10 +288,9 @@ describe('Insights State Management', () => {
       const action = { type: 'RESET_CIRCUIT_BREAKERS' };
       const newState = appReducer(stateWithOpen, action);
 
-      expect(newState.circuitBreakers).toEqual({
-        insights: 'closed',
-        analysis: 'closed',
-      });
+      expect(newState.circuitBreakers.insights).toBe('closed');
+      expect(newState.circuitBreakers.analysis).toBe('closed');
+      expect(newState.circuitBreakers.lastTripped).toEqual(stateWithOpen.circuitBreakers.lastTripped);
     });
 
     test('Circuit breakers can transition through states', () => {

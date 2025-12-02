@@ -141,7 +141,7 @@ export type AppAction =
 // ***REMOVED***: All job-polling actions are gone.
 
 // 3. Reducer
-const appReducer = (state: AppState, action: AppAction): AppState => {
+export const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
     case 'PREPARE_ANALYSIS':
       // Filter out any files that are already present in the results by filename to prevent duplicates from re-uploads.
@@ -340,19 +340,36 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         },
       };
 
-    case 'INSIGHTS_TIMEOUT':
-      // Add to pending resumes for potential retry
+    case 'INSIGHTS_TIMEOUT': {
+      // Check if this record already has a pending resume to avoid duplicates
+      const existingResumeIndex = state.pendingResumes.findIndex(
+        r => r.recordId === action.payload.recordId
+      );
+      
+      const newPendingResumes = existingResumeIndex >= 0
+        ? state.pendingResumes.map((resume, idx) =>
+            idx === existingResumeIndex
+              ? {
+                  ...resume,
+                  resumeJobId: action.payload.resumeJobId,
+                  attempts: resume.attempts + 1,
+                  lastAttempt: Date.now(),
+                }
+              : resume
+          )
+        : [
+            ...state.pendingResumes,
+            {
+              recordId: action.payload.recordId,
+              resumeJobId: action.payload.resumeJobId,
+              attempts: 1,
+              lastAttempt: Date.now(),
+            },
+          ];
+
       return {
         ...state,
-        pendingResumes: [
-          ...state.pendingResumes,
-          {
-            recordId: action.payload.recordId,
-            resumeJobId: action.payload.resumeJobId,
-            attempts: 1,
-            lastAttempt: Date.now(),
-          },
-        ],
+        pendingResumes: newPendingResumes,
         insightsState: {
           ...state.insightsState,
           [action.payload.recordId]: {
@@ -363,6 +380,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
           },
         },
       };
+    }
 
     case 'CONSENT_GRANTED':
       return {
@@ -406,6 +424,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         circuitBreakers: {
           insights: 'closed',
           analysis: 'closed',
+          lastTripped: state.circuitBreakers.lastTripped, // Preserve debugging history
         },
       };
 
