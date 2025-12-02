@@ -641,11 +641,6 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
   try {
     const resultsCol = await getCollection('analysis-results');
 
-    if (!userId) {
-      log.warn('Skipping result storage: No userId provided');
-      return;
-    }
-
     // If upgrading, update the existing record instead of inserting
     if (isUpgrade && existingRecordToUpgrade) {
       const previousAttempts = existingRecordToUpgrade.extractionAttempts || 1;
@@ -657,10 +652,17 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
       const originalId = existingRecordToUpgrade.id ||
         (existingRecordToUpgrade._id?.toString ? existingRecordToUpgrade._id.toString() : existingRecordToUpgrade._id);
 
-      // ***SECURITY NOTE: This update uses contentHash only for filtering***
-      // Enforcing tenant/user scoping to prevent cross-user record modifications
+      // Build update filter - include userId only if provided for multi-tenancy
+      const updateFilter = { contentHash };
+      if (userId) {
+        updateFilter.userId = userId;
+        log.debug('Updating record with userId filter for multi-tenancy', { userId: userId.substring(0, 8) + '...' });
+      } else {
+        log.debug('Updating record without userId filter (backwards compatibility)');
+      }
+
       const updateResult = await resultsCol.updateOne(
-        { contentHash, userId },
+        updateFilter,
         {
           $set: {
             // Keep the original ID - do NOT overwrite with new UUID
@@ -695,9 +697,8 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
       record.id = originalId;
     } else {
       // New record - insert
-      await resultsCol.insertOne({
+      const newRecord = {
         id: record.id,
-        userId, // Store userId for isolation
         fileName: record.fileName,
         timestamp: record.timestamp,
         analysis: record.analysis,
@@ -708,7 +709,17 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         validationWarnings: record.validationWarnings,
         validationScore: record.validationScore,
         extractionAttempts: 1
-      });
+      };
+      
+      // Add userId only if provided (for multi-tenancy)
+      if (userId) {
+        newRecord.userId = userId;
+        log.debug('Storing new record with userId for multi-tenancy', { userId: userId.substring(0, 8) + '...' });
+      } else {
+        log.debug('Storing new record without userId (backwards compatibility)');
+      }
+
+      await resultsCol.insertOne(newRecord);
 
       log.info('Analysis results stored for deduplication', {
         recordId: record.id,
