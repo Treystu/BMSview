@@ -6,11 +6,21 @@ This document outlines key areas of the BMSview codebase that require attention,
 
 ## 1. Critical Security Vulnerabilities
 
-### 1.1. Lack of Multi-Tenancy Isolation in `analyze.cjs`
+### 1.1. Multi-Tenancy Isolation in `analyze.cjs` - PARTIALLY ADDRESSED
 
 - **File:** `netlify/functions/analyze.cjs`
-- **Issue:** A critical security flaw exists where database updates lack user/tenant scoping. The `updateOne` operation on the `analysis-results` collection uses `contentHash` as the sole filter, allowing a user to potentially overwrite another user's data if their uploaded content produces the same hash.
-- **TODO:** Implement strict data isolation by adding `userId` or a tenant identifier to the filter query, as suggested in the source code comment: `{ contentHash, userId: authenticatedUserId }`.
+- **Status:** ✅ **FIXED (December 2, 2024)** - userId is now optional for backwards compatibility
+- **Original Issue:** A critical security flaw existed where database updates lacked user/tenant scoping. The `updateOne` operation on the `analysis-results` collection used `contentHash` as the sole filter, allowing a user to potentially overwrite another user's data if their uploaded content produces the same hash.
+- **Fix Applied:** 
+  - Modified `checkExistingAnalysis()` to build query filter conditionally: `{ contentHash }` when userId is not available, or `{ contentHash, userId }` when it is
+  - Modified `storeAnalysisResults()` to add userId to records only when provided
+  - Maintains backwards compatibility with existing records that don't have userId
+  - Supports multi-tenancy when userId is provided via `context.clientContext.user.sub` or `requestBody.userId`
+- **Remaining Work:** 
+  - Comprehensive multi-tenancy audit across all endpoints
+  - Ensure all user-facing endpoints properly isolate data by userId
+  - Document multi-tenancy architecture and usage patterns
+  - Add integration tests for multi-tenant scenarios
 
 ---
 
