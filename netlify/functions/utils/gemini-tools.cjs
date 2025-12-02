@@ -54,6 +54,15 @@ const forecasting = require('./forecasting.cjs');
 const patternAnalysis = require('./pattern-analysis.cjs');
 const energyBudget = require('./energy-budget.cjs');
 
+// GitHub API integration for repository access
+let githubApi;
+try {
+  githubApi = require('./github-api.cjs');
+} catch (err) {
+  // GitHub API not available - tools will return errors gracefully
+  githubApi = null;
+}
+
 /**
  * Tool definitions for Gemini function calling
  * These describe the available functions Gemini can call
@@ -384,6 +393,126 @@ The feedback will be saved to the AI Feedback panel in the Admin Dashboard where
       },
       required: ['systemId', 'feedbackType', 'category', 'priority', 'content']
     }
+  },
+  {
+    name: 'searchGitHubIssues',
+    description: `Search existing GitHub issues in the BMSview repository. **CRITICAL: ALWAYS use this before creating or suggesting new GitHub issues** to prevent duplicates and reference related work.
+
+Usage Guidelines:
+• **Before suggesting new features or fixes**: Search for related issues first
+• **When creating GitHub issues**: Check if similar issues exist
+• **Query tips**: Use keywords from the issue title and description
+• **State filter**: Use 'all' to search both open and closed issues
+
+This tool helps you:
+- Avoid duplicate issue creation
+- Find related discussions and implementation details
+- Reference existing work in new issues
+- Understand current project priorities
+
+Example queries:
+- "solar API integration" - Find solar-related issues
+- "timeout error" - Find timeout-related bugs
+- "admin dashboard" - Find UI/UX improvements`,
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query string. Use keywords from issue title/description. Example: "solar API", "timeout fix", "admin panel"'
+        },
+        state: {
+          type: 'string',
+          enum: ['open', 'closed', 'all'],
+          default: 'all',
+          description: 'Filter by issue state. Use "all" to search both open and closed issues (recommended for duplicate detection).'
+        },
+        labels: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Filter by labels. Examples: ["ai-generated", "enhancement", "bug"]'
+        },
+        per_page: {
+          type: 'number',
+          default: 30,
+          description: 'Number of results to return (max 100, default 30)'
+        }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'getCodebaseFile',
+    description: `Fetch file contents from the BMSview repository. **USE THIS to verify implementations before making suggestions** about code changes or features.
+
+Security & Access:
+• Only allowed paths can be accessed (netlify/functions, components, services, state, hooks, utils, docs, config files)
+• Blocked paths: .env, .git, node_modules, coverage, dist
+• Files larger than 15KB are automatically truncated
+• Directory traversal attempts are blocked
+
+Usage Guidelines:
+• **Before suggesting code changes**: Fetch the file to see current implementation
+• **When proposing new features**: Check if similar functionality already exists
+• **For architecture questions**: Review relevant files (ARCHITECTURE.md, component files)
+• **Error messages**: Include actual file path in your recommendation
+
+Example paths:
+- "netlify/functions/solar-estimate.ts" - Solar integration function
+- "components/AnalysisResult.tsx" - Main results display component
+- "ARCHITECTURE.md" - System architecture documentation
+- "types.ts" - TypeScript type definitions`,
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'File path in repository (e.g., "netlify/functions/analyze.cjs", "components/UploadSection.tsx", "ARCHITECTURE.md")'
+        },
+        ref: {
+          type: 'string',
+          default: 'main',
+          description: 'Git ref (branch, tag, or commit SHA). Defaults to "main" branch.'
+        }
+      },
+      required: ['path']
+    }
+  },
+  {
+    name: 'listDirectory',
+    description: `List contents of a directory in the BMSview repository. **USE THIS to discover available files** before fetching specific files or when you need to understand directory structure.
+
+Security & Access:
+• Same security restrictions as getCodebaseFile
+• Only allowed directories can be listed
+• Directory traversal is blocked
+
+Usage Guidelines:
+• **Before fetching files**: List directory to see what files are available
+• **For component discovery**: List "components/" to see all UI components
+• **For function discovery**: List "netlify/functions/" to see all serverless functions
+• **For documentation**: List "docs/" to find relevant documentation files
+
+Example paths:
+- "netlify/functions" - List all serverless functions
+- "components" - List all React components
+- "docs" - List documentation files
+- "netlify/functions/utils" - List utility modules`,
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Directory path in repository (e.g., "netlify/functions", "components", "docs")'
+        },
+        ref: {
+          type: 'string',
+          default: 'main',
+          description: 'Git ref (branch, tag, or commit SHA). Defaults to "main" branch.'
+        }
+      },
+      required: ['path']
+    }
   }
 ];
 
@@ -439,6 +568,18 @@ async function executeToolCall(toolName, parameters, log) {
 
       case 'submitAppFeedback':
         result = await submitAppFeedback(parameters, log);
+        break;
+
+      case 'searchGitHubIssues':
+        result = await searchGitHubIssues(parameters, log);
+        break;
+
+      case 'getCodebaseFile':
+        result = await getCodebaseFile(parameters, log);
+        break;
+
+      case 'listDirectory':
+        result = await listDirectory(parameters, log);
         break;
 
       default:
@@ -1352,6 +1493,134 @@ async function submitAppFeedback(params, log) {
       systemId,
       feedbackType,
       suggestion: 'The feedback system may be temporarily unavailable. Your suggestion has been logged and can be resubmitted later.'
+    };
+  }
+}
+
+/**
+ * Search GitHub issues using the github-api module
+ */
+async function searchGitHubIssues(params, log) {
+  log.info('Searching GitHub issues', { query: params.query, state: params.state });
+
+  if (!githubApi) {
+    log.error('GitHub API module not available');
+    return {
+      error: true,
+      message: 'GitHub API module is not available. Cannot search issues.',
+      suggestion: 'This feature requires the github-api module to be properly configured.'
+    };
+  }
+
+  try {
+    const result = await githubApi.searchGitHubIssues(params, log);
+    
+    log.info('GitHub issues search completed', {
+      totalCount: result.total_count,
+      returnedCount: result.items?.length || 0
+    });
+    
+    return result;
+  } catch (error) {
+    log.error('GitHub issues search failed', {
+      error: error.message,
+      query: params.query
+    });
+    
+    return {
+      error: true,
+      message: `Failed to search GitHub issues: ${error.message}`,
+      query: params.query,
+      suggestion: error.message.includes('rate limit') 
+        ? 'GitHub API rate limit reached. Please try again later.'
+        : 'Check query syntax and ensure GITHUB_TOKEN is configured.'
+    };
+  }
+}
+
+/**
+ * Get file contents from the codebase using the github-api module
+ */
+async function getCodebaseFile(params, log) {
+  log.info('Fetching codebase file', { path: params.path, ref: params.ref });
+
+  if (!githubApi) {
+    log.error('GitHub API module not available');
+    return {
+      error: true,
+      message: 'GitHub API module is not available. Cannot fetch files.',
+      suggestion: 'This feature requires the github-api module to be properly configured.'
+    };
+  }
+
+  try {
+    const result = await githubApi.getCodebaseFile(params, log);
+    
+    log.info('File fetched successfully', {
+      path: result.path,
+      size: result.size,
+      truncated: result.truncated
+    });
+    
+    return result;
+  } catch (error) {
+    log.error('Failed to fetch file', {
+      error: error.message,
+      path: params.path
+    });
+    
+    return {
+      error: true,
+      message: `Failed to fetch file: ${error.message}`,
+      path: params.path,
+      suggestion: error.message.includes('not allowed') 
+        ? 'File path is not in the allowed list. Only specific repository paths can be accessed.'
+        : error.message.includes('not found')
+        ? 'File does not exist at the specified path. Use listDirectory to discover available files.'
+        : 'Check file path and ensure GITHUB_TOKEN is configured.'
+    };
+  }
+}
+
+/**
+ * List directory contents using the github-api module
+ */
+async function listDirectory(params, log) {
+  log.info('Listing directory', { path: params.path, ref: params.ref });
+
+  if (!githubApi) {
+    log.error('GitHub API module not available');
+    return {
+      error: true,
+      message: 'GitHub API module is not available. Cannot list directories.',
+      suggestion: 'This feature requires the github-api module to be properly configured.'
+    };
+  }
+
+  try {
+    const result = await githubApi.listDirectory(params, log);
+    
+    log.info('Directory listed successfully', {
+      path: result.path,
+      itemCount: result.items?.length || 0
+    });
+    
+    return result;
+  } catch (error) {
+    log.error('Failed to list directory', {
+      error: error.message,
+      path: params.path
+    });
+    
+    return {
+      error: true,
+      message: `Failed to list directory: ${error.message}`,
+      path: params.path,
+      suggestion: error.message.includes('not allowed') 
+        ? 'Directory path is not in the allowed list. Only specific repository paths can be accessed.'
+        : error.message.includes('not found')
+        ? 'Directory does not exist at the specified path.'
+        : 'Check directory path and ensure GITHUB_TOKEN is configured.'
     };
   }
 }

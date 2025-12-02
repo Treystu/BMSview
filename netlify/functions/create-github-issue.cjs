@@ -1,18 +1,116 @@
 // @ts-nocheck
 /**
  * Create GitHub Issue Endpoint
- * Auto-generates GitHub issues from AI feedback
+ * Auto-generates GitHub issues from AI feedback with duplicate prevention
  */
 
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { retryAsync } = require('./utils/retry.cjs');
+const { searchGitHubIssues } = require('./utils/github-api.cjs');
+
+/**
+ * Search for similar issues before creating a new one
+ * @param {string} title - Issue title to search for
+ * @param {object} log - Logger instance
+ * @returns {Promise<object>} Similar issues found
+ */
+async function findSimilarIssues(title, log) {
+  log.info('Searching for similar issues', { title });
+  
+  try {
+    // Extract key terms from the title for better search
+    const searchQuery = title
+      .replace(/[🔴🟠🟡⚪🌤️🗄️🎨⚡🔌📊]/g, '') // Remove emojis
+      .trim();
+    
+    // Search both open and closed issues
+    const results = await searchGitHubIssues({
+      query: searchQuery,
+      state: 'all',
+      per_page: 10
+    }, log);
+    
+    if (results.error) {
+      log.warn('Failed to search for similar issues, will proceed with creation', {
+        error: results.message
+      });
+      return { items: [], searchFailed: true };
+    }
+    
+    log.info('Similar issues search completed', {
+      totalFound: results.total_count,
+      returnedCount: results.items?.length || 0
+    });
+    
+    return results;
+  } catch (error) {
+    log.error('Error searching for similar issues', {
+      error: error.message,
+      title
+    });
+    // Don't block issue creation if search fails
+    return { items: [], searchFailed: true, errorMessage: error.message };
+  }
+}
+
+/**
+ * Check if an issue is an exact duplicate (same title, close match)
+ * @param {string} newTitle - Title of the new issue
+ * @param {array} existingIssues - List of existing issues
+ * @returns {object} Duplicate check result
+ */
+function checkForExactDuplicate(newTitle, existingIssues) {
+  if (!existingIssues || existingIssues.length === 0) {
+    return { isDuplicate: false };
+  }
+  
+  // Normalize titles for comparison (remove emojis, lowercase, trim)
+  const normalizedNewTitle = newTitle
+    .replace(/[🔴🟠🟡⚪🌤️🗄️🎨⚡🔌📊]/g, '')
+    .toLowerCase()
+    .trim();
+  
+  for (const issue of existingIssues) {
+    const normalizedExistingTitle = issue.title
+      .replace(/[🔴🟠🟡⚪🌤️🗄️🎨⚡🔌📊]/g, '')
+      .toLowerCase()
+      .trim();
+    
+    // Check for exact match or very close match (>90% similarity)
+    if (normalizedExistingTitle === normalizedNewTitle) {
+      return {
+        isDuplicate: true,
+        duplicateIssue: issue,
+        reason: 'Exact title match'
+      };
+    }
+    
+    // Check for high similarity (simple word-based comparison)
+    const newWords = new Set(normalizedNewTitle.split(/\s+/));
+    const existingWords = new Set(normalizedExistingTitle.split(/\s+/));
+    const commonWords = [...newWords].filter(word => existingWords.has(word));
+    const similarity = commonWords.length / Math.max(newWords.size, existingWords.size);
+    
+    if (similarity > 0.9 && issue.state === 'open') {
+      return {
+        isDuplicate: true,
+        duplicateIssue: issue,
+        reason: `${Math.round(similarity * 100)}% title similarity with open issue`
+      };
+    }
+  }
+  
+  return { isDuplicate: false };
+}
 
 /**
  * Format feedback as GitHub issue
+ * @param {object} feedback - Feedback data
+ * @param {object} [similarIssues] - Similar issues found during search
  */
-function formatGitHubIssue(feedback) {
+function formatGitHubIssue(feedback, similarIssues = null) {
   const priorityEmoji = {
     critical: '🔴',
     high: '🟠',
@@ -74,10 +172,25 @@ ${feedback.suggestion.codeSnippets.join('\n\n')}
 \`\`\`
 ` : ''}
 
+${similarIssues && similarIssues.items && similarIssues.items.length > 0 ? `
+---
+
+### Related Issues
+
+The AI identified these potentially related issues:
+
+${similarIssues.items.slice(0, 5).map(issue => 
+  `- ${issue.state === 'open' ? '🟢' : '🔴'} #${issue.number}: [${issue.title}](${issue.html_url})`
+).join('\n')}
+
+${similarIssues.items.length > 5 ? `\n*...and ${similarIssues.items.length - 5} more*` : ''}
+` : ''}
+
 ---
 
 *This issue was automatically generated from AI feedback on ${new Date(feedback.timestamp).toLocaleDateString()}*  
 *Feedback ID: ${feedback.id}*
+${similarIssues && similarIssues.searchFailed ? '\n*Note: Similar issues search was not performed due to an error.*' : ''}
 `;
 
   const labels = [
@@ -271,8 +384,59 @@ exports.handler = async (event, context) => {
       priority: feedbackData.priority
     });
     
-    // Format issue
-    const issueData = formatGitHubIssue(feedbackData);
+    // Search for similar issues first (duplicate prevention)
+    const similarIssues = await findSimilarIssues(
+      feedbackData.suggestion?.title || 'AI Feedback',
+      log
+    );
+    
+    // Check for exact duplicates
+    const duplicateCheck = checkForExactDuplicate(
+      feedbackData.suggestion?.title || 'AI Feedback',
+      similarIssues.items
+    );
+    
+    if (duplicateCheck.isDuplicate) {
+      log.warn('Duplicate issue detected', {
+        feedbackId: feedbackData.id,
+        duplicateIssueNumber: duplicateCheck.duplicateIssue.number,
+        reason: duplicateCheck.reason
+      });
+      
+      // Return conflict status with duplicate information
+      return {
+        statusCode: 409,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          error: 'Duplicate issue detected',
+          reason: duplicateCheck.reason,
+          duplicateIssue: {
+            number: duplicateCheck.duplicateIssue.number,
+            title: duplicateCheck.duplicateIssue.title,
+            url: duplicateCheck.duplicateIssue.html_url,
+            state: duplicateCheck.duplicateIssue.state
+          },
+          suggestion: 'Review the existing issue instead of creating a duplicate. Manual override may be possible through the admin interface.',
+          feedbackId: feedbackData.id
+        })
+      };
+    }
+    
+    // Log similar issues found (audit trail)
+    if (similarIssues.items && similarIssues.items.length > 0) {
+      log.info('Similar issues found during duplicate check', {
+        feedbackId: feedbackData.id,
+        similarCount: similarIssues.items.length,
+        similarIssues: similarIssues.items.slice(0, 3).map(i => ({
+          number: i.number,
+          title: i.title,
+          state: i.state
+        }))
+      });
+    }
+    
+    // Format issue with similar issues included in body
+    const issueData = formatGitHubIssue(feedbackData, similarIssues);
     
     // Create GitHub issue
     const githubIssue = await createGitHubIssueAPI(issueData, log);
@@ -310,7 +474,9 @@ exports.handler = async (event, context) => {
         success: true,
         issueNumber: githubIssue.number,
         issueUrl: githubIssue.html_url,
-        feedbackId: feedbackData.id
+        feedbackId: feedbackData.id,
+        similarIssuesFound: similarIssues.items?.length || 0,
+        duplicateCheckPerformed: !similarIssues.searchFailed
       })
     };
   } catch (error) {
@@ -331,3 +497,5 @@ exports.handler = async (event, context) => {
 // Export for testing
 module.exports.formatGitHubIssue = formatGitHubIssue;
 module.exports.createGitHubIssueAPI = createGitHubIssueAPI;
+module.exports.findSimilarIssues = findSimilarIssues;
+module.exports.checkForExactDuplicate = checkForExactDuplicate;
