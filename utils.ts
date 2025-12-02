@@ -25,7 +25,8 @@ export const getIsActualError = (result: DisplayableAnalysisResult): boolean => 
         'saving',
         'queued',
         'submitted',
-        'processing'
+        'processing',
+        'checking'
     ];
     
     return !pendingStates.some(state => lowerError.includes(state));
