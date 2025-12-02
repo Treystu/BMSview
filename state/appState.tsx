@@ -61,6 +61,8 @@ export interface AppState {
     error?: string;
     resumeJobId?: string;
   }>;
+  // Selected insight generation mode
+  selectedInsightMode: InsightMode;
 }
 
 export const initialState: AppState = {
