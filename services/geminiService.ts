@@ -241,9 +241,15 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
  * Check if a file is a duplicate without performing full analysis.
  * This is a lightweight check using the backend's content hash detection.
  * @param file - The file to check
- * @returns Promise with isDuplicate flag and optional recordId/timestamp of existing record
+ * @returns Promise with isDuplicate flag, needsUpgrade flag, and optional recordId/timestamp/analysisData of existing record
  */
-export const checkFileDuplicate = async (file: File): Promise<{ isDuplicate: boolean; recordId?: string; timestamp?: string }> => {
+export const checkFileDuplicate = async (file: File): Promise<{ 
+    isDuplicate: boolean; 
+    needsUpgrade: boolean; 
+    recordId?: string; 
+    timestamp?: string;
+    analysisData?: any;
+}> => {
     const checkContext = { fileName: file.name, fileSize: file.size };
     log('info', 'Checking file for duplicates.', checkContext);
 
@@ -278,17 +284,29 @@ export const checkFileDuplicate = async (file: File): Promise<{ isDuplicate: boo
                 // Unexpected error - log as warning
                 log('warn', 'Duplicate check endpoint returned error, assuming not duplicate.', { status: response.status });
             }
-            return { isDuplicate: false };
+            return { isDuplicate: false, needsUpgrade: false };
         }
 
-        const result: { isDuplicate?: boolean; recordId?: string; timestamp?: string } = await response.json();
+        const result: { 
+            isDuplicate?: boolean; 
+            needsUpgrade?: boolean;
+            recordId?: string; 
+            timestamp?: string;
+            analysisData?: any;
+        } = await response.json();
         
-        log('info', 'Duplicate check complete.', { fileName: file.name, isDuplicate: !!result.isDuplicate });
+        log('info', 'Duplicate check complete.', { 
+            fileName: file.name, 
+            isDuplicate: !!result.isDuplicate,
+            needsUpgrade: !!result.needsUpgrade
+        });
         
         return {
             isDuplicate: result.isDuplicate || false,
+            needsUpgrade: result.needsUpgrade || false,
             recordId: result.recordId,
-            timestamp: result.timestamp
+            timestamp: result.timestamp,
+            analysisData: result.analysisData
         };
 
     } catch (error) {
@@ -300,6 +318,6 @@ export const checkFileDuplicate = async (file: File): Promise<{ isDuplicate: boo
             error: errorMessage,
             isTimeout 
         });
-        return { isDuplicate: false };
+        return { isDuplicate: false, needsUpgrade: false };
     }
 };

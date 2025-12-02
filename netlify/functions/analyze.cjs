@@ -263,16 +263,21 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
     if (checkOnly) {
       try {
         const existingAnalysis = await checkExistingAnalysis(contentHash, log);
-        const isDuplicate = !!existingAnalysis && !existingAnalysis._isUpgrade;
+        
+        // Distinguish between true duplicates and upgrades needed
+        const isDuplicate = !!existingAnalysis;
+        const needsUpgrade = existingAnalysis?._isUpgrade || false;
         
         const checkResponse = {
           isDuplicate,
+          needsUpgrade,
           recordId: existingAnalysis?.id || existingAnalysis?._id,
-          timestamp: existingAnalysis?.timestamp
+          timestamp: existingAnalysis?.timestamp,
+          analysisData: !needsUpgrade && existingAnalysis ? existingAnalysis.analysis : null
         };
 
-        const durationMs = timer.end({ checkOnly: true, isDuplicate });
-        log.info('Check-only request complete', { isDuplicate, durationMs });
+        const durationMs = timer.end({ checkOnly: true, isDuplicate, needsUpgrade });
+        log.info('Check-only request complete', { isDuplicate, needsUpgrade, durationMs });
         log.exit(200);
         
         return {
@@ -285,7 +290,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
         return {
           statusCode: 200,
           headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ isDuplicate: false })
+          body: JSON.stringify({ isDuplicate: false, needsUpgrade: false })
         };
       }
     }

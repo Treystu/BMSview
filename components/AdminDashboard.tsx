@@ -24,7 +24,8 @@ import {
     streamAllHistory,
     updateBmsSystem
 } from '../services/clientService';
-import { analyzeBmsScreenshot, checkFileDuplicate } from '../services/geminiService';
+import { analyzeBmsScreenshot } from '../services/geminiService';
+import { checkFilesForDuplicates } from '../utils/duplicateChecker';
 import { useAdminState } from '../state/adminState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
 import BulkUpload from './BulkUpload';
@@ -220,33 +221,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults });
 
         try {
-            // ***PHASE 1: Check ALL files for duplicates upfront***
-            log('info', 'Phase 1: Checking all files for duplicates upfront.', { fileCount: files.length });
+            // ***PHASE 1: Check ALL files for duplicates upfront - categorize into three groups***
+            const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(files, log);
             
-            const duplicateCheckResults = await Promise.all(
-                files.map(async (file) => {
-                    try {
-                        const result = await checkFileDuplicate(file);
-                        return { file, ...result };
-                    } catch (err) {
-                        log('warn', 'Duplicate check failed for file, will analyze anyway.', { fileName: file.name });
-                        return { file, isDuplicate: false };
-                    }
-                })
-            );
-
-            // Separate duplicates from files to analyze
-            const duplicates = duplicateCheckResults.filter(r => r.isDuplicate);
-            const filesToAnalyze = duplicateCheckResults.filter(r => !r.isDuplicate);
-
-            log('info', 'Duplicate check complete.', { 
-                totalFiles: files.length,
-                duplicates: duplicates.length,
-                toAnalyze: filesToAnalyze.length
-            });
-
-            // Mark all duplicates as skipped immediately
-            for (const dup of duplicates) {
+            // Mark true duplicates as skipped immediately (don't analyze these at all)
+            for (const dup of trueDuplicates) {
                 dispatch({
                     type: 'UPDATE_BULK_JOB_SKIPPED',
                     payload: { 
@@ -256,20 +235,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 });
             }
 
-            // Update remaining files to "Queued" status
-            for (const item of filesToAnalyze) {
+            // Update files that need upgrade to "Queued (needs upgrade)" status
+            for (const item of needsUpgrade) {
+                dispatch({ 
+                    type: 'UPDATE_BULK_UPLOAD_RESULT', 
+                    payload: { fileName: item.file.name, error: 'Queued (upgrading)' } 
+                });
+            }
+
+            // Update new files to "Queued" status
+            for (const item of newFiles) {
                 dispatch({ 
                     type: 'UPDATE_BULK_UPLOAD_RESULT', 
                     payload: { fileName: item.file.name, error: 'Queued' } 
                 });
             }
 
-            // ***PHASE 2: Analyze non-duplicate files***
-            log('info', 'Phase 2: Starting analysis of non-duplicate files.', { count: filesToAnalyze.length });
+            // ***PHASE 2: Analyze only upgrades and new files (true duplicates already handled)***
+            const filesToAnalyze = [...needsUpgrade, ...newFiles];
+            log('info', 'Phase 2: Starting analysis of non-duplicate files.', { 
+                count: filesToAnalyze.length,
+                upgrades: needsUpgrade.length,
+                new: newFiles.length
+            });
+            
+            let consecutiveRateLimitErrors = 0; // Track consecutive 429 errors across all files
             
             for (const item of filesToAnalyze) {
                 const file = item.file;
-                let retryCount = 0; // Move inside loop for per-file retry tracking
                 try {
                     // 1. Mark this specific file as "Processing"
                     dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: 'Processing' } });
@@ -292,18 +285,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         type: 'UPDATE_BULK_JOB_COMPLETED',
                         payload: { record: tempRecord, fileName: file.name }
                     });
+                    
+                    // Reset consecutive rate limit counter on success
+                    consecutiveRateLimitErrors = 0;
+                    
                 } catch (err) {
                     // 4. Handle error for this specific file
                     const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
                     log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
 
-                    // ***ISSUE 5 FIX: Add exponential backoff for rate limit errors***
+                    // ***ISSUE 5 FIX: Add exponential backoff for rate limit errors with max retry limit***
                     if (errorMessage.includes('429')) {
                         setShowRateLimitWarning(true);
-                        retryCount++;
+                        consecutiveRateLimitErrors++;
                         
                         // Stop processing after too many consecutive 429 errors
-                        if (retryCount >= 5) {
+                        if (consecutiveRateLimitErrors >= 5) {
                             log('error', 'Too many consecutive rate limit errors, stopping batch.', { 
                                 filesRemaining: filesToAnalyze.length,
                                 fileName: file.name 
@@ -315,13 +312,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             break; // Stop processing remaining files
                         }
                         
-                        const backoffMs = Math.min(2000 * Math.pow(2, retryCount - 1), 30000); // Max 30 seconds
+                        const backoffMs = Math.min(2000 * Math.pow(2, consecutiveRateLimitErrors - 1), 30000); // Max 30 seconds
                         log('warn', 'Rate limit detected, applying exponential backoff.', { 
-                            retryCount, 
+                            consecutiveErrors: consecutiveRateLimitErrors, 
                             backoffMs,
                             fileName: file.name 
                         });
                         await new Promise(resolve => setTimeout(resolve, backoffMs));
+                    } else {
+                        // Reset counter for non-429 errors
+                        consecutiveRateLimitErrors = 0;
                     }
 
                     dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: `Failed: ${errorMessage}` } });
