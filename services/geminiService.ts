@@ -236,3 +236,70 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
         throw new Error(errorMessage);
     }
 };
+
+/**
+ * Check if a file is a duplicate without performing full analysis.
+ * This is a lightweight check using the backend's content hash detection.
+ * @param file - The file to check
+ * @returns Promise with isDuplicate flag and optional recordId/timestamp of existing record
+ */
+export const checkFileDuplicate = async (file: File): Promise<{ isDuplicate: boolean; recordId?: string; timestamp?: string }> => {
+    const checkContext = { fileName: file.name, fileSize: file.size };
+    log('info', 'Checking file for duplicates.', checkContext);
+
+    try {
+        const imagePayload = await fileWithMetadataToBase64(file);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            log('warn', 'Duplicate check timed out after 10 seconds.', { fileName: file.name });
+            controller.abort();
+        }, 10000); // Shorter timeout for duplicate check
+
+        const dataToSend = {
+            image: imagePayload
+        };
+
+        const response = await fetch('/.netlify/functions/analyze?sync=true&check=true', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dataToSend),
+            signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            // Differentiate between expected and unexpected failures
+            if (response.status === 404 || response.status === 501) {
+                // Endpoint not implemented - expected, fall back gracefully
+                log('info', 'Duplicate check endpoint not available, will perform full analysis.', { status: response.status });
+            } else {
+                // Unexpected error - log as warning
+                log('warn', 'Duplicate check endpoint returned error, assuming not duplicate.', { status: response.status });
+            }
+            return { isDuplicate: false };
+        }
+
+        const result: { isDuplicate?: boolean; recordId?: string; timestamp?: string } = await response.json();
+        
+        log('info', 'Duplicate check complete.', { fileName: file.name, isDuplicate: !!result.isDuplicate });
+        
+        return {
+            isDuplicate: result.isDuplicate || false,
+            recordId: result.recordId,
+            timestamp: result.timestamp
+        };
+
+    } catch (error) {
+        // Detect timeout errors specifically
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const isTimeout = error instanceof Error && error.name === 'AbortError';
+        log('warn', 'Duplicate check failed, assuming not duplicate.', { 
+            ...checkContext, 
+            error: errorMessage,
+            isTimeout 
+        });
+        return { isDuplicate: false };
+    }
+};
