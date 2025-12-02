@@ -1,5 +1,6 @@
 // Simple service worker to cache app shell and static assets.
-const CACHE_NAME = 'bmsview-shell-v2';
+// Cache version updated to force invalidation on new deployments
+const CACHE_NAME = 'bmsview-shell-v3-' + new Date().toISOString().split('T')[0]; // v3 with date stamp
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
