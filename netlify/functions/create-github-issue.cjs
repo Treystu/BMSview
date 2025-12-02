@@ -11,6 +11,11 @@ const { retryAsync } = require('./utils/retry.cjs');
 const { searchGitHubIssues } = require('./utils/github-api.cjs');
 
 /**
+ * Emoji pattern used throughout for normalization
+ */
+const EMOJI_PATTERN = /[🔴🟠🟡⚪🌤️🗄️🎨⚡🔌📊]/g;
+
+/**
  * Search for similar issues before creating a new one
  * @param {string} title - Issue title to search for
  * @param {object} log - Logger instance
@@ -22,7 +27,7 @@ async function findSimilarIssues(title, log) {
   try {
     // Extract key terms from the title for better search
     const searchQuery = title
-      .replace(/[🔴🟠🟡⚪🌤️🗄️🎨⚡🔌📊]/g, '') // Remove emojis
+      .replace(EMOJI_PATTERN, '') // Remove emojis
       .trim();
     
     // Search both open and closed issues
@@ -68,13 +73,13 @@ function checkForExactDuplicate(newTitle, existingIssues) {
   
   // Normalize titles for comparison (remove emojis, lowercase, trim)
   const normalizedNewTitle = newTitle
-    .replace(/[🔴🟠🟡⚪🌤️🗄️🎨⚡🔌📊]/g, '')
+    .replace(EMOJI_PATTERN, '')
     .toLowerCase()
     .trim();
   
   for (const issue of existingIssues) {
     const normalizedExistingTitle = issue.title
-      .replace(/[🔴🟠🟡⚪🌤️🗄️🎨⚡🔌📊]/g, '')
+      .replace(EMOJI_PATTERN, '')
       .toLowerCase()
       .trim();
     
@@ -87,12 +92,23 @@ function checkForExactDuplicate(newTitle, existingIssues) {
       };
     }
     
+    // Skip comparison if either title is empty after normalization
+    if (!normalizedNewTitle || !normalizedExistingTitle) {
+      continue;
+    }
+    
     // Check for high similarity (simple word-based comparison)
     const newWords = new Set(normalizedNewTitle.split(/\s+/));
     const existingWords = new Set(normalizedExistingTitle.split(/\s+/));
     const commonWords = [...newWords].filter(word => existingWords.has(word));
     // Use union size for balanced similarity (Jaccard index)
     const unionSize = newWords.size + existingWords.size - commonWords.length;
+    
+    // Skip if there are no words to compare (prevents division by zero)
+    if (unionSize === 0) {
+      continue;
+    }
+    
     const similarity = commonWords.length / unionSize;
     
     if (similarity > 0.9 && issue.state === 'open') {

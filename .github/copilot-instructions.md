@@ -187,7 +187,7 @@ The insights generation (`react-loop.cjs`) handles circuit breaker errors by:
 - **Daily Net Balance**: Detailed calculations show generator runtime recommendations (max charging amps ÷ Ah deficit)
 - **Smart Recommendations**: Solar issues only flagged when variance exceeds tolerance AND weather conditions were favorable (correlate with cloud %, irradiance)
 
-### 7. GitHub Integration & Codebase Access Tools (Dec 2025)
+### 7. GitHub Integration & Codebase Access Tools (Dec 2024)
 **Gemini can now verify implementations and prevent duplicate issues** using three new tools:
 
 #### `searchGitHubIssues` - Duplicate Prevention

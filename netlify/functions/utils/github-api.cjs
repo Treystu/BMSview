@@ -11,7 +11,7 @@
  * - Comprehensive error handling
  */
 
-const { createLogger } = require('./logger.cjs');
+const path = require('path');
 
 /**
  * Allowed paths for file access (security allowlist)
@@ -83,41 +83,65 @@ function validateToken(token, log) {
  * @returns {string} Sanitized path
  * @throws {Error} If path is invalid or blocked
  */
-function validatePath(path, log) {
-  if (!path || typeof path !== 'string') {
+function validatePath(inputPath, log) {
+  if (!inputPath || typeof inputPath !== 'string') {
     throw new Error('Path must be a non-empty string');
   }
 
-  // Remove leading/trailing slashes and normalize
-  const normalizedPath = path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+  // Decode URL-encoded characters to prevent bypass
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(inputPath);
+  } catch (e) {
+    throw new Error('Invalid URL-encoded path');
+  }
 
-  // Check for directory traversal attempts
-  if (normalizedPath.includes('..') || normalizedPath.includes('./')) {
-    log.warn('Directory traversal attempt blocked', { path, normalizedPath });
+  // Check for directory traversal attempts BEFORE normalization
+  if (decodedPath.includes('./')) {
+    log.warn('Directory traversal attempt blocked', { path: inputPath, decodedPath });
     throw new Error('Directory traversal is not allowed');
   }
 
-  // Check against blocked paths
-  for (const blocked of BLOCKED_PATHS) {
-    if (normalizedPath === blocked || normalizedPath.startsWith(blocked + '/')) {
-      log.warn('Blocked path access attempt', { path: normalizedPath, blocked });
+  // Remove leading/trailing slashes and normalize
+  const normalizedPath = decodedPath.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+
+  // Use path.posix.normalize to handle .. properly
+  const resolvedPath = path.posix.normalize(normalizedPath);
+
+  // Check for directory traversal attempts (after normalization)
+  if (resolvedPath.includes('..')) {
+    log.warn('Directory traversal attempt blocked', { path: inputPath, normalizedPath, resolvedPath });
+    throw new Error('Directory traversal is not allowed');
+  }
+
+  // Split path into parts for segment-level checking
+  const parts = resolvedPath.split('/');
+
+  // Check against blocked paths (check each segment)
+  // Sort blocked paths by length (descending) to check more specific patterns first
+  const sortedBlockedPaths = [...BLOCKED_PATHS].sort((a, b) => b.length - a.length);
+  
+  for (const blocked of sortedBlockedPaths) {
+    // Check if any path segment matches a blocked name
+    if (parts.some(p => p === blocked || p.startsWith(blocked + '.'))) {
+      log.warn('Blocked path access attempt', { path: resolvedPath, blocked });
       throw new Error(`Access to '${blocked}' is not allowed`);
     }
   }
 
   // Check against allowed paths
   const isAllowed = ALLOWED_PATHS.some(allowed => 
-    normalizedPath === allowed || 
-    normalizedPath.startsWith(allowed + '/')
+    resolvedPath === allowed || 
+    resolvedPath.startsWith(allowed + '/')
   );
 
   if (!isAllowed) {
-    log.warn('Path not in allowlist', { path: normalizedPath, allowed: ALLOWED_PATHS });
-    throw new Error(`Access to '${normalizedPath}' is not allowed. Only specific repository paths can be accessed.`);
+    log.warn('Path not in allowlist', { path: resolvedPath, allowed: ALLOWED_PATHS });
+    throw new Error(`Access to '${resolvedPath}' is not allowed. Only specific repository paths can be accessed.`);
   }
 
-  log.debug('Path validated successfully', { path: normalizedPath });
-  return normalizedPath;
+  log.debug('Path validated successfully', { path: resolvedPath });
+  return resolvedPath;
 }
 
 /**
@@ -148,10 +172,12 @@ async function searchGitHubIssues(params, log) {
     searchQuery += ` state:${state}`;
   }
 
-  // Add label filters
+  // Add label filters (sanitize to prevent query injection)
   if (labels && labels.length > 0) {
     labels.forEach(label => {
-      searchQuery += ` label:"${label}"`;
+      // Escape double quotes in label to prevent breaking the search query
+      const sanitizedLabel = label.replace(/"/g, '\\"');
+      searchQuery += ` label:"${sanitizedLabel}"`;
     });
   }
 
@@ -179,7 +205,7 @@ async function searchGitHubIssues(params, log) {
       }
     });
 
-    // Handle rate limiting
+    // Handle rate limiting and other 403 errors
     if (response.status === 403) {
       const rateLimitRemaining = response.headers.get('X-RateLimit-Remaining');
       const rateLimitReset = response.headers.get('X-RateLimit-Reset');
@@ -190,6 +216,13 @@ async function searchGitHubIssues(params, log) {
           resetAt: resetDate.toISOString()
         });
         throw new Error(`GitHub API rate limit exceeded. Resets at ${resetDate.toLocaleString()}`);
+      } else {
+        log.warn('GitHub API returned 403 Forbidden (not rate limit)', {
+          rateLimitRemaining,
+          status: response.status,
+          statusText: response.statusText
+        });
+        // Fall through to generic error handling below
       }
     }
 

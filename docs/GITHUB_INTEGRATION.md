@@ -7,7 +7,7 @@ The AI Feedback System now includes GitHub repository integration, enabling Gemi
 2. Verify code implementations before making suggestions
 3. Discover repository structure and files
 
-This enhancement addresses Issue #[TBD]: "Enhance AI Feedback System: GitHub Issue Search, Duplicate Prevention, and Codebase Context for Gemini"
+This enhancement addresses Issue #268: "Enhance AI Feedback System: GitHub Issue Search, Duplicate Prevention, and Codebase Context for Gemini"
 
 ## Features
 

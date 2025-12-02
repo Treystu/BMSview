@@ -8,7 +8,7 @@ Successfully implemented comprehensive GitHub integration for the BMSview AI Fee
 - Discover repository structure and files
 - Create better, more accurate feedback and GitHub issues
 
-**Issue:** #[TBD] - Enhance AI Feedback System: GitHub Issue Search, Duplicate Prevention, and Codebase Context for Gemini
+**Issue:** #268 - Enhance AI Feedback System: GitHub Issue Search, Duplicate Prevention, and Codebase Context for Gemini
 
 **Status:** ✅ **COMPLETE**
 

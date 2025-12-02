@@ -191,4 +191,4 @@ Before deploying to production:
 
 **Last Updated:** 2024-12-02  
 **Feature:** GitHub Integration for AI Feedback System  
-**Issue:** #[TBD]
+**Issue:** #268
