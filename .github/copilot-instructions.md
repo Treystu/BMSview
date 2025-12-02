@@ -187,6 +187,94 @@ The insights generation (`react-loop.cjs`) handles circuit breaker errors by:
 - **Daily Net Balance**: Detailed calculations show generator runtime recommendations (max charging amps ÷ Ah deficit)
 - **Smart Recommendations**: Solar issues only flagged when variance exceeds tolerance AND weather conditions were favorable (correlate with cloud %, irradiance)
 
+### 7. GitHub Integration & Codebase Access Tools (Dec 2024)
+**Gemini can now verify implementations and prevent duplicate issues** using three new tools:
+
+#### `searchGitHubIssues` - Duplicate Prevention
+- **Purpose**: Search existing GitHub issues before creating new ones
+- **Usage**: ALWAYS call this before creating or suggesting GitHub issues
+- **Parameters**: 
+  - `query` (required): Search keywords (e.g., "solar API", "timeout fix")
+  - `state`: 'open', 'closed', or 'all' (default: 'all' for duplicate detection)
+  - `labels`: Filter by labels (e.g., ["ai-generated", "bug"])
+- **Security**: Requires `GITHUB_TOKEN` environment variable
+- **Returns**: List of matching issues with titles, states, URLs, and preview text
+- **Example**:
+  ```javascript
+  searchGitHubIssues({
+    query: "solar API integration",
+    state: "all",
+    per_page: 10
+  })
+  ```
+
+#### `getCodebaseFile` - Implementation Verification
+- **Purpose**: Fetch file contents to verify current implementation before suggestions
+- **Usage**: Use this to check if proposed changes match reality
+- **Parameters**:
+  - `path` (required): File path (e.g., "netlify/functions/solar-estimate.ts")
+  - `ref`: Git branch/tag/commit (default: "main")
+- **Security**:
+  - Path allowlist: Only specific directories accessible (netlify/functions, components, services, state, hooks, utils, docs, config files)
+  - Blocked: .env, .git, node_modules, coverage, dist, .netlify
+  - Directory traversal protection (blocks ".." and "./")
+  - File size limit: 15KB (auto-truncated with warning)
+- **Returns**: File content, size, SHA, and URL
+- **Example**:
+  ```javascript
+  getCodebaseFile({
+    path: "netlify/functions/utils/gemini-tools.cjs"
+  })
+  ```
+
+#### `listDirectory` - File Discovery
+- **Purpose**: Discover files in a directory before fetching
+- **Usage**: Use when you need to understand directory structure
+- **Parameters**:
+  - `path` (required): Directory path (e.g., "netlify/functions", "components")
+  - `ref`: Git branch/tag/commit (default: "main")
+- **Security**: Same restrictions as `getCodebaseFile`
+- **Returns**: Array of files/directories with names, types, sizes, SHAs, URLs
+- **Example**:
+  ```javascript
+  listDirectory({
+    path: "netlify/functions/utils"
+  })
+  ```
+
+#### Workflow for AI-Generated Issues
+**CRITICAL: Always follow this workflow before creating GitHub issues:**
+
+1. **Search for duplicates** (required):
+   ```javascript
+   const existing = searchGitHubIssues({ query: "feature title keywords", state: "all" });
+   ```
+
+2. **Verify implementation** (when suggesting code changes):
+   ```javascript
+   const currentCode = getCodebaseFile({ path: "affected/file/path.ts" });
+   // OR
+   const files = listDirectory({ path: "affected/directory" });
+   ```
+
+3. **Create issue** (only if no duplicate found):
+   - Reference similar issues in the issue body
+   - Include verification results (what you found in the code)
+   - Provide accurate, code-aware recommendations
+
+**Duplicate Prevention Logic:**
+- Exact title matches → Blocked (409 Conflict)
+- >90% similarity with open issues → Blocked
+- Similar closed issues → Allowed, but referenced
+- Failed search → Allowed with warning note
+
+**Audit Trail:**
+All searches and file accesses are logged with:
+- Query/path attempted
+- Results found (count, titles, states)
+- Security validations performed
+- Duplicate check outcomes
+
 ## Environment Variables
 
 ### Required
