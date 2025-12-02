@@ -166,31 +166,141 @@ exports.handler = async function (event, context) {
 
         log('debug', 'Calculated performance baseline.', { ...requestLogContext, baselineHoursWithData: sunnyDayChargingAmpsByHour.length });
 
-        // --- Recurring Alert Analysis with Duplicate Detection ---
-        const alertCountsMap = new Map();
-        let totalAlerts = 0;
+        // --- Recurring Alert Analysis (Duration-Based) ---
+
+        // 1. Sort Records by timestamp ascending to ensure correct event tracking
+        systemHistory.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+        // 2. Normalization Helper
+        const normalizeAlert = (alert) => {
+            if (!alert) return 'Unknown Alert';
+            return alert
+                .replace(/:\s*\d+(\.\d+)?\s*(mV|°C|%|A|V)$/i, '') // Strip value with unit at the end
+                .replace(/:\s*\d+$/i, '') // Strip raw numbers at end
+                .trim();
+        };
+
+        // 3. Event Loop
+        const activeEvents = new Map(); // Key -> { startTime, lastTime }
+        const finishedEvents = []; // { alert, startTime, endTime, durationMinutes }
+        const GAP_THRESHOLD_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+        let lastRecordTime = 0;
 
         systemHistory.forEach(record => {
+            const currentTime = new Date(record.timestamp).getTime();
+
+            // Check for time gap
+            if (lastRecordTime > 0 && (currentTime - lastRecordTime > GAP_THRESHOLD_MS)) {
+                // Close all active events due to gap
+                for (const [alert, data] of activeEvents.entries()) {
+                    const durationMs = data.lastTime - data.startTime;
+                    // For single points or very short events, we count them but duration might be 0
+                    const durationMinutes = Math.max(0, durationMs / 60000);
+                    finishedEvents.push({
+                        alert,
+                        startTime: new Date(data.startTime).toISOString(),
+                        endTime: new Date(data.lastTime).toISOString(),
+                        durationMinutes
+                    });
+                }
+                activeEvents.clear();
+            }
+            lastRecordTime = currentTime;
+
+            const currentAlerts = new Set();
             if (record.analysis.alerts && Array.isArray(record.analysis.alerts)) {
-                // Deduplicate alerts within each record to avoid counting the same alert multiple times
-                const uniqueAlertsInRecord = new Set(record.analysis.alerts);
-                uniqueAlertsInRecord.forEach(alert => {
-                    alertCountsMap.set(alert, (alertCountsMap.get(alert) || 0) + 1);
-                    totalAlerts++;
+                record.analysis.alerts.forEach(rawAlert => {
+                    const normalized = normalizeAlert(rawAlert);
+                    currentAlerts.add(normalized);
                 });
+            }
+
+            // Process current alerts
+            currentAlerts.forEach(alert => {
+                if (activeEvents.has(alert)) {
+                    // Update existing event
+                    const event = activeEvents.get(alert);
+                    event.lastTime = currentTime;
+                } else {
+                    // Start new event
+                    activeEvents.set(alert, { startTime: currentTime, lastTime: currentTime });
+                }
+            });
+
+            // Close ended alerts (in activeEvents but not in currentAlerts)
+            for (const [alert, data] of activeEvents.entries()) {
+                if (!currentAlerts.has(alert)) {
+                    const durationMs = data.lastTime - data.startTime;
+                    const durationMinutes = Math.max(0, durationMs / 60000);
+                    finishedEvents.push({
+                        alert,
+                        startTime: new Date(data.startTime).toISOString(),
+                        endTime: new Date(data.lastTime).toISOString(),
+                        durationMinutes
+                    });
+                    activeEvents.delete(alert);
+                }
             }
         });
 
-        const alertCounts = Array.from(alertCountsMap.entries())
-            .map(([alert, count]) => ({ alert, count }))
-            .sort((a, b) => b.count - a.count);
+        // Close any remaining active events at the end of history
+        for (const [alert, data] of activeEvents.entries()) {
+            const durationMs = data.lastTime - data.startTime;
+            const durationMinutes = Math.max(0, durationMs / 60000);
+            finishedEvents.push({
+                alert,
+                startTime: new Date(data.startTime).toISOString(),
+                endTime: new Date(data.lastTime).toISOString(),
+                durationMinutes
+            });
+        }
 
-        log('debug', 'Calculated alert analysis with deduplication.', { ...requestLogContext, uniqueAlerts: alertCounts.length, totalAlerts });
+        // 4. Aggregation
+        const alertStatsMap = new Map(); // Alert -> { count, totalDuration, firstSeen, lastSeen }
+
+        finishedEvents.forEach(event => {
+            if (!alertStatsMap.has(event.alert)) {
+                alertStatsMap.set(event.alert, {
+                    alert: event.alert,
+                    count: 0,
+                    totalDurationMinutes: 0,
+                    firstSeen: event.startTime,
+                    lastSeen: event.endTime
+                });
+            }
+            const stats = alertStatsMap.get(event.alert);
+            stats.count++;
+            stats.totalDurationMinutes += event.durationMinutes;
+
+            // Update first/last seen
+            if (new Date(event.startTime) < new Date(stats.firstSeen)) stats.firstSeen = event.startTime;
+            if (new Date(event.endTime) > new Date(stats.lastSeen)) stats.lastSeen = event.endTime;
+        });
+
+        const alertAnalysisEvents = Array.from(alertStatsMap.values()).map(stats => ({
+            ...stats,
+            avgDurationMinutes: stats.count > 0 ? stats.totalDurationMinutes / stats.count : 0
+        })).sort((a, b) => b.totalDurationMinutes - a.totalDurationMinutes); // Sort by duration desc
+
+        const totalEvents = alertAnalysisEvents.reduce((sum, item) => sum + item.count, 0);
+        const totalDurationMinutes = alertAnalysisEvents.reduce((sum, item) => sum + item.totalDurationMinutes, 0);
+
+        log('debug', 'Calculated alert analysis with duration.', {
+            ...requestLogContext,
+            uniqueAlerts: alertAnalysisEvents.length,
+            totalEvents,
+            totalDurationMinutes
+        });
 
         const analyticsData = {
             hourlyAverages,
             performanceBaseline: { sunnyDayChargingAmpsByHour },
-            alertAnalysis: { alertCounts, totalAlerts },
+            alertAnalysis: {
+                events: alertAnalysisEvents,
+                totalEvents,
+                totalDurationMinutes
+            },
         };
 
         log.info('Successfully generated system analytics.', requestLogContext);

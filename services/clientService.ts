@@ -1875,14 +1875,19 @@ export interface PerformanceBaseline {
     }[];
 }
 
-export interface AlertCount {
-    alert: string;
-    count: number;
+export interface AlertEventStats {
+    alert: string;              // Normalized alert text
+    count: number;              // Number of distinct events
+    totalDurationMinutes: number; // Total duration of all events
+    avgDurationMinutes: number; // Average duration per event
+    firstSeen: string;          // ISO Timestamp
+    lastSeen: string;           // ISO Timestamp
 }
 
 export interface AlertAnalysis {
-    alertCounts: AlertCount[];
-    totalAlerts: number;
+    events: AlertEventStats[];
+    totalEvents: number;
+    totalDurationMinutes: number;
 }
 
 export interface SystemAnalytics {
