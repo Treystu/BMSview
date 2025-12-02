@@ -33,8 +33,8 @@ const { handleStoryModeAnalysis } = require('./utils/story-mode.cjs');
 
 /**
  * Validate that required environment variables are set
- * @param {Object} log - Logger instance
- * @returns {Object} Validation result { ok: boolean, error?: string, details?: Object }
+ * @param {any} log - Logger instance
+ * @returns {any} Validation result { ok: boolean, error?: string, details?: Object }
  */
 function validateEnvironment(log) {
   const missing = [];
@@ -118,6 +118,10 @@ function getErrorCode(error) {
   return 'analysis_failed';
 }
 
+/**
+ * @param {import('@netlify/functions').HandlerEvent} event
+ * @param {import('@netlify/functions').HandlerContext} context
+ */
 exports.handler = async (event, context) => {
   // Get CORS headers (strict mode in production, permissive in development)
   const headers = getCorsHeaders(event);
@@ -135,8 +139,10 @@ exports.handler = async (event, context) => {
   }
 
   // Logger and request-scoped context
+  /** @type {any} */
   const log = createLoggerFromEvent('analyze', event, context);
   log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+  /** @type {any} */
   const timer = createTimer(log, 'analyze');
 
   // Validate environment before processing
@@ -162,14 +168,14 @@ exports.handler = async (event, context) => {
       log.warn('Invalid JSON body for analyze request.', { error: parsed.error });
       timer.end({ error: 'invalid_json' });
       log.exit(400);
-      return errorResponse(400, 'invalid_request', parsed.error, undefined, headers);
+      return errorResponse(400, 'invalid_request', parsed.error || 'Invalid JSON', undefined, headers);
     }
 
     log.debug('Processing analysis', { isSync, forceReanalysis, checkOnly, hasIdemKey: !!idemKey });
 
     if (isSync) {
       // Synchronous analysis path with comprehensive error handling
-      const result = await handleSyncAnalysis(parsed.value, idemKey, forceReanalysis, checkOnly, headers, log, context);
+      const result = await handleSyncAnalysis(parsed.value, idemKey || '', !!forceReanalysis, !!checkOnly, headers, log, context);
       timer.end({ mode: 'sync', statusCode: result.statusCode });
       log.exit(result.statusCode);
       return result;
@@ -181,7 +187,7 @@ exports.handler = async (event, context) => {
     log.exit(result.statusCode);
     return result;
 
-  } catch (error) {
+  } catch (/** @type {any} */ error) {
     timer.end({ error: true });
     log.error('Analyze function failed.', {
       error: error && error.message ? error.message : String(error),
@@ -223,15 +229,16 @@ exports.handler = async (event, context) => {
 
 /**
  * Handles synchronous image analysis requests
- * @param {Object} requestBody - Parsed request body
+ * @param {any} requestBody - Parsed request body
  * @param {string} idemKey - Idempotency key if provided
  * @param {boolean} forceReanalysis - Whether to bypass duplicate detection
  * @param {boolean} checkOnly - Whether to only check for duplicates without full analysis
- * @param {Object} headers - Response headers
- * @param {Object} log - Logger instance
- * @param {Object} context - Lambda context
+ * @param {any} headers - Response headers
+ * @param {any} log - Logger instance
+ * @param {any} context - Lambda context
  */
 async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOnly, headers, log, context) {
+  /** @type {any} */
   const timer = createTimer(log, 'sync-analysis');
 
   // Story Mode is admin-only - requires explicit isAdmin flag
@@ -239,7 +246,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
     // Verify this is an admin request (isAdmin flag must be explicitly set)
     if (!requestBody.isAdmin) {
       log.warn('Story mode requested without admin privileges');
-      return errorResponse(403, 'forbidden', 'Story mode is only available to administrators', null, { ...headers, 'Content-Type': 'application/json' });
+      return errorResponse(403, 'forbidden', 'Story mode is only available to administrators', undefined, { ...headers, 'Content-Type': 'application/json' });
     }
     log.info('Admin story mode analysis requested');
     return await handleStoryModeAnalysis(requestBody, idemKey, forceReanalysis, headers, log, context);
@@ -253,21 +260,27 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
     if (!imageValidation.ok) {
       log.warn('Sync analyze image validation failed.', { reason: imageValidation.error });
       log.exit(400);
-      return errorResponse(400, 'invalid_image', imageValidation.error, undefined, { ...headers, 'Content-Type': 'application/json' });
+      return errorResponse(400, 'invalid_image', imageValidation.error || 'Invalid image', undefined, { ...headers, 'Content-Type': 'application/json' });
     }
 
     // Calculate content hash for deduplication
     const contentHash = sha256HexFromBase64(imagePayload.image);
+    if (!contentHash) {
+      return errorResponse(400, 'invalid_image', 'Could not generate content hash', undefined, { ...headers, 'Content-Type': 'application/json' });
+    }
+
+    // Extract userId for data isolation
+    const userId = context.clientContext?.user?.sub || requestBody.userId;
 
     // ***NEW: Check-only mode - return duplicate status without full analysis***
     if (checkOnly) {
       try {
-        const existingAnalysis = await checkExistingAnalysis(contentHash, log);
-        
+        const existingAnalysis = await checkExistingAnalysis(contentHash || '', log, userId || '');
+
         // Distinguish between true duplicates and upgrades needed
         const isDuplicate = !!existingAnalysis;
         const needsUpgrade = existingAnalysis?._isUpgrade || false;
-        
+
         const checkResponse = {
           isDuplicate,
           needsUpgrade,
@@ -279,13 +292,13 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
         const durationMs = timer.end({ checkOnly: true, isDuplicate, needsUpgrade });
         log.info('Check-only request complete', { isDuplicate, needsUpgrade, durationMs });
         log.exit(200);
-        
+
         return {
           statusCode: 200,
           headers: { ...headers, 'Content-Type': 'application/json' },
           body: JSON.stringify(checkResponse)
         };
-      } catch (checkError) {
+      } catch (/** @type {any} */ checkError) {
         log.warn('Check-only request failed', { error: checkError.message });
         return {
           statusCode: 200,
@@ -308,7 +321,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
             body: JSON.stringify(idemResponse)
           };
         }
-      } catch (idemError) {
+      } catch (/** @type {any} */ idemError) {
         // Log but continue - idempotency is not critical
         log.warn('Idempotency check failed, continuing with analysis', {
           error: idemError.message,
@@ -321,9 +334,10 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
     let isUpgrade = !!imagePayload._isUpgrade;
     let existingRecordToUpgrade = null;
 
+
     if (!forceReanalysis) {
       try {
-        const existingAnalysis = await checkExistingAnalysis(contentHash, log);
+        const existingAnalysis = await checkExistingAnalysis(contentHash || '', log, userId || '');
 
         if (existingAnalysis) {
           // Check if checkExistingAnalysis flagged this as needing upgrade
@@ -362,7 +376,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
             };
           }
         }
-      } catch (dedupeError) {
+      } catch (/** @type {any} */ dedupeError) {
         // Log but continue - deduplication is not critical
         log.warn('Duplicate check failed, continuing with analysis', {
           error: dedupeError.message,
@@ -393,8 +407,8 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
 
     // Store results for future deduplication (best effort)
     try {
-      await storeAnalysisResults(record, contentHash, log, forceReanalysis, isUpgrade, existingRecordToUpgrade);
-    } catch (storageError) {
+      await storeAnalysisResults(record, contentHash || '', log, forceReanalysis, isUpgrade, existingRecordToUpgrade, userId);
+    } catch (/** @type {any} */ storageError) {
       // Log but don't fail - storage is not critical for immediate response
       log.warn('Failed to store analysis results for deduplication', {
         error: storageError.message,
@@ -414,7 +428,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
     try {
       const reasonCode = isUpgrade ? 'quality_upgrade' : (forceReanalysis ? 'force_reanalysis' : 'new_analysis');
       await storeIdempotentResponse(idemKey, responseBody, reasonCode);
-    } catch (idemStoreError) {
+    } catch (/** @type {any} */ idemStoreError) {
       // Log but don't fail
       log.warn('Failed to store idempotent response', { error: idemStoreError.message });
     }
@@ -426,30 +440,29 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(responseBody)
     };
-  } catch (error) {
+  } catch (/** @type {any} */ error) {
     // Let main handler deal with the error
     timer.end({ error: error.message });
     throw error;
   }
 }
 
-
 /**
  * Handles legacy asynchronous analysis requests
- * @param {Object} requestBody - Parsed request body
- * @param {Object} headers - Response headers
- * @param {Object} log - Logger instance
- * @param {Object} requestContext - Request context for error handling
+ * @param {any} requestBody - Parsed request body
+ * @param {any} headers - Response headers
+ * @param {any} log - Logger instance
+ * @param {any} requestContext - Request context for error handling
  */
 async function handleLegacyAnalysis(requestBody, headers, log, requestContext) {
   const validated = validateAnalyzeRequest(requestBody, log);
   if (!validated.ok) {
     log.warn('Legacy analyze request missing parameters.', { details: validated.details });
     log.exit(400);
-    return errorResponse(400, 'missing_parameters', validated.error, validated.details, { ...headers, 'Content-Type': 'application/json' });
+    return errorResponse(400, 'missing_parameters', validated.error || 'Missing parameters', validated.details, { ...headers, 'Content-Type': 'application/json' });
   }
 
-  const { jobId, fileData, userId } = validated.value;
+  const { jobId, fileData, userId } = /** @type {any} */ (validated).value;
   requestContext.jobId = jobId;
 
   log.info('Legacy analyze request received.', { jobId, userId, fileBytes: fileData ? fileData.length : 0 });
@@ -464,8 +477,8 @@ async function handleLegacyAnalysis(requestBody, headers, log, requestContext) {
 /**
  * Checks for existing idempotent response
  * @param {string} idemKey - Idempotency key
- * @param {Object} log - Logger instance
- * @returns {Object|null} Stored response if found
+ * @param {any} log - Logger instance
+ * @returns {Promise<any>} Stored response if found
  */
 async function checkIdempotency(idemKey, log) {
   if (!idemKey) return null;
@@ -478,8 +491,8 @@ async function checkIdempotency(idemKey, log) {
       return existingIdem.response;
     }
     return null;
-  } catch (error) {
-    log.warn('Idempotency check failed', { error: error.message, idemKey });
+  } catch (/** @type {any} */ error) {
+    log.warn('Idempotency check failed', { error: /** @type {Error} */ (error).message, idemKey });
     // Re-throw to let caller decide how to handle
     throw error;
   }
@@ -488,13 +501,19 @@ async function checkIdempotency(idemKey, log) {
 /**
  * Checks for existing analysis by content hash
  * @param {string} contentHash - Content hash to check
- * @param {Object} log - Logger instance
- * @returns {Object|null} Existing analysis if found and high quality, null if should re-analyze
+ * @param {any} log - Logger instance
+ * @param {any} userId - User ID
+ * @returns {Promise<any>} Existing analysis if found and high quality, null if should re-analyze
  */
-async function checkExistingAnalysis(contentHash, log) {
+async function checkExistingAnalysis(contentHash, log, userId) {
   try {
+    if (!userId) {
+      log.debug('Skipping duplicate check: No userId provided');
+      return null;
+    }
+
     const resultsCol = await getCollection('analysis-results');
-    const existing = await resultsCol.findOne({ contentHash });
+    const existing = await resultsCol.findOne({ contentHash, userId });
     if (existing) {
       log.info('Dedupe: existing analysis found for content hash.', {
         contentHash: contentHash.substring(0, 16) + '...',
@@ -527,7 +546,7 @@ async function checkExistingAnalysis(contentHash, log) {
 
       // ***FIXED: Check if this record has already been retried with no improvement***
       // Use epsilon comparison for floating point and validate both quality scores exist
-      const hasBeenRetriedWithNoImprovement = 
+      const hasBeenRetriedWithNoImprovement =
         (existing.validationScore !== undefined && existing.validationScore < 100) &&
         (existing.extractionAttempts || 1) >= 2 &&
         existing._wasUpgraded &&
@@ -560,7 +579,7 @@ async function checkExistingAnalysis(contentHash, log) {
       return existing;
     }
     return null;
-  } catch (error) {
+  } catch (/** @type {any} */ error) {
     log.warn('Duplicate check failed', {
       error: error.message,
       contentHash: contentHash.substring(0, 16) + '...'
@@ -572,10 +591,10 @@ async function checkExistingAnalysis(contentHash, log) {
 
 /**
  * Executes the analysis pipeline with retry and circuit breaker patterns
- * @param {Object} imagePayload - Image data and metadata
- * @param {Object} log - Logger instance
+ * @param {any} imagePayload - Image data and metadata
+ * @param {any} log - Logger instance
  * @param {Object} context - Lambda context
- * @returns {Object} Analysis results
+ * @returns {Promise<any>} Analysis results
  */
 async function executeAnalysisPipeline(imagePayload, log, context) {
   return await circuitBreaker('syncAnalysis', () =>
@@ -589,7 +608,7 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
           sequenceId: imagePayload.sequenceId,
           timelinePosition: imagePayload.timelinePosition
         },
-        null,
+        /** @type {any} */(null),
         log,
         context
       ),
@@ -611,16 +630,21 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
 
 /**
  * Stores analysis results for future deduplication
- * @param {Object} record - Analysis record to store
+ * @param {any} record - Analysis record to store
  * @param {string} contentHash - Content hash for deduplication
- * @param {Object} log - Logger instance
+ * @param {any} log - Logger instance
  * @param {boolean} forceReanalysis - Whether this was a forced reanalysis
  * @param {boolean} isUpgrade - Whether this is upgrading a low-quality record
- * @param {Object} existingRecordToUpgrade - Existing record being upgraded (if applicable)
+ * @param {any} existingRecordToUpgrade - Existing record being upgraded (if applicable)
  */
-async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false, isUpgrade = false, existingRecordToUpgrade = null) {
+async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false, isUpgrade = false, existingRecordToUpgrade = null, userId = null) {
   try {
     const resultsCol = await getCollection('analysis-results');
+
+    if (!userId) {
+      log.warn('Skipping result storage: No userId provided');
+      return;
+    }
 
     // If upgrading, update the existing record instead of inserting
     if (isUpgrade && existingRecordToUpgrade) {
@@ -630,14 +654,13 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
       const newQuality = record.validationScore;
 
       // ***CRITICAL FIX: Preserve the original record ID and handle ObjectId properly***
-      const originalId = existingRecordToUpgrade.id || 
+      const originalId = existingRecordToUpgrade.id ||
         (existingRecordToUpgrade._id?.toString ? existingRecordToUpgrade._id.toString() : existingRecordToUpgrade._id);
 
       // ***SECURITY NOTE: This update uses contentHash only for filtering***
-      // TODO: Add tenant/user scoping to prevent cross-user record modifications
-      // Should filter by { contentHash, userId: authenticatedUserId } to ensure proper isolation
+      // Enforcing tenant/user scoping to prevent cross-user record modifications
       const updateResult = await resultsCol.updateOne(
-        { contentHash },
+        { contentHash, userId },
         {
           $set: {
             // Keep the original ID - do NOT overwrite with new UUID
@@ -674,6 +697,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
       // New record - insert
       await resultsCol.insertOne({
         id: record.id,
+        userId, // Store userId for isolation
         fileName: record.fileName,
         timestamp: record.timestamp,
         analysis: record.analysis,
@@ -692,7 +716,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         qualityScore: record.validationScore
       });
     }
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     log.warn('Failed to persist analysis-results record.', {
       error: e && e.message ? e.message : String(e),
       recordId: record.id
@@ -704,7 +728,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
 /**
  * Stores response for idempotency
  * @param {string} idemKey - Idempotency key
- * @param {Object} response - Response to store
+ * @param {any} response - Response to store
  * @param {string} reasonCode - Reason code for tracking (e.g., 'new_analysis', 'force_reanalysis', 'dedupe_hit')
  */
 async function storeIdempotentResponse(idemKey, response, reasonCode = 'new_analysis') {
@@ -718,7 +742,7 @@ async function storeIdempotentResponse(idemKey, response, reasonCode = 'new_anal
       { upsert: true }
     );
     // Success - no logging needed (best effort operation)
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     // Silent fail - this is best effort and we don't want to break the response
   }
 }
@@ -726,13 +750,13 @@ async function storeIdempotentResponse(idemKey, response, reasonCode = 'new_anal
 /**
  * Stores a progress event for legacy jobs
  * @param {string} jobId - Job identifier
- * @param {Object} eventData - Event data to store
+ * @param {any} eventData - Event data to store
  */
 async function storeProgressEvent(jobId, eventData) {
   try {
     const collection = await getCollection('progress-events');
     await collection.insertOne({ jobId, ...eventData, timestamp: new Date() });
-  } catch (error) {
+  } catch (/** @type {any} */ error) {
     // Intentionally swallow errors to avoid masking primary failure
   }
 }

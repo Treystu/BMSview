@@ -31,19 +31,19 @@ function calculateSunriseSunset(date, latitude, longitude) {
     };
   }
 
-  const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 86400000);
-  
+  const dayOfYear = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000);
+
   // Solar noon correction for longitude
   const lngCorrection = longitude / 15.0;
-  
+
   // Approximate solar declination (degrees)
   const declination = -23.44 * Math.cos((360 / 365) * (dayOfYear + 10) * Math.PI / 180);
-  
+
   // Hour angle at sunrise/sunset (degrees)
   const latRad = latitude * Math.PI / 180;
   const declRad = declination * Math.PI / 180;
   const cosHourAngle = -Math.tan(latRad) * Math.tan(declRad);
-  
+
   // Check for polar day/night
   if (cosHourAngle > 1) {
     // Polar night - no sunrise
@@ -55,20 +55,20 @@ function calculateSunriseSunset(date, latitude, longitude) {
     const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
     return { sunrise: dayStart, sunset: dayEnd, isPolarDay: true };
   }
-  
+
   const hourAngle = Math.acos(cosHourAngle) * 180 / Math.PI;
-  
+
   // Convert hour angle to time
   const sunriseHour = 12 - (hourAngle / 15) - lngCorrection;
   const sunsetHour = 12 + (hourAngle / 15) - lngCorrection;
-  
+
   const year = date.getFullYear();
   const month = date.getMonth();
   const day = date.getDate();
-  
+
   const sunrise = new Date(year, month, day, Math.floor(sunriseHour), Math.round((sunriseHour % 1) * 60), 0);
   const sunset = new Date(year, month, day, Math.floor(sunsetHour), Math.round((sunsetHour % 1) * 60), 0);
-  
+
   return { sunrise, sunset };
 }
 
@@ -84,7 +84,7 @@ function calculateSunriseSunset(date, latitude, longitude) {
  * @param {string} systemId - Battery system identifier
  * @param {number} forecastDays - Number of days to forecast
  * @param {boolean} confidenceLevel - Include confidence intervals
- * @param {Object} log - Logger instance
+ * @param {import('./logger.cjs').Logger} log - Logger instance
  * @returns {Promise<Object>} Prediction results with trend data
  */
 async function predictCapacityDegradation(systemId, forecastDays = 30, confidenceLevel = true, log) {
@@ -178,15 +178,15 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
     }
 
     // NEW: Outlier detection using IQR method on retention percentages
-    const retentions = dataPoints.map(p => p.retentionPercent).sort((a, b) => a - b);
-    const q1 = retentions[Math.floor(retentions.length * 0.25)];
-    const q3 = retentions[Math.floor(retentions.length * 0.75)];
-    const iqr = q3 - q1;
+    const retentions = dataPoints.map(p => p.retentionPercent || 0).sort((a, b) => (a || 0) - (b || 0));
+    const q1 = retentions[Math.floor(retentions.length * 0.25)] || 0;
+    const q3 = retentions[Math.floor(retentions.length * 0.75)] || 0;
+    const iqr = (q3 || 0) - (q1 || 0);
     const lowerBound = q1 - 1.5 * iqr;
     const upperBound = q3 + 1.5 * iqr;
 
     const filteredPoints = dataPoints.filter(p =>
-      p.retentionPercent >= lowerBound && p.retentionPercent <= upperBound
+      (p.retentionPercent || 0) >= lowerBound && (p.retentionPercent || 0) <= upperBound
     );
 
     log.info('Outlier filtering', {
@@ -209,11 +209,11 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
     // Perform linear regression on retention percentage
     const regressionData = filteredPoints.map(p => ({
       timestamp: p.timestamp,
-      capacity: p.retentionPercent
+      capacity: p.retentionPercent || 0
     }));
 
-    const regression = linearRegression(regressionData);
-
+    const regression = /** @type {any} */ (linearRegression(regressionData));
+    const predicted = regression.slope * (forecastDays * 24 * 60 * 60 * 1000) + regression.intercept;
     // NEW: Cycle count gating - batteries under 100 cycles should show minimal degradation
     const isNewBattery = cycleCount != null && cycleCount < 100;
     const isVeryNewBattery = cycleCount != null && cycleCount < 50;
@@ -296,7 +296,7 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
       confidence = {
         rSquared: regression.rSquared,
         standardDeviation: Math.round(stdDev * 100) / 100,
-        confidenceLevel: regression.rSquared > 0.7 ? 'high' : regression.rSquared > 0.5 ? 'medium' : 'low',
+        confidenceLevel: regression.rSquared > 0.7 ? 'high' : (regression.rSquared > 0.4 ? 'medium' : 'low'),
         dataQuality: isAnomalous ? 'questionable - degradation rate exceeds expected physics' : 'acceptable'
       };
     }
@@ -307,7 +307,7 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
     const degradationAhPerDay = (degradationPercentPerDay / 100) * avgFullCapacity;
 
     // Calculate days to replacement threshold (80% for lithium)
-    const currentRetention = filteredPoints[filteredPoints.length - 1].retentionPercent;
+    const currentRetention = filteredPoints[filteredPoints.length - 1].retentionPercent || 0;
     const thresholdRetention = 80; // 80% retention threshold
     const retentionToLose = currentRetention - thresholdRetention;
     const daysToThreshold = degradationPercentPerDay > 0.0001
@@ -368,7 +368,7 @@ async function predictCapacityDegradation(systemId, forecastDays = 30, confidenc
       }
     };
 
-  } catch (error) {
+  } catch (/** @type {any} */ error) {
     log.error('Capacity degradation prediction failed', {
       error: error.message,
       systemId
@@ -388,16 +388,16 @@ function linearRegression(dataPoints) {
   const n = dataPoints.length;
 
   // Calculate means
-  const meanX = dataPoints.reduce((sum, p) => sum + p.timestamp, 0) / n;
-  const meanY = dataPoints.reduce((sum, p) => sum + p.capacity, 0) / n;
+  const meanX = dataPoints.reduce((sum, p) => sum + (p.timestamp || 0), 0) / n;
+  const meanY = dataPoints.reduce((sum, p) => sum + (p.capacity || 0), 0) / n;
 
   // Calculate slope and intercept
   let numerator = 0;
   let denominator = 0;
 
   for (const point of dataPoints) {
-    const xDiff = point.timestamp - meanX;
-    const yDiff = point.capacity - meanY;
+    const xDiff = (point.timestamp || 0) - meanX;
+    const yDiff = (point.capacity || 0) - meanY;
     numerator += xDiff * yDiff;
     denominator += xDiff * xDiff;
   }
@@ -406,12 +406,12 @@ function linearRegression(dataPoints) {
   const intercept = meanY - slope * meanX;
 
   // Calculate R-squared
-  const predictedValues = dataPoints.map(p => slope * p.timestamp + intercept);
+  const predictedValues = dataPoints.map(p => slope * (p.timestamp || 0) + intercept);
   const ssRes = dataPoints.reduce((sum, p, i) =>
-    sum + Math.pow(p.capacity - predictedValues[i], 2), 0
+    sum + Math.pow((p.capacity || 0) - predictedValues[i], 2), 0
   );
   const ssTot = dataPoints.reduce((sum, p) =>
-    sum + Math.pow(p.capacity - meanY, 2), 0
+    sum + Math.pow((p.capacity || 0) - meanY, 2), 0
   );
 
   const rSquared = ssTot !== 0 ? 1 - (ssRes / ssTot) : 0;
@@ -425,6 +425,11 @@ function linearRegression(dataPoints) {
 
 /**
  * Predict charge/discharge efficiency trends
+ * @param {string} systemId - Battery system identifier
+ * @param {number} forecastDays - Number of days to forecast
+ * @param {boolean} confidenceLevel - Include confidence intervals
+ * @param {import('./logger.cjs').Logger} log - Logger instance
+ * @returns {Promise<Object>} Prediction results with trend data
  */
 async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
   log.info('Predicting efficiency trends', { systemId, forecastDays });
@@ -455,7 +460,7 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
 
     // Calculate efficiency metrics from historical data
     // Efficiency = (Energy Out) / (Energy In) during charge/discharge cycles
-    const efficiencyData = [];
+    const effData = [];
 
     for (const record of records) {
       const { current, power, stateOfCharge } = record.analysis;
@@ -463,7 +468,7 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
         // Simple efficiency proxy: power/current ratio stability
         const efficiency = Math.abs(current) > 0.1 ? Math.abs(power / current) : null;
         if (efficiency && efficiency < 100) { // Filter outliers
-          efficiencyData.push({
+          effData.push({
             timestamp: new Date(record.timestamp).getTime(),
             efficiency,
             soc: stateOfCharge
@@ -472,7 +477,7 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
       }
     }
 
-    if (efficiencyData.length < 5) {
+    if (effData.length < 5) {
       return {
         error: false,
         insufficient_data: true,
@@ -482,8 +487,8 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
     }
 
     // Calculate average efficiency and trend
-    const avgEfficiency = efficiencyData.reduce((sum, d) => sum + d.efficiency, 0) / efficiencyData.length;
-    const regression = linearRegression(efficiencyData.map(d => ({ timestamp: d.timestamp, capacity: d.efficiency })));
+    const regression = /** @type {any} */ (linearRegression(effData.map(d => ({ timestamp: d.timestamp, capacity: d.efficiency }))));
+    const avgEfficiency = effData.reduce((sum, d) => sum + d.efficiency, 0) / effData.length;
 
     return {
       systemId,
@@ -495,11 +500,11 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
         rSquared: regression.rSquared,
         confidenceLevel: regression.rSquared > 0.5 ? 'medium' : 'low'
       } : null,
-      dataPoints: efficiencyData.length,
+      dataPoints: effData.length,
       message: 'Efficiency tracking based on power/current ratio analysis. Stable values indicate good battery health.'
     };
 
-  } catch (error) {
+  } catch (/** @type {any} */ error) {
     log.error('Efficiency prediction failed', { error: error.message, systemId });
     throw error;
   }
@@ -507,30 +512,126 @@ async function predictEfficiency(systemId, forecastDays, confidenceLevel, log) {
 
 /**
  * Predict temperature patterns
+ * @param {string} systemId - Battery system identifier
+ * @param {number} forecastDays - Number of days to forecast
+ * @param {boolean} confidenceLevel - Include confidence intervals
+ * @param {import('./logger.cjs').Logger} log - Logger instance
+ * @returns {Promise<Object>} Prediction results with trend data
  */
 async function predictTemperature(systemId, forecastDays, confidenceLevel, log) {
   log.info('Predicting temperature patterns', { systemId, forecastDays });
 
-  return {
-    systemId,
-    metric: 'temperature',
-    message: 'Temperature prediction requires weather data integration. Use historical temperature data to identify thermal management issues.',
-    suggestion: 'Check for temperature anomalies using the analyze_usage_patterns tool with patternType="anomalies"'
-  };
+  try {
+    const historyCollection = await getCollection('history');
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+    const records = await historyCollection
+      .find({
+        systemId,
+        timestamp: { $gte: sixtyDaysAgo.toISOString() },
+        'analysis.temperature': { $exists: true, $ne: null }
+      })
+      .sort({ timestamp: 1 })
+      .toArray();
+
+    if (records.length < 24) {
+      return {
+        error: false,
+        insufficient_data: true,
+        message: `Insufficient data for temperature prediction. Found ${records.length} records.`,
+        systemId
+      };
+    }
+
+    const tempData = records.map(r => ({
+      timestamp: new Date(r.timestamp).getTime(),
+      temperature: r.analysis.temperature
+    }));
+
+    const regression = /** @type {any} */ (linearRegression(tempData.map(d => ({ timestamp: d.timestamp, capacity: d.temperature }))));
+    const avgTemp = tempData.reduce((sum, d) => sum + d.temperature, 0) / tempData.length;
+    const maxTemp = Math.max(...tempData.map(d => d.temperature));
+
+    return {
+      systemId,
+      metric: 'temperature',
+      averageTemperature: Math.round(avgTemp * 10) / 10,
+      maxTemperature: Math.round(maxTemp * 10) / 10,
+      trend: regression.slope > 0.0001 ? 'increasing' : regression.slope < -0.0001 ? 'decreasing' : 'stable',
+      rateOfChange: Math.round(regression.slope * 1000000) / 1000000,
+      confidence: confidenceLevel ? {
+        rSquared: regression.rSquared,
+        confidenceLevel: regression.rSquared > 0.5 ? 'medium' : 'low'
+      } : null,
+      dataPoints: tempData.length,
+      message: 'Temperature trend analysis based on historical data.'
+    };
+  } catch (/** @type {any} */ error) {
+    log.error('Temperature prediction failed', { error: error.message, systemId });
+    throw error;
+  }
 }
 
 /**
  * Predict voltage trends
+ * @param {string} systemId - Battery system identifier
+ * @param {number} forecastDays - Number of days to forecast
+ * @param {boolean} confidenceLevel - Include confidence intervals
+ * @param {import('./logger.cjs').Logger} log - Logger instance
+ * @returns {Promise<Object>} Prediction results with trend data
  */
 async function predictVoltage(systemId, forecastDays, confidenceLevel, log) {
   log.info('Predicting voltage trends', { systemId, forecastDays });
 
-  return {
-    systemId,
-    metric: 'voltage',
-    message: 'Voltage prediction is best analyzed through capacity degradation trends. Voltage should remain stable unless there are cell balance issues.',
-    suggestion: 'Use predict_battery_trends with metric="capacity" for degradation analysis, or check cell voltage differences in historical data.'
-  };
+  try {
+    const historyCollection = await getCollection('history');
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const records = await historyCollection
+      .find({
+        systemId,
+        timestamp: { $gte: thirtyDaysAgo.toISOString() },
+        'analysis.overallVoltage': { $exists: true, $ne: null }
+      })
+      .sort({ timestamp: 1 })
+      .toArray();
+
+    if (records.length < 24) {
+      return {
+        error: false,
+        insufficient_data: true,
+        message: `Insufficient data for voltage prediction. Found ${records.length} records.`,
+        systemId
+      };
+    }
+
+    const voltageData = records.map(r => ({
+      timestamp: new Date(r.timestamp).getTime(),
+      voltage: r.analysis.overallVoltage
+    }));
+
+    const regression = /** @type {any} */ (linearRegression(voltageData.map(d => ({ timestamp: d.timestamp, capacity: d.voltage }))));
+    const avgVoltage = voltageData.reduce((sum, d) => sum + d.voltage, 0) / voltageData.length;
+
+    return {
+      systemId,
+      metric: 'voltage',
+      averageVoltage: Math.round(avgVoltage * 100) / 100,
+      trend: regression.slope > 0.0001 ? 'increasing' : regression.slope < -0.0001 ? 'decreasing' : 'stable',
+      rateOfChange: Math.round(regression.slope * 1000000) / 1000000,
+      confidence: confidenceLevel ? {
+        rSquared: regression.rSquared,
+        confidenceLevel: regression.rSquared > 0.5 ? 'medium' : 'low'
+      } : null,
+      dataPoints: voltageData.length,
+      message: 'Voltage trend analysis. Significant trends may indicate charging issues or cell imbalance.'
+    };
+  } catch (/** @type {any} */ error) {
+    log.error('Voltage prediction failed', { error: error.message, systemId });
+    throw error;
+  }
 }
 
 /**
@@ -539,13 +640,17 @@ async function predictVoltage(systemId, forecastDays, confidenceLevel, log) {
  * NOTE: This is NOT the same as "runtime" or "autonomy" (how long until discharge).
  * This predicts when the battery will reach end-of-service-life (typically 70% capacity).
  * For runtime calculations, use the energy budget tools (daysOfAutonomy).
+ *
+ * @param {string} systemId - Battery system identifier
+ * @param {boolean} confidenceLevel - Include confidence intervals
+ * @param {import('./logger.cjs').Logger} log - Logger instance
  */
 async function predictLifetime(systemId, confidenceLevel, log) {
   log.info('Predicting battery service lifetime', { systemId });
 
   try {
     // Use capacity degradation to estimate lifetime
-    const capacityPrediction = await predictCapacityDegradation(systemId, 365, confidenceLevel, log);
+    const capacityPrediction = /** @type {any} */ (await predictCapacityDegradation(systemId, 365, true, log));
 
     if (capacityPrediction.error || capacityPrediction.insufficient_data) {
       return capacityPrediction;
@@ -583,7 +688,7 @@ async function predictLifetime(systemId, confidenceLevel, log) {
         : 'Normal degradation rate. Continue monitoring monthly.'
     };
 
-  } catch (error) {
+  } catch (/** @type {any} */ error) {
     log.error('Lifetime prediction failed', { error: error.message, systemId });
     throw error;
   }
@@ -602,7 +707,7 @@ async function predictLifetime(systemId, confidenceLevel, log) {
  * 
  * @param {string} systemId - Battery system identifier
  * @param {number} hoursBack - Number of hours to predict (default: 72)
- * @param {Object} log - Logger instance
+ * @param {import('./logger.cjs').Logger} log - Logger instance
  * @returns {Promise<Object>} Hourly SOC predictions
  */
 async function predictHourlySoc(systemId, hoursBack = 72, log) {
@@ -611,7 +716,7 @@ async function predictHourlySoc(systemId, hoursBack = 72, log) {
   try {
     const historyCollection = await getCollection('history');
     const systemsCollection = await getCollection('systems');
-    
+
     // Get system metadata for location and capacity
     const system = await systemsCollection.findOne({ id: systemId });
     if (!system) {
@@ -625,7 +730,7 @@ async function predictHourlySoc(systemId, hoursBack = 72, log) {
 
     // Calculate time range
     const endTime = new Date();
-    const startTime = new Date(endTime - hoursBack * 60 * 60 * 1000);
+    const startTime = new Date(endTime.getTime() - hoursBack * 60 * 60 * 1000);
 
     log.info('Fetching historical records', {
       systemId,
@@ -691,9 +796,9 @@ async function predictHourlySoc(systemId, hoursBack = 72, log) {
     let chargeRateCount = 0;
 
     for (let i = 1; i < records.length; i++) {
-      const prev = records[i - 1];
-      const curr = records[i];
-      const timeDiffHours = (new Date(curr.timestamp) - new Date(prev.timestamp)) / (1000 * 60 * 60);
+      const prev = /** @type {any} */ (records[i - 1]);
+      const curr = /** @type {any} */ (records[i]);
+      const timeDiffHours = (new Date(curr.timestamp).getTime() - new Date(prev.timestamp).getTime()) / (1000 * 60 * 60);
 
       if (timeDiffHours > 0 && timeDiffHours < 24) {
         const socDiff = curr.analysis.stateOfCharge - prev.analysis.stateOfCharge;
@@ -736,8 +841,8 @@ async function predictHourlySoc(systemId, hoursBack = 72, log) {
 
       if (knownData && knownData.length > 0) {
         // Use actual data
-        const avgSoc = knownData.reduce((sum, d) => sum + d.soc, 0) / knownData.length;
-        const avgCurrent = knownData.reduce((sum, d) => sum + (d.current || 0), 0) / knownData.length;
+        const avgSoc = knownData.reduce((/** @type {any} */ sum, /** @type {any} */ d) => sum + d.soc, 0) / knownData.length;
+        const avgCurrent = knownData.reduce((/** @type {any} */ sum, /** @type {any} */ d) => sum + (d.current || 0), 0) / knownData.length;
         const clouds = knownData[0]?.weather?.clouds;
 
         hourlyPredictions.push({
@@ -767,7 +872,7 @@ async function predictHourlySoc(systemId, hoursBack = 72, log) {
     }
 
     // Calculate confidence score based on data coverage
-    const actualHours = hourlyPredictions.filter(p => !p.predicted).length;
+    const actualHours = hourlyPredictions.filter(p => !/** @type {any} */ (p).predicted).length;
     const coveragePercent = (actualHours / hoursBack) * 100;
 
     return {
@@ -789,7 +894,7 @@ async function predictHourlySoc(systemId, hoursBack = 72, log) {
       note: 'Hourly SOC predictions combine actual BMS data with interpolated values based on time-of-day patterns, weather, and historical usage. Predicted values marked with predicted:true.'
     };
 
-  } catch (error) {
+  } catch (/** @type {any} */ error) {
     log.error('Hourly SOC prediction failed', {
       error: error.message,
       systemId
@@ -809,8 +914,8 @@ const DAYTIME_LOAD_FACTOR = 0.3;
  * Interpolate SOC for an hour without data
  * 
  * @param {Date} targetTime - Hour to predict
- * @param {Array} existingPredictions - Predictions generated so far
- * @param {Array} allRecords - All historical records
+ * @param {Array<Object>} existingPredictions - Predictions generated so far
+ * @param {Array<Object>} allRecords - All historical records
  * @param {number} avgDischargeRate - Average discharge rate per hour
  * @param {number} avgChargeRate - Average charge rate per hour
  * @param {number} latitude - System latitude
@@ -830,28 +935,28 @@ function interpolateSoc(
 
   // Determine if it's daytime (potential solar charging)
   // Use sunrise/sunset calculation with lat/lon for accuracy
-  const sunTimes = calculateSunriseSunset(targetTime, latitude, longitude);
+  const sunInfo = /** @type {any} */ (calculateSunriseSunset(targetTime, latitude, longitude));
   let isDaytime;
-  
-  if (sunTimes.isPolarNight) {
+
+  if (sunInfo.isPolarNight) {
     // Polar night - no daylight
     isDaytime = false;
-  } else if (sunTimes.isPolarDay) {
+  } else if (sunInfo.isPolarDay) {
     // Polar day - 24h daylight
     isDaytime = true;
-  } else if (sunTimes.sunrise === null && sunTimes.sunset === null) {
+  } else if (sunInfo.sunrise === null && sunInfo.sunset === null) {
     // No solar data - fallback to simple check
     isDaytime = targetTime.getHours() >= 6 && targetTime.getHours() < 18;
   } else {
     // Normal case - check if current time is between sunrise and sunset
-    isDaytime = targetTime >= sunTimes.sunrise && targetTime < sunTimes.sunset;
+    isDaytime = targetTime >= sunInfo.sunrise && targetTime < sunInfo.sunset;
   }
 
   // Find nearest previous known SOC
   let previousSoc = null;
   for (let i = existingPredictions.length - 1; i >= 0; i--) {
-    if (existingPredictions[i].soc != null) {
-      previousSoc = existingPredictions[i].soc;
+    if (/** @type {any} */ (existingPredictions[i]).soc != null) {
+      previousSoc = /** @type {any} */ (existingPredictions[i]).soc;
       break;
     }
   }
@@ -861,9 +966,10 @@ function interpolateSoc(
     // Find closest record before target time
     const targetMs = targetTime.getTime();
     for (let i = allRecords.length - 1; i >= 0; i--) {
-      const recordMs = new Date(allRecords[i].timestamp).getTime();
-      if (recordMs <= targetMs && allRecords[i].analysis?.stateOfCharge != null) {
-        previousSoc = allRecords[i].analysis.stateOfCharge;
+      const record = /** @type {any} */ (allRecords[i]);
+      const recordMs = new Date(record.timestamp).getTime();
+      if (recordMs <= targetMs && record.analysis?.stateOfCharge != null) {
+        previousSoc = record.analysis.stateOfCharge;
         break;
       }
     }
