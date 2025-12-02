@@ -100,48 +100,79 @@ function App() {
 
     try {
       // ***PHASE 1: Check ALL files for duplicates upfront (unless forcing reanalysis)***
+      let filesToAnalyze: { file: File; needsUpgrade?: boolean }[] = [];
+      
       if (!options?.forceReanalysis) {
-        const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(files, log);
-        
-        // Mark true duplicates as skipped immediately (don't analyze these at all)
-        for (const dup of trueDuplicates) {
-          dispatch({
-            type: 'SYNC_ANALYSIS_COMPLETE',
-            payload: {
-              fileName: dup.file.name,
-              isDuplicate: true,
-              record: {
-                id: dup.recordId || `local-duplicate-${Date.now()}`,
-                timestamp: dup.timestamp || new Date().toISOString(),
-                analysis: dup.analysisData || null,
+        try {
+          const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(files, log);
+          
+          // Mark true duplicates as skipped immediately (don't analyze these at all)
+          for (const dup of trueDuplicates) {
+            dispatch({
+              type: 'SYNC_ANALYSIS_COMPLETE',
+              payload: {
                 fileName: dup.file.name,
+                isDuplicate: true,
+                record: {
+                  id: dup.recordId || `local-duplicate-${Date.now()}`,
+                  timestamp: dup.timestamp || new Date().toISOString(),
+                  analysis: dup.analysisData || null,
+                  fileName: dup.file.name,
+                },
               },
-            },
-          });
-        }
+            });
+          }
 
-        // Update files that need upgrade to "Queued (needs upgrade)" status
-        for (const item of needsUpgrade) {
-          dispatch({ 
-            type: 'UPDATE_ANALYSIS_STATUS', 
-            payload: { fileName: item.file.name, status: 'Queued (upgrading)' } 
-          });
-        }
+          // Update files that need upgrade to "Queued (needs upgrade)" status
+          for (const item of needsUpgrade) {
+            dispatch({ 
+              type: 'UPDATE_ANALYSIS_STATUS', 
+              payload: { fileName: item.file.name, status: 'Queued (upgrading)' } 
+            });
+          }
 
-        // Update new files to "Queued" status
-        for (const item of newFiles) {
-          dispatch({ 
-            type: 'UPDATE_ANALYSIS_STATUS', 
-            payload: { fileName: item.file.name, status: 'Queued' } 
+          // Update new files to "Queued" status
+          for (const item of newFiles) {
+            dispatch({ 
+              type: 'UPDATE_ANALYSIS_STATUS', 
+              payload: { fileName: item.file.name, status: 'Queued' } 
+            });
+          }
+
+          filesToAnalyze = [...needsUpgrade, ...newFiles];
+          
+          log('info', 'Phase 1 complete: Duplicate check finished.', { 
+            count: filesToAnalyze.length,
+            upgrades: needsUpgrade.length,
+            new: newFiles.length,
+            duplicates: trueDuplicates.length
           });
+        } catch (duplicateCheckError) {
+          // If duplicate check fails entirely, fall back to analyzing all files
+          const errorMessage = duplicateCheckError instanceof Error 
+            ? duplicateCheckError.message 
+            : 'Unknown error during duplicate check';
+          
+          log('warn', 'Phase 1 failed: Duplicate check error, will analyze all files.', { 
+            error: errorMessage,
+            fileCount: files.length
+          });
+          
+          // Reset all files to "Queued" status (clear any "Checking for duplicates..." errors)
+          for (const file of files) {
+            dispatch({ 
+              type: 'UPDATE_ANALYSIS_STATUS', 
+              payload: { fileName: file.name, status: 'Queued' } 
+            });
+          }
+          
+          // Treat all files as new files that need analysis
+          filesToAnalyze = files.map(file => ({ file }));
         }
 
         // ***PHASE 2: Analyze only upgrades and new files (true duplicates already handled)***
-        const filesToAnalyze = [...needsUpgrade, ...newFiles];
         log('info', 'Phase 2: Starting analysis of non-duplicate files.', { 
-          count: filesToAnalyze.length,
-          upgrades: needsUpgrade.length,
-          new: newFiles.length
+          count: filesToAnalyze.length
         });
         
         for (const item of filesToAnalyze) {
