@@ -91,7 +91,9 @@ function checkForExactDuplicate(newTitle, existingIssues) {
     const newWords = new Set(normalizedNewTitle.split(/\s+/));
     const existingWords = new Set(normalizedExistingTitle.split(/\s+/));
     const commonWords = [...newWords].filter(word => existingWords.has(word));
-    const similarity = commonWords.length / Math.max(newWords.size, existingWords.size);
+    // Use union size for balanced similarity (Jaccard index)
+    const unionSize = newWords.size + existingWords.size - commonWords.length;
+    const similarity = commonWords.length / unionSize;
     
     if (similarity > 0.9 && issue.state === 'open') {
       return {

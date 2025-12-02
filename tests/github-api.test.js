@@ -171,7 +171,6 @@ describe('GitHub API Utility Module', () => {
 
     test('MAX_FILE_SIZE should be reasonable (15KB)', () => {
       expect(MAX_FILE_SIZE).toBe(15 * 1024);
-      expect(MAX_FILE_SIZE).toBe(15360);
     });
   });
 

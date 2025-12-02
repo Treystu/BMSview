@@ -108,11 +108,7 @@ function validatePath(path, log) {
   // Check against allowed paths
   const isAllowed = ALLOWED_PATHS.some(allowed => 
     normalizedPath === allowed || 
-    normalizedPath.startsWith(allowed + '/') ||
-    (allowed.endsWith('.ts') && normalizedPath === allowed) ||
-    (allowed.endsWith('.tsx') && normalizedPath === allowed) ||
-    (allowed.endsWith('.json') && normalizedPath === allowed) ||
-    (allowed.endsWith('.md') && normalizedPath === allowed)
+    normalizedPath.startsWith(allowed + '/')
   );
 
   if (!isAllowed) {

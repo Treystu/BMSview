@@ -60,6 +60,10 @@ try {
   githubApi = require('./github-api.cjs');
 } catch (err) {
   // GitHub API not available - tools will return errors gracefully
+  // Log the error for debugging in development
+  if (process.env.LOG_LEVEL === 'DEBUG') {
+    console.warn('GitHub API module not available:', err.message);
+  }
   githubApi = null;
 }
 
