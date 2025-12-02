@@ -35,8 +35,32 @@ export interface AppState {
     historyCount: number;
     cacheSizeBytes: number;
   };
-  // Selected insight generation mode
-  selectedInsightMode: InsightMode;
+  // Circuit breaker state for error recovery UI
+  circuitBreakers: {
+    insights: 'closed' | 'open' | 'half-open';
+    analysis: 'closed' | 'open' | 'half-open';
+    lastTripped?: { service: string; reason: string; at: number };
+  };
+  // Consent tracking for insights/AI features
+  consentStatus: {
+    insightsConsented: boolean;
+    consentedAt?: number;
+    consentVersion?: string;
+  };
+  // Pending resume jobs for timeout recovery
+  pendingResumes: Array<{
+    recordId: string;
+    resumeJobId: string;
+    attempts: number;
+    lastAttempt: number;
+  }>;
+  // Per-record insights state tracking
+  insightsState: Record<string, {
+    isLoading: boolean;
+    insights?: string;
+    error?: string;
+    resumeJobId?: string;
+  }>;
 }
 
 export const initialState: AppState = {
@@ -62,6 +86,19 @@ export const initialState: AppState = {
   },
   // Default to WITH_TOOLS mode (Battery Guru - most comprehensive)
   selectedInsightMode: InsightModeEnum.WITH_TOOLS,
+  // Circuit breaker initial state
+  circuitBreakers: {
+    insights: 'closed',
+    analysis: 'closed',
+  },
+  // Consent not granted by default
+  consentStatus: {
+    insightsConsented: false,
+  },
+  // No pending resumes initially
+  pendingResumes: [],
+  // Empty insights state initially
+  insightsState: {},
 };
 
 // 2. Actions
@@ -86,7 +123,19 @@ export type AppAction =
   | { type: 'SET_CACHE_STATS'; payload: { systemsCount: number; historyCount: number; cacheSizeBytes: number } }
   | { type: 'SYNC_ERROR'; payload: string | null }
   // Insight mode selection
-  | { type: 'SET_INSIGHT_MODE'; payload: InsightMode };
+  | { type: 'SET_INSIGHT_MODE'; payload: InsightMode }
+  // Insights lifecycle actions
+  | { type: 'INSIGHTS_LOADING'; payload: { recordId: string } }
+  | { type: 'INSIGHTS_SUCCESS'; payload: { recordId: string; insights: string } }
+  | { type: 'INSIGHTS_ERROR'; payload: { recordId: string; error: string } }
+  | { type: 'INSIGHTS_RETRY'; payload: { recordId: string; resumeJobId: string } }
+  | { type: 'INSIGHTS_TIMEOUT'; payload: { recordId: string; resumeJobId: string } }
+  // Consent flow actions
+  | { type: 'CONSENT_GRANTED'; payload: { consentVersion: string } }
+  | { type: 'CONSENT_REVOKED' }
+  // Circuit breaker actions
+  | { type: 'UPDATE_CIRCUIT_BREAKER'; payload: { service: 'insights' | 'analysis'; state: 'closed' | 'open' | 'half-open'; reason?: string } }
+  | { type: 'RESET_CIRCUIT_BREAKERS' };
 // ***REMOVED***: All job-polling actions are gone.
 
 // 3. Reducer
@@ -234,6 +283,128 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       return {
         ...state,
         selectedInsightMode: action.payload,
+      };
+
+    case 'INSIGHTS_LOADING':
+      return {
+        ...state,
+        insightsState: {
+          ...state.insightsState,
+          [action.payload.recordId]: {
+            isLoading: true,
+            insights: undefined,
+            error: undefined,
+          },
+        },
+      };
+
+    case 'INSIGHTS_SUCCESS':
+      return {
+        ...state,
+        insightsState: {
+          ...state.insightsState,
+          [action.payload.recordId]: {
+            isLoading: false,
+            insights: action.payload.insights,
+            error: undefined,
+          },
+        },
+      };
+
+    case 'INSIGHTS_ERROR':
+      return {
+        ...state,
+        insightsState: {
+          ...state.insightsState,
+          [action.payload.recordId]: {
+            isLoading: false,
+            insights: undefined,
+            error: action.payload.error,
+          },
+        },
+      };
+
+    case 'INSIGHTS_RETRY':
+      return {
+        ...state,
+        insightsState: {
+          ...state.insightsState,
+          [action.payload.recordId]: {
+            isLoading: true,
+            insights: undefined,
+            error: undefined,
+            resumeJobId: action.payload.resumeJobId,
+          },
+        },
+      };
+
+    case 'INSIGHTS_TIMEOUT':
+      // Add to pending resumes for potential retry
+      return {
+        ...state,
+        pendingResumes: [
+          ...state.pendingResumes,
+          {
+            recordId: action.payload.recordId,
+            resumeJobId: action.payload.resumeJobId,
+            attempts: 1,
+            lastAttempt: Date.now(),
+          },
+        ],
+        insightsState: {
+          ...state.insightsState,
+          [action.payload.recordId]: {
+            isLoading: false,
+            insights: undefined,
+            error: 'Request timed out. Resume job created.',
+            resumeJobId: action.payload.resumeJobId,
+          },
+        },
+      };
+
+    case 'CONSENT_GRANTED':
+      return {
+        ...state,
+        consentStatus: {
+          insightsConsented: true,
+          consentedAt: Date.now(),
+          consentVersion: action.payload.consentVersion,
+        },
+      };
+
+    case 'CONSENT_REVOKED':
+      return {
+        ...state,
+        consentStatus: {
+          insightsConsented: false,
+          consentedAt: undefined,
+          consentVersion: undefined,
+        },
+      };
+
+    case 'UPDATE_CIRCUIT_BREAKER':
+      return {
+        ...state,
+        circuitBreakers: {
+          ...state.circuitBreakers,
+          [action.payload.service]: action.payload.state,
+          lastTripped: action.payload.reason
+            ? {
+                service: action.payload.service,
+                reason: action.payload.reason,
+                at: Date.now(),
+              }
+            : state.circuitBreakers.lastTripped,
+        },
+      };
+
+    case 'RESET_CIRCUIT_BREAKERS':
+      return {
+        ...state,
+        circuitBreakers: {
+          insights: 'closed',
+          analysis: 'closed',
+        },
       };
 
     default:

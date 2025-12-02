@@ -235,12 +235,12 @@ export const InsightModeDescriptions: Record<InsightMode, { label: string; descr
     ]
   },
   [InsightMode.STANDARD]: {
-    label: 'Legacy Endpoint',
-    description: 'Legacy endpoint (uses same engine as Battery Guru)',
+    label: '⚠️ Deprecated - Use Battery Guru',
+    description: 'This mode is deprecated and will be removed in a future version',
     features: [
-      'Same capabilities as Battery Guru',
-      'Maintained for backward compatibility',
-      'Recommended to use Battery Guru directly instead'
+      'Automatically redirects to Battery Guru (WITH_TOOLS)',
+      'Maintained for backward compatibility only',
+      'Please switch to Battery Guru mode for continued support'
     ]
   },
   [InsightMode.VISUAL_GURU]: {
