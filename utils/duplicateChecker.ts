@@ -1,5 +1,5 @@
 /**
- * Shared utility for two-phase duplicate checking
+ * Shared utility for three-category duplicate checking
  * Used by both App.tsx and AdminDashboard.tsx
  */
 
