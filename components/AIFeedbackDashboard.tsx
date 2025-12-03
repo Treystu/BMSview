@@ -8,6 +8,7 @@ interface AIFeedback {
   feedbackType: string;
   category: string;
   priority: string;
+  guruSource?: string;
   status: string;
   geminiModel: string;
   suggestion: {
@@ -55,6 +56,7 @@ interface FeedbackFilters {
   categories: string[];
   priorities: string[];
   types: string[];
+  guruSources: string[];
   dateFrom: string;
   dateTo: string;
 }
@@ -71,6 +73,7 @@ const DEFAULT_FILTERS: FeedbackFilters = {
   categories: [],
   priorities: [],
   types: [],
+  guruSources: [],
   dateFrom: '',
   dateTo: '',
 };
@@ -78,6 +81,20 @@ const DEFAULT_FILTERS: FeedbackFilters = {
 const CATEGORIES = ['weather_api', 'data_structure', 'ui_ux', 'performance', 'integration', 'analytics'];
 const PRIORITIES = ['critical', 'high', 'medium', 'low'];
 const TYPES = ['feature_request', 'api_suggestion', 'data_format', 'bug_report', 'optimization'];
+const GURU_SOURCES = ['diagnostics-guru', 'battery-guru', 'visual-guru', 'full-context-guru', 'quick-guru', 'manual'];
+
+// Helper function for guru source labels and icons
+const getGuruSourceInfo = (source: string): { label: string; icon: string; color: string } => {
+  const info: Record<string, { label: string; icon: string; color: string }> = {
+    'diagnostics-guru': { label: 'Diagnostics Guru', icon: '🔧', color: 'text-orange-600' },
+    'battery-guru': { label: 'Battery Guru', icon: '🔋', color: 'text-blue-600' },
+    'visual-guru': { label: 'Visual Guru', icon: '📊', color: 'text-purple-600' },
+    'full-context-guru': { label: 'Full Context Guru', icon: '🧠', color: 'text-green-600' },
+    'quick-guru': { label: 'Quick Guru', icon: '⚡', color: 'text-yellow-600' },
+    'manual': { label: 'Manual', icon: '👤', color: 'text-gray-600' }
+  };
+  return info[source] || { label: source, icon: '❓', color: 'text-gray-600' };
+};
 
 // Helper function for type labels
 const getTypeLabel = (type: string): string => {
@@ -202,6 +219,12 @@ export const AIFeedbackDashboard: React.FC = () => {
       // Type filter
       if (searchFilters.types.length > 0) {
         if (!searchFilters.types.includes(feedback.feedbackType)) return false;
+      }
+
+      // Guru source filter
+      if (searchFilters.guruSources.length > 0) {
+        const feedbackGuruSource = feedback.guruSource || 'manual';
+        if (!searchFilters.guruSources.includes(feedbackGuruSource)) return false;
       }
 
       // Date range filter
@@ -365,6 +388,7 @@ export const AIFeedbackDashboard: React.FC = () => {
       searchFilters.categories.length > 0 ||
       searchFilters.priorities.length > 0 ||
       searchFilters.types.length > 0 ||
+      searchFilters.guruSources.length > 0 ||
       searchFilters.dateFrom !== '' ||
       searchFilters.dateTo !== ''
     );
@@ -1050,7 +1074,7 @@ export const AIFeedbackDashboard: React.FC = () => {
 
         {/* Advanced Filters Panel */}
         {showAdvancedFilters && (
-          <div className="pt-4 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="pt-4 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             {/* Category Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
@@ -1102,6 +1126,29 @@ export const AIFeedbackDashboard: React.FC = () => {
                 {TYPES.map(t => (
                   <option key={t} value={t}>{getTypeLabel(t)}</option>
                 ))}
+              </select>
+            </div>
+
+            {/* Guru Source Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Guru Source</label>
+              <select
+                multiple
+                value={searchFilters.guruSources}
+                onChange={(e) => {
+                  const selected = Array.from(e.target.selectedOptions, option => option.value);
+                  setSearchFilters({ ...searchFilters, guruSources: selected });
+                }}
+                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm h-24"
+              >
+                {GURU_SOURCES.map(source => {
+                  const info = getGuruSourceInfo(source);
+                  return (
+                    <option key={source} value={source}>
+                      {info.icon} {info.label}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
@@ -1291,6 +1338,12 @@ export const AIFeedbackDashboard: React.FC = () => {
                       <span className="text-gray-500 hidden sm:inline">
                         {getTypeLabel(feedback.feedbackType)}
                       </span>
+                      {/* Guru Source Badge */}
+                      {feedback.guruSource && (
+                        <span className={`px-2 py-1 rounded-full font-medium border ${getGuruSourceInfo(feedback.guruSource).color} border-current bg-white`}>
+                          {getGuruSourceInfo(feedback.guruSource).icon} {getGuruSourceInfo(feedback.guruSource).label}
+                        </span>
+                      )}
                     </div>
                   </div>
                   

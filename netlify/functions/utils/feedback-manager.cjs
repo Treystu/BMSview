@@ -29,6 +29,7 @@ async function submitFeedbackToDatabase(feedbackData, context) {
       feedbackType: feedbackData.feedbackType,
       category: feedbackData.category,
       priority: feedbackData.priority,
+      guruSource: feedbackData.guruSource || 'manual',
       status: 'pending',
       geminiModel: feedbackData.geminiModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       suggestion: {
