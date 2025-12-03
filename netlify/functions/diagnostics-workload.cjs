@@ -56,7 +56,7 @@ exports.handler = async (event, context) => {
     const { action = 'start', workloadId, step } = body;
     
     log.info('Diagnostics workload request', { action, workloadId, step });
-    log.debug('Full request body', body);
+    log.debug('Request body (sanitized)', { action, workloadId, step, bodyLength: event.body ? event.body.length : 0 });
     
     // Start new diagnostic run
     if (action === 'start') {

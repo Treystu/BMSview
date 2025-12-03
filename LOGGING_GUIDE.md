@@ -38,11 +38,19 @@ const log = createLogger('function-name', context);
 
 // Entry point
 log.entry({ method: event.httpMethod, path: event.path });
+
+// Sanitize headers to redact secrets
+const sanitizedHeaders = {
+  ...event.headers,
+  authorization: event.headers?.authorization ? '[REDACTED]' : undefined,
+  cookie: event.headers?.cookie ? '[REDACTED]' : undefined,
+  'x-api-key': event.headers?.['x-api-key'] ? '[REDACTED]' : undefined,
+};
 log.debug('Request received', { 
   method: event.httpMethod, 
   path: event.path,
-  body: event.body,
-  headers: event.headers 
+  bodyLength: event.body ? event.body.length : 0,
+  headers: sanitizedHeaders
 });
 
 // Operation details
@@ -189,10 +197,10 @@ Netlify function logs are available in:
   "level": "DEBUG",
   "function": "diagnostics-workload",
   "requestId": "bf412503-177e-4ad3-bbb2-36a9cad66ee8",
-  "message": "Request received",
-  "method": "POST",
-  "path": "/.netlify/functions/diagnostics-workload",
-  "body": "{\"action\":\"status\",\"workloadId\":\"diag_1764741922531_93rfen\"}"
+  "message": "Request body (sanitized)",
+  "action": "status",
+  "workloadId": "diag_1764741922531_93rfen",
+  "bodyLength": 56
 }
 ```
 
