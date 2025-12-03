@@ -84,7 +84,7 @@ exports.handler = async (event, context) => {
             recordsFound: allMatchingRecords.length,
             hashesQueried: hashes.length,
             matchRate: allMatchingRecords.length > 0 ? 
-                `${Math.round((allMatchingRecords.length / hashes.length) * 100)}%` : '0%'
+                `${Math.round((new Set(allMatchingRecords.map(r => r.contentHash)).size / hashes.length) * 100)}%` : '0%'
         });
 
         const duplicates = [];
