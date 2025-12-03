@@ -13,7 +13,12 @@ exports.handler = async (event, context) => {
     }
 
     const log = createLoggerFromEvent('check-hashes', event, context);
-    log.entry({ method: event.httpMethod, path: event.path });
+    log.entry({ 
+        method: event.httpMethod, 
+        path: event.path,
+        hasBody: !!event.body,
+        bodyLength: event.body?.length || 0
+    });
     const timer = createTimer(log, 'check-hashes');
 
     if (event.httpMethod !== 'POST') {
@@ -31,7 +36,11 @@ exports.handler = async (event, context) => {
             return errorResponse(400, 'bad_request', 'Missing or invalid "hashes" array in request body.', null, headers);
         }
 
-        log.info('Checking hashes for existence', { hashCount: hashes.length });
+        // ENHANCED LOGGING: Log the actual hashes being checked
+        log.info('Checking hashes for existence', { 
+            hashCount: hashes.length,
+            hashPreview: hashes.slice(0, 3).map(h => h.substring(0, 16) + '...')
+        });
 
         const collection = await getCollection('analysis-results');
 
@@ -53,9 +62,25 @@ exports.handler = async (event, context) => {
         ];
 
         const query = { contentHash: { $in: hashes } };
+        
+        // ENHANCED LOGGING: Log query details
+        log.info('Executing MongoDB query', {
+            queryType: 'find',
+            collection: 'analysis-results',
+            hashesInQuery: hashes.length
+        });
+        
         const allMatchingRecords = await collection.find(query, {
             projection: { contentHash: 1, analysis: 1 }
         }).toArray();
+
+        // ENHANCED LOGGING: Log query results
+        log.info('MongoDB query complete', {
+            recordsFound: allMatchingRecords.length,
+            hashesQueried: hashes.length,
+            matchRate: allMatchingRecords.length > 0 ? 
+                `${Math.round((new Set(allMatchingRecords.map(r => r.contentHash)).size / hashes.length) * 100)}%` : '0%'
+        });
 
         const duplicates = [];
         const upgrades = new Set();
@@ -75,8 +100,28 @@ exports.handler = async (event, context) => {
                     data: { ...record.analysis, _recordId: record._id.toString() },
                 });
                 seenHashes.add(record.contentHash);
+                
+                // ENHANCED LOGGING: Log each duplicate found
+                log.info('Duplicate detected', {
+                    hash: record.contentHash.substring(0, 16) + '...',
+                    recordId: record._id.toString(),
+                    dlNumber: record.analysis?.dlNumber
+                });
             } else {
                 upgrades.add(record.contentHash);
+                
+                // ENHANCED LOGGING: Log each upgrade needed
+                const missingFields = criticalFields.filter(field => {
+                    const fieldValue = field.split('.').reduce((o, i) => o?.[i], record);
+                    return fieldValue === undefined || fieldValue === null;
+                });
+                
+                log.info('Upgrade needed - missing fields', {
+                    hash: record.contentHash.substring(0, 16) + '...',
+                    recordId: record._id.toString(),
+                    missingFields: missingFields.map(f => f.split('.').pop()),
+                    missingCount: missingFields.length
+                });
             }
         }
         
@@ -90,11 +135,14 @@ exports.handler = async (event, context) => {
             duplicatesFound: duplicates.length,
             upgradesNeeded: upgrades.size
         });
+        
         log.info('Hash check complete', { 
             hashesChecked: hashes.length, 
             duplicatesFound: duplicates.length, 
             upgradesNeeded: upgrades.size,
-            durationMs
+            newFiles: hashes.length - duplicates.length - upgrades.size,
+            durationMs,
+            event: 'COMPLETE'
         });
 
         log.exit(200);

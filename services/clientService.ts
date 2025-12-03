@@ -2656,18 +2656,35 @@ export const checkHashes = async (hashes: string[]): Promise<{ duplicates: { has
     if (hashes.length === 0) {
         return { duplicates: [], upgrades: [] };
     }
-    log('info', 'Checking file hashes against the backend for duplicates and upgrades.', { count: hashes.length });
+    
+    log('info', 'Checking file hashes against the backend for duplicates and upgrades.', { 
+        event: 'STARTING',
+        count: hashes.length,
+        hashPreview: hashes.slice(0, 3).map(h => h.substring(0, 16) + '...')
+    });
+    
     try {
         const response = await apiFetch<{ duplicates: { hash: string, data: any }[], upgrades: string[] }>('check-hashes', {
             method: 'POST',
             body: JSON.stringify({ hashes }),
         });
+        
+        log('info', 'checkHashes function completed successfully', {
+            event: 'SUCCESS',
+            duplicatesFound: response.duplicates?.length || 0,
+            upgradesNeeded: response.upgrades?.length || 0,
+            newFiles: hashes.length - (response.duplicates?.length || 0) - (response.upgrades?.length || 0)
+        });
+        
         return {
             duplicates: response.duplicates || [],
             upgrades: response.upgrades || [],
         };
     } catch (error) {
-        log('error', 'Failed to check hashes.', { error: error instanceof Error ? error.message : String(error) });
+        log('error', 'Failed to check hashes', { 
+            event: 'ERROR',
+            error: error instanceof Error ? error.message : String(error)
+        });
         // In case of error, assume no hashes exist to avoid blocking uploads
         return { duplicates: [], upgrades: [] };
     }
