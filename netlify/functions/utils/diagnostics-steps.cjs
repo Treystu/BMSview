@@ -183,7 +183,12 @@ async function initializeDiagnostics(log, context) {
     };
   } catch (error) {
     // Ultimate fallback - return error but allow process to continue
-    log.error('Initialization failed completely', { error: error.message, stack: error.stack });
+    log.error(
+      'Initialization failed completely',
+      process.env.LOG_LEVEL === 'DEBUG'
+        ? { error: error.message, stack: error.stack }
+        : { error: error.message }
+    );
     throw error; // Re-throw initialization errors as they prevent the entire workflow
   }
 }
@@ -340,10 +345,13 @@ async function testTool(workloadId, state, log, context) {
   } catch (error) {
     // Ultimate fallback - even if entire test step fails, continue
     log.error('Entire tool test step failed, skipping tool', { 
-      error: error.message, 
-      stack: error.stack,
+      error: error.message,
       toolIndex: state.toolIndex
     });
+    // Only log stack trace in debug mode to avoid leaking sensitive info
+    if (process.env.LOG_LEVEL === 'DEBUG') {
+      log.debug('Tool test error stack', { stack: error.stack });
+    }
     
     const safeToolIndex = (state.toolIndex || 0) + 1;
     const safeTool = TOOL_TESTS[state.toolIndex || 0];
@@ -455,7 +463,7 @@ async function analyzeFailures(workloadId, state, log, context) {
     };
   } catch (error) {
     // Even if analysis fails, continue to next step
-    log.error('Error during failure analysis, continuing anyway', { error: error.message, stack: error.stack });
+    log.error('Error during failure analysis, continuing anyway', { error: error.message });
     
     const safeState = {
       ...state,
@@ -565,8 +573,7 @@ async function submitFeedbackForFailures(workloadId, state, log, context) {
   } catch (error) {
     // Even if feedback submission fails entirely, continue to finalization
     log.error('Error during feedback submission, continuing to finalize', { 
-      error: error.message, 
-      stack: error.stack 
+      error: error.message
     });
     
     const safeState = {
@@ -622,7 +629,7 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
           if (r.edgeCaseTest.success) passedTests++;
         }
       } catch (err) {
-        log.warn('Error counting test result', { tool: r.tool, error: err.message });
+        log.warn('Error counting test result', { tool: r?.tool, error: err.message });
       }
     });
     
@@ -675,8 +682,7 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
   } catch (error) {
     // Even finalization errors should not fail - return best effort summary
     log.error('Error during finalization, returning best effort summary', { 
-      error: error.message, 
-      stack: error.stack 
+      error: error.message
     });
     
     const emergencySummary = {
@@ -771,10 +777,9 @@ function getEstimatedEffort(errorType) {
 
 /**
  * Helper: Calculate average response time
- */
-/**
- * Helper: Calculate average response time
  * Gracefully handles missing or invalid data
+ * @param {Array} results - Array of test result objects
+ * @returns {string} Average response time in ms, 'N/A' if no valid data, or 'Error' on exception
  */
 function calculateAverageResponseTime(results) {
   try {
