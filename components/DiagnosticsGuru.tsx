@@ -17,13 +17,19 @@ interface WorkloadStatus {
   feedbackSubmitted?: any[];
   summary?: {
     totalToolsTested: number;
-    totalTests: number;
-    passedTests: number;
-    failedTests: number;
+    totalTests: number | string;
+    passedTests: number | string;
+    failedTests: number | string;
     failureRate: string;
     averageResponseTime: string;
     duration: number;
+    errors?: {
+      analysisError?: string | null;
+      feedbackError?: string | null;
+      finalizationError?: string | null;
+    };
   };
+  warning?: string;
 }
 
 export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = '' }) => {
@@ -286,7 +292,9 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
               <div>
                 <div className="text-gray-600">Pass Rate</div>
                 <div className="text-2xl font-bold text-green-600">
-                  {((status.summary.passedTests / status.summary.totalTests) * 100).toFixed(1)}%
+                  {typeof status.summary.totalTests === 'number' && typeof status.summary.passedTests === 'number' && status.summary.totalTests > 0
+                    ? ((status.summary.passedTests / status.summary.totalTests) * 100).toFixed(1)
+                    : 'N/A'}%
                 </div>
               </div>
               <div>
@@ -308,19 +316,41 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
                 </div>
               </div>
             </div>
+            
+            {/* Show warnings/errors if any occurred during processing */}
+            {status.summary.errors && (status.summary.errors.analysisError || status.summary.errors.feedbackError || status.summary.errors.finalizationError) && (
+              <div className="mt-4 bg-yellow-50 border border-yellow-300 rounded p-3">
+                <h4 className="font-semibold text-yellow-900 text-sm mb-2">⚠️ Diagnostics Completed with Warnings</h4>
+                <ul className="text-xs text-yellow-800 space-y-1 list-disc list-inside">
+                  {status.summary.errors.analysisError && (
+                    <li>Analysis step had errors: {status.summary.errors.analysisError}</li>
+                  )}
+                  {status.summary.errors.feedbackError && (
+                    <li>Feedback submission had errors: {status.summary.errors.feedbackError}</li>
+                  )}
+                  {status.summary.errors.finalizationError && (
+                    <li>Finalization had errors: {status.summary.errors.finalizationError}</li>
+                  )}
+                </ul>
+                <p className="text-xs text-yellow-700 mt-2">
+                  Despite these warnings, all tools were tested and results are available. Review logs for details.
+                </p>
+              </div>
+            )}
           </div>
 
           {status.feedbackSubmitted && status.feedbackSubmitted.length > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <h3 className="font-semibold text-yellow-900 mb-2">
-                📤 Feedback Submitted ({status.feedbackSubmitted.length})
+                📤 Feedback Submitted ({status.feedbackSubmitted.filter((fb: any) => fb.feedbackId).length} / {status.feedbackSubmitted.length})
               </h3>
               <ul className="text-sm text-yellow-800 space-y-1">
                 {status.feedbackSubmitted.map((fb: any, idx: number) => (
                   <li key={idx} className="flex items-center justify-between">
                     <span>
-                      {fb.category.replace(/_/g, ' ')} 
+                      {fb.feedbackId ? '✅' : '❌'} {fb.category.replace(/_/g, ' ')} 
                       {fb.isDuplicate && <span className="text-yellow-600 ml-2">(duplicate)</span>}
+                      {fb.error && <span className="text-red-600 ml-2 text-xs">({fb.error})</span>}
                     </span>
                     <span className="text-xs text-yellow-600">
                       {fb.failureCount} failure{fb.failureCount > 1 ? 's' : ''}
@@ -329,7 +359,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
                 ))}
               </ul>
               <p className="text-xs text-yellow-700 mt-3">
-                View these in the AI Feedback dashboard filtered by "diagnostics-guru"
+                View submitted feedback in the AI Feedback dashboard filtered by "diagnostics-guru"
               </p>
             </div>
           )}
