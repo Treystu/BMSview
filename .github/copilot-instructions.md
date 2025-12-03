@@ -366,6 +366,10 @@ dispatch({ type: 'SYNC_ANALYSIS_COMPLETE', payload: { fileName, record, isDuplic
 12. **Don't show retry spam to users** - Keep retries silent in the UI, log to console only
     - Use calm progress indicators instead of "attempt X/N" messages
     - Aggressive retries should happen in the background, invisible to users
+13. **Don't add authentication or role checks in admin functions** - Admin access is controlled at the page level (admin.html) via OAuth
+    - Admin functions do NOT verify JWT tokens or check user roles
+    - See `ADMIN_ACCESS_CONTROL.md` for the complete pattern
+    - Page-level OAuth protection is the only security layer for admin functions
 
 ## Error Handling Best Practices
 
