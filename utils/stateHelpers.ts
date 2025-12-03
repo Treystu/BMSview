@@ -272,8 +272,9 @@ export function mergeWithDefaults<T extends Record<string, any>>(
     const defaultValue = defaults[key];
     
     // Type-safe merging based on default type
+    // IMPORTANT: Always copy default arrays/objects to avoid mutation of defaults
     if (Array.isArray(defaultValue)) {
-      result[key] = Array.isArray(value) ? value : defaultValue;
+      result[key] = Array.isArray(value) ? value : [...defaultValue];
     } else if (typeof defaultValue === 'number') {
       result[key] = typeof value === 'number' ? value : defaultValue;
     } else if (typeof defaultValue === 'string') {
@@ -281,7 +282,7 @@ export function mergeWithDefaults<T extends Record<string, any>>(
     } else if (typeof defaultValue === 'boolean') {
       result[key] = typeof value === 'boolean' ? value : defaultValue;
     } else if (typeof defaultValue === 'object' && defaultValue !== null) {
-      result[key] = typeof value === 'object' && value !== null ? value : defaultValue;
+      result[key] = typeof value === 'object' && value !== null ? value : { ...defaultValue };
     } else {
       result[key] = value !== undefined ? value : defaultValue;
     }
