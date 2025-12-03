@@ -27,8 +27,7 @@ describe('Upload Functionality', () => {
             httpMethod: 'POST',
             body: JSON.stringify({
                 filename: 'test-data.csv',
-                fileBase64: mockFileData,
-                userId: 'test-user'
+                fileBase64: mockFileData
             })
         };
 
@@ -54,8 +53,7 @@ describe('Upload Functionality', () => {
             httpMethod: 'POST',
             body: JSON.stringify({
                 filename: 'duplicate-file.csv',
-                fileBase64: 'dGVzdCBkYXRh', // base64 for "test data"
-                userId: 'test-user'
+                fileBase64: 'dGVzdCBkYXRh' // base64 for "test data"
             })
         };
 
@@ -79,8 +77,7 @@ describe('Upload Functionality', () => {
             httpMethod: 'POST',
             body: JSON.stringify({
                 filename: 'invalid-file.txt',
-                fileBase64: 'aW52YWxpZCBkYXRh', // base64 for "invalid data"
-                userId: 'test-user'
+                fileBase64: 'aW52YWxpZCBkYXRh' // base64 for "invalid data"
             })
         };
 
@@ -105,7 +102,7 @@ describe('Upload Functionality', () => {
             httpMethod: 'POST',
             body: JSON.stringify({
                 filename: 'test.csv'
-                // Missing fileBase64 and userId
+                // Missing fileBase64
             })
         };
 

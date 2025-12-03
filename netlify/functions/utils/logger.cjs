@@ -196,7 +196,8 @@ class Logger {
       auditEvent: true,
       eventType,
       clientIp: data.clientIp || this.context.clientIp || 'unknown',
-      userId: data.userId || this.context.userId || null,
+      // userId is optional - only include if explicitly provided in data
+      ...(data.userId ? { userId: data.userId } : {}),
       systemId: data.systemId || null,
       ...data
     };
