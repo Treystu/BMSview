@@ -62,7 +62,7 @@ exports.handler = async (event, context) => {
     
     // Execute next step
     if (action === 'step' && workloadId) {
-      const { getInsightsJob, updateJobStep } = require('./utils/insights-jobs.cjs');
+      const { getInsightsJob, saveCheckpoint } = require('./utils/insights-jobs.cjs');
       const job = await getInsightsJob(workloadId);
       
       if (!job) {
@@ -84,10 +84,13 @@ exports.handler = async (event, context) => {
       switch (currentStep) {
         case 'initialize':
           // Already done, move to testing
-          await updateJobStep(workloadId, {
-            currentStep: 'test_tool',
-            stepIndex: 0,
-            message: 'Starting tool tests'
+          await saveCheckpoint(workloadId, {
+            state: {
+              ...job.state,
+              currentStep: 'test_tool',
+              stepIndex: 0,
+              message: 'Starting tool tests'
+            }
           }, log);
           stepResult = { success: true, nextStep: 'test_tool' };
           break;

@@ -6,7 +6,14 @@
  */
 
 const { executeToolCall, toolDefinitions } = require('./gemini-tools.cjs');
-const { createInsightsJob, updateJobStep, completeJob, failJob } = require('./insights-jobs.cjs');
+const { createInsightsJob, getInsightsJob, saveCheckpoint, completeJob, failJob } = require('./insights-jobs.cjs');
+
+/**
+ * Helper to update job step state
+ */
+async function updateJobStep(jobId, stateUpdate, log) {
+  return await saveCheckpoint(jobId, { state: stateUpdate }, log);
+}
 
 /**
  * Tool test definitions - what to test for each tool
