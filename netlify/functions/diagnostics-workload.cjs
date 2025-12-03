@@ -22,6 +22,27 @@ const {
 } = require('./utils/diagnostics-steps.cjs');
 
 /**
+ * Get default state structure for diagnostics workload
+ * This ensures all required properties are always present
+ */
+function getDefaultState() {
+  return {
+    workloadType: 'diagnostics',
+    currentStep: 'initialize',
+    stepIndex: 0,
+    totalSteps: 0,
+    toolsToTest: [],
+    toolIndex: 0,
+    results: [],
+    failures: [],
+    feedbackSubmitted: [],
+    progress: 0,
+    message: 'Initializing...',
+    startTime: Date.now()
+  };
+}
+
+/**
  * Simple async workload handler (manual implementation since @netlify/async-workloads may not be available)
  * This follows the pattern described in issue #274 but uses jobs collection for state persistence
  */
@@ -100,21 +121,7 @@ exports.handler = async (event, context) => {
       let stepResult;
       // Access state from checkpointState.state for consistency with insights-jobs pattern
       // Provide proper defaults to prevent "Cannot read properties of undefined" errors
-      const defaultState = {
-        workloadType: 'diagnostics',
-        currentStep: 'initialize',
-        stepIndex: 0,
-        totalSteps: 0,
-        toolsToTest: [],
-        toolIndex: 0,
-        results: [],
-        failures: [],
-        feedbackSubmitted: [],
-        progress: 0,
-        message: 'Initializing...',
-        startTime: Date.now()
-      };
-      const jobState = job.checkpointState?.state || defaultState;
+      const jobState = job.checkpointState?.state || getDefaultState();
       const currentStep = jobState.currentStep || 'initialize';
       
       log.info('Executing step', { workloadId, currentStep, step: jobState.stepIndex });
@@ -204,21 +211,7 @@ exports.handler = async (event, context) => {
       }
       
       // Provide proper defaults to prevent missing properties
-      const defaultState = {
-        workloadType: 'diagnostics',
-        currentStep: 'initialize',
-        stepIndex: 0,
-        totalSteps: 0,
-        toolsToTest: [],
-        toolIndex: 0,
-        results: [],
-        failures: [],
-        feedbackSubmitted: [],
-        progress: 0,
-        message: 'Initializing...',
-        startTime: Date.now()
-      };
-      const jobState = job.checkpointState?.state || defaultState;
+      const jobState = job.checkpointState?.state || getDefaultState();
       
       log.debug('Job state retrieved', { 
         workloadId, 

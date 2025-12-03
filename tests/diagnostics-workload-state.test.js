@@ -78,11 +78,11 @@ describe('Diagnostics Workload State Management', () => {
         toolsToTest: []
       };
 
-      // These operations should not throw
+      // These operations should not throw and should return valid values
       expect(() => {
-        const failureCount = defaultState.failures.length;
-        const resultCount = defaultState.results.length;
-        const toolCount = defaultState.toolsToTest.length;
+        expect(defaultState.failures.length).toBe(0);
+        expect(defaultState.results.length).toBe(0);
+        expect(defaultState.toolsToTest.length).toBe(0);
       }).not.toThrow();
     });
   });
