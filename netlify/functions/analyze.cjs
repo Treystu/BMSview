@@ -1,6 +1,12 @@
 /**
  * Lambda function handler for analyzing image data.
- * * Dependencies:
+ * 
+ * **PRIVACY NOTICE**: This is an unauthenticated API endpoint. Analysis results are stored
+ * and retrieved based on image content hash (SHA-256) only, without user isolation. 
+ * Anyone with the same BMS screenshot can view the analysis results. Do not upload
+ * screenshots containing sensitive or private information.
+ * 
+ * Dependencies:
  * - utils/errors: { errorResponse } - Error handling utilities
  * - utils/validation: { parseJsonBody, validateAnalyzeRequest, validateImagePayload } - Request validation
  * - utils/logger: { createLogger, createTimer } - Logging and timing utilities
@@ -269,13 +275,10 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
       return errorResponse(400, 'invalid_image', 'Could not generate content hash', undefined, { ...headers, 'Content-Type': 'application/json' });
     }
 
-    // Extract userId for data isolation
-    const userId = context.clientContext?.user?.sub || requestBody.userId;
-
     // ***NEW: Check-only mode - return duplicate status without full analysis***
     if (checkOnly) {
       try {
-        const existingAnalysis = await checkExistingAnalysis(contentHash || '', log, userId || '');
+        const existingAnalysis = await checkExistingAnalysis(contentHash || '', log);
 
         // Distinguish between true duplicates and upgrades needed
         const isDuplicate = !!existingAnalysis;
@@ -337,7 +340,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
 
     if (!forceReanalysis) {
       try {
-        const existingAnalysis = await checkExistingAnalysis(contentHash || '', log, userId || '');
+        const existingAnalysis = await checkExistingAnalysis(contentHash || '', log);
 
         if (existingAnalysis) {
           // Check if checkExistingAnalysis flagged this as needing upgrade
@@ -407,7 +410,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
 
     // Store results for future deduplication (best effort)
     try {
-      await storeAnalysisResults(record, contentHash || '', log, forceReanalysis, isUpgrade, existingRecordToUpgrade, userId);
+      await storeAnalysisResults(record, contentHash || '', log, forceReanalysis, isUpgrade, existingRecordToUpgrade);
     } catch (/** @type {any} */ storageError) {
       // Log but don't fail - storage is not critical for immediate response
       log.warn('Failed to store analysis results for deduplication', {
@@ -462,10 +465,10 @@ async function handleLegacyAnalysis(requestBody, headers, log, requestContext) {
     return errorResponse(400, 'missing_parameters', validated.error || 'Missing parameters', validated.details, { ...headers, 'Content-Type': 'application/json' });
   }
 
-  const { jobId, fileData, userId } = /** @type {any} */ (validated).value;
+  const { jobId, fileData } = /** @type {any} */ (validated).value;
   requestContext.jobId = jobId;
 
-  log.info('Legacy analyze request received.', { jobId, userId, fileBytes: fileData ? fileData.length : 0 });
+  log.info('Legacy analyze request received.', { jobId, fileBytes: fileData ? fileData.length : 0 });
   log.exit(202, { mode: 'legacy' });
   return {
     statusCode: 202,
@@ -502,23 +505,12 @@ async function checkIdempotency(idemKey, log) {
  * Checks for existing analysis by content hash
  * @param {string} contentHash - Content hash to check
  * @param {any} log - Logger instance
- * @param {any} userId - User ID
  * @returns {Promise<any>} Existing analysis if found and high quality, null if should re-analyze
  */
-async function checkExistingAnalysis(contentHash, log, userId) {
+async function checkExistingAnalysis(contentHash, log) {
   try {
     const resultsCol = await getCollection('analysis-results');
-    
-    // Build query filter - include userId only if provided for multi-tenancy
-    const filter = { contentHash };
-    if (userId) {
-      filter.userId = userId;
-      log.debug('Checking for duplicate with userId filter', { userId: userId.substring(0, 8) + '...' });
-    } else {
-      log.debug('Checking for duplicate without userId filter (backwards compatibility)');
-    }
-    
-    const existing = await resultsCol.findOne(filter);
+    const existing = await resultsCol.findOne({ contentHash });
     if (existing) {
       log.info('Dedupe: existing analysis found for content hash.', {
         contentHash: contentHash.substring(0, 16) + '...',
@@ -642,7 +634,7 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
  * @param {boolean} isUpgrade - Whether this is upgrading a low-quality record
  * @param {any} existingRecordToUpgrade - Existing record being upgraded (if applicable)
  */
-async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false, isUpgrade = false, existingRecordToUpgrade = null, userId = null) {
+async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false, isUpgrade = false, existingRecordToUpgrade = null) {
   try {
     const resultsCol = await getCollection('analysis-results');
 
@@ -657,23 +649,11 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
       const originalId = existingRecordToUpgrade.id ||
         (existingRecordToUpgrade._id?.toString ? existingRecordToUpgrade._id.toString() : existingRecordToUpgrade._id);
 
-      // Build update filter - include userId only if provided for multi-tenancy
-      // SECURITY NOTE: When userId is not available (backwards compatibility mode),
-      // contentHash alone is used. While this allows for potential cross-user updates
-      // in theory, the probability is extremely low due to SHA-256 collision resistance.
-      // For production multi-tenant deployments, ensure userId is always provided.
-      const updateFilter = { contentHash };
-      if (userId) {
-        updateFilter.userId = userId;
-        log.debug('Updating record with userId filter for multi-tenancy', { userId: userId.substring(0, 8) + '...' });
-      } else {
-        log.debug('Updating record without userId filter (backwards compatibility)', {
-          securityNote: 'Relying on contentHash uniqueness - ensure userId is provided in multi-tenant deployments'
-        });
-      }
-
+      // Use contentHash as the primary deduplication key
+      // NOTE: This is a single-tenant application - all admins share the same analysis data.
+      // The contentHash uniquely identifies an image across all users.
       const updateResult = await resultsCol.updateOne(
-        updateFilter,
+        { contentHash },
         {
           $set: {
             // Keep the original ID - do NOT overwrite with new UUID

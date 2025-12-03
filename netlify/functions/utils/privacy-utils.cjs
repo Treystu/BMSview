@@ -58,9 +58,8 @@ function anonymizeSystemProfile(profile) {
         }
     }
     
-    // 4. Remove other potential PII fields
-    // Use 'in' operator to check for field existence rather than truthiness,
-    // ensuring complete removal of PII fields regardless of their values (null, "", 0, false)
+    // 4. Remove other potential PII fields (if present)
+    // Note: userId is not a required field in the system - it's only removed if present
     const piiFields = ['userId', 'owner', 'email', 'phone', 'address', 'wifiSsid'];
     piiFields.forEach(field => {
         if (field in safeProfile) {

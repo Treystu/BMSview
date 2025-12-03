@@ -8,6 +8,8 @@ An advanced application for analyzing Battery Management System (BMS) screenshot
 
 _Note: Previously known as "BMS Validator"_
 
+> **⚠️ PRIVACY NOTICE**: BMSview is currently a free, unauthenticated application. Analysis data is shared globally and can be viewed by anyone with the same BMS screenshot. Screenshots are identified by their content hash (SHA-256), not by user account. If you upload a screenshot, anyone else who uploads the identical image will see your analysis results. **Do not upload screenshots containing sensitive or private information.** You may intentionally share screenshots with others if desired. Administrative access to the dashboard requires Google OAuth authentication.
+
 View your app in AI Studio: https://ai.studio/apps/drive/1ATGOGWROvHw_0dBbow54GOPJ3IUn_Qsk
 
 ## Features
