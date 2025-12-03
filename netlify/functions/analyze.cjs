@@ -1,6 +1,12 @@
 /**
  * Lambda function handler for analyzing image data.
- * * Dependencies:
+ * 
+ * **PRIVACY NOTICE**: This is an unauthenticated API endpoint. Analysis results are stored
+ * and retrieved based on image content hash (SHA-256) only, without user isolation. 
+ * Anyone with the same BMS screenshot can view the analysis results. Do not upload
+ * screenshots containing sensitive or private information.
+ * 
+ * Dependencies:
  * - utils/errors: { errorResponse } - Error handling utilities
  * - utils/validation: { parseJsonBody, validateAnalyzeRequest, validateImagePayload } - Request validation
  * - utils/logger: { createLogger, createTimer } - Logging and timing utilities
