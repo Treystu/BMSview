@@ -393,6 +393,12 @@ The feedback will be saved to the AI Feedback panel in the Admin Dashboard where
             }
           },
           required: ['title', 'description', 'rationale', 'implementation', 'expectedBenefit', 'estimatedEffort']
+        },
+        guruSource: {
+          type: 'string',
+          enum: ['diagnostics-guru', 'battery-guru', 'visual-guru', 'full-context-guru', 'quick-guru', 'manual'],
+          description: 'Which Guru mode generated this feedback. Used for filtering in Admin Dashboard. Use "battery-guru" for standard insights, "diagnostics-guru" for tool testing/failures, "visual-guru" for chart improvements, "full-context-guru" for deep analysis, "quick-guru" for performance optimizations, "manual" for admin/user submitted.',
+          default: 'battery-guru'
         }
       },
       required: ['systemId', 'feedbackType', 'category', 'priority', 'content']
@@ -1390,13 +1396,14 @@ async function calculateEnergyBudget(params, log) {
  * This allows the Battery Guru to actively suggest improvements to BMSview
  */
 async function submitAppFeedback(params, log) {
-  const { systemId, feedbackType, category, priority, content } = params;
+  const { systemId, feedbackType, category, priority, content, guruSource = 'battery-guru' } = params;
 
   log.info('Submitting app feedback', { 
     systemId, 
     feedbackType, 
     category, 
     priority,
+    guruSource,
     title: content?.title 
   });
 
@@ -1443,6 +1450,7 @@ async function submitAppFeedback(params, log) {
       feedbackType,
       category,
       priority,
+      guruSource: guruSource || 'battery-guru',
       geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       content: {
         title: content.title,

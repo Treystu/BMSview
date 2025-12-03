@@ -275,6 +275,7 @@ export interface AIFeedback {
   feedbackType: 'feature_request' | 'api_suggestion' | 'data_format' | 'bug_report' | 'optimization';
   category: 'weather_api' | 'data_structure' | 'ui_ux' | 'performance' | 'integration' | 'analytics';
   priority: 'low' | 'medium' | 'high' | 'critical';
+  guruSource: 'diagnostics-guru' | 'battery-guru' | 'visual-guru' | 'full-context-guru' | 'quick-guru' | 'manual';
   status: 'pending' | 'reviewed' | 'accepted' | 'implemented' | 'rejected';
   geminiModel: string;
   contextHash: string;
