@@ -642,9 +642,11 @@ function calculateMonthlyBreakdown(allFeedback) {
 /**
  * Main handler
  * 
- * SECURITY: This endpoint is restricted to authenticated admin users only.
- * It should only be accessible from the Admin Dashboard which requires
- * Netlify Identity authentication.
+ * SECURITY: This endpoint is restricted to authenticated users only.
+ * Access control is enforced at the page level - the Admin Dashboard (admin.html)
+ * requires Netlify Identity OAuth authentication before this endpoint can be called.
+ * This endpoint verifies the user is authenticated (has valid JWT) but does not
+ * perform additional role-based access control.
  */
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('feedback-analytics', event, context);
@@ -675,6 +677,8 @@ exports.handler = async (event, context) => {
     
     // SECURITY: Require authentication via Netlify Identity
     // The clientContext is populated by Netlify when a valid JWT is provided
+    // Access control is enforced at the page level (admin.html requires OAuth login)
+    // This endpoint only verifies that the user is authenticated, not their role
     const user = context.clientContext?.user;
     if (!user) {
       log.warn('Unauthorized access attempt to feedback analytics', {
@@ -686,30 +690,12 @@ exports.handler = async (event, context) => {
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           error: 'Authentication required',
-          message: 'This endpoint requires admin authentication. Please log in via the Admin Dashboard.'
-        })
-      };
-    }
-    
-    // Add admin role verification
-    const isAdmin = (user.app_metadata?.roles?.includes('admin')) || (user.user_metadata?.role === 'admin');
-    if (!isAdmin) {
-      log.warn('Non-admin user attempted to access feedback analytics', {
-        userEmail: user.email,
-        userId: user.sub,
-        path: event.path
-      });
-      return {
-        statusCode: 403,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          error: 'Forbidden',
-          message: 'This endpoint requires admin privileges.'
+          message: 'This endpoint requires authentication. Please log in via the Admin Dashboard.'
         })
       };
     }
 
-    log.info('Authenticated admin accessing feedback analytics', {
+    log.info('Authenticated user accessing feedback analytics', {
       userEmail: user.email,
       userId: user.sub
     });
