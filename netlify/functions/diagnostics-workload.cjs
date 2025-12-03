@@ -36,15 +36,34 @@ exports.handler = async (event, context) => {
   const log = createLogger('diagnostics-workload', context);
   log.entry({ method: event.httpMethod, path: event.path });
   
+  // Sanitize headers for DEBUG logging
+  const sanitizedHeaders = event.headers ? { 
+    ...event.headers,
+    authorization: event.headers.authorization ? '[REDACTED]' : undefined,
+    cookie: event.headers.cookie ? '[REDACTED]' : undefined,
+    'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
+  } : {};
+  
+  log.debug('Request received', { 
+    method: event.httpMethod, 
+    path: event.path,
+    bodyLength: event.body ? event.body.length : 0,
+    headers: sanitizedHeaders
+  });
+  
   try {
     const body = event.body ? JSON.parse(event.body) : {};
     const { action = 'start', workloadId, step } = body;
     
     log.info('Diagnostics workload request', { action, workloadId, step });
+    log.debug('Request body (sanitized)', { action, workloadId, step, bodyLength: event.body ? event.body.length : 0 });
     
     // Start new diagnostic run
     if (action === 'start') {
+      log.debug('Starting new diagnostics workload');
       const result = await initializeDiagnostics(log, context);
+      
+      log.debug('Diagnostics workload initialized', result);
       
       return {
         statusCode: 200,
@@ -62,10 +81,12 @@ exports.handler = async (event, context) => {
     
     // Execute next step
     if (action === 'step' && workloadId) {
+      log.debug('Executing step', { workloadId });
       const { getInsightsJob, saveCheckpoint } = require('./utils/insights-jobs.cjs');
       const job = await getInsightsJob(workloadId);
       
       if (!job) {
+        log.warn('Workload not found for step execution', { workloadId });
         return {
           statusCode: 404,
           headers: { ...headers, 'Content-Type': 'application/json' },
@@ -82,9 +103,14 @@ exports.handler = async (event, context) => {
       const currentStep = jobState.currentStep || 'initialize';
       
       log.info('Executing step', { workloadId, currentStep, step: jobState.stepIndex });
+      log.debug('Job state before step execution', { 
+        jobState, 
+        hasCheckpointState: !!job.checkpointState 
+      });
       
       switch (currentStep) {
         case 'initialize':
+          log.debug('Step: initialize - moving to test_tool');
           // Already done, move to testing
           await saveCheckpoint(workloadId, {
             state: {
@@ -98,22 +124,27 @@ exports.handler = async (event, context) => {
           break;
           
         case 'test_tool':
+          log.debug('Step: test_tool');
           stepResult = await testTool(workloadId, jobState, log, context);
           break;
           
         case 'analyze_failures':
+          log.debug('Step: analyze_failures');
           stepResult = await analyzeFailures(workloadId, jobState, log, context);
           break;
           
         case 'submit_feedback':
+          log.debug('Step: submit_feedback');
           stepResult = await submitFeedbackForFailures(workloadId, jobState, log, context);
           break;
           
         case 'finalize':
+          log.debug('Step: finalize');
           stepResult = await finalizeDiagnostics(workloadId, jobState, log, context);
           break;
           
         default:
+          log.error('Unknown step', { currentStep });
           return {
             statusCode: 400,
             headers: { ...headers, 'Content-Type': 'application/json' },
@@ -123,6 +154,8 @@ exports.handler = async (event, context) => {
             })
           };
       }
+      
+      log.debug('Step result', { currentStep, stepResult });
       
       return {
         statusCode: 200,
@@ -141,7 +174,10 @@ exports.handler = async (event, context) => {
       const { getInsightsJob } = require('./utils/insights-jobs.cjs');
       const job = await getInsightsJob(workloadId);
       
+      log.debug('Status request', { workloadId, jobFound: !!job });
+      
       if (!job) {
+        log.warn('Workload not found', { workloadId });
         return {
           statusCode: 404,
           headers: { ...headers, 'Content-Type': 'application/json' },
@@ -154,23 +190,50 @@ exports.handler = async (event, context) => {
       
       const jobState = job.checkpointState?.state || {};
       
+      log.debug('Job state retrieved', { 
+        workloadId, 
+        status: job.status,
+        currentStep: jobState.currentStep,
+        stepIndex: jobState.stepIndex,
+        totalSteps: jobState.totalSteps,
+        hasCheckpointState: !!job.checkpointState,
+        hasState: !!jobState,
+        resultCount: (jobState.results || []).length,
+        failureCount: (jobState.failures || []).length
+      });
+      
+      // Ensure all required fields are present with defaults
+      const response = {
+        success: true,
+        workloadId: job.id,
+        status: job.status || 'pending',
+        currentStep: jobState.currentStep || 'initialize',
+        stepIndex: jobState.stepIndex !== undefined ? jobState.stepIndex : 0,
+        totalSteps: jobState.totalSteps || 0,
+        progress: jobState.progress || 0,
+        message: jobState.message || 'Initializing...',
+        results: jobState.results || [],
+        feedbackSubmitted: jobState.feedbackSubmitted || [],
+        summary: jobState.summary || null,
+        error: job.error || null
+      };
+      
+      log.debug('Sending status response', { 
+        workloadId: response.workloadId,
+        status: response.status,
+        currentStep: response.currentStep,
+        stepIndex: response.stepIndex,
+        totalSteps: response.totalSteps,
+        progress: response.progress,
+        hasResults: response.results.length > 0,
+        hasSummary: !!response.summary,
+        hasError: !!response.error
+      });
+      
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          success: true,
-          workloadId: job.id,
-          status: job.status,
-          currentStep: jobState.currentStep,
-          stepIndex: jobState.stepIndex,
-          totalSteps: jobState.totalSteps,
-          progress: jobState.progress || 0,
-          message: jobState.message,
-          results: jobState.results,
-          feedbackSubmitted: jobState.feedbackSubmitted || [],
-          summary: jobState.summary,
-          error: job.error
-        })
+        body: JSON.stringify(response)
       };
     }
     

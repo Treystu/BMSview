@@ -145,13 +145,13 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
           setStatus({
             workloadId: data.workloadId,
             status: data.status,
-            currentStep: data.currentStep,
-            stepIndex: data.stepIndex,
-            totalSteps: data.totalSteps,
+            currentStep: data.currentStep || 'initialize',
+            stepIndex: data.stepIndex !== undefined ? data.stepIndex : 0,
+            totalSteps: data.totalSteps || 0,
             progress: data.progress || 0,
-            message: data.message,
-            results: data.results,
-            feedbackSubmitted: data.feedbackSubmitted,
+            message: data.message || 'Initializing...',
+            results: data.results || [],
+            feedbackSubmitted: data.feedbackSubmitted || [],
             summary: data.summary
           });
           
@@ -239,7 +239,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
                 {getStepIcon(status.currentStep)} {status.message}
               </span>
               <span className="text-sm text-gray-600">
-                Step {status.stepIndex + 1} / {status.totalSteps}
+                Step {(status.stepIndex !== undefined ? status.stepIndex : 0) + 1} / {status.totalSteps || 0}
               </span>
             </div>
             

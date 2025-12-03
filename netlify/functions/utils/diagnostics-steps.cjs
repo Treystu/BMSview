@@ -91,6 +91,7 @@ const TOOL_TESTS = [
  */
 async function initializeDiagnostics(log, context) {
   log.info('Initializing diagnostics workload');
+  log.debug('Creating diagnostics job');
   
   // Create job in insights-jobs collection
   const jobId = `diag_${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -110,11 +111,20 @@ async function initializeDiagnostics(log, context) {
     startTime: Date.now()
   };
   
+  log.debug('Initial state created', { 
+    jobId, 
+    totalSteps: initialState.totalSteps,
+    toolCount: TOOL_TESTS.length,
+    workloadType: initialState.workloadType
+  });
+  
   // Create job using standard createInsightsJob signature
   const job = await createInsightsJob({
     systemId: 'diagnostics-system',
     customPrompt: 'Diagnostic self-test'
   }, log);
+  
+  log.debug('Job created', { originalJobId: job.id, newJobId: jobId });
   
   // Update the job ID to use our diagnostics-specific format
   const collection = await getCollection('insights-jobs');
@@ -130,6 +140,7 @@ async function initializeDiagnostics(log, context) {
   );
   
   log.info('Diagnostics workload initialized', { jobId, totalSteps: initialState.totalSteps });
+  log.debug('Job updated in database', { jobId });
   
   return {
     workloadId: jobId,
@@ -144,7 +155,10 @@ async function initializeDiagnostics(log, context) {
 async function testTool(workloadId, state, log, context) {
   const toolIndex = state.toolIndex || 0;
   
+  log.debug('Testing tool', { toolIndex, totalTools: TOOL_TESTS.length });
+  
   if (toolIndex >= TOOL_TESTS.length) {
+    log.debug('All tools tested, moving to analysis phase');
     // All tools tested, move to analysis
     await updateJobStep(workloadId, {
       currentStep: 'analyze_failures',
@@ -161,6 +175,13 @@ async function testTool(workloadId, state, log, context) {
   
   const toolTest = TOOL_TESTS[toolIndex];
   log.info('Testing tool', { tool: toolTest.name, index: toolIndex });
+  log.debug('Tool test parameters', { 
+    toolName: toolTest.name,
+    hasValidTest: !!toolTest.validTest,
+    hasEdgeCaseTest: !!toolTest.edgeCaseTest,
+    validTestKeys: Object.keys(toolTest.validTest || {}),
+    edgeCaseTestKeys: Object.keys(toolTest.edgeCaseTest || {})
+  });
   
   const result = {
     tool: toolTest.name,
