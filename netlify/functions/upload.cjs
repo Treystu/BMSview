@@ -43,27 +43,26 @@ exports.handler = async (event, context) => {
     log.debug('Parsing multipart form data');
     // Parse multipart form data
     const formData = await parseMultipartData(event, log);
-    const { file, userId } = formData;
+    const { file } = formData;
     
-    log.info('Processing upload request', { fileName: file?.name, userId, fileSize: file?.size });
+    log.info('Processing upload request', { fileName: file?.name, fileSize: file?.size });
     
-    if (!file || !userId) {
-      log.warn('Missing required fields', { hasFile: !!file, hasUserId: !!userId });
+    if (!file) {
+      log.warn('Missing required fields', { hasFile: !!file });
       timer.end({ error: 'missing_fields' });
       log.exit(400);
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'Missing file or userId' })
+        body: JSON.stringify({ error: 'Missing file' })
       };
     }
 
-    log.debug('Checking for duplicate file', { fileName: file.name, userId });
+    log.debug('Checking for duplicate file', { fileName: file.name });
     // Check for duplicate file
     const uploadsCollection = await getCollection('uploads');
     const existing = await uploadsCollection.findOne({
       filename: file.name,
-      userId,
       status: { $in: ['completed', 'processing'] }
     });
 
@@ -82,11 +81,10 @@ exports.handler = async (event, context) => {
       };
     }
 
-    log.info('Creating upload record', { fileName: file.name, userId });
+    log.info('Creating upload record', { fileName: file.name });
     // Insert upload record in processing state
     const uploadRecord = await uploadsCollection.insertOne({
       filename: file.name,
-      userId,
       status: 'processing',
       createdAt: new Date(),
       fileSize: file.size,
@@ -179,10 +177,8 @@ async function parseMultipartData(event, log) {
             size: buffer.length,
             type: part.headers['content-type'],
             data: buffer,
-          },
-          userId: 'user-id-from-form-or-header' // Replace with actual user ID extraction
+          }
         });
-        log.info('User ID extracted', { userId: 'user-id-from-form-or-header' });
       });
       part.on('error', (err) => {
         log.error('Multiparty part error', { error: err.message, stack: err.stack });

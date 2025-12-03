@@ -50,7 +50,7 @@ function parseJsonBody(event, log = null) {
 
 /**
  * Validate analyze request minimal shape.
- * Accept legacy shape: { jobId, fileData, userId }
+ * Accept legacy shape: { jobId, fileData }
  * @param {object} payload - Request payload to validate
  * @param {object} log - Optional logger instance for debug logging
  */
@@ -70,9 +70,6 @@ function validateAnalyzeRequest(payload, log = null) {
   if (!payload.fileData || typeof payload.fileData !== "string") {
     details.missing.push("fileData");
   }
-  if (!payload.userId || typeof payload.userId !== "string") {
-    details.missing.push("userId");
-  }
 
   if (details.missing.length > 0) {
     if (log) {
@@ -82,7 +79,7 @@ function validateAnalyzeRequest(payload, log = null) {
   }
 
   if (log) {
-    log.debug('Validate analyze request passed', { hasJobId: !!payload.jobId, hasFileData: !!payload.fileData, hasUserId: !!payload.userId });
+    log.debug('Validate analyze request passed', { hasJobId: !!payload.jobId, hasFileData: !!payload.fileData });
   }
   return { ok: true, value: payload };
 }
