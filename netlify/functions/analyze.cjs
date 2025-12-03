@@ -688,7 +688,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
       record.id = originalId;
     } else {
       // New record - insert
-      await resultsCol.insertOne({
+      const newRecord = {
         id: record.id,
         fileName: record.fileName,
         timestamp: record.timestamp,
@@ -700,7 +700,17 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         validationWarnings: record.validationWarnings,
         validationScore: record.validationScore,
         extractionAttempts: 1
-      });
+      };
+      
+      // Add userId only if provided (for multi-tenancy)
+      if (userId) {
+        newRecord.userId = userId;
+        log.debug('Storing new record with userId for multi-tenancy', { userId: userId.substring(0, 8) + '...' });
+      } else {
+        log.debug('Storing new record without userId (backwards compatibility)');
+      }
+
+      await resultsCol.insertOne(newRecord);
 
       log.info('Analysis results stored for deduplication', {
         recordId: record.id,
