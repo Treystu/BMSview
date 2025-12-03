@@ -111,7 +111,12 @@ async function initializeDiagnostics(log, context) {
     startTime: Date.now()
   };
   
-  log.debug('Initial state created', { jobId, initialState });
+  log.debug('Initial state created', { 
+    jobId, 
+    totalSteps: initialState.totalSteps,
+    toolCount: TOOL_TESTS.length,
+    workloadType: initialState.workloadType
+  });
   
   // Create job using standard createInsightsJob signature
   const job = await createInsightsJob({
@@ -170,7 +175,13 @@ async function testTool(workloadId, state, log, context) {
   
   const toolTest = TOOL_TESTS[toolIndex];
   log.info('Testing tool', { tool: toolTest.name, index: toolIndex });
-  log.debug('Tool test parameters', { validTest: toolTest.validTest, edgeCaseTest: toolTest.edgeCaseTest });
+  log.debug('Tool test parameters', { 
+    toolName: toolTest.name,
+    hasValidTest: !!toolTest.validTest,
+    hasEdgeCaseTest: !!toolTest.edgeCaseTest,
+    validTestKeys: Object.keys(toolTest.validTest || {}),
+    edgeCaseTestKeys: Object.keys(toolTest.edgeCaseTest || {})
+  });
   
   const result = {
     tool: toolTest.name,

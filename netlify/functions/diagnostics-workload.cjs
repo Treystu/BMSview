@@ -35,11 +35,20 @@ exports.handler = async (event, context) => {
   
   const log = createLogger('diagnostics-workload', context);
   log.entry({ method: event.httpMethod, path: event.path });
+  
+  // Sanitize headers for DEBUG logging
+  const sanitizedHeaders = event.headers ? { 
+    ...event.headers,
+    authorization: event.headers.authorization ? '[REDACTED]' : undefined,
+    cookie: event.headers.cookie ? '[REDACTED]' : undefined,
+    'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
+  } : {};
+  
   log.debug('Request received', { 
     method: event.httpMethod, 
     path: event.path,
-    body: event.body,
-    headers: event.headers 
+    bodyLength: event.body ? event.body.length : 0,
+    headers: sanitizedHeaders
   });
   
   try {
@@ -188,7 +197,9 @@ exports.handler = async (event, context) => {
         stepIndex: jobState.stepIndex,
         totalSteps: jobState.totalSteps,
         hasCheckpointState: !!job.checkpointState,
-        hasState: !!jobState
+        hasState: !!jobState,
+        resultCount: (jobState.results || []).length,
+        failureCount: (jobState.failures || []).length
       });
       
       // Ensure all required fields are present with defaults
@@ -207,7 +218,17 @@ exports.handler = async (event, context) => {
         error: job.error || null
       };
       
-      log.debug('Sending status response', response);
+      log.debug('Sending status response', { 
+        workloadId: response.workloadId,
+        status: response.status,
+        currentStep: response.currentStep,
+        stepIndex: response.stepIndex,
+        totalSteps: response.totalSteps,
+        progress: response.progress,
+        hasResults: response.results.length > 0,
+        hasSummary: !!response.summary,
+        hasError: !!response.error
+      });
       
       return {
         statusCode: 200,
