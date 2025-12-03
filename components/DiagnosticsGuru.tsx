@@ -157,6 +157,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
     } catch (err) {
       console.error('Fatal error in step execution:', err);
       setError(err instanceof Error ? err.message : 'Unknown error during step execution');
+      setIsRunning(false);
     } finally {
       isExecutingRef.current = false;
     }
