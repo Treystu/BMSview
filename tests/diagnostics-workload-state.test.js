@@ -203,15 +203,7 @@ describe('Diagnostics Workload State Management', () => {
         });
       });
 
-      // Override to set analyze_failures as current step
-      mockGetInsightsJob.mockResolvedValue({
-        id: 'test-workload-id',
-        status: 'running',
-        checkpointState: null // Completely null - triggers full default state
-      });
-
-      // Now manually update mock to return state with analyze_failures step
-      // but missing other properties
+      // Set up state with analyze_failures step to trigger the function that was crashing
       const stateWithOnlyStep = getDefaultState();
       stateWithOnlyStep.currentStep = 'analyze_failures';
       
