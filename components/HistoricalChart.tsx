@@ -1276,8 +1276,14 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [selectedSystemId, setSelectedSystemId] = useState<string>('');
     const [metricConfig, setMetricConfig] = useState<Partial<Record<MetricKey, { axis: Axis }>>>({ stateOfCharge: { axis: 'left' }, current: { axis: 'right' } });
     const [hiddenMetrics] = useState<Set<MetricKey>>(new Set());
-    const [startDate, setStartDate] = useState<string>('');
-    const [endDate, setEndDate] = useState<string>('');
+    
+    // Initialize with default 30-day range so charts load immediately
+    const now = new Date();
+    const [startDate, setStartDate] = useState<string>(
+        new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
+    );
+    const [endDate, setEndDate] = useState<string>(now.toISOString().slice(0, 16));
+    
     const [timelineData, setTimelineData] = useState<any | null>(null);
     const [bandEnabled, setBandEnabled] = useState<boolean>(false);
 

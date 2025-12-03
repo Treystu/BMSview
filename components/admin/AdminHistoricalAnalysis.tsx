@@ -22,8 +22,14 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
 }) => {
     const [selectedSystemId, setSelectedSystemId] = useState<string>('');
     const [visibleTimeRange, setVisibleTimeRange] = useState<{ start: number; end: number } | null>(null);
-    const [startDate, setStartDate] = useState<string>('');
-    const [endDate, setEndDate] = useState<string>('');
+    
+    // Initialize with default 30-day range so charts load immediately
+    const now = new Date();
+    const [startDate, setStartDate] = useState<string>(
+        new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
+    );
+    const [endDate, setEndDate] = useState<string>(now.toISOString().slice(0, 16));
+    
     const [analysisResult, setAnalysisResult] = useState<any>(null);
     const [predictionResult, setPredictionResult] = useState<any>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
