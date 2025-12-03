@@ -1339,12 +1339,12 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
     const stableSetViewBox = useCallback(setViewBox, []);
 
-    // Auto-generate chart when system is selected
+    // Auto-generate chart when system is selected or date range changes
     useEffect(() => {
         if (selectedSystemId) {
             prepareChartData();
         }
-    }, [selectedSystemId]);
+    }, [selectedSystemId, prepareChartData]);
 
     // Load predictive data when chartView changes to predictive
     useEffect(() => {
