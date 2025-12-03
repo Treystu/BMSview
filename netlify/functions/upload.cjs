@@ -60,6 +60,8 @@ exports.handler = async (event, context) => {
 
     log.debug('Checking for duplicate file', { fileName: file.name });
     // Check for duplicate file
+    // NOTE: This is a single-tenant application - all admins share the same uploads.
+    // Duplicate detection is based on filename only, not per-user.
     const uploadsCollection = await getCollection('uploads');
     const existing = await uploadsCollection.findOne({
       filename: file.name,

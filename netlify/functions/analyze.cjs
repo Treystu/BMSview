@@ -644,6 +644,8 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         (existingRecordToUpgrade._id?.toString ? existingRecordToUpgrade._id.toString() : existingRecordToUpgrade._id);
 
       // Use contentHash as the primary deduplication key
+      // NOTE: This is a single-tenant application - all admins share the same analysis data.
+      // The contentHash uniquely identifies an image across all users.
       const updateResult = await resultsCol.updateOne(
         { contentHash },
         {
