@@ -13,18 +13,13 @@ exports.handler = async (event, context) => {
     }
 
     const log = createLoggerFromEvent('check-hashes', event, context);
-    log.entry({ method: event.httpMethod, path: event.path });
-    const timer = createTimer(log, 'check-hashes');
-
-    // ENHANCED LOGGING: Always log function invocation for debugging
-    console.log(JSON.stringify({
-        timestamp: new Date().toISOString(),
-        function: 'check-hashes',
-        event: 'INVOKED',
-        method: event.httpMethod,
+    log.entry({ 
+        method: event.httpMethod, 
+        path: event.path,
         hasBody: !!event.body,
         bodyLength: event.body?.length || 0
-    }));
+    });
+    const timer = createTimer(log, 'check-hashes');
 
     if (event.httpMethod !== 'POST') {
         log.warn('Method not allowed', { method: event.httpMethod });
@@ -141,28 +136,14 @@ exports.handler = async (event, context) => {
             upgradesNeeded: upgrades.size
         });
         
-        // ENHANCED LOGGING: Final summary with detailed breakdown
         log.info('Hash check complete', { 
             hashesChecked: hashes.length, 
             duplicatesFound: duplicates.length, 
             upgradesNeeded: upgrades.size,
             newFiles: hashes.length - duplicates.length - upgrades.size,
-            durationMs
+            durationMs,
+            event: 'COMPLETE'
         });
-        
-        // ENHANCED LOGGING: Console log for easy visibility
-        console.log(JSON.stringify({
-            timestamp: new Date().toISOString(),
-            function: 'check-hashes',
-            event: 'COMPLETE',
-            summary: {
-                total: hashes.length,
-                duplicates: duplicates.length,
-                upgrades: upgrades.size,
-                newFiles: hashes.length - duplicates.length - upgrades.size
-            },
-            durationMs
-        }));
 
         log.exit(200);
         return {
