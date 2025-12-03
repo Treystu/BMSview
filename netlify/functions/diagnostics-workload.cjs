@@ -99,7 +99,22 @@ exports.handler = async (event, context) => {
       
       let stepResult;
       // Access state from checkpointState.state for consistency with insights-jobs pattern
-      const jobState = job.checkpointState?.state || {};
+      // Provide proper defaults to prevent "Cannot read properties of undefined" errors
+      const defaultState = {
+        workloadType: 'diagnostics',
+        currentStep: 'initialize',
+        stepIndex: 0,
+        totalSteps: 0,
+        toolsToTest: [],
+        toolIndex: 0,
+        results: [],
+        failures: [],
+        feedbackSubmitted: [],
+        progress: 0,
+        message: 'Initializing...',
+        startTime: Date.now()
+      };
+      const jobState = job.checkpointState?.state || defaultState;
       const currentStep = jobState.currentStep || 'initialize';
       
       log.info('Executing step', { workloadId, currentStep, step: jobState.stepIndex });
@@ -188,7 +203,22 @@ exports.handler = async (event, context) => {
         };
       }
       
-      const jobState = job.checkpointState?.state || {};
+      // Provide proper defaults to prevent missing properties
+      const defaultState = {
+        workloadType: 'diagnostics',
+        currentStep: 'initialize',
+        stepIndex: 0,
+        totalSteps: 0,
+        toolsToTest: [],
+        toolIndex: 0,
+        results: [],
+        failures: [],
+        feedbackSubmitted: [],
+        progress: 0,
+        message: 'Initializing...',
+        startTime: Date.now()
+      };
+      const jobState = job.checkpointState?.state || defaultState;
       
       log.debug('Job state retrieved', { 
         workloadId, 
