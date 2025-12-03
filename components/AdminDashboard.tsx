@@ -44,6 +44,7 @@ import ReconciliationDashboard from './admin/reconciliation/ReconciliationDashbo
 import MonitoringDashboard from './admin/MonitoringDashboard';
 import { getNestedValue } from './admin/columnDefinitions';
 import { AIFeedbackDashboard } from './AIFeedbackDashboard';
+import { DiagnosticsGuru } from './DiagnosticsGuru';
 
 interface NetlifyUser {
     email: string;
@@ -923,6 +924,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">🤖 AI Feedback & Suggestions</h2>
                             <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
                                 <AIFeedbackDashboard />
+                            </div>
+                        </section>
+                        <section id="diagnostics-guru-section">
+                            <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">🔧 Diagnostics Guru</h2>
+                            <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
+                                <DiagnosticsGuru />
                             </div>
                         </section>
                         <section id="ip-management-section">
