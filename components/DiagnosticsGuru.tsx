@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import SpinnerIcon from './icons/SpinnerIcon';
 
 interface DiagnosticsGuruProps {
@@ -31,7 +31,8 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
   const [workloadId, setWorkloadId] = useState<string | null>(null);
   const [status, setStatus] = useState<WorkloadStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isExecutingRef = useRef(false);
 
   // Start diagnostics workload
   const startDiagnostics = async () => {
@@ -52,9 +53,10 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
         throw new Error(data.error || 'Failed to start diagnostics');
       }
       
-      setWorkloadId(data.workloadId);
+      const newWorkloadId = data.workloadId;
+      setWorkloadId(newWorkloadId);
       setStatus({
-        workloadId: data.workloadId,
+        workloadId: newWorkloadId,
         status: 'running',
         currentStep: data.nextStep,
         stepIndex: 0,
@@ -63,44 +65,72 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
         message: 'Starting diagnostics...'
       });
       
-      // Start polling for status
-      startPolling(data.workloadId);
+      // Start polling for status (backend will execute steps autonomously)
+      startPolling(newWorkloadId);
       
-      // Execute first step
-      await executeStep(data.workloadId);
+      // Trigger backend to start executing steps
+      await triggerBackendExecution(newWorkloadId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
       setIsRunning(false);
     }
   };
 
-  // Execute a single step
-  const executeStep = async (wid: string) => {
+  // Trigger backend to execute all steps (backend will handle orchestration)
+  const triggerBackendExecution = async (wid: string) => {
+    if (isExecutingRef.current) return;
+    isExecutingRef.current = true;
+    
     try {
-      const response = await fetch('/.netlify/functions/diagnostics-workload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'step', workloadId: wid })
-      });
+      // Execute steps with retry logic and exponential backoff
+      let retryCount = 0;
+      const maxRetries = 3;
       
-      const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Step execution failed');
+      while (retryCount < maxRetries) {
+        try {
+          const response = await fetch('/.netlify/functions/diagnostics-workload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'step', workloadId: wid })
+          });
+          
+          const data = await response.json();
+          
+          if (!data.success) {
+            throw new Error(data.error || 'Step execution failed');
+          }
+          
+          // If complete, stop
+          if (data.complete) {
+            break;
+          }
+          
+          // Wait 1 second before next step (reduced from 100ms)
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          retryCount = 0; // Reset on success
+        } catch (err) {
+          retryCount++;
+          if (retryCount >= maxRetries) {
+            console.error('Max retries reached:', err);
+            setError(err instanceof Error ? err.message : 'Step execution failed after retries');
+            break;
+          }
+          // Exponential backoff: 2s, 4s, 8s
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+        }
       }
-      
-      // If not complete, schedule next step
-      if (!data.complete) {
-        setTimeout(() => executeStep(wid), 100);
-      }
-    } catch (err) {
-      console.error('Step execution error:', err);
-      setError(err instanceof Error ? err.message : 'Step execution failed');
+    } finally {
+      isExecutingRef.current = false;
     }
   };
 
   // Poll for status updates
   const startPolling = (wid: string) => {
+    // Clear any existing interval
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    
     const interval = setInterval(async () => {
       try {
         const response = await fetch('/.netlify/functions/diagnostics-workload', {
@@ -127,8 +157,9 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
           
           // Stop polling if complete
           if (data.status === 'completed' || data.status === 'failed') {
-            if (pollingInterval) {
-              clearInterval(pollingInterval);
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              pollingIntervalRef.current = null;
             }
             setIsRunning(false);
           }
@@ -138,17 +169,18 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
       }
     }, 2000); // Poll every 2 seconds
     
-    setPollingInterval(interval);
+    pollingIntervalRef.current = interval;
   };
 
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
       }
     };
-  }, [pollingInterval]);
+  }, []); // Empty deps array - only cleanup on unmount
 
   const getStepIcon = (step: string) => {
     const icons: Record<string, string> = {
@@ -239,6 +271,12 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
               <span className="text-xl mr-2">✅</span>
               Diagnostics Complete
             </h3>
+            
+            {workloadId && (
+              <div className="text-xs text-gray-600 mb-3 font-mono">
+                Workload ID: {workloadId}
+              </div>
+            )}
             
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>

@@ -77,16 +77,18 @@ exports.handler = async (event, context) => {
       }
       
       let stepResult;
-      const currentStep = job.state.currentStep || 'initialize';
+      // Access state from checkpointState.state for consistency with insights-jobs pattern
+      const jobState = job.checkpointState?.state || {};
+      const currentStep = jobState.currentStep || 'initialize';
       
-      log.info('Executing step', { workloadId, currentStep, step: job.state.stepIndex });
+      log.info('Executing step', { workloadId, currentStep, step: jobState.stepIndex });
       
       switch (currentStep) {
         case 'initialize':
           // Already done, move to testing
           await saveCheckpoint(workloadId, {
             state: {
-              ...job.state,
+              ...jobState,
               currentStep: 'test_tool',
               stepIndex: 0,
               message: 'Starting tool tests'
@@ -96,19 +98,19 @@ exports.handler = async (event, context) => {
           break;
           
         case 'test_tool':
-          stepResult = await testTool(workloadId, job.state, log, context);
+          stepResult = await testTool(workloadId, jobState, log, context);
           break;
           
         case 'analyze_failures':
-          stepResult = await analyzeFailures(workloadId, job.state, log, context);
+          stepResult = await analyzeFailures(workloadId, jobState, log, context);
           break;
           
         case 'submit_feedback':
-          stepResult = await submitFeedbackForFailures(workloadId, job.state, log, context);
+          stepResult = await submitFeedbackForFailures(workloadId, jobState, log, context);
           break;
           
         case 'finalize':
-          stepResult = await finalizeDiagnostics(workloadId, job.state, log, context);
+          stepResult = await finalizeDiagnostics(workloadId, jobState, log, context);
           break;
           
         default:
@@ -150,20 +152,23 @@ exports.handler = async (event, context) => {
         };
       }
       
+      const jobState = job.checkpointState?.state || {};
+      
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           success: true,
-          workloadId: job.jobId,
+          workloadId: job.id,
           status: job.status,
-          currentStep: job.state.currentStep,
-          stepIndex: job.state.stepIndex,
-          totalSteps: job.state.totalSteps,
-          progress: job.state.progress || 0,
-          message: job.state.message,
-          results: job.state.results,
-          feedbackSubmitted: job.state.feedbackSubmitted || [],
+          currentStep: jobState.currentStep,
+          stepIndex: jobState.stepIndex,
+          totalSteps: jobState.totalSteps,
+          progress: jobState.progress || 0,
+          message: jobState.message,
+          results: jobState.results,
+          feedbackSubmitted: jobState.feedbackSubmitted || [],
+          summary: jobState.summary,
           error: job.error
         })
       };

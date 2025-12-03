@@ -7,12 +7,22 @@
 
 const { executeToolCall, toolDefinitions } = require('./gemini-tools.cjs');
 const { createInsightsJob, getInsightsJob, saveCheckpoint, completeJob, failJob } = require('./insights-jobs.cjs');
+const { getCollection } = require('./mongodb.cjs');
 
 /**
  * Helper to update job step state
+ * State is stored in checkpointState.state for consistency with insights-jobs pattern
  */
 async function updateJobStep(jobId, stateUpdate, log) {
   return await saveCheckpoint(jobId, { state: stateUpdate }, log);
+}
+
+/**
+ * Get available tool definitions for validation
+ * @returns {Array} List of available tool names
+ */
+function getAvailableTools() {
+  return toolDefinitions.map(t => t.name);
 }
 
 /**
@@ -100,14 +110,24 @@ async function initializeDiagnostics(log, context) {
     startTime: Date.now()
   };
   
-  await createInsightsJob({
-    jobId,
-    mode: 'diagnostics',
+  // Create job using standard createInsightsJob signature
+  const job = await createInsightsJob({
     systemId: 'diagnostics-system',
-    customPrompt: 'Diagnostic self-test',
-    state: initialState,
-    status: 'pending'
+    customPrompt: 'Diagnostic self-test'
   }, log);
+  
+  // Update the job ID to use our diagnostics-specific format
+  const collection = await getCollection('insights-jobs');
+  await collection.updateOne(
+    { id: job.id },
+    { 
+      $set: { 
+        id: jobId,
+        checkpointState: { state: initialState },
+        status: 'pending'
+      } 
+    }
+  );
   
   log.info('Diagnostics workload initialized', { jobId, totalSteps: initialState.totalSteps });
   
@@ -149,6 +169,8 @@ async function testTool(workloadId, state, log, context) {
     timestamp: new Date().toISOString()
   };
   
+  const newFailures = [];
+  
   // Test with valid parameters
   try {
     const start = Date.now();
@@ -158,7 +180,7 @@ async function testTool(workloadId, state, log, context) {
     result.validTest.response = response;
     if (response.error) {
       result.validTest.error = response.error;
-      state.failures.push({
+      newFailures.push({
         tool: toolTest.name,
         testType: 'valid',
         error: response.error,
@@ -168,7 +190,7 @@ async function testTool(workloadId, state, log, context) {
   } catch (error) {
     result.validTest.error = error.message;
     result.validTest.duration = 0;
-    state.failures.push({
+    newFailures.push({
       tool: toolTest.name,
       testType: 'valid',
       error: error.message,
@@ -185,7 +207,7 @@ async function testTool(workloadId, state, log, context) {
     result.edgeCaseTest.response = response;
     if (response.error) {
       result.edgeCaseTest.error = response.error;
-      state.failures.push({
+      newFailures.push({
         tool: toolTest.name,
         testType: 'edge_case',
         error: response.error,
@@ -195,7 +217,7 @@ async function testTool(workloadId, state, log, context) {
   } catch (error) {
     result.edgeCaseTest.error = error.message;
     result.edgeCaseTest.duration = 0;
-    state.failures.push({
+    newFailures.push({
       tool: toolTest.name,
       testType: 'edge_case',
       error: error.message,
@@ -203,28 +225,33 @@ async function testTool(workloadId, state, log, context) {
     });
   }
   
-  state.results.push(result);
-  state.toolIndex = toolIndex + 1;
-  state.progress = Math.round((state.toolIndex / state.totalSteps) * 100);
-  state.message = `Tested ${toolTest.name} (${state.toolIndex}/${TOOL_TESTS.length})`;
+  // Create immutable state update
+  const updatedState = {
+    ...state,
+    results: [...state.results, result],
+    failures: [...state.failures, ...newFailures],
+    toolIndex: toolIndex + 1,
+    progress: Math.round(((toolIndex + 1) / state.totalSteps) * 100),
+    message: `Tested ${toolTest.name} (${toolIndex + 1}/${TOOL_TESTS.length})`
+  };
   
   // Persist state
-  await updateJobStep(workloadId, state, log);
+  await updateJobStep(workloadId, updatedState, log);
   
   log.info('Tool test complete', {
     tool: toolTest.name,
     validSuccess: result.validTest.success,
     edgeCaseSuccess: result.edgeCaseTest.success,
-    failures: state.failures.length
+    failures: updatedState.failures.length
   });
   
   return {
     success: true,
     nextStep: 'test_tool',
     currentTool: toolTest.name,
-    toolIndex: state.toolIndex,
+    toolIndex: updatedState.toolIndex,
     totalTools: TOOL_TESTS.length,
-    progress: state.progress
+    progress: updatedState.progress
   };
 }
 
