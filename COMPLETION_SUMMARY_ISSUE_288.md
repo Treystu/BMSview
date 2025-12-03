@@ -68,11 +68,14 @@ codeql_checker
 
 ## Test Coverage Details
 
+**Integration Tests with Backend Implementation**
+
 | Test Category | Tests | Status |
 |--------------|-------|--------|
-| State Structure | 4 | ✅ Pass |
-| Fallback Behavior | 3 | ✅ Pass |
-| Display Calculations | 3 | ✅ Pass |
+| getDefaultState() Function | 5 | ✅ Pass |
+| Handler Integration - Missing State | 3 | ✅ Pass |
+| Handler Integration - Status Retrieval | 1 | ✅ Pass |
+| State Preservation with Actual State | 1 | ✅ Pass |
 | **Total** | **10** | **✅ Pass** |
 
 ---

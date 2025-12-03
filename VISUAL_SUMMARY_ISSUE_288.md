@@ -126,9 +126,10 @@ log.info('Analyzing failures', { failureCount: state.failures.length });
 - **Total**: +619 lines
 
 ### Test Coverage
-- **New Tests**: 10
-- **Test Categories**: 3 (structure, fallback, display)
+- **New Tests**: 10 (integration tests with mocked dependencies)
+- **Test Categories**: 3 (getDefaultState() function, handler integration, state preservation)
 - **Pass Rate**: 100% (10/10 passing)
+- **Coverage**: Tests import and validate the actual `getDefaultState()` function and handler behavior from `diagnostics-workload.cjs`
 
 ### Code Quality
 - **Duplication Removed**: 28 lines (DRY principle applied)

@@ -42,6 +42,9 @@ function getDefaultState() {
   };
 }
 
+// Export for testing
+exports.getDefaultState = getDefaultState;
+
 /**
  * Simple async workload handler (manual implementation since @netlify/async-workloads may not be available)
  * This follows the pattern described in issue #274 but uses jobs collection for state persistence

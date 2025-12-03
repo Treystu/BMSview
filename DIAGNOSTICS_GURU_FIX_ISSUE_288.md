@@ -158,9 +158,9 @@ The `defaultState` object now serves as a **type guard** and **fallback mechanis
 
 If adding new state properties to the diagnostics workload:
 
-1. Add them to **both** `defaultState` objects in `diagnostics-workload.cjs`
+1. Add them to the `getDefaultState()` function in `diagnostics-workload.cjs`
 2. Add them to the `initialState` in `diagnostics-steps.cjs`
-3. Update the test in `diagnostics-workload-state.test.js`
+3. Update the tests in `diagnostics-workload-state.test.js`
 4. Document the property's purpose
 
 This ensures consistency and prevents similar undefined property errors.
