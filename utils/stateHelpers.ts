@@ -29,8 +29,13 @@ export function safeGetItems<T>(
   }
   
   // Paginated response - extract items
-  if (typeof data === 'object' && 'items' in data && Array.isArray(data.items)) {
-    return data.items;
+  if (typeof data === 'object' && 'items' in data) {
+    if (Array.isArray(data.items)) {
+      return data.items;
+    }
+    // Malformed paginated response - items exists but isn't an array
+    console.warn('Malformed PaginatedResponse: items property is not an array', data);
+    return [];
   }
   
   // Unexpected format - return empty array
@@ -246,6 +251,11 @@ export function safePercentage(
 /**
  * Merge objects with defensive copying
  * Ensures all properties from defaults exist in the result
+ * 
+ * Note: Arrays are validated for type but not contents.
+ * If override contains an array with null/undefined items, they will be preserved.
+ * Use this function when you need to ensure all default properties exist,
+ * but be aware that array item validation is not performed.
  */
 export function mergeWithDefaults<T extends Record<string, any>>(
   defaults: T,

@@ -753,7 +753,7 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
         ? state.categorizedFailures 
         : {},
       feedbackSubmitted: Array.isArray(state.feedbackSubmitted) ? state.feedbackSubmitted : [],
-      duration: Date.now() - (typeof state.startTime === 'number' ? state.startTime : Date.now()),
+      duration: typeof state.startTime === 'number' ? Date.now() - state.startTime : 'unknown',
       completedAt: new Date().toISOString(),
       errors: {
         analysisError: state.analysisError || null,

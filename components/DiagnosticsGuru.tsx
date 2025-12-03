@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import SpinnerIcon from './icons/SpinnerIcon';
+import { ensureNumber } from '../utils/stateHelpers';
 
 interface DiagnosticsGuruProps {
   className?: string;
@@ -123,6 +124,13 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
           if (data.complete) {
             isComplete = true;
             console.log('Diagnostics workload complete');
+            break;
+          }
+          
+          // Safety check: prevent infinite loops if backend returns malformed response
+          if (!data.nextStep && !isComplete) {
+            console.warn('No next step indicated but not complete - treating as complete');
+            isComplete = true;
             break;
           }
           
@@ -270,7 +278,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
                 {getStepIcon(status.currentStep)} {status.message || 'Processing...'}
               </span>
               <span className="text-sm text-gray-600">
-                Step {((typeof status.stepIndex === 'number' ? status.stepIndex : 0) + 1)} / {(typeof status.totalSteps === 'number' ? status.totalSteps : 0)}
+                Step {(ensureNumber(status.stepIndex, 0) + 1)} / {ensureNumber(status.totalSteps, 0)}
               </span>
             </div>
             
@@ -278,12 +286,12 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             <div className="w-full bg-gray-200 rounded-full h-2.5">
               <div 
                 className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                style={{ width: `${Math.min(100, Math.max(0, typeof status.progress === 'number' ? status.progress : 0))}%` }}
+                style={{ width: `${Math.min(100, Math.max(0, ensureNumber(status.progress, 0)))}%` }}
               ></div>
             </div>
             
             <div className="text-xs text-gray-500 mt-1 text-right">
-              {typeof status.progress === 'number' ? status.progress : 0}%
+              {ensureNumber(status.progress, 0)}%
             </div>
           </div>
           
@@ -370,18 +378,21 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
                 📤 Feedback Submitted ({status.feedbackSubmitted.filter((fb: any) => fb && fb.feedbackId).length} / {status.feedbackSubmitted.length})
               </h3>
               <ul className="text-sm text-yellow-800 space-y-1">
-                {status.feedbackSubmitted.map((fb: any, idx: number) => (
-                  <li key={idx} className="flex items-center justify-between">
-                    <span>
-                      {(fb && fb.feedbackId) ? '✅' : '❌'} {(fb && fb.category) ? fb.category.replace(/_/g, ' ') : 'Unknown category'} 
-                      {fb && fb.isDuplicate && <span className="text-yellow-600 ml-2">(duplicate)</span>}
-                      {fb && fb.error && <span className="text-red-600 ml-2 text-xs">({fb.error})</span>}
-                    </span>
-                    <span className="text-xs text-yellow-600">
-                      {(fb && typeof fb.failureCount === 'number') ? fb.failureCount : 0} failure{((fb && fb.failureCount) || 0) !== 1 ? 's' : ''}
-                    </span>
-                  </li>
-                ))}
+                {status.feedbackSubmitted.map((fb: any, idx: number) => {
+                  const failureCount = (fb && typeof fb.failureCount === 'number') ? fb.failureCount : 0;
+                  return (
+                    <li key={idx} className="flex items-center justify-between">
+                      <span>
+                        {(fb && fb.feedbackId) ? '✅' : '❌'} {(fb && fb.category) ? fb.category.replace(/_/g, ' ') : 'Unknown category'} 
+                        {fb && fb.isDuplicate && <span className="text-yellow-600 ml-2">(duplicate)</span>}
+                        {fb && fb.error && <span className="text-red-600 ml-2 text-xs">({fb.error})</span>}
+                      </span>
+                      <span className="text-xs text-yellow-600">
+                        {failureCount} failure{failureCount !== 1 ? 's' : ''}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
               <p className="text-xs text-yellow-700 mt-3">
                 View submitted feedback in the AI Feedback dashboard filtered by "diagnostics-guru"
