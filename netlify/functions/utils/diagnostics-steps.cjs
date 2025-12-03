@@ -395,16 +395,19 @@ async function testTool(workloadId, state, log, context) {
 
 /**
  * Step N+1: Analyze failures
- * Gracefully handles all errors - never fails, always completes
+ * CRITICAL FIX: Gracefully handles all errors - never fails, always completes
  */
 async function analyzeFailures(workloadId, state, log, context) {
   try {
-    // Defensive: ensure failures array exists
-    const failures = state.failures || [];
+    // CRITICAL FIX: Defensive - ensure failures array exists
+    const failures = Array.isArray(state.failures) ? state.failures : [];
     
-    log.info('Analyzing failures', { failureCount: failures.length });
+    log.info('Analyzing failures', { 
+      workloadId,
+      failureCount: failures.length 
+    });
     
-    // Categorize failures
+    // Categorize failures with error handling for each failure
     const categorized = {
       network_error: [],
       database_error: [],
@@ -415,10 +418,10 @@ async function analyzeFailures(workloadId, state, log, context) {
       unknown: []
     };
     
-    // Gracefully handle each failure
-    failures.forEach(failure => {
+    // CRITICAL FIX: Gracefully handle each failure individually
+    failures.forEach((failure, index) => {
       try {
-        const errorMsg = (failure.error || '').toLowerCase();
+        const errorMsg = ((failure && failure.error) || '').toLowerCase();
         
         if (errorMsg.includes('network') || errorMsg.includes('timeout') || errorMsg.includes('econnrefused')) {
           categorized.network_error.push(failure);
@@ -436,7 +439,11 @@ async function analyzeFailures(workloadId, state, log, context) {
           categorized.unknown.push(failure);
         }
       } catch (err) {
-        log.warn('Error categorizing individual failure', { error: err.message, failure });
+        log.warn('Error categorizing individual failure, adding to unknown', { 
+          workloadId,
+          error: err.message, 
+          failureIndex: index
+        });
         categorized.unknown.push(failure);
       }
     });
@@ -453,6 +460,7 @@ async function analyzeFailures(workloadId, state, log, context) {
     await updateJobStep(workloadId, updatedState, log);
     
     log.info('Failure analysis complete', {
+      workloadId,
       categories: Object.keys(categorized).map(cat => `${cat}: ${categorized[cat].length}`)
     });
     
@@ -462,12 +470,16 @@ async function analyzeFailures(workloadId, state, log, context) {
       categorized
     };
   } catch (error) {
-    // Even if analysis fails, continue to next step
-    log.error('Error during failure analysis, continuing anyway', { error: error.message });
+    // CRITICAL FIX: Even if analysis fails entirely, continue to next step
+    log.error('Error during failure analysis, continuing anyway', { 
+      workloadId,
+      error: error.message,
+      stack: process.env.LOG_LEVEL === 'DEBUG' ? error.stack : undefined
+    });
     
     const safeState = {
       ...state,
-      categorizedFailures: { unknown: state.failures || [] },
+      categorizedFailures: { unknown: Array.isArray(state.failures) ? state.failures : [] },
       currentStep: 'submit_feedback',
       message: 'Failure analysis had errors, continuing with best effort',
       progress: Math.round(((TOOL_TESTS.length + 1) / (state.totalSteps || TOOL_TESTS.length + 3)) * 100),
@@ -477,13 +489,16 @@ async function analyzeFailures(workloadId, state, log, context) {
     try {
       await updateJobStep(workloadId, safeState, log);
     } catch (updateErr) {
-      log.error('Could not update job step, continuing', { error: updateErr.message });
+      log.error('Could not update job step, continuing anyway', { 
+        workloadId,
+        error: updateErr.message 
+      });
     }
     
     return {
-      success: true, // Continue despite error
+      success: true, // CRITICAL: Always report success to continue
       nextStep: 'submit_feedback',
-      categorized: { unknown: state.failures || [] },
+      categorized: { unknown: Array.isArray(state.failures) ? state.failures : [] },
       warning: 'Analysis encountered errors but continued'
     };
   }
@@ -491,24 +506,26 @@ async function analyzeFailures(workloadId, state, log, context) {
 
 /**
  * Step N+2: Submit feedback for failures
- * Gracefully handles all errors - never fails, continues with best effort
+ * CRITICAL FIX: Gracefully handles all errors - never fails, continues with best effort
  */
 async function submitFeedbackForFailures(workloadId, state, log, context) {
   try {
-    log.info('Submitting feedback for failures');
+    log.info('Submitting feedback for failures', { workloadId });
     
     const { submitFeedbackToDatabase } = require('./feedback-manager.cjs');
     const feedbackIds = [];
     
-    // Defensive: ensure categorizedFailures exists
-    const categorizedFailures = state.categorizedFailures || {};
+    // CRITICAL FIX: Defensive - ensure categorizedFailures exists and is an object
+    const categorizedFailures = (state.categorizedFailures && typeof state.categorizedFailures === 'object') 
+      ? state.categorizedFailures 
+      : {};
     
     // Submit one feedback item per unique failure category
     for (const [category, failures] of Object.entries(categorizedFailures)) {
-      if (!failures || failures.length === 0) continue;
+      if (!failures || !Array.isArray(failures) || failures.length === 0) continue;
       
       try {
-        const toolsAffected = [...new Set(failures.map(f => f.tool || 'unknown'))];
+        const toolsAffected = [...new Set(failures.map(f => (f && f.tool) || 'unknown'))];
         
         const feedbackData = {
           systemId: 'diagnostics-system',
@@ -518,7 +535,7 @@ async function submitFeedbackForFailures(workloadId, state, log, context) {
           guruSource: 'diagnostics-guru',
           content: {
             title: `Tool Failure: ${category.replace(/_/g, ' ')} (${failures.length} failures)`,
-            description: `Diagnostic testing found ${failures.length} ${category.replace(/_/g, ' ')} failures across ${toolsAffected.length} tools.\n\n**Affected Tools:**\n${toolsAffected.map(t => `- ${t}`).join('\n')}\n\n**Sample Errors:**\n${failures.slice(0, 3).map(f => `- ${f.tool || 'unknown'} (${f.testType || 'unknown'}): ${f.error || 'No error message'}`).join('\n')}`,
+            description: `Diagnostic testing found ${failures.length} ${category.replace(/_/g, ' ')} failures across ${toolsAffected.length} tools.\n\n**Affected Tools:**\n${toolsAffected.map(t => `- ${t}`).join('\n')}\n\n**Sample Errors:**\n${failures.slice(0, 3).map(f => `- ${(f && f.tool) || 'unknown'} (${(f && f.testType) || 'unknown'}): ${(f && f.error) || 'No error message'}`).join('\n')}`,
             rationale: `These failures impact insights generation quality and may prevent users from getting accurate analysis.`,
             implementation: getImplementationSuggestion(category),
             expectedBenefit: `Improved tool reliability, better insights quality, reduced error rates`,
@@ -536,9 +553,19 @@ async function submitFeedbackForFailures(workloadId, state, log, context) {
             isDuplicate: result.isDuplicate,
             failureCount: failures.length
           });
-          log.info('Feedback submitted', { category, feedbackId: result.id, isDuplicate: result.isDuplicate });
+          log.info('Feedback submitted', { 
+            workloadId,
+            category, 
+            feedbackId: result.id, 
+            isDuplicate: result.isDuplicate 
+          });
         } catch (error) {
-          log.error('Failed to submit feedback for category, continuing', { category, error: error.message });
+          // CRITICAL FIX: Don't fail on rate limits - log and continue
+          log.error('Failed to submit feedback for category, continuing', { 
+            workloadId,
+            category, 
+            error: error.message 
+          });
           feedbackIds.push({
             category,
             feedbackId: null,
@@ -547,7 +574,11 @@ async function submitFeedbackForFailures(workloadId, state, log, context) {
           });
         }
       } catch (categoryErr) {
-        log.error('Error processing category, skipping', { category, error: categoryErr.message });
+        log.error('Error processing category, skipping', { 
+          workloadId,
+          category, 
+          error: categoryErr.message 
+        });
       }
     }
     
@@ -562,7 +593,10 @@ async function submitFeedbackForFailures(workloadId, state, log, context) {
     try {
       await updateJobStep(workloadId, updatedState, log);
     } catch (updateErr) {
-      log.error('Could not update job step, continuing', { error: updateErr.message });
+      log.error('Could not update job step, continuing anyway', { 
+        workloadId,
+        error: updateErr.message 
+      });
     }
     
     return {
@@ -571,9 +605,11 @@ async function submitFeedbackForFailures(workloadId, state, log, context) {
       feedbackSubmitted: feedbackIds
     };
   } catch (error) {
-    // Even if feedback submission fails entirely, continue to finalization
+    // CRITICAL FIX: Even if feedback submission fails entirely, continue to finalization
     log.error('Error during feedback submission, continuing to finalize', { 
-      error: error.message
+      workloadId,
+      error: error.message,
+      stack: process.env.LOG_LEVEL === 'DEBUG' ? error.stack : undefined
     });
     
     const safeState = {
@@ -588,11 +624,14 @@ async function submitFeedbackForFailures(workloadId, state, log, context) {
     try {
       await updateJobStep(workloadId, safeState, log);
     } catch (updateErr) {
-      log.error('Could not update job step, continuing', { error: updateErr.message });
+      log.error('Could not update job step, continuing anyway', { 
+        workloadId,
+        error: updateErr.message 
+      });
     }
     
     return {
-      success: true, // Continue despite error
+      success: true, // CRITICAL: Always report success to continue
       nextStep: 'finalize',
       feedbackSubmitted: [],
       warning: 'Feedback submission encountered errors but continued'
@@ -602,34 +641,43 @@ async function submitFeedbackForFailures(workloadId, state, log, context) {
 
 /**
  * Step N+3: Finalize diagnostics
- * Gracefully handles all errors - always completes with summary
+ * CRITICAL FIX: Gracefully handles all errors - always completes with summary
  */
 async function finalizeDiagnostics(workloadId, state, log, context) {
   try {
-    log.info('Finalizing diagnostics');
+    log.info('Finalizing diagnostics', { workloadId });
     
-    // Defensive defaults
-    const results = state.results || [];
-    const feedbackSubmitted = state.feedbackSubmitted || [];
-    const categorizedFailures = state.categorizedFailures || {};
-    const startTime = state.startTime || Date.now();
+    // CRITICAL FIX: Defensive defaults for all state properties
+    const results = Array.isArray(state.results) ? state.results : [];
+    const feedbackSubmitted = Array.isArray(state.feedbackSubmitted) ? state.feedbackSubmitted : [];
+    const categorizedFailures = (state.categorizedFailures && typeof state.categorizedFailures === 'object') 
+      ? state.categorizedFailures 
+      : {};
+    const startTime = typeof state.startTime === 'number' ? state.startTime : Date.now();
     
     let totalTests = 0;
     let passedTests = 0;
     
-    // Safe calculation with error handling for each result
-    results.forEach(r => {
+    // CRITICAL FIX: Safe calculation with error handling for each result
+    results.forEach((r, index) => {
       try {
-        if (r.validTest) {
-          totalTests++;
-          if (r.validTest.success) passedTests++;
-        }
-        if (r.edgeCaseTest) {
-          totalTests++;
-          if (r.edgeCaseTest.success) passedTests++;
+        if (r && typeof r === 'object') {
+          if (r.validTest && typeof r.validTest === 'object') {
+            totalTests++;
+            if (r.validTest.success) passedTests++;
+          }
+          if (r.edgeCaseTest && typeof r.edgeCaseTest === 'object') {
+            totalTests++;
+            if (r.edgeCaseTest.success) passedTests++;
+          }
         }
       } catch (err) {
-        log.warn('Error counting test result', { tool: r?.tool, error: err.message });
+        log.warn('Error counting test result, skipping', { 
+          workloadId,
+          tool: r?.tool, 
+          resultIndex: index,
+          error: err.message 
+        });
       }
     });
     
@@ -657,22 +705,28 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
       message: 'Diagnostics complete'
     };
     
-    // Safe completion
+    // CRITICAL FIX: Safe completion with fallback
     try {
       await completeJob(workloadId, {
         insights: `## Diagnostics Summary\n\n**Pass Rate:** ${passedTests}/${totalTests} (${totalTests > 0 ? (passedTests/totalTests*100).toFixed(1) : '0'}%)\n\n**Failures:** ${totalTests - passedTests}\n**Feedback Items:** ${feedbackSubmitted.length}\n**Duration:** ${(summary.duration/1000).toFixed(1)}s\n\n${summary.errors.analysisError ? '⚠️ Analysis had errors\n' : ''}${summary.errors.feedbackError ? '⚠️ Feedback submission had errors\n' : ''}`,
         state: finalState
       }, log);
     } catch (completeErr) {
-      log.error('Could not mark job as complete, trying manual update', { error: completeErr.message });
+      log.error('Could not mark job as complete, trying manual update', { 
+        workloadId,
+        error: completeErr.message 
+      });
       try {
         await updateJobStep(workloadId, finalState, log);
       } catch (updateErr) {
-        log.error('Could not update final state', { error: updateErr.message });
+        log.error('Could not update final state, continuing anyway', { 
+          workloadId,
+          error: updateErr.message 
+        });
       }
     }
     
-    log.info('Diagnostics complete', summary);
+    log.info('Diagnostics complete', { workloadId, summary });
     
     return {
       success: true,
@@ -680,21 +734,26 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
       summary
     };
   } catch (error) {
-    // Even finalization errors should not fail - return best effort summary
+    // CRITICAL FIX: Even finalization errors should not fail - return best effort summary
     log.error('Error during finalization, returning best effort summary', { 
-      error: error.message
+      workloadId,
+      error: error.message,
+      stack: process.env.LOG_LEVEL === 'DEBUG' ? error.stack : undefined
     });
     
+    // CRITICAL FIX: Build emergency summary with safe access
     const emergencySummary = {
-      totalToolsTested: (state.results || []).length,
+      totalToolsTested: Array.isArray(state.results) ? state.results.length : 0,
       totalTests: 'unknown',
       passedTests: 'unknown',
       failedTests: 'unknown',
       failureRate: 'unknown',
       averageResponseTime: 'unknown',
-      categorizedFailures: state.categorizedFailures || {},
-      feedbackSubmitted: state.feedbackSubmitted || [],
-      duration: Date.now() - (state.startTime || Date.now()),
+      categorizedFailures: (state.categorizedFailures && typeof state.categorizedFailures === 'object') 
+        ? state.categorizedFailures 
+        : {},
+      feedbackSubmitted: Array.isArray(state.feedbackSubmitted) ? state.feedbackSubmitted : [],
+      duration: typeof state.startTime === 'number' ? Date.now() - state.startTime : 'unknown',
       completedAt: new Date().toISOString(),
       errors: {
         analysisError: state.analysisError || null,
@@ -703,7 +762,7 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
       }
     };
     
-    // Try to save emergency summary
+    // CRITICAL FIX: Try to save emergency summary
     try {
       await updateJobStep(workloadId, {
         ...state,
@@ -712,11 +771,14 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
         message: 'Diagnostics completed with errors'
       }, log);
     } catch (updateErr) {
-      log.error('Could not save emergency summary', { error: updateErr.message });
+      log.error('Could not save emergency summary, continuing anyway', { 
+        workloadId,
+        error: updateErr.message 
+      });
     }
     
     return {
-      success: true, // Report success so process completes
+      success: true, // CRITICAL: Report success so process completes
       complete: true,
       summary: emergencySummary,
       warning: 'Finalization encountered errors but completed'
