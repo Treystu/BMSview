@@ -22,14 +22,6 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
 }) => {
     const [selectedSystemId, setSelectedSystemId] = useState<string>('');
     const [visibleTimeRange, setVisibleTimeRange] = useState<{ start: number; end: number } | null>(null);
-    
-    // Initialize with default 30-day range so charts load immediately
-    const now = new Date();
-    const [startDate, setStartDate] = useState<string>(
-        new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
-    );
-    const [endDate, setEndDate] = useState<string>(now.toISOString().slice(0, 16));
-    
     const [analysisResult, setAnalysisResult] = useState<any>(null);
     const [predictionResult, setPredictionResult] = useState<any>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -52,28 +44,6 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
     // Handle zoom domain changes from chart
     const handleZoomDomainChange = useCallback((start: number, end: number) => {
         setVisibleTimeRange({ start, end });
-    }, []);
-
-    // Handle quick range selection
-    const handleQuickRangeSelect = useCallback((range: 'Last 24h' | '7 Days' | '30 Days') => {
-        const now = new Date();
-        const end = now.toISOString().slice(0, 16); // Format for datetime-local
-        
-        let start: Date;
-        switch (range) {
-            case 'Last 24h':
-                start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-                break;
-            case '7 Days':
-                start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                break;
-            case '30 Days':
-                start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                break;
-        }
-        
-        setStartDate(start.toISOString().slice(0, 16));
-        setEndDate(end);
     }, []);
 
     // Handle analyze history action
@@ -152,7 +122,6 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
                     selectedSystemId={selectedSystemId}
                     analyticsData={analyticsData}
                     isLoading={analyticsLoading}
-                    onQuickRangeSelect={handleQuickRangeSelect}
                 />
             </div>
 

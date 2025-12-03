@@ -1278,11 +1278,12 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [hiddenMetrics] = useState<Set<MetricKey>>(new Set());
     
     // Initialize with default 30-day range so charts load immediately
-    const now = new Date();
-    const [startDate, setStartDate] = useState<string>(
-        new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
+    const [startDate, setStartDate] = useState<string>(() =>
+        new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
     );
-    const [endDate, setEndDate] = useState<string>(now.toISOString().slice(0, 16));
+    const [endDate, setEndDate] = useState<string>(() =>
+        new Date().toISOString().slice(0, 16)
+    );
     
     const [timelineData, setTimelineData] = useState<any | null>(null);
     const [bandEnabled, setBandEnabled] = useState<boolean>(false);
@@ -1338,13 +1339,6 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     }, []);
 
     const stableSetViewBox = useCallback(setViewBox, []);
-
-    // Auto-generate chart when system is selected or date range changes
-    useEffect(() => {
-        if (selectedSystemId) {
-            prepareChartData();
-        }
-    }, [selectedSystemId, prepareChartData]);
 
     // Load predictive data when chartView changes to predictive
     useEffect(() => {
@@ -1538,6 +1532,13 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             setIsGenerating(false);
         }
     }, [selectedSystemId, history, systems, startDate, endDate, chartDimensions, averagingEnabled, manualBucketSize, useMergedData]);
+
+    // Auto-generate chart when system is selected or date range changes
+    useEffect(() => {
+        if (selectedSystemId) {
+            prepareChartData();
+        }
+    }, [selectedSystemId, prepareChartData]);
 
     const handleResetView = () => {
         setZoomPercentage(100);
