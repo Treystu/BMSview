@@ -16,8 +16,64 @@ All Netlify functions use a centralized logging system with configurable log lev
 Configure via environment variable in Netlify:
 ```bash
 LOG_LEVEL=INFO  # Recommended for production
-LOG_LEVEL=DEBUG # For troubleshooting
+LOG_LEVEL=DEBUG # For troubleshooting and diagnostics
 ```
+
+### **CRITICAL: All Netlify Functions Must Support DEBUG Logging**
+
+**Requirement:** Every Netlify function MUST implement comprehensive DEBUG-level logging to support troubleshooting and diagnostics.
+
+**What to log at DEBUG level:**
+- Full request bodies (sanitized for sensitive data)
+- Job state before and after operations
+- Step execution details and transitions
+- Database query parameters and results
+- API call parameters and responses
+- Conditional branch decisions
+- Data transformation steps
+
+**Example Implementation:**
+```javascript
+const log = createLogger('function-name', context);
+
+// Entry point
+log.entry({ method: event.httpMethod, path: event.path });
+log.debug('Request received', { 
+  method: event.httpMethod, 
+  path: event.path,
+  body: event.body,
+  headers: event.headers 
+});
+
+// Operation details
+log.debug('Processing step', { 
+  stepName: 'data-extraction',
+  parameters: sanitizedParams,
+  currentState: jobState 
+});
+
+// Database operations
+log.debug('Database query', { 
+  collection: 'analysis-results',
+  query: { id: recordId },
+  hasResults: !!results 
+});
+
+// Responses
+log.debug('Sending response', { 
+  statusCode: 200,
+  responseSize: JSON.stringify(response).length,
+  hasData: !!response.data 
+});
+```
+
+**Finding Logs:**
+Netlify function logs are available in:
+1. **Netlify Dashboard** → Functions → [Function Name] → Real-time logs
+2. **AWS CloudWatch** → Log Groups → `/aws/lambda/[lambda-id]`
+3. **Function endpoint with `?debug=true`** (if implemented)
+
+**Note:** DEBUG logging is essential for the Diagnostics Guru feature and other automated testing systems.
 
 ## Current Logging Status by Service
 
@@ -115,7 +171,44 @@ LOG_LEVEL=DEBUG # For troubleshooting
 }
 ```
 
-#### 5. Security Service (`security.js`)
+#### 5. Diagnostics Workload (`diagnostics-workload.cjs`)
+**Log Level:** INFO + DEBUG (comprehensive)
+**Key Operations Logged:**
+- Function invocation with full request details (DEBUG)
+- Workload initialization and job creation (INFO + DEBUG)
+- Step execution transitions (INFO + DEBUG)
+- Job state before/after operations (DEBUG)
+- Tool test results and failures (INFO)
+- Status requests and responses (DEBUG)
+- Error conditions with full context (ERROR)
+
+**Sample Log Output:**
+```json
+{
+  "timestamp": "2025-12-03T06:07:08.789Z",
+  "level": "DEBUG",
+  "function": "diagnostics-workload",
+  "requestId": "bf412503-177e-4ad3-bbb2-36a9cad66ee8",
+  "message": "Request received",
+  "method": "POST",
+  "path": "/.netlify/functions/diagnostics-workload",
+  "body": "{\"action\":\"status\",\"workloadId\":\"diag_1764741922531_93rfen\"}"
+}
+```
+
+**Where to Find Logs:**
+- **Netlify Dashboard:** Functions → diagnostics-workload → Logs
+- **Netlify Functions Log Stream:** Real-time view of all invocations
+- **CloudWatch:** `/aws/lambda/[lambda-id]` (look for "diagnostics-workload" in function name)
+
+**DEBUG Logging Includes:**
+- Complete request body and headers
+- Job state snapshots before/after each step
+- Tool test parameters and responses
+- Database query details
+- Response payloads sent to client
+
+#### 6. Security Service (`security.js`)
 **Log Level:** INFO
 **Key Operations Logged:**
 - Security check invocation
@@ -136,7 +229,7 @@ LOG_LEVEL=DEBUG # For troubleshooting
 }
 ```
 
-#### 6. Get Job Status (`get-job-status.js`)
+#### 7. Get Job Status (`get-job-status.js`)
 **Log Level:** INFO (enhanced in this fix)
 **Key Operations Logged:**
 - Function invocation
