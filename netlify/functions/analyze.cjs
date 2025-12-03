@@ -507,13 +507,18 @@ async function checkIdempotency(idemKey, log) {
  */
 async function checkExistingAnalysis(contentHash, log, userId) {
   try {
-    if (!userId) {
-      log.debug('Skipping duplicate check: No userId provided');
-      return null;
-    }
-
     const resultsCol = await getCollection('analysis-results');
-    const existing = await resultsCol.findOne({ contentHash, userId });
+    
+    // Build query filter - include userId only if provided for multi-tenancy
+    const filter = { contentHash };
+    if (userId) {
+      filter.userId = userId;
+      log.debug('Checking for duplicate with userId filter', { userId: userId.substring(0, 8) + '...' });
+    } else {
+      log.debug('Checking for duplicate without userId filter (backwards compatibility)');
+    }
+    
+    const existing = await resultsCol.findOne(filter);
     if (existing) {
       log.info('Dedupe: existing analysis found for content hash.', {
         contentHash: contentHash.substring(0, 16) + '...',
