@@ -17,6 +17,7 @@ import { analyzeBmsScreenshot } from './services/geminiService';
 import { checkFilesForDuplicates } from './utils/duplicateChecker';
 import { useAppState } from './state/appState';
 import type { BmsSystem, DisplayableAnalysisResult } from './types';
+import { safeGetItems } from './utils/stateHelpers';
 // ***REMOVED***: No longer need job polling
 // import { getIsActualError } from './utils';
 // import { useJobPolling } from './hooks/useJobPolling';
@@ -314,7 +315,7 @@ function App() {
                 <AnalysisResult
                   key={result.fileName}
                   result={result}
-                  registeredSystems={state.registeredSystems.items || []}
+                  registeredSystems={safeGetItems(state.registeredSystems)}
                   onLinkRecord={handleLinkRecordToSystem}
                   onReprocess={handleReprocess}
                   onRegisterNewSystem={handleInitiateRegistration}
