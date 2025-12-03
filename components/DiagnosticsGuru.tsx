@@ -82,17 +82,18 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
     }
   };
 
-  // Trigger backend to execute all steps (backend will handle orchestration)
+  // Trigger backend to execute all steps (loop until complete)
   const triggerBackendExecution = async (wid: string) => {
     if (isExecutingRef.current) return;
     isExecutingRef.current = true;
     
     try {
-      // Execute steps with retry logic and exponential backoff
-      let retryCount = 0;
-      const maxRetries = 3;
+      let isComplete = false;
+      let consecutiveErrors = 0;
+      const maxConsecutiveErrors = 3;
       
-      while (retryCount < maxRetries) {
+      // Keep executing steps until the workload is complete
+      while (!isComplete && consecutiveErrors < maxConsecutiveErrors) {
         try {
           const response = await fetch('/.netlify/functions/diagnostics-workload', {
             method: 'POST',
@@ -100,31 +101,53 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             body: JSON.stringify({ action: 'step', workloadId: wid })
           });
           
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
           const data = await response.json();
           
           if (!data.success) {
             throw new Error(data.error || 'Step execution failed');
           }
           
-          // If complete, stop
+          // Log step completion
+          console.log('Step completed:', {
+            step: data.step,
+            nextStep: data.nextStep,
+            complete: data.complete,
+            warning: data.warning
+          });
+          
+          // If this step reported completion, we're done
           if (data.complete) {
+            isComplete = true;
+            console.log('Diagnostics workload complete');
             break;
           }
           
-          // Wait 1 second before next step (reduced from 100ms)
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          retryCount = 0; // Reset on success
+          // Reset error counter on success
+          consecutiveErrors = 0;
+          
+          // Small delay between steps to avoid overwhelming the backend
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
         } catch (err) {
-          retryCount++;
-          if (retryCount >= maxRetries) {
-            console.error('Max retries reached:', err);
-            setError(err instanceof Error ? err.message : 'Step execution failed after retries');
+          consecutiveErrors++;
+          console.error(`Step execution error (${consecutiveErrors}/${maxConsecutiveErrors}):`, err);
+          
+          if (consecutiveErrors >= maxConsecutiveErrors) {
+            setError(err instanceof Error ? err.message : 'Step execution failed after multiple retries');
             break;
           }
-          // Exponential backoff: 2s, 4s, 8s
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+          
+          // Exponential backoff on errors: 1s, 2s, 4s
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, consecutiveErrors - 1) * 1000));
         }
       }
+    } catch (err) {
+      console.error('Fatal error in step execution:', err);
+      setError(err instanceof Error ? err.message : 'Unknown error during step execution');
     } finally {
       isExecutingRef.current = false;
     }
@@ -148,17 +171,19 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
         const data = await response.json();
         
         if (data.success) {
+          // CRITICAL FIX: Defensive state update with explicit defaults
           setStatus({
-            workloadId: data.workloadId,
-            status: data.status,
+            workloadId: data.workloadId || wid,
+            status: data.status || 'pending',
             currentStep: data.currentStep || 'initialize',
-            stepIndex: data.stepIndex !== undefined ? data.stepIndex : 0,
-            totalSteps: data.totalSteps || 0,
-            progress: data.progress || 0,
-            message: data.message || 'Initializing...',
-            results: data.results || [],
-            feedbackSubmitted: data.feedbackSubmitted || [],
-            summary: data.summary
+            stepIndex: typeof data.stepIndex === 'number' ? data.stepIndex : 0,
+            totalSteps: typeof data.totalSteps === 'number' ? data.totalSteps : 0,
+            progress: typeof data.progress === 'number' ? data.progress : 0,
+            message: data.message || 'Processing...',
+            results: Array.isArray(data.results) ? data.results : [],
+            feedbackSubmitted: Array.isArray(data.feedbackSubmitted) ? data.feedbackSubmitted : [],
+            summary: data.summary || undefined,
+            warning: data.warning || undefined
           });
           
           // Stop polling if complete
@@ -242,10 +267,10 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
           <div className="bg-gray-50 rounded-lg p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-gray-700">
-                {getStepIcon(status.currentStep)} {status.message}
+                {getStepIcon(status.currentStep)} {status.message || 'Processing...'}
               </span>
               <span className="text-sm text-gray-600">
-                Step {(status.stepIndex !== undefined ? status.stepIndex : 0) + 1} / {status.totalSteps || 0}
+                Step {((typeof status.stepIndex === 'number' ? status.stepIndex : 0) + 1)} / {(typeof status.totalSteps === 'number' ? status.totalSteps : 0)}
               </span>
             </div>
             
@@ -253,12 +278,12 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             <div className="w-full bg-gray-200 rounded-full h-2.5">
               <div 
                 className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                style={{ width: `${status.progress}%` }}
+                style={{ width: `${Math.min(100, Math.max(0, typeof status.progress === 'number' ? status.progress : 0))}%` }}
               ></div>
             </div>
             
             <div className="text-xs text-gray-500 mt-1 text-right">
-              {status.progress}%
+              {typeof status.progress === 'number' ? status.progress : 0}%
             </div>
           </div>
           
@@ -339,21 +364,21 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             )}
           </div>
 
-          {status.feedbackSubmitted && status.feedbackSubmitted.length > 0 && (
+          {status.feedbackSubmitted && Array.isArray(status.feedbackSubmitted) && status.feedbackSubmitted.length > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <h3 className="font-semibold text-yellow-900 mb-2">
-                📤 Feedback Submitted ({status.feedbackSubmitted.filter((fb: any) => fb.feedbackId).length} / {status.feedbackSubmitted.length})
+                📤 Feedback Submitted ({status.feedbackSubmitted.filter((fb: any) => fb && fb.feedbackId).length} / {status.feedbackSubmitted.length})
               </h3>
               <ul className="text-sm text-yellow-800 space-y-1">
                 {status.feedbackSubmitted.map((fb: any, idx: number) => (
                   <li key={idx} className="flex items-center justify-between">
                     <span>
-                      {fb.feedbackId ? '✅' : '❌'} {fb.category.replace(/_/g, ' ')} 
-                      {fb.isDuplicate && <span className="text-yellow-600 ml-2">(duplicate)</span>}
-                      {fb.error && <span className="text-red-600 ml-2 text-xs">({fb.error})</span>}
+                      {(fb && fb.feedbackId) ? '✅' : '❌'} {(fb && fb.category) ? fb.category.replace(/_/g, ' ') : 'Unknown category'} 
+                      {fb && fb.isDuplicate && <span className="text-yellow-600 ml-2">(duplicate)</span>}
+                      {fb && fb.error && <span className="text-red-600 ml-2 text-xs">({fb.error})</span>}
                     </span>
                     <span className="text-xs text-yellow-600">
-                      {fb.failureCount} failure{fb.failureCount > 1 ? 's' : ''}
+                      {(fb && typeof fb.failureCount === 'number') ? fb.failureCount : 0} failure{((fb && fb.failureCount) || 0) !== 1 ? 's' : ''}
                     </span>
                   </li>
                 ))}

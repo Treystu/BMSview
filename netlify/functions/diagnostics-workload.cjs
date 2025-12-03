@@ -122,15 +122,32 @@ exports.handler = async (event, context) => {
       }
       
       let stepResult;
-      // Access state from checkpointState.state for consistency with insights-jobs pattern
-      // Provide proper defaults to prevent "Cannot read properties of undefined" errors
-      const jobState = job.checkpointState?.state || getDefaultState();
-      const currentStep = jobState.currentStep || 'initialize';
+      // CRITICAL FIX: Merge with default state to prevent undefined property access
+      const defaultState = getDefaultState();
+      const rawState = job.checkpointState?.state || {};
+      const jobState = {
+        ...defaultState,
+        ...rawState,
+        // Ensure arrays are always arrays, never undefined
+        results: Array.isArray(rawState.results) ? rawState.results : [],
+        failures: Array.isArray(rawState.failures) ? rawState.failures : [],
+        feedbackSubmitted: Array.isArray(rawState.feedbackSubmitted) ? rawState.feedbackSubmitted : [],
+        toolsToTest: Array.isArray(rawState.toolsToTest) ? rawState.toolsToTest : defaultState.toolsToTest,
+        // Ensure numbers are always numbers, never undefined
+        stepIndex: typeof rawState.stepIndex === 'number' ? rawState.stepIndex : 0,
+        totalSteps: typeof rawState.totalSteps === 'number' ? rawState.totalSteps : 0,
+        toolIndex: typeof rawState.toolIndex === 'number' ? rawState.toolIndex : 0,
+        progress: typeof rawState.progress === 'number' ? rawState.progress : 0
+      };
+      const currentStep = jobState.currentStep;
       
-      log.info('Executing step', { workloadId, currentStep, step: jobState.stepIndex });
+      log.info('Executing step', { workloadId, currentStep, stepIndex: jobState.stepIndex, totalSteps: jobState.totalSteps });
       log.debug('Job state before step execution', { 
+        workloadId,
         jobState, 
-        hasCheckpointState: !!job.checkpointState 
+        hasCheckpointState: !!job.checkpointState,
+        resultCount: jobState.results.length,
+        failureCount: jobState.failures.length
       });
       
       switch (currentStep) {
@@ -213,10 +230,25 @@ exports.handler = async (event, context) => {
         };
       }
       
-      // Provide proper defaults to prevent missing properties
-      const jobState = job.checkpointState?.state || getDefaultState();
+      // CRITICAL FIX: Merge with default state to prevent undefined property access
+      const defaultState = getDefaultState();
+      const rawState = job.checkpointState?.state || {};
+      const jobState = {
+        ...defaultState,
+        ...rawState,
+        // Ensure arrays are always arrays, never undefined
+        results: Array.isArray(rawState.results) ? rawState.results : [],
+        failures: Array.isArray(rawState.failures) ? rawState.failures : [],
+        feedbackSubmitted: Array.isArray(rawState.feedbackSubmitted) ? rawState.feedbackSubmitted : [],
+        toolsToTest: Array.isArray(rawState.toolsToTest) ? rawState.toolsToTest : defaultState.toolsToTest,
+        // Ensure numbers are always numbers, never undefined
+        stepIndex: typeof rawState.stepIndex === 'number' ? rawState.stepIndex : 0,
+        totalSteps: typeof rawState.totalSteps === 'number' ? rawState.totalSteps : 0,
+        toolIndex: typeof rawState.toolIndex === 'number' ? rawState.toolIndex : 0,
+        progress: typeof rawState.progress === 'number' ? rawState.progress : 0
+      };
       
-      log.debug('Job state retrieved', { 
+      log.debug('Job state retrieved with defaults applied', { 
         workloadId, 
         status: job.status,
         currentStep: jobState.currentStep,
@@ -224,24 +256,26 @@ exports.handler = async (event, context) => {
         totalSteps: jobState.totalSteps,
         hasCheckpointState: !!job.checkpointState,
         hasState: !!jobState,
-        resultCount: (jobState.results || []).length,
-        failureCount: (jobState.failures || []).length
+        resultCount: jobState.results.length,
+        failureCount: jobState.failures.length,
+        feedbackSubmittedCount: jobState.feedbackSubmitted.length
       });
       
-      // Ensure all required fields are present with defaults
+      // Ensure all required fields are present with explicit defaults
       const response = {
         success: true,
         workloadId: job.id,
         status: job.status || 'pending',
-        currentStep: jobState.currentStep || 'initialize',
-        stepIndex: jobState.stepIndex !== undefined ? jobState.stepIndex : 0,
-        totalSteps: jobState.totalSteps || 0,
-        progress: jobState.progress || 0,
-        message: jobState.message || 'Initializing...',
-        results: jobState.results || [],
-        feedbackSubmitted: jobState.feedbackSubmitted || [],
+        currentStep: jobState.currentStep,
+        stepIndex: jobState.stepIndex,
+        totalSteps: jobState.totalSteps,
+        progress: jobState.progress,
+        message: jobState.message,
+        results: jobState.results,
+        feedbackSubmitted: jobState.feedbackSubmitted,
         summary: jobState.summary || null,
-        error: job.error || null
+        error: job.error || null,
+        warning: jobState.warning || null
       };
       
       log.debug('Sending status response', { 
