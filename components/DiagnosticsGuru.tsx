@@ -146,6 +146,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
           
           if (consecutiveErrors >= maxConsecutiveErrors) {
             setError(err instanceof Error ? err.message : 'Step execution failed after multiple retries');
+            setIsRunning(false);
             break;
           }
           
