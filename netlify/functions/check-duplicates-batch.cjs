@@ -221,7 +221,10 @@ exports.handler = async (event, context) => {
     if (hashErrors.length > 0) {
       log.warn('Some files failed hash calculation', {
         errorCount: hashErrors.length,
-        errors: hashErrors.slice(0, 5), // Log first 5
+        errors: hashErrors.slice(0, 5).map(e => ({
+          fileName: e.fileName,
+          errorType: e.error && e.error.includes('read') ? 'read_failed' : 'hash_failed'
+        }), // Log first 5 sanitized errors
         event: 'HASH_ERRORS'
       });
     }
