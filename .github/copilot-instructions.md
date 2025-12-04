@@ -87,7 +87,7 @@ BMSview/
 - **Key functions**:
   - `analyze.cjs` - BMS image analysis (supports sync mode with `?sync=true`)
   - `generate-insights-with-tools.cjs` - AI "Battery Guru" with function calling (supports sync and background modes)
-  - `generate-insights-background.cjs` - **DEPRECATED** - Background processing now in-process
+  - `generate-insights-background.mjs` - Netlify Async Workload handler for long-running insights (event-driven, unlimited runtime)
   - `solar-estimate.ts` - Solar energy estimation proxy (TypeScript, bundled separately)
   - `history.cjs` - Analysis history with pagination
   - `systems.cjs` - BMS system registration and management
