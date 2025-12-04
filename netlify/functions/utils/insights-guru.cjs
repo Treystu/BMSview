@@ -14,6 +14,7 @@ const { getCollection } = require("./mongodb.cjs");
 const { toolDefinitions, executeToolCall } = require("./gemini-tools.cjs");
 const { calculateSunriseSunset } = require("./weather-fetcher.cjs");
 const { anonymizeSystemProfile } = require("./privacy-utils.cjs");
+const { groupAlertEvents } = require("./analysis-utilities.cjs");
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const RECENT_SNAPSHOT_LIMIT = 24;
@@ -1023,19 +1024,15 @@ function formatAnalyticsSection(analytics) {
         }
     }
     if (analytics.alertAnalysis?.totalEvents) {
-        const topAlert = analytics.alertAnalysis.alertCounts?.[0];
+        const topEvent = analytics.alertAnalysis.events?.[0];
         const totalEvents = analytics.alertAnalysis.totalEvents;
-        const totalOccurrences = analytics.alertAnalysis.totalAlerts;
+        const totalDurationMinutes = analytics.alertAnalysis.totalDurationMinutes || 0;
 
-        if (topAlert) {
-            lines.push(`- Alert events: ${totalEvents} distinct events from ${totalOccurrences} screenshot occurrences (top: ${topAlert.alert} - ${topAlert.count} events, ${topAlert.occurrences} occurrences${topAlert.avgDurationHours ? `, avg ${formatNumber(topAlert.avgDurationHours, "h", 1)}` : ""}).`);
+        if (topEvent) {
+            lines.push(`- Alert events: ${totalEvents} distinct events, total downtime ${formatNumber(totalDurationMinutes / 60, "h", 1)} (top: ${topEvent.alert} - ${topEvent.count} events${topEvent.avgDurationMinutes ? `, avg ${formatNumber(topEvent.avgDurationMinutes / 60, "h", 1)}` : ""}).`);
         } else {
-            lines.push(`- Alert events: ${totalEvents} distinct events from ${totalOccurrences} screenshot occurrences.`);
+            lines.push(`- Alert events: ${totalEvents} distinct events, total downtime ${formatNumber(totalDurationMinutes / 60, "h", 1)}.`);
         }
-    } else if (analytics.alertAnalysis?.totalAlerts) {
-        // Fallback for old format
-        const topAlert = analytics.alertAnalysis.alertCounts?.[0];
-        lines.push(`- Alert volume: ${analytics.alertAnalysis.totalAlerts} (top: ${topAlert ? `${topAlert.alert} ×${topAlert.count}` : "none"}).`);
     }
     return lines.join("\n");
 }
@@ -1776,6 +1773,7 @@ async function load90DayDailyRollup(systemId, log) {
 
 /**
  * Compute metrics for an hour's worth of records
+ * Note: Alert events are calculated separately at the daily level using groupAlertEvents
  */
 function computeHourlyMetrics(records) {
     const metrics = {
@@ -1784,8 +1782,7 @@ function computeHourlyMetrics(records) {
         power: [],
         soc: [],
         capacity: [],
-        temperature: [],
-        alertCount: 0
+        temperature: []
     };
 
     for (const record of records) {
@@ -1802,11 +1799,6 @@ function computeHourlyMetrics(records) {
             const avgTemp = a.temperatures.reduce((sum, t) => sum + t, 0) / a.temperatures.length;
             if (isFiniteNumber(avgTemp)) metrics.temperature.push(avgTemp);
         }
-
-        if (Array.isArray(a.alerts) || Array.isArray(record.alerts)) {
-            const alerts = a.alerts || record.alerts;
-            metrics.alertCount += alerts.filter(Boolean).length;
-        }
     }
 
     return {
@@ -1816,7 +1808,6 @@ function computeHourlyMetrics(records) {
         soc: average(metrics.soc),
         capacity: average(metrics.capacity),
         temperature: average(metrics.temperature),
-        alertCount: metrics.alertCount,
         // Add statistical measures for better insights
         voltageStdDev: standardDeviation(metrics.voltage),
         currentStdDev: standardDeviation(metrics.current),
@@ -1838,7 +1829,8 @@ function standardDeviation(values) {
 }
 
 /**
- * Compute daily summary from hourly averages
+ * Compute daily summary from hourly averages and day records
+ * Uses event-based alert grouping instead of raw occurrence counting
  */
 function computeDailySummary(hourlyAverages, dayRecords) {
     const allVoltage = hourlyAverages.map(h => h.voltage).filter(isFiniteNumber);
@@ -1847,6 +1839,15 @@ function computeDailySummary(hourlyAverages, dayRecords) {
     const allSoc = hourlyAverages.map(h => h.soc).filter(isFiniteNumber);
     const allCapacity = hourlyAverages.map(h => h.capacity).filter(isFiniteNumber);
     const allTemp = hourlyAverages.map(h => h.temperature).filter(isFiniteNumber);
+
+    // Calculate alert events for this day using event-based grouping
+    const snapshots = (dayRecords || []).map(r => ({
+        timestamp: r.timestamp,
+        alerts: r.analysis?.alerts || [],
+        soc: r.analysis?.stateOfCharge
+    }));
+    
+    const alertAnalysis = groupAlertEvents(snapshots, { maxGapHours: 6 });
 
     return {
         avgVoltage: average(allVoltage),
@@ -1857,7 +1858,11 @@ function computeDailySummary(hourlyAverages, dayRecords) {
         avgTemperature: average(allTemp),
         minSoc: allSoc.length > 0 ? Math.min(...allSoc) : null,
         maxSoc: allSoc.length > 0 ? Math.max(...allSoc) : null,
-        totalAlerts: hourlyAverages.reduce((sum, h) => sum + (h.alertCount || 0), 0),
+        // Event-based alert metrics
+        alertEvents: alertAnalysis.totalEvents,           // Number of distinct alert events
+        alertOccurrences: alertAnalysis.totalAlertOccurrences, // Raw screenshot count for backwards compat
+        // Backwards compatibility: Use event count as primary metric
+        totalAlerts: alertAnalysis.totalEvents,
         coverage: (hourlyAverages.length / 24 * 100).toFixed(1) + '%' // % of day covered
     };
 }
@@ -2426,7 +2431,7 @@ function summarizeContextForClient(context, analysisData) {
             latestVoltage: toNullableNumber(latestSnapshot?.voltage),
             netAhDelta: calculateDelta(latestSnapshot?.remainingCapacity, earliestSnapshot?.remainingCapacity),
             netSocDelta: calculateDelta(latestSnapshot?.soc, earliestSnapshot?.soc),
-            alertCount: recentSnapshots.reduce((acc, snap) => acc + (Array.isArray(snap.alerts) ? snap.alerts.length : 0), 0)
+            alertOccurrences: recentSnapshots.reduce((acc, snap) => acc + (Array.isArray(snap.alerts) ? snap.alerts.length : 0), 0)  // Raw occurrence count for summary
         } : null,
         meta: {
             contextBuildMs: context.meta?.durationMs ?? null,

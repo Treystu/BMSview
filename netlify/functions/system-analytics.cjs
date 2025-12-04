@@ -47,13 +47,13 @@ exports.handler = async function (event, context) {
         const allHistory = await withRetry(() => historyCollection.find({}).toArray());
 
         const systemHistory = allHistory.filter(record => record.systemId === systemId && record.analysis);
-        log('info', `Found ${systemHistory.length} history records for system.`, requestLogContext);
+        log.info(`Found ${systemHistory.length} history records for system.`, requestLogContext);
 
         if (systemHistory.length === 0) {
             return respond(200, {
                 hourlyAverages: [],
                 performanceBaseline: { sunnyDayChargingAmpsByHour: [] },
-                alertAnalysis: { alertCounts: [], totalAlerts: 0 },
+                alertAnalysis: { events: [], totalEvents: 0, totalDurationMinutes: 0 },
             });
         }
 
@@ -101,7 +101,7 @@ exports.handler = async function (event, context) {
                     }
                 });
             } catch (e) {
-                log('warn', 'Skipping record due to invalid timestamp.', { recordId: record.id, timestamp: record.timestamp });
+                log.warn('Skipping record due to invalid timestamp.', { recordId: record.id, timestamp: record.timestamp });
             }
         });
 
@@ -135,7 +135,7 @@ exports.handler = async function (event, context) {
             });
             return hourData;
         });
-        log('debug', 'Calculated unified hourly averages.', requestLogContext);
+        log.debug('Calculated unified hourly averages.', requestLogContext);
 
 
         // --- Performance Baseline (Sunny Day Charging) ---
@@ -164,7 +164,7 @@ exports.handler = async function (event, context) {
             }))
             .filter(d => d.dataPoints > 0); // Only return hours with data
 
-        log('debug', 'Calculated performance baseline.', { ...requestLogContext, baselineHoursWithData: sunnyDayChargingAmpsByHour.length });
+        log.debug('Calculated performance baseline.', { ...requestLogContext, baselineHoursWithData: sunnyDayChargingAmpsByHour.length });
 
         // --- Recurring Alert Analysis (Duration-Based) ---
 
@@ -286,7 +286,7 @@ exports.handler = async function (event, context) {
         const totalEvents = alertAnalysisEvents.reduce((sum, item) => sum + item.count, 0);
         const totalDurationMinutes = alertAnalysisEvents.reduce((sum, item) => sum + item.totalDurationMinutes, 0);
 
-        log('debug', 'Calculated alert analysis with duration.', {
+        log.debug('Calculated alert analysis with duration.', {
             ...requestLogContext,
             uniqueAlerts: alertAnalysisEvents.length,
             totalEvents,
