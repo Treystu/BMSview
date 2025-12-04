@@ -12,6 +12,47 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const MONGODB_DB = process.env.MONGODB_DB || 'bmsview';
 
 const INDEXES = {
+    'analysis-results': [
+        {
+            key: { contentHash: 1 },
+            options: { 
+                name: 'idx_analysis_content_hash',
+                unique: true,
+                background: true,
+                sparse: true // Allow null values for old records
+            }
+        },
+        {
+            key: { timestamp: 1 },
+            options: { 
+                name: 'idx_analysis_timestamp',
+                background: true 
+            }
+        },
+        {
+            key: { updatedAt: 1 },
+            options: { 
+                name: 'idx_analysis_updated',
+                background: true 
+            }
+        },
+        {
+            key: { systemId: 1, timestamp: -1 },
+            options: { 
+                name: 'idx_analysis_system_timestamp',
+                background: true,
+                sparse: true
+            }
+        },
+        {
+            key: { dlNumber: 1 },
+            options: { 
+                name: 'idx_analysis_dlnumber',
+                background: true,
+                sparse: true
+            }
+        }
+    ],
     jobs: [
         {
             key: { id: 1 },
