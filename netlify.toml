@@ -13,6 +13,8 @@
 # Uses Netlify's durable async workload system for extended execution
 [functions."generate-insights-background"]
   node_bundler = "esbuild"
+  external_node_modules = ["@netlify/async-workloads"]
+  # Note: @netlify/async-workloads is imported in the .mjs file but provided by Netlify runtime
   # Note: @netlify/async-workloads is imported in the .mjs file but provided by Netlify runtime
   # Enable async workloads
   async_workloads = true
