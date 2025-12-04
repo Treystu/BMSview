@@ -1041,7 +1041,8 @@ async function executeReActLoop(params) {
         skipInitialization = false, // Skip initialization if already done separately
         checkpointState = null, // Resume from checkpoint if provided
         onCheckpoint = null, // Callback to save checkpoint before timeout
-        insightMode = 'with_tools' // Insight mode (standard, full_context, etc.)
+        insightMode = 'with_tools', // Insight mode (standard, full_context, etc.)
+        fullContextMode = false // NEW: Enable full context pre-loading
     } = params;
 
     const log = externalLog || createLogger('react-loop');
@@ -1070,7 +1071,8 @@ async function executeReActLoop(params) {
         skipInitialization,
         isResuming,
         checkpointTurn: checkpointState?.startTurnCount || 0,
-        insightMode
+        insightMode,
+        fullContextMode // Log whether full context mode is enabled
     });
 
     try {
@@ -1100,23 +1102,61 @@ async function executeReActLoop(params) {
             const contextStartTime = Date.now();
 
             try {
-                // EDGE CASE PROTECTION #4: Add hard timeout to context collection
-                // Prevent context collection from consuming entire budget
-                const contextCollectionPromise = collectAutoInsightsContext(
-                    systemId,
-                    analysisData,
-                    log,
-                    { mode, maxMs: contextBudgetMs }
-                );
+                // NEW: Full Context Mode - Pre-load ALL data into prompt
+                if (fullContextMode && systemId) {
+                    log.info('Full Context Mode enabled - building complete context', {
+                        systemId,
+                        contextWindowDays
+                    });
 
-                preloadedContext = await Promise.race([
-                    contextCollectionPromise,
-                    new Promise((_, reject) =>
-                        setTimeout(() => {
-                            reject(new Error('CONTEXT_TIMEOUT'));
-                        }, contextBudgetMs + 1000) // Allow 1s extra for graceful completion
-                    )
-                ]);
+                    const { buildCompleteContext, countDataPoints } = require('./full-context-builder.cjs');
+                    
+                    try {
+                        const fullContext = await buildCompleteContext(systemId, {
+                            contextWindowDays: contextWindowDays || 90
+                        });
+
+                        const dataPointCount = countDataPoints(fullContext);
+                        log.info('Full context built successfully', {
+                            dataPoints: dataPointCount,
+                            contextSize: JSON.stringify(fullContext).length
+                        });
+
+                        // Store full context for use in prompt
+                        preloadedContext = {
+                            fullContext,
+                            dataPointsAnalyzed: dataPointCount,
+                            isFullContextMode: true
+                        };
+                    } catch (fullContextError) {
+                        log.warn('Full context building failed, falling back to standard context', {
+                            error: fullContextError.message
+                        });
+                        // Fall through to standard context collection
+                        preloadedContext = null;
+                    }
+                }
+
+                // Standard context collection (if full context not loaded or failed)
+                if (!preloadedContext) {
+                    // EDGE CASE PROTECTION #4: Add hard timeout to context collection
+                    // Prevent context collection from consuming entire budget
+                    const contextCollectionPromise = collectAutoInsightsContext(
+                        systemId,
+                        analysisData,
+                        log,
+                        { mode, maxMs: contextBudgetMs }
+                    );
+
+                    preloadedContext = await Promise.race([
+                        contextCollectionPromise,
+                        new Promise((_, reject) =>
+                            setTimeout(() => {
+                                reject(new Error('CONTEXT_TIMEOUT'));
+                            }, contextBudgetMs + 1000) // Allow 1s extra for graceful completion
+                        )
+                    ]);
+                }
             } catch (contextError) {
                 const err = contextError instanceof Error ? contextError : new Error(String(contextError));
 

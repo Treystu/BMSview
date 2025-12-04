@@ -686,6 +686,28 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
 
       // ***CRITICAL FIX: Update the record object to return the original ID to the caller***
       record.id = originalId;
+
+      // DUAL-WRITE: Update history collection as well
+      try {
+        const historyCol = await getCollection('history');
+        await historyCol.updateOne(
+          { id: originalId },
+          {
+            $set: {
+              analysis: record.analysis,
+              timestamp: record.timestamp,
+              fileName: record.fileName,
+              validationScore: newQuality
+            }
+          }
+        );
+        log.debug('Dual-write update to history collection successful', { recordId: originalId });
+      } catch (/** @type {any} */ historyError) {
+        log.warn('Dual-write update to history collection failed (non-fatal)', {
+          error: historyError && historyError.message ? historyError.message : String(historyError),
+          recordId: originalId
+        });
+      }
     } else {
       // New record - insert
       const newRecord = {
@@ -717,6 +739,36 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         contentHash: contentHash.substring(0, 16) + '...',
         qualityScore: record.validationScore
       });
+
+      // DUAL-WRITE: Also save to history collection for backward compatibility
+      // This ensures tools (request_bms_data, insights-guru) can access the data
+      try {
+        const historyCol = await getCollection('history');
+        const historyRecord = {
+          id: record.id,
+          timestamp: record.timestamp,
+          systemId: record.analysis?.systemId || null,
+          systemName: null, // Will be filled when linked to a system
+          analysis: record.analysis,
+          weather: record.weather || null,
+          dlNumber: record.analysis?.dlNumber || null,
+          fileName: record.fileName,
+          analysisKey: contentHash // Use contentHash as analysisKey for consistency
+        };
+        
+        await historyCol.insertOne(historyRecord);
+        
+        log.info('Dual-write to history collection successful', {
+          recordId: record.id,
+          systemId: record.analysis?.systemId
+        });
+      } catch (/** @type {any} */ historyError) {
+        log.warn('Dual-write to history collection failed (non-fatal)', {
+          error: historyError && historyError.message ? historyError.message : String(historyError),
+          recordId: record.id
+        });
+        // Don't throw - this is best effort dual-write
+      }
     }
   } catch (/** @type {any} */ e) {
     log.warn('Failed to persist analysis-results record.', {

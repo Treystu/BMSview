@@ -186,6 +186,7 @@ exports.handler = async (event, context) => {
     const initializationComplete = sanitizedBody.initializationComplete;
     const resumeJobId = sanitizedBody.resumeJobId;
     const consentGranted = sanitizedBody.consentGranted;
+    const fullContextMode = sanitizedBody.fullContextMode || false; // NEW: Enable full context pre-loading
 
     // =====================
     // SECURITY: Consent Verification with Audit Logging
@@ -355,7 +356,8 @@ exports.handler = async (event, context) => {
           checkpointState: resumeConfig, // Pass resume config if available
           onCheckpoint: checkpointCallback, // Auto-save checkpoints
           stream,
-          insightMode // Pass insight mode for specialized behavior
+          insightMode, // Pass insight mode for specialized behavior
+          fullContextMode: job.fullContextMode || fullContextMode // NEW: Enable full context pre-loading
         };
         log.info('Calling executeReActLoop with params', params);
         const result = await executeReActLoop(params);
@@ -519,7 +521,8 @@ exports.handler = async (event, context) => {
         customPrompt,
         initialSummary: null,
         contextWindowDays,
-        maxIterations
+        maxIterations,
+        fullContextMode // NEW: Pass fullContextMode to background jobs
       }, log);
 
       if (!job || !job.id) {
@@ -536,7 +539,7 @@ exports.handler = async (event, context) => {
     }
 
     // Start background processing (don't await)
-    // Pass all parameters including contextWindowDays, maxIterations, and modelOverride
+    // Pass all parameters including contextWindowDays, maxIterations, modelOverride, and fullContextMode
     processInsightsInBackground(
       job.id,
       analysisData,
@@ -546,7 +549,8 @@ exports.handler = async (event, context) => {
       {
         contextWindowDays,
         maxIterations,
-        modelOverride
+        modelOverride,
+        fullContextMode // NEW: Pass fullContextMode to background processor
       }
     ).catch(err => {
       log.error('Background processing error (logged, not thrown)', {
