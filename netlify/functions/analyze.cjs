@@ -270,14 +270,32 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
     }
 
     // Calculate content hash for deduplication
+    const hashStartTime = Date.now();
     const contentHash = sha256HexFromBase64(imagePayload.image);
+    const hashDurationMs = Date.now() - hashStartTime;
+    
     if (!contentHash) {
       return errorResponse(400, 'invalid_image', 'Could not generate content hash', undefined, { ...headers, 'Content-Type': 'application/json' });
     }
+    
+    log.debug('Content hash calculated', {
+      contentHash: contentHash.substring(0, 16) + '...',
+      hashDurationMs,
+      imageSize: imagePayload.image?.length || 0,
+      fileName: imagePayload.fileName,
+      event: 'HASH_CALCULATED'
+    });
 
     // ***NEW: Check-only mode - return duplicate status without full analysis***
     if (checkOnly) {
+      const checkOnlyStartTime = Date.now();
       try {
+        log.info('Check-only mode: starting duplicate check', {
+          contentHash: contentHash.substring(0, 16) + '...',
+          fileName: imagePayload.fileName,
+          event: 'CHECK_ONLY_START'
+        });
+        
         const existingAnalysis = await checkExistingAnalysis(contentHash || '', log);
 
         // Distinguish between true duplicates and upgrades needed
@@ -293,7 +311,15 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
         };
 
         const durationMs = timer.end({ checkOnly: true, isDuplicate, needsUpgrade });
-        log.info('Check-only request complete', { isDuplicate, needsUpgrade, durationMs });
+        const checkOnlyDurationMs = Date.now() - checkOnlyStartTime;
+        log.info('Check-only request complete', { 
+          isDuplicate, 
+          needsUpgrade, 
+          durationMs,
+          checkOnlyDurationMs,
+          fileName: imagePayload.fileName,
+          event: 'CHECK_ONLY_COMPLETE'
+        });
         log.exit(200);
 
         return {
@@ -302,7 +328,13 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
           body: JSON.stringify(checkResponse)
         };
       } catch (/** @type {any} */ checkError) {
-        log.warn('Check-only request failed', { error: checkError.message });
+        const checkOnlyDurationMs = Date.now() - checkOnlyStartTime;
+        log.warn('Check-only request failed', { 
+          error: checkError.message,
+          checkOnlyDurationMs,
+          fileName: imagePayload.fileName,
+          event: 'CHECK_ONLY_ERROR'
+        });
         return {
           statusCode: 200,
           headers: { ...headers, 'Content-Type': 'application/json' },
@@ -510,7 +542,28 @@ async function checkIdempotency(idemKey, log) {
 async function checkExistingAnalysis(contentHash, log) {
   const startTime = Date.now();
   try {
+    const collectionStartTime = Date.now();
     const resultsCol = await getCollection('analysis-results');
+    const collectionDurationMs = Date.now() - collectionStartTime;
+    
+    // Check for index existence on first call (log once)
+    if (!checkExistingAnalysis._indexChecked) {
+      try {
+        const indexes = await resultsCol.indexes();
+        const hasContentHashIndex = indexes.some(idx => 
+          idx.key && idx.key.contentHash !== undefined
+        );
+        log.info('MongoDB index status for contentHash', {
+          hasContentHashIndex,
+          totalIndexes: indexes.length,
+          indexNames: indexes.map(i => i.name).join(', '),
+          event: 'INDEX_CHECK'
+        });
+        checkExistingAnalysis._indexChecked = true;
+      } catch (indexErr) {
+        log.warn('Failed to check indexes', { error: indexErr.message });
+      }
+    }
     
     const queryStartTime = Date.now();
     const existing = await resultsCol.findOne({ contentHash });
@@ -522,6 +575,7 @@ async function checkExistingAnalysis(contentHash, log) {
         needsReview: existing.needsReview,
         validationScore: existing.validationScore,
         extractionAttempts: existing.extractionAttempts || 1,
+        collectionDurationMs,
         queryDurationMs,
         event: 'FOUND'
       });
@@ -552,6 +606,9 @@ async function checkExistingAnalysis(contentHash, log) {
           extractionAttempts: existing.extractionAttempts || 1,
           missingFieldCount: missingFields.length,
           missingFields: missingFields.slice(0, 5), // Log first 5 to avoid log spam
+          fileName: existing.fileName,
+          recordId: existing._id || existing.id,
+          decision: 'UPGRADE',
           event: 'UPGRADE_NEEDED'
         });
         return { _isUpgrade: true, _existingRecord: existing };
@@ -574,28 +631,55 @@ async function checkExistingAnalysis(contentHash, log) {
           extractionAttempts: existing.extractionAttempts,
           previousQuality: existing._previousQuality,
           newQuality: existing._newQuality,
+          fileName: existing.fileName,
+          recordId: existing._id || existing.id,
+          decision: 'RETURN_EXISTING',
           event: 'NO_IMPROVEMENT'
         });
         return existing; // Return as-is, no further retry needed
       }
 
-      // ***FIXED: Auto-retry if confidence score < 100% with proper undefined handling***
+      // ***FIXED: More conservative auto-retry - only if confidence score < 80% (not 100%)***
+      // This prevents re-analyzing records with "good enough" data (80-99% confidence)
       const validationScore = existing.validationScore ?? 0; // Default to 0 if undefined
-      if (validationScore < 100 && (existing.extractionAttempts || 1) < 2) {
+      const UPGRADE_THRESHOLD = 80; // Only upgrade if below 80% confidence
+      
+      if (validationScore < UPGRADE_THRESHOLD && (existing.extractionAttempts || 1) < 2) {
         log.warn('Existing record has low confidence score. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
           validationScore: validationScore,
+          threshold: UPGRADE_THRESHOLD,
           extractionAttempts: existing.extractionAttempts || 1,
+          fileName: existing.fileName,
+          recordId: existing._id || existing.id,
+          decision: 'UPGRADE',
           event: 'LOW_CONFIDENCE_UPGRADE'
         });
         return { _isUpgrade: true, _existingRecord: existing };
+      }
+      
+      // Log when we skip upgrade for good-quality records
+      if (validationScore >= UPGRADE_THRESHOLD && validationScore < 100) {
+        log.info('Existing record has acceptable quality - not upgrading.', {
+          contentHash: contentHash.substring(0, 16) + '...',
+          validationScore: validationScore,
+          threshold: UPGRADE_THRESHOLD,
+          fileName: existing.fileName,
+          recordId: existing._id || existing.id,
+          decision: 'RETURN_EXISTING',
+          event: 'ACCEPTABLE_QUALITY'
+        });
       }
 
       const totalDurationMs = Date.now() - startTime;
       log.info('Dedupe: high-quality duplicate found, will return existing.', {
         contentHash: contentHash.substring(0, 16) + '...',
         validationScore: existing.validationScore,
+        hasAllCriticalFields: true,
+        fileName: existing.fileName,
+        recordId: existing._id || existing.id,
         totalDurationMs,
+        decision: 'RETURN_EXISTING',
         event: 'HIGH_QUALITY_DUPLICATE'
       });
       
@@ -605,6 +689,7 @@ async function checkExistingAnalysis(contentHash, log) {
     const totalDurationMs = Date.now() - startTime;
     log.info('Dedupe: no existing analysis found, will perform new analysis.', {
       contentHash: contentHash.substring(0, 16) + '...',
+      collectionDurationMs,
       queryDurationMs,
       totalDurationMs,
       event: 'NOT_FOUND'
