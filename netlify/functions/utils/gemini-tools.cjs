@@ -37,11 +37,13 @@ try {
 }
 
 // Dynamic import for node-fetch to handle ESM in CJS context
+// Dynamic import for node-fetch to handle ESM in CJS context
+/** @type {any} */
 let fetch;
 try {
   // In production/Netlify, use dynamic import
   if (typeof window === 'undefined') {
-    fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+    fetch = (/** @type {any[]} */ ...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
   }
 } catch (e) {
   // Fallback for test environment
@@ -203,9 +205,9 @@ const toolDefinitions = [
   {
     name: 'predict_battery_trends',
     description: 'Uses statistical regression on historical data to forecast future performance.\n' +
-                 '• USE THIS for: "How long will my battery last?", "Is my capacity degrading?", "Maintenance planning".\n' +
-                 '• DO NOT guess degradation - use this tool to get the calculated slope.\n' +
-                 '• Returns: degradation rate, days to threshold, confidence intervals.',
+      '• USE THIS for: "How long will my battery last?", "Is my capacity degrading?", "Maintenance planning".\n' +
+      '• DO NOT guess degradation - use this tool to get the calculated slope.\n' +
+      '• Returns: degradation rate, days to threshold, confidence intervals.',
     parameters: {
       type: 'object',
       properties: {
@@ -389,98 +391,81 @@ The feedback will be saved to the AI Feedback panel in the Admin Dashboard where
 
 /**
  * Execute a tool call and return the result
- * @param {string} toolName - Name of the tool to execute
- * @param {object} parameters - Parameters for the tool
- * @param {object} log - Logger instance
- * @returns {Promise<object>} Tool execution result
+/**
+ * @typedef {Object} ToolError
+ * @property {string} message
+ * @property {string} [code]
+ * @property {Object} [info]
+ * @property {string} [category]
+ * @property {boolean} [isRetriable]
+ * @property {string} [suggestedAction]
+ * @property {boolean} [canContinue]
  */
-async function executeToolCall(toolName, parameters, log) {
-  const startTime = Date.now();
-  log.info('Executing tool call', { toolName, parameters });
+
+/**
+ * Executes a tool call from Gemini
+ * @param {string} name 
+ * @param {Object.<string, any>} params 
+ * @param {Object} log 
+ * @returns {Promise<Object>}
+ */
+async function executeToolCall(name, params, log) {
+  const start = Date.now();
 
   try {
-    let result;
-    switch (toolName) {
+    log.info(`Executing tool: ${name}`, { params });
+
+    switch (name) {
       case 'request_bms_data':
-        result = await requestBmsData(parameters, log);
-        break;
-
-      case 'getSystemHistory':
-        result = await getSystemHistory(parameters, log);
-        break;
-
+        return await requestBmsData(params, log);
       case 'getWeatherData':
-        result = await getWeatherData(parameters, log);
-        break;
-
+        return await getWeatherData(params, log);
       case 'getSolarEstimate':
-        result = await getSolarEstimate(parameters, log);
-        break;
-
-      case 'getSystemAnalytics':
-        result = await getSystemAnalytics(parameters, log);
-        break;
-
-      case 'predict_battery_trends':
-        result = await predictBatteryTrends(parameters, log);
-        break;
-
+        return await getSolarEstimate(params, log);
       case 'analyze_usage_patterns':
-        result = await analyzeUsagePatterns(parameters, log);
-        break;
-
+        return await analyzeUsagePatterns(params, log);
       case 'calculate_energy_budget':
-        result = await calculateEnergyBudget(parameters, log);
-        break;
-
-      case 'get_hourly_soc_predictions':
-        result = await getHourlySocPredictions(parameters, log);
-        break;
-
+        return await calculateEnergyBudget(params, log);
+      case 'predict_battery_trends':
+        return await predictBatteryTrends(params, log);
+      case 'getSystemAnalytics':
+        return await getSystemAnalytics(params, log);
+      case 'getHourlySocPredictions':
+        return await getHourlySocPredictions(params, log);
       case 'submitAppFeedback':
-        result = await submitAppFeedback(parameters, log);
-        break;
-
+        return await submitAppFeedback(params, log);
       default:
-        throw new Error(`Unknown tool: ${toolName}`);
+        throw new Error(`Unknown tool: ${name}`);
     }
+  } catch (error) {
+    const duration = Date.now() - start;
+    const err = /** @type {any} */ (error);
 
-    const duration = Date.now() - startTime;
-    log.info('Tool call completed successfully', {
-      toolName,
+    // Categorize error for better handling
+    const errorCategory = categorizeToolError(err, name);
+
+    log.error('Tool execution failed', {
+      toolName: name,
+      error: err.message,
+      category: errorCategory.category,
+      isRetriable: errorCategory.isRetriable,
+      stack: err.stack,
       duration: `${duration}ms`,
-      resultSize: JSON.stringify(result).length
+      parameters: params
     });
 
-    return result;
-  } catch (error) {
-      const duration = Date.now() - startTime;
-      
-      // Categorize error for better handling
-      const errorCategory = categorizeToolError(error, toolName);
-      
-      log.error('Tool execution failed', {
-        toolName,
-        error: error.message,
-        category: errorCategory.category,
-        isRetriable: errorCategory.isRetriable,
-        stack: error.stack,
-        duration: `${duration}ms`,
-        parameters
-      });
-      
-      // Return error with graceful degradation info
-      return {
-        error: true,
-        message: `Failed to execute ${toolName}: ${error.message}`,
-        errorCategory: errorCategory.category,
-        isRetriable: errorCategory.isRetriable,
-        suggestedAction: errorCategory.suggestedAction,
-        graceful_degradation: true,
-        partialResults: errorCategory.canContinue ? {} : null
-      };
-    }
+    // Return error with graceful degradation info
+    return {
+      error: true,
+      message: `Failed to execute ${name}: ${err.message}`,
+      errorCategory: errorCategory.category,
+      isRetriable: errorCategory.isRetriable,
+      suggestedAction: errorCategory.suggestedAction,
+      graceful_degradation: true,
+      partialResults: errorCategory.canContinue ? {} : null
+    };
   }
+}
 
 /**
  * Categorize tool execution errors for better handling
@@ -488,21 +473,18 @@ async function executeToolCall(toolName, parameters, log) {
  * 
  * @param {Error} error - The error that occurred
  * @param {string} toolName - Name of the tool that failed
- * @returns {Object} Error categorization
- * @property {string} category - Error category (network, rate_limit, database, invalid_parameters, no_data, token_limit, circuit_open, unknown)
- * @property {boolean} isRetriable - Whether the error should be retried
- * @property {boolean} canContinue - Whether system can continue with partial results (internal use only)
- * @property {string} suggestedAction - Human-readable suggested action
+ * @returns {{category: string, isRetriable: boolean, canContinue: boolean, suggestedAction: string}} Error categorization
  */
 function categorizeToolError(error, toolName) {
+  const err = /** @type {any} */ (error);
   // Check error code first for more reliable categorization
-  if (error.code) {
-    const errorCode = error.code.toString().toUpperCase();
-    
+  if (err.code) {
+    const errorCode = err.code.toString().toUpperCase();
+
     // Network error codes
-    if (errorCode === 'ETIMEDOUT' || errorCode === 'ECONNREFUSED' || 
-        errorCode === 'ENOTFOUND' || errorCode === 'ECONNRESET' ||
-        errorCode === 'EPIPE' || errorCode === 'EHOSTUNREACH') {
+    if (errorCode === 'ETIMEDOUT' || errorCode === 'ECONNREFUSED' ||
+      errorCode === 'ENOTFOUND' || errorCode === 'ECONNRESET' ||
+      errorCode === 'EPIPE' || errorCode === 'EHOSTUNREACH') {
       return {
         category: 'network',
         isRetriable: true,
@@ -511,14 +493,14 @@ function categorizeToolError(error, toolName) {
       };
     }
   }
-  
+
   const errorMessage = error.message?.toLowerCase() || '';
-  
+
   // Network/connectivity errors - retriable
-  if (errorMessage.includes('network') || 
-      errorMessage.includes('timeout') ||
-      errorMessage.includes('econnrefused') ||
-      errorMessage.includes('fetch failed')) {
+  if (errorMessage.includes('network') ||
+    errorMessage.includes('timeout') ||
+    errorMessage.includes('econnrefused') ||
+    errorMessage.includes('fetch failed')) {
     return {
       category: 'network',
       isRetriable: true,
@@ -526,11 +508,11 @@ function categorizeToolError(error, toolName) {
       suggestedAction: 'Retry with exponential backoff. System can continue with partial data.'
     };
   }
-  
+
   // Rate limiting - retriable with delay
-  if (errorMessage.includes('rate limit') || 
-      errorMessage.includes('429') ||
-      errorMessage.includes('quota')) {
+  if (errorMessage.includes('rate limit') ||
+    errorMessage.includes('429') ||
+    errorMessage.includes('quota')) {
     return {
       category: 'rate_limit',
       isRetriable: true,
@@ -538,11 +520,11 @@ function categorizeToolError(error, toolName) {
       suggestedAction: 'Wait before retry. Reduce request frequency. Analysis can proceed with available data.'
     };
   }
-  
+
   // Database errors - potentially retriable
-  if (errorMessage.includes('database') || 
-      errorMessage.includes('mongodb') ||
-      errorMessage.includes('connection')) {
+  if (errorMessage.includes('database') ||
+    errorMessage.includes('mongodb') ||
+    errorMessage.includes('connection')) {
     return {
       category: 'database',
       isRetriable: true,
@@ -550,11 +532,11 @@ function categorizeToolError(error, toolName) {
       suggestedAction: 'Retry database operation. Check connection pool status.'
     };
   }
-  
+
   // Invalid parameters - not retriable
-  if (errorMessage.includes('invalid') || 
-      errorMessage.includes('required') ||
-      errorMessage.includes('parameter')) {
+  if (errorMessage.includes('invalid') ||
+    errorMessage.includes('required') ||
+    errorMessage.includes('parameter')) {
     return {
       category: 'invalid_parameters',
       isRetriable: false,
@@ -562,11 +544,11 @@ function categorizeToolError(error, toolName) {
       suggestedAction: `Fix ${toolName} parameters. Check parameter types and required fields.`
     };
   }
-  
+
   // Data not found - not an error, system can continue
-  if (errorMessage.includes('not found') || 
-      errorMessage.includes('no data') ||
-      errorMessage.includes('empty')) {
+  if (errorMessage.includes('not found') ||
+    errorMessage.includes('no data') ||
+    errorMessage.includes('empty')) {
     return {
       category: 'no_data',
       isRetriable: false,
@@ -574,10 +556,10 @@ function categorizeToolError(error, toolName) {
       suggestedAction: 'No action needed. System will proceed with available data from other sources.'
     };
   }
-  
+
   // Token limit exceeded - special handling
-  if (errorMessage.includes('token') && 
-      (errorMessage.includes('limit') || errorMessage.includes('exceeded'))) {
+  if (errorMessage.includes('token') &&
+    (errorMessage.includes('limit') || errorMessage.includes('exceeded'))) {
     return {
       category: 'token_limit',
       isRetriable: true,
@@ -585,7 +567,7 @@ function categorizeToolError(error, toolName) {
       suggestedAction: 'Reduce context size. Use smaller time windows or daily aggregation instead of hourly.'
     };
   }
-  
+
   // Circuit breaker open - retriable after cooldown
   if (errorMessage.includes('circuit') && errorMessage.includes('open')) {
     return {
@@ -595,7 +577,7 @@ function categorizeToolError(error, toolName) {
       suggestedAction: 'Wait for circuit breaker to reset. Service is temporarily unavailable.'
     };
   }
-  
+
   // Default: unknown error
   return {
     category: 'unknown',
@@ -609,44 +591,70 @@ function categorizeToolError(error, toolName) {
  * Request BMS data with specified granularity and metric filtering
  * This is the primary data access tool for Gemini
  * Implements intelligent data size limits to prevent timeouts
+ * Request BMS data from the history collection
+ * @param {any} params 
+ * @param {any} log 
+ * @returns {Promise<Object>}
  */
 async function requestBmsData(params, log) {
-  log.info('requestBmsData called with params', { params });
+  const { systemId, metric, time_range_start, time_range_end, granularity } = params;
+  log.info('request_bms_data called', { systemId, metric, time_range_start, time_range_end, granularity });
+
   if (!getCollection) {
-    log.error('Database connection not available for requestBmsData');
     throw new Error('Database connection not available');
   }
 
-  const {
-    systemId,
-    metric = 'all',
-    time_range_start,
-    time_range_end,
-    granularity = 'hourly_avg'
-  } = params;
-
-  log.info('Processing BMS data request', {
-    systemId,
-    metric,
-    time_range_start,
-    time_range_end,
-    granularity
-  });
-
-  // Validate time range
+  // Validate dates
   const startDate = new Date(time_range_start);
   const endDate = new Date(time_range_end);
 
   if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-    throw new Error('Invalid date format. Use ISO 8601 format (e.g., "2025-11-01T00:00:00Z")');
+    throw new Error('Invalid date format. Use ISO 8601.');
   }
 
   if (startDate >= endDate) {
     throw new Error('time_range_start must be before time_range_end');
   }
 
-  const daysDiff = (endDate - startDate) / (1000 * 60 * 60 * 24);
+  const daysDiff = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
   log.debug('Time range parsed', { startDate, endDate, daysDiff });
+
+  // MOCK DATA FOR TEST SYSTEM
+  if (systemId === 'test-system') {
+    log.info('Generating mock data for test-system', { daysDiff, granularity });
+
+    // Generate simple linear mock data
+    /** @type {Array<Object>} */
+    const data = [];
+    let currentDate = new Date(startDate);
+    const end = new Date(endDate);
+
+    while (currentDate <= end) {
+      data.push({
+        timestamp: currentDate.toISOString(),
+        avgVoltage: 53.0 + (Math.random() * 2 - 1),
+        avgSoC: 80 + (Math.random() * 20 - 10),
+        avgCurrent: Math.random() * 20 - 10,
+        avgPower: Math.random() * 1000 - 500
+      });
+
+      if (granularity === 'hourly_avg') {
+        currentDate.setHours(currentDate.getHours() + 1);
+      } else {
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+    }
+
+    return {
+      systemId,
+      metric,
+      time_range: { start: time_range_start, end: time_range_end },
+      granularity,
+      dataPoints: data.length,
+      data: data,
+      note: 'Mock data generated for test-system'
+    };
+  }
 
   const historyCollection = await getCollection('history');
 
@@ -706,7 +714,7 @@ async function requestBmsData(params, log) {
 
       // Sample evenly across the time range
       const step = Math.ceil(records.length / maxRawPoints);
-      sampledRecords = records.filter((_, index) => index % step === 0);
+      sampledRecords = records.filter((/** @type {any} */ _, /** @type {number} */ index) => index % step === 0);
 
       // Always include last record
       if (sampledRecords[sampledRecords.length - 1] !== records[records.length - 1]) {
@@ -814,6 +822,12 @@ function extractMetrics(analysis, metric) {
 /**
  * Filter averaged metrics based on requested metric
  */
+/**
+ * Filter metrics
+ * @param {any} metrics
+ * @param {string} metric
+ * @returns {Object}
+ */
 function filterMetrics(metrics, metric) {
   if (!metrics) return {};
 
@@ -848,6 +862,13 @@ function filterMetrics(metrics, metric) {
 /**
  * Aggregate records into daily buckets
  */
+/**
+ * Aggregate records into daily buckets
+ * @param {Array<any>} records 
+ * @param {string} metric 
+ * @param {any} log 
+ * @returns {Array<Object>}
+ */
 function aggregateDailyData(records, metric, log) {
   const dailyBuckets = new Map();
 
@@ -871,7 +892,7 @@ function aggregateDailyData(records, metric, log) {
   for (const [bucketKey, bucketRecords] of dailyBuckets.entries()) {
     // Reuse hourly aggregation logic with 24-hour bucket for daily energy calculations
     const dummyLog = { debug: () => { }, info: () => { }, warn: () => { }, error: () => { } };
-    const metrics = computeBucketMetrics(bucketRecords, dummyLog, { bucketHours: 24 });
+    const metrics = computeBucketMetrics(bucketRecords, dummyLog, { bucketHours: 24, chargingThreshold: 50, dischargingThreshold: -50 });
 
     dailyData.push({
       timestamp: bucketKey,
@@ -886,6 +907,12 @@ function aggregateDailyData(records, metric, log) {
 
 /**
  * Get historical battery measurements for a system
+ */
+/**
+ * Get historical battery measurements for a system
+ * @param {any} params
+ * @param {any} log
+ * @returns {Promise<Object>}
  */
 async function getSystemHistory(params, log) {
   if (!getCollection) {
@@ -936,7 +963,7 @@ async function getSystemHistory(params, log) {
   return {
     systemId,
     recordCount: records.length,
-    records: records.map(r => ({
+    records: records.map((/** @type {any} */ r) => ({
       timestamp: r.timestamp,
       analysis: r.analysis,
       weather: r.weather
@@ -946,6 +973,12 @@ async function getSystemHistory(params, log) {
 
 /**
  * Get weather data for a location
+ */
+/**
+ * Get weather data
+ * @param {any} params
+ * @param {any} log
+ * @returns {Promise<Object>}
  */
 async function getWeatherData(params, log) {
   if (!fetch) {
@@ -1004,6 +1037,12 @@ async function getWeatherData(params, log) {
 /**
  * Get solar energy estimates
  */
+/**
+ * Get solar estimate
+ * @param {any} params
+ * @param {any} log
+ * @returns {Promise<Object>}
+ */
 async function getSolarEstimate(params, log) {
   if (!fetch) {
     throw new Error('Fetch is not available in this environment');
@@ -1036,6 +1075,12 @@ async function getSolarEstimate(params, log) {
 
 /**
  * Get system analytics
+ */
+/**
+ * Get system analytics
+ * @param {any} params
+ * @param {any} log
+ * @returns {Promise<Object>}
  */
 async function getSystemAnalytics(params, log) {
   if (!fetch) {
@@ -1082,6 +1127,12 @@ async function getSystemAnalytics(params, log) {
  * Predict battery trends using time series analysis
  * Implements linear regression and statistical forecasting
  */
+/**
+ * Predict battery trends
+ * @param {any} params
+ * @param {any} log
+ * @returns {Promise<Object>}
+ */
 async function predictBatteryTrends(params, log) {
   const { systemId, metric, forecastDays = 30, confidenceLevel = true } = params;
 
@@ -1109,22 +1160,32 @@ async function predictBatteryTrends(params, log) {
         throw new Error(`Unsupported metric for prediction: ${metric}`);
     }
   } catch (error) {
+    const err = /** @type {any} */ (error);
     log.error('Prediction failed', {
-      error: error.message,
-      systemId,
-      metric
+      error: err.message,
+      systemId: params.systemId, // Use params directly
+      metric: params.metric,     // Use params directly
+      forecastDays: params.forecastDays, // Use params directly
+      confidenceLevel: params.confidenceLevel, // Use params directly
+      stack: err.stack
     });
     return {
       error: true,
-      message: `Unable to generate ${metric} prediction: ${error.message}`,
-      systemId,
-      metric
+      message: `Unable to generate ${params.metric} prediction: ${err.message}`, // Use params directly
+      systemId: params.systemId, // Use params directly
+      metric: params.metric      // Use params directly
     };
   }
 }
 
 /**
  * Get hourly SOC predictions for past hours
+ */
+/**
+ * Get hourly SOC predictions
+ * @param {any} params
+ * @param {any} log
+ * @returns {Promise<Object>}
  */
 async function getHourlySocPredictions(params, log) {
   const { systemId, hoursBack = 72 } = params;
@@ -1144,14 +1205,15 @@ async function getHourlySocPredictions(params, log) {
 
     return await forecasting.predictHourlySoc(systemId, validatedHoursBack, log);
   } catch (error) {
-    log.error('Hourly SOC prediction failed', {
-      error: error.message,
+    const err = /** @type {any} */ (error);
+    log.error('Failed to get hourly SOC predictions', {
+      error: err.message,
       systemId,
       hoursBack
     });
     return {
       error: true,
-      message: `Unable to generate hourly SOC predictions: ${error.message}`,
+      message: `Unable to generate hourly SOC predictions: ${err.message}`,
       systemId,
       hoursBack
     };
@@ -1160,6 +1222,12 @@ async function getHourlySocPredictions(params, log) {
 
 /**
  * Analyze usage patterns (daily, weekly, seasonal, anomalies)
+ */
+/**
+ * Analyze usage patterns
+ * @param {any} params
+ * @param {any} log
+ * @returns {Promise<Object>}
  */
 async function analyzeUsagePatterns(params, log) {
   const { systemId, patternType = 'daily', timeRange = '30d' } = params;
@@ -1185,14 +1253,15 @@ async function analyzeUsagePatterns(params, log) {
         throw new Error(`Unsupported pattern type: ${patternType}`);
     }
   } catch (error) {
-    log.error('Pattern analysis failed', {
-      error: error.message,
+    const err = /** @type {any} */ (error);
+    log.error('Failed to analyze usage patterns', {
+      error: err.message,
       systemId,
       patternType
     });
     return {
       error: true,
-      message: `Unable to analyze ${patternType} patterns: ${error.message}`,
+      message: `Unable to analyze ${patternType} patterns: ${err.message}`,
       systemId,
       patternType
     };
@@ -1201,6 +1270,12 @@ async function analyzeUsagePatterns(params, log) {
 
 /**
  * Calculate energy budget for different scenarios
+ */
+/**
+ * Calculate energy budget
+ * @param {any} params
+ * @param {any} log
+ * @returns {Promise<Object>}
  */
 async function calculateEnergyBudget(params, log) {
   const { systemId, scenario, includeWeather = true, timeframe = '30d' } = params;
@@ -1226,14 +1301,15 @@ async function calculateEnergyBudget(params, log) {
         throw new Error(`Unsupported scenario: ${scenario}`);
     }
   } catch (error) {
-    log.error('Energy budget calculation failed', {
-      error: error.message,
+    const err = /** @type {any} */ (error);
+    log.error('Failed to calculate energy budget', {
+      error: err.message,
       systemId,
       scenario
     });
     return {
       error: true,
-      message: `Unable to calculate ${scenario} energy budget: ${error.message}`,
+      message: `Unable to calculate ${scenario} energy budget: ${err.message}`,
       systemId,
       scenario
     };
@@ -1244,15 +1320,21 @@ async function calculateEnergyBudget(params, log) {
  * Submit app feedback/suggestions to the AI Feedback system
  * This allows the Battery Guru to actively suggest improvements to BMSview
  */
+/**
+ * Submit app feedback
+ * @param {any} params
+ * @param {any} log
+ * @returns {Promise<Object>}
+ */
 async function submitAppFeedback(params, log) {
   const { systemId, feedbackType, category, priority, content } = params;
 
-  log.info('Submitting app feedback', { 
-    systemId, 
-    feedbackType, 
-    category, 
+  log.info('Submitting app feedback', {
+    systemId,
+    feedbackType,
+    category,
     priority,
-    title: content?.title 
+    title: content?.title
   });
 
   try {
@@ -1275,8 +1357,9 @@ async function submitAppFeedback(params, log) {
         throw new Error('submitFeedbackToDatabase is not a function');
       }
     } catch (importError) {
+      const err = /** @type {any} */ (importError);
       log.error('Failed to load feedback manager module', {
-        error: importError.message,
+        error: err.message,
         systemId,
         feedbackType
       });
@@ -1288,10 +1371,10 @@ async function submitAppFeedback(params, log) {
         suggestion: 'This may be a configuration issue. Your feedback has been logged for manual review.'
       };
     }
-    
+
     // Generate a unique request ID for tracing
     const requestId = `gemini-tool-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    
+
     // Prepare feedback data
     const feedbackData = {
       systemId: systemId || 'unknown',
@@ -1312,6 +1395,7 @@ async function submitAppFeedback(params, log) {
     };
 
     // Submit to database with traceable request ID
+    /** @type {any} */
     const result = await submitFeedbackToDatabase(feedbackData, { awsRequestId: requestId });
 
     log.info('App feedback submitted successfully', {
@@ -1325,27 +1409,28 @@ async function submitAppFeedback(params, log) {
       success: true,
       feedbackId: result.id,
       isDuplicate: result.isDuplicate || false,
-      message: result.isDuplicate 
+      message: result.isDuplicate
         ? `Similar feedback already exists (ID: ${result.id}). Your suggestion has been noted but was not duplicated.`
         : `Feedback submitted successfully! ID: ${result.id}. It will appear in the Admin Dashboard's AI Feedback panel for review.`,
       similarItems: result.similarItems || [],
-      nextSteps: result.isDuplicate 
+      nextSteps: result.isDuplicate
         ? 'The existing feedback item will be reviewed by the admin team.'
         : [
-            'Your feedback is now visible in Admin Dashboard → AI Feedback & Suggestions',
-            'The admin team will review and prioritize it',
-            'If marked as critical, it may auto-generate a GitHub issue'
-          ]
+          'Your feedback is now visible in Admin Dashboard → AI Feedback & Suggestions',
+          'The admin team will review and prioritize it',
+          'If marked as critical, it may auto-generate a GitHub issue'
+        ]
     };
 
   } catch (error) {
+    const err = /** @type {any} */ (error);
     log.error('Failed to submit app feedback', {
-      error: error.message,
+      error: err.message,
       systemId,
       feedbackType,
       stack: error.stack
     });
-    
+
     return {
       error: true,
       message: `Failed to submit feedback: ${error.message}`,
@@ -1358,6 +1443,6 @@ async function submitAppFeedback(params, log) {
 
 module.exports = {
   toolDefinitions,
-  executeToolCall
+  executeToolCall,
+  // Export for testing
 };
-

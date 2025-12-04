@@ -1003,14 +1003,71 @@ const diagnosticTests = {
       /** @type {Array<Object.<string, any>>} */
       tests: [],
       duration: 0,
+      /** @type {Object.<string, any>} */
       details: {}
     };
 
     let createdJobId = /** @type {string | null} */ (null);
 
+    /**
+     * Helper to seed test data for diagnostics
+     * @param {string} systemId 
+     * @param {Object} log 
+     */
+    const seedTestData = async (systemId, log) => {
+      try {
+        const historyCollection = await getCollection('history');
+        const now = new Date();
+        const records = [];
+
+        // Generate 24 hours of hourly data
+        for (let i = 0; i < 24; i++) {
+          const timestamp = new Date(now.getTime() - (i * 60 * 60 * 1000));
+          records.push({
+            systemId,
+            timestamp: timestamp.toISOString(),
+            analysis: {
+              ...TEST_BMS_DATA,
+              voltage: 53.0 + (Math.random() * 0.5),
+              soc: 80 - (i * 0.5), // Decreasing SOC
+              power: i < 12 ? 500 : -200 // Charge/Discharge pattern
+            },
+            testData: true,
+            createdAt: new Date()
+          });
+        }
+
+        await historyCollection.insertMany(records);
+        log.info(`Seeded ${records.length} test records for ${systemId}`);
+        return true;
+      } catch (error) {
+        log.error('Failed to seed test data', { error: error.message, systemId });
+        return false;
+      }
+    };
+
+    /**
+     * Helper to cleanup test data
+     * @param {string} systemId 
+     * @param {Object} log 
+     */
+    const cleanupTestData = async (systemId, log) => {
+      try {
+        const historyCollection = await getCollection('history');
+        await historyCollection.deleteMany({ systemId });
+        log.info(`Cleaned up test records for ${systemId}`);
+      } catch (error) {
+        log.error('Failed to cleanup test data', { error: /** @type {Error} */(error).message, systemId });
+      }
+    };
+
     // Wrap EVERYTHING in try-catch to ensure we always return a result object
     try {
       logger.info('========== STARTING INSIGHTS WITH TOOLS TEST ==========');
+
+      // Seed data for the ReAct loop test
+      const seedSystemId = 'test_system_' + testId;
+      await seedTestData(seedSystemId, logger);
 
       // Test 1: Insights job creation
       try {
@@ -1148,7 +1205,7 @@ const diagnosticTests = {
             await jobsCollection.deleteOne({ id: createdJobId });
           } catch (cleanupError) {
             const cleanErr = /** @type {Error} */ (cleanupError);
-            logger.warn('Failed to cleanup job after retrieval error', { error: cleanErr.message });
+            logger.warn('Failed to cleanup job after error', { error: cleanErr.message });
           }
         }
       } else {
@@ -1158,6 +1215,9 @@ const diagnosticTests = {
           reason: 'No job was created'
         });
       }
+
+      // Cleanup seeded data
+      await cleanupTestData('test_system_' + testId, logger);
 
       testResults.status = testResults.tests.filter(t => t.status === 'success').length >= 2 ? 'success' : 'partial';
       testResults.duration = Date.now() - startTime;
@@ -3720,12 +3780,12 @@ const sendSSEMessage = (data, event = 'message') => {
 */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
-  
+
   // Handle CORS preflight early
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
-  
+
   const requestStartTime = Date.now();
   let testId = 'unknown';
 
@@ -3759,17 +3819,15 @@ exports.handler = async (event, context) => {
     // Check for scope query parameter (for granular single-test execution)
     const queryScope = event.queryStringParameters?.scope;
     if (queryScope) {
-      // Scope can be a single test name or comma-separated list
-      const scopeTests = queryScope.split(',').map((/** @type {string} */ t) => t.trim()).filter(t => /** @type {any} */(diagnosticTests)[t]);
-      if (scopeTests.length > 0) {
-        selectedTests = scopeTests;
-        logger.info('Query parameter scope selection', {
-          scope: queryScope,
-          valid: selectedTests.length,
-          tests: selectedTests
-        });
+      // Alias solarEstimate to solar
+      const normalizedScope = queryScope === 'solarEstimate' ? 'solar' : queryScope;
+
+      if (diagnosticTests[normalizedScope]) {
+        selectedTests = [normalizedScope];
+        logger.info(`Running scoped test: ${normalizedScope} (requested as: ${queryScope})`);
       } else {
         logger.warn('Invalid scope parameter - no matching tests found', { scope: queryScope });
+        // Fallback to all tests is handled by default initialization
       }
     } else if (event.httpMethod === 'POST' && event.body) {
       // Fallback to POST body for backward compatibility
@@ -3999,7 +4057,7 @@ exports.handler = async (event, context) => {
       }
     };
 
-    const durationMs = timer.end({ 
+    const durationMs = timer.end({
       overallStatus,
       testsRun: selectedTests.length,
       success: summary.success,
@@ -4066,12 +4124,11 @@ exports.handler = async (event, context) => {
     logger.exit(200, { testId, status: 'error' });
     return {
       statusCode: 200,  // Return 200 for handled errors so frontend can parse response
-      headers: {
-        ...headers,
+      headers: /** @type {any} */ ({
         'Content-Type': 'application/json',
         'X-Diagnostic-Id': testId,
         'X-Diagnostic-Status': 'error'
-      },
+      }),
       body: JSON.stringify({
         status: 'error',
         testId,

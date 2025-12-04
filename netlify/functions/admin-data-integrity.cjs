@@ -14,11 +14,11 @@ const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 function validateEnvironment(log) {
-  if (!process.env.MONGODB_URI) {
-    log.error('Missing MONGODB_URI environment variable');
-    return false;
-  }
-  return true;
+    if (!process.env.MONGODB_URI) {
+        log.error('Missing MONGODB_URI environment variable');
+        return false;
+    }
+    return true;
 }
 
 const respond = (statusCode, body, headers = {}) => ({
@@ -27,18 +27,23 @@ const respond = (statusCode, body, headers = {}) => ({
     headers: { 'Content-Type': 'application/json', ...headers },
 });
 
-exports.handler = async function(event, context) {
+exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
-    
+
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers };
     }
-    
+
     const log = createLoggerFromEvent('admin-data-integrity', event, context);
     log.entry({ method: event.httpMethod, path: event.path });
+
+    // OPTIMIZATION: Prevent Lambda from waiting for MongoDB connection to close
+    // This allows connection reuse across invocations
+    context.callbackWaitsForEmptyEventLoop = false;
+
     const timer = createTimer(log, 'data-integrity-audit');
-    
+
     if (!validateEnvironment(log)) {
         log.exit(500);
         return respond(500, { error: 'Server configuration error' }, headers);
@@ -85,12 +90,12 @@ exports.handler = async function(event, context) {
         // Only log pipeline in debug mode to avoid performance impact
         log.debug('Running aggregation pipeline', { pipelineStages: aggregationPipeline.length });
         const aggregationResults = await historyCollection.aggregate(aggregationPipeline).toArray();
-        
+
         log.info('Aggregation complete', { uniqueDLSources: aggregationResults.length });
 
         // Step 2: Fetch all systems and create a mapping of DL-# to System
         const allSystems = await systemsCollection.find({}, { projection: { _id: 0 } }).toArray();
-        
+
         log.info('Fetched registered systems', { systemCount: allSystems.length });
 
         // Create a map: DL-# -> System object
@@ -107,7 +112,7 @@ exports.handler = async function(event, context) {
         const categorizedData = aggregationResults.map(item => {
             const dlId = item._id;
             const system = dlToSystemMap.get(dlId);
-            
+
             if (system) {
                 // This DL is associated with a registered system
                 return {
@@ -151,7 +156,7 @@ exports.handler = async function(event, context) {
                 .reduce((sum, item) => sum + item.record_count, 0)
         };
 
-        const durationMs = timer.end({ 
+        const durationMs = timer.end({
             matched: summary.matched,
             orphaned: summary.orphaned,
             totalRecords: summary.total_records
@@ -170,9 +175,9 @@ exports.handler = async function(event, context) {
         const error = err instanceof Error ? err.message : 'Unknown error during data integrity audit.';
         log.error('Data integrity audit failed', { error, stack: err instanceof Error ? err.stack : undefined });
         log.exit(500);
-        return respond(500, { 
+        return respond(500, {
             error: 'Failed to perform data integrity audit.',
-            details: error 
+            details: error
         }, headers);
     }
 };
