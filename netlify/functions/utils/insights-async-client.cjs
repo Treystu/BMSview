@@ -1,20 +1,19 @@
 /**
  * Insights Async Workload Client
  * 
- * Triggers async workload for insights generation WITHOUT importing @netlify/async-workloads package.
- * Uses direct background processing to avoid 250MB bundle size limit.
+ * Triggers async workload for insights generation using TRUE Netlify Async Workloads.
  * 
  * ARCHITECTURE:
- * - Trigger creates job in MongoDB
- * - Starts background processing directly (fire-and-forget)
- * - No AsyncWorkloadsClient import (avoids 43MB package + dependencies)
- * - Background processor handles retry, state, timeout management
+ * - Calls separate "send-insights-event" function via internal HTTP
+ * - That function uses AsyncWorkloadsClient to send events
+ * - Avoids importing @netlify/async-workloads in trigger function
+ * - Keeps trigger lightweight while using full async workload features
  * 
  * Usage:
  * ```js
  * const { triggerInsightsWorkload } = require('./utils/insights-async-client.cjs');
  * 
- * const { jobId } = await triggerInsightsWorkload({
+ * const { eventId, jobId } = await triggerInsightsWorkload({
  *   jobId: 'job-123',
  *   analysisData: {...},
  *   systemId: 'sys-456',
@@ -26,14 +25,30 @@
  * ```
  */
 
-const { processInsightsInBackground } = require('./insights-processor.cjs');
 const { createLogger } = require('./logger.cjs');
 
 /**
- * Trigger insights generation via background processing
+ * Get base URL for internal function calls
+ */
+function getBaseUrl() {
+  // In production, use Netlify URL
+  if (process.env.URL) {
+    return process.env.URL;
+  }
+  
+  // In development, use localhost
+  if (process.env.NETLIFY_DEV) {
+    return 'http://localhost:8888';
+  }
+  
+  // Fallback
+  return 'http://localhost:8888';
+}
+
+/**
+ * Trigger insights generation via async workload
  * 
- * Uses direct invocation of insights processor (no async workload package needed).
- * This avoids the 250MB bundle size issue while maintaining background processing capability.
+ * Sends event to Netlify's async workload system via separate event sender function.
  * 
  * @param {Object} options - Processing options
  * @param {string} options.jobId - Job identifier
@@ -44,7 +59,9 @@ const { createLogger } = require('./logger.cjs');
  * @param {number} [options.maxIterations] - Maximum AI iterations (default: 10)
  * @param {string} [options.modelOverride] - Gemini model override
  * @param {boolean} [options.fullContextMode] - Enable full context mode
- * @returns {Promise<{jobId: string}>}
+ * @param {number} [options.priority] - Event priority (0-10, default: 5)
+ * @param {number|Date} [options.delayUntil] - Delay execution until timestamp
+ * @returns {Promise<{eventId: string, jobId: string}>}
  */
 async function triggerInsightsWorkload(options) {
   const {
@@ -55,82 +72,106 @@ async function triggerInsightsWorkload(options) {
     contextWindowDays,
     maxIterations,
     modelOverride,
-    fullContextMode
+    fullContextMode,
+    priority = 5,
+    delayUntil
   } = options;
 
   if (!jobId) {
-    throw new Error('jobId is required to trigger insights processing');
+    throw new Error('jobId is required to trigger insights workload');
   }
 
-  const log = createLogger('insights-background-client', { jobId });
+  const log = createLogger('insights-async-client', { jobId });
   
-  log.info('Triggering background insights processing', {
+  log.info('Triggering async workload', {
     jobId,
     hasAnalysisData: !!analysisData,
     systemId,
-    fullContextMode,
-    contextWindowDays,
-    maxIterations
+    priority,
+    hasDelay: !!delayUntil
   });
-
-  // Start processing in background (async, fire-and-forget)
-  // The processor handles retry logic, state persistence, and error management
-  processInsightsInBackground(
-    jobId,
-    analysisData,
-    systemId,
-    customPrompt,
-    contextWindowDays,
-    maxIterations,
-    modelOverride,
-    fullContextMode
-  ).catch(error => {
-    log.error('Background insights processing failed', {
-      jobId,
-      error: error.message,
-      stack: error.stack
-    });
-    // Error is logged but doesn't fail the trigger - job status will reflect failure
-  });
-
-  log.info('Background processing started', { jobId });
   
-  return { jobId };
+  const baseUrl = getBaseUrl();
+  
+  // Call the event sender function (internal HTTP call)
+  const response = await fetch(`${baseUrl}/.netlify/functions/send-insights-event`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      eventName: 'generate-insights',
+      eventData: {
+        jobId,
+        analysisData,
+        systemId,
+        customPrompt,
+        contextWindowDays,
+        maxIterations,
+        modelOverride,
+        fullContextMode
+      },
+      priority,
+      delayUntil: delayUntil instanceof Date ? delayUntil.getTime() : delayUntil
+    })
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    log.error('Failed to send async workload event', {
+      status: response.status,
+      error: errorText
+    });
+    throw new Error(`Failed to trigger async workload: ${response.status} ${errorText}`);
+  }
+  
+  const result = await response.json();
+  
+  if (!result.success) {
+    log.error('Event sender reported failure', result);
+    throw new Error(`Failed to trigger async workload: ${result.error || 'Unknown error'}`);
+  }
+  
+  log.info('Async workload triggered successfully', {
+    eventId: result.eventId,
+    jobId: result.jobId
+  });
+  
+  return {
+    eventId: result.eventId,
+    jobId: result.jobId
+  };
 }
 
 /**
  * Trigger high-priority insights workload
  * 
- * In this simplified implementation (without AsyncWorkloadsClient), priority is handled
- * by the background processor's internal queue management.
+ * Sends event with priority 10 (highest) for urgent processing.
  * 
  * @param {Object} options - Same as triggerInsightsWorkload
- * @returns {Promise<{jobId: string}>}
+ * @returns {Promise<{eventId: string, jobId: string}>}
  */
 async function triggerUrgentInsightsWorkload(options) {
-  // For now, same as normal trigger - background processor handles all jobs equally
-  // Future enhancement: Could add priority field to job metadata
-  return triggerInsightsWorkload(options);
+  return triggerInsightsWorkload({
+    ...options,
+    priority: 10 // Highest priority
+  });
 }
 
 /**
  * Schedule insights workload for future execution
  * 
- * In this simplified implementation, scheduling is not supported without AsyncWorkloadsClient.
- * Jobs are processed immediately.
+ * Delays event execution until specified time using Netlify Async Workloads scheduling.
  * 
  * @param {Object} options - Workload options
- * @param {Date|number} delayUntil - Ignored in this implementation
- * @returns {Promise<{jobId: string}>}
+ * @param {Date|number} delayUntil - When to execute (Date object or Unix timestamp)
+ * @returns {Promise<{eventId: string, jobId: string}>}
  */
 async function scheduleInsightsWorkload(options, delayUntil) {
-  const log = createLogger('insights-background-client', { jobId: options.jobId });
-  log.warn('Scheduling not supported in simplified implementation - processing immediately', {
-    requestedDelay: delayUntil
+  return triggerInsightsWorkload({
+    ...options,
+    delayUntil
   });
-  
-  // Execute immediately
-  return triggerInsightsWorkload(options);
 }
 
 module.exports = {
