@@ -178,7 +178,7 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
             )}
 
             {/* Alert Analysis Section - Context Aware */}
-            {analyticsData && analyticsData.alertAnalysis && analyticsData.alertAnalysis.totalAlerts > 0 && (
+            {analyticsData && analyticsData.alertAnalysis && analyticsData.alertAnalysis.totalEvents > 0 && (
                 <div className="mb-6">
                     <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
                         <div className="mb-4">

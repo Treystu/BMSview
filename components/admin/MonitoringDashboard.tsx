@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getSystemAnalytics } from '../../services/clientService';
-import type { SystemAnalytics } from '../../types';
+import { getSystemAnalytics, type SystemAnalytics } from '../../services/clientService';
 import SpinnerIcon from '../icons/SpinnerIcon';
 
 const MonitoringDashboard = () => {
@@ -49,23 +48,30 @@ const MonitoringDashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-gray-800 p-4 rounded-lg">
           <h2 className="text-lg font-semibold mb-2">System Health</h2>
-          <p>Total Records: {analytics.recordCount}</p>
-          <p>Alerts: {analytics.alertAnalysis.totalAlerts}</p>
+          <p>Hourly Data Points: {analytics.hourlyAverages.length}</p>
+          <p>Alert Events: {analytics.alertAnalysis.totalEvents}</p>
+          <p>Total Alert Duration: {Math.round(analytics.alertAnalysis.totalDurationMinutes)} min</p>
         </div>
         <div className="bg-gray-800 p-4 rounded-lg">
           <h2 className="text-lg font-semibold mb-2">Performance Baseline</h2>
-          <p>Median SOC: {analytics.performanceBaseline?.medianSOC?.toFixed(2)}%</p>
-          <p>Median Voltage: {analytics.performanceBaseline?.medianVoltage?.toFixed(2)}V</p>
-          <p>Median Current: {analytics.performanceBaseline?.medianCurrent?.toFixed(2)}A</p>
+          <p>Sunny Day Charging Hours: {analytics.performanceBaseline.sunnyDayChargingAmpsByHour.length}</p>
+          {analytics.performanceBaseline.sunnyDayChargingAmpsByHour.length > 0 && (
+            <p>Peak Charging Hour: {analytics.performanceBaseline.sunnyDayChargingAmpsByHour.reduce((max, curr) => 
+              curr.avgCurrent > max.avgCurrent ? curr : max
+            ).hour}:00 UTC</p>
+          )}
         </div>
         <div className="bg-gray-800 p-4 rounded-lg">
-          <h2 className="text-lg font-semibold mb-2">Alerts</h2>
-          <ul>
-            {analytics.alertAnalysis.alertCounts.map((alert) => (
-              <li key={alert.alert}>
-                {alert.alert}: {alert.count}
+          <h2 className="text-lg font-semibold mb-2">Top Alerts</h2>
+          <ul className="space-y-1 text-sm">
+            {analytics.alertAnalysis.events.slice(0, 5).map((event) => (
+              <li key={event.alert} className="truncate">
+                {event.alert}: {event.count} events
               </li>
             ))}
+            {analytics.alertAnalysis.events.length === 0 && (
+              <li className="text-gray-500">No alerts</li>
+            )}
           </ul>
         </div>
       </div>

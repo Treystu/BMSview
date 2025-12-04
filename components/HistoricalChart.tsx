@@ -1610,7 +1610,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                                     )}
                                 </div>
                                 <div className="lg:col-span-1">
-                                    {analyticsData?.alertAnalysis && analyticsData.alertAnalysis.totalAlerts > 0 && (
+                                    {analyticsData?.alertAnalysis && analyticsData.alertAnalysis.totalEvents > 0 && (
                                         <AlertAnalysis data={analyticsData.alertAnalysis} />
                                     )}
                                 </div>

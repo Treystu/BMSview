@@ -59,8 +59,8 @@ const TrendingOverview: React.FC<TrendingOverviewProps> = ({
             chargeDischargeRatio,
             avgDailyCharge,
             avgDailyDischarge,
-            totalAlerts: alertAnalysis.totalAlerts,
-            uniqueAlertTypes: alertAnalysis.alertCounts.length
+            totalAlerts: alertAnalysis.totalEvents,
+            uniqueAlertTypes: alertAnalysis.events.length
         };
     };
 
