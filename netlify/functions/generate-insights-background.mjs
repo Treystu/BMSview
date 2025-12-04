@@ -281,7 +281,9 @@ const handler = asyncWorkloadFn(async (event) => {
     try {
       const { jobId } = eventData || {};
       if (jobId) {
-        await failJob(jobId, error.message, log);
+        if (error instanceof ErrorDoNotRetry || attempt >= asyncWorkloadConfig.maxRetries) {
+          await failJob(jobId, error.message, log);
+        }
       }
     } catch (failError) {
       log.error('Failed to mark job as failed', {
