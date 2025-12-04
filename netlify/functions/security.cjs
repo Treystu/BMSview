@@ -28,7 +28,7 @@ const isIpInCidr = (ip, cidr, log) => {
     const mask = -1 << (32 - bits);
     return (ipToInt(ip) & mask) === (ipToInt(range) & mask);
   } catch (e) {
-    log('error', `Error in isIpInCidr.`, { ip, cidr, errorMessage: e.message });
+    log.error(`Error in isIpInCidr`, { ip, cidr, errorMessage: e.message });
     return false;
   }
 };
@@ -39,7 +39,7 @@ const getIpRanges = async (log, type) => {
         const doc = await securityCollection.findOne({ _id: 'ip_config' });
         return doc ? (doc[type] || []) : [];
     } catch (error) {
-        log('error', `Could not fetch ${type} ranges from MongoDB.`, { errorMessage: error.message });
+        log.error(`Could not fetch ${type} ranges from MongoDB`, { errorMessage: error.message });
         return [];
     }
 };
@@ -64,16 +64,16 @@ const checkRateLimit = async (request, log) => {
     if (!ip) return;
     const logContext = { clientIp: ip };
 
-    log('debug', 'Checking rate limit.', logContext);
+    log.debug('Checking rate limit', logContext);
     
     // Check if IP is verified (bypass rate limiting)
     const verifiedRanges = await getIpRanges(log, 'verified');
     if (isIpInRanges(ip, verifiedRanges, log)) {
-        log('info', 'IP is verified, bypassing rate limit.', logContext);
+        log.info('IP is verified, bypassing rate limit', logContext);
         return;
     }
 
-    log('debug', 'IP is not verified, proceeding with rate limit check.', logContext);
+    log.debug('IP is not verified, proceeding with rate limit check', logContext);
     const rateLimitCollection = await getCollection("rate_limits");
     const now = new Date();
     const windowStart = new Date(now.getTime() - (60 * 1000)); // 1 minute window
@@ -89,7 +89,7 @@ const checkRateLimit = async (request, log) => {
         const recentTimestamps = timestamps.filter(ts => new Date(ts) > windowStart);
         const currentCount = recentTimestamps.length;
         
-        log('debug', 'Current rate limit status.', { 
+        log.debug('Current rate limit status', { 
             ...logContext, 
             currentCount, 
             limit: UNVERIFIED_IP_LIMIT,
@@ -98,7 +98,7 @@ const checkRateLimit = async (request, log) => {
         
         // STEP 3: Check if limit exceeded
         if (currentCount >= UNVERIFIED_IP_LIMIT) {
-            log('warn', 'Rate limit exceeded for unverified IP.', { 
+            log.warn('Rate limit exceeded for unverified IP', { 
                 ...logContext, 
                 currentCount, 
                 limit: UNVERIFIED_IP_LIMIT 
@@ -125,7 +125,7 @@ const checkRateLimit = async (request, log) => {
             { upsert: true }
         );
         
-        log('debug', 'Rate limit check passed and updated.', { 
+        log.debug('Rate limit check passed and updated', { 
             ...logContext, 
             newCount: updatedTimestamps.length,
             limit: UNVERIFIED_IP_LIMIT,
@@ -134,36 +134,36 @@ const checkRateLimit = async (request, log) => {
 
     } catch (error) {
         if (error instanceof HttpError) throw error;
-        log('error', 'Error during rate limit check.', { ...logContext, errorMessage: error.message, stack: error.stack });
+        log.error('Error during rate limit check', { ...logContext, errorMessage: error.message, stack: error.stack });
         // Fail open on database errors to prevent service disruption
-        log('warn', 'Rate limit check failed, allowing request through.', logContext);
+        log.warn('Rate limit check failed, allowing request through', logContext);
     }
 };
 
 const checkSecurity = async (request, log) => {
     const ip = request.headers['x-nf-client-connection-ip'];
     const logContext = { clientIp: ip };
-    log('info', 'Executing security check.', logContext);
+    log.info('Executing security check', logContext);
     
     try {
         if (ip) {
-            log('debug', 'Checking if IP is in blocked ranges.', logContext);
+            log.debug('Checking if IP is in blocked ranges', logContext);
             const blockedRanges = await getIpRanges(log, 'blocked');
             if (isIpInRanges(ip, blockedRanges, log)) {
-                log('warn', 'Request from blocked IP was rejected.', logContext);
+                log.warn('Request from blocked IP was rejected', logContext);
                 throw new HttpError(403, 'Your IP address has been blocked.');
             }
-            log('debug', 'IP is not blocked. Proceeding to rate limit check.', logContext);
+            log.debug('IP is not blocked. Proceeding to rate limit check', logContext);
         } else {
-            log('warn', 'No client IP found in headers, cannot perform IP-based security checks.', logContext);
+            log.warn('No client IP found in headers, cannot perform IP-based security checks', logContext);
         }
         
         await checkRateLimit(request, log);
-        log('info', 'Security check completed successfully.', logContext);
+        log.info('Security check completed successfully', logContext);
         
     } catch (error) {
         if (error instanceof HttpError) throw error;
-        log('error', `A critical error occurred during the security check.`, { 
+        log.error(`A critical error occurred during the security check`, { 
             ...logContext, 
             errorMessage: error.message, 
             stack: error.stack 
