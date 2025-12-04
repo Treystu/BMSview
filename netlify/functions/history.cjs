@@ -890,7 +890,7 @@ exports.handler = async function(event, context) {
         // --- PUT Request Handler (Link Record) ---
         if (event.httpMethod === 'PUT') {
             const parsedBody = JSON.parse(event.body);
-            log.debug('Parsed PUT body', { bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
+            log.debug('Parsed PUT body', { ...logContext, bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
             const { recordId, systemId, dlNumber } = parsedBody;
             if (!recordId || !systemId) {
                 timer.end({ error: 'missing_params' });
