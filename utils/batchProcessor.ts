@@ -17,7 +17,10 @@ export const BATCH_CONFIG = {
     MAX_CONCURRENT_BATCHES: 3,
     
     // Timeout for a single batch request (ms)
-    BATCH_TIMEOUT_MS: 30000
+    BATCH_TIMEOUT_MS: 30000,
+    
+    // Emergency flag to disable batching entirely (for troubleshooting)
+    DISABLE_BATCHING: false
 };
 
 /**
@@ -51,17 +54,20 @@ export async function processBatches<T, R>(
         delayMs?: number;
         onProgress?: (completed: number, total: number) => void;
         log?: (level: string, message: string, context?: any) => void;
+        rateLimiter?: RateLimiter; // Optional rate limiter for request throttling
     } = {}
 ): Promise<R[]> {
     const {
         maxConcurrent = BATCH_CONFIG.MAX_CONCURRENT_BATCHES,
         delayMs = BATCH_CONFIG.BATCH_DELAY_MS,
         onProgress,
-        log = () => {}
+        log = () => {},
+        rateLimiter
     } = options;
     
     const chunks = chunkArray(items, batchSize);
     const results: R[] = [];
+    let itemsProcessed = 0; // Track actual items processed for accurate progress
     
     log('info', 'Starting batch processing', {
         totalItems: items.length,
@@ -88,6 +94,11 @@ export async function processBatches<T, R>(
                 const globalIndex = i + localIndex;
                 const startTime = Date.now();
                 
+                // Apply rate limiting if configured
+                if (rateLimiter) {
+                    await rateLimiter.consume(1);
+                }
+                
                 try {
                     const result = await processBatch(batch, globalIndex);
                     const duration = Date.now() - startTime;
@@ -100,10 +111,9 @@ export async function processBatches<T, R>(
                     });
                     
                     if (onProgress) {
-                        // Calculate actual progress based on accumulated results
-                        const completed = results.length + localIndex + 1;
-                        const actualCompleted = Math.min(completed * batchSize, items.length);
-                        onProgress(actualCompleted, items.length);
+                        // Track actual items processed (batch.length may be < batchSize for last batch)
+                        itemsProcessed += batch.length;
+                        onProgress(itemsProcessed, items.length);
                     }
                     
                     return result;
@@ -153,6 +163,17 @@ export async function processBatches<T, R>(
 
 /**
  * Rate limiter using token bucket algorithm
+ * 
+ * Used to throttle batch processing requests to prevent overwhelming the backend.
+ * 
+ * @example
+ * // Create a rate limiter: 10 tokens capacity, refill 2 per second
+ * const limiter = new RateLimiter(10, 2);
+ * 
+ * // In processBatches:
+ * await processBatches(files, 50, checkBatch, {
+ *   rateLimiter: limiter  // Apply rate limiting
+ * });
  */
 export class RateLimiter {
     private tokens: number;

@@ -45,7 +45,7 @@ const INDEXES = {
             }
         },
         {
-            key: { dlNumber: 1 },
+            key: { 'analysis.dlNumber': 1 },
             options: { 
                 name: 'idx_analysis_dlnumber',
                 background: true,

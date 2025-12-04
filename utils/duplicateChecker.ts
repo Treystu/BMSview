@@ -80,7 +80,8 @@ export async function checkFilesForDuplicates(
     let checkResults: DuplicateCheckResult[];
     
     // Use batch processing for large file sets to avoid overwhelming the backend
-    if (files.length > BATCH_CONFIG.MAX_BATCH_SIZE) {
+    // (unless batching is disabled via config)
+    if (files.length > BATCH_CONFIG.MAX_BATCH_SIZE && !BATCH_CONFIG.DISABLE_BATCHING) {
         log('info', 'Using batch processing for large file set', {
             totalFiles: files.length,
             batchSize: BATCH_CONFIG.MAX_BATCH_SIZE,

@@ -18,8 +18,8 @@ use bmsview;
 db.analysis_results.createIndex({ timestamp: 1 }, { background: true });
 db.analysis_results.createIndex({ updatedAt: 1 }, { background: true });
 db.analysis_results.createIndex({ systemId: 1 }, { background: true });
-db.analysis_results.createIndex({ dlNumber: 1 }, { background: true });
-db.analysis_results.createIndex({ contentHash: 1 }, { unique: false, background: true });
+db.analysis_results.createIndex({ 'analysis.dlNumber': 1 }, { background: true, sparse: true });
+db.analysis_results.createIndex({ contentHash: 1 }, { unique: true, sparse: true, background: true });
 
 // Compound indexes (most important for performance optimization)
 db.analysis_results.createIndex(

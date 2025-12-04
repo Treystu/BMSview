@@ -318,9 +318,10 @@ export const checkFileDuplicate = async (file: File): Promise<{
             fileName: file.name, 
             isDuplicate: !!result.isDuplicate,
             needsUpgrade: !!result.needsUpgrade,
-            readDurationMs,
-            fetchDurationMs,
-            totalDurationMs,
+            // Timing breakdown (all times are cumulative parts of totalDurationMs):
+            readDurationMs,      // Time to read file and convert to base64
+            fetchDurationMs,     // Time for HTTP request to backend (includes network latency)
+            totalDurationMs,     // Total = read + fetch + overhead (JSON parsing, etc.)
             event: 'COMPLETE'
         });
         
