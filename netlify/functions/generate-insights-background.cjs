@@ -1,8 +1,14 @@
 /**
  * Generate Insights Background - Long-Running Job Processor
  * 
- * This function handles background insights jobs that exceed the 60s timeout.
- * It's invoked separately from the main endpoint to allow unlimited execution time.
+ * @deprecated This endpoint is no longer used in the normal workflow.
+ * Background insights processing is now handled directly in generate-insights-with-tools.cjs
+ * via in-process async execution of processInsightsInBackground().
+ * 
+ * This file is kept temporarily for backward compatibility and emergency manual invocation,
+ * but will be removed in a future release.
+ * 
+ * Migration: Use generate-insights-with-tools.cjs with mode='background' instead.
  * 
  * SECURITY HARDENING:
  * - Rate limiting per user/system

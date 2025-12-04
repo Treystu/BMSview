@@ -1,4 +1,12 @@
 // @ts-nocheck
+/**
+ * Tests for generate-insights-background.cjs
+ * 
+ * NOTE: This endpoint is DEPRECATED as of [date].
+ * These tests are kept for backward compatibility verification only.
+ * The endpoint is no longer used in the normal workflow.
+ * Background processing now happens in-process via insights-processor.cjs
+ */
 
 jest.mock('../netlify/functions/utils/insights-jobs.cjs', () => ({
     getInsightsJob: jest.fn(),
@@ -20,7 +28,7 @@ const getInsightsJobMock = /** @type {import('jest-mock').Mock} */ (getInsightsJ
 const failJobMock = /** @type {import('jest-mock').Mock} */ (failJob);
 const processInsightsInBackgroundMock = /** @type {import('jest-mock').Mock} */ (processInsightsInBackground);
 
-describe('generate-insights-background handler', () => {
+describe('generate-insights-background handler (DEPRECATED)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         failJobMock.mockResolvedValue(undefined);

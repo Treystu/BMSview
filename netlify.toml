@@ -9,9 +9,11 @@
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
 
-# Background function configuration for long-running insights generation
-[functions."generate-insights-background"]
-  external_node_modules = ["@google/generative-ai"]
+# DEPRECATED: Background function configuration for long-running insights generation
+# This endpoint is no longer used - background processing now happens in-process
+# via generate-insights-with-tools.cjs mode='background'
+# [functions."generate-insights-background"]
+#   external_node_modules = ["@google/generative-ai"]
 
 # Admin diagnostics function - needs longer timeout for comprehensive testing
 [functions."admin-diagnostics"]

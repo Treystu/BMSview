@@ -152,8 +152,8 @@ From `ARCHITECTURE.md`, `FULL_CONTEXT_MODE.md`, insights and monitoring docs:
      - `GENERATE_INSIGHTS_OPTIMIZATION_SUMMARY.md`
      - `INSIGHTS_*` and `ANALYZE_INSIGHTS_FIX_COMPLETE.md`
    - Two modes:
-     - **Synchronous**: <~55–58 seconds total Netlify request time.
-     - **Background**: Creates jobs in `insights-jobs` for longer analysis, processed by `generate-insights-background.cjs`.
+     - **Synchronous**: <~20 seconds total Netlify request time.
+     - **Background**: Creates jobs in `insights-jobs`, processes via in-process async call to `processInsightsInBackground()`.
 
 4. **Full Context Mode & AI Feedback System**
    - Documented in:
@@ -366,8 +366,8 @@ From `FULL_CONTEXT_MODE.md`, `FULL_CONTEXT_MODE_IMPLEMENTATION_COMPLETE.md`, `AI
 - **Job-based model**:
   - For large or expensive feedback tasks, system creates jobs:
     - Stored in `insights-jobs` or dedicated feedback-related collections.
-    - Processed by `generate-insights-background.cjs`.
-  - Supports resumable and checkpointed analysis (see `CHECKPOINT_RESUMABLE_INSIGHTS_IMPLEMENTATION.md`.
+    - Processed in-process via `processInsightsInBackground()`.
+  - Supports resumable and checkpointed analysis (see `CHECKPOINT_RESUMABLE_INSIGHTS_IMPLEMENTATION.md`).
 
 - **Security & RBAC**:
   - All access control is handled **in the admin UI** via OAuth and authorization logic (documented in `SYSTEM_DIAGNOSTICS.md`, `FULL_CONTEXT_MODE.md`).

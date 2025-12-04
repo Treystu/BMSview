@@ -4,7 +4,11 @@ This document explains the background processing implementation for AI-powered i
 
 ## Overview
 
-The background processing system allows AI insights generation to run for up to 15 minutes (vs 60 seconds for synchronous requests), providing real-time progress updates and streaming results.
+The background processing system allows AI insights generation to run asynchronously for up to 15 minutes (vs 20 seconds for synchronous requests), providing real-time progress updates via job polling.
+
+**Note:** As of this deprecation (issue #[number]), background processing happens in-process via `processInsightsInBackground()` 
+called directly from `generate-insights-with-tools.cjs`. The separate `generate-insights-background.cjs` endpoint 
+has been deprecated and is no longer used in the normal workflow.
 
 ## Architecture
 
@@ -15,36 +19,35 @@ The background processing system allows AI insights generation to run for up to 
    - Manages job lifecycle (queued → processing → completed/failed)
    - Stores progress events and partial results
 
-2. **Summary Generation** (`netlify/functions/utils/insights-summary.cjs`)
-   - Generates immediate battery summaries
-   - Calculates daily statistics and charging patterns
-   - Provides instant feedback while background processing runs
-
-3. **Background Processor** (`netlify/functions/generate-insights-background.cjs`)
-   - Long-running Netlify background function
-   - Executes full AI tool calling loop
+2. **Insights Processor** (`netlify/functions/utils/insights-processor.cjs`)
+   - Executes ReAct loop for background jobs
+   - Handles full AI tool calling workflow
    - Updates job progress in real-time
+   - Called in-process from main insights endpoint
 
-4. **Status Endpoint** (`netlify/functions/generate-insights-status.cjs`)
+3. **Status Endpoint** (`netlify/functions/generate-insights-status.cjs`)
    - Polls for job status and progress
-   - Returns initial summary, progress events, and partial/final insights
+   - Returns progress events and partial/final insights
 
-5. **Frontend Components**
+4. **Frontend Components**
    - `hooks/useInsightsPolling.ts` - Polling hook with exponential backoff
    - `components/InsightsProgressDisplay.tsx` - Progress visualization
    - `services/clientService.ts` - API integration
+
+~~**Background Processor** (`netlify/functions/generate-insights-background.cjs`)~~
+   - **DEPRECATED**: This separate endpoint is no longer used
+   - Background processing now happens in-process via `insights-processor.cjs`
 
 ## Flow Diagram
 
 ```
 User Request
     ↓
-generate-insights-with-tools.cjs
+generate-insights-with-tools.cjs (mode='background')
     ↓
-├─ Generate initial summary (immediate)
 ├─ Create job in MongoDB
-├─ Invoke background function (async)
-└─ Return jobId + summary
+├─ Call processInsightsInBackground() in-process (async, don't await)
+└─ Return jobId immediately
     ↓
 Frontend starts polling
     ↓
@@ -52,7 +55,7 @@ generate-insights-status.cjs
     ↓
 Returns: status, progress, partial insights
     ↓
-Background function completes
+In-process background function completes
     ↓
 Final insights stored in MongoDB
     ↓
