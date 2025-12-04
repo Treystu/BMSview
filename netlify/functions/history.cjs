@@ -859,7 +859,7 @@ exports.handler = async function(event, context) {
 
 
             // --- Default Action: Create New History Record ---
-            log.info('Creating new history record');
+            log.info('Creating new history record', logContext);
             // Basic validation for new record
             if (!parsedBody.analysis || !parsedBody.fileName) {
                 timer.end({ error: 'missing_fields' });
