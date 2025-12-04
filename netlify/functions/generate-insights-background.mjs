@@ -247,7 +247,7 @@ const handler = asyncWorkloadFn(async (event) => {
             completedAt: new Date().toISOString(),
             hasInsights: !!insights
           },
-          priority: 1 // Lower priority for notification events
+          priority: 4 // Raised priority for more timely notification events
         });
         
         log.info('Completion event sent', { jobId });
