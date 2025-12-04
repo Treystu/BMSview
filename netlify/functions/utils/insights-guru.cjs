@@ -1023,19 +1023,15 @@ function formatAnalyticsSection(analytics) {
         }
     }
     if (analytics.alertAnalysis?.totalEvents) {
-        const topAlert = analytics.alertAnalysis.alertCounts?.[0];
+        const topEvent = analytics.alertAnalysis.events?.[0];
         const totalEvents = analytics.alertAnalysis.totalEvents;
-        const totalOccurrences = analytics.alertAnalysis.totalAlerts;
+        const totalDurationMinutes = analytics.alertAnalysis.totalDurationMinutes || 0;
 
-        if (topAlert) {
-            lines.push(`- Alert events: ${totalEvents} distinct events from ${totalOccurrences} screenshot occurrences (top: ${topAlert.alert} - ${topAlert.count} events, ${topAlert.occurrences} occurrences${topAlert.avgDurationHours ? `, avg ${formatNumber(topAlert.avgDurationHours, "h", 1)}` : ""}).`);
+        if (topEvent) {
+            lines.push(`- Alert events: ${totalEvents} distinct events, total downtime ${formatNumber(totalDurationMinutes / 60, "h", 1)} (top: ${topEvent.alert} - ${topEvent.count} occurrences${topEvent.avgDurationMinutes ? `, avg ${formatNumber(topEvent.avgDurationMinutes / 60, "h", 1)}` : ""}).`);
         } else {
-            lines.push(`- Alert events: ${totalEvents} distinct events from ${totalOccurrences} screenshot occurrences.`);
+            lines.push(`- Alert events: ${totalEvents} distinct events, total downtime ${formatNumber(totalDurationMinutes / 60, "h", 1)}.`);
         }
-    } else if (analytics.alertAnalysis?.totalAlerts) {
-        // Fallback for old format
-        const topAlert = analytics.alertAnalysis.alertCounts?.[0];
-        lines.push(`- Alert volume: ${analytics.alertAnalysis.totalAlerts} (top: ${topAlert ? `${topAlert.alert} ×${topAlert.count}` : "none"}).`);
     }
     return lines.join("\n");
 }
