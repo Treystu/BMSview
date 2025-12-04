@@ -1,20 +1,23 @@
 /**
- * Generate Insights Background - Netlify Async Workload Implementation
+ * Generate Insights Background - Background Processing Implementation
  * 
- * This is a COMPLETE implementation of Netlify Async Workloads for insights generation.
- * Uses all features of @netlify/async-workloads for maximum resilience and durability.
+ * IMPORTANT: This file uses @netlify/async-workloads package which causes bundle bloat.
+ * The ACTUAL implementation uses simplified background processing via insights-processor.cjs
+ * to avoid the 250MB bundle size limit.
  * 
- * FEATURES ("All the Bells and Whistles"):
- * ✅ Event-driven architecture (not HTTP-based)
+ * This file is CONFIGURED but NOT ACTIVELY USED in the current architecture.
+ * It's preserved for potential future use when Netlify provides better bundling support.
+ * 
+ * CURRENT ARCHITECTURE:
+ * - Trigger creates job → calls processInsightsInBackground() directly
+ * - No AsyncWorkloadsClient usage (avoids 43MB package dependency)
+ * - Background processor handles retry, state, error management
+ * 
+ * FUTURE: When Netlify supports external packages better, this async workload handler
+ * can be activated for true event-driven processing with:
+ * ✅ Event-driven architecture
  * ✅ Durable execution with automatic retries
  * ✅ Multi-step workflows with independent retry per step
- * ✅ Sleep/delay capabilities for rate limiting
- * ✅ Custom backoff schedules
- * ✅ Event filtering
- * ✅ State persistence across retries
- * ✅ Error handling with retry control
- * ✅ Event chaining (trigger follow-up events)
- * ✅ Priority support
  * ✅ Extended execution time (no timeout limits)
  * 
  * @see https://docs.netlify.com/build/async-workloads/
