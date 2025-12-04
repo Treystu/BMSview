@@ -14,15 +14,16 @@
 [functions."generate-insights-background"]
   node_bundler = "esbuild"
   external_node_modules = ["@netlify/async-workloads"]
-  # Note: @netlify/async-workloads is imported in the .mjs file but provided by Netlify runtime
-  # Note: @netlify/async-workloads is imported in the .mjs file but provided by Netlify runtime
+  # Note: @netlify/async-workloads package must be in package.json as a dependency.
+  # The package is externalized (not bundled) to reduce function size while still being available at runtime.
   # Enable async workloads
   async_workloads = true
 
 # Trigger endpoint for async workloads  
-# Note: Uses HTTP API instead of @netlify/async-workloads package to avoid bundle size issues
+# Uses AsyncWorkloadsClient from @netlify/async-workloads package
 [functions."generate-insights-async-trigger"]
   node_bundler = "esbuild"
+  external_node_modules = ["@netlify/async-workloads"]
 
 # Admin diagnostics function - needs longer timeout for comprehensive testing
 [functions."admin-diagnostics"]

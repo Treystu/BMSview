@@ -25,6 +25,10 @@ import { createLogger } from './utils/logger.cjs';
 import { getInsightsJob, updateJobStatus, saveCheckpoint, completeJob, failJob } from './utils/insights-jobs.cjs';
 import { processInsightsInBackground } from './utils/insights-processor.cjs';
 
+// Retry delay constants (in milliseconds)
+const RATE_LIMIT_RETRY_DELAY_MS = 300000; // 5 minutes
+const TRANSIENT_ERROR_RETRY_DELAY_MS = 30000; // 30 seconds
+
 /**
  * Main async workload handler
  * 
@@ -83,12 +87,12 @@ const handler = asyncWorkloadFn(async (event) => {
 
     // STEP 2: Fetch job data if needed
     let jobData = analysisData;
-    let sysId = systemId;
-    let prompt = customPrompt;
-    let contextDays = contextWindowDays;
-    let maxIter = maxIterations;
-    let modelOvr = modelOverride;
-    let fullCtx = fullContextMode;
+    let systemIdFromJob = systemId;
+    let customPromptFromJob = customPrompt;
+    let contextWindowDaysFromJob = contextWindowDays;
+    let maxIterationsFromJob = maxIterations;
+    let modelOverrideFromJob = modelOverride;
+    let fullContextModeFromJob = fullContextMode;
 
     if (!jobData) {
       await step.run('fetch-job-data', async () => {
@@ -104,17 +108,17 @@ const handler = asyncWorkloadFn(async (event) => {
         
         // Extract all parameters from job
         jobData = job.analysisData;
-        sysId = job.systemId;
-        prompt = job.customPrompt;
-        contextDays = job.contextWindowDays;
-        maxIter = job.maxIterations;
-        modelOvr = job.modelOverride;
-        fullCtx = job.fullContextMode;
+        systemIdFromJob = job.systemId;
+        customPromptFromJob = job.customPrompt;
+        contextWindowDaysFromJob = job.contextWindowDays;
+        maxIterationsFromJob = job.maxIterations;
+        modelOverrideFromJob = job.modelOverride;
+        fullContextModeFromJob = job.fullContextMode;
         
         log.info('Job data loaded', { 
           jobId,
           hasData: !!jobData,
-          hasSystemId: !!sysId
+          hasSystemId: !!systemIdFromJob
         });
       });
     }
@@ -123,7 +127,7 @@ const handler = asyncWorkloadFn(async (event) => {
     await step.run('validate-data', async () => {
       log.info('Step 3: Validating data', { jobId });
       
-      if (!jobData || !sysId) {
+      if (!jobData || !systemIdFromJob) {
         throw new ErrorDoNotRetry('Missing required data: analysisData and systemId are required');
       }
       
@@ -132,7 +136,7 @@ const handler = asyncWorkloadFn(async (event) => {
           step: 'validate',
           validated: true,
           hasData: !!jobData,
-          hasSystemId: !!sysId
+          hasSystemId: !!systemIdFromJob
         }
       }, log);
     });
@@ -146,14 +150,14 @@ const handler = asyncWorkloadFn(async (event) => {
         const result = await processInsightsInBackground(
           jobId,
           jobData,
-          sysId,
-          prompt,
+          systemIdFromJob,
+          customPromptFromJob,
           log,
           {
-            contextWindowDays: contextDays,
-            maxIterations: maxIter,
-            modelOverride: modelOvr,
-            fullContextMode: fullCtx
+            contextWindowDays: contextWindowDaysFromJob,
+            maxIterations: maxIterationsFromJob,
+            modelOverride: modelOverrideFromJob,
+            fullContextMode: fullContextModeFromJob
           }
         );
         
@@ -164,15 +168,15 @@ const handler = asyncWorkloadFn(async (event) => {
           if (errorMsg.includes('timeout') || errorMsg.includes('ECONNREFUSED')) {
             // Retry after delay for transient errors
             throw new ErrorRetryAfterDelay({
-              message: `Transient error during processing: ${errorMsg}`,
-              retryDelay: 30000, // 30 seconds
+              message: `Transient error during processing: ${errorMsg}. Will retry after ${TRANSIENT_ERROR_RETRY_DELAY_MS / 1000}s`,
+              retryDelay: TRANSIENT_ERROR_RETRY_DELAY_MS, // 30 seconds
               error: new Error(errorMsg)
             });
           } else if (errorMsg.includes('quota') || errorMsg.includes('rate limit')) {
             // Longer delay for quota/rate limit errors
             throw new ErrorRetryAfterDelay({
-              message: `Rate limit or quota error: ${errorMsg}`,
-              retryDelay: 300000, // 5 minutes
+              message: `Rate limit or quota error: ${errorMsg}. Will retry after ${RATE_LIMIT_RETRY_DELAY_MS / 1000}s`,
+              retryDelay: RATE_LIMIT_RETRY_DELAY_MS, // 5 minutes
               error: new Error(errorMsg)
             });
           } else {
@@ -243,7 +247,7 @@ const handler = asyncWorkloadFn(async (event) => {
         await sendEvent('insights-completed', {
           data: {
             jobId,
-            systemId: sysId,
+            systemId: systemIdFromJob,
             completedAt: new Date().toISOString(),
             hasInsights: !!insights
           },

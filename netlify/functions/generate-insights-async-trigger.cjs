@@ -5,12 +5,19 @@
  * It creates a job, sends an event to the async workload system, and returns immediately.
  * 
  * The actual processing happens in generate-insights-background.mjs via async workload.
+ * 
+ * SECURITY HARDENING:
+ * - Rate limiting per user/system
+ * - Input sanitization (jobId, systemId validation)
+ * - Audit logging for compliance
  */
 
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { createInsightsJob } = require('./utils/insights-jobs.cjs');
 const { triggerInsightsWorkload } = require('./utils/insights-async-client.cjs');
+const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
+const { sanitizeJobId, sanitizeSystemId, SanitizationError } = require('./utils/security-sanitizer.cjs');
 
 /**
  * Handler for triggering async workload
@@ -27,7 +34,53 @@ exports.handler = async (event, context) => {
   log.entry({ method: event.httpMethod, path: event.path });
   const timer = createTimer(log, 'async-trigger');
   
+  // Extract client IP for security logging
+  const clientIp = event?.headers?.['x-nf-client-connection-ip'] || 'unknown';
+  
   try {
+    // =====================
+    // SECURITY: Rate Limiting
+    // =====================
+    log.debug('Checking rate limits', { endpoint: 'async-insights', clientIp });
+    let rateLimitResult;
+    try {
+      rateLimitResult = await applyRateLimit(event, 'async-insights', log);
+      log.rateLimit('allowed', {
+        endpoint: 'async-insights',
+        clientIp,
+        remaining: rateLimitResult.remaining,
+        limit: rateLimitResult.limit
+      });
+    } catch (rateLimitError) {
+      if (rateLimitError instanceof RateLimitError) {
+        log.rateLimit('blocked', {
+          endpoint: 'async-insights',
+          clientIp,
+          retryAfterMs: rateLimitError.retryAfterMs
+        });
+        timer.end({ rateLimited: true });
+        log.exit(429);
+        return {
+          statusCode: 429,
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json',
+            'Retry-After': String(Math.ceil(rateLimitError.retryAfterMs / 1000))
+          },
+          body: JSON.stringify({
+            success: false,
+            error: 'rate_limit_exceeded',
+            message: rateLimitError.message,
+            retryAfterSeconds: Math.ceil(rateLimitError.retryAfterMs / 1000)
+          })
+        };
+      }
+      // Non-rate-limit errors: log and continue (fail open)
+      log.warn('Rate limit check error, continuing', { error: rateLimitError.message });
+    }
+
+    const rateLimitHeaders = rateLimitResult?.headers || {};
+    
     const body = event.body ? JSON.parse(event.body) : {};
     const {
       analysisData,
@@ -43,7 +96,7 @@ exports.handler = async (event, context) => {
     if (!analysisData || !systemId) {
       return {
         statusCode: 400,
-        headers: { ...headers, 'Content-Type': 'application/json' },
+        headers: { ...headers, ...rateLimitHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           success: false,
           error: 'analysisData and systemId are required'
@@ -54,7 +107,7 @@ exports.handler = async (event, context) => {
     if (!consentGranted) {
       return {
         statusCode: 400,
-        headers: { ...headers, 'Content-Type': 'application/json' },
+        headers: { ...headers, ...rateLimitHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           success: false,
           error: 'User consent is required for async workload processing'
@@ -62,18 +115,49 @@ exports.handler = async (event, context) => {
       };
     }
     
+    // =====================
+    // SECURITY: Input Sanitization
+    // =====================
+    let sanitizedSystemId;
+    try {
+      sanitizedSystemId = sanitizeSystemId(systemId, log);
+      log.debug('System ID sanitized', { original: systemId, sanitized: sanitizedSystemId });
+    } catch (sanitizeError) {
+      if (sanitizeError instanceof SanitizationError) {
+        log.warn('Input sanitization failed', {
+          field: 'systemId',
+          value: systemId,
+          reason: sanitizeError.message,
+          clientIp
+        });
+        timer.end({ sanitizationFailed: true });
+        log.exit(400);
+        return {
+          statusCode: 400,
+          headers: { ...headers, ...rateLimitHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            success: false,
+            error: 'invalid_input',
+            message: sanitizeError.message
+          })
+        };
+      }
+      throw sanitizeError;
+    }
+    
     log.info('Creating job for async workload', {
       hasAnalysisData: !!analysisData,
-      hasSystemId: !!systemId,
+      systemId: sanitizedSystemId,
       contextWindowDays,
       maxIterations,
-      fullContextMode
+      fullContextMode,
+      clientIp
     });
     
     // Create job in database
     const job = await createInsightsJob({
       analysisData,
-      systemId,
+      systemId: sanitizedSystemId,
       customPrompt,
       initialSummary: null,
       contextWindowDays,
@@ -87,7 +171,7 @@ exports.handler = async (event, context) => {
     const { eventId } = await triggerInsightsWorkload({
       jobId: job.id,
       analysisData,
-      systemId,
+      systemId: sanitizedSystemId,
       customPrompt,
       contextWindowDays,
       maxIterations,
@@ -103,7 +187,7 @@ exports.handler = async (event, context) => {
     // Return job info immediately (workload runs asynchronously)
     return {
       statusCode: 202,
-      headers: { ...headers, 'Content-Type': 'application/json' },
+      headers: { ...headers, ...rateLimitHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         success: true,
         jobId: job.id,
