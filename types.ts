@@ -207,7 +207,8 @@ export enum InsightMode {
   WITH_TOOLS = 'with-tools',      // AI "Battery Guru" with function calling (default, most comprehensive)
   FULL_CONTEXT = 'full-context',  // Full Context Mode with AI Feedback capability
   STANDARD = 'standard',          // Legacy endpoint (proxies to WITH_TOOLS for backward compatibility)
-  VISUAL_GURU = 'visual-guru'     // Visual Guru Expert mode - infographic-style, chart-focused output
+  VISUAL_GURU = 'visual-guru',    // Visual Guru Expert mode - infographic-style, chart-focused output
+  ASYNC_WORKLOAD = 'async-workload' // Netlify Async Workload - durable, unlimited timeout, multi-step execution
 }
 
 // Human-readable descriptions for each mode
@@ -252,6 +253,18 @@ export const InsightModeDescriptions: Record<InsightMode, { label: string; descr
       'Structured sections with status blocks and gauges',
       'Short, affirmative phrases about visual clarity',
       'Best for dashboards and visual reports'
+    ]
+  },
+  [InsightMode.ASYNC_WORKLOAD]: {
+    label: '⚡ Async Workload (Experimental)',
+    description: 'Durable async execution with unlimited timeout and multi-step resilience',
+    features: [
+      'Unlimited execution time (no timeout limits)',
+      'Automatic retries with intelligent backoff',
+      'Multi-step workflow with independent retry per step',
+      'State persistence across failures',
+      'Best for complex analysis requiring extended processing',
+      'Event-driven with priority and scheduling support'
     ]
   }
 };

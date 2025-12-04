@@ -9,11 +9,12 @@
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
 
-# DEPRECATED: Background function configuration for long-running insights generation
-# This endpoint is no longer used - background processing now happens in-process
-# via generate-insights-with-tools.cjs mode='background'
-# [functions."generate-insights-background"]
-#   external_node_modules = ["@google/generative-ai"]
+# Async Workloads configuration for insights generation
+# Uses Netlify's durable async workload system for extended execution
+[functions."generate-insights-background"]
+  node_bundler = "esbuild"
+  # Enable async workloads
+  async_workloads = true
 
 # Admin diagnostics function - needs longer timeout for comprehensive testing
 [functions."admin-diagnostics"]
