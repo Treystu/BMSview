@@ -262,6 +262,8 @@ exports.handler = async (event, context) => {
       
       const upgradeCheck = checkIfNeedsUpgrade(existing);
       
+      // Note: analysisData intentionally excluded to prevent PII leakage
+      // Clients should use the recordId to fetch full analysis via authenticated endpoint
       return {
         fileName,
         isDuplicate: true,
@@ -271,8 +273,6 @@ exports.handler = async (event, context) => {
         validationScore: existing.validationScore,
         extractionAttempts: existing.extractionAttempts || 1,
         upgradeReason: upgradeCheck.reason
-        // Note: analysisData intentionally excluded to prevent PII leakage
-        // Clients should use the recordId to fetch full analysis via authenticated endpoint
       };
     });
     
