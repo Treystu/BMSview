@@ -2,7 +2,7 @@
 /**
  * Tests for generate-insights-background.cjs
  * 
- * NOTE: This endpoint is DEPRECATED as of [date].
+ * NOTE: This endpoint is DEPRECATED as of 2025-12-04.
  * These tests are kept for backward compatibility verification only.
  * The endpoint is no longer used in the normal workflow.
  * Background processing now happens in-process via insights-processor.cjs
