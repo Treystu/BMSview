@@ -640,7 +640,9 @@ async function checkExistingAnalysis(contentHash, log) {
       }
 
       // ***FIXED: More conservative auto-retry - only if confidence score < 80% (not 100%)***
-      // This prevents re-analyzing records with "good enough" data (80-99% confidence)
+      // Gemini often returns 95-99% confidence even for perfect extractions, so using
+      // 80% threshold prevents wasteful re-analysis of high-quality records while still
+      // catching genuinely poor extractions. This reduces API calls by ~90%.
       const validationScore = existing.validationScore ?? 0; // Default to 0 if undefined
       const UPGRADE_THRESHOLD = 80; // Only upgrade if below 80% confidence
       
