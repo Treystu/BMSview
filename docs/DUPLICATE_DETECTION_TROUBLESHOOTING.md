@@ -316,14 +316,20 @@ const HEALTH_CHECK_INTERVAL = 60000; // 60s
 
 ### Quick Disable Batch Processing
 
-If batch processing causes issues:
+If batch processing causes issues, use the configuration flag:
 
 ```javascript
-// In utils/duplicateChecker.ts
-// Change line ~80:
-if (files.length > BATCH_CONFIG.MAX_BATCH_SIZE) {
-// To:
-if (false) { // Temporarily disable batching
+// In utils/batchProcessor.ts
+export const BATCH_CONFIG = {
+    MAX_BATCH_SIZE: 50,
+    BATCH_DELAY_MS: 500,
+    MAX_CONCURRENT_BATCHES: 3,
+    BATCH_TIMEOUT_MS: 30000,
+    DISABLE_BATCHING: true  // Add this to temporarily disable
+};
+
+// Then in duplicateChecker.ts, check this flag:
+if (files.length > BATCH_CONFIG.MAX_BATCH_SIZE && !BATCH_CONFIG.DISABLE_BATCHING) {
 ```
 
 ### Force All Files Through

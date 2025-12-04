@@ -100,8 +100,10 @@ export async function processBatches<T, R>(
                     });
                     
                     if (onProgress) {
-                        const completed = Math.min((globalIndex + 1) * batchSize, items.length);
-                        onProgress(completed, items.length);
+                        // Calculate actual progress based on accumulated results
+                        const completed = results.length + localIndex + 1;
+                        const actualCompleted = Math.min(completed * batchSize, items.length);
+                        onProgress(actualCompleted, items.length);
                     }
                     
                     return result;

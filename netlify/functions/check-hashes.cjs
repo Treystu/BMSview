@@ -124,11 +124,15 @@ exports.handler = async (event, context) => {
         for (const record of allMatchingRecords) {
             if (seenHashes.has(record.contentHash)) continue;
 
-            // Fast field existence check using direct property access
+            // Fast field existence check - short-circuit on first missing field
             const analysis = record.analysis || {};
-            const hasAllCriticalFields = criticalFieldsList.every(field => 
-                analysis[field] !== undefined && analysis[field] !== null
-            );
+            let hasAllCriticalFields = true;
+            for (const field of criticalFieldsList) {
+                if (analysis[field] === undefined || analysis[field] === null) {
+                    hasAllCriticalFields = false;
+                    break; // Short-circuit on first missing field
+                }
+            }
 
             if (hasAllCriticalFields) {
                 duplicates.push({
