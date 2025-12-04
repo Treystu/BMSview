@@ -319,16 +319,16 @@ console.log('📊 SANITY CHECK RESULTS');
 console.log('='.repeat(70));
 
 console.log(`\n✅ PASSED: ${CHECKS.length} checks`);
-CHECKS.forEach(check => console.log(`   ${check}`));
+CHECKS.forEach(item => console.log(`   ${item}`));
 
 if (WARNINGS.length > 0) {
     console.log(`\n⚠️  WARNINGS: ${WARNINGS.length}`);
-    WARNINGS.forEach(warning => console.log(`   ${warning}`));
+    WARNINGS.forEach(item => console.log(`   ${item}`));
 }
 
 if (ERRORS.length > 0) {
     console.log(`\n❌ FAILED: ${ERRORS.length} checks`);
-    ERRORS.forEach(error => console.log(`   ${error}`));
+    ERRORS.forEach(item => console.log(`   ${item}`));
     console.log('\n🔴 SANITY CHECK FAILED - Please fix errors above!');
     process.exit(1);
 } else {
