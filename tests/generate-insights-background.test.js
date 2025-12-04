@@ -17,6 +17,17 @@ jest.mock('../netlify/functions/utils/insights-processor.cjs', () => ({
     processInsightsInBackground: jest.fn()
 }));
 
+jest.mock('../netlify/functions/utils/rate-limiter.cjs', () => ({
+    applyRateLimit: jest.fn().mockResolvedValue({ remaining: 10, limit: 10, headers: {} }),
+    RateLimitError: class RateLimitError extends Error {}
+}));
+
+jest.mock('../netlify/functions/utils/security-sanitizer.cjs', () => ({
+    sanitizeJobId: jest.fn(id => id),
+    sanitizeSystemId: jest.fn(id => id),
+    SanitizationError: class SanitizationError extends Error {}
+}));
+
 const { handler } = require('../netlify/functions/generate-insights-background.cjs');
 const {
     getInsightsJob,
