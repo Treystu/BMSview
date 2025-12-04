@@ -10,8 +10,8 @@ Previously, the BMSview architecture included a separate HTTP endpoint (`generat
 
 1. The main endpoint (`generate-insights-with-tools.cjs`) handles background mode directly
 2. Background processing happens in-process via `processInsightsInBackground()` 
-3. The separate endpoint was never invoked in the normal workflow
-4. It existed as redundant/legacy code
+3. The `generate-insights-background.cjs` endpoint handled background processing for long-running jobs.
+   This has been replaced with Netlify Async Workloads for better resilience and unlimited execution time.
 
 ## What Changed
 
