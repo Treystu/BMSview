@@ -1029,7 +1029,7 @@ function formatAnalyticsSection(analytics) {
         const totalDurationMinutes = analytics.alertAnalysis.totalDurationMinutes || 0;
 
         if (topEvent) {
-            lines.push(`- Alert events: ${totalEvents} distinct events, total downtime ${formatNumber(totalDurationMinutes / 60, "h", 1)} (top: ${topEvent.alert} - ${topEvent.count} occurrences${topEvent.avgDurationMinutes ? `, avg ${formatNumber(topEvent.avgDurationMinutes / 60, "h", 1)}` : ""}).`);
+            lines.push(`- Alert events: ${totalEvents} distinct events, total downtime ${formatNumber(totalDurationMinutes / 60, "h", 1)} (top: ${topEvent.alert} - ${topEvent.count} events${topEvent.avgDurationMinutes ? `, avg ${formatNumber(topEvent.avgDurationMinutes / 60, "h", 1)}` : ""}).`);
         } else {
             lines.push(`- Alert events: ${totalEvents} distinct events, total downtime ${formatNumber(totalDurationMinutes / 60, "h", 1)}.`);
         }
