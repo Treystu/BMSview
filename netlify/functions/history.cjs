@@ -859,7 +859,7 @@ exports.handler = async function(event, context) {
 
 
             // --- Default Action: Create New History Record ---
-            log.info('Creating new history record');
+            log.info('Creating new history record', logContext);
             // Basic validation for new record
             if (!parsedBody.analysis || !parsedBody.fileName) {
                 timer.end({ error: 'missing_fields' });
@@ -890,7 +890,7 @@ exports.handler = async function(event, context) {
         // --- PUT Request Handler (Link Record) ---
         if (event.httpMethod === 'PUT') {
             const parsedBody = JSON.parse(event.body);
-            log.debug('Parsed PUT body', { bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
+            log.debug('Parsed PUT body', { ...logContext, bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
             const { recordId, systemId, dlNumber } = parsedBody;
             if (!recordId || !systemId) {
                 timer.end({ error: 'missing_params' });
