@@ -422,10 +422,8 @@ Check:
 
 ## Migration from Old System
 
-### Step 1: Install Package
-```bash
-npm install @netlify/async-workloads
-```
+### Step 1: No Package Installation Required
+The trigger endpoint uses Netlify's HTTP API instead of the @netlify/async-workloads package to avoid bundle size issues (250 MB limit). The package is only used in the .mjs workload handler where it's provided by Netlify runtime.
 
 ### Step 2: Update Configuration
 Update `netlify.toml` to enable async workloads

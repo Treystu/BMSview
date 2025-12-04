@@ -4,6 +4,8 @@
  * Helper for triggering insights generation via Netlify Async Workloads.
  * This replaces the old in-process background execution with durable async workloads.
  * 
+ * NOTE: Uses HTTP API instead of @netlify/async-workloads package to avoid 250 MB bundle size limit.
+ * 
  * Usage:
  * ```js
  * const { triggerInsightsWorkload } = require('./utils/insights-async-client.cjs');
@@ -20,10 +22,11 @@
  * ```
  */
 
-const { AsyncWorkloadsClient } = require('@netlify/async-workloads');
-
 /**
- * Trigger insights generation async workload
+ * Trigger insights generation async workload via HTTP API
+ * 
+ * This uses Netlify's async workload HTTP API instead of the AsyncWorkloadsClient
+ * to avoid bundling the large @netlify/async-workloads package (which causes 250 MB limit issues).
  * 
  * @param {Object} options - Workload options
  * @param {string} options.jobId - Job identifier
@@ -56,12 +59,17 @@ async function triggerInsightsWorkload(options) {
     throw new Error('jobId is required to trigger insights workload');
   }
 
-  // Create async workloads client
-  const client = new AsyncWorkloadsClient();
-
-  // Send event to trigger workload
-  const result = await client.send('generate-insights', {
-    data: {
+  // Get Netlify site URL from environment
+  const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL || 'http://localhost:8888';
+  const apiKey = process.env.AWL_API_KEY; // Async Workload API key if needed
+  
+  // Construct async workload send endpoint
+  const endpoint = `${siteUrl}/.netlify/functions/async-workloads/send`;
+  
+  // Prepare request body
+  const requestBody = {
+    eventName: 'generate-insights',
+    eventData: {
       jobId,
       analysisData,
       systemId,
@@ -70,13 +78,37 @@ async function triggerInsightsWorkload(options) {
       maxIterations,
       modelOverride,
       fullContextMode
+    }
+  };
+  
+  // Add optional parameters
+  if (priority !== undefined && priority !== 5) {
+    requestBody.priority = priority;
+  }
+  
+  if (delayUntil) {
+    requestBody.delayUntil = typeof delayUntil === 'number' ? delayUntil : new Date(delayUntil).getTime();
+  }
+  
+  // Make HTTP request to trigger async workload
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
     },
-    priority,
-    delayUntil
+    body: JSON.stringify(requestBody)
   });
-
-  if (result.sendStatus !== 'succeeded') {
-    throw new Error(`Failed to trigger insights workload: ${result.sendStatus}`);
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to trigger async workload: ${response.status} ${errorText}`);
+  }
+  
+  const result = await response.json();
+  
+  if (!result.eventId) {
+    throw new Error('Async workload API did not return eventId');
   }
 
   return {
