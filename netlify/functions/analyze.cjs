@@ -14,6 +14,7 @@
  * - utils/hash: { sha256HexFromBase64 } - Content hashing utilities
  * - utils/mongodb: { getCollection } - MongoDB connection and collection access
  * - utils/retry: { withTimeout, retryAsync, circuitBreaker } - Retry and circuit breaker patterns
+ * - utils/duplicate-constants: Shared constants for duplicate detection logic
  * * Required Environment Variables:
  * - ANALYSIS_TIMEOUT_MS: Analysis pipeline timeout (default: 60000)
  * - ANALYSIS_RETRIES: Number of retry attempts (default: 2)
@@ -36,6 +37,11 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { handleStoryModeAnalysis } = require('./utils/story-mode.cjs');
+const { 
+  DUPLICATE_UPGRADE_THRESHOLD, 
+  MIN_QUALITY_IMPROVEMENT, 
+  CRITICAL_FIELDS 
+} = require('./utils/duplicate-constants.cjs');
 
 /**
  * Validate that required environment variables are set
@@ -580,14 +586,7 @@ async function checkExistingAnalysis(contentHash, log) {
         event: 'FOUND'
       });
 
-      const criticalFields = [
-        'dlNumber', 'stateOfCharge', 'overallVoltage', 'current', 'remainingCapacity',
-        'chargeMosOn', 'dischargeMosOn', 'balanceOn', 'highestCellVoltage',
-        'lowestCellVoltage', 'averageCellVoltage', 'cellVoltageDifference',
-        'cycleCount', 'power'
-      ];
-
-      const hasAllCriticalFields = criticalFields.every(field =>
+      const hasAllCriticalFields = CRITICAL_FIELDS.every(field =>
         existing.analysis &&
         existing.analysis[field] !== null &&
         existing.analysis[field] !== undefined
@@ -595,7 +594,7 @@ async function checkExistingAnalysis(contentHash, log) {
 
       // Check for missing critical fields first (highest priority)
       if (!hasAllCriticalFields) {
-        const missingFields = criticalFields.filter(field => 
+        const missingFields = CRITICAL_FIELDS.filter(field => 
           !existing.analysis || 
           existing.analysis[field] === null || 
           existing.analysis[field] === undefined
@@ -622,7 +621,7 @@ async function checkExistingAnalysis(contentHash, log) {
         existing._wasUpgraded &&
         existing._previousQuality !== undefined &&
         existing._newQuality !== undefined &&
-        Math.abs(existing._previousQuality - existing._newQuality) < 0.01; // Epsilon comparison
+        Math.abs(existing._previousQuality - existing._newQuality) < MIN_QUALITY_IMPROVEMENT;
 
       if (hasBeenRetriedWithNoImprovement) {
         log.info('Existing record was already retried with identical results - assuming full extraction.', {
@@ -644,13 +643,12 @@ async function checkExistingAnalysis(contentHash, log) {
       // 80% threshold prevents wasteful re-analysis of high-quality records while still
       // catching genuinely poor extractions. This reduces API calls by ~90%.
       const validationScore = existing.validationScore ?? 0; // Default to 0 if undefined
-      const UPGRADE_THRESHOLD = 80; // Only upgrade if below 80% confidence
       
-      if (validationScore < UPGRADE_THRESHOLD && (existing.extractionAttempts || 1) < 2) {
+      if (validationScore < DUPLICATE_UPGRADE_THRESHOLD && (existing.extractionAttempts || 1) < 2) {
         log.warn('Existing record has low confidence score. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
           validationScore: validationScore,
-          threshold: UPGRADE_THRESHOLD,
+          threshold: DUPLICATE_UPGRADE_THRESHOLD,
           extractionAttempts: existing.extractionAttempts || 1,
           fileName: existing.fileName,
           recordId: existing._id || existing.id,
@@ -661,11 +659,11 @@ async function checkExistingAnalysis(contentHash, log) {
       }
       
       // Log when we skip upgrade for good-quality records
-      if (validationScore >= UPGRADE_THRESHOLD && validationScore < 100) {
+      if (validationScore >= DUPLICATE_UPGRADE_THRESHOLD && validationScore < 100) {
         log.info('Existing record has acceptable quality - not upgrading.', {
           contentHash: contentHash.substring(0, 16) + '...',
           validationScore: validationScore,
-          threshold: UPGRADE_THRESHOLD,
+          threshold: DUPLICATE_UPGRADE_THRESHOLD,
           fileName: existing.fileName,
           recordId: existing._id || existing.id,
           decision: 'RETURN_EXISTING',

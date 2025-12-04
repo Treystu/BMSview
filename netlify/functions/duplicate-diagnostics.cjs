@@ -153,7 +153,12 @@ exports.handler = async (event, context) => {
         },
         qualityDistribution: {
           byValidationScore: scoreRanges.map(r => ({
-            range: `${r._id}-${r._id + 10}%`,
+            range: r._id === 0 ? '0-49%' :
+                   r._id === 50 ? '50-79%' :
+                   r._id === 80 ? '80-89%' :
+                   r._id === 90 ? '90-99%' :
+                   r._id === 100 ? '100%' :
+                   'null',
             count: r.count
           })),
           byExtractionAttempts: attemptCounts.map(r => ({

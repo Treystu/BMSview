@@ -13,6 +13,11 @@ const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { sha256HexFromBase64 } = require('./utils/hash.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { 
+  DUPLICATE_UPGRADE_THRESHOLD, 
+  MIN_QUALITY_IMPROVEMENT, 
+  CRITICAL_FIELDS 
+} = require('./utils/duplicate-constants.cjs');
 
 /**
  * Batch check for existing analyses by content hash
@@ -76,21 +81,14 @@ function checkIfNeedsUpgrade(existing) {
     return { needsUpgrade: false };
   }
   
-  const criticalFields = [
-    'dlNumber', 'stateOfCharge', 'overallVoltage', 'current', 'remainingCapacity',
-    'chargeMosOn', 'dischargeMosOn', 'balanceOn', 'highestCellVoltage',
-    'lowestCellVoltage', 'averageCellVoltage', 'cellVoltageDifference',
-    'cycleCount', 'power'
-  ];
-  
-  const hasAllCriticalFields = criticalFields.every(field =>
+  const hasAllCriticalFields = CRITICAL_FIELDS.every(field =>
     existing.analysis &&
     existing.analysis[field] !== null &&
     existing.analysis[field] !== undefined
   );
   
   if (!hasAllCriticalFields) {
-    const missingFields = criticalFields.filter(field => 
+    const missingFields = CRITICAL_FIELDS.filter(field => 
       !existing.analysis || 
       existing.analysis[field] === null || 
       existing.analysis[field] === undefined
@@ -108,20 +106,18 @@ function checkIfNeedsUpgrade(existing) {
     existing._wasUpgraded &&
     existing._previousQuality !== undefined &&
     existing._newQuality !== undefined &&
-    Math.abs(existing._previousQuality - existing._newQuality) < 0.01;
+    Math.abs(existing._previousQuality - existing._newQuality) < MIN_QUALITY_IMPROVEMENT;
   
   if (hasBeenRetriedWithNoImprovement) {
     return { needsUpgrade: false, reason: 'Already retried with no improvement' };
   }
   
-  // ***CONSERVATIVE: Only upgrade if validation score < 80% (not 100%)***
   const validationScore = existing.validationScore ?? 0;
-  const UPGRADE_THRESHOLD = 80;
   
-  if (validationScore < UPGRADE_THRESHOLD && (existing.extractionAttempts || 1) < 2) {
+  if (validationScore < DUPLICATE_UPGRADE_THRESHOLD && (existing.extractionAttempts || 1) < 2) {
     return { 
       needsUpgrade: true, 
-      reason: `Low confidence score: ${validationScore}% (threshold: ${UPGRADE_THRESHOLD}%)` 
+      reason: `Low confidence score: ${validationScore}% (threshold: ${DUPLICATE_UPGRADE_THRESHOLD}%)` 
     };
   }
   
@@ -221,10 +217,11 @@ exports.handler = async (event, context) => {
     if (hashErrors.length > 0) {
       log.warn('Some files failed hash calculation', {
         errorCount: hashErrors.length,
+        // Log first 5 sanitized errors
         errors: hashErrors.slice(0, 5).map(e => ({
           fileName: e.fileName,
           errorType: e.error && e.error.includes('read') ? 'read_failed' : 'hash_failed'
-        }), // Log first 5 sanitized errors
+        })),
         event: 'HASH_ERRORS'
       });
     }
@@ -273,8 +270,9 @@ exports.handler = async (event, context) => {
         timestamp: existing.timestamp,
         validationScore: existing.validationScore,
         extractionAttempts: existing.extractionAttempts || 1,
-        upgradeReason: upgradeCheck.reason,
-        analysisData: !upgradeCheck.needsUpgrade ? existing.analysis : null
+        upgradeReason: upgradeCheck.reason
+        // Note: analysisData intentionally excluded to prevent PII leakage
+        // Clients should use the recordId to fetch full analysis via authenticated endpoint
       };
     });
     

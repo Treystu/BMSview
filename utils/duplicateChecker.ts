@@ -62,7 +62,7 @@ async function checkSingleFile(
  * Check files using batch API endpoint (more efficient for multiple files)
  * @param files - Array of files to check
  * @param log - Logging function
- * @returns Promise with check results
+ * @returns Promise with check results, or empty array if batch API fails (triggers fallback to individual checks)
  */
 async function checkFilesUsingBatchAPI(
     files: File[],
@@ -151,17 +151,26 @@ async function checkFilesUsingBatchAPI(
         });
         
         // Map results back to DuplicateCheckResult format
-        return result.results.map((apiResult: any) => {
-            const file = files.find(f => f.name === apiResult.fileName);
-            return {
-                file: file!,
-                isDuplicate: apiResult.isDuplicate,
-                needsUpgrade: apiResult.needsUpgrade,
-                recordId: apiResult.recordId,
-                timestamp: apiResult.timestamp,
-                analysisData: apiResult.analysisData
-            };
-        });
+        return result.results
+            .map((apiResult: any) => {
+                const file = files.find(f => f.name === apiResult.fileName);
+                if (!file) {
+                    log('warn', 'File not found in original array', { 
+                        fileName: apiResult.fileName,
+                        event: 'FILE_MISMATCH'
+                    });
+                    return null;
+                }
+                return {
+                    file,
+                    isDuplicate: apiResult.isDuplicate,
+                    needsUpgrade: apiResult.needsUpgrade,
+                    recordId: apiResult.recordId,
+                    timestamp: apiResult.timestamp,
+                    analysisData: apiResult.analysisData
+                };
+            })
+            .filter((r): r is DuplicateCheckResult => r !== null);
         
     } catch (error) {
         const totalDurationMs = Date.now() - startTime;
