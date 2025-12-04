@@ -33,6 +33,14 @@ exports.handler = async function(event, context) {
     log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
     const timer = createTimer(log, 'history');
     
+    // Define logContext for consistent logging throughout the function
+    const clientIp = event.headers['x-nf-client-connection-ip'] || 'unknown';
+    const logContext = { 
+        clientIp, 
+        httpMethod: event.httpMethod,
+        path: event.path
+    };
+    
     if (!validateEnvironment(log)) {
         log.exit(500);
         return respond(500, { error: 'Server configuration error' }, headers);
@@ -86,7 +94,7 @@ exports.handler = async function(event, context) {
 
             if (systemId) {
                 // Fetch all history for a specific system (used for charting)
-                log.info('Fetching full history for a single system', { systemId });
+                log.info('Fetching full history for a single system', { ...logContext, systemId });
                 const historyForSystem = await historyCollection.find({ systemId }, { projection: { _id: 0 } }).sort({ timestamp: 1 }).toArray();
                 timer.end({ systemId, count: historyForSystem.length });
                 log.exit(200);
@@ -95,7 +103,7 @@ exports.handler = async function(event, context) {
 
             if (all === 'true') {
                  // Fetch ALL history records (used for cache building, potentially large)
-                 log.info('Fetching ALL history records');
+                 log.info('Fetching ALL history records', logContext);
                  const allHistory = await historyCollection.find({}, { projection: { _id: 0 } }).sort({ timestamp: -1 }).toArray();
                  timer.end({ all: true, count: allHistory.length });
                  log.exit(200);
@@ -103,7 +111,7 @@ exports.handler = async function(event, context) {
             }
 
             // Fetch paginated history (default)
-            log.debug('Fetching paginated history', { page, limit });
+            log.debug('Fetching paginated history', { ...logContext, page, limit });
             const pageNum = parseInt(page, 10);
             const limitNum = parseInt(limit, 10);
             const skip = (pageNum - 1) * limitNum;
@@ -114,7 +122,7 @@ exports.handler = async function(event, context) {
             ]);
 
             timer.end({ page: pageNum, returned: history.length, total: totalItems });
-            log.info(`Returning page ${pageNum} of history`, { returned: history.length, total: totalItems });
+            log.info(`Returning page ${pageNum} of history`, { ...logContext, returned: history.length, total: totalItems });
             log.exit(200);
             return respond(200, { items: history, totalItems }, headers);
         }
@@ -122,9 +130,10 @@ exports.handler = async function(event, context) {
         // --- POST Request Handler ---
         if (event.httpMethod === 'POST') {
             const parsedBody = JSON.parse(event.body);
-            log.debug('Parsed POST body', { bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
+            log.debug('Parsed POST body', { ...logContext, bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
             const { action } = parsedBody;
-            log.info('Processing POST request', { action });
+            const postLogContext = { ...logContext, action };
+            log.info('Processing POST request', postLogContext);
 
             // --- Batch Delete Action ---
             if (action === 'deleteBatch') {
@@ -134,7 +143,7 @@ exports.handler = async function(event, context) {
                     log.exit(400);
                     return respond(400, { error: 'recordIds array is required.' }, headers);
                 }
-                log.warn('Deleting batch of history records', { action, count: recordIds.length });
+                log.warn('Deleting batch of history records', { ...postLogContext, count: recordIds.length });
                 const { deletedCount } = await historyCollection.deleteMany({ id: { $in: recordIds } });
                 timer.end({ action, deletedCount });
                 log.exit(200);
@@ -143,7 +152,7 @@ exports.handler = async function(event, context) {
 
             // --- Fix Power Signs Action ---
             if (action === 'fix-power-signs') {
-                log.info('Starting fix-power-signs task', { action });
+                log.info('Starting fix-power-signs task', postLogContext);
                 const filter = {
                     'analysis.current': { $lt: 0 }, // Current is negative (discharge)
                     'analysis.power': { $gt: 0 }    // Power is positive (incorrect)
