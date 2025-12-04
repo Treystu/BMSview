@@ -13,8 +13,14 @@
 # Uses Netlify's durable async workload system for extended execution
 [functions."generate-insights-background"]
   node_bundler = "esbuild"
+  external_node_modules = ["@netlify/async-workloads"]
   # Enable async workloads
   async_workloads = true
+
+# Trigger endpoint for async workloads
+[functions."generate-insights-async-trigger"]
+  node_bundler = "esbuild"
+  external_node_modules = ["@netlify/async-workloads"]
 
 # Admin diagnostics function - needs longer timeout for comprehensive testing
 [functions."admin-diagnostics"]
