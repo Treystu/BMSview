@@ -1,16 +1,14 @@
 /**
- * Insights Async Workload Client
+ * Insights Background Processing Client
  * 
- * Helper for triggering insights generation via Netlify Async Workloads.
- * This replaces the old in-process background execution with durable async workloads.
- * 
- * Uses @netlify/async-workloads package for proper integration with Netlify's async system.
+ * Helper for triggering insights generation in background.
+ * Uses simple in-process async execution without package dependencies.
  * 
  * Usage:
  * ```js
  * const { triggerInsightsWorkload } = require('./utils/insights-async-client.cjs');
  * 
- * const { eventId, jobId } = await triggerInsightsWorkload({
+ * const { jobId } = await triggerInsightsWorkload({
  *   jobId: 'job-123',
  *   analysisData: {...},
  *   systemId: 'sys-456',
@@ -22,12 +20,13 @@
  * ```
  */
 
-const { AsyncWorkloadsClient } = require('@netlify/async-workloads');
+const { processInsightsInBackground } = require('./insights-processor.cjs');
+const { createLogger } = require('./logger.cjs');
 
 /**
- * Trigger insights generation async workload
+ * Trigger insights generation in background
  * 
- * @param {Object} options - Workload options
+ * @param {Object} options - Processing options
  * @param {string} options.jobId - Job identifier
  * @param {Object} [options.analysisData] - Analysis data (optional if jobId exists in DB)
  * @param {string} [options.systemId] - System identifier
@@ -36,9 +35,7 @@ const { AsyncWorkloadsClient } = require('@netlify/async-workloads');
  * @param {number} [options.maxIterations] - Maximum AI iterations
  * @param {string} [options.modelOverride] - Gemini model override
  * @param {boolean} [options.fullContextMode] - Enable full context mode
- * @param {number} [options.priority] - Event priority (0-10, default 5)
- * @param {number|string} [options.delayUntil] - Delay execution until timestamp
- * @returns {Promise<{eventId: string, jobId: string}>}
+ * @returns {Promise<{jobId: string}>}
  */
 async function triggerInsightsWorkload(options) {
   const {
@@ -49,42 +46,34 @@ async function triggerInsightsWorkload(options) {
     contextWindowDays,
     maxIterations,
     modelOverride,
-    fullContextMode,
-    priority = 5,
-    delayUntil
+    fullContextMode
   } = options;
 
   if (!jobId) {
-    throw new Error('jobId is required to trigger insights workload');
+    throw new Error('jobId is required to trigger insights processing');
   }
 
-  // Create async workloads client
-  const client = new AsyncWorkloadsClient();
+  const log = createLogger('insights-background-client', { jobId });
 
-  // Send event to trigger workload
-  const result = await client.send('generate-insights', {
-    data: {
+  // Start processing in background (async, fire-and-forget)
+  processInsightsInBackground(
+    jobId,
+    analysisData,
+    systemId,
+    customPrompt,
+    contextWindowDays,
+    maxIterations,
+    modelOverride,
+    fullContextMode
+  ).catch(error => {
+    log.error('Background insights processing failed', {
       jobId,
-      analysisData,
-      systemId,
-      customPrompt,
-      contextWindowDays,
-      maxIterations,
-      modelOverride,
-      fullContextMode
-    },
-    priority,
-    delayUntil
+      error: error.message,
+      stack: error.stack
+    });
   });
 
-  if (result.sendStatus !== 'succeeded') {
-    throw new Error(`Failed to trigger insights workload: ${result.sendStatus}`);
-  }
-
-  return {
-    eventId: result.eventId,
-    jobId
-  };
+  return { jobId };
 }
 
 /**
