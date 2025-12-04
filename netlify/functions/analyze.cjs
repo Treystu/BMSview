@@ -508,15 +508,22 @@ async function checkIdempotency(idemKey, log) {
  * @returns {Promise<any>} Existing analysis if found and high quality, null if should re-analyze
  */
 async function checkExistingAnalysis(contentHash, log) {
+  const startTime = Date.now();
   try {
     const resultsCol = await getCollection('analysis-results');
+    
+    const queryStartTime = Date.now();
     const existing = await resultsCol.findOne({ contentHash });
+    const queryDurationMs = Date.now() - queryStartTime;
+    
     if (existing) {
       log.info('Dedupe: existing analysis found for content hash.', {
         contentHash: contentHash.substring(0, 16) + '...',
         needsReview: existing.needsReview,
         validationScore: existing.validationScore,
-        extractionAttempts: existing.extractionAttempts || 1
+        extractionAttempts: existing.extractionAttempts || 1,
+        queryDurationMs,
+        event: 'FOUND'
       });
 
       const criticalFields = [
@@ -534,9 +541,18 @@ async function checkExistingAnalysis(contentHash, log) {
 
       // Check for missing critical fields first (highest priority)
       if (!hasAllCriticalFields) {
+        const missingFields = criticalFields.filter(field => 
+          !existing.analysis || 
+          existing.analysis[field] === null || 
+          existing.analysis[field] === undefined
+        );
+        
         log.warn('Existing record is missing critical fields. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
-          extractionAttempts: existing.extractionAttempts || 1
+          extractionAttempts: existing.extractionAttempts || 1,
+          missingFieldCount: missingFields.length,
+          missingFields: missingFields.slice(0, 5), // Log first 5 to avoid log spam
+          event: 'UPGRADE_NEEDED'
         });
         return { _isUpgrade: true, _existingRecord: existing };
       }
@@ -557,7 +573,8 @@ async function checkExistingAnalysis(contentHash, log) {
           validationScore: existing.validationScore,
           extractionAttempts: existing.extractionAttempts,
           previousQuality: existing._previousQuality,
-          newQuality: existing._newQuality
+          newQuality: existing._newQuality,
+          event: 'NO_IMPROVEMENT'
         });
         return existing; // Return as-is, no further retry needed
       }
@@ -568,18 +585,38 @@ async function checkExistingAnalysis(contentHash, log) {
         log.warn('Existing record has low confidence score. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
           validationScore: validationScore,
-          extractionAttempts: existing.extractionAttempts || 1
+          extractionAttempts: existing.extractionAttempts || 1,
+          event: 'LOW_CONFIDENCE_UPGRADE'
         });
         return { _isUpgrade: true, _existingRecord: existing };
       }
 
+      const totalDurationMs = Date.now() - startTime;
+      log.info('Dedupe: high-quality duplicate found, will return existing.', {
+        contentHash: contentHash.substring(0, 16) + '...',
+        validationScore: existing.validationScore,
+        totalDurationMs,
+        event: 'HIGH_QUALITY_DUPLICATE'
+      });
+      
       return existing;
     }
+    
+    const totalDurationMs = Date.now() - startTime;
+    log.info('Dedupe: no existing analysis found, will perform new analysis.', {
+      contentHash: contentHash.substring(0, 16) + '...',
+      queryDurationMs,
+      totalDurationMs,
+      event: 'NOT_FOUND'
+    });
     return null;
   } catch (/** @type {any} */ error) {
+    const totalDurationMs = Date.now() - startTime;
     log.warn('Duplicate check failed', {
       error: error.message,
-      contentHash: contentHash.substring(0, 16) + '...'
+      contentHash: contentHash.substring(0, 16) + '...',
+      totalDurationMs,
+      event: 'ERROR'
     });
     // Re-throw to let caller decide how to handle
     throw error;

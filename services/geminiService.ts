@@ -250,15 +250,21 @@ export const checkFileDuplicate = async (file: File): Promise<{
     timestamp?: string;
     analysisData?: any;
 }> => {
+    const startTime = Date.now();
     const checkContext = { fileName: file.name, fileSize: file.size };
-    log('info', 'Checking file for duplicates.', checkContext);
+    log('debug', 'Checking file for duplicates.', { ...checkContext, event: 'START' });
 
     try {
+        const readStartTime = Date.now();
         const imagePayload = await fileWithMetadataToBase64(file);
+        const readDurationMs = Date.now() - readStartTime;
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
-            log('warn', 'Duplicate check timed out after 20 seconds.', { fileName: file.name });
+            log('warn', 'Duplicate check timed out after 20 seconds.', { 
+                fileName: file.name,
+                event: 'TIMEOUT'
+            });
             controller.abort();
         }, 20000); // 20-second timeout for duplicate check (increased from 10s to handle batch checks better)
 
@@ -266,6 +272,7 @@ export const checkFileDuplicate = async (file: File): Promise<{
             image: imagePayload
         };
 
+        const fetchStartTime = Date.now();
         const response = await fetch('/.netlify/functions/analyze?sync=true&check=true', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -274,15 +281,27 @@ export const checkFileDuplicate = async (file: File): Promise<{
         });
 
         clearTimeout(timeoutId);
+        
+        const fetchDurationMs = Date.now() - fetchStartTime;
+        const totalDurationMs = Date.now() - startTime;
 
         if (!response.ok) {
             // Differentiate between expected and unexpected failures
             if (response.status === 404 || response.status === 501) {
                 // Endpoint not implemented - expected, fall back gracefully
-                log('info', 'Duplicate check endpoint not available, will perform full analysis.', { status: response.status });
+                log('info', 'Duplicate check endpoint not available, will perform full analysis.', { 
+                    status: response.status,
+                    fileName: file.name,
+                    event: 'ENDPOINT_NOT_AVAILABLE'
+                });
             } else {
                 // Unexpected error - log as warning
-                log('warn', 'Duplicate check endpoint returned error, assuming not duplicate.', { status: response.status });
+                log('warn', 'Duplicate check endpoint returned error, assuming not duplicate.', { 
+                    status: response.status,
+                    fileName: file.name,
+                    totalDurationMs,
+                    event: 'API_ERROR'
+                });
             }
             return { isDuplicate: false, needsUpgrade: false };
         }
@@ -298,7 +317,12 @@ export const checkFileDuplicate = async (file: File): Promise<{
         log('info', 'Duplicate check complete.', { 
             fileName: file.name, 
             isDuplicate: !!result.isDuplicate,
-            needsUpgrade: !!result.needsUpgrade
+            needsUpgrade: !!result.needsUpgrade,
+            // Timing breakdown (all times are cumulative parts of totalDurationMs):
+            readDurationMs,      // Time to read file and convert to base64
+            fetchDurationMs,     // Time for HTTP request to backend (includes network latency)
+            totalDurationMs,     // Total = read + fetch + overhead (JSON parsing, etc.)
+            event: 'COMPLETE'
         });
         
         return {
@@ -313,10 +337,14 @@ export const checkFileDuplicate = async (file: File): Promise<{
         // Detect timeout errors specifically
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         const isTimeout = error instanceof Error && error.name === 'AbortError';
+        const totalDurationMs = Date.now() - startTime;
+        
         log('warn', 'Duplicate check failed, assuming not duplicate.', { 
             ...checkContext, 
             error: errorMessage,
-            isTimeout 
+            isTimeout,
+            totalDurationMs,
+            event: 'ERROR'
         });
         return { isDuplicate: false, needsUpgrade: false };
     }
