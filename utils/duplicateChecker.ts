@@ -105,6 +105,10 @@ async function checkFilesUsingBatchAPI(
             .filter(result => result.status === 'fulfilled')
             .map(result => (result as PromiseFulfilledResult<any>).value);
         
+        if (filesData.length !== files.length) {
+            throw new Error(`Failed to read ${files.length - filesData.length} files`);
+        }
+
         log('info', 'Files read complete', {
             totalFiles: files.length,
             successfulReads: filesData.length,
