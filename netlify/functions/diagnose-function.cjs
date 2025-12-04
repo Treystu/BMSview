@@ -76,9 +76,10 @@ const FUNCTION_DIAGNOSTICS = {
       } else {
         recommendations = 'Issues detected:\n\n';
         if (issues.some(i => i.includes('dual-write'))) {
-          recommendations += '1. Check analyze.cjs logs for dual-write errors (line 727-745)\n';
-          recommendations += '2. Verify MongoDB connection is stable\n';
-          recommendations += '3. Run a test analysis and verify both collections update\n';
+          recommendations += '1. Check analyze.cjs logs in storeAnalysisResults function for dual-write errors\n';
+          recommendations += '2. Search logs for "Dual-write to history collection" messages\n';
+          recommendations += '3. Verify MongoDB connection is stable\n';
+          recommendations += '4. Run a test analysis and verify both collections update\n';
         }
         if (issues.some(i => i.includes('empty'))) {
           recommendations += '1. No analysis data found - upload a BMS screenshot to test\n';
@@ -258,8 +259,9 @@ const FUNCTION_DIAGNOSTICS = {
         recommendations += 'Reason: analysis-results collection is empty.\n\n';
         recommendations += 'SOLUTION:\n';
         recommendations += '1. Upload BMS screenshots to populate analysis-results\n';
-        recommendations += '2. Verify analyze.cjs is saving to analysis-results (line 713)\n';
-        recommendations += '3. Link analyses to systems for richer context\n';
+        recommendations += '2. Verify analyze.cjs storeAnalysisResults function is saving to analysis-results\n';
+        recommendations += '3. Check logs for "Analysis results stored for deduplication" messages\n';
+        recommendations += '4. Link analyses to systems for richer context\n';
       } else {
         recommendations = '✅ Full Context Mode has data available.';
       }

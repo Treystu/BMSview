@@ -3,6 +3,8 @@
 **Last Updated**: December 4, 2025  
 **Status**: Active - This is the authoritative source for collection usage patterns
 
+> **Note**: Function and file references in this document use descriptive function names rather than line numbers, as line numbers may shift as code evolves. Use your editor's search functionality to locate specific implementations.
+
 ## Overview
 
 BMSview uses MongoDB for persistent storage. This document provides the **single source of truth** for all collection usage patterns, schemas, and access conventions.
@@ -35,11 +37,11 @@ As of December 2025, BMSview implements a **dual-write pattern** for analysis da
 **Purpose**: Stores BMS screenshot analysis results with deduplication and quality tracking.
 
 **Written By**:
-- `netlify/functions/analyze.cjs` (line 713 - insertOne, line 655 - updateOne)
+- `netlify/functions/analyze.cjs` (storeAnalysisResults function - insertOne and updateOne operations)
 
 **Read By**:
-- `netlify/functions/utils/full-context-builder.cjs` (line 132)
-- `netlify/functions/utils/insights-summary.cjs` (line 81)
+- `netlify/functions/utils/full-context-builder.cjs` (getRawData function)
+- `netlify/functions/utils/insights-summary.cjs` (generateInitialSummary function)
 
 **Schema**:
 ```javascript
@@ -95,12 +97,12 @@ db['analysis-results'].createIndex({ 'analysis.systemId': 1, timestamp: -1 });
 **Purpose**: Duplicate storage of analysis data for backward compatibility with legacy tools.
 
 **Written By**:
-- `netlify/functions/analyze.cjs` (line 727 - dual-write, line 694 - dual-write update)
-- `netlify/functions/history.cjs` (line 813 - legacy POST endpoint)
+- `netlify/functions/analyze.cjs` (storeAnalysisResults function - dual-write to history collection)
+- `netlify/functions/history.cjs` (POST endpoint handler for legacy direct writes)
 
 **Read By**:
-- `netlify/functions/utils/insights-guru.cjs` (lines 122, 1620, 1661, 2480)
-- `netlify/functions/utils/gemini-tools.cjs` - `request_bms_data` tool (line 802)
+- `netlify/functions/utils/insights-guru.cjs` (multiple data loading functions)
+- `netlify/functions/utils/gemini-tools.cjs` - `request_bms_data` tool
 
 **Schema**:
 ```javascript
@@ -137,8 +139,8 @@ db.history.createIndex({ id: 1 }, { unique: true });
 **Purpose**: Stores registered BMS system configurations.
 
 **Written By**:
-- `netlify/functions/systems.cjs`
-- `netlify/functions/history.cjs` (line 838 - associatedDLs update)
+- `netlify/functions/systems.cjs` (system registration endpoints)
+- `netlify/functions/history.cjs` (associatedDLs array updates during linking)
 
 **Read By**:
 - All insights and analysis functions that need system metadata
@@ -265,10 +267,10 @@ db.ai_feedback.createIndex({ guruSource: 1, status: 1 });
 **Purpose**: Stores request/response pairs for safe retries and idempotency.
 
 **Written By**:
-- `netlify/functions/analyze.cjs` (line 741)
+- `netlify/functions/analyze.cjs` (storeIdempotentResponse function)
 
 **Read By**:
-- `netlify/functions/analyze.cjs` (line 490)
+- `netlify/functions/analyze.cjs` (checkIdempotency function)
 
 **Schema**:
 ```javascript

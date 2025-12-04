@@ -5,6 +5,8 @@
 **Date**: December 4, 2025  
 **Status**: ✅ COMPLETE - All fixes implemented and verified
 
+> **Note**: This document references functions and files rather than specific line numbers, as code locations may shift over time. Use your editor's search to find current implementations.
+
 ---
 
 ## Problem Statement
@@ -50,8 +52,8 @@ Additionally, user requested:
 **File**: `netlify/functions/analyze.cjs`
 
 **Changes**:
-- Line 713-745: Dual-write new records to BOTH `analysis-results` AND `history`
-- Line 688-707: Dual-write updates on quality upgrades
+- Dual-write new records to BOTH `analysis-results` AND `history` (storeAnalysisResults function)
+- Dual-write updates on quality upgrades (quality upgrade logic in storeAnalysisResults)
 - Non-blocking best-effort approach (won't fail analysis if dual-write fails)
 - Success/failure logging for verification
 
@@ -80,13 +82,13 @@ db['history'].findOne({ id: "uuid" })
 **Changes**:
 
 **generate-insights-with-tools.cjs**:
-- Line 189: Extract `fullContextMode` parameter
-- Line 362: Pass to sync ReAct loop
-- Line 525, 552: Pass to background jobs
+- Extract `fullContextMode` parameter from request body
+- Pass to sync ReAct loop in params object
+- Pass to background jobs configuration
 
 **react-loop.cjs**:
-- Line 1044: Add `fullContextMode` parameter
-- Line 1105-1128: When enabled:
+- Add `fullContextMode` parameter to executeReActLoop function
+- When enabled (in context building section):
   1. Call `buildCompleteContext(systemId, { contextWindowDays })`
   2. Pre-load ALL data from `analysis-results`
   3. Mark as `isFullContextMode: true`
