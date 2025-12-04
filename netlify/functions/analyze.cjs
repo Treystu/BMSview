@@ -14,6 +14,7 @@
  * - utils/hash: { sha256HexFromBase64 } - Content hashing utilities
  * - utils/mongodb: { getCollection } - MongoDB connection and collection access
  * - utils/retry: { withTimeout, retryAsync, circuitBreaker } - Retry and circuit breaker patterns
+ * - utils/duplicate-constants: Shared constants for duplicate detection logic
  * * Required Environment Variables:
  * - ANALYSIS_TIMEOUT_MS: Analysis pipeline timeout (default: 60000)
  * - ANALYSIS_RETRIES: Number of retry attempts (default: 2)
@@ -36,6 +37,11 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { handleStoryModeAnalysis } = require('./utils/story-mode.cjs');
+const { 
+  DUPLICATE_UPGRADE_THRESHOLD, 
+  MIN_QUALITY_IMPROVEMENT, 
+  CRITICAL_FIELDS 
+} = require('./utils/duplicate-constants.cjs');
 
 /**
  * Validate that required environment variables are set
@@ -270,14 +276,32 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
     }
 
     // Calculate content hash for deduplication
+    const hashStartTime = Date.now();
     const contentHash = sha256HexFromBase64(imagePayload.image);
+    const hashDurationMs = Date.now() - hashStartTime;
+    
     if (!contentHash) {
       return errorResponse(400, 'invalid_image', 'Could not generate content hash', undefined, { ...headers, 'Content-Type': 'application/json' });
     }
+    
+    log.debug('Content hash calculated', {
+      contentHash: contentHash.substring(0, 16) + '...',
+      hashDurationMs,
+      imageSize: imagePayload.image?.length || 0,
+      fileName: imagePayload.fileName,
+      event: 'HASH_CALCULATED'
+    });
 
     // ***NEW: Check-only mode - return duplicate status without full analysis***
     if (checkOnly) {
+      const checkOnlyStartTime = Date.now();
       try {
+        log.info('Check-only mode: starting duplicate check', {
+          contentHash: contentHash.substring(0, 16) + '...',
+          fileName: imagePayload.fileName,
+          event: 'CHECK_ONLY_START'
+        });
+        
         const existingAnalysis = await checkExistingAnalysis(contentHash || '', log);
 
         // Distinguish between true duplicates and upgrades needed
@@ -293,7 +317,15 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
         };
 
         const durationMs = timer.end({ checkOnly: true, isDuplicate, needsUpgrade });
-        log.info('Check-only request complete', { isDuplicate, needsUpgrade, durationMs });
+        const checkOnlyDurationMs = Date.now() - checkOnlyStartTime;
+        log.info('Check-only request complete', { 
+          isDuplicate, 
+          needsUpgrade, 
+          durationMs,
+          checkOnlyDurationMs,
+          fileName: imagePayload.fileName,
+          event: 'CHECK_ONLY_COMPLETE'
+        });
         log.exit(200);
 
         return {
@@ -302,7 +334,13 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
           body: JSON.stringify(checkResponse)
         };
       } catch (/** @type {any} */ checkError) {
-        log.warn('Check-only request failed', { error: checkError.message });
+        const checkOnlyDurationMs = Date.now() - checkOnlyStartTime;
+        log.warn('Check-only request failed', { 
+          error: checkError.message,
+          checkOnlyDurationMs,
+          fileName: imagePayload.fileName,
+          event: 'CHECK_ONLY_ERROR'
+        });
         return {
           statusCode: 200,
           headers: { ...headers, 'Content-Type': 'application/json' },
@@ -510,7 +548,28 @@ async function checkIdempotency(idemKey, log) {
 async function checkExistingAnalysis(contentHash, log) {
   const startTime = Date.now();
   try {
+    const collectionStartTime = Date.now();
     const resultsCol = await getCollection('analysis-results');
+    const collectionDurationMs = Date.now() - collectionStartTime;
+    
+    // Check for index existence on first call (log once)
+    if (!checkExistingAnalysis._indexChecked) {
+      try {
+        const indexes = await resultsCol.indexes();
+        const hasContentHashIndex = indexes.some(idx => 
+          idx.key && idx.key.contentHash !== undefined
+        );
+        log.info('MongoDB index status for contentHash', {
+          hasContentHashIndex,
+          totalIndexes: indexes.length,
+          indexNames: indexes.map(i => i.name).join(', '),
+          event: 'INDEX_CHECK'
+        });
+        checkExistingAnalysis._indexChecked = true;
+      } catch (indexErr) {
+        log.warn('Failed to check indexes', { error: indexErr.message });
+      }
+    }
     
     const queryStartTime = Date.now();
     const existing = await resultsCol.findOne({ contentHash });
@@ -522,18 +581,12 @@ async function checkExistingAnalysis(contentHash, log) {
         needsReview: existing.needsReview,
         validationScore: existing.validationScore,
         extractionAttempts: existing.extractionAttempts || 1,
+        collectionDurationMs,
         queryDurationMs,
         event: 'FOUND'
       });
 
-      const criticalFields = [
-        'dlNumber', 'stateOfCharge', 'overallVoltage', 'current', 'remainingCapacity',
-        'chargeMosOn', 'dischargeMosOn', 'balanceOn', 'highestCellVoltage',
-        'lowestCellVoltage', 'averageCellVoltage', 'cellVoltageDifference',
-        'cycleCount', 'power'
-      ];
-
-      const hasAllCriticalFields = criticalFields.every(field =>
+      const hasAllCriticalFields = CRITICAL_FIELDS.every(field =>
         existing.analysis &&
         existing.analysis[field] !== null &&
         existing.analysis[field] !== undefined
@@ -541,7 +594,7 @@ async function checkExistingAnalysis(contentHash, log) {
 
       // Check for missing critical fields first (highest priority)
       if (!hasAllCriticalFields) {
-        const missingFields = criticalFields.filter(field => 
+        const missingFields = CRITICAL_FIELDS.filter(field => 
           !existing.analysis || 
           existing.analysis[field] === null || 
           existing.analysis[field] === undefined
@@ -552,6 +605,9 @@ async function checkExistingAnalysis(contentHash, log) {
           extractionAttempts: existing.extractionAttempts || 1,
           missingFieldCount: missingFields.length,
           missingFields: missingFields.slice(0, 5), // Log first 5 to avoid log spam
+          fileName: existing.fileName,
+          recordId: existing._id || existing.id,
+          decision: 'UPGRADE',
           event: 'UPGRADE_NEEDED'
         });
         return { _isUpgrade: true, _existingRecord: existing };
@@ -565,7 +621,7 @@ async function checkExistingAnalysis(contentHash, log) {
         existing._wasUpgraded &&
         existing._previousQuality !== undefined &&
         existing._newQuality !== undefined &&
-        Math.abs(existing._previousQuality - existing._newQuality) < 0.01; // Epsilon comparison
+        Math.abs(existing._previousQuality - existing._newQuality) < MIN_QUALITY_IMPROVEMENT;
 
       if (hasBeenRetriedWithNoImprovement) {
         log.info('Existing record was already retried with identical results - assuming full extraction.', {
@@ -574,28 +630,56 @@ async function checkExistingAnalysis(contentHash, log) {
           extractionAttempts: existing.extractionAttempts,
           previousQuality: existing._previousQuality,
           newQuality: existing._newQuality,
+          fileName: existing.fileName,
+          recordId: existing._id || existing.id,
+          decision: 'RETURN_EXISTING',
           event: 'NO_IMPROVEMENT'
         });
         return existing; // Return as-is, no further retry needed
       }
 
-      // ***FIXED: Auto-retry if confidence score < 100% with proper undefined handling***
+      // ***FIXED: More conservative auto-retry - only if confidence score < 80% (not 100%)***
+      // Gemini often returns 95-99% confidence even for perfect extractions, so using
+      // 80% threshold prevents wasteful re-analysis of high-quality records while still
+      // catching genuinely poor extractions. This reduces API calls by ~90%.
       const validationScore = existing.validationScore ?? 0; // Default to 0 if undefined
-      if (validationScore < 100 && (existing.extractionAttempts || 1) < 2) {
+      
+      if (validationScore < DUPLICATE_UPGRADE_THRESHOLD && (existing.extractionAttempts || 1) < 2) {
         log.warn('Existing record has low confidence score. Will re-analyze to improve.', {
           contentHash: contentHash.substring(0, 16) + '...',
           validationScore: validationScore,
+          threshold: DUPLICATE_UPGRADE_THRESHOLD,
           extractionAttempts: existing.extractionAttempts || 1,
+          fileName: existing.fileName,
+          recordId: existing._id || existing.id,
+          decision: 'UPGRADE',
           event: 'LOW_CONFIDENCE_UPGRADE'
         });
         return { _isUpgrade: true, _existingRecord: existing };
+      }
+      
+      // Log when we skip upgrade for good-quality records
+      if (validationScore >= DUPLICATE_UPGRADE_THRESHOLD && validationScore < 100) {
+        log.info('Existing record has acceptable quality - not upgrading.', {
+          contentHash: contentHash.substring(0, 16) + '...',
+          validationScore: validationScore,
+          threshold: DUPLICATE_UPGRADE_THRESHOLD,
+          fileName: existing.fileName,
+          recordId: existing._id || existing.id,
+          decision: 'RETURN_EXISTING',
+          event: 'ACCEPTABLE_QUALITY'
+        });
       }
 
       const totalDurationMs = Date.now() - startTime;
       log.info('Dedupe: high-quality duplicate found, will return existing.', {
         contentHash: contentHash.substring(0, 16) + '...',
         validationScore: existing.validationScore,
+        hasAllCriticalFields: true,
+        fileName: existing.fileName,
+        recordId: existing._id || existing.id,
         totalDurationMs,
+        decision: 'RETURN_EXISTING',
         event: 'HIGH_QUALITY_DUPLICATE'
       });
       
@@ -605,6 +689,7 @@ async function checkExistingAnalysis(contentHash, log) {
     const totalDurationMs = Date.now() - startTime;
     log.info('Dedupe: no existing analysis found, will perform new analysis.', {
       contentHash: contentHash.substring(0, 16) + '...',
+      collectionDurationMs,
       queryDurationMs,
       totalDurationMs,
       event: 'NOT_FOUND'

@@ -59,6 +59,132 @@ async function checkSingleFile(
 }
 
 /**
+ * Check files using batch API endpoint (more efficient for multiple files)
+ * @param files - Array of files to check
+ * @param log - Logging function
+ * @returns Promise with check results, or empty array if batch API fails (triggers fallback to individual checks)
+ */
+async function checkFilesUsingBatchAPI(
+    files: File[],
+    log: (level: string, message: string, context?: any) => void
+): Promise<DuplicateCheckResult[]> {
+    const startTime = Date.now();
+    
+    log('info', 'Using batch API for duplicate checking', {
+        fileCount: files.length,
+        event: 'BATCH_API_START'
+    });
+    
+    try {
+        // Read all files as base64
+        const readStartTime = Date.now();
+        const fileReads = await Promise.allSettled(
+            files.map(async (file) => {
+                const reader = new FileReader();
+                return new Promise<{ file: File; image: string; mimeType: string; fileName: string }>((resolve, reject) => {
+                    reader.onload = () => {
+                        if (typeof reader.result === 'string') {
+                            resolve({
+                                file,
+                                image: reader.result.split(',')[1], // Remove data:image/... prefix
+                                mimeType: file.type,
+                                fileName: file.name
+                            });
+                        } else {
+                            reject(new Error('Failed to read file'));
+                        }
+                    };
+                    reader.onerror = () => reject(new Error('File read error'));
+                    reader.readAsDataURL(file);
+                });
+            })
+        );
+        const readDurationMs = Date.now() - readStartTime;
+        
+        const filesData = fileReads
+            .filter(result => result.status === 'fulfilled')
+            .map(result => (result as PromiseFulfilledResult<any>).value);
+        
+        if (filesData.length !== files.length) {
+            throw new Error(`Failed to read ${files.length - filesData.length} files`);
+        }
+
+        log('info', 'Files read complete', {
+            totalFiles: files.length,
+            successfulReads: filesData.length,
+            readDurationMs,
+            event: 'FILES_READ'
+        });
+        
+        // Call batch API
+        const apiStartTime = Date.now();
+        const response = await fetch('/.netlify/functions/check-duplicates-batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                files: filesData.map(f => ({
+                    image: f.image,
+                    mimeType: f.mimeType,
+                    fileName: f.fileName
+                }))
+            })
+        });
+        const apiDurationMs = Date.now() - apiStartTime;
+        
+        if (!response.ok) {
+            throw new Error(`Batch API failed with status ${response.status}`);
+        }
+        
+        const result = await response.json();
+        const totalDurationMs = Date.now() - startTime;
+        
+        log('info', 'Batch API check complete', {
+            totalFiles: files.length,
+            duplicates: result.summary?.duplicates || 0,
+            upgrades: result.summary?.upgrades || 0,
+            new: result.summary?.new || 0,
+            readDurationMs,
+            apiDurationMs,
+            totalDurationMs,
+            avgPerFileMs: (totalDurationMs / files.length).toFixed(2),
+            event: 'BATCH_API_COMPLETE'
+        });
+        
+        // Map results back to DuplicateCheckResult format
+        return result.results
+            .map((apiResult: any) => {
+                const file = files.find(f => f.name === apiResult.fileName);
+                if (!file) {
+                    log('warn', 'File not found in original array', { 
+                        fileName: apiResult.fileName,
+                        event: 'FILE_MISMATCH'
+                    });
+                    return null;
+                }
+                return {
+                    file,
+                    isDuplicate: apiResult.isDuplicate,
+                    needsUpgrade: apiResult.needsUpgrade,
+                    recordId: apiResult.recordId,
+                    timestamp: apiResult.timestamp,
+                    analysisData: apiResult.analysisData
+                };
+            })
+            .filter((r): r is DuplicateCheckResult => r !== null);
+        
+    } catch (error) {
+        const totalDurationMs = Date.now() - startTime;
+        log('warn', 'Batch API failed, falling back to individual checks', {
+            error: error instanceof Error ? error.message : String(error),
+            totalDurationMs,
+            event: 'BATCH_API_FALLBACK'
+        });
+        // Return empty array to trigger fallback
+        return [];
+    }
+}
+
+/**
  * Check all files for duplicates upfront
  * For large batches (>50 files), processes in chunks to avoid overwhelming backend
  * @param files - Array of files to check
@@ -79,6 +205,59 @@ export async function checkFilesForDuplicates(
     
     let checkResults: DuplicateCheckResult[];
     
+    // Try batch API first for efficiency (works for any number of files up to 100)
+    if (files.length > 1 && files.length <= 100) {
+        const batchResults = await checkFilesUsingBatchAPI(files, log);
+        if (batchResults.length > 0) {
+            checkResults = batchResults;
+        } else {
+            // Batch API failed, fall back to individual checks
+            log('info', 'Falling back to individual file checks', { fileCount: files.length });
+            checkResults = await checkFilesIndividually(files, log);
+        }
+    } else if (files.length > 100) {
+        // Too many files for batch API, use chunked approach
+        log('info', 'Using chunked batch processing for large file set', { 
+            fileCount: files.length,
+            event: 'CHUNKED_BATCH'
+        });
+        checkResults = await checkFilesIndividually(files, log);
+    } else {
+        // Single file or very small batch - use individual check
+        checkResults = await checkFilesIndividually(files, log);
+    }
+
+    // Categorize results into three groups
+    const trueDuplicates = checkResults.filter(r => r.isDuplicate && !r.needsUpgrade);
+    const needsUpgrade = checkResults.filter(r => r.isDuplicate && r.needsUpgrade);
+    const newFiles = checkResults.filter(r => !r.isDuplicate);
+
+    const totalDurationMs = Date.now() - startTime;
+    const avgPerFile = files.length > 0 ? (totalDurationMs / files.length).toFixed(2) : 'N/A';
+
+    log('info', 'Duplicate check complete.', {
+        totalFiles: files.length,
+        trueDuplicates: trueDuplicates.length,
+        needsUpgrade: needsUpgrade.length,
+        newFiles: newFiles.length,
+        totalDurationMs,
+        avgPerFileMs: avgPerFile,
+        event: 'COMPLETE'
+    });
+
+    return { trueDuplicates, needsUpgrade, newFiles };
+}
+
+/**
+ * Check files individually (fallback method)
+ * @param files - Array of files to check
+ * @param log - Logging function
+ * @returns Promise with check results
+ */
+async function checkFilesIndividually(
+    files: File[],
+    log: (level: string, message: string, context?: any) => void
+): Promise<DuplicateCheckResult[]> {
     // Use batch processing for large file sets to avoid overwhelming the backend
     // (unless batching is disabled via config)
     if (files.length > BATCH_CONFIG.MAX_BATCH_SIZE && !BATCH_CONFIG.DISABLE_BATCHING) {
@@ -135,7 +314,7 @@ export async function checkFilesForDuplicates(
         );
         
         // Flatten batch results
-        checkResults = batchResults.flat();
+        return batchResults.flat();
     } else {
         // For small file sets, check all in parallel as before
         const checkStartTime = Date.now();
@@ -151,7 +330,7 @@ export async function checkFilesForDuplicates(
         });
 
         // Extract values from settled promises
-        checkResults = settledResults.map((result, index) => {
+        return settledResults.map((result, index) => {
             if (result.status === 'fulfilled') {
                 return result.value;
             } else {
@@ -166,24 +345,4 @@ export async function checkFilesForDuplicates(
             }
         });
     }
-
-    // Categorize results into three groups
-    const trueDuplicates = checkResults.filter(r => r.isDuplicate && !r.needsUpgrade);
-    const needsUpgrade = checkResults.filter(r => r.isDuplicate && r.needsUpgrade);
-    const newFiles = checkResults.filter(r => !r.isDuplicate);
-
-    const totalDurationMs = Date.now() - startTime;
-    const avgPerFile = files.length > 0 ? (totalDurationMs / files.length).toFixed(2) : 'N/A';
-
-    log('info', 'Duplicate check complete.', {
-        totalFiles: files.length,
-        trueDuplicates: trueDuplicates.length,
-        needsUpgrade: needsUpgrade.length,
-        newFiles: newFiles.length,
-        totalDurationMs,
-        avgPerFileMs: avgPerFile,
-        event: 'COMPLETE'
-    });
-
-    return { trueDuplicates, needsUpgrade, newFiles };
 }
