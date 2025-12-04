@@ -201,6 +201,9 @@ export class RateLimiter {
      * @returns Promise that resolves when tokens are consumed
      */
     async consume(count: number = 1): Promise<void> {
+        if (count > this.capacity) {
+            throw new Error(`Cannot consume ${count} tokens: exceeds capacity of ${this.capacity}`);
+        }
         while (!this.tryConsume(count)) {
             // Wait a bit before trying again
             await new Promise(resolve => setTimeout(resolve, 100));
