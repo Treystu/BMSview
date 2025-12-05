@@ -4,6 +4,7 @@
   functions = "netlify/functions"
 
 [build.environment]
+  AWS_LAMBDA_JS_RUNTIME = "nodejs20.x"
   NODE_VERSION = "20"
 
 [[plugins]]
