@@ -18,7 +18,8 @@
   async_workloads = true
 
 # Trigger endpoint for async workloads
-# Uses AsyncWorkloadsClient directly with externalized package
+# CRITICAL: Must be .mjs (ES Module) because @netlify/async-workloads is an ES Module
+# CommonJS (.cjs) cannot require() ES Modules - will fail at runtime
 # NOTE: Using nft (Node File Trace) bundler for better external module support
 [functions."generate-insights-async-trigger"]
   node_bundler = "nft"

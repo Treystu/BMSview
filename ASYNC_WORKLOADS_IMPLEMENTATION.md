@@ -1,5 +1,22 @@
 # Netlify Async Workloads Implementation - Complete Guide
 
+## ⚠️ CRITICAL: Read This First
+
+**Before implementing any async workload functionality, READ:**
+- **[ASYNC_WORKLOAD_BEST_PRACTICES.md](./ASYNC_WORKLOAD_BEST_PRACTICES.md)** - REQUIRED reading to avoid 250MB bundle size errors and runtime issues
+
+**Key Requirements:**
+1. ✅ Use `.mjs` (ES Module) format - NOT `.cjs` (CommonJS)
+2. ✅ Use `nft` bundler - NOT `esbuild`
+3. ✅ Import `@netlify/async-workloads` directly - NO transitive imports through utilities
+4. ✅ Configure `external_node_modules` in netlify.toml
+
+Failure to follow these requirements will result in either:
+- **Runtime Error:** "require() of ES Module not supported"
+- **Deployment Error:** "function exceeds maximum size of 250 MB"
+
+---
+
 ## Overview
 
 This document describes the complete implementation of Netlify Async Workloads for insights generation in BMSview. This replaces the previous in-process background execution with a durable, resilient, event-driven async system.
