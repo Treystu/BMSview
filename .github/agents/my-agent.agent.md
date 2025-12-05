@@ -366,7 +366,7 @@ From `FULL_CONTEXT_MODE.md`, `FULL_CONTEXT_MODE_IMPLEMENTATION_COMPLETE.md`, `AI
 - **Job-based model**:
   - For large or expensive feedback tasks, system creates jobs:
     - Stored in `insights-jobs` or dedicated feedback-related collections.
-    - Processed in-process via `processInsightsInBackground()`.
+    - Processed by the Netlify Async Workload (`generate-insights-background.mjs`), which calls `processInsightsInBackground()` to execute each job.
   - Supports resumable and checkpointed analysis (see `CHECKPOINT_RESUMABLE_INSIGHTS_IMPLEMENTATION.md`).
 
 - **Security & RBAC**:
