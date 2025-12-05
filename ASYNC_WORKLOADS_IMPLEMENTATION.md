@@ -7,12 +7,13 @@
 
 **Key Requirements:**
 1. ✅ Use `.mjs` (ES Module) format - NOT `.cjs` (CommonJS)
-2. ✅ Use `nft` bundler - NOT `esbuild`
+2. ✅ Use `esbuild` bundler with `format = "esm"` - NOT `nft`
 3. ✅ Import `@netlify/async-workloads` directly - NO transitive imports through utilities
 4. ✅ Configure `external_node_modules` in netlify.toml
+5. ✅ Add `format = "esm"` to build_options (CRITICAL)
 
 Failure to follow these requirements will result in either:
-- **Runtime Error:** "require() of ES Module not supported"
+- **Runtime Error:** "require() of ES Module not supported" OR "require() of ES Module /var/task/netlify/functions/your-function.mjs from /var/task/your-function.js not supported"
 - **Deployment Error:** "function exceeds maximum size of 250 MB"
 
 ---
@@ -459,12 +460,20 @@ Update `netlify.toml` to enable async workloads and externalize the package:
 [functions."generate-insights-async-trigger"]
   node_bundler = "esbuild"
   external_node_modules = ["@netlify/async-workloads"]
+  # CRITICAL: Must set format to esm for .mjs files
+  [functions."generate-insights-async-trigger".build_options]
+    format = "esm"
 
 [functions."generate-insights-background"]
   node_bundler = "esbuild"
   external_node_modules = ["@netlify/async-workloads"]
   async_workloads = true
+  # CRITICAL: Must set format to esm for async workload handlers
+  [functions."generate-insights-background".build_options]
+    format = "esm"
 ```
+
+**IMPORTANT:** The `format = "esm"` setting is required to prevent Netlify from creating a CommonJS wrapper that would cause runtime errors.
 
 ### Step 3: Replace Background Calls
 Replace direct `processInsightsInBackground()` calls with workload triggers:

@@ -35,7 +35,7 @@ import { AsyncWorkloadsClient } from '@netlify/async-workloads'; // ✅ Works!
 
 ---
 
-## The Complete Solution: 4 Critical Requirements
+## The Complete Solution: 5 Critical Requirements
 
 ### 1. Use .mjs Extension (ES Module Format)
 
@@ -45,19 +45,23 @@ import { AsyncWorkloadsClient } from '@netlify/async-workloads'; // ✅ Works!
 - ❌ `generate-insights-trigger.cjs` - CommonJS (will fail)
 - ❌ `generate-insights-trigger.js` - Ambiguous (avoid)
 
-### 2. Use NFT Bundler (Not esbuild)
+### 2. Use esbuild Bundler with format = "esm"
 
 **netlify.toml configuration:**
 ```toml
 [functions."your-async-function"]
-  node_bundler = "nft"  # ✅ Reliable externalization
+  node_bundler = "esbuild"  # ✅ Works with format="esm"
   external_node_modules = ["@netlify/async-workloads"]
   async_workloads = true  # Only for workload handlers
+  # CRITICAL: Must set format to esm
+  [functions."your-async-function".build_options]
+    format = "esm"
 ```
 
-**Why NFT over esbuild:**
-- **NFT (Node File Trace):** Designed specifically for serverless functions, reliably respects `external_node_modules`
-- **esbuild:** General-purpose bundler, inconsistent with external module handling, may still bundle despite configuration
+**Why esbuild with format="esm":**
+- **esbuild + format="esm":** Outputs pure ES Modules without CommonJS wrappers, works natively with .mjs files
+- **NFT bundler:** Creates CommonJS wrapper that tries to `require()` .mjs files → runtime error
+- **The format="esm" setting is CRITICAL:** Without it, Netlify creates a wrapper file that causes `ERR_REQUIRE_ESM` errors
 
 ### 3. Direct Imports Only (No Transitive Imports)
 
@@ -200,14 +204,18 @@ export default handler;
 ```toml
 # Workload handler
 [functions."my-handler"]
-  node_bundler = "nft"
+  node_bundler = "esbuild"
   external_node_modules = ["@netlify/async-workloads"]
   async_workloads = true
+  [functions."my-handler".build_options]
+    format = "esm"
 
 # Trigger function
 [functions."my-trigger"]
-  node_bundler = "nft"
+  node_bundler = "esbuild"
   external_node_modules = ["@netlify/async-workloads"]
+  [functions."my-trigger".build_options]
+    format = "esm"
 ```
 
 ---
@@ -219,12 +227,19 @@ export default handler;
 **Symptom:**
 ```
 Error [ERR_REQUIRE_ESM]: require() of ES Module ... not supported
+OR
+Error [ERR_REQUIRE_ESM]: require() of ES Module /var/task/netlify/functions/your-function.mjs from /var/task/your-function.js not supported
 ```
 
-**Solution:**
-- Convert your function from `.cjs` to `.mjs`
-- Change `require()` to `import`
-- Change `module.exports` to `export`
+**Solutions:**
+1. Convert your function from `.cjs` to `.mjs`
+2. Change `require()` to `import`
+3. Change `module.exports` to `export`
+4. **Add format="esm" to netlify.toml build_options** (most common missing step):
+   ```toml
+   [functions."your-function".build_options]
+     format = "esm"
+   ```
 
 ### Issue 2: "function exceeds maximum size of 250 MB"
 
@@ -235,9 +250,11 @@ Deploy did not succeed with HTTP Error 400: The function exceeds the maximum siz
 
 **Solutions (in order of likelihood):**
 
-1. **Check bundler:** Must be `nft`, not `esbuild`
+1. **Check bundler:** Must be `esbuild` with format="esm", not nft
    ```toml
-   node_bundler = "nft"  # ✅ Not "esbuild"
+   node_bundler = "esbuild"  # ✅ Not "nft"
+   [functions."your-function".build_options]
+     format = "esm"
    ```
 
 2. **Check for transitive imports:** Import directly in function file
