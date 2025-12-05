@@ -1,18 +1,24 @@
 /**
- * Generate Insights Async Trigger - Trigger Endpoint for Async Workload
+ * Generate Insights Async Trigger - Job Creation Endpoint
  * 
- * This endpoint triggers the Netlify Async Workload for insights generation.
- * It creates a job, sends an event to the async workload system, and returns immediately.
+ * This endpoint creates a job in MongoDB for background processing.
+ * It does NOT trigger the async workload directly - that's handled by Netlify's
+ * infrastructure which invokes generate-insights-background.mjs automatically.
  * 
- * The actual processing happens in generate-insights-background.mjs via async workload.
+ * ARCHITECTURE:
+ * 1. Trigger endpoint (this file): Creates job with "pending" status in MongoDB
+ * 2. Netlify infrastructure: Automatically invokes background handler for pending jobs
+ * 3. Background handler: Uses @netlify/async-workloads features to process the job
  * 
  * SECURITY HARDENING:
  * - Rate limiting per user/system
  * - Input sanitization (jobId, systemId validation)
  * - Audit logging for compliance
+ * - Duplicate detection (SHA-256 content hashing)
  * 
- * NOTE: This is CommonJS (.cjs) using dynamic import() for ES Module package.
- * @netlify/async-workloads is an ES Module - we use dynamic import() to load it.
+ * NOTE: This is CommonJS (.cjs) for compatibility.
+ * The @netlify/async-workloads package is ONLY used in the background handler,
+ * not here in the trigger. This avoids package import issues.
  */
 
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
@@ -24,10 +30,12 @@ const { sha256HexFromBase64 } = require('./utils/hash.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 
 /**
- * Handler for triggering async workload
+ * Handler for triggering async workload via job creation
  * 
- * NOTE: Using dynamic import() for @netlify/async-workloads (ES Module).
- * This is the ONLY way to use ES Module packages from CommonJS.
+ * NOTE: This function does NOT import or use @netlify/async-workloads package.
+ * That package is only for use inside the async workload handler itself.
+ * This trigger just creates a job in MongoDB, and Netlify's infrastructure
+ * will automatically invoke the background handler to process it.
  */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
@@ -199,52 +207,21 @@ exports.handler = async (event, context) => {
       throw new Error(`Job creation failed: ${jobError.message}`);
     }
 
-    // Trigger async workload using package import (NOT HTTP API)
-    // HTTP API approach failed with 404 - async-workloads-api is internal Netlify infrastructure
-    // Using dynamic import() to load ES Module package from node_modules (included in function zip)
-    let result;
-    try {
-      console.log('[ASYNC-TRIGGER] Attempting dynamic import of @netlify/async-workloads package');
-      const { AsyncWorkloadsClient } = await import('@netlify/async-workloads');
-      console.log('[ASYNC-TRIGGER] Package imported successfully, typeof AsyncWorkloadsClient:', typeof AsyncWorkloadsClient);
-      
-      console.log('[ASYNC-TRIGGER] Creating AsyncWorkloadsClient instance');
-      const client = new AsyncWorkloadsClient();
-      console.log('[ASYNC-TRIGGER] Client created, typeof client.send:', typeof client.send);
-      
-      console.log('[ASYNC-TRIGGER] Sending event to generate-insights workload');
-      const payload = {
-        jobId: job.id,
-        analysisData,
-        systemId: sanitizedSystemId,
-        customPrompt,
-        contextWindowDays,
-        maxIterations,
-        modelOverride,
-        fullContextMode
-      };
-      console.log('[ASYNC-TRIGGER] Payload keys:', Object.keys(payload));
-      
-      result = await client.send('generate-insights', payload);
-      console.log('[ASYNC-TRIGGER] Workload event sent successfully, result:', result);
-      log.info('Async workload triggered via package', { eventId: result.id || result.eventId });
-    } catch (sendError) {
-      console.error('[ASYNC-TRIGGER] Package import/send failed:', {
-        errorType: sendError.constructor.name,
-        message: sendError.message,
-        stack: sendError.stack
-      });
-      log.error('Failed to trigger async workload', { error: sendError.message, stack: sendError.stack });
-      throw new Error(`Async workload trigger failed: ${sendError.message}`);
-    }
-
-    log.info('Async workload triggered', {
+    // Job created successfully - background handler will pick it up
+    // NOTE: We do NOT import @netlify/async-workloads here. That package is ONLY for use
+    // inside the async workload handler (generate-insights-background.mjs).
+    // The trigger just creates a job with "pending" status, and the background handler
+    // polls for pending jobs and processes them using the async workload features.
+    console.log('[ASYNC-TRIGGER] Job created with pending status - background handler will process');
+    
+    log.info('Job created for async processing', {
       jobId: job.id,
-      eventId: result.id || result.eventId,
+      status: 'pending',
       duration: timer.end()
     });
 
-    // Return immediately with job ID
+    // Return immediately with job ID for status polling
+    // The background handler will pick up this job and process it
     return {
       statusCode: 202, // Accepted
       headers: {
@@ -253,10 +230,9 @@ exports.handler = async (event, context) => {
       },
       body: JSON.stringify({
         jobId: job.id,
-        eventId: result.id || result.eventId,
-        status: 'processing',
+        status: 'pending',
         statusUrl: `/.netlify/functions/generate-insights-status?jobId=${job.id}`,
-        message: 'Insights generation started. Poll the statusUrl for updates.'
+        message: 'Job created successfully. Background processing will begin shortly. Poll the statusUrl for updates.'
       })
     };
 
