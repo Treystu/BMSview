@@ -11,18 +11,15 @@
 
 # Async Workloads configuration for insights generation
 # Uses Netlify's durable async workload system for extended execution
-# NOTE: Using NFT bundler - reliably keeps bundle under 250 MB with external_node_modules
+# CRITICAL: Using default bundler (no bundling) to avoid 250MB limit
 [functions."generate-insights-background"]
-  node_bundler = "nft"
   external_node_modules = ["@netlify/async-workloads"]
   async_workloads = true
 
 # Trigger endpoint for async workloads
-# CRITICAL: Using CommonJS (.cjs) with dynamic import() for @netlify/async-workloads
-# Dynamic import() is the ONLY way to use ES Module packages from CommonJS
-# NOTE: Using NFT bundler - reliably keeps bundle under 250 MB with external_node_modules
+# CRITICAL: Using default bundler (no bundling) to avoid 250MB limit
+# Dynamic import() loads @netlify/async-workloads at runtime from node_modules
 [functions."generate-insights-async-trigger"]
-  node_bundler = "nft"
   external_node_modules = ["@netlify/async-workloads"]
 
 # Admin diagnostics function - needs longer timeout for comprehensive testing
