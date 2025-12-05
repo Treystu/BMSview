@@ -11,26 +11,23 @@
  * - Input sanitization (jobId, systemId validation)
  * - Audit logging for compliance
  * 
- * NOTE: This is an ES Module (.mjs) because @netlify/async-workloads is an ES Module.
- * CommonJS cannot require() ES Modules - must use ES Module import syntax.
+ * NOTE: This is CommonJS (.cjs) using dynamic import() for ES Module package.
+ * @netlify/async-workloads is an ES Module - we use dynamic import() to load it.
  */
 
-import { createLoggerFromEvent, createTimer } from './utils/logger.cjs';
-import { getCorsHeaders } from './utils/cors.cjs';
-import { createInsightsJob } from './utils/insights-jobs.cjs';
-import { applyRateLimit, RateLimitError } from './utils/rate-limiter.cjs';
-import { sanitizeJobId, sanitizeSystemId, SanitizationError } from './utils/security-sanitizer.cjs';
-
-// Static import works with esbuild format="esm" + external configuration
-import { AsyncWorkloadsClient } from '@netlify/async-workloads';
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { getCorsHeaders } = require('./utils/cors.cjs');
+const { createInsightsJob } = require('./utils/insights-jobs.cjs');
+const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
+const { sanitizeJobId, sanitizeSystemId, SanitizationError } = require('./utils/security-sanitizer.cjs');
 
 /**
  * Handler for triggering async workload
  * 
- * NOTE: Using static import with esbuild format="esm" and external config.
- * This prevents bundling while avoiding CommonJS wrapper creation.
+ * NOTE: Using dynamic import() for @netlify/async-workloads (ES Module).
+ * This is the ONLY way to use ES Module packages from CommonJS.
  */
-export const handler = async (event, context) => {
+exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
   
   // Handle preflight
@@ -132,8 +129,9 @@ export const handler = async (event, context) => {
 
     log.info('Job created', { jobId: job.id });
 
-    // Trigger async workload using static import
-    // Works with esbuild format="esm" + external configuration
+    // Trigger async workload using dynamic import
+    // Dynamic import() is required because @netlify/async-workloads is an ES Module
+    const { AsyncWorkloadsClient } = await import('@netlify/async-workloads');
     const client = new AsyncWorkloadsClient();
     const result = await client.send('generate-insights', {
       data: {
