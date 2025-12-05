@@ -322,7 +322,7 @@ export const asyncWorkloadConfig = {
   // Event filter - only process events with valid job data
   eventFilter: (event) => {
     const { eventData } = event;
-    return eventData && (eventData.jobId || (eventData.analysisData && eventData.systemId));
+    return Boolean(eventData && eventData.jobId);
   },
   
   // Custom exponential backoff schedule
