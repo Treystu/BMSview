@@ -119,6 +119,7 @@ exports.handler = async (event, context) => {
     // Create job in MongoDB
     let job;
     try {
+      console.log('[ASYNC-TRIGGER] Creating job with params:', { systemId: sanitizedSystemId, hasAnalysisData: !!analysisData });
       job = await createInsightsJob({
         systemId: sanitizedSystemId,
         analysisData,
@@ -127,9 +128,11 @@ exports.handler = async (event, context) => {
         maxIterations,
         modelOverride,
         fullContextMode
-      });
+      }, log);  // Pass log as second argument
+      console.log('[ASYNC-TRIGGER] Job created successfully:', job.id);
       log.info('Job created', { jobId: job.id });
     } catch (jobError) {
+      console.error('[ASYNC-TRIGGER] Job creation failed:', jobError.message, jobError.stack);
       log.error('Failed to create job', { error: jobError.message, stack: jobError.stack });
       throw new Error(`Job creation failed: ${jobError.message}`);
     }
@@ -138,17 +141,22 @@ exports.handler = async (event, context) => {
     // Dynamic import() is required because @netlify/async-workloads is an ES Module
     let AsyncWorkloadsClient;
     try {
+      console.log('[ASYNC-TRIGGER] Attempting dynamic import of @netlify/async-workloads');
       const module = await import('@netlify/async-workloads');
       AsyncWorkloadsClient = module.AsyncWorkloadsClient;
+      console.log('[ASYNC-TRIGGER] AsyncWorkloadsClient imported successfully:', typeof AsyncWorkloadsClient);
       log.info('AsyncWorkloadsClient imported successfully');
     } catch (importError) {
+      console.error('[ASYNC-TRIGGER] Package import failed:', importError.message, importError.stack);
       log.error('Failed to import AsyncWorkloadsClient', { error: importError.message, stack: importError.stack });
       throw new Error(`Package import failed: ${importError.message}`);
     }
 
     let result;
     try {
+      console.log('[ASYNC-TRIGGER] Creating AsyncWorkloadsClient instance');
       const client = new AsyncWorkloadsClient();
+      console.log('[ASYNC-TRIGGER] Sending event to generate-insights workload');
       result = await client.send('generate-insights', {
         data: {
           jobId: job.id,
@@ -162,8 +170,10 @@ exports.handler = async (event, context) => {
         },
         priority: 5 // Normal priority (0-10 scale, 5 = default)
       });
+      console.log('[ASYNC-TRIGGER] Async workload event sent successfully:', result.eventId);
       log.info('Async workload event sent', { eventId: result.eventId });
     } catch (sendError) {
+      console.error('[ASYNC-TRIGGER] Async workload send failed:', sendError.message, sendError.stack);
       log.error('Failed to send async workload event', { error: sendError.message, stack: sendError.stack });
       throw new Error(`Async workload send failed: ${sendError.message}`);
     }
@@ -221,16 +231,20 @@ exports.handler = async (event, context) => {
       duration: timer.end({ error: true })
     });
 
+    console.error('[ASYNC-TRIGGER] Error caught in handler:', {
+      errorType: error.constructor.name,
+      message: error.message,
+      stack: error.stack
+    });
+
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
         error: 'INTERNAL_ERROR',
-        message: 'Failed to trigger async workload. Please try again later.',
-        // Always include error type for debugging
+        message: error.message, // Show specific error message, not generic
         errorType: error.constructor.name,
-        // Include details in both dev and production for better debugging
-        details: error.message
+        details: error.stack ? error.stack.split('\n').slice(0, 3).join('\n') : error.message
       })
     };
   }
