@@ -427,11 +427,27 @@ Check:
 
 ## Migration from Old System
 
-### Step 1: No Package Installation Required
-The trigger endpoint uses Netlify's HTTP API instead of the @netlify/async-workloads package to avoid bundle size issues (250 MB limit). The package is only used in the .mjs workload handler where it's provided by Netlify runtime.
+### Step 1: Install @netlify/async-workloads Package
+The package is required and must be listed in package.json:
+```bash
+npm install @netlify/async-workloads
+```
+
+**Bundle Size Management:** The package is externalized via `external_node_modules` configuration in netlify.toml to prevent bundling (which would exceed 250 MB limit). Netlify provides the package at runtime.
 
 ### Step 2: Update Configuration
-Update `netlify.toml` to enable async workloads
+Update `netlify.toml` to enable async workloads and externalize the package:
+
+```toml
+[functions."generate-insights-async-trigger"]
+  node_bundler = "esbuild"
+  external_node_modules = ["@netlify/async-workloads"]
+
+[functions."generate-insights-background"]
+  node_bundler = "esbuild"
+  external_node_modules = ["@netlify/async-workloads"]
+  async_workloads = true
+```
 
 ### Step 3: Replace Background Calls
 Replace direct `processInsightsInBackground()` calls with workload triggers:
