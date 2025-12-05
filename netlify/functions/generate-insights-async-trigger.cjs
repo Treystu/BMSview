@@ -150,7 +150,7 @@ exports.handler = async (event, context) => {
     log.info('Async workload triggered', {
       jobId: job.id,
       eventId: result.eventId,
-      duration: timer()
+      duration: timer.end()
     });
 
     // Return immediately with job ID
@@ -197,7 +197,7 @@ exports.handler = async (event, context) => {
     log.error('Async trigger error', {
       error: error.message,
       stack: error.stack,
-      duration: timer()
+      duration: timer.end({ error: true })
     });
 
     return {
