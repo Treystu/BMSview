@@ -29,6 +29,10 @@ const InsightModeLoadingStates: Record<InsightMode, { title: string; description
   [InsightMode.VISUAL_GURU]: {
     title: '📊 Visual Guru Expert Analyzing...',
     description: 'Generating infographic-style insights with charts for time-based metrics. Optimized for visual clarity and dashboard-ready output.'
+  },
+  [InsightMode.ASYNC_WORKLOAD]: {
+    title: '⚡ Async Workload Queued...',
+    description: 'Your analysis has been queued in Netlify\'s durable async system. This workload can run unlimited time with automatic retries. Check status via polling.'
   }
 };
 

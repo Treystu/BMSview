@@ -4,14 +4,22 @@
   functions = "netlify/functions"
 
 [build.environment]
-  NODE_VERSION = "22"
+  AWS_LAMBDA_JS_RUNTIME = "nodejs20.x"
+  NODE_VERSION = "20"
 
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
 
-# Background function configuration for long-running insights generation
+# Async Workloads configuration for insights generation
+# Uses Netlify's durable async workload system for extended execution
+# CRITICAL: Using default bundler which includes dependencies in function zip
 [functions."generate-insights-background"]
-  external_node_modules = ["@google/generative-ai"]
+  async_workloads = true
+
+# Trigger endpoint for async workloads
+# CRITICAL: Using default bundler which includes dependencies in function zip
+# Dynamic import() loads @netlify/async-workloads at runtime from node_modules
+[functions."generate-insights-async-trigger"]
 
 # Admin diagnostics function - needs longer timeout for comprehensive testing
 [functions."admin-diagnostics"]

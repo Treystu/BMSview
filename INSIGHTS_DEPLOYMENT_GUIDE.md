@@ -24,7 +24,7 @@ The Generate Insights feature has been **completely rebuilt** with full ReAct lo
 | `/generate-insights-with-tools` | **MAIN** - Full ReAct loop implementation | Sync + Background |
 | `/generate-insights` | Legacy proxy (backward compatibility) | Proxies to above |
 | `/generate-insights-status` | Job status polling | Status check |
-| `/generate-insights-background` | Long-running job processor | Background only |
+| ~~`/generate-insights-background`~~ | **DEPRECATED** - No longer used | N/A |
 
 ### Flow Diagram
 
@@ -33,19 +33,24 @@ User Request
     ↓
 generate-insights-with-tools.cjs
     ↓
-Try SYNC MODE (55s timeout)
-    ├─ Success → Return insights immediately
-    └─ Timeout → Fall back to BACKGROUND MODE
-           ↓
-       Create job in MongoDB
-           ↓
-       Start background processing
-           ↓
-       Return jobId to client
-           ↓
-       Client polls /generate-insights-status
-           ↓
-       Background completes → Client gets insights
+MODE SELECTION (based on 'mode' parameter)
+    ├─ SYNC MODE (default, 20s timeout)
+    │   ↓
+    │   Execute ReAct loop synchronously
+    │   ↓
+    │   Return insights immediately (or timeout with resume capability)
+    │
+    └─ BACKGROUND MODE (mode='background')
+        ↓
+        Create job in MongoDB
+        ↓
+        Start in-process async processing via processInsightsInBackground()
+        ↓
+        Return jobId to client immediately
+        ↓
+        Client polls /generate-insights-status
+        ↓
+        Background completes → Client gets insights
 ```
 
 ### ReAct Loop Execution

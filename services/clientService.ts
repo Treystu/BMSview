@@ -639,6 +639,9 @@ export function selectEndpointForMode(mode: InsightMode): string {
         case InsightModeEnum.VISUAL_GURU:
             // Visual Guru uses the same endpoint but with different prompt behavior
             return '/.netlify/functions/generate-insights-with-tools';
+        case InsightModeEnum.ASYNC_WORKLOAD:
+            // Async Workload uses Netlify's async workload system
+            return '/.netlify/functions/generate-insights-async-trigger';
         case InsightModeEnum.WITH_TOOLS:
         default:
             return '/.netlify/functions/generate-insights-with-tools';
