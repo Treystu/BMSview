@@ -317,7 +317,12 @@ In `netlify.toml`:
 
 ### Environment Variables
 
-No additional environment variables required. The async workloads system uses:
+Required environment variables:
+- `MONGODB_URI` – Mongo connection string for persisting jobs/checkpoints
+- `MONGODB_DB_NAME` (optional) – overrides the default database name
+- `DATA_ENCRYPTION_KEY` (optional) – enables field-level encryption of stored insights
+
+The async workloads system also uses Netlify’s built-in authentication, site-specific API endpoints, and automatic configuration.
 - Netlify's built-in authentication
 - Site-specific API endpoints
 - Automatic configuration
