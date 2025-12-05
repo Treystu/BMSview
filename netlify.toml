@@ -16,15 +16,11 @@
   external_node_modules = ["@netlify/async-workloads"]
   async_workloads = true
 
-# Event sender - sends events to async workload system
-[functions."send-insights-event"]
-  node_bundler = "esbuild"
-  external_node_modules = ["@netlify/async-workloads"]
-
-# Trigger endpoint for async workloads  
-# Does NOT import @netlify/async-workloads (calls send-insights-event instead)
+# Trigger endpoint for async workloads
+# Uses AsyncWorkloadsClient directly with externalized package
 [functions."generate-insights-async-trigger"]
   node_bundler = "esbuild"
+  external_node_modules = ["@netlify/async-workloads"]
 
 # Admin diagnostics function - needs longer timeout for comprehensive testing
 [functions."admin-diagnostics"]

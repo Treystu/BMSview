@@ -3,11 +3,11 @@
  * 
  * Triggers async workload for insights generation using TRUE Netlify Async Workloads.
  * 
- * ARCHITECTURE:
- * - Calls separate "send-insights-event" function via internal HTTP
- * - That function uses AsyncWorkloadsClient to send events
- * - Avoids importing @netlify/async-workloads in trigger function
- * - Keeps trigger lightweight while using full async workload features
+ * DIRECT ARCHITECTURE (No intermediate function):
+ * - Uses AsyncWorkloadsClient directly from @netlify/async-workloads
+ * - Package is externalized via netlify.toml configuration
+ * - This file is used by trigger function which ALSO has external_node_modules config
+ * - Avoids bundle size issues while maintaining full async workload features
  * 
  * Usage:
  * ```js
@@ -25,30 +25,13 @@
  * ```
  */
 
+const { AsyncWorkloadsClient } = require('@netlify/async-workloads');
 const { createLogger } = require('./logger.cjs');
-
-/**
- * Get base URL for internal function calls
- */
-function getBaseUrl() {
-  // In production, use Netlify URL
-  if (process.env.URL) {
-    return process.env.URL;
-  }
-  
-  // In development, use localhost
-  if (process.env.NETLIFY_DEV) {
-    return 'http://localhost:8888';
-  }
-  
-  // Fallback
-  return 'http://localhost:8888';
-}
 
 /**
  * Trigger insights generation via async workload
  * 
- * Sends event to Netlify's async workload system via separate event sender function.
+ * Sends event directly to Netlify's async workload system using AsyncWorkloadsClient.
  * 
  * @param {Object} options - Processing options
  * @param {string} options.jobId - Job identifier
@@ -83,7 +66,7 @@ async function triggerInsightsWorkload(options) {
 
   const log = createLogger('insights-async-client', { jobId });
   
-  log.info('Triggering async workload', {
+  log.info('Triggering async workload via AsyncWorkloadsClient', {
     jobId,
     hasAnalysisData: !!analysisData,
     systemId,
@@ -91,55 +74,41 @@ async function triggerInsightsWorkload(options) {
     hasDelay: !!delayUntil
   });
   
-  const baseUrl = getBaseUrl();
+  // Create async workloads client
+  const client = new AsyncWorkloadsClient();
   
-  // Call the event sender function (internal HTTP call)
-  const response = await fetch(`${baseUrl}/.netlify/functions/send-insights-event`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
+  // Send event to async workload system
+  const result = await client.send('generate-insights', {
+    data: {
+      jobId,
+      analysisData,
+      systemId,
+      customPrompt,
+      contextWindowDays,
+      maxIterations,
+      modelOverride,
+      fullContextMode
     },
-    body: JSON.stringify({
-      eventName: 'generate-insights',
-      eventData: {
-        jobId,
-        analysisData,
-        systemId,
-        customPrompt,
-        contextWindowDays,
-        maxIterations,
-        modelOverride,
-        fullContextMode
-      },
-      priority,
-      delayUntil: delayUntil instanceof Date ? delayUntil.getTime() : delayUntil
-    })
+    priority,
+    delayUntil: delayUntil instanceof Date ? delayUntil.getTime() : delayUntil
   });
   
-  if (!response.ok) {
-    const errorText = await response.text();
+  if (result.sendStatus !== 'succeeded') {
     log.error('Failed to send async workload event', {
-      status: response.status,
-      error: errorText
+      sendStatus: result.sendStatus,
+      jobId
     });
-    throw new Error(`Failed to trigger async workload: ${response.status} ${errorText}`);
+    throw new Error(`Failed to trigger async workload: ${result.sendStatus}`);
   }
   
-  const result = await response.json();
-  
-  if (!result.success) {
-    log.error('Event sender reported failure', result);
-    throw new Error(`Failed to trigger async workload: ${result.error || 'Unknown error'}`);
-  }
-  
-  log.info('Async workload triggered successfully', {
+  log.info('Async workload triggered successfully via AsyncWorkloadsClient', {
     eventId: result.eventId,
-    jobId: result.jobId
+    jobId
   });
   
   return {
     eventId: result.eventId,
-    jobId: result.jobId
+    jobId
   };
 }
 
