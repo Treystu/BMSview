@@ -117,35 +117,56 @@ exports.handler = async (event, context) => {
     });
 
     // Create job in MongoDB
-    const job = await createInsightsJob({
-      systemId: sanitizedSystemId,
-      analysisData,
-      customPrompt,
-      contextWindowDays,
-      maxIterations,
-      modelOverride,
-      fullContextMode
-    });
-
-    log.info('Job created', { jobId: job.id });
-
-    // Trigger async workload using dynamic import
-    // Dynamic import() is required because @netlify/async-workloads is an ES Module
-    const { AsyncWorkloadsClient } = await import('@netlify/async-workloads');
-    const client = new AsyncWorkloadsClient();
-    const result = await client.send('generate-insights', {
-      data: {
-        jobId: job.id,
-        analysisData,
+    let job;
+    try {
+      job = await createInsightsJob({
         systemId: sanitizedSystemId,
+        analysisData,
         customPrompt,
         contextWindowDays,
         maxIterations,
         modelOverride,
         fullContextMode
-      },
-      priority: 5 // Normal priority (0-10 scale, 5 = default)
-    });
+      });
+      log.info('Job created', { jobId: job.id });
+    } catch (jobError) {
+      log.error('Failed to create job', { error: jobError.message, stack: jobError.stack });
+      throw new Error(`Job creation failed: ${jobError.message}`);
+    }
+
+    // Trigger async workload using dynamic import
+    // Dynamic import() is required because @netlify/async-workloads is an ES Module
+    let AsyncWorkloadsClient;
+    try {
+      const module = await import('@netlify/async-workloads');
+      AsyncWorkloadsClient = module.AsyncWorkloadsClient;
+      log.info('AsyncWorkloadsClient imported successfully');
+    } catch (importError) {
+      log.error('Failed to import AsyncWorkloadsClient', { error: importError.message, stack: importError.stack });
+      throw new Error(`Package import failed: ${importError.message}`);
+    }
+
+    let result;
+    try {
+      const client = new AsyncWorkloadsClient();
+      result = await client.send('generate-insights', {
+        data: {
+          jobId: job.id,
+          analysisData,
+          systemId: sanitizedSystemId,
+          customPrompt,
+          contextWindowDays,
+          maxIterations,
+          modelOverride,
+          fullContextMode
+        },
+        priority: 5 // Normal priority (0-10 scale, 5 = default)
+      });
+      log.info('Async workload event sent', { eventId: result.eventId });
+    } catch (sendError) {
+      log.error('Failed to send async workload event', { error: sendError.message, stack: sendError.stack });
+      throw new Error(`Async workload send failed: ${sendError.message}`);
+    }
 
     log.info('Async workload triggered', {
       jobId: job.id,
@@ -206,7 +227,10 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         error: 'INTERNAL_ERROR',
         message: 'Failed to trigger async workload. Please try again later.',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        // Always include error type for debugging
+        errorType: error.constructor.name,
+        // Include details in both dev and production for better debugging
+        details: error.message
       })
     };
   }
