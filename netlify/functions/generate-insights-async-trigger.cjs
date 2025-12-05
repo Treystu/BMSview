@@ -137,50 +137,53 @@ exports.handler = async (event, context) => {
       throw new Error(`Job creation failed: ${jobError.message}`);
     }
 
-    // Trigger async workload using dynamic import
-    // Dynamic import() is required because @netlify/async-workloads is an ES Module
-    let AsyncWorkloadsClient;
-    try {
-      console.log('[ASYNC-TRIGGER] Attempting dynamic import of @netlify/async-workloads');
-      const module = await import('@netlify/async-workloads');
-      AsyncWorkloadsClient = module.AsyncWorkloadsClient;
-      console.log('[ASYNC-TRIGGER] AsyncWorkloadsClient imported successfully:', typeof AsyncWorkloadsClient);
-      log.info('AsyncWorkloadsClient imported successfully');
-    } catch (importError) {
-      console.error('[ASYNC-TRIGGER] Package import failed:', importError.message, importError.stack);
-      log.error('Failed to import AsyncWorkloadsClient', { error: importError.message, stack: importError.stack });
-      throw new Error(`Package import failed: ${importError.message}`);
-    }
-
+    // Trigger async workload via Netlify's HTTP API
+    // Netlify auto-generates async-workloads-* functions that provide the async workload system
+    // Using HTTP API avoids package import and 250MB bundle size issues
     let result;
     try {
-      console.log('[ASYNC-TRIGGER] Creating AsyncWorkloadsClient instance');
-      const client = new AsyncWorkloadsClient();
-      console.log('[ASYNC-TRIGGER] Sending event to generate-insights workload');
-      result = await client.send('generate-insights', {
-        data: {
-          jobId: job.id,
-          analysisData,
-          systemId: sanitizedSystemId,
-          customPrompt,
-          contextWindowDays,
-          maxIterations,
-          modelOverride,
-          fullContextMode
+      console.log('[ASYNC-TRIGGER] Triggering workload via HTTP API');
+      const apiUrl = `${process.env.URL}/.netlify/functions/async-workloads-api`;
+      console.log('[ASYNC-TRIGGER] API URL:', apiUrl);
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
         },
-        priority: 5 // Normal priority (0-10 scale, 5 = default)
+        body: JSON.stringify({
+          workload: 'generate-insights',
+          data: {
+            jobId: job.id,
+            analysisData,
+            systemId: sanitizedSystemId,
+            customPrompt,
+            contextWindowDays,
+            maxIterations,
+            modelOverride,
+            fullContextMode
+          },
+          priority: 5 // Normal priority (0-10 scale, 5 = default)
+        })
       });
-      console.log('[ASYNC-TRIGGER] Async workload event sent successfully:', result.eventId);
-      log.info('Async workload event sent', { eventId: result.eventId });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      
+      result = await response.json();
+      console.log('[ASYNC-TRIGGER] Workload triggered successfully:', result);
+      log.info('Async workload triggered', { workloadId: result.id || result.eventId });
     } catch (sendError) {
-      console.error('[ASYNC-TRIGGER] Async workload send failed:', sendError.message, sendError.stack);
-      log.error('Failed to send async workload event', { error: sendError.message, stack: sendError.stack });
-      throw new Error(`Async workload send failed: ${sendError.message}`);
+      console.error('[ASYNC-TRIGGER] Workload trigger failed:', sendError.message, sendError.stack);
+      log.error('Failed to trigger async workload', { error: sendError.message, stack: sendError.stack });
+      throw new Error(`Async workload trigger failed: ${sendError.message}`);
     }
 
     log.info('Async workload triggered', {
       jobId: job.id,
-      eventId: result.eventId,
+      workloadId: result.id || result.eventId,
       duration: timer.end()
     });
 
@@ -193,7 +196,7 @@ exports.handler = async (event, context) => {
       },
       body: JSON.stringify({
         jobId: job.id,
-        eventId: result.eventId,
+        workloadId: result.id || result.eventId,
         status: 'processing',
         statusUrl: `/.netlify/functions/generate-insights-status?jobId=${job.id}`,
         message: 'Insights generation started. Poll the statusUrl for updates.'
