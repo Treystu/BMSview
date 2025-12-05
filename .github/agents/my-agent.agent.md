@@ -153,7 +153,7 @@ From `ARCHITECTURE.md`, `FULL_CONTEXT_MODE.md`, insights and monitoring docs:
      - `INSIGHTS_*` and `ANALYZE_INSIGHTS_FIX_COMPLETE.md`
    - Two modes:
      - **Synchronous**: <~20 seconds total Netlify request time.
-     - **Background**: Creates jobs in `insights-jobs` and triggers the Netlify Async Workload (`generate-insights-background.mjs`) via the `/.netlify/functions/async-workloads/send` HTTP endpoint.
+     - **Background**: Creates jobs in `insights-jobs` and triggers the Netlify Async Workload (`generate-insights-background.mjs`) via the `/.netlify/functions/send-insights-event` bridge function.
 
 4. **Full Context Mode & AI Feedback System**
    - Documented in:
