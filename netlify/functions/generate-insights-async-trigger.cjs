@@ -20,6 +20,8 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 const { createInsightsJob } = require('./utils/insights-jobs.cjs');
 const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
 const { sanitizeJobId, sanitizeSystemId, SanitizationError } = require('./utils/security-sanitizer.cjs');
+const { sha256HexFromBase64 } = require('./utils/hash.cjs');
+const { getCollection } = require('./utils/mongodb.cjs');
 
 /**
  * Handler for triggering async workload
@@ -108,12 +110,72 @@ exports.handler = async (event, context) => {
     // Sanitize inputs
     const sanitizedSystemId = sanitizeSystemId(systemId, log);
 
+    // CHECK FOR DUPLICATES FIRST (same as analyze.cjs)
+    // Calculate content hash from image to check if we've already analyzed this exact screenshot
+    console.log('[ASYNC-TRIGGER] Checking for duplicate analysis');
+    let contentHash = null;
+    if (analysisData && analysisData.image) {
+      try {
+        console.log('[ASYNC-TRIGGER] Calculating content hash from image');
+        contentHash = sha256HexFromBase64(analysisData.image);
+        console.log('[ASYNC-TRIGGER] Content hash calculated:', contentHash ? contentHash.substring(0, 16) + '...' : 'null');
+      } catch (hashError) {
+        console.warn('[ASYNC-TRIGGER] Failed to calculate content hash:', hashError.message);
+        log.warn('Content hash calculation failed', { error: hashError.message });
+      }
+    }
+
+    // Check for existing analysis with same content hash
+    if (contentHash) {
+      try {
+        console.log('[ASYNC-TRIGGER] Querying database for existing analysis');
+        const resultsCol = await getCollection('analysis-results');
+        const existingAnalysis = await resultsCol.findOne({ contentHash });
+        
+        if (existingAnalysis) {
+          console.log('[ASYNC-TRIGGER] Duplicate found! Returning existing analysis:', {
+            recordId: existingAnalysis._id,
+            timestamp: existingAnalysis.timestamp,
+            hasAnalysis: !!existingAnalysis.analysis
+          });
+          
+          log.info('Duplicate analysis found, returning existing result', {
+            contentHash: contentHash.substring(0, 16) + '...',
+            recordId: existingAnalysis._id
+          });
+
+          // Return existing analysis immediately (no job creation needed)
+          return {
+            statusCode: 200,
+            headers: {
+              ...headers,
+              ...rateLimitHeaders
+            },
+            body: JSON.stringify({
+              isDuplicate: true,
+              recordId: existingAnalysis._id,
+              timestamp: existingAnalysis.timestamp,
+              analysisData: existingAnalysis.analysis,
+              message: 'This image has already been analyzed. Returning existing results.'
+            })
+          };
+        } else {
+          console.log('[ASYNC-TRIGGER] No duplicate found - proceeding with new analysis');
+        }
+      } catch (dbError) {
+        console.error('[ASYNC-TRIGGER] Database check failed:', dbError.message);
+        log.warn('Duplicate check failed, proceeding with analysis', { error: dbError.message });
+        // Continue with job creation if duplicate check fails
+      }
+    }
+
     log.info('Creating insights job', {
       systemId: sanitizedSystemId,
       hasCustomPrompt: !!customPrompt,
       contextWindowDays,
       maxIterations,
-      fullContextMode
+      fullContextMode,
+      contentHash: contentHash ? contentHash.substring(0, 16) + '...' : 'none'
     });
 
     // Create job in MongoDB
@@ -137,53 +199,48 @@ exports.handler = async (event, context) => {
       throw new Error(`Job creation failed: ${jobError.message}`);
     }
 
-    // Trigger async workload via Netlify's HTTP API
-    // Netlify auto-generates async-workloads-* functions that provide the async workload system
-    // Using HTTP API avoids package import and 250MB bundle size issues
+    // Trigger async workload using package import (NOT HTTP API)
+    // HTTP API approach failed with 404 - async-workloads-api is internal Netlify infrastructure
+    // Using dynamic import() to load ES Module package from node_modules (included in function zip)
     let result;
     try {
-      console.log('[ASYNC-TRIGGER] Triggering workload via HTTP API');
-      const apiUrl = `${process.env.URL}/.netlify/functions/async-workloads-api`;
-      console.log('[ASYNC-TRIGGER] API URL:', apiUrl);
+      console.log('[ASYNC-TRIGGER] Attempting dynamic import of @netlify/async-workloads package');
+      const { AsyncWorkloadsClient } = await import('@netlify/async-workloads');
+      console.log('[ASYNC-TRIGGER] Package imported successfully, typeof AsyncWorkloadsClient:', typeof AsyncWorkloadsClient);
       
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          workload: 'generate-insights',
-          data: {
-            jobId: job.id,
-            analysisData,
-            systemId: sanitizedSystemId,
-            customPrompt,
-            contextWindowDays,
-            maxIterations,
-            modelOverride,
-            fullContextMode
-          },
-          priority: 5 // Normal priority (0-10 scale, 5 = default)
-        })
-      });
+      console.log('[ASYNC-TRIGGER] Creating AsyncWorkloadsClient instance');
+      const client = new AsyncWorkloadsClient();
+      console.log('[ASYNC-TRIGGER] Client created, typeof client.send:', typeof client.send);
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
+      console.log('[ASYNC-TRIGGER] Sending event to generate-insights workload');
+      const payload = {
+        jobId: job.id,
+        analysisData,
+        systemId: sanitizedSystemId,
+        customPrompt,
+        contextWindowDays,
+        maxIterations,
+        modelOverride,
+        fullContextMode
+      };
+      console.log('[ASYNC-TRIGGER] Payload keys:', Object.keys(payload));
       
-      result = await response.json();
-      console.log('[ASYNC-TRIGGER] Workload triggered successfully:', result);
-      log.info('Async workload triggered', { workloadId: result.id || result.eventId });
+      result = await client.send('generate-insights', payload);
+      console.log('[ASYNC-TRIGGER] Workload event sent successfully, result:', result);
+      log.info('Async workload triggered via package', { eventId: result.id || result.eventId });
     } catch (sendError) {
-      console.error('[ASYNC-TRIGGER] Workload trigger failed:', sendError.message, sendError.stack);
+      console.error('[ASYNC-TRIGGER] Package import/send failed:', {
+        errorType: sendError.constructor.name,
+        message: sendError.message,
+        stack: sendError.stack
+      });
       log.error('Failed to trigger async workload', { error: sendError.message, stack: sendError.stack });
       throw new Error(`Async workload trigger failed: ${sendError.message}`);
     }
 
     log.info('Async workload triggered', {
       jobId: job.id,
-      workloadId: result.id || result.eventId,
+      eventId: result.id || result.eventId,
       duration: timer.end()
     });
 
@@ -196,7 +253,7 @@ exports.handler = async (event, context) => {
       },
       body: JSON.stringify({
         jobId: job.id,
-        workloadId: result.id || result.eventId,
+        eventId: result.id || result.eventId,
         status: 'processing',
         statusUrl: `/.netlify/functions/generate-insights-status?jobId=${job.id}`,
         message: 'Insights generation started. Poll the statusUrl for updates.'
