@@ -18,12 +18,14 @@
 import { createLoggerFromEvent, createTimer } from './utils/logger.cjs';
 import { getCorsHeaders } from './utils/cors.cjs';
 import { createInsightsJob } from './utils/insights-jobs.cjs';
-import { AsyncWorkloadsClient } from '@netlify/async-workloads';
 import { applyRateLimit, RateLimitError } from './utils/rate-limiter.cjs';
 import { sanitizeJobId, sanitizeSystemId, SanitizationError } from './utils/security-sanitizer.cjs';
 
 /**
  * Handler for triggering async workload
+ * 
+ * NOTE: AsyncWorkloadsClient is dynamically imported to avoid bundling issues.
+ * This allows external_node_modules to work properly with NFT bundler.
  */
 export const handler = async (event, context) => {
   const headers = getCorsHeaders(event);
@@ -128,6 +130,8 @@ export const handler = async (event, context) => {
     log.info('Job created', { jobId: job.id });
 
     // Trigger async workload
+    // Dynamic import to avoid bundling with NFT
+    const { AsyncWorkloadsClient } = await import('@netlify/async-workloads');
     const client = new AsyncWorkloadsClient();
     const result = await client.send('generate-insights', {
       data: {
