@@ -8,8 +8,9 @@ The `generate-insights-background.cjs` endpoint has been deprecated and will be 
 
 Previously, the BMSview architecture included a separate HTTP endpoint (`generate-insights-background.cjs`) intended for long-running background insights processing. However, analysis of the actual workflow revealed that:
 
-1. The main endpoint (`generate-insights-with-tools.cjs`) handles background mode directly
-2. Background processing happens in-process via `processInsightsInBackground()` 
+1. The async trigger (`generate-insights-async-trigger.cjs`) now enqueues background jobs via Netlify Async Workloads
+2. Work is processed inside the workload handler (`generate-insights-background.mjs`), so nothing runs in-process in `generate-insights-with-tools.cjs`
+3. `generate-insights-background.cjs` is deprecated in favor of the async workload handler
 3. The `generate-insights-background.cjs` endpoint handled background processing for long-running jobs.
    This has been replaced with Netlify Async Workloads for better resilience and unlimited execution time.
 
