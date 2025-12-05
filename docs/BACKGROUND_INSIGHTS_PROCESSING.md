@@ -4,7 +4,7 @@ This document explains the background processing implementation for AI-powered i
 
 ## Overview
 
-The background processing system allows AI insights generation to run asynchronously for up to 15 minutes (vs 20 seconds for synchronous requests), providing real-time progress updates via job polling.
+The background processing system allows AI insights generation to run asynchronously for up to 15 minutes (vs 55 seconds for synchronous requests), providing real-time progress updates via job polling.
 
 **Note:** As of this deprecation (December 2024), background processing happens in-process via `processInsightsInBackground()` 
 called directly from `generate-insights-with-tools.cjs`. The separate `generate-insights-background.cjs` endpoint 
