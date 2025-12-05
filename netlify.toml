@@ -11,15 +11,17 @@
 
 # Async Workloads configuration for insights generation
 # Uses Netlify's durable async workload system for extended execution
+# NOTE: Using nft (Node File Trace) bundler for better external module support
 [functions."generate-insights-background"]
-  node_bundler = "esbuild"
+  node_bundler = "nft"
   external_node_modules = ["@netlify/async-workloads"]
   async_workloads = true
 
 # Trigger endpoint for async workloads
 # Uses AsyncWorkloadsClient directly with externalized package
+# NOTE: Using nft (Node File Trace) bundler for better external module support
 [functions."generate-insights-async-trigger"]
-  node_bundler = "esbuild"
+  node_bundler = "nft"
   external_node_modules = ["@netlify/async-workloads"]
 
 # Admin diagnostics function - needs longer timeout for comprehensive testing
