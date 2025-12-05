@@ -11,19 +11,25 @@
 
 # Async Workloads configuration for insights generation
 # Uses Netlify's durable async workload system for extended execution
-# NOTE: Using nft bundler - external_node_modules keeps package out of bundle
+# NOTE: Using esbuild with format="esm" and external config
 [functions."generate-insights-background"]
-  node_bundler = "nft"
+  node_bundler = "esbuild"
   external_node_modules = ["@netlify/async-workloads"]
   async_workloads = true
+  [functions."generate-insights-background".build_options]
+    format = "esm"
+    external = ["@netlify/async-workloads"]
 
 # Trigger endpoint for async workloads
 # CRITICAL: Must be .mjs (ES Module) because @netlify/async-workloads is an ES Module
 # CommonJS (.cjs) cannot require() ES Modules - will fail at runtime
-# NOTE: Using nft bundler - external_node_modules keeps bundle under 250 MB
+# NOTE: Using esbuild with format="esm" to prevent CommonJS wrapper creation
 [functions."generate-insights-async-trigger"]
-  node_bundler = "nft"
+  node_bundler = "esbuild"
   external_node_modules = ["@netlify/async-workloads"]
+  [functions."generate-insights-async-trigger".build_options]
+    format = "esm"
+    external = ["@netlify/async-workloads"]
 
 # Admin diagnostics function - needs longer timeout for comprehensive testing
 [functions."admin-diagnostics"]
