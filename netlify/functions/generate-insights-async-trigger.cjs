@@ -15,7 +15,7 @@
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { createInsightsJob } = require('./utils/insights-jobs.cjs');
-const { triggerInsightsWorkload } = require('./utils/insights-async-client.cjs');
+const { AsyncWorkloadsClient } = require('@netlify/async-workloads');
 const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
 const { sanitizeJobId, sanitizeSystemId, SanitizationError } = require('./utils/security-sanitizer.cjs');
 
@@ -167,8 +167,10 @@ exports.handler = async (event, context) => {
     
     log.info('Job created, triggering async workload', { jobId: job.id });
     
-    // Trigger async workload event
-    const { eventId } = await triggerInsightsWorkload({
+    // Trigger async workload event directly using AsyncWorkloadsClient
+    // Package is externalized via netlify.toml, not bundled into function
+    const client = new AsyncWorkloadsClient();
+    const eventData = {
       jobId: job.id,
       analysisData,
       systemId: sanitizedSystemId,
@@ -176,9 +178,15 @@ exports.handler = async (event, context) => {
       contextWindowDays,
       maxIterations,
       modelOverride,
-      fullContextMode,
+      fullContextMode
+    };
+    
+    const result = await client.send('generate-insights', {
+      data: eventData,
       priority: 5 // Normal priority
     });
+    
+    const eventId = result.eventId;
     
     const durationMs = timer.end({ jobId: job.id, eventId });
     log.info('Async workload triggered successfully', { jobId: job.id, eventId, durationMs });
