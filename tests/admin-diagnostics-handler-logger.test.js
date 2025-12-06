@@ -117,8 +117,10 @@ describe('Admin Diagnostics Handler Logger Integration', () => {
   });
 
   test('logger should be called during handler execution', async () => {
+    // Use POST request instead of OPTIONS to ensure logger is initialized
     const mockEvent = {
-      httpMethod: 'OPTIONS',
+      httpMethod: 'POST',
+      body: JSON.stringify({ selectedTests: [] }),
       headers: {}
     };
 
