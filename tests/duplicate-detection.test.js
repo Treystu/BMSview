@@ -11,9 +11,14 @@ jest.mock('../utils', () => ({
 // Mock the checkHashes service directly
 jest.mock('../services/clientService', () => ({
   checkHashes: jest.fn().mockImplementation(async (hashes) => {
+    const duplicatesWithData = hashes
+      .filter(h => h === 'hash-existing-perfect.png')
+      .map(hash => ({ hash, data: { soc: 85, voltage: 13.2 } }));
+    const upgradeHashes = hashes.filter(h => h === 'hash-existing-imperfect.png');
+    
     return {
-      duplicates: hashes.filter(h => h === 'hash-existing-perfect.png'),
-      upgrades: hashes.filter(h => h === 'hash-existing-imperfect.png'),
+      duplicates: duplicatesWithData,
+      upgrades: upgradeHashes,
     };
   }),
 }));
@@ -46,15 +51,24 @@ describe('useFileUpload with duplicate detection', () => {
       await result.current.processFileList(dataTransfer.files);
     });
 
-    // new-file.png and existing-imperfect.png (for upgrade) should be in files
-    expect(result.current.files.length).toBe(2);
-    expect(result.current.files.some(f => f.name === 'new-file.png')).toBe(true);
-    const imperfectFile = result.current.files.find(f => f.name === 'existing-imperfect.png');
-    expect(imperfectFile).toBeDefined();
-    expect(imperfectFile._isUpgrade).toBe(true);
+    // All files should be in the files array now (duplicates are marked but not skipped)
+    // existing-perfect.png (duplicate), new-file.png (new), existing-imperfect.png (upgrade)
+    expect(result.current.files.length).toBe(3);
     
-    // existing-perfect.png should be skipped
-    expect(result.current.skippedFiles.size).toBe(1);
-    expect(result.current.skippedFiles.get('existing-perfect.png')).toBe('Skipped (duplicate)');
+    // Check new file
+    expect(result.current.files.some(f => f.name === 'new-file.png')).toBe(true);
+    
+    // Check duplicate file (should be marked)
+    const duplicateFile = result.current.files.find(f => f.name === 'existing-perfect.png');
+    expect(duplicateFile).toBeDefined();
+    expect(duplicateFile._isDuplicate).toBe(true);
+    
+    // Check upgrade file (should be marked)
+    const upgradeFile = result.current.files.find(f => f.name === 'existing-imperfect.png');
+    expect(upgradeFile).toBeDefined();
+    expect(upgradeFile._isUpgrade).toBe(true);
+    
+    // No files should be skipped in the current implementation
+    expect(result.current.skippedFiles.size).toBe(0);
   });
 });
