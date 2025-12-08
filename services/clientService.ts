@@ -1939,47 +1939,48 @@ export const mergeBmsSystems = async (primarySystemId: string, idsToMerge: strin
 };
 
 export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> => {
-    log('info', 'Finding duplicate analysis sets.');
-    const allHistory = await apiFetch<AnalysisRecord[]>('history?all=true');
-    const recordsByKey = new Map<string, AnalysisRecord[]>();
-
-    for (const record of allHistory) {
-        if (!record.analysis) continue;
-        const key = generateAnalysisKey(record.analysis);
-        if (!recordsByKey.has(key)) {
-            recordsByKey.set(key, []);
-        }
-        recordsByKey.get(key)!.push(record);
-    }
-
-    const finalSets: AnalysisRecord[][] = [];
-    const TIME_WINDOW_MS = 5 * 60 * 1000;
-
-    for (const group of recordsByKey.values()) {
-        if (group.length < 2) continue;
-
-        const sortedGroup = group.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-
-        let i = 0;
-        while (i < sortedGroup.length) {
-            const currentSet = [sortedGroup[i]];
-            const startTime = new Date(sortedGroup[i].timestamp).getTime();
-            let j = i + 1;
-
-            while (j < sortedGroup.length && (new Date(sortedGroup[j].timestamp).getTime() - startTime <= TIME_WINDOW_MS)) {
-                currentSet.push(sortedGroup[j]);
-                j++;
-            }
-
-            if (currentSet.length > 1) {
-                finalSets.push(currentSet);
-            }
-
-            i = j;
-        }
-    }
-    log('info', 'Duplicate scan complete on client.', { foundSets: finalSets.length });
-    return finalSets;
+    log('info', 'Finding duplicate analysis sets using backend endpoint.');
+    
+    // Use backend endpoint for consistent duplicate detection (contentHash-based)
+    const response = await apiFetch<{
+        duplicateSets: Array<Array<{
+            id: string;
+            timestamp: string;
+            systemName: string;
+            dlNumber: string | null;
+            fileName: string;
+            validationScore: number;
+            contentHash: string;
+        }>>;
+        summary: {
+            totalRecords: number;
+            duplicateSets: number;
+            totalDuplicates: number;
+        };
+    }>('admin-scan-duplicates');
+    
+    // Convert backend format to AnalysisRecord format for compatibility
+    // Note: Backend returns minimal info, we need to fetch full records if needed
+    // For now, return the sets as-is since we only need id, timestamp, systemName, dlNumber for UI
+    const sets = response.duplicateSets.map(set => 
+        set.map(record => ({
+            id: record.id,
+            timestamp: record.timestamp,
+            systemId: record.systemName,
+            dlNumber: record.dlNumber,
+            fileName: record.fileName,
+            validationScore: record.validationScore,
+            // Minimal record - enough for display and deletion
+            analysis: { dlNumber: record.dlNumber }
+        } as AnalysisRecord))
+    );
+    
+    log('info', 'Duplicate scan complete via backend.', { 
+        foundSets: sets.length,
+        totalDuplicates: response.summary.totalDuplicates
+    });
+    
+    return sets;
 };
 
 export const deleteAnalysisRecords = async (recordIds: string[]): Promise<void> => {

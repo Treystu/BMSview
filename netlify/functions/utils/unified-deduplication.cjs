@@ -104,6 +104,16 @@ function checkNeedsUpgrade(record) {
     return { needsUpgrade: true, reason: 'Missing analysis data' };
   }
 
+  // Check if record is marked as complete (admin override or confident extraction)
+  // Complete records are NEVER upgraded unless explicitly forced by admin
+  if (record.isComplete === true) {
+    return {
+      needsUpgrade: false,
+      reason: 'Record marked as complete',
+      isComplete: true
+    };
+  }
+
   // CRITICAL: Check for missing critical fields FIRST (highest priority)
   // This must come before validation score check
   const hasAllCriticalFields = CRITICAL_FIELDS.every(field =>
@@ -125,7 +135,7 @@ function checkNeedsUpgrade(record) {
   }
 
   // Check if this record has already been retried with no improvement
-  // If so, don't upgrade again (prevents infinite retry loops)
+  // If so, mark as complete and don't upgrade again (prevents infinite retry loops)
   const hasBeenRetriedWithNoImprovement =
     (record.validationScore !== undefined && record.validationScore < 100) &&
     (record.extractionAttempts || 1) >= 2 &&
@@ -137,7 +147,8 @@ function checkNeedsUpgrade(record) {
   if (hasBeenRetriedWithNoImprovement) {
     return { 
       needsUpgrade: false, 
-      reason: 'Already retried with no improvement' 
+      reason: 'Already retried with no improvement',
+      shouldMarkComplete: true // Signal that this should be marked complete
     };
   }
 
@@ -152,7 +163,14 @@ function checkNeedsUpgrade(record) {
   }
 
   // Record has acceptable quality (all critical fields + score ≥ 80%)
-  return { needsUpgrade: false, reason: null };
+  // Mark as complete if score is high or if we've exhausted retries
+  const shouldMarkComplete = validationScore >= DUPLICATE_UPGRADE_THRESHOLD || (record.extractionAttempts || 1) >= 2;
+  
+  return { 
+    needsUpgrade: false, 
+    reason: null,
+    shouldMarkComplete 
+  };
 }
 
 /**
