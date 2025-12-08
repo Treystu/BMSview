@@ -1,0 +1,326 @@
+/**
+ * Unified Deduplication Utility
+ * 
+ * Consolidates all deduplication logic across the codebase:
+ * - Image content hashing (SHA-256 from base64)
+ * - Analysis result deduplication  
+ * - AI feedback deduplication
+ * - Quality-based upgrade detection
+ * 
+ * This module provides a single source of truth for duplicate detection
+ * to ensure consistency across analyze.cjs, check-duplicates-batch.cjs,
+ * feedback systems, and frontend utilities.
+ */
+
+const crypto = require('crypto');
+const { createLogger } = require('./logger.cjs');
+
+// Import existing constants for backward compatibility
+const { 
+  DUPLICATE_UPGRADE_THRESHOLD, 
+  MIN_QUALITY_IMPROVEMENT, 
+  CRITICAL_FIELDS 
+} = require('./duplicate-constants.cjs');
+
+/**
+ * Calculate SHA-256 hash from base64-encoded image
+ * This is the canonical method for image content hashing
+ * 
+ * @param {string} base64String - Base64-encoded image data
+ * @returns {string|null} - Hex-encoded SHA-256 hash or null on error
+ */
+function calculateImageHash(base64String) {
+  try {
+    const buffer = Buffer.from(base64String, 'base64');
+    return crypto.createHash('sha256').update(buffer).digest('hex');
+  } catch (error) {
+    console.error('Error calculating image hash:', error);
+    return null;
+  }
+}
+
+/**
+ * Calculate SHA-256 hash from JSON object
+ * Used for AI feedback and structured data deduplication
+ * 
+ * @param {Object} content - Object to hash
+ * @returns {string} - Hex-encoded SHA-256 hash
+ */
+function calculateContentHash(content) {
+  return crypto.createHash('sha256').update(JSON.stringify(content)).digest('hex');
+}
+
+/**
+ * Check if an analysis record needs quality upgrade
+ * Based on validation score and critical field completeness
+ * 
+ * @param {Object} record - Analysis record to check
+ * @param {number} record.validationScore - Quality/confidence score (0-100)
+ * @param {Object} record.analysis - Analysis data object
+ * @returns {Object} - { needsUpgrade: boolean, reason: string|null }
+ */
+function checkNeedsUpgrade(record) {
+  if (!record || !record.analysis) {
+    return { needsUpgrade: true, reason: 'Missing analysis data' };
+  }
+
+  // Check validation score
+  const validationScore = record.validationScore || 0;
+  if (validationScore < DUPLICATE_UPGRADE_THRESHOLD) {
+    return { 
+      needsUpgrade: true, 
+      reason: `Low quality score: ${validationScore}% < ${DUPLICATE_UPGRADE_THRESHOLD}%` 
+    };
+  }
+
+  // Check for missing critical fields
+  const missingFields = CRITICAL_FIELDS.filter(field => {
+    const value = record.analysis[field];
+    return value === null || value === undefined;
+  });
+
+  if (missingFields.length > 0) {
+    return { 
+      needsUpgrade: true, 
+      reason: `Missing critical fields: ${missingFields.join(', ')}` 
+    };
+  }
+
+  return { needsUpgrade: false, reason: null };
+}
+
+/**
+ * Find duplicate analysis record by content hash
+ * 
+ * @param {string} contentHash - SHA-256 hash of image content
+ * @param {Object} collection - MongoDB collection instance
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object|null>} - Duplicate record or null
+ */
+async function findDuplicateByHash(contentHash, collection, log) {
+  try {
+    const duplicate = await collection.findOne({ contentHash });
+    
+    if (duplicate) {
+      log.info('Duplicate found by content hash', {
+        recordId: duplicate._id,
+        contentHash: contentHash.substring(0, 16) + '...',
+        timestamp: duplicate.timestamp
+      });
+      
+      return duplicate;
+    }
+    
+    return null;
+  } catch (error) {
+    log.error('Error finding duplicate by hash', { error: error.message });
+    return null;
+  }
+}
+
+/**
+ * Comprehensive duplicate detection for analysis records
+ * Returns both duplicate status and upgrade recommendation
+ * 
+ * @param {string} base64Image - Base64-encoded image
+ * @param {Object} collection - MongoDB analysis-results collection
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} - { isDuplicate, needsUpgrade, existingRecord, contentHash }
+ */
+async function detectAnalysisDuplicate(base64Image, collection, log) {
+  // Calculate content hash
+  const contentHash = calculateImageHash(base64Image);
+  
+  if (!contentHash) {
+    return {
+      isDuplicate: false,
+      needsUpgrade: false,
+      existingRecord: null,
+      contentHash: null,
+      error: 'Failed to calculate content hash'
+    };
+  }
+
+  // Find existing record
+  const existingRecord = await findDuplicateByHash(contentHash, collection, log);
+
+  if (!existingRecord) {
+    return {
+      isDuplicate: false,
+      needsUpgrade: false,
+      existingRecord: null,
+      contentHash
+    };
+  }
+
+  // Check if existing record needs upgrade
+  const upgradeCheck = checkNeedsUpgrade(existingRecord);
+
+  return {
+    isDuplicate: true,
+    needsUpgrade: upgradeCheck.needsUpgrade,
+    upgradeReason: upgradeCheck.reason,
+    existingRecord,
+    contentHash
+  };
+}
+
+/**
+ * Calculate text similarity using Jaccard index
+ * Used for semantic duplicate detection in AI feedback
+ * 
+ * @param {string} str1 - First string
+ * @param {string} str2 - Second string
+ * @returns {number} - Similarity score between 0 and 1
+ */
+function calculateTextSimilarity(str1, str2) {
+  const s1 = str1.toLowerCase().trim();
+  const s2 = str2.toLowerCase().trim();
+  
+  if (s1 === s2) return 1.0;
+  if (s1.length === 0 && s2.length === 0) return 1.0;
+  
+  const words1 = new Set(s1.split(/\s+/).filter(w => w.length > 0));
+  const words2 = new Set(s2.split(/\s+/).filter(w => w.length > 0));
+  
+  if (words1.size === 0 && words2.size === 0) return 1.0;
+  if (words1.size === 0 || words2.size === 0) return 0;
+  
+  const intersection = new Set([...words1].filter(x => words2.has(x)));
+  const union = new Set([...words1, ...words2]);
+  
+  if (union.size === 0) return 0;
+  
+  return intersection.size / union.size;
+}
+
+/**
+ * Detect semantic duplicates in AI feedback
+ * Combines exact hash matching with similarity scoring
+ * 
+ * @param {Object} newFeedback - New feedback to check
+ * @param {Object} collection - MongoDB feedback collection
+ * @param {Object} options - { similarityThreshold: number }
+ * @param {Object} log - Logger instance
+ * @returns {Promise<Object>} - { isDuplicate, matchType, existingId, similarity, similarItems }
+ */
+async function detectFeedbackDuplicate(newFeedback, collection, options = {}, log) {
+  const similarityThreshold = options.similarityThreshold || 0.7;
+  
+  try {
+    // 1. Exact hash match
+    const contentHash = calculateContentHash(newFeedback.suggestion);
+    
+    const exactMatch = await collection.findOne({
+      contentHash,
+      status: { $in: ['pending', 'reviewed', 'accepted'] }
+    });
+    
+    if (exactMatch) {
+      log.info('Exact feedback duplicate found', { existingId: exactMatch.id });
+      return {
+        isDuplicate: true,
+        matchType: 'exact',
+        existingId: exactMatch.id,
+        similarity: 1.0,
+        similarItems: []
+      };
+    }
+    
+    // 2. Semantic similarity check
+    const recentFeedback = await collection
+      .find({
+        systemId: newFeedback.systemId,
+        status: { $nin: ['rejected'] }
+      })
+      .limit(100)
+      .toArray();
+    
+    const similarItems = [];
+    
+    for (const existing of recentFeedback) {
+      if (existing.status === 'rejected' || existing.status === 'implemented') {
+        continue;
+      }
+      
+      const titleSim = calculateTextSimilarity(
+        newFeedback.suggestion.title,
+        existing.suggestion.title
+      );
+      const descSim = calculateTextSimilarity(
+        newFeedback.suggestion.description,
+        existing.suggestion.description
+      );
+      const ratSim = calculateTextSimilarity(
+        newFeedback.suggestion.rationale,
+        existing.suggestion.rationale
+      );
+      
+      const overallSim = titleSim * 0.5 + descSim * 0.3 + ratSim * 0.2;
+      
+      if (overallSim >= similarityThreshold) {
+        similarItems.push({
+          feedbackId: existing.id,
+          similarity: Math.round(overallSim * 100) / 100,
+          existing: {
+            title: existing.suggestion.title,
+            status: existing.status,
+            priority: existing.priority
+          }
+        });
+      }
+    }
+    
+    similarItems.sort((a, b) => b.similarity - a.similarity);
+    
+    if (similarItems.length > 0 && similarItems[0].similarity >= 0.9) {
+      log.info('High similarity feedback duplicate found', {
+        existingId: similarItems[0].feedbackId,
+        similarity: similarItems[0].similarity
+      });
+      return {
+        isDuplicate: true,
+        matchType: 'similar',
+        existingId: similarItems[0].feedbackId,
+        similarity: similarItems[0].similarity,
+        similarItems: similarItems.slice(0, 5)
+      };
+    }
+    
+    return {
+      isDuplicate: false,
+      matchType: 'none',
+      existingId: null,
+      similarity: 0,
+      similarItems: similarItems.slice(0, 5)
+    };
+  } catch (error) {
+    log.error('Feedback duplicate detection failed', { error: error.message });
+    return {
+      isDuplicate: false,
+      matchType: 'error',
+      error: error.message,
+      similarItems: []
+    };
+  }
+}
+
+module.exports = {
+  // Hash functions
+  calculateImageHash,
+  calculateContentHash,
+  
+  // Analysis duplicate detection
+  detectAnalysisDuplicate,
+  findDuplicateByHash,
+  checkNeedsUpgrade,
+  
+  // Feedback duplicate detection
+  detectFeedbackDuplicate,
+  calculateTextSimilarity,
+  
+  // Constants (re-exported for convenience)
+  DUPLICATE_UPGRADE_THRESHOLD,
+  MIN_QUALITY_IMPROVEMENT,
+  CRITICAL_FIELDS
+};
