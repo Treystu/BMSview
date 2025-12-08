@@ -1,6 +1,6 @@
 ---
 schema-version: v1
-name: "BMSView Agent"
+name: "BMSView Agent Old"
 description: "Grounded, change-verifying agent for BMSview"
 model: "gpt-4.1"
 ---
