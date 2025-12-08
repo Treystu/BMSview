@@ -11,18 +11,19 @@
  * - utils/validation: { parseJsonBody, validateAnalyzeRequest, validateImagePayload } - Request validation
  * - utils/logger: { createLogger, createTimer } - Logging and timing utilities
  * - utils/analysis-pipeline: { performAnalysisPipeline } - Core analysis implementation
- * - utils/hash: { sha256HexFromBase64 } - Content hashing utilities
+ * - utils/unified-deduplication: Canonical duplicate detection and content hashing
  * - utils/mongodb: { getCollection } - MongoDB connection and collection access
  * - utils/retry: { withTimeout, retryAsync, circuitBreaker } - Retry and circuit breaker patterns
- * - utils/duplicate-constants: Shared constants for duplicate detection logic
- * * Required Environment Variables:
+ * 
+ * Required Environment Variables:
  * - ANALYSIS_TIMEOUT_MS: Analysis pipeline timeout (default: 60000)
  * - ANALYSIS_RETRIES: Number of retry attempts (default: 2)
  * - ANALYSIS_RETRY_BASE_MS: Base delay between retries (default: 250)
  * - ANALYSIS_RETRY_JITTER_MS: Jitter added to retry delay (default: 200)
  * - CB_FAILURES: Circuit breaker failure threshold (default: 5)
  * - CB_OPEN_MS: Circuit breaker open duration (default: 30000)
- * * MongoDB Collections Used:
+ * 
+ * MongoDB Collections Used:
  * - idempotent-requests: Stores request/response pairs for idempotency
  * - analysis-results: Stores analysis results and content hashes for deduplication
  * - progress-events: Stores legacy job progress events

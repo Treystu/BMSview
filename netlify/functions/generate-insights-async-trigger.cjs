@@ -26,7 +26,7 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 const { createInsightsJob } = require('./utils/insights-jobs.cjs');
 const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
 const { sanitizeJobId, sanitizeSystemId, SanitizationError } = require('./utils/security-sanitizer.cjs');
-const { sha256HexFromBase64 } = require('./utils/hash.cjs');
+const { calculateImageHash } = require('./utils/unified-deduplication.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 
 /**
@@ -125,7 +125,7 @@ exports.handler = async (event, context) => {
     if (analysisData && analysisData.image) {
       try {
         console.log('[ASYNC-TRIGGER] Calculating content hash from image');
-        contentHash = sha256HexFromBase64(analysisData.image);
+        contentHash = calculateImageHash(analysisData.image);
         console.log('[ASYNC-TRIGGER] Content hash calculated:', contentHash ? contentHash.substring(0, 16) + '...' : 'null');
       } catch (hashError) {
         console.warn('[ASYNC-TRIGGER] Failed to calculate content hash:', hashError.message);
