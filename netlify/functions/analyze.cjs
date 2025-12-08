@@ -96,13 +96,20 @@ function validateEnvironment(log) {
  */
 function getErrorStatusCode(error) {
   const message = error.message || '';
+  const code = error.code || '';
 
+  // Gateway timeout for backend service timeouts (504)
+  if (code === 'operation_timeout' || message.includes('operation_timeout')) {
+    return 504;
+  }
+  
   // Client errors (400-499)
   if (message.includes('invalid') || message.includes('validation')) return 400;
   if (message.includes('unauthorized') || message.includes('authentication')) return 401;
   if (message.includes('forbidden')) return 403;
   if (message.includes('not found')) return 404;
-  if (message.includes('timeout') || message.includes('TIMEOUT')) return 408;
+  // Client-side timeout (408) for generic timeout messages
+  if (message.includes('timeout') || message.includes('TIMEOUT') || message.includes('timed out')) return 408;
   if (message.includes('quota') || message.includes('rate limit')) return 429;
 
   // Service errors (500-599)
@@ -121,6 +128,10 @@ function getErrorStatusCode(error) {
 function getErrorCode(error) {
   const message = error.message || '';
 
+  const code = error.code || '';
+  
+  // Gateway timeout for backend service timeouts
+  if (code === 'operation_timeout' || message.includes('operation_timeout')) return 'gateway_timeout';
   if (message.includes('timeout') || message.includes('TIMEOUT')) return 'analysis_timeout';
   if (message.includes('quota') || message.includes('rate limit')) return 'quota_exceeded';
   if (message.includes('ECONNREFUSED') || message.includes('connection')) return 'database_unavailable';

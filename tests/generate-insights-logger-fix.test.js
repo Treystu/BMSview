@@ -23,7 +23,20 @@ jest.mock('../netlify/functions/utils/logger.cjs', () => ({
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
-    debug: jest.fn()
+    debug: jest.fn(),
+    entry: jest.fn(),
+    exit: jest.fn()
+  }),
+  createLoggerFromEvent: jest.fn().mockReturnValue({
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    entry: jest.fn(),
+    exit: jest.fn()
+  }),
+  createTimer: jest.fn().mockReturnValue({
+    end: jest.fn()
   })
 }));
 
@@ -51,7 +64,7 @@ describe('generate-insights logger fix', () => {
   };
 
   test('handler creates logger instance without error', async () => {
-    const { createLogger } = require('../netlify/functions/utils/logger.cjs');
+    const { createLoggerFromEvent } = require('../netlify/functions/utils/logger.cjs');
     
     const event = {
       httpMethod: 'POST',
@@ -63,8 +76,8 @@ describe('generate-insights logger fix', () => {
     // Call handler - it should create a logger instance
     await handler(event, mockContext);
     
-    // Verify createLogger was called with the legacy name
-    expect(createLogger).toHaveBeenCalledWith('generate-insights-legacy', mockContext);
+    // Verify createLoggerFromEvent was called with the legacy name
+    expect(createLoggerFromEvent).toHaveBeenCalledWith('generate-insights-legacy', event, mockContext);
   });
 
   test.skip('generateInsightsWithTools creates logger instance without error', async () => {
