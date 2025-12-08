@@ -10,14 +10,16 @@
 const { errorResponse } = require('./utils/errors.cjs');
 const { parseJsonBody } = require('./utils/validation.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
-const { sha256HexFromBase64 } = require('./utils/hash.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
-const { 
-  DUPLICATE_UPGRADE_THRESHOLD, 
-  MIN_QUALITY_IMPROVEMENT, 
-  CRITICAL_FIELDS 
-} = require('./utils/duplicate-constants.cjs');
+// Use unified deduplication module as canonical source
+const {
+  calculateImageHash,
+  checkNeedsUpgrade,
+  DUPLICATE_UPGRADE_THRESHOLD,
+  MIN_QUALITY_IMPROVEMENT,
+  CRITICAL_FIELDS
+} = require('./utils/unified-deduplication.cjs');
 
 /**
  * Batch check for existing analyses by content hash
@@ -72,7 +74,8 @@ async function batchCheckExistingAnalyses(contentHashes, log) {
 }
 
 /**
- * Determine if an existing record needs upgrade
+ * Determine if an existing record needs upgrade using unified deduplication
+ * This is now a wrapper around checkNeedsUpgrade from unified-deduplication.cjs
  * @param {any} existing - Existing analysis record
  * @returns {{ needsUpgrade: boolean, reason?: string }}
  */
@@ -81,48 +84,8 @@ function checkIfNeedsUpgrade(existing) {
     return { needsUpgrade: false };
   }
   
-  const hasAllCriticalFields = CRITICAL_FIELDS.every(field =>
-    existing.analysis &&
-    existing.analysis[field] !== null &&
-    existing.analysis[field] !== undefined
-  );
-  
-  if (!hasAllCriticalFields) {
-    const missingFields = CRITICAL_FIELDS.filter(field => 
-      !existing.analysis || 
-      existing.analysis[field] === null || 
-      existing.analysis[field] === undefined
-    );
-    return { 
-      needsUpgrade: true, 
-      reason: `Missing ${missingFields.length} critical fields: ${missingFields.slice(0, 3).join(', ')}` 
-    };
-  }
-  
-  // Check if already retried with no improvement
-  const hasBeenRetriedWithNoImprovement =
-    (existing.validationScore !== undefined && existing.validationScore < 100) &&
-    (existing.extractionAttempts || 1) >= 2 &&
-    existing._wasUpgraded &&
-    existing._previousQuality !== undefined &&
-    existing._newQuality !== undefined &&
-    Math.abs(existing._previousQuality - existing._newQuality) < MIN_QUALITY_IMPROVEMENT;
-  
-  if (hasBeenRetriedWithNoImprovement) {
-    return { needsUpgrade: false, reason: 'Already retried with no improvement' };
-  }
-  
-  const validationScore = existing.validationScore ?? 0;
-  
-  if (validationScore < DUPLICATE_UPGRADE_THRESHOLD && (existing.extractionAttempts || 1) < 2) {
-    return { 
-      needsUpgrade: true, 
-      reason: `Low confidence score: ${validationScore}% (threshold: ${DUPLICATE_UPGRADE_THRESHOLD}%)` 
-    };
-  }
-  
-  // Record has acceptable quality (80%+)
-  return { needsUpgrade: false, reason: `Acceptable quality: ${validationScore}%` };
+  // Use the canonical checkNeedsUpgrade function from unified deduplication
+  return checkNeedsUpgrade(existing);
 }
 
 /**
@@ -190,7 +153,7 @@ exports.handler = async (event, context) => {
       }
       
       try {
-        const contentHash = sha256HexFromBase64(file.image);
+        const contentHash = calculateImageHash(file.image);
         if (!contentHash) {
           hashErrors.push({ index: i, fileName: file.fileName, error: 'Failed to generate hash' });
           fileHashes.push({ index: i, fileName: file.fileName, contentHash: null });
