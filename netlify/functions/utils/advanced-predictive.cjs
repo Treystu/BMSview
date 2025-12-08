@@ -8,10 +8,61 @@
  * - Remaining useful life (RUL) prediction with ensemble models
  * - Confidence intervals using bootstrap methods
  * - Multi-factor degradation models
+ * - Model caching and persistence in MongoDB
  */
 
-// Note: getCollection imported but reserved for future enhancements
-// const { getCollection } = require('./mongodb.cjs');
+const { getCollection } = require('./mongodb.cjs');
+
+/**
+ * Cache prediction model in database for reuse
+ * @param {string} systemId - System identifier
+ * @param {string} modelType - Type of model (exponential, polynomial, weibull, rul)
+ * @param {Object} modelData - Model parameters and predictions
+ * @returns {Promise<void>}
+ */
+async function cacheModel(systemId, modelType, modelData) {
+  try {
+    const modelsCol = await getCollection('prediction-models');
+    await modelsCol.updateOne(
+      { systemId, modelType },
+      { 
+        $set: {
+          systemId,
+          modelType,
+          ...modelData,
+          cachedAt: new Date(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+        }
+      },
+      { upsert: true }
+    );
+  } catch (error) {
+    // Non-critical - just log error
+    console.error('Failed to cache model:', error.message);
+  }
+}
+
+/**
+ * Retrieve cached prediction model from database
+ * @param {string} systemId - System identifier
+ * @param {string} modelType - Type of model
+ * @returns {Promise<Object|null>} Cached model or null
+ */
+async function getCachedModel(systemId, modelType) {
+  try {
+    const modelsCol = await getCollection('prediction-models');
+    const cached = await modelsCol.findOne({
+      systemId,
+      modelType,
+      expiresAt: { $gt: new Date() }
+    });
+    return cached;
+  } catch (error) {
+    // Non-critical - just log error
+    console.error('Failed to retrieve cached model:', error.message);
+    return null;
+  }
+}
 
 /**
  * Calculate exponential decay model for battery capacity
@@ -238,6 +289,7 @@ function predictFailureProbability(dataPoints, failureThreshold = 70, forecastDa
 /**
  * Calculate Remaining Useful Life (RUL) using multiple models
  * Combines exponential decay, linear regression, and cycle-based estimates
+ * Now with model caching for improved performance
  * 
  * @param {string} systemId - System ID
  * @param {Array<Object>} historicalData - Historical analysis data
@@ -245,6 +297,16 @@ function predictFailureProbability(dataPoints, failureThreshold = 70, forecastDa
  * @returns {Object} RUL estimates from multiple models
  */
 async function calculateRemainingUsefulLife(systemId, historicalData, failureThreshold = 70) {
+    // Check cache first
+    const cached = await getCachedModel(systemId, 'rul');
+    if (cached && cached.remainingUsefulLifeDays !== null) {
+        return {
+            ...cached,
+            fromCache: true,
+            cachedAt: cached.cachedAt
+        };
+    }
+
     if (!historicalData || historicalData.length < 3) {
         return {
             error: 'Insufficient data for RUL calculation',
@@ -312,7 +374,7 @@ async function calculateRemainingUsefulLife(systemId, historicalData, failureThr
         );
     }
 
-    return {
+    const result = {
         remainingUsefulLifeDays: ensembleRUL,
         remainingUsefulLifeMonths: ensembleRUL ? Math.round(ensembleRUL / 30) : null,
         remainingUsefulLifeYears: ensembleRUL ? (ensembleRUL / 365).toFixed(1) : null,
@@ -327,6 +389,11 @@ async function calculateRemainingUsefulLife(systemId, historicalData, failureThr
         failureThreshold,
         degradationRate: linearRate * 365  // % per year
     };
+
+    // Cache the result for 24 hours
+    await cacheModel(systemId, 'rul', result);
+
+    return result;
 }
 
 /**
@@ -381,5 +448,7 @@ module.exports = {
     polynomialRegressionModel,
     predictFailureProbability,
     calculateRemainingUsefulLife,
-    bootstrapConfidenceIntervals
+    bootstrapConfidenceIntervals,
+    cacheModel,
+    getCachedModel
 };

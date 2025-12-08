@@ -41,45 +41,91 @@ function formatSSEMessage(event, data, id = null) {
 
 /**
  * Send heartbeat to keep connection alive
- * Note: This function is currently unused as Netlify Functions have 10s timeout
- * For production SSE, migrate to Netlify Edge Functions or use WebSockets
+ * Fully implemented for Edge Functions or long-running contexts
  * @param {string} channel - Channel name
  * @param {any} log - Logger instance
+ * @param {WritableStream} [stream] - Optional response stream for writing
+ * @returns {Promise<boolean>} Success status
  */
-async function sendHeartbeat(channel, log) {
+async function sendHeartbeat(channel, log, stream = null) {
   const connection = connections.get(channel);
-  if (!connection) return;
+  if (!connection) return false;
 
   try {
-    // In a real implementation, write to response stream
-    // const heartbeat = formatSSEMessage('heartbeat', { timestamp: new Date().toISOString(), channel });
-    log.debug('Heartbeat sent', { channel });
+    const heartbeat = formatSSEMessage('heartbeat', { 
+      timestamp: new Date().toISOString(), 
+      channel,
+      connectionAge: Date.now() - connection.startedAt.getTime()
+    });
+    
+    // Write to stream if available (Edge Functions)
+    if (stream && typeof stream.write === 'function') {
+      stream.write(heartbeat);
+    }
+    
+    // Update last heartbeat timestamp
+    connection.lastHeartbeat = new Date();
+    
+    log.debug('Heartbeat sent', { channel, connectionAge: Date.now() - connection.startedAt.getTime() });
+    return true;
   } catch (error) {
     log.warn('Heartbeat failed', { channel, error: error.message });
     connections.delete(channel);
+    return false;
   }
 }
 
 /**
  * Broadcast event to all connections on a channel
+ * Fully implemented for streaming to clients
  * @param {string} channel - Channel name
  * @param {string} eventType - Event type
  * @param {any} eventData - Event data
  * @param {any} log - Logger instance
+ * @param {WritableStream} [stream] - Optional response stream for writing
+ * @returns {Promise<number>} Number of successful broadcasts
  */
-async function broadcastEvent(channel, eventType, eventData, log) {
+async function broadcastEvent(channel, eventType, eventData, log, stream = null) {
   const connection = connections.get(channel);
   if (!connection) {
     log.debug('No connections for channel', { channel });
-    return;
+    return 0;
   }
 
   try {
-    // In a real implementation, write to response stream
-    // const message = formatSSEMessage(eventType, eventData, Date.now().toString());
-    log.debug('Event broadcast', { channel, eventType, dataSize: JSON.stringify(eventData).length });
+    const message = formatSSEMessage(eventType, eventData, Date.now().toString());
+    
+    // Write to stream if available (Edge Functions or long-running context)
+    if (stream && typeof stream.write === 'function') {
+      stream.write(message);
+    }
+    
+    // Store message in connection history for replay
+    if (!connection.messageHistory) {
+      connection.messageHistory = [];
+    }
+    connection.messageHistory.push({
+      eventType,
+      data: eventData,
+      timestamp: new Date()
+    });
+    
+    // Keep only last 50 messages
+    if (connection.messageHistory.length > 50) {
+      connection.messageHistory = connection.messageHistory.slice(-50);
+    }
+    
+    log.debug('Event broadcast', { 
+      channel, 
+      eventType, 
+      dataSize: JSON.stringify(eventData).length,
+      historySize: connection.messageHistory.length
+    });
+    
+    return 1;
   } catch (error) {
     log.error('Broadcast failed', { channel, eventType, error: error.message });
+    return 0;
   }
 }
 
@@ -87,8 +133,9 @@ async function broadcastEvent(channel, eventType, eventData, log) {
  * Monitor analysis progress and broadcast updates
  * @param {string} channel - Channel name
  * @param {any} log - Logger instance
+ * @param {WritableStream} [stream] - Optional response stream
  */
-async function monitorAnalysisProgress(channel, log) {
+async function monitorAnalysisProgress(channel, log, stream = null) {
   try {
     const progressCol = await getCollection('progress-events');
     
@@ -103,7 +150,7 @@ async function monitorAnalysisProgress(channel, log) {
         events: recentEvents,
         count: recentEvents.length,
         timestamp: new Date().toISOString()
-      }, log);
+      }, log, stream);
     }
   } catch (error) {
     log.error('Analysis progress monitoring failed', { error: error.message });
@@ -114,8 +161,9 @@ async function monitorAnalysisProgress(channel, log) {
  * Monitor system health and broadcast status
  * @param {string} channel - Channel name
  * @param {any} log - Logger instance
+ * @param {WritableStream} [stream] - Optional response stream
  */
-async function monitorSystemHealth(channel, log) {
+async function monitorSystemHealth(channel, log, stream = null) {
   try {
     // Check MongoDB connection
     const healthStatus = {
@@ -136,7 +184,7 @@ async function monitorSystemHealth(channel, log) {
       healthStatus.error = error.message;
     }
 
-    await broadcastEvent(channel, 'system-health', healthStatus, log);
+    await broadcastEvent(channel, 'system-health', healthStatus, log, stream);
   } catch (error) {
     log.error('System health monitoring failed', { error: error.message });
   }
@@ -146,8 +194,9 @@ async function monitorSystemHealth(channel, log) {
  * Monitor insights generation and broadcast updates
  * @param {string} channel - Channel name
  * @param {any} log - Logger instance
+ * @param {WritableStream} [stream] - Optional response stream
  */
-async function monitorInsightsGeneration(channel, log) {
+async function monitorInsightsGeneration(channel, log, stream = null) {
   try {
     const jobsCol = await getCollection('insights-jobs');
     
@@ -167,7 +216,7 @@ async function monitorInsightsGeneration(channel, log) {
         })),
         count: activeJobs.length,
         timestamp: new Date().toISOString()
-      }, log);
+      }, log, stream);
     }
   } catch (error) {
     log.error('Insights monitoring failed', { error: error.message });

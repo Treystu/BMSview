@@ -151,12 +151,27 @@ const BatteryInsights: React.FC<BatteryInsightsProps> = ({
         // Usage Pattern Insights
         const usageInsights: string[] = [];
         const chargingRecords = filteredRecords.filter(r => (r.analysis?.power || 0) > 0);
+        const dischargingRecords = filteredRecords.filter(r => (r.analysis?.power || 0) < 0);
 
         const chargingPercent = (chargingRecords.length / filteredRecords.length) * 100;
-        usageInsights.push(`Charging ${chargingPercent.toFixed(0)}% of the time, discharging ${(100 - chargingPercent).toFixed(0)}%`);
+        const dischargingPercent = (dischargingRecords.length / filteredRecords.length) * 100;
+        
+        usageInsights.push(`Charging ${chargingPercent.toFixed(0)}% of the time, discharging ${dischargingPercent.toFixed(0)}%`);
 
         if (chargingPercent < 40) {
             usageInsights.push(`Low charging time. Consider adding solar panels or reducing load.`);
+        }
+
+        // Analyze discharge patterns
+        if (dischargingRecords.length > 0) {
+            const avgDischargePower = Math.abs(
+                dischargingRecords.reduce((sum, r) => sum + (r.analysis?.power || 0), 0) / dischargingRecords.length
+            );
+            usageInsights.push(`Average discharge power: ${avgDischargePower.toFixed(0)}W`);
+            
+            if (avgDischargePower > 1000) {
+                usageInsights.push(`High discharge rate detected. Consider load management or battery upgrade.`);
+            }
         }
 
         categories.push({
