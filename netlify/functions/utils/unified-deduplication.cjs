@@ -104,28 +104,54 @@ function checkNeedsUpgrade(record) {
     return { needsUpgrade: true, reason: 'Missing analysis data' };
   }
 
-  // Check validation score
-  const validationScore = record.validationScore || 0;
-  if (validationScore < DUPLICATE_UPGRADE_THRESHOLD) {
+  // CRITICAL: Check for missing critical fields FIRST (highest priority)
+  // This must come before validation score check
+  const hasAllCriticalFields = CRITICAL_FIELDS.every(field =>
+    record.analysis &&
+    record.analysis[field] !== null &&
+    record.analysis[field] !== undefined
+  );
+
+  if (!hasAllCriticalFields) {
+    const missingFields = CRITICAL_FIELDS.filter(field => 
+      !record.analysis || 
+      record.analysis[field] === null || 
+      record.analysis[field] === undefined
+    );
+    return { 
+      needsUpgrade: true, 
+      reason: `Missing ${missingFields.length} critical fields: ${missingFields.slice(0, 3).join(', ')}` 
+    };
+  }
+
+  // Check if this record has already been retried with no improvement
+  // If so, don't upgrade again (prevents infinite retry loops)
+  const hasBeenRetriedWithNoImprovement =
+    (record.validationScore !== undefined && record.validationScore < 100) &&
+    (record.extractionAttempts || 1) >= 2 &&
+    record._wasUpgraded &&
+    record._previousQuality !== undefined &&
+    record._newQuality !== undefined &&
+    Math.abs(record._previousQuality - record._newQuality) < MIN_QUALITY_IMPROVEMENT;
+
+  if (hasBeenRetriedWithNoImprovement) {
+    return { 
+      needsUpgrade: false, 
+      reason: 'Already retried with no improvement' 
+    };
+  }
+
+  // Check validation score (only if critical fields are present and not already retried)
+  const validationScore = record.validationScore ?? 0;
+  
+  if (validationScore < DUPLICATE_UPGRADE_THRESHOLD && (record.extractionAttempts || 1) < 2) {
     return { 
       needsUpgrade: true, 
       reason: `Low quality score: ${validationScore}% < ${DUPLICATE_UPGRADE_THRESHOLD}%` 
     };
   }
 
-  // Check for missing critical fields
-  const missingFields = CRITICAL_FIELDS.filter(field => {
-    const value = record.analysis[field];
-    return value === null || value === undefined;
-  });
-
-  if (missingFields.length > 0) {
-    return { 
-      needsUpgrade: true, 
-      reason: `Missing critical fields: ${missingFields.join(', ')}` 
-    };
-  }
-
+  // Record has acceptable quality (all critical fields + score ≥ 80%)
   return { needsUpgrade: false, reason: null };
 }
 
