@@ -1,15 +1,26 @@
 /**
  * Unified Deduplication Utility
  * 
- * Consolidates all deduplication logic across the codebase:
+ * **SINGLE SOURCE OF TRUTH** for all deduplication logic across BMSview.
+ * 
+ * This module consolidates duplicate detection to ensure consistency across:
  * - Image content hashing (SHA-256 from base64)
  * - Analysis result deduplication  
  * - AI feedback deduplication
  * - Quality-based upgrade detection
  * 
- * This module provides a single source of truth for duplicate detection
- * to ensure consistency across analyze.cjs, check-duplicates-batch.cjs,
- * feedback systems, and frontend utilities.
+ * **Usage Guidelines:**
+ * - All backend endpoints MUST use these functions for duplicate detection
+ * - Frontend MUST call backend APIs, NOT implement duplicate logic locally
+ * - Use `calculateImageHash()` for content hashing (replaces sha256HexFromBase64)
+ * - Use `findDuplicateByHash()` + `checkNeedsUpgrade()` for duplicate checks
+ * - Use `detectAnalysisDuplicate()` for comprehensive duplicate detection with upgrade logic
+ * 
+ * **Architecture:**
+ * - Backend: analyze.cjs, check-duplicates-batch.cjs → unified-deduplication.cjs
+ * - Frontend: duplicateChecker.ts, geminiService.ts → backend API → unified-deduplication.cjs
+ * 
+ * @module unified-deduplication
  */
 
 const crypto = require('crypto');
@@ -24,10 +35,18 @@ const {
 
 /**
  * Calculate SHA-256 hash from base64-encoded image
- * This is the canonical method for image content hashing
  * 
- * @param {string} base64String - Base64-encoded image data
- * @returns {string|null} - Hex-encoded SHA-256 hash or null on error
+ * **This is the canonical method for image content hashing across BMSview.**
+ * Replaces all previous uses of `sha256HexFromBase64` in analyze.cjs and check-duplicates-batch.cjs.
+ * 
+ * @param {string} base64String - Base64-encoded image data (without data:image/... prefix)
+ * @returns {string|null} - Hex-encoded SHA-256 hash (64 chars) or null on error
+ * 
+ * @example
+ * const hash = calculateImageHash(base64ImageData);
+ * if (hash) {
+ *   // Hash successfully calculated: "a1b2c3d4..."
+ * }
  */
 function calculateImageHash(base64String) {
   try {
@@ -52,12 +71,33 @@ function calculateContentHash(content) {
 
 /**
  * Check if an analysis record needs quality upgrade
- * Based on validation score and critical field completeness
+ * 
+ * **Core upgrade decision logic used by all endpoints.**
+ * Determines if a duplicate should be re-analyzed to improve quality.
+ * 
+ * **Upgrade triggers:**
+ * 1. Missing any critical fields (overallVoltage, current, stateOfCharge, etc.)
+ * 2. Validation score < 80% (DUPLICATE_UPGRADE_THRESHOLD) AND extractionAttempts < 2
+ * 
+ * **Upgrade prevention:**
+ * - Already retried (extractionAttempts >= 2) with no improvement (< MIN_QUALITY_IMPROVEMENT)
+ * - Quality score >= 80% (acceptable quality, no need to waste API calls)
  * 
  * @param {Object} record - Analysis record to check
- * @param {number} record.validationScore - Quality/confidence score (0-100)
- * @param {Object} record.analysis - Analysis data object
+ * @param {number} [record.validationScore] - Quality/confidence score (0-100)
+ * @param {Object} record.analysis - Analysis data object with BMS metrics
+ * @param {number} [record.extractionAttempts] - Number of extraction attempts (default: 1)
+ * @param {boolean} [record._wasUpgraded] - Flag indicating previous upgrade
+ * @param {number} [record._previousQuality] - Quality score before upgrade
+ * @param {number} [record._newQuality] - Quality score after upgrade
  * @returns {Object} - { needsUpgrade: boolean, reason: string|null }
+ * 
+ * @example
+ * const upgradeCheck = checkNeedsUpgrade(existingRecord);
+ * if (upgradeCheck.needsUpgrade) {
+ *   console.log('Upgrade reason:', upgradeCheck.reason);
+ *   // Re-analyze to improve quality
+ * }
  */
 function checkNeedsUpgrade(record) {
   if (!record || !record.analysis) {
@@ -92,10 +132,21 @@ function checkNeedsUpgrade(record) {
 /**
  * Find duplicate analysis record by content hash
  * 
- * @param {string} contentHash - SHA-256 hash of image content
- * @param {Object} collection - MongoDB collection instance
- * @param {Object} log - Logger instance
- * @returns {Promise<Object|null>} - Duplicate record or null
+ * **Core MongoDB query for duplicate detection.**
+ * Used by analyze.cjs and check-duplicates-batch.cjs via wrapper functions.
+ * 
+ * @param {string} contentHash - SHA-256 hash of image content (from calculateImageHash)
+ * @param {Object} collection - MongoDB collection instance (analysis-results)
+ * @param {Object} log - Logger instance for structured logging
+ * @returns {Promise<Object|null>} - Duplicate record or null if not found
+ * 
+ * @example
+ * const resultsCol = await getCollection('analysis-results');
+ * const duplicate = await findDuplicateByHash(contentHash, resultsCol, log);
+ * if (duplicate) {
+ *   const upgradeCheck = checkNeedsUpgrade(duplicate);
+ *   // Handle duplicate or upgrade
+ * }
  */
 async function findDuplicateByHash(contentHash, collection, log) {
   try {
@@ -120,12 +171,47 @@ async function findDuplicateByHash(contentHash, collection, log) {
 
 /**
  * Comprehensive duplicate detection for analysis records
- * Returns both duplicate status and upgrade recommendation
  * 
- * @param {string} base64Image - Base64-encoded image
+ * **High-level duplicate detection with automatic upgrade logic.**
+ * Combines image hashing + duplicate lookup + upgrade check in one call.
+ * 
+ * **Workflow:**
+ * 1. Calculate content hash from base64 image (SHA-256)
+ * 2. Search MongoDB for existing record with same hash
+ * 3. If found, check if upgrade is needed (checkNeedsUpgrade)
+ * 4. Return comprehensive result object
+ * 
+ * **Use this when:**
+ * - You have a base64 image and want to check for duplicates in one call
+ * - You need to know both duplicate status AND upgrade recommendation
+ * 
+ * **Use findDuplicateByHash + checkNeedsUpgrade when:**
+ * - You already have the content hash
+ * - You want more control over the process
+ * 
+ * @param {string} base64Image - Base64-encoded image (without data:image/... prefix)
  * @param {Object} collection - MongoDB analysis-results collection
  * @param {Object} log - Logger instance
- * @returns {Promise<Object>} - { isDuplicate, needsUpgrade, existingRecord, contentHash }
+ * @returns {Promise<Object>} Result object with:
+ *   - {boolean} isDuplicate - True if duplicate exists
+ *   - {boolean} needsUpgrade - True if existing record needs re-analysis
+ *   - {Object|null} existingRecord - Full existing record or null
+ *   - {string|null} contentHash - Calculated SHA-256 hash or null on error
+ *   - {string} [upgradeReason] - Reason for upgrade (if needsUpgrade=true)
+ *   - {string} [error] - Error message if hash calculation failed
+ * 
+ * @example
+ * const result = await detectAnalysisDuplicate(base64Image, collection, log);
+ * 
+ * if (!result.isDuplicate) {
+ *   // New analysis - proceed with full analysis
+ * } else if (result.needsUpgrade) {
+ *   // Low-quality duplicate - re-analyze to upgrade
+ *   console.log('Upgrade reason:', result.upgradeReason);
+ * } else {
+ *   // High-quality duplicate - return existing record
+ *   return result.existingRecord;
+ * }
  */
 async function detectAnalysisDuplicate(base64Image, collection, log) {
   // Calculate content hash
@@ -306,21 +392,79 @@ async function detectFeedbackDuplicate(newFeedback, collection, options = {}, lo
 }
 
 module.exports = {
-  // Hash functions
+  // ============================================
+  // Image Hashing
+  // ============================================
+  
+  /**
+   * calculateImageHash: SHA-256 hash from base64 image
+   * Canonical method for content hashing across all endpoints
+   */
   calculateImageHash,
+  
+  /**
+   * calculateContentHash: SHA-256 hash from JSON object
+   * Used for AI feedback and structured data deduplication
+   */
   calculateContentHash,
   
-  // Analysis duplicate detection
+  // ============================================
+  // Analysis Duplicate Detection
+  // ============================================
+  
+  /**
+   * detectAnalysisDuplicate: High-level duplicate detection (image → hash → lookup → upgrade check)
+   * Use when you have base64 image and want comprehensive check
+   */
   detectAnalysisDuplicate,
+  
+  /**
+   * findDuplicateByHash: MongoDB lookup by content hash
+   * Use when you already have the hash
+   */
   findDuplicateByHash,
+  
+  /**
+   * checkNeedsUpgrade: Determine if record needs quality upgrade
+   * Core upgrade decision logic used by all endpoints
+   */
   checkNeedsUpgrade,
   
-  // Feedback duplicate detection
+  // ============================================
+  // Feedback Duplicate Detection
+  // ============================================
+  
+  /**
+   * detectFeedbackDuplicate: Semantic duplicate detection for AI feedback
+   * Combines exact hash matching with similarity scoring
+   */
   detectFeedbackDuplicate,
+  
+  /**
+   * calculateTextSimilarity: Jaccard similarity for text comparison
+   * Used by feedback duplicate detection
+   */
   calculateTextSimilarity,
   
-  // Constants (re-exported for convenience)
+  // ============================================
+  // Constants (re-exported from duplicate-constants.cjs)
+  // ============================================
+  
+  /**
+   * DUPLICATE_UPGRADE_THRESHOLD: Validation score threshold (80%)
+   * Records below this score are candidates for upgrade
+   */
   DUPLICATE_UPGRADE_THRESHOLD,
+  
+  /**
+   * MIN_QUALITY_IMPROVEMENT: Minimum improvement required (5%)
+   * Prevents wasteful retries when quality doesn't improve
+   */
   MIN_QUALITY_IMPROVEMENT,
+  
+  /**
+   * CRITICAL_FIELDS: Required BMS metrics
+   * Missing any of these fields triggers upgrade
+   */
   CRITICAL_FIELDS
 };

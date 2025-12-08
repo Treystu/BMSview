@@ -216,8 +216,26 @@ export const __internals = {
     resetMetrics: () => resetClientServiceMetrics()
 };
 
-// This key generation logic is now only used on the client-side for finding duplicates
-// among already-fetched data.
+/**
+ * IMPORTANT: This key generation is CLIENT-SIDE ONLY for UI deduplication.
+ * 
+ * **Duplicate Detection Architecture:**
+ * - Backend (canonical): unified-deduplication.cjs uses SHA-256 content hashing
+ * - Frontend (UI helper): This function creates approximate keys for grouping already-fetched data
+ * 
+ * **This function does NOT:**
+ * - Replace backend duplicate detection
+ * - Perform cryptographic hashing
+ * - Check server-side duplicates
+ * 
+ * **Use this for:**
+ * - Grouping similar analyses in UI lists
+ * - Finding client-side duplicates in already-loaded data
+ * 
+ * **For actual duplicate detection:**
+ * - Frontend: Use checkFileDuplicate() from geminiService.ts (calls backend API)
+ * - Backend: Use unified-deduplication.cjs functions directly
+ */
 const generateAnalysisKey = (data: AnalysisData): string => {
     if (!data) return Math.random().toString();
     const voltage = data.overallVoltage ? (Math.round(data.overallVoltage * 10) / 10).toFixed(1) : 'N/A';
