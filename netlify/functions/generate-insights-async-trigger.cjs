@@ -14,7 +14,10 @@
  * - Rate limiting per user/system
  * - Input sanitization (jobId, systemId validation)
  * - Audit logging for compliance
- * - Duplicate detection (SHA-256 content hashing)
+ * 
+ * NOTE: This endpoint does NOT perform duplicate detection. Insights can be
+ * regenerated multiple times for the same analysis (e.g., with different prompts,
+ * different context windows, etc.). Duplicate detection is only for analysis results.
  * 
  * NOTE: This is CommonJS (.cjs) for compatibility.
  * The @netlify/async-workloads package is ONLY used in the background handler,
@@ -26,7 +29,6 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 const { createInsightsJob } = require('./utils/insights-jobs.cjs');
 const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
 const { sanitizeJobId, sanitizeSystemId, SanitizationError } = require('./utils/security-sanitizer.cjs');
-const { calculateImageHash } = require('./utils/unified-deduplication.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 
 /**
@@ -118,72 +120,12 @@ exports.handler = async (event, context) => {
     // Sanitize inputs
     const sanitizedSystemId = sanitizeSystemId(systemId, log);
 
-    // CHECK FOR DUPLICATES FIRST (same as analyze.cjs)
-    // Calculate content hash from image to check if we've already analyzed this exact screenshot
-    console.log('[ASYNC-TRIGGER] Checking for duplicate analysis');
-    let contentHash = null;
-    if (analysisData && analysisData.image) {
-      try {
-        console.log('[ASYNC-TRIGGER] Calculating content hash from image');
-        contentHash = calculateImageHash(analysisData.image);
-        console.log('[ASYNC-TRIGGER] Content hash calculated:', contentHash ? contentHash.substring(0, 16) + '...' : 'null');
-      } catch (hashError) {
-        console.warn('[ASYNC-TRIGGER] Failed to calculate content hash:', hashError.message);
-        log.warn('Content hash calculation failed', { error: hashError.message });
-      }
-    }
-
-    // Check for existing analysis with same content hash
-    if (contentHash) {
-      try {
-        console.log('[ASYNC-TRIGGER] Querying database for existing analysis');
-        const resultsCol = await getCollection('analysis-results');
-        const existingAnalysis = await resultsCol.findOne({ contentHash });
-        
-        if (existingAnalysis) {
-          console.log('[ASYNC-TRIGGER] Duplicate found! Returning existing analysis:', {
-            recordId: existingAnalysis._id,
-            timestamp: existingAnalysis.timestamp,
-            hasAnalysis: !!existingAnalysis.analysis
-          });
-          
-          log.info('Duplicate analysis found, returning existing result', {
-            contentHash: contentHash.substring(0, 16) + '...',
-            recordId: existingAnalysis._id
-          });
-
-          // Return existing analysis immediately (no job creation needed)
-          return {
-            statusCode: 200,
-            headers: {
-              ...headers,
-              ...rateLimitHeaders
-            },
-            body: JSON.stringify({
-              isDuplicate: true,
-              recordId: existingAnalysis._id,
-              timestamp: existingAnalysis.timestamp,
-              analysisData: existingAnalysis.analysis,
-              message: 'This image has already been analyzed. Returning existing results.'
-            })
-          };
-        } else {
-          console.log('[ASYNC-TRIGGER] No duplicate found - proceeding with new analysis');
-        }
-      } catch (dbError) {
-        console.error('[ASYNC-TRIGGER] Database check failed:', dbError.message);
-        log.warn('Duplicate check failed, proceeding with analysis', { error: dbError.message });
-        // Continue with job creation if duplicate check fails
-      }
-    }
-
     log.info('Creating insights job', {
       systemId: sanitizedSystemId,
       hasCustomPrompt: !!customPrompt,
       contextWindowDays,
       maxIterations,
-      fullContextMode,
-      contentHash: contentHash ? contentHash.substring(0, 16) + '...' : 'none'
+      fullContextMode
     });
 
     // Create job in MongoDB
