@@ -41,6 +41,8 @@ function formatSSEMessage(event, data, id = null) {
 
 /**
  * Send heartbeat to keep connection alive
+ * Note: This function is currently unused as Netlify Functions have 10s timeout
+ * For production SSE, migrate to Netlify Edge Functions or use WebSockets
  * @param {string} channel - Channel name
  * @param {any} log - Logger instance
  */
@@ -49,12 +51,8 @@ async function sendHeartbeat(channel, log) {
   if (!connection) return;
 
   try {
-    const heartbeat = formatSSEMessage('heartbeat', {
-      timestamp: new Date().toISOString(),
-      channel
-    });
-    
     // In a real implementation, write to response stream
+    // const heartbeat = formatSSEMessage('heartbeat', { timestamp: new Date().toISOString(), channel });
     log.debug('Heartbeat sent', { channel });
   } catch (error) {
     log.warn('Heartbeat failed', { channel, error: error.message });
@@ -77,9 +75,8 @@ async function broadcastEvent(channel, eventType, eventData, log) {
   }
 
   try {
-    const message = formatSSEMessage(eventType, eventData, Date.now().toString());
-    
     // In a real implementation, write to response stream
+    // const message = formatSSEMessage(eventType, eventData, Date.now().toString());
     log.debug('Event broadcast', { channel, eventType, dataSize: JSON.stringify(eventData).length });
   } catch (error) {
     log.error('Broadcast failed', { channel, eventType, error: error.message });

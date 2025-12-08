@@ -98,12 +98,7 @@ function getErrorStatusCode(error) {
   const message = error.message || '';
   const code = error.code || '';
 
-  // Timeout errors should return 504 Gateway Timeout
-  if (code === 'operation_timeout' || message.includes('timeout') || message.includes('timed out')) {
-    return 504;
-  }
-
-  // Timeout errors should return 504 Gateway Timeout (backend service timeout)
+  // Gateway timeout for backend service timeouts (504)
   if (code === 'operation_timeout' || message.includes('operation_timeout')) {
     return 504;
   }
@@ -113,8 +108,8 @@ function getErrorStatusCode(error) {
   if (message.includes('unauthorized') || message.includes('authentication')) return 401;
   if (message.includes('forbidden')) return 403;
   if (message.includes('not found')) return 404;
-  // 408 for client-side timeouts (request timeout)
-  if (message.includes('timeout') || message.includes('TIMEOUT')) return 408;
+  // Client-side timeout (408) for generic timeout messages
+  if (message.includes('timeout') || message.includes('TIMEOUT') || message.includes('timed out')) return 408;
   if (message.includes('quota') || message.includes('rate limit')) return 429;
 
   // Service errors (500-599)

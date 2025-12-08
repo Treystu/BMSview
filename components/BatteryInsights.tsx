@@ -151,7 +151,6 @@ const BatteryInsights: React.FC<BatteryInsightsProps> = ({
         // Usage Pattern Insights
         const usageInsights: string[] = [];
         const chargingRecords = filteredRecords.filter(r => (r.analysis?.power || 0) > 0);
-        const dischargingRecords = filteredRecords.filter(r => (r.analysis?.power || 0) < 0);
 
         const chargingPercent = (chargingRecords.length / filteredRecords.length) * 100;
         usageInsights.push(`Charging ${chargingPercent.toFixed(0)}% of the time, discharging ${(100 - chargingPercent).toFixed(0)}%`);

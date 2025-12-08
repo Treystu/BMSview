@@ -82,11 +82,11 @@ const AdminSystemsManager: React.FC<AdminSystemsManagerProps> = ({
         }
 
         if (formData.voltage !== undefined && (formData.voltage <= 0 || formData.voltage > 1000)) {
-            errors.voltage = 'Voltage must be between 0 and 1000V';
+            errors.voltage = 'Voltage must be greater than 0 and less than or equal to 1000V';
         }
 
         if (formData.capacity !== undefined && (formData.capacity <= 0 || formData.capacity > 10000)) {
-            errors.capacity = 'Capacity must be between 0 and 10000Ah';
+            errors.capacity = 'Capacity must be greater than 0 and less than or equal to 10000Ah';
         }
 
         if (formData.latitude !== undefined && (formData.latitude < -90 || formData.latitude > 90)) {

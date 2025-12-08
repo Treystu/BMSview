@@ -3,14 +3,15 @@
  * 
  * Implements advanced ML algorithms beyond linear regression:
  * - Exponential decay models for capacity fade
- * - Polynomial regression for non-linear trends
- * - Failure probability estimation
- * - Remaining useful life (RUL) prediction
+ * - Polynomial regression for non-linear trends (currently linear approximation)
+ * - Failure probability estimation using Weibull distribution
+ * - Remaining useful life (RUL) prediction with ensemble models
  * - Confidence intervals using bootstrap methods
  * - Multi-factor degradation models
  */
 
-const { getCollection } = require('./mongodb.cjs');
+// Note: getCollection imported but reserved for future enhancements
+// const { getCollection } = require('./mongodb.cjs');
 
 /**
  * Calculate exponential decay model for battery capacity
@@ -133,11 +134,14 @@ function polynomialRegressionModel(dataPoints, degree, forecastDays) {
         sumX2Y += x * x * y;
     }
 
-    // Solve 3x3 system for a, b, c
-    // This is a simplified solution - for production use matrix library
-    const a = sumY / n;  // Simplified
-    const b = (sumXY - (sumX * sumY / n)) / (sumX2 - (sumX * sumX / n));  // Simplified
-    const c = 0;  // Would need proper matrix solution
+    // Note: This implementation provides linear regression approximation
+    // True polynomial regression requires matrix algebra (normal equations or QR decomposition)
+    // For production use, consider integrating ml-regression-polynomial or similar library
+    const a = sumY / n;
+    const b = (sumXY - (sumX * sumY / n)) / (sumX2 - (sumX * sumX / n));
+    // c coefficient set to 0 - this makes it effectively linear regression
+    // To enable true polynomial: implement proper matrix solution for [a,b,c] coefficients
+    const c = 0;
 
     // Generate predictions
     const predictions = [];
@@ -273,7 +277,10 @@ async function calculateRemainingUsefulLife(systemId, historicalData, failureThr
         // Find when capacity reaches threshold
         const daysToThreshold = expModel.predictions.find(p => p.predictedCapacity <= failureThreshold);
         if (daysToThreshold) {
-            expRUL = Math.round(daysToThreshold.daysFromStart - capacityData[capacityData.length - 1].timestamp);
+            // Calculate days from last data point to threshold
+            const startTime = capacityData[0].timestamp.getTime();
+            const lastDaysFromStart = (capacityData[capacityData.length - 1].timestamp.getTime() - startTime) / (24 * 60 * 60 * 1000);
+            expRUL = Math.round(daysToThreshold.daysFromStart - lastDaysFromStart);
         }
     }
 

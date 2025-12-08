@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import type { AnalysisRecord } from '../../types';
+import type { AnalysisRecord } from '../types';
 
 interface BatteryHealthTrendsProps {
     systemId?: string;
@@ -87,7 +87,14 @@ const BatteryHealthTrends: React.FC<BatteryHealthTrendsProps> = ({
             const lastRecord = sortedRecords[sortedRecords.length - 1];
 
             // Calculate capacity fade
-            const initialCapacity = firstRecord.analysis?.capacity || 100;
+            // Note: If capacity data is unavailable, we cannot calculate meaningful metrics
+            if (!firstRecord.analysis?.capacity) {
+                setLoading(false);
+                setHealthMetrics(null);
+                setAlerts(['⚠️ Capacity data unavailable - cannot calculate health metrics']);
+                return;
+            }
+            const initialCapacity = firstRecord.analysis.capacity;
             const currentCapacity = lastRecord.analysis?.capacity || initialCapacity;
             const capacityFade = ((initialCapacity - currentCapacity) / initialCapacity) * 100;
 
