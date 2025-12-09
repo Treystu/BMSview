@@ -374,17 +374,25 @@ async function findDuplicateByHash(contentHash, collection, log) {
 async function detectAnalysisDuplicate(base64Image, collection, log) {
   const startTime = Date.now();
   
-  log.debug('Starting comprehensive duplicate detection', {
+  // Create a safe logger wrapper to handle null/undefined log
+  const safeLog = log || {
+    debug: () => {},
+    info: () => {},
+    warn: () => {},
+    error: () => {}
+  };
+  
+  safeLog.debug('Starting comprehensive duplicate detection', {
     imageLength: base64Image?.length || 0,
     event: 'DETECT_START'
   });
   
   // Calculate content hash
-  const contentHash = calculateImageHash(base64Image, log);
+  const contentHash = calculateImageHash(base64Image, safeLog);
   
   if (!contentHash) {
     const durationMs = Date.now() - startTime;
-    log.warn('Duplicate detection aborted - hash calculation failed', {
+    safeLog.warn('Duplicate detection aborted - hash calculation failed', {
       imageLength: base64Image?.length || 0,
       durationMs,
       event: 'DETECT_HASH_FAILED'
@@ -401,10 +409,10 @@ async function detectAnalysisDuplicate(base64Image, collection, log) {
   // Find existing record
   let existingRecord;
   try {
-    existingRecord = await findDuplicateByHash(contentHash, collection, log);
+    existingRecord = await findDuplicateByHash(contentHash, collection, safeLog);
   } catch (lookupError) {
     const durationMs = Date.now() - startTime;
-    log.error('Duplicate detection failed during lookup', {
+    safeLog.error('Duplicate detection failed during lookup', {
       error: lookupError.message,
       hashPreview: formatHashPreview(contentHash),
       durationMs,
@@ -422,7 +430,7 @@ async function detectAnalysisDuplicate(base64Image, collection, log) {
 
   if (!existingRecord) {
     const durationMs = Date.now() - startTime;
-    log.info('Duplicate detection complete - no duplicate found', {
+    safeLog.info('Duplicate detection complete - no duplicate found', {
       hashPreview: formatHashPreview(contentHash),
       durationMs,
       event: 'DETECT_NOT_DUPLICATE'
@@ -439,7 +447,7 @@ async function detectAnalysisDuplicate(base64Image, collection, log) {
   const upgradeCheck = checkNeedsUpgrade(existingRecord);
   const durationMs = Date.now() - startTime;
   
-  log.info('Duplicate detection complete', {
+  safeLog.info('Duplicate detection complete', {
     hashPreview: formatHashPreview(contentHash),
     isDuplicate: true,
     needsUpgrade: upgradeCheck.needsUpgrade,

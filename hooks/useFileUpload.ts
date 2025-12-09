@@ -116,9 +116,20 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                             const reader = new FileReader();
                             reader.onload = () => {
                                 if (typeof reader.result === 'string') {
+                                    // Validate data URL format (must contain comma separator)
+                                    const commaIndex = reader.result.indexOf(',');
+                                    if (commaIndex === -1) {
+                                        reject(new Error(`Invalid data URL format for ${file.name}`));
+                                        return;
+                                    }
+                                    const base64Data = reader.result.substring(commaIndex + 1);
+                                    if (!base64Data) {
+                                        reject(new Error(`Empty base64 data for ${file.name}`));
+                                        return;
+                                    }
                                     resolve({
                                         file,
-                                        image: reader.result.split(',')[1], // Remove data:image/... prefix
+                                        image: base64Data,
                                         mimeType: file.type,
                                         fileName: file.name
                                     });
