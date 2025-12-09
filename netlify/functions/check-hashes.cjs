@@ -42,6 +42,7 @@ exports.handler = async (event, context) => {
         log.info('Checking hashes for existence', { 
             hashCount: hashes.length,
             hashPreview: hashes.slice(0, 3).map(h => h.substring(0, 16) + '...'),
+            firstFullHash: hashes[0], // Log first complete hash for debugging
             event: 'START'
         });
 
