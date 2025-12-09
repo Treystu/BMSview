@@ -19,6 +19,7 @@ const {
   formatHashPreview
 } = require('./utils/unified-deduplication.cjs');
 
+// Limit logged file names to avoid log bloat while keeping context for debugging
 const MAX_FILE_NAMES_LOGGED = 10;
 
 /**

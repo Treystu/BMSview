@@ -26,8 +26,19 @@
 const crypto = require('crypto');
 const { createLogger } = require('./logger.cjs');
 
+/**
+ * Generate a short preview of a hash for safe logging.
+ * @param {string} hash
+ * @returns {string}
+ */
 const HASH_PREVIEW_LENGTH = 16;
 const formatHashPreview = (hash) => (hash ? `${hash.substring(0, HASH_PREVIEW_LENGTH)}...` : 'null');
+
+/**
+ * Strip padding from a base64 string for comparison.
+ * @param {string} value
+ * @returns {string}
+ */
 const stripPadding = (value = '') => value.replace(/=+$/, '');
 
 // Import existing constants for backward compatibility
@@ -92,6 +103,8 @@ function calculateImageHash(base64String, log = null, { skipValidation = false }
       return null;
     }
 
+    // Round-trip validation guards against malformed/poisoned base64.
+    // Set skipValidation=true for trusted/prevalidated callers to avoid the extra encode step on large payloads.
     if (!skipValidation) {
       const sanitizedWithoutPadding = stripPadding(sanitized);
       const reEncodedWithoutPadding = stripPadding(buffer.toString('base64'));
