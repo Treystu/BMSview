@@ -200,8 +200,9 @@ async function initializeDiagnostics(log, context) {
 async function testTool(workloadId, state, log, context) {
   try {
     const toolIndex = state.toolIndex || 0;
+    const currentStepIndex = state.stepIndex || 0;
     
-    log.debug('Testing tool', { toolIndex, totalTools: TOOL_TESTS.length });
+    log.debug('Testing tool', { toolIndex, currentStepIndex, totalTools: TOOL_TESTS.length });
     
     if (toolIndex >= TOOL_TESTS.length) {
       log.debug('All tools tested, moving to analysis phase');
@@ -209,8 +210,9 @@ async function testTool(workloadId, state, log, context) {
       const nextState = {
         ...state,
         currentStep: 'analyze_failures',
+        stepIndex: TOOL_TESTS.length, // Update stepIndex to reflect completion of all tool tests
         message: 'All tools tested, analyzing results',
-        progress: Math.round((toolIndex / (state.totalSteps || TOOL_TESTS.length + 3)) * 100)
+        progress: Math.round((TOOL_TESTS.length / (state.totalSteps || TOOL_TESTS.length + 3)) * 100)
       };
       
       try {
@@ -313,6 +315,7 @@ async function testTool(workloadId, state, log, context) {
       results: [...(state.results || []), result],
       failures: [...(state.failures || []), ...newFailures],
       toolIndex: toolIndex + 1,
+      stepIndex: toolIndex + 1, // Update stepIndex to match tool progression (1-indexed for display)
       progress: Math.round(((toolIndex + 1) / (state.totalSteps || TOOL_TESTS.length + 3)) * 100),
       message: `Tested ${toolTest.name} (${toolIndex + 1}/${TOOL_TESTS.length})`
     };
@@ -371,6 +374,7 @@ async function testTool(workloadId, state, log, context) {
         params: {}
       }],
       toolIndex: safeToolIndex,
+      stepIndex: safeToolIndex, // Update stepIndex to match recovery
       progress: Math.round((safeToolIndex / (state.totalSteps || TOOL_TESTS.length + 3)) * 100),
       message: `Error testing tool, continuing (${safeToolIndex}/${TOOL_TESTS.length})`
     };
@@ -453,6 +457,7 @@ async function analyzeFailures(workloadId, state, log, context) {
       ...state,
       categorizedFailures: categorized,
       currentStep: 'submit_feedback',
+      stepIndex: TOOL_TESTS.length + 1, // Increment stepIndex for analyze_failures step
       message: 'Failures analyzed, preparing feedback submissions',
       progress: Math.round(((TOOL_TESTS.length + 1) / (state.totalSteps || TOOL_TESTS.length + 3)) * 100)
     };
@@ -481,6 +486,7 @@ async function analyzeFailures(workloadId, state, log, context) {
       ...state,
       categorizedFailures: { unknown: Array.isArray(state.failures) ? state.failures : [] },
       currentStep: 'submit_feedback',
+      stepIndex: TOOL_TESTS.length + 1, // Increment stepIndex even on error
       message: 'Failure analysis had errors, continuing with best effort',
       progress: Math.round(((TOOL_TESTS.length + 1) / (state.totalSteps || TOOL_TESTS.length + 3)) * 100),
       analysisError: error.message
@@ -586,6 +592,7 @@ async function submitFeedbackForFailures(workloadId, state, log, context) {
       ...state,
       feedbackSubmitted: feedbackIds,
       currentStep: 'finalize',
+      stepIndex: TOOL_TESTS.length + 2, // Increment stepIndex for submit_feedback step
       message: 'Feedback submitted, finalizing diagnostics',
       progress: Math.round(((TOOL_TESTS.length + 2) / (state.totalSteps || TOOL_TESTS.length + 3)) * 100)
     };
@@ -616,6 +623,7 @@ async function submitFeedbackForFailures(workloadId, state, log, context) {
       ...state,
       feedbackSubmitted: [],
       currentStep: 'finalize',
+      stepIndex: TOOL_TESTS.length + 2, // Increment stepIndex even on error
       message: 'Feedback submission had errors, finalizing anyway',
       progress: Math.round(((TOOL_TESTS.length + 2) / (state.totalSteps || TOOL_TESTS.length + 3)) * 100),
       feedbackError: error.message
@@ -681,6 +689,33 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
       }
     });
     
+    // Determine if any critical failures need GitHub issues
+    const criticalFailures = [];
+    Object.entries(categorizedFailures).forEach(([category, failures]) => {
+      if (Array.isArray(failures) && failures.length > 0) {
+        const priority = getPriorityFromErrorType(category, failures.length);
+        if (priority === 'critical' || priority === 'high') {
+          criticalFailures.push({
+            category,
+            count: failures.length,
+            priority,
+            tools: [...new Set(failures.map(f => (f && f.tool) || 'unknown'))]
+          });
+        }
+      }
+    });
+    
+    // Detailed results per tool for the summary
+    const toolResults = results.map(r => ({
+      tool: r?.tool || 'unknown',
+      validTestPassed: r?.validTest?.success || false,
+      edgeCaseTestPassed: r?.edgeCaseTest?.success || false,
+      validTestDuration: r?.validTest?.duration || 0,
+      edgeCaseTestDuration: r?.edgeCaseTest?.duration || 0,
+      validTestError: r?.validTest?.error || null,
+      edgeCaseTestError: r?.edgeCaseTest?.error || null
+    }));
+    
     const summary = {
       totalToolsTested: results.length,
       totalTests,
@@ -690,17 +725,21 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
       averageResponseTime: calculateAverageResponseTime(results),
       categorizedFailures,
       feedbackSubmitted,
+      criticalFailures,
+      toolResults, // Detailed per-tool results
       duration: Date.now() - startTime,
       completedAt: new Date().toISOString(),
       errors: {
         analysisError: state.analysisError || null,
         feedbackError: state.feedbackError || null
-      }
+      },
+      recommendations: generateRecommendations(results, categorizedFailures, feedbackSubmitted)
     };
     
     const finalState = {
       ...state,
       summary,
+      stepIndex: TOOL_TESTS.length + 3, // Final step index (all steps complete)
       progress: 100,
       message: 'Diagnostics complete'
     };
@@ -767,6 +806,7 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
       await updateJobStep(workloadId, {
         ...state,
         summary: emergencySummary,
+        stepIndex: TOOL_TESTS.length + 3, // Final step index even on error
         progress: 100,
         message: 'Diagnostics completed with errors'
       }, log);
@@ -868,6 +908,101 @@ function calculateAverageResponseTime(results) {
     return count > 0 ? Math.round(totalDuration / count) + 'ms' : 'N/A';
   } catch (error) {
     return 'Error';
+  }
+}
+
+/**
+ * Helper: Generate recommendations based on diagnostic results
+ * @param {Array} results - Test results
+ * @param {Object} categorizedFailures - Categorized failure data
+ * @param {Array} feedbackSubmitted - Feedback submission results
+ * @returns {Array} Recommendations for next steps
+ */
+function generateRecommendations(results, categorizedFailures, feedbackSubmitted) {
+  const recommendations = [];
+  
+  try {
+    // Count failures by category
+    const failureCounts = {};
+    Object.entries(categorizedFailures).forEach(([category, failures]) => {
+      if (Array.isArray(failures) && failures.length > 0) {
+        failureCounts[category] = failures.length;
+      }
+    });
+    
+    // Recommendations based on failure patterns
+    if (failureCounts.network_error) {
+      recommendations.push({
+        category: 'network',
+        severity: 'high',
+        message: `${failureCounts.network_error} network/timeout errors detected`,
+        action: 'Review timeout configurations and network connectivity. Consider increasing retry thresholds.'
+      });
+    }
+    
+    if (failureCounts.database_error) {
+      recommendations.push({
+        category: 'database',
+        severity: 'critical',
+        message: `${failureCounts.database_error} database errors detected`,
+        action: 'Check MongoDB connection health, verify indexes, and review connection pooling settings.'
+      });
+    }
+    
+    if (failureCounts.invalid_parameters) {
+      recommendations.push({
+        category: 'validation',
+        severity: 'medium',
+        message: `${failureCounts.invalid_parameters} parameter validation failures`,
+        action: 'Improve parameter validation in tool definitions and add better error messages.'
+      });
+    }
+    
+    if (failureCounts.circuit_open) {
+      recommendations.push({
+        category: 'resilience',
+        severity: 'high',
+        message: `${failureCounts.circuit_open} circuit breaker triggered`,
+        action: 'Review circuit breaker thresholds and cooldown mechanisms.'
+      });
+    }
+    
+    // Recommendations based on feedback submission
+    const failedSubmissions = feedbackSubmitted.filter(fb => fb && fb.error);
+    if (failedSubmissions.length > 0) {
+      recommendations.push({
+        category: 'feedback',
+        severity: 'low',
+        message: `${failedSubmissions.length} feedback submissions failed`,
+        action: 'Check rate limiting on feedback API. Some categories may be duplicates.'
+      });
+    }
+    
+    // General recommendation
+    if (recommendations.length === 0) {
+      recommendations.push({
+        category: 'general',
+        severity: 'info',
+        message: 'All diagnostics passed successfully',
+        action: 'No immediate action required. System is healthy.'
+      });
+    } else {
+      recommendations.push({
+        category: 'general',
+        severity: 'info',
+        message: `Review ${feedbackSubmitted.filter(fb => fb && fb.feedbackId).length} submitted feedback items in AI Feedback dashboard`,
+        action: 'Validate feedback and create GitHub issues for confirmed bugs.'
+      });
+    }
+    
+    return recommendations;
+  } catch (error) {
+    return [{
+      category: 'error',
+      severity: 'low',
+      message: 'Failed to generate recommendations',
+      action: 'Review diagnostic logs manually.'
+    }];
   }
 }
 

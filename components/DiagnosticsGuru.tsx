@@ -374,6 +374,57 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             )}
           </div>
 
+          {/* Detailed Tool Results */}
+          {status.summary.toolResults && Array.isArray(status.summary.toolResults) && status.summary.toolResults.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-lg p-4">
+              <h3 className="font-semibold text-gray-900 mb-3">🔧 Tool Test Results</h3>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {status.summary.toolResults.map((tool: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                    <span className="text-sm font-medium text-gray-700">{tool.tool}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded ${tool.validTestPassed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        Valid: {tool.validTestPassed ? '✅' : '❌'}
+                      </span>
+                      <span className={`text-xs px-2 py-1 rounded ${tool.edgeCaseTestPassed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        Edge: {tool.edgeCaseTestPassed ? '✅' : '❌'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recommendations */}
+          {status.summary.recommendations && Array.isArray(status.summary.recommendations) && status.summary.recommendations.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="font-semibold text-blue-900 mb-3">💡 Recommendations</h3>
+              <div className="space-y-2">
+                {status.summary.recommendations.map((rec: any, idx: number) => (
+                  <div key={idx} className={`p-3 rounded border ${
+                    rec.severity === 'critical' ? 'bg-red-50 border-red-300' :
+                    rec.severity === 'high' ? 'bg-orange-50 border-orange-300' :
+                    rec.severity === 'medium' ? 'bg-yellow-50 border-yellow-300' :
+                    'bg-blue-50 border-blue-200'
+                  }`}>
+                    <div className="flex items-start gap-2">
+                      <span className="text-lg">
+                        {rec.severity === 'critical' ? '🔴' :
+                         rec.severity === 'high' ? '🟠' :
+                         rec.severity === 'medium' ? '🟡' : 'ℹ️'}
+                      </span>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">{rec.message}</p>
+                        <p className="text-xs text-gray-600 mt-1">{rec.action}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {status.feedbackSubmitted && Array.isArray(status.feedbackSubmitted) && status.feedbackSubmitted.length > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <h3 className="font-semibold text-yellow-900 mb-2">
