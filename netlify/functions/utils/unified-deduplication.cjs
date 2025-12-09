@@ -105,9 +105,9 @@ function calculateImageHash(base64String, log = null, { skipValidation = false }
     // Round-trip validation guards against malformed/poisoned base64.
     // Set skipValidation=true for trusted/prevalidated callers to avoid the extra encode step on large payloads.
     if (!skipValidation) {
-      const sanitizedWithoutPadding = stripPadding(sanitized);
-      const reEncodedWithoutPadding = stripPadding(buffer.toString('base64'));
-      if (reEncodedWithoutPadding !== sanitizedWithoutPadding) {
+      const inputNoPadding = stripPadding(sanitized);
+      const roundTripNoPadding = stripPadding(buffer.toString('base64'));
+      if (roundTripNoPadding !== inputNoPadding) {
         if (log?.error) {
           log.error('Image hash calculation failed: base64 validation mismatch', {
             length: sanitized.length,

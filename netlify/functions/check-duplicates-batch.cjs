@@ -21,6 +21,7 @@ const {
 
 // Limit logged file names to avoid log bloat while keeping context for debugging
 const MAX_FILE_NAMES_LOGGED = 10;
+const formatFileNameForLog = (file, index) => file?.fileName || `file-${index}`;
 
 /**
  * Batch check for existing analyses by content hash
@@ -136,7 +137,7 @@ exports.handler = async (event, context) => {
     
     log.info('Processing batch duplicate check', {
       fileCount: files.length,
-      fileNames: files.slice(0, MAX_FILE_NAMES_LOGGED).map((f, idx) => f?.fileName || `file-${idx}`),
+      fileNames: files.slice(0, MAX_FILE_NAMES_LOGGED).map((f, idx) => formatFileNameForLog(f, idx)),
       event: 'BATCH_START'
     });
     
@@ -149,8 +150,9 @@ exports.handler = async (event, context) => {
       const file = files[i];
       
       if (!file.image || !file.fileName) {
-        hashErrors.push({ index: i, fileName: file.fileName || `file-${i}`, error: 'Missing image or fileName' });
-        fileHashes.push({ index: i, fileName: file.fileName || `file-${i}`, contentHash: null });
+        const fileName = formatFileNameForLog(file, i);
+        hashErrors.push({ index: i, fileName, error: 'Missing image or fileName' });
+        fileHashes.push({ index: i, fileName, contentHash: null });
         continue;
       }
       
@@ -169,10 +171,11 @@ exports.handler = async (event, context) => {
           });
         }
       } catch (hashErr) {
-        hashErrors.push({ index: i, fileName: file.fileName, error: hashErr.message });
-        fileHashes.push({ index: i, fileName: file.fileName, contentHash: null });
+        const fileName = formatFileNameForLog(file, i);
+        hashErrors.push({ index: i, fileName, error: hashErr.message });
+        fileHashes.push({ index: i, fileName, contentHash: null });
         log.warn('Hash calculation failed for file', {
-          fileName: file.fileName || `file-${i}`,
+          fileName,
           error: hashErr.message,
           event: 'HASH_FAILED'
         });
