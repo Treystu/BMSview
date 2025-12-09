@@ -15,7 +15,8 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 // Use unified deduplication module as canonical source
 const {
   calculateImageHash,
-  checkNeedsUpgrade
+  checkNeedsUpgrade,
+  formatHashPreview
 } = require('./utils/unified-deduplication.cjs');
 
 const MAX_FILE_NAMES_LOGGED = 10;
@@ -161,7 +162,7 @@ exports.handler = async (event, context) => {
           fileHashes.push({ index: i, fileName: file.fileName, contentHash });
           log.debug('Hash generated for file', {
             fileName: file.fileName,
-            hashPreview: contentHash.substring(0, 16) + '...',
+            hashPreview: formatHashPreview(contentHash),
             index: i,
             event: 'HASH_GENERATED'
           });

@@ -26,6 +26,9 @@
 const crypto = require('crypto');
 const { createLogger } = require('./logger.cjs');
 
+const HASH_PREVIEW_LENGTH = 16;
+const formatHashPreview = (hash) => (hash ? `${hash.substring(0, HASH_PREVIEW_LENGTH)}...` : 'null');
+
 // Import existing constants for backward compatibility
 const { 
   DUPLICATE_UPGRADE_THRESHOLD, 
@@ -88,9 +91,9 @@ function calculateImageHash(base64String, log = null) {
     }
 
     const stripPadding = (value) => value.replace(/=+$/, '');
-    const normalizedInput = stripPadding(sanitized);
-    const reEncoded = stripPadding(buffer.toString('base64'));
-    if (!buffer.length || reEncoded !== normalizedInput) {
+    const sanitizedWithoutPadding = stripPadding(sanitized);
+    const reEncodedWithoutPadding = stripPadding(buffer.toString('base64'));
+    if (reEncodedWithoutPadding !== sanitizedWithoutPadding) {
       if (log?.error) {
         log.error('Image hash calculation failed: base64 validation mismatch', {
           length: sanitized.length,
@@ -106,7 +109,7 @@ function calculateImageHash(base64String, log = null) {
 
     if (log?.debug) {
       log.debug('Image hash generated', {
-        hashPreview: hash.substring(0, 16) + '...',
+        hashPreview: formatHashPreview(hash),
         imageLength: sanitized.length,
         event: 'HASH_GENERATED'
       });
@@ -515,6 +518,7 @@ module.exports = {
    * Canonical method for content hashing across all endpoints
    */
   calculateImageHash,
+  formatHashPreview,
   
   /**
    * calculateContentHash: SHA-256 hash from JSON object
