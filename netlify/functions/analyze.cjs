@@ -143,6 +143,17 @@ function getErrorCode(error) {
 }
 
 /**
+ * Extract record ID from an analysis record
+ * Handles both MongoDB ObjectId and string ID formats
+ * @param {Object} record - Analysis record
+ * @returns {string|undefined} Record ID as string
+ */
+function extractRecordId(record) {
+  if (!record) return undefined;
+  return record.id || record._id?.toString?.() || record._id;
+}
+
+/**
  * @param {import('@netlify/functions').HandlerEvent} event
  * @param {import('@netlify/functions').HandlerContext} context
  */
@@ -313,34 +324,47 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
     if (checkOnly) {
       const checkOnlyStartTime = Date.now();
       try {
-        log.info('Check-only mode: starting duplicate check', {
+        log.info('DUPLICATE_CHECK: Starting check-only mode', {
           contentHash: contentHash.substring(0, 16) + '...',
           fileName: imagePayload.fileName,
+          imageSize: imagePayload.image?.length || 0,
           event: 'CHECK_ONLY_START'
         });
         
         const existingAnalysis = await checkExistingAnalysis(contentHash || '', log);
 
         // Distinguish between true duplicates and upgrades needed
+        // checkExistingAnalysis returns:
+        // - null: No duplicate found
+        // - { _isUpgrade: true, _existingRecord: ... }: Low-quality duplicate needs upgrade
+        // - record object: High-quality duplicate (true duplicate)
         const isDuplicate = !!existingAnalysis;
-        const needsUpgrade = existingAnalysis?._isUpgrade || false;
+        const needsUpgrade = existingAnalysis?._isUpgrade === true;
+        
+        // Extract the actual record for upgrade cases
+        const actualRecord = needsUpgrade ? existingAnalysis._existingRecord : existingAnalysis;
 
         const checkResponse = {
           isDuplicate,
           needsUpgrade,
-          recordId: existingAnalysis?.id || existingAnalysis?._id,
-          timestamp: existingAnalysis?.timestamp,
-          analysisData: !needsUpgrade && existingAnalysis ? existingAnalysis.analysis : null
+          recordId: extractRecordId(actualRecord),
+          timestamp: actualRecord?.timestamp,
+          analysisData: (!needsUpgrade && actualRecord) ? actualRecord.analysis : null
         };
 
         const durationMs = timer.end({ checkOnly: true, isDuplicate, needsUpgrade });
         const checkOnlyDurationMs = Date.now() - checkOnlyStartTime;
-        log.info('Check-only request complete', { 
+        
+        // Enhanced logging for duplicate detection debugging
+        log.info('DUPLICATE_CHECK: Check-only complete', { 
           isDuplicate, 
           needsUpgrade, 
+          hasRecordId: !!checkResponse.recordId,
+          hasAnalysisData: !!checkResponse.analysisData,
           durationMs,
           checkOnlyDurationMs,
           fileName: imagePayload.fileName,
+          contentHashPreview: contentHash.substring(0, 16) + '...',
           event: 'CHECK_ONLY_COMPLETE'
         });
         log.exit(200);
@@ -352,10 +376,12 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
         };
       } catch (/** @type {any} */ checkError) {
         const checkOnlyDurationMs = Date.now() - checkOnlyStartTime;
-        log.warn('Check-only request failed', { 
+        log.error('DUPLICATE_CHECK: Check-only failed', { 
           error: checkError.message,
+          stack: checkError.stack?.substring?.(0, 500),
           checkOnlyDurationMs,
           fileName: imagePayload.fileName,
+          contentHashPreview: contentHash?.substring?.(0, 16) + '...',
           event: 'CHECK_ONLY_ERROR'
         });
         return {
@@ -566,6 +592,12 @@ async function checkIdempotency(idemKey, log) {
 async function checkExistingAnalysis(contentHash, log) {
   const startTime = Date.now();
   try {
+    log.info('DUPLICATE_CHECK: Starting database lookup', {
+      contentHashPreview: contentHash.substring(0, 16) + '...',
+      fullHashLength: contentHash.length,
+      event: 'DB_LOOKUP_START'
+    });
+    
     const resultsCol = await getCollection('analysis-results');
     
     // Use unified deduplication module to find the duplicate
@@ -574,16 +606,34 @@ async function checkExistingAnalysis(contentHash, log) {
     const totalDurationMs = Date.now() - startTime;
     
     if (!existingRecord) {
-      log.info('Dedupe: no existing analysis found, will perform new analysis.', {
-        contentHash: contentHash.substring(0, 16) + '...',
+      log.info('DUPLICATE_CHECK: No existing analysis found in database', {
+        contentHashPreview: contentHash.substring(0, 16) + '...',
         totalDurationMs,
         event: 'NOT_FOUND'
       });
       return null;
     }
     
+    log.info('DUPLICATE_CHECK: Found existing record, checking quality', {
+      recordId: existingRecord._id || existingRecord.id,
+      validationScore: existingRecord.validationScore,
+      extractionAttempts: existingRecord.extractionAttempts || 1,
+      isComplete: existingRecord.isComplete || false,
+      hasAnalysis: !!existingRecord.analysis,
+      contentHashPreview: contentHash.substring(0, 16) + '...',
+      event: 'RECORD_FOUND'
+    });
+    
     // Use unified checkNeedsUpgrade to determine if upgrade is required
     const upgradeCheck = checkNeedsUpgrade(existingRecord);
+    
+    log.info('DUPLICATE_CHECK: Upgrade check result', {
+      needsUpgrade: upgradeCheck.needsUpgrade,
+      reason: upgradeCheck.reason,
+      shouldMarkComplete: upgradeCheck.shouldMarkComplete,
+      contentHashPreview: contentHash.substring(0, 16) + '...',
+      event: 'UPGRADE_CHECK_RESULT'
+    });
     
     // If the check indicates this record should be marked complete, update it in the database
     if (upgradeCheck.shouldMarkComplete && !existingRecord.isComplete) {
@@ -593,24 +643,26 @@ async function checkExistingAnalysis(contentHash, log) {
           { _id: existingRecord._id },
           { $set: { isComplete: true, completedAt: new Date() } }
         );
-        log.info('Marked record as complete (no further upgrades needed)', {
+        log.info('DUPLICATE_CHECK: Marked record as complete', {
           recordId: existingRecord._id,
-          reason: upgradeCheck.reason || 'High quality or retry exhausted'
+          reason: upgradeCheck.reason || 'High quality or retry exhausted',
+          event: 'MARKED_COMPLETE'
         });
         // Update local record for consistency
         existingRecord.isComplete = true;
       } catch (markError) {
         // Log but don't fail - marking complete is not critical
-        log.warn('Failed to mark record as complete', {
+        log.warn('DUPLICATE_CHECK: Failed to mark record as complete', {
           error: markError.message,
-          recordId: existingRecord._id
+          recordId: existingRecord._id,
+          event: 'MARK_COMPLETE_FAILED'
         });
       }
     }
     
     if (upgradeCheck.needsUpgrade) {
-      log.warn('Dedupe: existing record needs upgrade.', {
-        contentHash: contentHash.substring(0, 16) + '...',
+      log.info('DUPLICATE_CHECK: Returning upgrade needed response', {
+        contentHashPreview: contentHash.substring(0, 16) + '...',
         upgradeReason: upgradeCheck.reason,
         recordId: existingRecord._id || existingRecord.id,
         totalDurationMs,
@@ -620,8 +672,8 @@ async function checkExistingAnalysis(contentHash, log) {
       return { _isUpgrade: true, _existingRecord: existingRecord };
     }
     
-    log.info('Dedupe: high-quality duplicate found, will return existing.', {
-      contentHash: contentHash.substring(0, 16) + '...',
+    log.info('DUPLICATE_CHECK: Returning high-quality duplicate', {
+      contentHashPreview: contentHash.substring(0, 16) + '...',
       validationScore: existingRecord.validationScore,
       isComplete: existingRecord.isComplete || false,
       recordId: existingRecord._id || existingRecord.id,
@@ -632,11 +684,12 @@ async function checkExistingAnalysis(contentHash, log) {
     return existingRecord;
   } catch (/** @type {any} */ error) {
     const totalDurationMs = Date.now() - startTime;
-    log.warn('Duplicate check failed', {
+    log.error('DUPLICATE_CHECK: Database lookup failed', {
       error: error.message,
-      contentHash: contentHash.substring(0, 16) + '...',
+      stack: error.stack?.substring?.(0, 500),
+      contentHashPreview: contentHash.substring(0, 16) + '...',
       totalDurationMs,
-      event: 'ERROR'
+      event: 'DB_LOOKUP_ERROR'
     });
     // Re-throw to let caller decide how to handle
     throw error;

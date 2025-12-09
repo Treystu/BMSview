@@ -9,8 +9,17 @@ jest.mock('../netlify/functions/utils/mongodb.cjs', () => ({
   getCollection: jest.fn()
 }));
 
+// Mock GitHub API for duplicate detection
+jest.mock('../netlify/functions/utils/github-api.cjs', () => ({
+  searchGitHubIssues: jest.fn().mockResolvedValue({
+    total_count: 0,
+    items: []
+  })
+}));
+
 const { handler, formatGitHubIssue, createGitHubIssueAPI } = require('../netlify/functions/create-github-issue.cjs');
 const { getCollection } = require('../netlify/functions/utils/mongodb.cjs');
+const { searchGitHubIssues } = require('../netlify/functions/utils/github-api.cjs');
 
 // Mock fetch globally
 global.fetch = jest.fn();
@@ -382,6 +391,113 @@ describe('create-github-issue', () => {
       const body = JSON.parse(response.body);
       expect(body.success).toBe(true);
       expect(body.issueNumber).toBe(200);
+      
+      // Verify searchGitHubIssues was called for duplicate detection
+      expect(searchGitHubIssues).toHaveBeenCalled();
+    });
+
+    test('should detect duplicate issues using searchGitHubIssues', async () => {
+      // Mock searchGitHubIssues to return similar issues
+      searchGitHubIssues.mockResolvedValueOnce({
+        total_count: 1,
+        items: [{
+          number: 50,
+          title: '🟠 ⚡ Test Improvement',
+          html_url: 'https://github.com/TestOwner/TestRepo/issues/50',
+          state: 'open'
+        }]
+      });
+
+      const event = {
+        httpMethod: 'POST',
+        headers: {},
+        body: JSON.stringify({ feedbackId: 'feedback-123' })
+      };
+
+      const response = await handler(event, {});
+      const body = JSON.parse(response.body);
+
+      // Should detect as duplicate and return 409
+      expect(response.statusCode).toBe(409);
+      expect(body.error).toBe('Duplicate issue detected');
+      expect(body.duplicateIssue).toBeDefined();
+      expect(body.duplicateIssue.number).toBe(50);
+      expect(body.reason).toBeDefined();
+      
+      // Verify searchGitHubIssues was called with correct parameters
+      expect(searchGitHubIssues).toHaveBeenCalled();
+      const searchCall = searchGitHubIssues.mock.calls[0];
+      expect(searchCall[0]).toEqual(expect.objectContaining({
+        query: expect.any(String),
+        state: 'all',
+        per_page: 10
+      }));
+    });
+
+    test('should proceed with issue creation when no duplicates found', async () => {
+      // Mock searchGitHubIssues to return no duplicates
+      searchGitHubIssues.mockResolvedValueOnce({
+        total_count: 0,
+        items: []
+      });
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          number: 201,
+          url: 'https://api.github.com/repos/TestOwner/TestRepo/issues/201',
+          html_url: 'https://github.com/TestOwner/TestRepo/issues/201',
+          state: 'open',
+          created_at: '2025-01-15T00:00:00Z'
+        })
+      });
+
+      const event = {
+        httpMethod: 'POST',
+        headers: {},
+        body: JSON.stringify({ feedbackId: 'feedback-123' })
+      };
+
+      const response = await handler(event, {});
+      const body = JSON.parse(response.body);
+
+      expect(response.statusCode).toBe(200);
+      expect(body.success).toBe(true);
+      expect(body.issueNumber).toBe(201);
+      expect(searchGitHubIssues).toHaveBeenCalled();
+    });
+
+    test('should handle searchGitHubIssues errors gracefully', async () => {
+      // Mock searchGitHubIssues to return an error
+      searchGitHubIssues.mockResolvedValueOnce({
+        error: true,
+        message: 'GitHub API rate limit exceeded'
+      });
+
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          number: 202,
+          url: 'https://api.github.com/repos/TestOwner/TestRepo/issues/202',
+          html_url: 'https://github.com/TestOwner/TestRepo/issues/202',
+          state: 'open',
+          created_at: '2025-01-15T00:00:00Z'
+        })
+      });
+
+      const event = {
+        httpMethod: 'POST',
+        headers: {},
+        body: JSON.stringify({ feedbackId: 'feedback-123' })
+      };
+
+      const response = await handler(event, {});
+      const body = JSON.parse(response.body);
+
+      // Should still create the issue despite search failure
+      expect(response.statusCode).toBe(200);
+      expect(body.success).toBe(true);
+      expect(searchGitHubIssues).toHaveBeenCalled();
     });
 
     test('should handle API errors gracefully', async () => {

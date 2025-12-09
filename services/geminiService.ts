@@ -252,16 +252,23 @@ export const checkFileDuplicate = async (file: File): Promise<{
 }> => {
     const startTime = Date.now();
     const checkContext = { fileName: file.name, fileSize: file.size };
-    log('debug', 'Checking file for duplicates.', { ...checkContext, event: 'START' });
+    log('info', 'DUPLICATE_CHECK: Starting individual file check', { ...checkContext, event: 'FILE_CHECK_START' });
 
     try {
         const readStartTime = Date.now();
         const imagePayload = await fileWithMetadataToBase64(file);
         const readDurationMs = Date.now() - readStartTime;
+        
+        log('debug', 'DUPLICATE_CHECK: File read complete', {
+            fileName: file.name,
+            readDurationMs,
+            imageSize: imagePayload.image?.length || 0,
+            event: 'FILE_READ_COMPLETE'
+        });
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
-            log('warn', 'Duplicate check timed out after 20 seconds.', { 
+            log('warn', 'DUPLICATE_CHECK: Request timed out after 20 seconds', { 
                 fileName: file.name,
                 event: 'TIMEOUT'
             });
@@ -273,6 +280,12 @@ export const checkFileDuplicate = async (file: File): Promise<{
         };
 
         const fetchStartTime = Date.now();
+        log('debug', 'DUPLICATE_CHECK: Calling backend API', {
+            fileName: file.name,
+            endpoint: '/.netlify/functions/analyze?sync=true&check=true',
+            event: 'API_CALL_START'
+        });
+        
         const response = await fetch('/.netlify/functions/analyze?sync=true&check=true', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -289,14 +302,14 @@ export const checkFileDuplicate = async (file: File): Promise<{
             // Differentiate between expected and unexpected failures
             if (response.status === 404 || response.status === 501) {
                 // Endpoint not implemented - expected, fall back gracefully
-                log('info', 'Duplicate check endpoint not available, will perform full analysis.', { 
+                log('info', 'DUPLICATE_CHECK: Endpoint not available, treating as new file', { 
                     status: response.status,
                     fileName: file.name,
                     event: 'ENDPOINT_NOT_AVAILABLE'
                 });
             } else {
                 // Unexpected error - log as warning
-                log('warn', 'Duplicate check endpoint returned error, assuming not duplicate.', { 
+                log('warn', 'DUPLICATE_CHECK: API error, treating as new file', { 
                     status: response.status,
                     fileName: file.name,
                     totalDurationMs,
@@ -314,15 +327,18 @@ export const checkFileDuplicate = async (file: File): Promise<{
             analysisData?: any;
         } = await response.json();
         
-        log('info', 'Duplicate check complete.', { 
+        // Enhanced logging with full result details
+        log('info', 'DUPLICATE_CHECK: Backend response received', { 
             fileName: file.name, 
             isDuplicate: !!result.isDuplicate,
             needsUpgrade: !!result.needsUpgrade,
-            // Timing breakdown (all times are cumulative parts of totalDurationMs):
+            hasRecordId: !!result.recordId,
+            hasTimestamp: !!result.timestamp,
+            hasAnalysisData: !!result.analysisData,
             readDurationMs,      // Time to read file and convert to base64
             fetchDurationMs,     // Time for HTTP request to backend (includes network latency)
             totalDurationMs,     // Total = read + fetch + overhead (JSON parsing, etc.)
-            event: 'COMPLETE'
+            event: 'API_RESPONSE'
         });
         
         return {
@@ -339,12 +355,12 @@ export const checkFileDuplicate = async (file: File): Promise<{
         const isTimeout = error instanceof Error && error.name === 'AbortError';
         const totalDurationMs = Date.now() - startTime;
         
-        log('warn', 'Duplicate check failed, assuming not duplicate.', { 
+        log('warn', 'DUPLICATE_CHECK: File check failed, treating as new file', { 
             ...checkContext, 
             error: errorMessage,
             isTimeout,
             totalDurationMs,
-            event: 'ERROR'
+            event: 'FILE_CHECK_ERROR'
         });
         return { isDuplicate: false, needsUpgrade: false };
     }
