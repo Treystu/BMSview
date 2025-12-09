@@ -113,92 +113,110 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                     event: 'HASH_CALC_START'
                 });
                 
-                const hashStartTime = Date.now();
-                const hashes = await Promise.all(validImageFiles.map(sha256Browser));
-                const hashDurationMs = Date.now() - hashStartTime;
-                
-                log('info', 'UPFRONT_DUPLICATE_CHECK: Hash calculation complete', {
-                    fileCount: hashes.length,
-                    hashPreviews: hashes.map(truncateHash),
-                    hashDurationMs,
-                    event: 'HASH_CALC_COMPLETE'
-                });
-                
-                log('info', 'UPFRONT_DUPLICATE_CHECK: Calling checkHashes API', {
-                    hashCount: hashes.length,
-                    event: 'API_CALL_START'
-                });
-                
-                const apiStartTime = Date.now();
-                const { duplicates, upgrades } = await checkHashes(hashes);
-                const apiDurationMs = Date.now() - apiStartTime;
-                
-                log('info', 'UPFRONT_DUPLICATE_CHECK: checkHashes API response received', {
-                    duplicatesFound: duplicates.length,
-                    upgradesFound: upgrades.length,
-                    duplicateHashes: duplicates.map(d => truncateHash(d.hash)),
-                    upgradeHashes: upgrades.map(truncateHash),
-                    apiDurationMs,
-                    event: 'API_RESPONSE'
-                });
-                
-                const duplicateMap = new Map(duplicates.map(d => [d.hash, d.data]));
-                const upgradeSet = new Set(upgrades);
+                try {
+                    const hashStartTime = Date.now();
+                    const hashes = await Promise.all(validImageFiles.map(sha256Browser));
+                    const hashDurationMs = Date.now() - hashStartTime;
+                    
+                    log('info', 'UPFRONT_DUPLICATE_CHECK: Hash calculation complete', {
+                        fileCount: hashes.length,
+                        hashPreviews: hashes.map(truncateHash),
+                        hashDurationMs,
+                        event: 'HASH_CALC_COMPLETE'
+                    });
+                    
+                    log('info', 'UPFRONT_DUPLICATE_CHECK: Calling checkHashes API', {
+                        hashCount: hashes.length,
+                        event: 'API_CALL_START'
+                    });
+                    
+                    const apiStartTime = Date.now();
+                    const { duplicates, upgrades } = await checkHashes(hashes);
+                    const apiDurationMs = Date.now() - apiStartTime;
+                    
+                    log('info', 'UPFRONT_DUPLICATE_CHECK: checkHashes API response received', {
+                        duplicatesFound: duplicates.length,
+                        upgradesFound: upgrades.length,
+                        duplicateHashes: duplicates.map(d => truncateHash(d.hash)),
+                        upgradeHashes: upgrades.map(truncateHash),
+                        apiDurationMs,
+                        event: 'API_RESPONSE'
+                    });
+                    
+                    const duplicateMap = new Map(duplicates.map(d => [d.hash, d.data]));
+                    const upgradeSet = new Set(upgrades);
 
-                const newFiles: File[] = [];
-                const filesToUpgrade: File[] = [];
-                const newSkipped = new Map(skippedFiles);
-                let duplicateCount = 0;
-                let newFileCount = 0;
+                    const newFiles: File[] = [];
+                    const filesToUpgrade: File[] = [];
+                    const newSkipped = new Map(skippedFiles);
+                    let duplicateCount = 0;
+                    let newFileCount = 0;
 
-                hashes.forEach((hash, index) => {
-                    const file = validImageFiles[index];
-                    const duplicateData = duplicateMap.get(hash);
+                    hashes.forEach((hash, index) => {
+                        const file = validImageFiles[index];
+                        const duplicateData = duplicateMap.get(hash);
 
-                    if (duplicateData) {
-                        log('info', 'UPFRONT_DUPLICATE_CHECK: File identified as duplicate', {
-                            fileName: file.name,
-                            hash: truncateHash(hash),
-                            hasDuplicateData: !!duplicateData,
-                            event: 'FILE_DUPLICATE'
-                        });
-                        // This is a duplicate, add it to the files array with the data
-                        const duplicateFile = Object.assign(file, {
-                            _isDuplicate: true,
-                            _analysisData: duplicateData,
-                        });
-                        newFiles.push(duplicateFile);
-                        duplicateCount++;
-                    } else if (upgradeSet.has(hash)) {
-                        log('info', 'UPFRONT_DUPLICATE_CHECK: File needs upgrade', {
-                            fileName: file.name,
-                            hash: truncateHash(hash),
-                            event: 'FILE_UPGRADE'
-                        });
-                        filesToUpgrade.push(file);
-                    } else {
-                        log('info', 'UPFRONT_DUPLICATE_CHECK: File is new (not found in database)', {
-                            fileName: file.name,
-                            hash: truncateHash(hash),
-                            event: 'FILE_NEW'
-                        });
-                        newFiles.push(file);
-                        newFileCount++;
-                    }
-                });
-                
-                log('info', 'UPFRONT_DUPLICATE_CHECK: Categorization complete', {
-                    totalFiles: validImageFiles.length,
-                    duplicates: duplicateCount,
-                    upgrades: filesToUpgrade.length,
-                    newFiles: newFileCount,
-                    event: 'CATEGORIZE_COMPLETE'
-                });
-                
-                // Add new files and upgrades to the main files list
-                setFiles(prev => [...prev, ...newFiles, ...filesToUpgrade.map(f => Object.assign(f, { _isUpgrade: true }))]);
-                setSkippedFiles(newSkipped);
-                setIsProcessing(false);
+                        if (duplicateData) {
+                            log('info', 'UPFRONT_DUPLICATE_CHECK: File identified as duplicate', {
+                                fileName: file.name,
+                                hash: truncateHash(hash),
+                                hasDuplicateData: !!duplicateData,
+                                event: 'FILE_DUPLICATE'
+                            });
+                            // This is a duplicate, add it to the files array with the data
+                            const duplicateFile = Object.assign(file, {
+                                _isDuplicate: true,
+                                _analysisData: duplicateData,
+                            });
+                            newFiles.push(duplicateFile);
+                            duplicateCount++;
+                        } else if (upgradeSet.has(hash)) {
+                            log('info', 'UPFRONT_DUPLICATE_CHECK: File needs upgrade', {
+                                fileName: file.name,
+                                hash: truncateHash(hash),
+                                event: 'FILE_UPGRADE'
+                            });
+                            filesToUpgrade.push(file);
+                        } else {
+                            log('info', 'UPFRONT_DUPLICATE_CHECK: File is new (not found in database)', {
+                                fileName: file.name,
+                                hash: truncateHash(hash),
+                                event: 'FILE_NEW'
+                            });
+                            newFiles.push(file);
+                            newFileCount++;
+                        }
+                    });
+                    
+                    log('info', 'UPFRONT_DUPLICATE_CHECK: Categorization complete', {
+                        totalFiles: validImageFiles.length,
+                        duplicates: duplicateCount,
+                        upgrades: filesToUpgrade.length,
+                        newFiles: newFileCount,
+                        event: 'CATEGORIZE_COMPLETE'
+                    });
+                    
+                    // Add new files and upgrades to the main files list
+                    setFiles(prev => [...prev, ...newFiles, ...filesToUpgrade.map(f => Object.assign(f, { _isUpgrade: true }))]);
+                    setSkippedFiles(newSkipped);
+                } catch (error) {
+                    // Duplicate check failed - log error and show user message
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    log('error', 'UPFRONT_DUPLICATE_CHECK: Failed to check for duplicates', {
+                        error: errorMessage,
+                        fileCount: validImageFiles.length,
+                        event: 'CHECK_FAILED'
+                    });
+                    
+                    // Show user-friendly error message
+                    setFileError(`Unable to check for duplicate files: ${errorMessage}. Files will be processed, but duplicates may not be detected.`);
+                    
+                    // Process files anyway (no duplicate detection)
+                    // This ensures users can still upload even if duplicate check fails
+                    setFiles(prev => [...prev, ...validImageFiles]);
+                } finally {
+                    setIsProcessing(false);
+                }
             }
         })();
 

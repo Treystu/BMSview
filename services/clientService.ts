@@ -2686,31 +2686,51 @@ export const checkHashes = async (hashes: string[]): Promise<{ duplicates: { has
         hashPreview: hashes.slice(0, 3).map(h => h.substring(0, 16) + '...')
     });
     
-    try {
-        const response = await apiFetch<{ duplicates: { hash: string, data: any }[], upgrades: string[] }>('check-hashes', {
-            method: 'POST',
-            body: JSON.stringify({ hashes }),
-        });
-        
-        log('info', 'checkHashes function completed successfully', {
-            event: 'SUCCESS',
-            duplicatesFound: response.duplicates?.length || 0,
-            upgradesNeeded: response.upgrades?.length || 0,
-            newFiles: hashes.length - (response.duplicates?.length || 0) - (response.upgrades?.length || 0)
-        });
-        
-        return {
-            duplicates: response.duplicates || [],
-            upgrades: response.upgrades || [],
-        };
-    } catch (error) {
-        log('error', 'Failed to check hashes', { 
-            event: 'ERROR',
-            error: error instanceof Error ? error.message : String(error)
-        });
-        // In case of error, assume no hashes exist to avoid blocking uploads
-        return { duplicates: [], upgrades: [] };
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 1000;
+    
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            const response = await apiFetch<{ duplicates: { hash: string, data: any }[], upgrades: string[] }>('check-hashes', {
+                method: 'POST',
+                body: JSON.stringify({ hashes }),
+            });
+            
+            log('info', 'checkHashes function completed successfully', {
+                event: 'SUCCESS',
+                duplicatesFound: response.duplicates?.length || 0,
+                upgradesNeeded: response.upgrades?.length || 0,
+                newFiles: hashes.length - (response.duplicates?.length || 0) - (response.upgrades?.length || 0),
+                attempt
+            });
+            
+            return {
+                duplicates: response.duplicates || [],
+                upgrades: response.upgrades || [],
+            };
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            const isLastAttempt = attempt === MAX_RETRIES;
+            
+            log(isLastAttempt ? 'error' : 'warn', `Failed to check hashes (attempt ${attempt}/${MAX_RETRIES})`, { 
+                event: isLastAttempt ? 'ERROR_FINAL' : 'ERROR_RETRY',
+                error: errorMessage,
+                attempt,
+                willRetry: !isLastAttempt
+            });
+            
+            // On final attempt, throw error to inform user
+            if (isLastAttempt) {
+                throw new Error(`Failed to check for duplicates after ${MAX_RETRIES} attempts: ${errorMessage}`);
+            }
+            
+            // Wait before retry (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * attempt));
+        }
     }
+    
+    // Should never reach here, but TypeScript requires a return
+    throw new Error('Unexpected: checkHashes exceeded retry loop');
 };
 
 /**
