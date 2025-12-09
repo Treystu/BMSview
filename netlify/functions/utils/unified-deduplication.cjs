@@ -281,22 +281,47 @@ function checkNeedsUpgrade(record) {
  * }
  */
 async function findDuplicateByHash(contentHash, collection, log) {
+  const startTime = Date.now();
   try {
+    log.info('DUPLICATE_LOOKUP: Querying MongoDB for content hash', {
+      contentHashPreview: contentHash.substring(0, 16) + '...',
+      fullHashLength: contentHash.length,
+      event: 'MONGO_QUERY_START'
+    });
+    
     const duplicate = await collection.findOne({ contentHash });
     
+    const durationMs = Date.now() - startTime;
+    
     if (duplicate) {
-      log.info('Duplicate found by content hash', {
-        recordId: duplicate._id,
-        contentHash: contentHash.substring(0, 16) + '...',
-        timestamp: duplicate.timestamp
+      log.info('DUPLICATE_LOOKUP: Found matching record in MongoDB', {
+        recordId: duplicate._id?.toString?.() || duplicate._id || duplicate.id,
+        contentHashPreview: contentHash.substring(0, 16) + '...',
+        timestamp: duplicate.timestamp,
+        validationScore: duplicate.validationScore,
+        hasAnalysis: !!duplicate.analysis,
+        durationMs,
+        event: 'MONGO_FOUND'
       });
       
       return duplicate;
     }
     
+    log.info('DUPLICATE_LOOKUP: No matching record found in MongoDB', {
+      contentHashPreview: contentHash.substring(0, 16) + '...',
+      durationMs,
+      event: 'MONGO_NOT_FOUND'
+    });
+    
     return null;
   } catch (error) {
-    log.error('Error finding duplicate by hash', { error: error.message });
+    const durationMs = Date.now() - startTime;
+    log.error('DUPLICATE_LOOKUP: MongoDB query failed', { 
+      error: error.message,
+      contentHashPreview: contentHash.substring(0, 16) + '...',
+      durationMs,
+      event: 'MONGO_ERROR'
+    });
     return null;
   }
 }

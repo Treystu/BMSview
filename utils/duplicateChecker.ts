@@ -196,34 +196,50 @@ export async function checkFilesForDuplicates(
     log: (level: string, message: string, context?: any) => void
 ): Promise<CategorizedFiles> {
     const startTime = Date.now();
-    log('info', 'Phase 1: Checking all files for duplicates upfront.', { 
+    log('info', 'DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates', { 
         fileCount: files.length,
         willUseBatching: files.length > BATCH_CONFIG.MAX_BATCH_SIZE,
         batchSize: BATCH_CONFIG.MAX_BATCH_SIZE,
-        event: 'START'
+        fileNames: files.slice(0, 5).map(f => f.name), // Log first 5 file names
+        event: 'PHASE1_START'
     });
     
     let checkResults: DuplicateCheckResult[];
     
     // Try batch API first for efficiency (works for any number of files up to 100)
     if (files.length > 1 && files.length <= 100) {
+        log('info', 'DUPLICATE_CHECK: Using batch API endpoint', { 
+            fileCount: files.length,
+            event: 'BATCH_API_SELECTED'
+        });
         const batchResults = await checkFilesUsingBatchAPI(files, log);
         if (batchResults.length > 0) {
+            log('info', 'DUPLICATE_CHECK: Batch API returned results', { 
+                resultCount: batchResults.length,
+                event: 'BATCH_API_SUCCESS'
+            });
             checkResults = batchResults;
         } else {
             // Batch API failed, fall back to individual checks
-            log('info', 'Falling back to individual file checks', { fileCount: files.length });
+            log('warn', 'DUPLICATE_CHECK: Batch API failed, falling back to individual checks', { 
+                fileCount: files.length,
+                event: 'BATCH_API_FALLBACK'
+            });
             checkResults = await checkFilesIndividually(files, log);
         }
     } else if (files.length > 100) {
         // Too many files for batch API, use chunked approach
-        log('info', 'Using chunked batch processing for large file set', { 
+        log('info', 'DUPLICATE_CHECK: Too many files for batch API, using chunked processing', { 
             fileCount: files.length,
-            event: 'CHUNKED_BATCH'
+            event: 'CHUNKED_SELECTED'
         });
         checkResults = await checkFilesIndividually(files, log);
     } else {
         // Single file or very small batch - use individual check
+        log('info', 'DUPLICATE_CHECK: Single file check', { 
+            fileCount: files.length,
+            event: 'INDIVIDUAL_SELECTED'
+        });
         checkResults = await checkFilesIndividually(files, log);
     }
 
@@ -235,14 +251,18 @@ export async function checkFilesForDuplicates(
     const totalDurationMs = Date.now() - startTime;
     const avgPerFile = files.length > 0 ? (totalDurationMs / files.length).toFixed(2) : 'N/A';
 
-    log('info', 'Duplicate check complete.', {
+    // Enhanced logging with individual file results
+    log('info', 'DUPLICATE_CHECK: Phase 1 complete - categorization finished', {
         totalFiles: files.length,
         trueDuplicates: trueDuplicates.length,
+        trueDuplicateNames: trueDuplicates.slice(0, 5).map(r => r.file.name),
         needsUpgrade: needsUpgrade.length,
+        upgradeNames: needsUpgrade.slice(0, 5).map(r => r.file.name),
         newFiles: newFiles.length,
+        newFileNames: newFiles.slice(0, 5).map(r => r.file.name),
         totalDurationMs,
         avgPerFileMs: avgPerFile,
-        event: 'COMPLETE'
+        event: 'PHASE1_COMPLETE'
     });
 
     return { trueDuplicates, needsUpgrade, newFiles };

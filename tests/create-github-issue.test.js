@@ -9,8 +9,17 @@ jest.mock('../netlify/functions/utils/mongodb.cjs', () => ({
   getCollection: jest.fn()
 }));
 
+// Mock GitHub API for duplicate detection
+jest.mock('../netlify/functions/utils/github-api.cjs', () => ({
+  searchGitHubIssues: jest.fn().mockResolvedValue({
+    total_count: 0,
+    items: []
+  })
+}));
+
 const { handler, formatGitHubIssue, createGitHubIssueAPI } = require('../netlify/functions/create-github-issue.cjs');
 const { getCollection } = require('../netlify/functions/utils/mongodb.cjs');
+const { searchGitHubIssues } = require('../netlify/functions/utils/github-api.cjs');
 
 // Mock fetch globally
 global.fetch = jest.fn();
