@@ -15,10 +15,7 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 // Use unified deduplication module as canonical source
 const {
   calculateImageHash,
-  checkNeedsUpgrade,
-  DUPLICATE_UPGRADE_THRESHOLD,
-  MIN_QUALITY_IMPROVEMENT,
-  CRITICAL_FIELDS
+  checkNeedsUpgrade
 } = require('./utils/unified-deduplication.cjs');
 
 /**

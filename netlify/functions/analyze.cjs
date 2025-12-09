@@ -41,10 +41,7 @@ const { handleStoryModeAnalysis } = require('./utils/story-mode.cjs');
 const {
   calculateImageHash,
   findDuplicateByHash,
-  checkNeedsUpgrade,
-  DUPLICATE_UPGRADE_THRESHOLD,
-  MIN_QUALITY_IMPROVEMENT,
-  CRITICAL_FIELDS
+  checkNeedsUpgrade
 } = require('./utils/unified-deduplication.cjs');
 
 /**
@@ -583,6 +580,29 @@ async function checkExistingAnalysis(contentHash, log) {
     // Use unified checkNeedsUpgrade to determine if upgrade is required
     const upgradeCheck = checkNeedsUpgrade(existingRecord);
     
+    // If the check indicates this record should be marked complete, update it in the database
+    if (upgradeCheck.shouldMarkComplete && !existingRecord.isComplete) {
+      try {
+        const resultsCol = await getCollection('analysis-results');
+        await resultsCol.updateOne(
+          { _id: existingRecord._id },
+          { $set: { isComplete: true, completedAt: new Date() } }
+        );
+        log.info('Marked record as complete (no further upgrades needed)', {
+          recordId: existingRecord._id,
+          reason: upgradeCheck.reason || 'High quality or retry exhausted'
+        });
+        // Update local record for consistency
+        existingRecord.isComplete = true;
+      } catch (markError) {
+        // Log but don't fail - marking complete is not critical
+        log.warn('Failed to mark record as complete', {
+          error: markError.message,
+          recordId: existingRecord._id
+        });
+      }
+    }
+    
     if (upgradeCheck.needsUpgrade) {
       log.warn('Dedupe: existing record needs upgrade.', {
         contentHash: contentHash.substring(0, 16) + '...',
@@ -598,6 +618,7 @@ async function checkExistingAnalysis(contentHash, log) {
     log.info('Dedupe: high-quality duplicate found, will return existing.', {
       contentHash: contentHash.substring(0, 16) + '...',
       validationScore: existingRecord.validationScore,
+      isComplete: existingRecord.isComplete || false,
       recordId: existingRecord._id || existingRecord.id,
       totalDurationMs,
       event: 'HIGH_QUALITY_DUPLICATE'

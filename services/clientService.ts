@@ -1960,8 +1960,8 @@ export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> =
     }>('admin-scan-duplicates');
     
     // Convert backend format to AnalysisRecord format for compatibility
-    // Note: Backend returns minimal info, we need to fetch full records if needed
-    // For now, return the sets as-is since we only need id, timestamp, systemName, dlNumber for UI
+    // Note: Backend returns minimal info for display purposes
+    // The UI only needs id, timestamp, systemId, dlNumber for deletion
     const sets = response.duplicateSets.map(set => 
         set.map(record => ({
             id: record.id,
@@ -1970,8 +1970,9 @@ export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> =
             dlNumber: record.dlNumber,
             fileName: record.fileName,
             validationScore: record.validationScore,
-            // Minimal record - enough for display and deletion
-            analysis: { dlNumber: record.dlNumber }
+            // Minimal partial record - enough for UI display and deletion
+            // Type assertion is safe here because UI only accesses these specific fields
+            analysis: record.dlNumber ? { dlNumber: record.dlNumber } as Partial<AnalysisData> : null
         } as AnalysisRecord))
     );
     

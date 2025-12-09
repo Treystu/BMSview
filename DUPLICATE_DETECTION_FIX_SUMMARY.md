@@ -19,14 +19,23 @@
 Restored correct order in `unified-deduplication.cjs`:
 ```javascript
 function checkNeedsUpgrade(record) {
-  // 1. Critical fields FIRST
+  // 0. Completion check FIRST (admin override)
+  if (record.isComplete === true) {
+    return { needsUpgrade: false, reason: 'Record marked as complete', isComplete: true };
+  }
+
+  // 1. Critical fields (highest priority)
   if (!hasAllCriticalFields) {
     return { needsUpgrade: true, reason: 'Missing fields' };
   }
   
   // 2. Retry prevention
   if (hasBeenRetriedWithNoImprovement) {
-    return { needsUpgrade: false, reason: 'Already retried' };
+    return { 
+      needsUpgrade: false, 
+      reason: 'Already retried',
+      shouldMarkComplete: true 
+    };
   }
   
   // 3. Validation score
@@ -34,7 +43,11 @@ function checkNeedsUpgrade(record) {
     return { needsUpgrade: true, reason: 'Low score' };
   }
   
-  return { needsUpgrade: false };
+  return { 
+    needsUpgrade: false, 
+    reason: null,
+    shouldMarkComplete: validationScore >= 80 || attempts >= 2
+  };
 }
 ```
 
@@ -97,13 +110,16 @@ Frontend Upload:
      → calculateImageHash()
      → findDuplicateByHash()
      → checkNeedsUpgrade()
-        1. Check critical fields
+        0. Check isComplete flag (NEVER upgrade if true)
+        1. Check critical fields (highest priority)
         2. Check retry prevention
         3. Check validation score
+        4. Return shouldMarkComplete if appropriate
 
 Backend Analysis:
   → analyze.cjs
   → checkExistingAnalysis()
   → unified-deduplication.findDuplicateByHash()
   → unified-deduplication.checkNeedsUpgrade()
+     (same order as above)
 ```

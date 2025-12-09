@@ -90,7 +90,12 @@ function calculateContentHash(content) {
  * @param {boolean} [record._wasUpgraded] - Flag indicating previous upgrade
  * @param {number} [record._previousQuality] - Quality score before upgrade
  * @param {number} [record._newQuality] - Quality score after upgrade
- * @returns {Object} - { needsUpgrade: boolean, reason: string|null }
+ * @param {boolean} [record.isComplete] - Flag indicating record is marked as complete
+ * @returns {Object} Result object with:
+ *   - {boolean} needsUpgrade - Whether the record needs re-analysis
+ *   - {string|null} reason - Reason for upgrade decision or null
+ *   - {boolean} [shouldMarkComplete] - Signal that record should be marked complete (optional)
+ *   - {boolean} [isComplete] - Indicates record is marked complete (optional)
  * 
  * @example
  * const upgradeCheck = checkNeedsUpgrade(existingRecord);

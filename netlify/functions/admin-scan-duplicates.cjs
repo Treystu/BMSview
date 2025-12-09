@@ -8,6 +8,10 @@
  * Earliest record in each set is kept, others marked for deletion.
  * 
  * This ensures admin duplicate scanner uses UNIFIED backend logic.
+ * 
+ * AUTHENTICATION: This endpoint follows the BMSview admin access control pattern.
+ * Admin access is controlled at the page level (admin.html) via OAuth.
+ * See ADMIN_ACCESS_CONTROL.md for details. No function-level auth checks are performed.
  */
 
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
@@ -38,51 +42,55 @@ exports.handler = async (event, context) => {
   try {
     const resultsCol = await getCollection('analysis-results');
     
-    // Find all records, group by contentHash
-    log.info('Fetching all analysis records for duplicate scan');
-    const allRecords = await resultsCol.find({}).toArray();
+    // Use MongoDB aggregation for memory-efficient duplicate detection
+    // This groups records by contentHash and only returns groups with 2+ records
+    log.info('Starting duplicate scan using aggregation pipeline');
     
-    log.info('Records fetched, grouping by contentHash', { totalRecords: allRecords.length });
-    
-    // Group by contentHash
-    const recordsByHash = new Map();
-    for (const record of allRecords) {
-      if (!record.contentHash) {
-        log.warn('Record without contentHash found, skipping', { 
-          recordId: record._id,
-          fileName: record.fileName 
-        });
-        continue;
-      }
-      
-      if (!recordsByHash.has(record.contentHash)) {
-        recordsByHash.set(record.contentHash, []);
-      }
-      recordsByHash.get(record.contentHash).push(record);
-    }
-    
-    // Filter to only groups with duplicates (2+ records)
     const duplicateSets = [];
-    for (const [contentHash, records] of recordsByHash.entries()) {
-      if (records.length < 2) continue;
+    const pipeline = [
+      // Group by contentHash, collecting all records in each group
+      {
+        $group: {
+          _id: '$contentHash',
+          records: { 
+            $push: {
+              id: { $toString: '$_id' },
+              timestamp: '$timestamp',
+              systemId: { $ifNull: ['$systemId', 'Unknown'] },
+              dlNumber: { $ifNull: ['$analysis.dlNumber', { $ifNull: ['$dlNumber', null] }] },
+              fileName: '$fileName',
+              validationScore: { $ifNull: ['$validationScore', 0] }
+            }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      // Only keep groups with 2 or more records (actual duplicates)
+      { $match: { count: { $gte: 2 } } },
+      // Sort by contentHash for consistency
+      { $sort: { _id: 1 } }
+    ];
+    
+    const cursor = resultsCol.aggregate(pipeline);
+    let totalRecords = 0;
+    
+    for await (const group of cursor) {
+      if (!group._id) continue; // Skip groups without contentHash
       
-      // Sort by timestamp (earliest first)
-      const sortedRecords = records.sort((a, b) => 
+      // Sort records within each group by timestamp (earliest first)
+      const sortedRecords = group.records.sort((a, b) => 
         new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
       
-      // Format for frontend
+      // Add contentHash to each record for display
       const formattedSet = sortedRecords.map(record => ({
-        id: record._id.toString(),
-        timestamp: record.timestamp,
-        systemName: record.systemId || 'Unknown',
-        dlNumber: record.analysis?.dlNumber || record.dlNumber || null,
-        fileName: record.fileName,
-        validationScore: record.validationScore,
-        contentHash: contentHash.substring(0, 16) + '...'
+        ...record,
+        systemName: record.systemId,
+        contentHash: group._id.substring(0, 16) + '...'
       }));
       
       duplicateSets.push(formattedSet);
+      totalRecords += group.count;
     }
     
     const totalDuplicateRecords = duplicateSets.reduce((sum, set) => sum + (set.length - 1), 0);
@@ -93,7 +101,7 @@ exports.handler = async (event, context) => {
     });
     
     log.info('Duplicate scan complete', {
-      totalRecords: allRecords.length,
+      totalRecords,
       duplicateSets: duplicateSets.length,
       totalDuplicates: totalDuplicateRecords,
       durationMs,
@@ -108,7 +116,7 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         duplicateSets,
         summary: {
-          totalRecords: allRecords.length,
+          totalRecords,
           duplicateSets: duplicateSets.length,
           totalDuplicates: totalDuplicateRecords,
           durationMs
