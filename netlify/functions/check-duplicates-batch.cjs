@@ -109,9 +109,10 @@ exports.handler = async (event, context) => {
   log.entry({ method: event.httpMethod, path: event.path });
   const timer = createTimer(log, 'check-duplicates-batch');
   
+  let parsed;
   try {
     // Parse request body
-    const parsed = parseJsonBody(event, log);
+    parsed = parseJsonBody(event, log);
     if (!parsed.ok) {
       log.warn('Invalid JSON body', { error: parsed.error });
       timer.end({ error: 'invalid_json' });
