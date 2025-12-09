@@ -278,6 +278,45 @@ exports.handler = async (event, context) => {
         warning: jobState.warning || null
       };
       
+      // Log summary details when status is completed (for debugging UI issues)
+      if (response.status === 'completed' && response.summary) {
+        log.info('DIAGNOSTICS COMPLETE - FULL SUMMARY', {
+          workloadId: response.workloadId,
+          totalTests: response.summary.totalTests,
+          passedTests: response.summary.passedTests,
+          failedTests: response.summary.failedTests,
+          failureRate: response.summary.failureRate,
+          averageResponseTime: response.summary.averageResponseTime,
+          duration: response.summary.duration,
+          toolResultsCount: response.summary.toolResults?.length || 0,
+          recommendationsCount: response.summary.recommendations?.length || 0,
+          githubIssuesCount: response.summary.githubIssuesCreated?.length || 0,
+          feedbackSubmittedCount: response.feedbackSubmitted?.length || 0,
+          hasErrors: !!(response.summary.errors?.analysisError || response.summary.errors?.feedbackError || response.summary.errors?.finalizationError)
+        });
+        
+        // Log individual tool results for detailed debugging
+        if (response.summary.toolResults && response.summary.toolResults.length > 0) {
+          log.info('TOOL RESULTS DETAIL', {
+            tools: response.summary.toolResults.map(t => ({
+              tool: t.tool,
+              valid: t.validTestPassed,
+              edge: t.edgeCaseTestPassed
+            }))
+          });
+        }
+        
+        // Log recommendations
+        if (response.summary.recommendations && response.summary.recommendations.length > 0) {
+          log.info('RECOMMENDATIONS', {
+            recommendations: response.summary.recommendations.map(r => ({
+              severity: r.severity,
+              message: r.message
+            }))
+          });
+        }
+      }
+      
       log.debug('Sending status response', { 
         workloadId: response.workloadId,
         status: response.status,

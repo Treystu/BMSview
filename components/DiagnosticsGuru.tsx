@@ -29,6 +29,22 @@ interface WorkloadStatus {
       feedbackError?: string | null;
       finalizationError?: string | null;
     };
+    // Fields returned by finalizeDiagnostics
+    toolResults?: Array<{
+      tool: string;
+      validTestPassed: boolean;
+      edgeCaseTestPassed: boolean;
+    }>;
+    recommendations?: Array<{
+      severity: string;
+      message: string;
+      action: string;
+    }>;
+    githubIssuesCreated?: Array<{
+      issueNumber: number;
+      issueUrl: string;
+      category: string;
+    }>;
   };
   warning?: string;
 }
@@ -179,6 +195,15 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
         });
         
         const data = await response.json();
+        
+        // Debug logging for diagnostics
+        console.log('Diagnostics status response:', {
+          success: data.success,
+          status: data.status,
+          currentStep: data.currentStep,
+          hasSummary: !!data.summary,
+          summaryKeys: data.summary ? Object.keys(data.summary) : []
+        });
         
         if (data.success) {
           // CRITICAL FIX: Defensive state update with explicit defaults

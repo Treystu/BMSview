@@ -117,10 +117,10 @@ const SystemCard: React.FC<SystemCardProps> = ({ system, onAdopt, onRefresh }) =
 };
 
 interface AdminSystemsProps {
-  userId: string;
+  // No props needed - single-tenant application
 }
 
-const AdminSystems: React.FC<AdminSystemsProps> = ({ userId }) => {
+const AdminSystems: React.FC<AdminSystemsProps> = () => {
   const [systems, setSystems] = useState<System[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +141,7 @@ const AdminSystems: React.FC<AdminSystemsProps> = ({ userId }) => {
         ? '/api/adopted-systems'
         : '/api/all-systems';
       
-      const response = await fetch(`${endpoint}?userId=${userId}`);
+      const response = await fetch(endpoint);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch systems: ${response.statusText}`);
@@ -164,7 +164,7 @@ const AdminSystems: React.FC<AdminSystemsProps> = ({ userId }) => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ systemId, userId }),
+        body: JSON.stringify({ systemId }),
       });
       
       if (!response.ok) {

@@ -781,13 +781,13 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         extractionAttempts: 1
       };
       
-      // Add userId only if provided (for multi-tenancy)
-      if (userId) {
-        newRecord.userId = userId;
-        log.debug('Storing new record with userId for multi-tenancy', { userId: userId.substring(0, 8) + '...' });
-      } else {
-        log.debug('Storing new record without userId (backwards compatibility)');
-      }
+      // NOTE: This is a single-tenant application - no userId segregation needed
+      // All admins share the same analysis data indexed by contentHash
+      log.debug('Storing new analysis record', { 
+        recordId: record.id,
+        hasContentHash: !!contentHash,
+        qualityScore: record.validationScore 
+      });
 
       await resultsCol.insertOne(newRecord);
 
