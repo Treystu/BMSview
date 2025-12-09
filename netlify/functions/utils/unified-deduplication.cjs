@@ -28,6 +28,7 @@ const { createLogger } = require('./logger.cjs');
 
 const HASH_PREVIEW_LENGTH = 16;
 const formatHashPreview = (hash) => (hash ? `${hash.substring(0, HASH_PREVIEW_LENGTH)}...` : 'null');
+const stripPadding = (value = '') => value.replace(/=+$/, '');
 
 // Import existing constants for backward compatibility
 const { 
@@ -90,7 +91,6 @@ function calculateImageHash(base64String, log = null) {
       return null;
     }
 
-    const stripPadding = (value) => value.replace(/=+$/, '');
     const sanitizedWithoutPadding = stripPadding(sanitized);
     const reEncodedWithoutPadding = stripPadding(buffer.toString('base64'));
     if (reEncodedWithoutPadding !== sanitizedWithoutPadding) {
