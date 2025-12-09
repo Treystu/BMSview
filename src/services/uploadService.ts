@@ -44,22 +44,20 @@ async function getContentHash(file: any): Promise<string | null> {
   }
 }
 
-async function checkForDuplicate(file: any, userId: string): Promise<{ isDuplicate: boolean, existingId?: string }> {
+async function checkForDuplicate(file: any): Promise<{ isDuplicate: boolean, existingId?: string }> {
   try {
     // Calculate content hash (works in Node tests via Buffer)
     const contentHash = await getContentHash(file);
     const db = await getDb();
-    // Check for duplicates by filename AND content hash
+    // Check for duplicates by filename AND content hash (single-tenant - no userId)
     const existing = await db.collection('uploads').findOne({
       $or: [
         {
           filename: file.name,
-          userId,
           status: { $in: ['completed', 'processing'] }
         },
         contentHash ? {
           contentHash,
-          userId,
           status: { $in: ['completed', 'processing'] }
         } : null
       ].filter(Boolean)
@@ -79,7 +77,6 @@ async function checkForDuplicate(file: any, userId: string): Promise<{ isDuplica
     const db = await getDb();
     const existing = await db.collection('uploads').findOne({
       filename: file.name,
-      userId,
       status: { $in: ['completed', 'processing'] }
     });
     return {
@@ -131,7 +128,7 @@ function validateFilename(filename: string): { valid: boolean; error?: string } 
   return { valid: true };
 }
 
-async function processFile(file: any, userId: string): Promise<string> {
+async function processFile(file: any): Promise<string> {
   // Simulate file processing
   const processingSteps = [
     { stage: 'uploaded', progress: 25 },
@@ -152,7 +149,7 @@ async function processFile(file: any, userId: string): Promise<string> {
 }
 
 const inProgressKeys = new Set<string>();
-export async function uploadFile(file: any, userId: string): Promise<UploadResponse> {
+export async function uploadFile(file: any): Promise<UploadResponse> {
   try {
     // Validate filename
     const filenameValidation = validateFilename(file.name);
@@ -163,8 +160,8 @@ export async function uploadFile(file: any, userId: string): Promise<UploadRespo
       };
     }
 
-    // Prevent duplicate concurrent uploads (best-effort lock)
-    const key = `${userId}|${String(file.name).toLowerCase()}`;
+    // Prevent duplicate concurrent uploads (best-effort lock) - single-tenant
+    const key = String(file.name).toLowerCase();
     if (inProgressKeys.has(key)) {
       return { status: 'skipped', reason: 'duplicate' };
     }
@@ -172,7 +169,7 @@ export async function uploadFile(file: any, userId: string): Promise<UploadRespo
 
     try {
       // Check for duplicates
-      const duplicateCheck = await checkForDuplicate(file, userId);
+      const duplicateCheck = await checkForDuplicate(file);
       if (duplicateCheck.isDuplicate) {
         return {
           status: 'skipped',
@@ -186,18 +183,17 @@ export async function uploadFile(file: any, userId: string): Promise<UploadRespo
       // Insert upload record in processing state
       await db.collection('uploads').insertOne({
         filename: file.name,
-        userId,
         status: 'processing',
         createdAt: new Date(),
         fileSize: file.size
       });
 
       // Process the file
-      const fileId = await processFile(file, userId);
+      const fileId = await processFile(file);
 
       // Update record to completed
       await db.collection('uploads').updateOne(
-        { filename: file.name, userId },
+        { filename: file.name },
         {
           $set: {
             status: 'completed',
@@ -223,7 +219,7 @@ export async function uploadFile(file: any, userId: string): Promise<UploadRespo
     // Update record to failed if it exists
     const db = await getDb();
     await db.collection('uploads').updateOne(
-      { filename: file.name, userId },
+      { filename: file.name },
       {
         $set: {
           status: 'failed',
@@ -240,27 +236,23 @@ export async function uploadFile(file: any, userId: string): Promise<UploadRespo
   }
 }
 
-export async function getUploadHistory(userId: string): Promise<any[]> {
+export async function getUploadHistory(): Promise<any[]> {
   try {
     const db = await getDb();
-    const uploads = await db.collection('uploads').findOne({
-      userId,
-      // Mock query - in real implementation this would be find() with toArray()
-    });
-
-    return uploads || []; // Return empty array if no uploads found
+    const uploads = await db.collection('uploads').find({}).toArray();
+    return uploads || [];
   } catch (error) {
     console.error('Error getting upload history:', error);
     return [];
   }
 }
 
-export async function deleteUpload(filename: string, userId: string): Promise<boolean> {
+export async function deleteUpload(filename: string): Promise<boolean> {
   try {
     const db = await getDb();
     // Update status to deleted instead of actually deleting
     const result = await db.collection('uploads').updateOne(
-      { filename, userId },
+      { filename },
       {
         $set: {
           status: 'deleted',

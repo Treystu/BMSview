@@ -40,10 +40,10 @@ exports.handler = async (event, context) => {
     await client.connect();
     
     const queryStringParameters = event.queryStringParameters || {};
-    const { userId, filter = 'unadopted' } = queryStringParameters;
+    const { filter = 'unadopted' } = queryStringParameters;
 
     if (event.httpMethod === 'GET') {
-      log.debug('Fetching systems', { filter, userId });
+      log.debug('Fetching systems', { filter });
       let systems;
       
       switch (filter) {
@@ -51,7 +51,7 @@ exports.handler = async (event, context) => {
           systems = await getUnadoptedSystems(database, log);
           break;
         case 'adopted':
-          systems = await getAdoptedSystems(database, userId, log);
+          systems = await getAdoptedSystems(database, log);
           break;
         case 'all':
           systems = await getAllSystems(database, log);
@@ -71,21 +71,21 @@ exports.handler = async (event, context) => {
     }
 
     if (event.httpMethod === 'POST') {
-      const { systemId, userId: adoptUserId } = JSON.parse(event.body);
+      const { systemId } = JSON.parse(event.body);
       
-      if (!systemId || !adoptUserId) {
-        log.warn('Missing systemId or userId');
+      if (!systemId) {
+        log.warn('Missing systemId');
         timer.end({ error: 'missing_params' });
         log.exit(400);
         return {
           statusCode: 400,
           headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: 'Missing systemId or userId' })
+          body: JSON.stringify({ error: 'Missing systemId' })
         };
       }
 
-      log.info('Adopting system', { systemId, userId: adoptUserId });
-      const result = await adoptSystem(database, systemId, adoptUserId, log);
+      log.info('Adopting system', { systemId });
+      const result = await adoptSystem(database, systemId, log);
       
       if (result.success) {
         timer.end({ adopted: true });
@@ -167,12 +167,11 @@ async function getUnadoptedSystems(database, log) {
   }));
 }
 
-async function getAdoptedSystems(database, userId, log) {
-  log.debug('Querying adopted systems', { userId });
+async function getAdoptedSystems(database, log) {
+  log.debug('Querying adopted systems');
   const systems = await database.collection('systems').aggregate([
     { $match: { 
-        adopted: true,
-        adoptedBy: userId 
+        adopted: true
       }},
     { $lookup: {
         from: 'records',
@@ -225,7 +224,7 @@ async function getAllSystems(database, log) {
   }));
 }
 
-async function adoptSystem(database, systemId, userId, log) {
+async function adoptSystem(database, systemId, log) {
   try {
     // Check if system exists and is unadopted
     log.debug('Checking system for adoption', { systemId });
@@ -244,7 +243,6 @@ async function adoptSystem(database, systemId, userId, log) {
       { 
         $set: {
           adopted: true,
-          adoptedBy: userId,
           adoptedAt: new Date(),
           lastActive: new Date()
         }
@@ -258,13 +256,12 @@ async function adoptSystem(database, systemId, userId, log) {
     // Log the adoption
     await database.collection('system-adoption-log').insertOne({
       systemId,
-      userId,
       adoptedAt: new Date(),
       previousName: system.name,
       action: 'adopted'
     });
 
-    log.debug('System adoption recorded', { systemId, userId });
+    log.debug('System adoption recorded', { systemId });
     return { success: true };
   } catch (error) {
     log.error('Error adopting system', { error: error.message, systemId });
