@@ -281,23 +281,49 @@ function checkNeedsUpgrade(record) {
  * }
  */
 async function findDuplicateByHash(contentHash, collection, log) {
+  const startTime = Date.now();
+  
   try {
+    log.debug('Starting duplicate hash lookup', {
+      hashPreview: formatHashPreview(contentHash),
+      event: 'DEDUP_LOOKUP_START'
+    });
+    
     const duplicate = await collection.findOne({ contentHash });
+    const durationMs = Date.now() - startTime;
     
     if (duplicate) {
       log.info('Duplicate found by content hash', {
         recordId: duplicate._id,
-        contentHash: contentHash.substring(0, 16) + '...',
-        timestamp: duplicate.timestamp
+        hashPreview: formatHashPreview(contentHash),
+        timestamp: duplicate.timestamp,
+        validationScore: duplicate.validationScore,
+        extractionAttempts: duplicate.extractionAttempts || 1,
+        durationMs,
+        event: 'DEDUP_FOUND'
       });
       
       return duplicate;
     }
     
+    log.debug('No duplicate found for content hash', {
+      hashPreview: formatHashPreview(contentHash),
+      durationMs,
+      event: 'DEDUP_NOT_FOUND'
+    });
+    
     return null;
   } catch (error) {
-    log.error('Error finding duplicate by hash', { error: error.message });
-    return null;
+    const durationMs = Date.now() - startTime;
+    log.error('Error finding duplicate by hash', { 
+      error: error.message,
+      stack: error.stack,
+      hashPreview: formatHashPreview(contentHash),
+      durationMs,
+      event: 'DEDUP_ERROR'
+    });
+    // Re-throw to let caller handle the error appropriately
+    throw error;
   }
 }
 
@@ -346,10 +372,23 @@ async function findDuplicateByHash(contentHash, collection, log) {
  * }
  */
 async function detectAnalysisDuplicate(base64Image, collection, log) {
+  const startTime = Date.now();
+  
+  log.debug('Starting comprehensive duplicate detection', {
+    imageLength: base64Image?.length || 0,
+    event: 'DETECT_START'
+  });
+  
   // Calculate content hash
-  const contentHash = calculateImageHash(base64Image);
+  const contentHash = calculateImageHash(base64Image, log);
   
   if (!contentHash) {
+    const durationMs = Date.now() - startTime;
+    log.warn('Duplicate detection aborted - hash calculation failed', {
+      imageLength: base64Image?.length || 0,
+      durationMs,
+      event: 'DETECT_HASH_FAILED'
+    });
     return {
       isDuplicate: false,
       needsUpgrade: false,
@@ -360,9 +399,34 @@ async function detectAnalysisDuplicate(base64Image, collection, log) {
   }
 
   // Find existing record
-  const existingRecord = await findDuplicateByHash(contentHash, collection, log);
+  let existingRecord;
+  try {
+    existingRecord = await findDuplicateByHash(contentHash, collection, log);
+  } catch (lookupError) {
+    const durationMs = Date.now() - startTime;
+    log.error('Duplicate detection failed during lookup', {
+      error: lookupError.message,
+      hashPreview: formatHashPreview(contentHash),
+      durationMs,
+      event: 'DETECT_LOOKUP_FAILED'
+    });
+    // Return non-duplicate status to allow analysis to proceed
+    return {
+      isDuplicate: false,
+      needsUpgrade: false,
+      existingRecord: null,
+      contentHash,
+      error: `Lookup failed: ${lookupError.message}`
+    };
+  }
 
   if (!existingRecord) {
+    const durationMs = Date.now() - startTime;
+    log.info('Duplicate detection complete - no duplicate found', {
+      hashPreview: formatHashPreview(contentHash),
+      durationMs,
+      event: 'DETECT_NOT_DUPLICATE'
+    });
     return {
       isDuplicate: false,
       needsUpgrade: false,
@@ -373,6 +437,18 @@ async function detectAnalysisDuplicate(base64Image, collection, log) {
 
   // Check if existing record needs upgrade
   const upgradeCheck = checkNeedsUpgrade(existingRecord);
+  const durationMs = Date.now() - startTime;
+  
+  log.info('Duplicate detection complete', {
+    hashPreview: formatHashPreview(contentHash),
+    isDuplicate: true,
+    needsUpgrade: upgradeCheck.needsUpgrade,
+    upgradeReason: upgradeCheck.reason,
+    recordId: existingRecord._id?.toString() || existingRecord.id,
+    validationScore: existingRecord.validationScore,
+    durationMs,
+    event: upgradeCheck.needsUpgrade ? 'DETECT_UPGRADE_NEEDED' : 'DETECT_HIGH_QUALITY_DUPLICATE'
+  });
 
   return {
     isDuplicate: true,
