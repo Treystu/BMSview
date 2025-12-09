@@ -13,6 +13,9 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
     }));
 };
 
+/** Truncate hash for logging (first 16 chars + ...) */
+const truncateHash = (hash: string): string => hash.substring(0, 16) + '...';
+
 const getMimeTypeFromFileName = (fileName: string): string => {
     const extension = fileName.split('.').pop()?.toLowerCase();
     switch (extension) {
@@ -116,7 +119,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                 
                 log('info', 'UPFRONT_DUPLICATE_CHECK: Hash calculation complete', {
                     fileCount: hashes.length,
-                    hashPreviews: hashes.map(h => h.substring(0, 16) + '...'),
+                    hashPreviews: hashes.map(truncateHash),
                     hashDurationMs,
                     event: 'HASH_CALC_COMPLETE'
                 });
@@ -133,8 +136,8 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                 log('info', 'UPFRONT_DUPLICATE_CHECK: checkHashes API response received', {
                     duplicatesFound: duplicates.length,
                     upgradesFound: upgrades.length,
-                    duplicateHashes: duplicates.map(d => d.hash.substring(0, 16) + '...'),
-                    upgradeHashes: upgrades.map(h => h.substring(0, 16) + '...'),
+                    duplicateHashes: duplicates.map(d => truncateHash(d.hash)),
+                    upgradeHashes: upgrades.map(truncateHash),
                     apiDurationMs,
                     event: 'API_RESPONSE'
                 });
@@ -145,6 +148,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                 const newFiles: File[] = [];
                 const filesToUpgrade: File[] = [];
                 const newSkipped = new Map(skippedFiles);
+                let duplicateCount = 0;
 
                 hashes.forEach((hash, index) => {
                     const file = validImageFiles[index];
@@ -153,7 +157,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                     if (duplicateData) {
                         log('info', 'UPFRONT_DUPLICATE_CHECK: File identified as duplicate', {
                             fileName: file.name,
-                            hash: hash.substring(0, 16) + '...',
+                            hash: truncateHash(hash),
                             hasDuplicateData: !!duplicateData,
                             event: 'FILE_DUPLICATE'
                         });
@@ -163,17 +167,18 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                             _analysisData: duplicateData,
                         });
                         newFiles.push(duplicateFile);
+                        duplicateCount++;
                     } else if (upgradeSet.has(hash)) {
                         log('info', 'UPFRONT_DUPLICATE_CHECK: File needs upgrade', {
                             fileName: file.name,
-                            hash: hash.substring(0, 16) + '...',
+                            hash: truncateHash(hash),
                             event: 'FILE_UPGRADE'
                         });
                         filesToUpgrade.push(file);
                     } else {
                         log('info', 'UPFRONT_DUPLICATE_CHECK: File is new (not found in database)', {
                             fileName: file.name,
-                            hash: hash.substring(0, 16) + '...',
+                            hash: truncateHash(hash),
                             event: 'FILE_NEW'
                         });
                         newFiles.push(file);
@@ -182,9 +187,9 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                 
                 log('info', 'UPFRONT_DUPLICATE_CHECK: Categorization complete', {
                     totalFiles: validImageFiles.length,
-                    duplicates: newFiles.filter((f: any) => f._isDuplicate).length,
+                    duplicates: duplicateCount,
                     upgrades: filesToUpgrade.length,
-                    newFiles: newFiles.filter((f: any) => !f._isDuplicate).length,
+                    newFiles: newFiles.length - duplicateCount,
                     event: 'CATEGORIZE_COMPLETE'
                 });
                 
