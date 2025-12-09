@@ -15,9 +15,16 @@ async function sha256Browser(buffer) {
     return hashHex;
 }
 
-// Simulate backend calculateImageHash function
+// Simulate backend calculateImageHash function (from unified-deduplication.cjs)
 function calculateImageHash(base64String) {
-    const sanitized = base64String.replace(/\s+/g, '');
+    // Normalize payload: trim whitespace and strip data URL prefix if present
+    const normalized = base64String.trim();
+    const cleaned = normalized.startsWith('data:')
+        ? normalized.slice(normalized.indexOf(',') + 1)
+        : normalized;
+    
+    // Remove whitespace that may be introduced by transport layers
+    const sanitized = cleaned.replace(/\s+/g, '');
     const buffer = Buffer.from(sanitized, 'base64');
     const hash = crypto.createHash('sha256').update(buffer).digest('hex');
     return hash;
@@ -49,10 +56,15 @@ describe('Hash Consistency Between Frontend and Backend', () => {
         const base64WithPrefix = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
         const base64WithoutPrefix = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
         
-        // Backend strips data URL prefix
+        // Backend strips data URL prefix properly
         const hash1 = calculateImageHash(base64WithPrefix);
         const hash2 = calculateImageHash(base64WithoutPrefix);
         
+        console.log('Hash with prefix:   ', hash1);
+        console.log('Hash without prefix:', hash2);
+        console.log('Match:', hash1 === hash2 ? '✓' : '✗');
+        
+        // These should be equal after backend strips the prefix
         expect(hash1).toBe(hash2);
     });
     
