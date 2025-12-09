@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import JSZip from 'jszip';
-import { sha256Browser } from '../utils';
-import { checkHashes } from '../services/clientService';
+// Unified duplicate detection - use backend hashing via check-duplicates-batch endpoint
+// This ensures consistent hash calculation with analyze.cjs (see unified-deduplication.cjs)
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({
@@ -103,36 +103,112 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
         const imageProcessingPromise = (async () => {
             if (validImageFiles.length > 0) {
                 setIsProcessing(true);
-                const hashes = await Promise.all(validImageFiles.map(sha256Browser));
-                const { duplicates, upgrades } = await checkHashes(hashes);
-                const duplicateMap = new Map(duplicates.map(d => [d.hash, d.data]));
-                const upgradeSet = new Set(upgrades);
-
-                const newFiles: File[] = [];
-                const filesToUpgrade: File[] = [];
-                const newSkipped = new Map(skippedFiles);
-
-                hashes.forEach((hash, index) => {
-                    const file = validImageFiles[index];
-                    const duplicateData = duplicateMap.get(hash);
-
-                    if (duplicateData) {
-                        // This is a duplicate, add it to the files array with the data
-                        const duplicateFile = Object.assign(file, {
-                            _isDuplicate: true,
-                            _analysisData: duplicateData,
-                        });
-                        newFiles.push(duplicateFile);
-                    } else if (upgradeSet.has(hash)) {
-                        filesToUpgrade.push(file);
-                    } else {
-                        newFiles.push(file);
-                    }
+                
+                log('info', 'Starting unified duplicate detection via backend', {
+                    fileCount: validImageFiles.length,
+                    event: 'UNIFIED_DEDUP_START'
                 });
                 
-                // Add new files and upgrades to the main files list
-                setFiles(prev => [...prev, ...newFiles, ...filesToUpgrade.map(f => Object.assign(f, { _isUpgrade: true }))]);
-                setSkippedFiles(newSkipped);
+                try {
+                    // Read all files as base64 (matching backend's calculateImageHash input format)
+                    const fileReadPromises = validImageFiles.map(file => {
+                        return new Promise<{ file: File; image: string; mimeType: string; fileName: string }>((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                if (typeof reader.result === 'string') {
+                                    resolve({
+                                        file,
+                                        image: reader.result.split(',')[1], // Remove data:image/... prefix
+                                        mimeType: file.type,
+                                        fileName: file.name
+                                    });
+                                } else {
+                                    reject(new Error('Failed to read file'));
+                                }
+                            };
+                            reader.onerror = () => reject(new Error('File read error'));
+                            reader.readAsDataURL(file);
+                        });
+                    });
+                    
+                    const filesData = await Promise.all(fileReadPromises);
+                    
+                    // Call unified batch API (uses calculateImageHash on backend for consistent hashing)
+                    const response = await fetch('/.netlify/functions/check-duplicates-batch', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            files: filesData.map(f => ({
+                                image: f.image,
+                                mimeType: f.mimeType,
+                                fileName: f.fileName
+                            }))
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`Batch API failed with status ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    
+                    log('info', 'Unified duplicate detection complete', {
+                        totalFiles: validImageFiles.length,
+                        duplicates: result.summary?.duplicates || 0,
+                        upgrades: result.summary?.upgrades || 0,
+                        new: result.summary?.new || 0,
+                        event: 'UNIFIED_DEDUP_COMPLETE'
+                    });
+                    
+                    const newFiles: File[] = [];
+                    const filesToUpgrade: File[] = [];
+                    const newSkipped = new Map(skippedFiles);
+                    
+                    // Process results from batch API
+                    result.results.forEach((apiResult: { 
+                        fileName: string; 
+                        isDuplicate: boolean; 
+                        needsUpgrade: boolean; 
+                        recordId?: string;
+                        timestamp?: string;
+                    }) => {
+                        const fileData = filesData.find(f => f.fileName === apiResult.fileName);
+                        if (!fileData) {
+                            log('warn', 'File not found in original array', { fileName: apiResult.fileName });
+                            return;
+                        }
+                        
+                        if (apiResult.isDuplicate && !apiResult.needsUpgrade) {
+                            // True duplicate - mark with analysis data
+                            const duplicateFile = Object.assign(fileData.file, {
+                                _isDuplicate: true,
+                                _recordId: apiResult.recordId,
+                                _timestamp: apiResult.timestamp
+                            });
+                            newFiles.push(duplicateFile);
+                        } else if (apiResult.needsUpgrade) {
+                            // Needs upgrade - mark for re-analysis
+                            filesToUpgrade.push(fileData.file);
+                        } else {
+                            // New file - no duplicate found
+                            newFiles.push(fileData.file);
+                        }
+                    });
+                    
+                    // Add new files and upgrades to the main files list
+                    setFiles(prev => [...prev, ...newFiles, ...filesToUpgrade.map(f => Object.assign(f, { _isUpgrade: true }))]);
+                    setSkippedFiles(newSkipped);
+                    
+                } catch (error) {
+                    // On error, allow all files through (will be processed by analyze endpoint)
+                    log('error', 'Unified duplicate detection failed, allowing all files', {
+                        error: error instanceof Error ? error.message : String(error),
+                        fileCount: validImageFiles.length,
+                        event: 'UNIFIED_DEDUP_ERROR'
+                    });
+                    setFiles(prev => [...prev, ...validImageFiles]);
+                }
+                
                 setIsProcessing(false);
             }
         })();
