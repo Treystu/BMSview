@@ -149,6 +149,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                 const filesToUpgrade: File[] = [];
                 const newSkipped = new Map(skippedFiles);
                 let duplicateCount = 0;
+                let newFileCount = 0;
 
                 hashes.forEach((hash, index) => {
                     const file = validImageFiles[index];
@@ -182,6 +183,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                             event: 'FILE_NEW'
                         });
                         newFiles.push(file);
+                        newFileCount++;
                     }
                 });
                 
@@ -189,7 +191,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
                     totalFiles: validImageFiles.length,
                     duplicates: duplicateCount,
                     upgrades: filesToUpgrade.length,
-                    newFiles: newFiles.length - duplicateCount,
+                    newFiles: newFileCount,
                     event: 'CATEGORIZE_COMPLETE'
                 });
                 
