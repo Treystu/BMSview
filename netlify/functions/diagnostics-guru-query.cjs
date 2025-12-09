@@ -67,51 +67,6 @@ exports.handler = async (event, context) => {
         log.warn('Failed to gather collection context', { error: err.message });
       }
 
-      // Add deduplication diagnostics
-      try {
-        const resultsCol = await getCollection('analysis-results');
-        
-        // Count records with/without contentHash
-        const totalRecords = await resultsCol.countDocuments({});
-        const withHash = await resultsCol.countDocuments({ contentHash: { $exists: true, $ne: null } });
-        const withoutHash = totalRecords - withHash;
-        
-        // Check index status
-        const indexes = await resultsCol.indexes();
-        const hasContentHashIndex = indexes.some(idx => idx.key && idx.key.contentHash !== undefined);
-        
-        // Get validation score distribution
-        const lowQuality = await resultsCol.countDocuments({ validationScore: { $lt: 80 } });
-        const highQuality = await resultsCol.countDocuments({ validationScore: { $gte: 80 } });
-        const upgraded = await resultsCol.countDocuments({ _wasUpgraded: true });
-        
-        contextParts.push('\nDEDUPLICATION DIAGNOSTICS:');
-        contextParts.push(JSON.stringify({
-          totalRecords,
-          withContentHash: withHash,
-          withoutContentHash: withoutHash,
-          percentWithHash: totalRecords > 0 ? ((withHash / totalRecords) * 100).toFixed(1) + '%' : '0%',
-          hasContentHashIndex,
-          indexRecommendation: hasContentHashIndex ? 'Index present - queries optimized' : 'CRITICAL: Missing contentHash index - duplicate checks will be slow',
-          qualityDistribution: {
-            lowQuality: `${lowQuality} records (<80%)`,
-            highQuality: `${highQuality} records (>=80%)`,
-            upgraded: `${upgraded} records upgraded`
-          }
-        }, null, 2));
-        
-        log.info('Deduplication diagnostics gathered', {
-          totalRecords,
-          withHash,
-          withoutHash,
-          hasContentHashIndex,
-          event: 'DEDUP_DIAGNOSTICS'
-        });
-      } catch (err) {
-        log.warn('Failed to gather deduplication diagnostics', { error: err.message });
-        contextParts.push('\nDEDUPLICATION DIAGNOSTICS: Error gathering - ' + err.message);
-      }
-
       // Add recent error logs if available
       try {
         const logsCollection = await getCollection('logs');
