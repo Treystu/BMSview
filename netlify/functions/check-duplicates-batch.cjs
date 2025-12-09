@@ -136,7 +136,7 @@ exports.handler = async (event, context) => {
     
     log.info('Processing batch duplicate check', {
       fileCount: files.length,
-      fileNames: files.slice(0, MAX_FILE_NAMES_LOGGED).map(f => f?.fileName || 'unknown'),
+      fileNames: files.slice(0, MAX_FILE_NAMES_LOGGED).map((f, idx) => f?.fileName || `file-${idx}`),
       event: 'BATCH_START'
     });
     

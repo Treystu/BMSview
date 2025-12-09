@@ -31,8 +31,7 @@ const { createLogger } = require('./logger.cjs');
  * @param {string} hash
  * @returns {string}
  */
-const HASH_PREVIEW_LENGTH = 16;
-const formatHashPreview = (hash) => (hash ? `${hash.substring(0, HASH_PREVIEW_LENGTH)}...` : 'null');
+const formatHashPreview = (hash) => (hash ? `${hash.substring(0, 16)}...` : 'null');
 
 /**
  * Strip padding from a base64 string for comparison.
@@ -56,7 +55,7 @@ const {
  * 
  * @param {string} base64String - Base64-encoded image data (without data:image/... prefix)
  * @param {Object} [log] - Optional logger with error/debug methods
- * @param {{ skipValidation?: boolean }} [options] - Optional controls (skipValidation to bypass round-trip validation)
+ * @param {{ skipValidation?: boolean }} [options] - Optional controls (set skipValidation=true for trusted inputs to bypass round-trip validation)
  * @returns {string|null} - Hex-encoded SHA-256 hash (64 chars) or null on error
  * 
  * @example
