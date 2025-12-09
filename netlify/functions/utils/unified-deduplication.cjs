@@ -67,8 +67,8 @@ function calculateImageHash(base64String, log = null) {
       ? normalized.slice(normalized.indexOf(',') + 1)
       : normalized;
 
-    // Remove common whitespace characters that may be introduced by transport layers
-    const sanitized = cleaned.replace(/[ \t\r\n]+/g, '');
+    // Remove whitespace that may be introduced by transport layers
+    const sanitized = cleaned.replace(/\s+/g, '');
 
     // Validate base64 by round-tripping through Buffer
     let buffer;
@@ -87,8 +87,9 @@ function calculateImageHash(base64String, log = null) {
       return null;
     }
 
-    const normalizedInput = sanitized.replace(/=+$/, '');
-    const reEncoded = buffer.toString('base64').replace(/=+$/, '');
+    const stripPadding = (value) => value.replace(/=+$/, '');
+    const normalizedInput = stripPadding(sanitized);
+    const reEncoded = stripPadding(buffer.toString('base64'));
     if (!buffer.length || reEncoded !== normalizedInput) {
       if (log?.error) {
         log.error('Image hash calculation failed: base64 validation mismatch', {

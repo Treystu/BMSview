@@ -89,8 +89,8 @@ describe('check-duplicates-batch handler', () => {
     expect(bad?.error).toBeTruthy();
 
     // Ensure hash failure was logged
-    const warnMessages = warnSpy.mock.calls.map((c) => (c && c[0] ? String(c[0]) : ''));
-    expect(warnMessages.some((msg) => msg.includes('HASH_FAILED') || msg.includes('HASH_ERRORS'))).toBe(true);
+    const warnOutput = warnSpy.mock.calls.map((call) => call.join(' ')).join(' ');
+    expect(warnOutput).toContain('HASH_FAILED');
   });
 });
 
