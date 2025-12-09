@@ -40,6 +40,7 @@ const {
  * Replaces all previous uses of `sha256HexFromBase64` in analyze.cjs and check-duplicates-batch.cjs.
  * 
  * @param {string} base64String - Base64-encoded image data (without data:image/... prefix)
+ * @param {Object} [log] - Optional logger with error/debug methods
  * @returns {string|null} - Hex-encoded SHA-256 hash (64 chars) or null on error
  * 
  * @example
@@ -48,12 +49,56 @@ const {
  *   // Hash successfully calculated: "a1b2c3d4..."
  * }
  */
-function calculateImageHash(base64String) {
+function calculateImageHash(base64String, log = null) {
   try {
-    const buffer = Buffer.from(base64String, 'base64');
-    return crypto.createHash('sha256').update(buffer).digest('hex');
+    if (!base64String || typeof base64String !== 'string') {
+      if (log?.warn) {
+        log.warn('Image hash calculation skipped: missing or invalid base64 payload', {
+          hasString: typeof base64String === 'string',
+          event: 'HASH_INPUT_INVALID'
+        });
+      }
+      return null;
+    }
+
+    // Normalize payload: trim whitespace and strip data URL prefix if present
+    const normalized = base64String.trim();
+    const cleaned = normalized.startsWith('data:')
+      ? normalized.slice(normalized.indexOf(',') + 1)
+      : normalized;
+
+    // Basic base64 validation to avoid hashing garbage input
+    const base64Pattern = /^[A-Za-z0-9+/]+={0,2}$/;
+    if (!cleaned || !base64Pattern.test(cleaned)) {
+      if (log?.error) {
+        log.error('Image hash calculation failed: invalid base64 payload', {
+          length: cleaned.length,
+          event: 'HASH_INVALID_BASE64'
+        });
+      } else {
+        console.error('Error calculating image hash: invalid base64 payload');
+      }
+      return null;
+    }
+
+    const buffer = Buffer.from(cleaned, 'base64');
+    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+
+    if (log?.debug) {
+      log.debug('Image hash generated', {
+        hashPreview: hash.substring(0, 16) + '...',
+        imageLength: cleaned.length,
+        event: 'HASH_GENERATED'
+      });
+    }
+
+    return hash;
   } catch (error) {
-    console.error('Error calculating image hash:', error);
+    if (log?.error) {
+      log.error('Error calculating image hash', { error: error.message, event: 'HASH_ERROR' });
+    } else {
+      console.error('Error calculating image hash:', error);
+    }
     return null;
   }
 }

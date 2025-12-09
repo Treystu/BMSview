@@ -132,6 +132,7 @@ exports.handler = async (event, context) => {
     
     log.info('Processing batch duplicate check', {
       fileCount: files.length,
+      fileNames: files.slice(0, 10).map(f => f?.fileName || 'unknown'),
       event: 'BATCH_START'
     });
     
@@ -150,16 +151,27 @@ exports.handler = async (event, context) => {
       }
       
       try {
-        const contentHash = calculateImageHash(file.image);
+        const contentHash = calculateImageHash(file.image, log);
         if (!contentHash) {
           hashErrors.push({ index: i, fileName: file.fileName, error: 'Failed to generate hash' });
           fileHashes.push({ index: i, fileName: file.fileName, contentHash: null });
         } else {
           fileHashes.push({ index: i, fileName: file.fileName, contentHash });
+          log.debug('Hash generated for file', {
+            fileName: file.fileName,
+            hashPreview: contentHash.substring(0, 16) + '...',
+            index: i,
+            event: 'HASH_GENERATED'
+          });
         }
       } catch (hashErr) {
         hashErrors.push({ index: i, fileName: file.fileName, error: hashErr.message });
         fileHashes.push({ index: i, fileName: file.fileName, contentHash: null });
+        log.warn('Hash calculation failed for file', {
+          fileName: file.fileName || `file-${i}`,
+          error: hashErr.message,
+          event: 'HASH_FAILED'
+        });
       }
     }
     
@@ -190,6 +202,13 @@ exports.handler = async (event, context) => {
     const validHashes = fileHashes
       .filter(h => h.contentHash)
       .map(h => h.contentHash);
+
+    if (validHashes.length === 0) {
+      log.warn('No valid hashes generated, returning non-duplicate results', {
+        fileCount: files.length,
+        event: 'NO_VALID_HASHES'
+      });
+    }
     
     // Batch check MongoDB
     let existingRecordsMap = new Map();
@@ -279,6 +298,7 @@ exports.handler = async (event, context) => {
     log.error('Batch duplicate check failed', {
       error: error.message,
       stack: error.stack,
+      fileCount: Array.isArray(parsed?.value?.files) ? parsed.value.files.length : undefined,
       event: 'BATCH_ERROR'
     });
     

@@ -137,7 +137,7 @@ exports.handler = async (event, context) => {
     if (analysisData && analysisData.image) {
       try {
         console.log('[ASYNC-TRIGGER] Calculating content hash from image');
-        contentHash = calculateImageHash(analysisData.image);
+        contentHash = calculateImageHash(analysisData.image, log);
         console.log('[ASYNC-TRIGGER] Content hash calculated:', contentHash ? contentHash.substring(0, 16) + '...' : 'null');
       } catch (hashError) {
         console.warn('[ASYNC-TRIGGER] Failed to calculate content hash:', hashError.message);
