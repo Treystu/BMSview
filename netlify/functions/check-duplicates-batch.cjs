@@ -41,6 +41,9 @@ try {
 const MAX_FILE_NAMES_LOGGED = 10;
 const formatFileNameForLog = (file, index) => file?.fileName || `file-${index}`;
 
+// Shared constant for hash validation (SHA-256 produces 64 hex characters)
+const VALID_HASH_REGEX = /^[a-f0-9]{64}$/i;
+
 /**
  * Batch check for existing analyses by content hash
  * @param {string[]} contentHashes - Array of content hashes to check
@@ -213,13 +216,34 @@ exports.handler = async (event, context) => {
     });
     
     // Detect mode: hash-only or image mode
-    const isHashOnlyMode = files.length > 0 && files[0].hash && !files[0].image;
-    const isImageMode = files.length > 0 && files[0].image && !files[0].hash;
+    // Validate that all files follow the same mode (no mixed batches allowed)
+    const hasHash = files.some(f => f.hash);
+    const hasImage = files.some(f => f.image);
+    
+    if (hasHash && hasImage) {
+      log.warn('Mixed mode batch detected (some files have hash, some have image)', {
+        filesWithHash: files.filter(f => f.hash).length,
+        filesWithImage: files.filter(f => f.image).length,
+        event: 'MIXED_MODE_ERROR'
+      });
+      timer.end({ error: 'mixed_mode' });
+      log.exit(400);
+      return errorResponse(
+        400,
+        'invalid_request',
+        'Mixed mode batch not allowed. All files must use either hash-only mode or image mode.',
+        { suggestion: 'Ensure all files have either "hash" or "image" property, not both' },
+        headers
+      );
+    }
+    
+    const isHashOnlyMode = hasHash;
+    const isImageMode = hasImage;
     
     log.info('Batch mode detected', {
-      mode: isHashOnlyMode ? 'hash-only' : isImageMode ? 'image' : 'mixed',
-      firstFileHasHash: !!files[0]?.hash,
-      firstFileHasImage: !!files[0]?.image,
+      mode: isHashOnlyMode ? 'hash-only' : isImageMode ? 'image' : 'unknown',
+      filesWithHash: files.filter(f => f.hash).length,
+      filesWithImage: files.filter(f => f.image).length,
       event: 'MODE_DETECTED'
     });
     
@@ -242,7 +266,7 @@ exports.handler = async (event, context) => {
         }
         
         // Validate hash format (should be 64 hex characters)
-        if (!/^[a-f0-9]{64}$/i.test(file.hash)) {
+        if (!VALID_HASH_REGEX.test(file.hash)) {
           hashErrors.push({ index: i, fileName: file.fileName, error: 'Invalid hash format (expected 64 hex chars)' });
           fileHashes.push({ index: i, fileName: file.fileName, contentHash: null });
           continue;

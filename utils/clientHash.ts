@@ -31,9 +31,9 @@ export async function calculateImageHashClient(base64String: string): Promise<st
       return null;
     }
 
-    // Check if Web Crypto API is available
-    if (!window.crypto || !window.crypto.subtle) {
-      console.warn('Web Crypto API not available, cannot calculate hash client-side');
+    // Check for browser environment and Web Crypto API availability
+    if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
+      console.warn('Web Crypto API not available (non-browser environment or unsupported browser)');
       return null;
     }
 
@@ -160,7 +160,7 @@ export async function calculateFileHash(file: File): Promise<string | null> {
  * Calculate SHA-256 hashes for multiple File objects
  * 
  * @param files - Array of File objects
- * @returns Promise resolving to array of { file, hash } objects
+ * @returns Promise resolving to array of { file, hash } objects where hash is the SHA-256 hash or null if failed
  * 
  * @example
  * const results = await calculateFileHashesBatch([file1, file2]);

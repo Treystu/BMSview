@@ -140,8 +140,20 @@ async function checkFilesUsingBatchAPI(
         const apiDurationMs = Date.now() - apiStartTime;
         
         if (!response.ok) {
-            const errorText = await response.text().catch(() => 'Unknown error');
-            throw new Error(`Batch API failed with status ${response.status}: ${errorText}`);
+            // Sanitize error message to avoid exposing sensitive server details
+            let errorMessage = `Batch API failed with status ${response.status}`;
+            try {
+                const errorData = await response.json();
+                if (errorData?.error?.message) {
+                    errorMessage = errorData.error.message;
+                } else if (typeof errorData === 'string') {
+                    errorMessage = errorData;
+                }
+            } catch (parseError) {
+                // If JSON parsing fails, use generic error message
+                errorMessage = `Batch API returned ${response.status} status`;
+            }
+            throw new Error(errorMessage);
         }
         
         const result = await response.json();
