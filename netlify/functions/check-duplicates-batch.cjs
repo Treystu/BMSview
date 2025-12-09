@@ -103,9 +103,16 @@ exports.handler = async (event, context) => {
   // Handle module initialization errors
   if (initError) {
     console.error('Handler called but module failed to initialize:', initError.message);
+    // Basic CORS headers for error response (getCorsHeaders may not be available if init failed)
+    const basicCorsHeaders = {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    };
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: basicCorsHeaders,
       body: JSON.stringify({
         error: {
           code: 'module_init_failed',
