@@ -705,6 +705,80 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
       }
     });
     
+    // Try to create GitHub issues for critical failures
+    const githubIssuesCreated = [];
+    if (criticalFailures.length > 0 && process.env.GITHUB_TOKEN) {
+      log.info('Creating GitHub issues for critical failures', { 
+        workloadId,
+        criticalFailureCount: criticalFailures.length 
+      });
+      
+      for (const failure of criticalFailures) {
+        try {
+          const { createGitHubIssueAPI } = require('../create-github-issue.cjs');
+          
+          const issueTitle = `🔧 Diagnostics: ${failure.category.replace(/_/g, ' ')} (${failure.count} failures)`;
+          const issueBody = `## Diagnostic Testing Found ${failure.priority.toUpperCase()} Priority Failures
+
+**Category:** ${failure.category.replace(/_/g, ' ')}  
+**Failure Count:** ${failure.count}  
+**Priority:** ${failure.priority}  
+**Affected Tools:** ${failure.tools.join(', ')}  
+**Detected:** ${new Date().toISOString()}
+
+### Details
+
+The Diagnostics Guru systematic testing found ${failure.count} ${failure.category.replace(/_/g, ' ')} failures across ${failure.tools.length} tools.
+
+### Recommendation
+
+${getImplementationSuggestion(failure.category)}
+
+### Next Steps
+
+1. Review the AI Feedback dashboard for detailed error information
+2. Investigate the root cause of these failures
+3. Implement fixes following the recommendations above
+4. Re-run diagnostics to verify the fixes
+
+---
+
+*This issue was automatically created by Diagnostics Guru workload ${workloadId}*`;
+
+          const githubIssue = await createGitHubIssueAPI({
+            title: issueTitle,
+            body: issueBody,
+            labels: ['ai-generated', `priority-${failure.priority}`, 'diagnostics', 'bug']
+          }, log);
+          
+          githubIssuesCreated.push({
+            category: failure.category,
+            issueNumber: githubIssue.number,
+            issueUrl: githubIssue.html_url
+          });
+          
+          log.info('GitHub issue created for critical failure', {
+            workloadId,
+            category: failure.category,
+            issueNumber: githubIssue.number,
+            issueUrl: githubIssue.html_url
+          });
+        } catch (issueErr) {
+          log.error('Failed to create GitHub issue for critical failure', {
+            workloadId,
+            category: failure.category,
+            error: issueErr.message
+          });
+          // Don't fail diagnostics if GitHub issue creation fails
+        }
+      }
+    } else if (criticalFailures.length > 0) {
+      log.warn('Critical failures detected but GITHUB_TOKEN not configured', {
+        workloadId,
+        criticalFailureCount: criticalFailures.length
+      });
+    }
+    
     // Detailed results per tool for the summary
     const toolResults = results.map(r => ({
       tool: r?.tool || 'unknown',
@@ -726,6 +800,7 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
       categorizedFailures,
       feedbackSubmitted,
       criticalFailures,
+      githubIssuesCreated, // Include created GitHub issues
       toolResults, // Detailed per-tool results
       duration: Date.now() - startTime,
       completedAt: new Date().toISOString(),
@@ -733,7 +808,7 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
         analysisError: state.analysisError || null,
         feedbackError: state.feedbackError || null
       },
-      recommendations: generateRecommendations(results, categorizedFailures, feedbackSubmitted)
+      recommendations: generateRecommendations(results, categorizedFailures, feedbackSubmitted, githubIssuesCreated)
     };
     
     const finalState = {
@@ -916,9 +991,10 @@ function calculateAverageResponseTime(results) {
  * @param {Array} results - Test results
  * @param {Object} categorizedFailures - Categorized failure data
  * @param {Array} feedbackSubmitted - Feedback submission results
+ * @param {Array} githubIssuesCreated - GitHub issues created for critical failures
  * @returns {Array} Recommendations for next steps
  */
-function generateRecommendations(results, categorizedFailures, feedbackSubmitted) {
+function generateRecommendations(results, categorizedFailures, feedbackSubmitted, githubIssuesCreated = []) {
   const recommendations = [];
   
   try {
@@ -975,6 +1051,16 @@ function generateRecommendations(results, categorizedFailures, feedbackSubmitted
         severity: 'low',
         message: `${failedSubmissions.length} feedback submissions failed`,
         action: 'Check rate limiting on feedback API. Some categories may be duplicates.'
+      });
+    }
+    
+    // Recommendations for GitHub issues created
+    if (githubIssuesCreated && githubIssuesCreated.length > 0) {
+      recommendations.push({
+        category: 'github',
+        severity: 'info',
+        message: `Created ${githubIssuesCreated.length} GitHub issue(s) for critical failures`,
+        action: `Review and address the following issues: ${githubIssuesCreated.map(i => `#${i.issueNumber}`).join(', ')}`
       });
     }
     
