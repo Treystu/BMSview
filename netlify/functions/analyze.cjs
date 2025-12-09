@@ -289,10 +289,15 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
 
     // Calculate content hash for deduplication using unified function
     const hashStartTime = Date.now();
-    const contentHash = calculateImageHash(imagePayload.image);
+    const contentHash = calculateImageHash(imagePayload.image, log);
     const hashDurationMs = Date.now() - hashStartTime;
     
     if (!contentHash) {
+      log.error('Failed to generate content hash for image payload', {
+        fileName: imagePayload.fileName,
+        imageSize: imagePayload.image?.length || 0,
+        event: 'HASH_FAILED'
+      });
       return errorResponse(400, 'invalid_image', 'Could not generate content hash', undefined, { ...headers, 'Content-Type': 'application/json' });
     }
     

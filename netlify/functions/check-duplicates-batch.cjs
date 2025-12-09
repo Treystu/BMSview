@@ -15,8 +15,13 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 // Use unified deduplication module as canonical source
 const {
   calculateImageHash,
-  checkNeedsUpgrade
+  checkNeedsUpgrade,
+  formatHashPreview
 } = require('./utils/unified-deduplication.cjs');
+
+// Limit logged file names to avoid log bloat while keeping context for debugging
+const MAX_FILE_NAMES_LOGGED = 10;
+const formatFileNameForLog = (file, index) => file?.fileName || `file-${index}`;
 
 /**
  * Batch check for existing analyses by content hash
@@ -104,9 +109,10 @@ exports.handler = async (event, context) => {
   log.entry({ method: event.httpMethod, path: event.path });
   const timer = createTimer(log, 'check-duplicates-batch');
   
+  let parsed;
   try {
     // Parse request body
-    const parsed = parseJsonBody(event, log);
+    parsed = parseJsonBody(event, log);
     if (!parsed.ok) {
       log.warn('Invalid JSON body', { error: parsed.error });
       timer.end({ error: 'invalid_json' });
@@ -132,6 +138,7 @@ exports.handler = async (event, context) => {
     
     log.info('Processing batch duplicate check', {
       fileCount: files.length,
+      fileNames: files.slice(0, MAX_FILE_NAMES_LOGGED).map((f, idx) => formatFileNameForLog(f, idx)),
       event: 'BATCH_START'
     });
     
@@ -144,22 +151,35 @@ exports.handler = async (event, context) => {
       const file = files[i];
       
       if (!file.image || !file.fileName) {
-        hashErrors.push({ index: i, fileName: file.fileName || `file-${i}`, error: 'Missing image or fileName' });
-        fileHashes.push({ index: i, fileName: file.fileName || `file-${i}`, contentHash: null });
+        const fileName = formatFileNameForLog(file, i);
+        hashErrors.push({ index: i, fileName, error: 'Missing image or fileName' });
+        fileHashes.push({ index: i, fileName, contentHash: null });
         continue;
       }
       
       try {
-        const contentHash = calculateImageHash(file.image);
+        const contentHash = calculateImageHash(file.image, log);
         if (!contentHash) {
           hashErrors.push({ index: i, fileName: file.fileName, error: 'Failed to generate hash' });
           fileHashes.push({ index: i, fileName: file.fileName, contentHash: null });
         } else {
           fileHashes.push({ index: i, fileName: file.fileName, contentHash });
+          log.debug('Hash generated for file', {
+            fileName: file.fileName,
+            hashPreview: formatHashPreview(contentHash),
+            index: i,
+            event: 'HASH_GENERATED'
+          });
         }
       } catch (hashErr) {
-        hashErrors.push({ index: i, fileName: file.fileName, error: hashErr.message });
-        fileHashes.push({ index: i, fileName: file.fileName, contentHash: null });
+        const fileName = formatFileNameForLog(file, i);
+        hashErrors.push({ index: i, fileName, error: hashErr.message });
+        fileHashes.push({ index: i, fileName, contentHash: null });
+        log.warn('Hash calculation failed for file', {
+          fileName,
+          error: hashErr.message,
+          event: 'HASH_FAILED'
+        });
       }
     }
     
@@ -190,6 +210,13 @@ exports.handler = async (event, context) => {
     const validHashes = fileHashes
       .filter(h => h.contentHash)
       .map(h => h.contentHash);
+
+    if (validHashes.length === 0) {
+      log.warn('No valid hashes generated, returning non-duplicate results', {
+        fileCount: files.length,
+        event: 'NO_VALID_HASHES'
+      });
+    }
     
     // Batch check MongoDB
     let existingRecordsMap = new Map();
@@ -279,6 +306,7 @@ exports.handler = async (event, context) => {
     log.error('Batch duplicate check failed', {
       error: error.message,
       stack: error.stack,
+      fileCount: Array.isArray(parsed?.value?.files) ? parsed.value.files.length : undefined,
       event: 'BATCH_ERROR'
     });
     

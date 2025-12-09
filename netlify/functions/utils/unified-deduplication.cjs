@@ -26,6 +26,20 @@
 const crypto = require('crypto');
 const { createLogger } = require('./logger.cjs');
 
+/**
+ * Generate a short preview of a hash for safe logging.
+ * @param {string} hash
+ * @returns {string}
+ */
+const formatHashPreview = (hash) => (hash ? `${hash.substring(0, 16)}...` : 'null');
+
+/**
+ * Strip padding from a base64 string for comparison during validation.
+ * @param {string} value
+ * @returns {string}
+ */
+const stripPadding = (value = '') => value.replace(/=+$/, '');
+
 // Import existing constants for backward compatibility
 const { 
   DUPLICATE_UPGRADE_THRESHOLD, 
@@ -40,6 +54,8 @@ const {
  * Replaces all previous uses of `sha256HexFromBase64` in analyze.cjs and check-duplicates-batch.cjs.
  * 
  * @param {string} base64String - Base64-encoded image data (without data:image/... prefix)
+ * @param {Object} [log] - Optional logger with error/debug methods
+ * @param {{ skipValidation?: boolean }} [options] - Optional controls (set skipValidation=true for trusted inputs to bypass round-trip validation and the extra re-encode cost)
  * @returns {string|null} - Hex-encoded SHA-256 hash (64 chars) or null on error
  * 
  * @example
@@ -48,12 +64,79 @@ const {
  *   // Hash successfully calculated: "a1b2c3d4..."
  * }
  */
-function calculateImageHash(base64String) {
+function calculateImageHash(base64String, log = null, { skipValidation = false } = {}) {
   try {
-    const buffer = Buffer.from(base64String, 'base64');
-    return crypto.createHash('sha256').update(buffer).digest('hex');
+    if (!base64String || typeof base64String !== 'string') {
+      if (log?.warn) {
+        log.warn('Image hash calculation skipped: missing or invalid base64 payload', {
+          hasString: typeof base64String === 'string',
+          event: 'HASH_INPUT_INVALID'
+        });
+      }
+      return null;
+    }
+
+    // Normalize payload: trim whitespace and strip data URL prefix if present
+    const normalized = base64String.trim();
+    const cleaned = normalized.startsWith('data:')
+      ? normalized.slice(normalized.indexOf(',') + 1)
+      : normalized;
+
+    // Remove whitespace that may be introduced by transport layers
+    const sanitized = cleaned.replace(/\s+/g, '');
+
+    // Validate base64 by round-tripping through Buffer
+    let buffer;
+    try {
+      buffer = Buffer.from(sanitized, 'base64');
+    } catch (decodeError) {
+      if (log?.error) {
+        log.error('Image hash calculation failed: invalid base64 payload', {
+          length: sanitized.length,
+          error: decodeError.message,
+          event: 'HASH_INVALID_BASE64'
+        });
+      } else {
+        console.error('Error calculating image hash:', decodeError);
+      }
+      return null;
+    }
+
+    // Round-trip validation guards against malformed/poisoned base64.
+    // Set skipValidation=true for trusted/prevalidated callers to avoid the extra encode step on large payloads.
+    if (!skipValidation) {
+      const inputNoPadding = stripPadding(sanitized);
+      const roundTripNoPadding = stripPadding(buffer.toString('base64'));
+      if (roundTripNoPadding !== inputNoPadding) {
+        if (log?.error) {
+          log.error('Image hash calculation failed: base64 validation mismatch', {
+            length: sanitized.length,
+            event: 'HASH_INVALID_BASE64'
+          });
+        } else {
+          console.error('Error calculating image hash: base64 validation mismatch');
+        }
+        return null;
+      }
+    }
+
+    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+
+    if (log?.debug) {
+      log.debug('Image hash generated', {
+        hashPreview: formatHashPreview(hash),
+        imageLength: sanitized.length,
+        event: 'HASH_GENERATED'
+      });
+    }
+
+    return hash;
   } catch (error) {
-    console.error('Error calculating image hash:', error);
+    if (log?.error) {
+      log.error('Error calculating image hash', { error: error.message, event: 'HASH_ERROR' });
+    } else {
+      console.error('Error calculating image hash:', error);
+    }
     return null;
   }
 }
@@ -450,6 +533,7 @@ module.exports = {
    * Canonical method for content hashing across all endpoints
    */
   calculateImageHash,
+  formatHashPreview,
   
   /**
    * calculateContentHash: SHA-256 hash from JSON object
