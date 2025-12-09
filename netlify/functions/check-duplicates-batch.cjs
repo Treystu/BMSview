@@ -7,17 +7,22 @@
  * Response: { results: [{ fileName: string, isDuplicate: boolean, needsUpgrade: boolean, ... }, ...] }
  */
 
-const { errorResponse } = require('./utils/errors.cjs');
-const { parseJsonBody } = require('./utils/validation.cjs');
-const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
-const { getCollection } = require('./utils/mongodb.cjs');
-const { getCorsHeaders } = require('./utils/cors.cjs');
-// Use unified deduplication module as canonical source
-const {
-  calculateImageHash,
-  checkNeedsUpgrade,
-  formatHashPreview
-} = require('./utils/unified-deduplication.cjs');
+// Defensive module initialization to catch and log any module loading errors
+let initError = null;
+let errorResponse, parseJsonBody, createLoggerFromEvent, createTimer, getCollection, getCorsHeaders, calculateImageHash, checkNeedsUpgrade, formatHashPreview;
+
+try {
+  ({ errorResponse } = require('./utils/errors.cjs'));
+  ({ parseJsonBody } = require('./utils/validation.cjs'));
+  ({ createLoggerFromEvent, createTimer } = require('./utils/logger.cjs'));
+  ({ getCollection } = require('./utils/mongodb.cjs'));
+  ({ getCorsHeaders } = require('./utils/cors.cjs'));
+  // Use unified deduplication module as canonical source
+  ({ calculateImageHash, checkNeedsUpgrade, formatHashPreview } = require('./utils/unified-deduplication.cjs'));
+} catch (e) {
+  initError = e;
+  console.error('CHECK-DUPLICATES-BATCH MODULE INIT ERROR:', e.message, e.stack);
+}
 
 // Limit logged file names to avoid log bloat while keeping context for debugging
 const MAX_FILE_NAMES_LOGGED = 10;
@@ -95,6 +100,22 @@ function checkIfNeedsUpgrade(existing) {
  * @param {import('@netlify/functions').HandlerContext} context
  */
 exports.handler = async (event, context) => {
+  // Handle module initialization errors
+  if (initError) {
+    console.error('Handler called but module failed to initialize:', initError.message);
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error: {
+          code: 'module_init_failed',
+          message: 'Function failed to initialize',
+          details: { error: initError.message }
+        }
+      })
+    };
+  }
+  
   const headers = getCorsHeaders(event);
   
   if (event.httpMethod === 'OPTIONS') {
