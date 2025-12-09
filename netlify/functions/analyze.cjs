@@ -143,6 +143,17 @@ function getErrorCode(error) {
 }
 
 /**
+ * Extract record ID from an analysis record
+ * Handles both MongoDB ObjectId and string ID formats
+ * @param {Object} record - Analysis record
+ * @returns {string|undefined} Record ID as string
+ */
+function extractRecordId(record) {
+  if (!record) return undefined;
+  return record.id || record._id?.toString?.() || record._id;
+}
+
+/**
  * @param {import('@netlify/functions').HandlerEvent} event
  * @param {import('@netlify/functions').HandlerContext} context
  */
@@ -336,7 +347,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
         const checkResponse = {
           isDuplicate,
           needsUpgrade,
-          recordId: actualRecord?.id || actualRecord?._id?.toString?.() || actualRecord?._id,
+          recordId: extractRecordId(actualRecord),
           timestamp: actualRecord?.timestamp,
           analysisData: (!needsUpgrade && actualRecord) ? actualRecord.analysis : null
         };
