@@ -19,11 +19,10 @@ This document describes the comprehensive fixes applied to the Diagnostics Guru 
 **Solution:** 
 - Added `stepIndex` tracking throughout all diagnostic steps
 - `stepIndex` now increments correctly:
-  - Steps 0-10: Testing each of 11 tools (stepIndex = toolIndex)
-  - Step 11: Analyzing failures (stepIndex = TOOL_TESTS.length)
-  - Step 12: Submitting feedback (stepIndex = TOOL_TESTS.length + 1)
-  - Step 13: Finalizing (stepIndex = TOOL_TESTS.length + 2)
-  - Step 14: Complete (stepIndex = TOOL_TESTS.length + 3)
+  - Steps 1-11: Testing each of 11 tools (stepIndex = toolIndex + 1, 1-indexed for display)
+  - Step 12: Analyzing failures (stepIndex = TOOL_TESTS.length + 1)
+  - Step 13: Submitting feedback (stepIndex = TOOL_TESTS.length + 2)
+  - Step 14: Finalizing (stepIndex = TOOL_TESTS.length + 3)
 
 **Files Changed:**
 - `netlify/functions/utils/diagnostics-steps.cjs` - Added stepIndex updates in testTool, analyzeFailures, submitFeedbackForFailures, finalizeDiagnostics

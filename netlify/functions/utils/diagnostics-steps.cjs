@@ -210,7 +210,7 @@ async function testTool(workloadId, state, log, context) {
       const nextState = {
         ...state,
         currentStep: 'analyze_failures',
-        stepIndex: TOOL_TESTS.length, // Update stepIndex to reflect completion of all tool tests
+        stepIndex: TOOL_TESTS.length + 1, // Step 12 - analyzing failures
         message: 'All tools tested, analyzing results',
         progress: Math.round((TOOL_TESTS.length / (state.totalSteps || TOOL_TESTS.length + 3)) * 100)
       };
@@ -374,7 +374,7 @@ async function testTool(workloadId, state, log, context) {
         params: {}
       }],
       toolIndex: safeToolIndex,
-      stepIndex: safeToolIndex, // Update stepIndex to match recovery
+      stepIndex: safeToolIndex, // safeToolIndex is already 1-indexed (toolIndex + 1) for display
       progress: Math.round((safeToolIndex / (state.totalSteps || TOOL_TESTS.length + 3)) * 100),
       message: `Error testing tool, continuing (${safeToolIndex}/${TOOL_TESTS.length})`
     };
@@ -713,9 +713,9 @@ async function finalizeDiagnostics(workloadId, state, log, context) {
         criticalFailureCount: criticalFailures.length 
       });
       
+      const { createGitHubIssueAPI } = require('../create-github-issue.cjs');
       for (const failure of criticalFailures) {
         try {
-          const { createGitHubIssueAPI } = require('../create-github-issue.cjs');
           
           const issueTitle = `🔧 Diagnostics: ${failure.category.replace(/_/g, ' ')} (${failure.count} failures)`;
           const issueBody = `## Diagnostic Testing Found ${failure.priority.toUpperCase()} Priority Failures
