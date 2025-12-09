@@ -67,24 +67,40 @@ function calculateImageHash(base64String, log = null) {
       ? normalized.slice(normalized.indexOf(',') + 1)
       : normalized;
 
-    // Remove internal whitespace that may be introduced by transport layers
-    const sanitized = cleaned.replace(/\s+/g, '');
+    // Remove common whitespace characters that may be introduced by transport layers
+    const sanitized = cleaned.replace(/[ \t\r\n]+/g, '');
 
-    // Basic base64 validation to avoid hashing garbage input
-    const base64Pattern = /^[A-Za-z0-9+/]*={0,2}$/;
-    if (!sanitized || !base64Pattern.test(sanitized)) {
+    // Validate base64 by round-tripping through Buffer
+    let buffer;
+    try {
+      buffer = Buffer.from(sanitized, 'base64');
+    } catch (decodeError) {
       if (log?.error) {
         log.error('Image hash calculation failed: invalid base64 payload', {
           length: sanitized.length,
+          error: decodeError.message,
           event: 'HASH_INVALID_BASE64'
         });
       } else {
-        console.error('Error calculating image hash: invalid base64 payload');
+        console.error('Error calculating image hash:', decodeError);
       }
       return null;
     }
 
-    const buffer = Buffer.from(sanitized, 'base64');
+    const normalizedInput = sanitized.replace(/=+$/, '');
+    const reEncoded = buffer.toString('base64').replace(/=+$/, '');
+    if (!buffer.length || reEncoded !== normalizedInput) {
+      if (log?.error) {
+        log.error('Image hash calculation failed: base64 validation mismatch', {
+          length: sanitized.length,
+          event: 'HASH_INVALID_BASE64'
+        });
+      } else {
+        console.error('Error calculating image hash: base64 validation mismatch');
+      }
+      return null;
+    }
+
     const hash = crypto.createHash('sha256').update(buffer).digest('hex');
 
     if (log?.debug) {

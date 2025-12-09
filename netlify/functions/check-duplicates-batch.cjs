@@ -18,6 +18,8 @@ const {
   checkNeedsUpgrade
 } = require('./utils/unified-deduplication.cjs');
 
+const MAX_FILE_NAMES_LOGGED = 10;
+
 /**
  * Batch check for existing analyses by content hash
  * @param {string[]} contentHashes - Array of content hashes to check
@@ -132,7 +134,7 @@ exports.handler = async (event, context) => {
     
     log.info('Processing batch duplicate check', {
       fileCount: files.length,
-      fileNames: files.slice(0, 10).map(f => f?.fileName || 'unknown'),
+      fileNames: files.slice(0, MAX_FILE_NAMES_LOGGED).map(f => f?.fileName || 'unknown'),
       event: 'BATCH_START'
     });
     
