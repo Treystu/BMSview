@@ -24,7 +24,6 @@
  */
 
 const crypto = require('crypto');
-const { createLogger } = require('./logger.cjs');
 
 /**
  * Generate a short preview of a hash for safe logging.
