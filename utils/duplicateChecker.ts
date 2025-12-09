@@ -5,6 +5,7 @@
 
 import { checkFileDuplicate } from 'services/geminiService';
 import { processBatches, BATCH_CONFIG } from './batchProcessor';
+import { calculateFileHashesBatch } from './clientHash';
 
 export interface DuplicateCheckResult {
     file: File;
@@ -59,7 +60,14 @@ async function checkSingleFile(
 }
 
 /**
- * Check files using batch API endpoint (more efficient for multiple files)
+ * Check files using batch API endpoint with client-side hashing (more efficient for multiple files)
+ * 
+ * **Optimized workflow:**
+ * 1. Calculate SHA-256 hashes client-side using Web Crypto API
+ * 2. Send only hashes to batch API (22 files: ~2KB vs ~8MB)
+ * 3. Batch API looks up hashes in MongoDB
+ * 4. Return results with duplicate status
+ * 
  * @param files - Array of files to check
  * @param log - Logging function
  * @returns Promise with check results, or empty array if batch API fails (triggers fallback to individual checks)
@@ -70,69 +78,70 @@ async function checkFilesUsingBatchAPI(
 ): Promise<DuplicateCheckResult[]> {
     const startTime = Date.now();
     
-    log('info', 'Using batch API for duplicate checking', {
+    log('info', 'Using batch API for duplicate checking with client-side hashing', {
         fileCount: files.length,
         event: 'BATCH_API_START'
     });
     
     try {
-        // Read all files as base64
-        const readStartTime = Date.now();
-        const fileReads = await Promise.allSettled(
-            files.map(async (file) => {
-                const reader = new FileReader();
-                return new Promise<{ file: File; image: string; mimeType: string; fileName: string }>((resolve, reject) => {
-                    reader.onload = () => {
-                        if (typeof reader.result === 'string') {
-                            resolve({
-                                file,
-                                image: reader.result.split(',')[1], // Remove data:image/... prefix
-                                mimeType: file.type,
-                                fileName: file.name
-                            });
-                        } else {
-                            reject(new Error('Failed to read file'));
-                        }
-                    };
-                    reader.onerror = () => reject(new Error('File read error'));
-                    reader.readAsDataURL(file);
-                });
-            })
-        );
-        const readDurationMs = Date.now() - readStartTime;
+        // Calculate hashes client-side using Web Crypto API
+        const hashStartTime = Date.now();
+        const hashResults = await calculateFileHashesBatch(files);
+        const hashDurationMs = Date.now() - hashStartTime;
         
-        const filesData = fileReads
-            .filter(result => result.status === 'fulfilled')
-            .map(result => (result as PromiseFulfilledResult<any>).value);
+        // Filter out files that failed to hash
+        const filesWithHashes = hashResults.filter(r => r.hash !== null);
+        const failedHashes = hashResults.filter(r => r.hash === null);
         
-        if (filesData.length !== files.length) {
-            throw new Error(`Failed to read ${files.length - filesData.length} files`);
+        if (failedHashes.length > 0) {
+            log('warn', 'Some files failed client-side hashing, will exclude from batch', {
+                failedCount: failedHashes.length,
+                failedNames: failedHashes.slice(0, 5).map(r => r.file.name),
+                event: 'HASH_FAILURES'
+            });
+        }
+        
+        if (filesWithHashes.length === 0) {
+            throw new Error('All files failed client-side hashing');
         }
 
-        log('info', 'Files read complete', {
+        log('info', 'Client-side hashing complete', {
             totalFiles: files.length,
-            successfulReads: filesData.length,
-            readDurationMs,
-            event: 'FILES_READ'
+            successfulHashes: filesWithHashes.length,
+            failedHashes: failedHashes.length,
+            hashDurationMs,
+            avgPerFileMs: (hashDurationMs / files.length).toFixed(2),
+            event: 'CLIENT_HASH_COMPLETE'
         });
         
-        // Call batch API
+        // Prepare hash-only payload (minimal size)
+        const hashOnlyPayload = filesWithHashes.map(({ file, hash }) => ({
+            hash,
+            fileName: file.name
+        }));
+        
+        // Calculate payload size for comparison
+        const payloadString = JSON.stringify({ files: hashOnlyPayload });
+        const payloadSizeKB = (payloadString.length / 1024).toFixed(2);
+        
+        log('info', 'Sending hash-only batch request', {
+            fileCount: hashOnlyPayload.length,
+            payloadSizeKB,
+            event: 'HASH_PAYLOAD_READY'
+        });
+        
+        // Call batch API with hash-only payload
         const apiStartTime = Date.now();
         const response = await fetch('/.netlify/functions/check-duplicates-batch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                files: filesData.map(f => ({
-                    image: f.image,
-                    mimeType: f.mimeType,
-                    fileName: f.fileName
-                }))
-            })
+            body: payloadString
         });
         const apiDurationMs = Date.now() - apiStartTime;
         
         if (!response.ok) {
-            throw new Error(`Batch API failed with status ${response.status}`);
+            const errorText = await response.text().catch(() => 'Unknown error');
+            throw new Error(`Batch API failed with status ${response.status}: ${errorText}`);
         }
         
         const result = await response.json();
@@ -143,18 +152,19 @@ async function checkFilesUsingBatchAPI(
             duplicates: result.summary?.duplicates || 0,
             upgrades: result.summary?.upgrades || 0,
             new: result.summary?.new || 0,
-            readDurationMs,
+            hashDurationMs,
             apiDurationMs,
             totalDurationMs,
+            payloadSizeKB,
             avgPerFileMs: (totalDurationMs / files.length).toFixed(2),
             event: 'BATCH_API_COMPLETE'
         });
         
         // Map results back to DuplicateCheckResult format
-        return result.results
+        const results: DuplicateCheckResult[] = result.results
             .map((apiResult: any) => {
-                const file = files.find(f => f.name === apiResult.fileName);
-                if (!file) {
+                const fileWithHash = filesWithHashes.find(r => r.file.name === apiResult.fileName);
+                if (!fileWithHash) {
                     log('warn', 'File not found in original array', { 
                         fileName: apiResult.fileName,
                         event: 'FILE_MISMATCH'
@@ -162,7 +172,7 @@ async function checkFilesUsingBatchAPI(
                     return null;
                 }
                 return {
-                    file,
+                    file: fileWithHash.file,
                     isDuplicate: apiResult.isDuplicate,
                     needsUpgrade: apiResult.needsUpgrade,
                     recordId: apiResult.recordId,
@@ -171,6 +181,17 @@ async function checkFilesUsingBatchAPI(
                 };
             })
             .filter((r): r is DuplicateCheckResult => r !== null);
+        
+        // Add failed hash files as non-duplicates
+        for (const failedResult of failedHashes) {
+            results.push({
+                file: failedResult.file,
+                isDuplicate: false,
+                needsUpgrade: false
+            });
+        }
+        
+        return results;
         
     } catch (error) {
         const totalDurationMs = Date.now() - startTime;
