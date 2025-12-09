@@ -45,6 +45,7 @@ const {
  * 
  * @param {string} base64String - Base64-encoded image data (without data:image/... prefix)
  * @param {Object} [log] - Optional logger with error/debug methods
+ * @param {{ skipValidation?: boolean }} [options] - Optional controls (skipValidation to bypass round-trip validation)
  * @returns {string|null} - Hex-encoded SHA-256 hash (64 chars) or null on error
  * 
  * @example
@@ -53,7 +54,7 @@ const {
  *   // Hash successfully calculated: "a1b2c3d4..."
  * }
  */
-function calculateImageHash(base64String, log = null) {
+function calculateImageHash(base64String, log = null, { skipValidation = false } = {}) {
   try {
     if (!base64String || typeof base64String !== 'string') {
       if (log?.warn) {
@@ -91,18 +92,20 @@ function calculateImageHash(base64String, log = null) {
       return null;
     }
 
-    const sanitizedWithoutPadding = stripPadding(sanitized);
-    const reEncodedWithoutPadding = stripPadding(buffer.toString('base64'));
-    if (reEncodedWithoutPadding !== sanitizedWithoutPadding) {
-      if (log?.error) {
-        log.error('Image hash calculation failed: base64 validation mismatch', {
-          length: sanitized.length,
-          event: 'HASH_INVALID_BASE64'
-        });
-      } else {
-        console.error('Error calculating image hash: base64 validation mismatch');
+    if (!skipValidation) {
+      const sanitizedWithoutPadding = stripPadding(sanitized);
+      const reEncodedWithoutPadding = stripPadding(buffer.toString('base64'));
+      if (reEncodedWithoutPadding !== sanitizedWithoutPadding) {
+        if (log?.error) {
+          log.error('Image hash calculation failed: base64 validation mismatch', {
+            length: sanitized.length,
+            event: 'HASH_INVALID_BASE64'
+          });
+        } else {
+          console.error('Error calculating image hash: base64 validation mismatch');
+        }
+        return null;
       }
-      return null;
     }
 
     const hash = crypto.createHash('sha256').update(buffer).digest('hex');
