@@ -14,7 +14,13 @@
  * - Rate limiting per user/system
  * - Input sanitization (jobId, systemId validation)
  * - Audit logging for compliance
- * - Duplicate detection (SHA-256 content hashing)
+ * 
+ * INSIGHTS-SPECIFIC DUPLICATE CHECK:
+ * - This is DIFFERENT from main app analysis duplicate detection
+ * - Main app: Checks if user uploaded same screenshot (duplicate upload)
+ * - Insights: Checks if screenshot was already ANALYZED (avoids re-processing)
+ * - Purpose: Save API calls by returning cached analysis if image already processed
+ * - Note: User can still generate different insights on same analysis with different prompts
  * 
  * NOTE: This is CommonJS (.cjs) for compatibility.
  * The @netlify/async-workloads package is ONLY used in the background handler,
@@ -26,7 +32,7 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 const { createInsightsJob } = require('./utils/insights-jobs.cjs');
 const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
 const { sanitizeJobId, sanitizeSystemId, SanitizationError } = require('./utils/security-sanitizer.cjs');
-const { sha256HexFromBase64 } = require('./utils/hash.cjs');
+const { calculateImageHash } = require('./utils/unified-deduplication.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 
 /**
@@ -118,14 +124,20 @@ exports.handler = async (event, context) => {
     // Sanitize inputs
     const sanitizedSystemId = sanitizeSystemId(systemId, log);
 
-    // CHECK FOR DUPLICATES FIRST (same as analyze.cjs)
-    // Calculate content hash from image to check if we've already analyzed this exact screenshot
-    console.log('[ASYNC-TRIGGER] Checking for duplicate analysis');
+    // INSIGHTS-SPECIFIC DUPLICATE CHECK
+    // This is DIFFERENT from analysis duplicate detection:
+    // - Analysis duplicate: Checks if same image was uploaded (main app flow)
+    // - Insights duplicate: Checks if image was already ANALYZED (to avoid wasting API calls)
+    // 
+    // Purpose: If the BMS screenshot was already analyzed, return existing analysis data
+    // instead of re-running analysis. User can still generate insights with different
+    // prompts/parameters on the same analysis data.
+    console.log('[ASYNC-TRIGGER] Checking for existing analysis to avoid re-processing');
     let contentHash = null;
     if (analysisData && analysisData.image) {
       try {
         console.log('[ASYNC-TRIGGER] Calculating content hash from image');
-        contentHash = sha256HexFromBase64(analysisData.image);
+        contentHash = calculateImageHash(analysisData.image);
         console.log('[ASYNC-TRIGGER] Content hash calculated:', contentHash ? contentHash.substring(0, 16) + '...' : 'null');
       } catch (hashError) {
         console.warn('[ASYNC-TRIGGER] Failed to calculate content hash:', hashError.message);
@@ -141,18 +153,19 @@ exports.handler = async (event, context) => {
         const existingAnalysis = await resultsCol.findOne({ contentHash });
         
         if (existingAnalysis) {
-          console.log('[ASYNC-TRIGGER] Duplicate found! Returning existing analysis:', {
+          console.log('[ASYNC-TRIGGER] Existing analysis found! Returning cached result:', {
             recordId: existingAnalysis._id,
             timestamp: existingAnalysis.timestamp,
             hasAnalysis: !!existingAnalysis.analysis
           });
           
-          log.info('Duplicate analysis found, returning existing result', {
+          log.info('Existing analysis found, returning cached result (insights duplicate check)', {
             contentHash: contentHash.substring(0, 16) + '...',
             recordId: existingAnalysis._id
           });
 
           // Return existing analysis immediately (no job creation needed)
+          // This saves API calls and improves response time
           return {
             statusCode: 200,
             headers: {
@@ -168,7 +181,7 @@ exports.handler = async (event, context) => {
             })
           };
         } else {
-          console.log('[ASYNC-TRIGGER] No duplicate found - proceeding with new analysis');
+          console.log('[ASYNC-TRIGGER] No existing analysis found - will process image');
         }
       } catch (dbError) {
         console.error('[ASYNC-TRIGGER] Database check failed:', dbError.message);

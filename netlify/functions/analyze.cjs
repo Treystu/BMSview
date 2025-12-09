@@ -11,18 +11,19 @@
  * - utils/validation: { parseJsonBody, validateAnalyzeRequest, validateImagePayload } - Request validation
  * - utils/logger: { createLogger, createTimer } - Logging and timing utilities
  * - utils/analysis-pipeline: { performAnalysisPipeline } - Core analysis implementation
- * - utils/hash: { sha256HexFromBase64 } - Content hashing utilities
+ * - utils/unified-deduplication: Canonical duplicate detection and content hashing
  * - utils/mongodb: { getCollection } - MongoDB connection and collection access
  * - utils/retry: { withTimeout, retryAsync, circuitBreaker } - Retry and circuit breaker patterns
- * - utils/duplicate-constants: Shared constants for duplicate detection logic
- * * Required Environment Variables:
+ * 
+ * Required Environment Variables:
  * - ANALYSIS_TIMEOUT_MS: Analysis pipeline timeout (default: 60000)
  * - ANALYSIS_RETRIES: Number of retry attempts (default: 2)
  * - ANALYSIS_RETRY_BASE_MS: Base delay between retries (default: 250)
  * - ANALYSIS_RETRY_JITTER_MS: Jitter added to retry delay (default: 200)
  * - CB_FAILURES: Circuit breaker failure threshold (default: 5)
  * - CB_OPEN_MS: Circuit breaker open duration (default: 30000)
- * * MongoDB Collections Used:
+ * 
+ * MongoDB Collections Used:
  * - idempotent-requests: Stores request/response pairs for idempotency
  * - analysis-results: Stores analysis results and content hashes for deduplication
  * - progress-events: Stores legacy job progress events
@@ -32,16 +33,16 @@ const { errorResponse } = require('./utils/errors.cjs');
 const { parseJsonBody, validateAnalyzeRequest, validateImagePayload } = require('./utils/validation.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
-const { sha256HexFromBase64 } = require('./utils/hash.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { handleStoryModeAnalysis } = require('./utils/story-mode.cjs');
-const { 
-  DUPLICATE_UPGRADE_THRESHOLD, 
-  MIN_QUALITY_IMPROVEMENT, 
-  CRITICAL_FIELDS 
-} = require('./utils/duplicate-constants.cjs');
+// Use unified deduplication module as canonical source
+const {
+  calculateImageHash,
+  findDuplicateByHash,
+  checkNeedsUpgrade
+} = require('./utils/unified-deduplication.cjs');
 
 /**
  * Validate that required environment variables are set
@@ -286,9 +287,9 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
       return errorResponse(400, 'invalid_image', imageValidation.error || 'Invalid image', undefined, { ...headers, 'Content-Type': 'application/json' });
     }
 
-    // Calculate content hash for deduplication
+    // Calculate content hash for deduplication using unified function
     const hashStartTime = Date.now();
-    const contentHash = sha256HexFromBase64(imagePayload.image);
+    const contentHash = calculateImageHash(imagePayload.image);
     const hashDurationMs = Date.now() - hashStartTime;
     
     if (!contentHash) {
@@ -551,161 +552,79 @@ async function checkIdempotency(idemKey, log) {
 }
 
 /**
- * Checks for existing analysis by content hash
+ * Checks for existing analysis by content hash using unified deduplication
+ * This is now a thin wrapper around the canonical unified-deduplication module
  * @param {string} contentHash - Content hash to check
  * @param {any} log - Logger instance
- * @returns {Promise<any>} Existing analysis if found and high quality, null if should re-analyze
+ * @returns {Promise<any>} Existing analysis if found, { _isUpgrade: true, _existingRecord } if upgrade needed, or null
  */
 async function checkExistingAnalysis(contentHash, log) {
   const startTime = Date.now();
   try {
-    const collectionStartTime = Date.now();
     const resultsCol = await getCollection('analysis-results');
-    const collectionDurationMs = Date.now() - collectionStartTime;
     
-    // Check for index existence on first call (log once)
-    if (!checkExistingAnalysis._indexChecked) {
-      try {
-        const indexes = await resultsCol.indexes();
-        const hasContentHashIndex = indexes.some(idx => 
-          idx.key && idx.key.contentHash !== undefined
-        );
-        log.info('MongoDB index status for contentHash', {
-          hasContentHashIndex,
-          totalIndexes: indexes.length,
-          indexNames: indexes.map(i => i.name).join(', '),
-          event: 'INDEX_CHECK'
-        });
-        checkExistingAnalysis._indexChecked = true;
-      } catch (indexErr) {
-        log.warn('Failed to check indexes', { error: indexErr.message });
-      }
-    }
-    
-    const queryStartTime = Date.now();
-    const existing = await resultsCol.findOne({ contentHash });
-    const queryDurationMs = Date.now() - queryStartTime;
-    
-    if (existing) {
-      log.info('Dedupe: existing analysis found for content hash.', {
-        contentHash: contentHash.substring(0, 16) + '...',
-        needsReview: existing.needsReview,
-        validationScore: existing.validationScore,
-        extractionAttempts: existing.extractionAttempts || 1,
-        collectionDurationMs,
-        queryDurationMs,
-        event: 'FOUND'
-      });
-
-      const hasAllCriticalFields = CRITICAL_FIELDS.every(field =>
-        existing.analysis &&
-        existing.analysis[field] !== null &&
-        existing.analysis[field] !== undefined
-      );
-
-      // Check for missing critical fields first (highest priority)
-      if (!hasAllCriticalFields) {
-        const missingFields = CRITICAL_FIELDS.filter(field => 
-          !existing.analysis || 
-          existing.analysis[field] === null || 
-          existing.analysis[field] === undefined
-        );
-        
-        log.warn('Existing record is missing critical fields. Will re-analyze to improve.', {
-          contentHash: contentHash.substring(0, 16) + '...',
-          extractionAttempts: existing.extractionAttempts || 1,
-          missingFieldCount: missingFields.length,
-          missingFields: missingFields.slice(0, 5), // Log first 5 to avoid log spam
-          fileName: existing.fileName,
-          recordId: existing._id || existing.id,
-          decision: 'UPGRADE',
-          event: 'UPGRADE_NEEDED'
-        });
-        return { _isUpgrade: true, _existingRecord: existing };
-      }
-
-      // ***FIXED: Check if this record has already been retried with no improvement***
-      // Use epsilon comparison for floating point and validate both quality scores exist
-      const hasBeenRetriedWithNoImprovement =
-        (existing.validationScore !== undefined && existing.validationScore < 100) &&
-        (existing.extractionAttempts || 1) >= 2 &&
-        existing._wasUpgraded &&
-        existing._previousQuality !== undefined &&
-        existing._newQuality !== undefined &&
-        Math.abs(existing._previousQuality - existing._newQuality) < MIN_QUALITY_IMPROVEMENT;
-
-      if (hasBeenRetriedWithNoImprovement) {
-        log.info('Existing record was already retried with identical results - assuming full extraction.', {
-          contentHash: contentHash.substring(0, 16) + '...',
-          validationScore: existing.validationScore,
-          extractionAttempts: existing.extractionAttempts,
-          previousQuality: existing._previousQuality,
-          newQuality: existing._newQuality,
-          fileName: existing.fileName,
-          recordId: existing._id || existing.id,
-          decision: 'RETURN_EXISTING',
-          event: 'NO_IMPROVEMENT'
-        });
-        return existing; // Return as-is, no further retry needed
-      }
-
-      // ***FIXED: More conservative auto-retry - only if confidence score < 80% (not 100%)***
-      // Gemini often returns 95-99% confidence even for perfect extractions, so using
-      // 80% threshold prevents wasteful re-analysis of high-quality records while still
-      // catching genuinely poor extractions. This reduces API calls by ~90%.
-      const validationScore = existing.validationScore ?? 0; // Default to 0 if undefined
-      
-      if (validationScore < DUPLICATE_UPGRADE_THRESHOLD && (existing.extractionAttempts || 1) < 2) {
-        log.warn('Existing record has low confidence score. Will re-analyze to improve.', {
-          contentHash: contentHash.substring(0, 16) + '...',
-          validationScore: validationScore,
-          threshold: DUPLICATE_UPGRADE_THRESHOLD,
-          extractionAttempts: existing.extractionAttempts || 1,
-          fileName: existing.fileName,
-          recordId: existing._id || existing.id,
-          decision: 'UPGRADE',
-          event: 'LOW_CONFIDENCE_UPGRADE'
-        });
-        return { _isUpgrade: true, _existingRecord: existing };
-      }
-      
-      // Log when we skip upgrade for good-quality records
-      if (validationScore >= DUPLICATE_UPGRADE_THRESHOLD && validationScore < 100) {
-        log.info('Existing record has acceptable quality - not upgrading.', {
-          contentHash: contentHash.substring(0, 16) + '...',
-          validationScore: validationScore,
-          threshold: DUPLICATE_UPGRADE_THRESHOLD,
-          fileName: existing.fileName,
-          recordId: existing._id || existing.id,
-          decision: 'RETURN_EXISTING',
-          event: 'ACCEPTABLE_QUALITY'
-        });
-      }
-
-      const totalDurationMs = Date.now() - startTime;
-      log.info('Dedupe: high-quality duplicate found, will return existing.', {
-        contentHash: contentHash.substring(0, 16) + '...',
-        validationScore: existing.validationScore,
-        hasAllCriticalFields: true,
-        fileName: existing.fileName,
-        recordId: existing._id || existing.id,
-        totalDurationMs,
-        decision: 'RETURN_EXISTING',
-        event: 'HIGH_QUALITY_DUPLICATE'
-      });
-      
-      return existing;
-    }
+    // Use unified deduplication module to find the duplicate
+    const existingRecord = await findDuplicateByHash(contentHash, resultsCol, log);
     
     const totalDurationMs = Date.now() - startTime;
-    log.info('Dedupe: no existing analysis found, will perform new analysis.', {
+    
+    if (!existingRecord) {
+      log.info('Dedupe: no existing analysis found, will perform new analysis.', {
+        contentHash: contentHash.substring(0, 16) + '...',
+        totalDurationMs,
+        event: 'NOT_FOUND'
+      });
+      return null;
+    }
+    
+    // Use unified checkNeedsUpgrade to determine if upgrade is required
+    const upgradeCheck = checkNeedsUpgrade(existingRecord);
+    
+    // If the check indicates this record should be marked complete, update it in the database
+    if (upgradeCheck.shouldMarkComplete && !existingRecord.isComplete) {
+      try {
+        const resultsCol = await getCollection('analysis-results');
+        await resultsCol.updateOne(
+          { _id: existingRecord._id },
+          { $set: { isComplete: true, completedAt: new Date() } }
+        );
+        log.info('Marked record as complete (no further upgrades needed)', {
+          recordId: existingRecord._id,
+          reason: upgradeCheck.reason || 'High quality or retry exhausted'
+        });
+        // Update local record for consistency
+        existingRecord.isComplete = true;
+      } catch (markError) {
+        // Log but don't fail - marking complete is not critical
+        log.warn('Failed to mark record as complete', {
+          error: markError.message,
+          recordId: existingRecord._id
+        });
+      }
+    }
+    
+    if (upgradeCheck.needsUpgrade) {
+      log.warn('Dedupe: existing record needs upgrade.', {
+        contentHash: contentHash.substring(0, 16) + '...',
+        upgradeReason: upgradeCheck.reason,
+        recordId: existingRecord._id || existingRecord.id,
+        totalDurationMs,
+        event: 'UPGRADE_NEEDED'
+      });
+      // Return upgrade marker for compatibility with existing code
+      return { _isUpgrade: true, _existingRecord: existingRecord };
+    }
+    
+    log.info('Dedupe: high-quality duplicate found, will return existing.', {
       contentHash: contentHash.substring(0, 16) + '...',
-      collectionDurationMs,
-      queryDurationMs,
+      validationScore: existingRecord.validationScore,
+      isComplete: existingRecord.isComplete || false,
+      recordId: existingRecord._id || existingRecord.id,
       totalDurationMs,
-      event: 'NOT_FOUND'
+      event: 'HIGH_QUALITY_DUPLICATE'
     });
-    return null;
+    
+    return existingRecord;
   } catch (/** @type {any} */ error) {
     const totalDurationMs = Date.now() - startTime;
     log.warn('Duplicate check failed', {

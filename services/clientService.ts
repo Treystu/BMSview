@@ -216,8 +216,26 @@ export const __internals = {
     resetMetrics: () => resetClientServiceMetrics()
 };
 
-// This key generation logic is now only used on the client-side for finding duplicates
-// among already-fetched data.
+/**
+ * IMPORTANT: This key generation is CLIENT-SIDE ONLY for UI deduplication.
+ * 
+ * **Duplicate Detection Architecture:**
+ * - Backend (canonical): unified-deduplication.cjs uses SHA-256 content hashing
+ * - Frontend (UI helper): This function creates approximate keys for grouping already-fetched data
+ * 
+ * **This function does NOT:**
+ * - Replace backend duplicate detection
+ * - Perform cryptographic hashing
+ * - Check server-side duplicates
+ * 
+ * **Use this for:**
+ * - Grouping similar analyses in UI lists
+ * - Finding client-side duplicates in already-loaded data
+ * 
+ * **For actual duplicate detection:**
+ * - Frontend: Use checkFileDuplicate() from geminiService.ts (calls backend API)
+ * - Backend: Use unified-deduplication.cjs functions directly
+ */
 const generateAnalysisKey = (data: AnalysisData): string => {
     if (!data) return Math.random().toString();
     const voltage = data.overallVoltage ? (Math.round(data.overallVoltage * 10) / 10).toFixed(1) : 'N/A';
@@ -1921,47 +1939,49 @@ export const mergeBmsSystems = async (primarySystemId: string, idsToMerge: strin
 };
 
 export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> => {
-    log('info', 'Finding duplicate analysis sets.');
-    const allHistory = await apiFetch<AnalysisRecord[]>('history?all=true');
-    const recordsByKey = new Map<string, AnalysisRecord[]>();
-
-    for (const record of allHistory) {
-        if (!record.analysis) continue;
-        const key = generateAnalysisKey(record.analysis);
-        if (!recordsByKey.has(key)) {
-            recordsByKey.set(key, []);
-        }
-        recordsByKey.get(key)!.push(record);
-    }
-
-    const finalSets: AnalysisRecord[][] = [];
-    const TIME_WINDOW_MS = 5 * 60 * 1000;
-
-    for (const group of recordsByKey.values()) {
-        if (group.length < 2) continue;
-
-        const sortedGroup = group.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-
-        let i = 0;
-        while (i < sortedGroup.length) {
-            const currentSet = [sortedGroup[i]];
-            const startTime = new Date(sortedGroup[i].timestamp).getTime();
-            let j = i + 1;
-
-            while (j < sortedGroup.length && (new Date(sortedGroup[j].timestamp).getTime() - startTime <= TIME_WINDOW_MS)) {
-                currentSet.push(sortedGroup[j]);
-                j++;
-            }
-
-            if (currentSet.length > 1) {
-                finalSets.push(currentSet);
-            }
-
-            i = j;
-        }
-    }
-    log('info', 'Duplicate scan complete on client.', { foundSets: finalSets.length });
-    return finalSets;
+    log('info', 'Finding duplicate analysis sets using backend endpoint.');
+    
+    // Use backend endpoint for consistent duplicate detection (contentHash-based)
+    const response = await apiFetch<{
+        duplicateSets: Array<Array<{
+            id: string;
+            timestamp: string;
+            systemName: string;
+            dlNumber: string | null;
+            fileName: string;
+            validationScore: number;
+            contentHash: string;
+        }>>;
+        summary: {
+            totalRecords: number;
+            duplicateSets: number;
+            totalDuplicates: number;
+        };
+    }>('admin-scan-duplicates');
+    
+    // Convert backend format to AnalysisRecord format for compatibility
+    // Note: Backend returns minimal info for display purposes
+    // The UI only needs id, timestamp, systemId, dlNumber for deletion
+    const sets = response.duplicateSets.map(set => 
+        set.map(record => ({
+            id: record.id,
+            timestamp: record.timestamp,
+            systemId: record.systemName,
+            dlNumber: record.dlNumber,
+            fileName: record.fileName,
+            validationScore: record.validationScore,
+            // Minimal partial record - enough for UI display and deletion
+            // Type assertion is safe here because UI only accesses these specific fields
+            analysis: record.dlNumber ? { dlNumber: record.dlNumber } as Partial<AnalysisData> : null
+        } as AnalysisRecord))
+    );
+    
+    log('info', 'Duplicate scan complete via backend.', { 
+        foundSets: sets.length,
+        totalDuplicates: response.summary.totalDuplicates
+    });
+    
+    return sets;
 };
 
 export const deleteAnalysisRecords = async (recordIds: string[]): Promise<void> => {
