@@ -67,12 +67,15 @@ function calculateImageHash(base64String, log = null) {
       ? normalized.slice(normalized.indexOf(',') + 1)
       : normalized;
 
+    // Remove internal whitespace that may be introduced by transport layers
+    const sanitized = cleaned.replace(/\s+/g, '');
+
     // Basic base64 validation to avoid hashing garbage input
-    const base64Pattern = /^[A-Za-z0-9+/]+={0,2}$/;
-    if (!cleaned || !base64Pattern.test(cleaned)) {
+    const base64Pattern = /^[A-Za-z0-9+/]*={0,2}$/;
+    if (!sanitized || !base64Pattern.test(sanitized)) {
       if (log?.error) {
         log.error('Image hash calculation failed: invalid base64 payload', {
-          length: cleaned.length,
+          length: sanitized.length,
           event: 'HASH_INVALID_BASE64'
         });
       } else {
@@ -81,13 +84,13 @@ function calculateImageHash(base64String, log = null) {
       return null;
     }
 
-    const buffer = Buffer.from(cleaned, 'base64');
+    const buffer = Buffer.from(sanitized, 'base64');
     const hash = crypto.createHash('sha256').update(buffer).digest('hex');
 
     if (log?.debug) {
       log.debug('Image hash generated', {
         hashPreview: hash.substring(0, 16) + '...',
-        imageLength: cleaned.length,
+        imageLength: sanitized.length,
         event: 'HASH_GENERATED'
       });
     }
