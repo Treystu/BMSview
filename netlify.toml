@@ -53,6 +53,13 @@
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
+# Content Security Policy headers for all pages
+# worker-src allows blob: URLs for Web Workers (client-side hashing)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://identity.netlify.com https://aistudiocdn.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; frame-src https://identity.netlify.com https://app.netlify.com https://*.netlify.com;"
+
 [context.production.environment]
   LOG_LEVEL = "INFO"
 [context.deploy-preview.environment]
