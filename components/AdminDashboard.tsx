@@ -25,7 +25,7 @@ import {
     updateBmsSystem
 } from '../services/clientService';
 import { analyzeBmsScreenshot } from '../services/geminiService';
-import { checkFilesForDuplicates } from '../utils/duplicateChecker';
+import { checkFilesForDuplicates, partitionCachedFiles, buildRecordFromCachedDuplicate, type DuplicateCheckResult } from '../utils/duplicateChecker';
 import { useAdminState } from '../state/adminState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
 import BulkUpload from './BulkUpload';
@@ -222,8 +222,39 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults });
 
         try {
-            // ***PHASE 1: Check ALL files for duplicates upfront - categorize into three groups***
-            const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(files, log);
+            // Layer 1: Client-side cache fast-path (PR #341) - instant for cached duplicates
+            const { cachedDuplicates, cachedUpgrades, remainingFiles } = partitionCachedFiles(files);
+
+            // Process cached duplicates immediately (no network call needed)
+            for (const dup of cachedDuplicates) {
+                const record = buildRecordFromCachedDuplicate(dup, 'cached');
+                dispatch({
+                    type: 'UPDATE_BULK_JOB_COMPLETED',
+                    payload: { record, fileName: dup.file.name }
+                });
+            }
+
+            // Prepare cached upgrades as DuplicateCheckResults
+            const cachedUpgradeResults: DuplicateCheckResult[] = cachedUpgrades.map(file => ({
+                file,
+                isDuplicate: true,
+                needsUpgrade: true
+            }));
+
+            // PHASE 1: Check remaining files for duplicates upfront - categorize into three groups
+            let trueDuplicates: DuplicateCheckResult[] = [];
+            let needsUpgrade: DuplicateCheckResult[] = [];
+            let newFiles: DuplicateCheckResult[] = [];
+
+            if (remainingFiles.length > 0) {
+                const result = await checkFilesForDuplicates(remainingFiles, log);
+                trueDuplicates = result.trueDuplicates;
+                needsUpgrade = result.needsUpgrade;
+                newFiles = result.newFiles;
+            }
+
+            // Combine cached upgrades with network-checked upgrades
+            needsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
             
             // Mark true duplicates as skipped immediately (don't analyze these at all)
             for (const dup of trueDuplicates) {
@@ -257,7 +288,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             log('info', 'Phase 2: Starting analysis of non-duplicate files.', { 
                 count: filesToAnalyze.length,
                 upgrades: needsUpgrade.length,
-                new: newFiles.length
+                new: newFiles.length,
+                cachedDuplicates: cachedDuplicates.length,
+                cachedUpgrades: cachedUpgrades.length
             });
             
             let consecutiveRateLimitErrors = 0; // Track consecutive 429 errors across all files
