@@ -168,7 +168,7 @@ async function checkFilesUsingBatchAPI(
             apiDurationMs,
             totalDurationMs,
             payloadSizeKB,
-            avgPerFileMs: (totalDurationMs / files.length).toFixed(2),
+            avgPerFileMs: files.length > 0 ? (totalDurationMs / files.length).toFixed(2) : '0.00',
             event: 'BATCH_API_COMPLETE'
         });
         
@@ -194,13 +194,42 @@ async function checkFilesUsingBatchAPI(
             })
             .filter((r): r is DuplicateCheckResult => r !== null);
         
-        // Add failed hash files as non-duplicates
+        // For files that failed client-side hashing, fall back to individual server-side duplicate checking
         for (const failedResult of failedHashes) {
-            results.push({
-                file: failedResult.file,
-                isDuplicate: false,
-                needsUpgrade: false
-            });
+            try {
+                log('info', 'Falling back to server-side duplicate check for file with failed client-side hash', {
+                    fileName: failedResult.file.name,
+                    event: 'SERVER_FALLBACK_START'
+                });
+                
+                const serverResult = await checkFileDuplicate(failedResult.file);
+                results.push({
+                    file: failedResult.file,
+                    isDuplicate: serverResult.isDuplicate,
+                    needsUpgrade: serverResult.needsUpgrade,
+                    recordId: serverResult.recordId,
+                    timestamp: serverResult.timestamp,
+                    analysisData: serverResult.analysisData
+                });
+                
+                log('info', 'Server-side duplicate check complete', {
+                    fileName: failedResult.file.name,
+                    isDuplicate: serverResult.isDuplicate,
+                    event: 'SERVER_FALLBACK_COMPLETE'
+                });
+            } catch (err) {
+                log('warn', 'Failed server-side duplicate check for file that failed client-side hashing', {
+                    fileName: failedResult.file.name,
+                    error: err instanceof Error ? err.message : String(err),
+                    event: 'SERVER_FALLBACK_ERROR'
+                });
+                // Treat as non-duplicate only after server-side check also fails
+                results.push({
+                    file: failedResult.file,
+                    isDuplicate: false,
+                    needsUpgrade: false
+                });
+            }
         }
         
         return results;

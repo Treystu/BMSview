@@ -339,7 +339,7 @@ exports.handler = async (event, context) => {
         successfulHashes: fileHashes.filter(h => h.contentHash).length,
         failedHashes: hashErrors.length,
         hashDurationMs,
-        avgHashMs: (hashDurationMs / files.length).toFixed(2),
+        avgHashMs: files.length > 0 ? (hashDurationMs / files.length).toFixed(2) : '0.00',
         event: 'IMAGE_MODE_COMPLETE'
       });
     }

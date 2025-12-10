@@ -110,7 +110,7 @@ export async function calculateImageHashesBatch(base64Images: string[]): Promise
     successfulHashes: successCount,
     failedHashes: base64Images.length - successCount,
     durationMs,
-    avgPerImageMs: (durationMs / base64Images.length).toFixed(2),
+    avgPerImageMs: base64Images.length > 0 ? (durationMs / base64Images.length).toFixed(2) : '0.00',
     event: 'BATCH_HASH_COMPLETE'
   });
 
@@ -194,7 +194,7 @@ export async function calculateFileHashesBatch(
     successfulHashes: successCount,
     failedHashes: files.length - successCount,
     durationMs,
-    avgPerFileMs: (durationMs / files.length).toFixed(2),
+    avgPerFileMs: files.length > 0 ? (durationMs / files.length).toFixed(2) : '0.00',
     event: 'FILE_HASH_COMPLETE'
   });
 
