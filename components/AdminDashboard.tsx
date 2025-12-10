@@ -25,7 +25,7 @@ import {
     updateBmsSystem
 } from '../services/clientService';
 import { analyzeBmsScreenshot } from '../services/geminiService';
-import { checkFilesForDuplicates } from '../utils/duplicateChecker';
+import { checkFilesForDuplicates, partitionCachedFiles, DuplicateCheckResult, buildRecordFromCachedDuplicate } from '../utils/duplicateChecker';
 import { useAdminState } from '../state/adminState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
 import BulkUpload from './BulkUpload';
@@ -222,9 +222,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults });
 
         try {
-            // ***PHASE 1: Check ALL files for duplicates upfront - categorize into three groups***
-            const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(files, log);
-            
+            // Fast-path duplicates using hash cache from useFileUpload
+            const { cachedDuplicates, cachedUpgrades, remainingFiles } = partitionCachedFiles(files);
+
+            for (const dup of cachedDuplicates) {
+                const record: AnalysisRecord = buildRecordFromCachedDuplicate(dup, 'cached');
+                dispatch({
+                    type: 'UPDATE_BULK_JOB_COMPLETED',
+                    payload: { record, fileName: dup.file.name }
+                });
+            }
+
+            const cachedUpgradeResults: DuplicateCheckResult[] = cachedUpgrades.map(file => ({
+                file,
+                isDuplicate: true,
+                needsUpgrade: true
+            }));
+
+            // PHASE 1: Check ALL files for duplicates upfront - categorize into three groups
+            let trueDuplicates: DuplicateCheckResult[] = [];
+            let needsUpgrade: DuplicateCheckResult[] = [];
+            let newFiles: DuplicateCheckResult[] = [];
+
+            if (remainingFiles.length > 0) {
+                const result = await checkFilesForDuplicates(remainingFiles, log);
+                trueDuplicates = result.trueDuplicates;
+                needsUpgrade = result.needsUpgrade;
+                newFiles = result.newFiles;
+            }
+
+            needsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
+
             // Mark true duplicates as skipped immediately (don't analyze these at all)
             for (const dup of trueDuplicates) {
                 dispatch({

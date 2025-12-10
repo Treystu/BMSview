@@ -14,7 +14,7 @@ import {
   registerBmsSystem
 } from './services/clientService';
 import { analyzeBmsScreenshot } from './services/geminiService';
-import { checkFilesForDuplicates } from './utils/duplicateChecker';
+import { checkFilesForDuplicates, partitionCachedFiles, DuplicateCheckResult, CategorizedFiles, buildRecordFromCachedDuplicate, EMPTY_CATEGORIZATION } from './utils/duplicateChecker';
 import { useAppState } from './state/appState';
 import type { BmsSystem, DisplayableAnalysisResult } from './types';
 import { safeGetItems } from './utils/stateHelpers';
@@ -105,7 +105,30 @@ function App() {
       
       if (!options?.forceReanalysis) {
         try {
-          const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(files, log);
+          const { cachedDuplicates, cachedUpgrades, remainingFiles } = partitionCachedFiles(files);
+
+          for (const dup of cachedDuplicates) {
+            dispatch({
+              type: 'SYNC_ANALYSIS_COMPLETE',
+              payload: {
+                fileName: dup.file.name,
+                isDuplicate: true,
+                record: buildRecordFromCachedDuplicate(dup, 'local-duplicate')
+              },
+            });
+          }
+
+          const cachedUpgradeResults: DuplicateCheckResult[] = cachedUpgrades.map(file => ({
+            file,
+            isDuplicate: true,
+            needsUpgrade: true
+          }));
+
+          const { trueDuplicates, needsUpgrade, newFiles } = remainingFiles.length > 0
+            ? await checkFilesForDuplicates(remainingFiles, log)
+            : EMPTY_CATEGORIZATION;
+
+          const combinedNeedsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
           
           // Mark true duplicates as skipped immediately (don't analyze these at all)
           for (const dup of trueDuplicates) {
@@ -125,7 +148,7 @@ function App() {
           }
 
           // Update files that need upgrade to "Queued (needs upgrade)" status
-          for (const item of needsUpgrade) {
+          for (const item of combinedNeedsUpgrade) {
             dispatch({ 
               type: 'UPDATE_ANALYSIS_STATUS', 
               payload: { fileName: item.file.name, status: 'Queued (upgrading)' } 
@@ -140,11 +163,11 @@ function App() {
             });
           }
 
-          filesToAnalyze = [...needsUpgrade, ...newFiles];
+          filesToAnalyze = [...combinedNeedsUpgrade, ...newFiles];
           
           log('info', 'Phase 1 complete: Duplicate check finished.', { 
             count: filesToAnalyze.length,
-            upgrades: needsUpgrade.length,
+            upgrades: combinedNeedsUpgrade.length,
             new: newFiles.length,
             duplicates: trueDuplicates.length
           });
@@ -339,4 +362,3 @@ function App() {
 }
 
 export default App;
-

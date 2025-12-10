@@ -1,10 +1,13 @@
-/**
- * Shared utility for three-category duplicate checking
- * Used by both App.tsx and AdminDashboard.tsx
- */
-
 import { checkFileDuplicate } from 'services/geminiService';
 import { processBatches, BATCH_CONFIG } from './batchProcessor';
+import type { AnalysisData, AnalysisRecord } from '../types';
+
+export const generateLocalId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+export const EMPTY_CATEGORIZATION = {
+    trueDuplicates: [] as DuplicateCheckResult[],
+    needsUpgrade: [] as DuplicateCheckResult[],
+    newFiles: [] as DuplicateCheckResult[]
+};
 
 export interface DuplicateCheckResult {
     file: File;
@@ -19,6 +22,76 @@ export interface CategorizedFiles {
     trueDuplicates: DuplicateCheckResult[];
     needsUpgrade: DuplicateCheckResult[];
     newFiles: DuplicateCheckResult[];
+}
+
+export interface CachedDuplicateResult {
+    file: File;
+    analysisData: AnalysisData | null | undefined;
+    recordId?: string;
+    timestamp?: string;
+}
+
+type FileWithMeta = File & {
+    _isDuplicate?: boolean;
+    _analysisData?: AnalysisData | null;
+    _isUpgrade?: boolean;
+    _recordId?: string;
+    _timestamp?: string;
+};
+
+/**
+ * Partition files that already have duplicate metadata (from hash cache)
+ * into cached duplicates, cached upgrades, and remaining files.
+ */
+export function partitionCachedFiles(
+    files: File[]
+): {
+    cachedDuplicates: CachedDuplicateResult[];
+    cachedUpgrades: File[];
+    remainingFiles: File[];
+} {
+    const cachedDuplicates: CachedDuplicateResult[] = [];
+    const cachedUpgrades: File[] = [];
+    const remainingFiles: File[] = [];
+
+    for (const file of files) {
+        const meta = file as FileWithMeta;
+        // Treat as cached duplicate only when we also have full analysis data available
+        if (meta?._isDuplicate && meta?._analysisData) {
+            // Prefer metadata attached to analysis data; legacy file-level fields remain only for backward compatibility
+            // with pre-cache uploads that attached identifiers directly on the File object.
+            const recordId = (meta._analysisData?._recordId ?? meta._recordId) || undefined;
+            const timestamp = (meta._analysisData?._timestamp ?? meta._timestamp) || undefined;
+            cachedDuplicates.push({
+                file,
+                analysisData: meta._analysisData,
+                recordId,
+                timestamp
+            });
+            continue;
+        }
+
+        if (meta?._isUpgrade) {
+            cachedUpgrades.push(file);
+            continue;
+        }
+
+        remainingFiles.push(file);
+    }
+
+    return { cachedDuplicates, cachedUpgrades, remainingFiles };
+}
+
+export function buildRecordFromCachedDuplicate(
+    dup: CachedDuplicateResult,
+    prefix: string
+): AnalysisRecord {
+    return {
+        id: dup.recordId || generateLocalId(prefix),
+        timestamp: dup.timestamp || new Date().toISOString(),
+        analysis: dup.analysisData || null,
+        fileName: dup.file.name
+    };
 }
 
 /**
