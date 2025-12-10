@@ -17,10 +17,10 @@ import type { AnalysisData, AnalysisRecord } from '../types';
 // Shared exports for cache fast-path (PR #341)
 export const generateLocalId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 export const EMPTY_CATEGORIZATION = {
-    trueDuplicates: [] as DuplicateCheckResult[],
-    needsUpgrade: [] as DuplicateCheckResult[],
-    newFiles: [] as DuplicateCheckResult[]
-};
+    trueDuplicates: [],
+    needsUpgrade: [],
+    newFiles: []
+} as const;
 
 export interface DuplicateCheckResult {
     file: File;

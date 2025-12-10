@@ -149,10 +149,13 @@ describe('Client-side implementation requirements (documented for browser testin
   test('division by zero protection must be in place', () => {
     // Document that avgPerImageMs and avgPerFileMs calculations must protect against division by zero
     // When array length is 0, the calculation should return '0.00' instead of Infinity
-    const emptyArrayAvg = 0 > 0 ? (100 / 0).toFixed(2) : '0.00';
+    // Simulate the logic: if divisor is zero, return '0.00', else perform division
+    const divisorEmpty = 0;
+    const emptyArrayAvg = divisorEmpty === 0 ? '0.00' : (100 / divisorEmpty).toFixed(2);
     expect(emptyArrayAvg).toBe('0.00');
     
-    const nonEmptyArrayAvg = 5 > 0 ? (100 / 5).toFixed(2) : '0.00';
+    const divisorNonEmpty = 5;
+    const nonEmptyArrayAvg = divisorNonEmpty === 0 ? '0.00' : (100 / divisorNonEmpty).toFixed(2);
     expect(nonEmptyArrayAvg).toBe('20.00');
   });
 
@@ -161,12 +164,6 @@ describe('Client-side implementation requirements (documented for browser testin
     // The client-side code uses: typeof window !== 'undefined' && window.crypto && window.crypto.subtle
     
     // This test documents the required checks for the client-side implementation
-    // In a browser environment, all three should be available
-    const hasRequiredAPIs = 
-      typeof window !== 'undefined' && 
-      window.crypto !== undefined && 
-      window.crypto.subtle !== undefined;
-    
     // The client-side implementation should perform this check and return null if unavailable
     expect(typeof window !== 'undefined').toBe(true); // Window exists (in test mock)
   });
