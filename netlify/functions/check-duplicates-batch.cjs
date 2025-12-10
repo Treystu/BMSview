@@ -28,6 +28,9 @@ try {
 const MAX_FILE_NAMES_LOGGED = 10;
 const formatFileNameForLog = (file, index) => file?.fileName || `file-${index}`;
 
+// Shared constant for hash validation (SHA-256 produces 64 hex characters)
+const VALID_HASH_REGEX = /^[a-f0-9]{64}$/i;
+
 /**
  * Batch check for existing analyses by content hash
  * @param {string[]} contentHashes - Array of content hashes to check
@@ -137,6 +140,35 @@ exports.handler = async (event, context) => {
   log.entry({ method: event.httpMethod, path: event.path });
   const timer = createTimer(log, 'check-duplicates-batch');
   
+  // Log request body size for debugging payload issues (PR #339)
+  const bodySize = event.body ? event.body.length : 0;
+  const bodySizeMB = (bodySize / (1024 * 1024)).toFixed(2);
+  log.info('Request body size', { 
+    bodySizeBytes: bodySize,
+    bodySizeMB,
+    event: 'REQUEST_SIZE'
+  });
+  
+  // Check for payload too large (Netlify limit is 6MB) (PR #339)
+  const MAX_PAYLOAD_SIZE = 6 * 1024 * 1024; // 6MB in bytes
+  if (bodySize > MAX_PAYLOAD_SIZE) {
+    const maxSizeMB = (MAX_PAYLOAD_SIZE / (1024 * 1024)).toFixed(2);
+    log.warn('Request body too large', {
+      bodySizeMB,
+      maxSizeMB,
+      event: 'PAYLOAD_TOO_LARGE'
+    });
+    timer.end({ error: 'payload_too_large' });
+    log.exit(413);
+    return errorResponse(
+      413,
+      'payload_too_large',
+      `Request body too large (${bodySizeMB}MB). Maximum allowed is ${maxSizeMB}MB. Consider using client-side hashing or smaller batches.`,
+      { bodySizeMB, maxSizeMB, suggestion: 'Use hash-only mode or reduce batch size to 10 files' },
+      headers
+    );
+  }
+  
   let parsed;
   try {
     // Parse request body
@@ -170,57 +202,134 @@ exports.handler = async (event, context) => {
       event: 'BATCH_START'
     });
     
-    // Calculate content hashes for all files
-    const hashStartTime = Date.now();
-    const fileHashes = [];
-    const hashErrors = [];
+    // Detect mode: hash-only or image mode (PR #339)
+    // Validate that all files follow the same mode (no mixed batches allowed)
+    const hasHash = files.some(f => f.hash);
+    const hasImage = files.some(f => f.image);
     
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      
-      if (!file.image || !file.fileName) {
-        const fileName = formatFileNameForLog(file, i);
-        hashErrors.push({ index: i, fileName, error: 'Missing image or fileName' });
-        fileHashes.push({ index: i, fileName, contentHash: null });
-        continue;
-      }
-      
-      try {
-        const contentHash = calculateImageHash(file.image, log);
-        if (!contentHash) {
-          hashErrors.push({ index: i, fileName: file.fileName, error: 'Failed to generate hash' });
-          fileHashes.push({ index: i, fileName: file.fileName, contentHash: null });
-        } else {
-          fileHashes.push({ index: i, fileName: file.fileName, contentHash });
-          log.debug('Hash generated for file', {
-            fileName: file.fileName,
-            hashPreview: formatHashPreview(contentHash),
-            index: i,
-            event: 'HASH_GENERATED'
-          });
-        }
-      } catch (hashErr) {
-        const fileName = formatFileNameForLog(file, i);
-        hashErrors.push({ index: i, fileName, error: hashErr.message });
-        fileHashes.push({ index: i, fileName, contentHash: null });
-        log.warn('Hash calculation failed for file', {
-          fileName,
-          error: hashErr.message,
-          event: 'HASH_FAILED'
-        });
-      }
+    if (hasHash && hasImage) {
+      log.warn('Mixed mode batch detected (some files have hash, some have image)', {
+        filesWithHash: files.filter(f => f.hash).length,
+        filesWithImage: files.filter(f => f.image).length,
+        event: 'MIXED_MODE_ERROR'
+      });
+      timer.end({ error: 'mixed_mode' });
+      log.exit(400);
+      return errorResponse(
+        400,
+        'invalid_request',
+        'Mixed mode batch not allowed. All files must use either hash-only mode or image mode.',
+        { suggestion: 'Ensure all files have either "hash" or "image" property, not both' },
+        headers
+      );
     }
     
-    const hashDurationMs = Date.now() - hashStartTime;
+    const isHashOnlyMode = hasHash;
+    const isImageMode = hasImage;
     
-    log.info('Hash calculation complete', {
-      totalFiles: files.length,
-      successfulHashes: fileHashes.filter(h => h.contentHash).length,
-      failedHashes: hashErrors.length,
-      hashDurationMs,
-      avgHashMs: (hashDurationMs / files.length).toFixed(2),
-      event: 'HASH_COMPLETE'
+    log.info('Batch mode detected', {
+      mode: isHashOnlyMode ? 'hash-only' : isImageMode ? 'image' : 'unknown',
+      filesWithHash: files.filter(f => f.hash).length,
+      filesWithImage: files.filter(f => f.image).length,
+      event: 'MODE_DETECTED'
     });
+    
+    // Process based on mode (PR #339)
+    let fileHashes = [];
+    const hashErrors = [];
+    
+    if (isHashOnlyMode) {
+      // Hash-only mode: Use provided hashes directly (no calculation needed)
+      const hashStartTime = Date.now();
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        if (!file.hash || !file.fileName) {
+          const fileName = formatFileNameForLog(file, i);
+          hashErrors.push({ index: i, fileName, error: 'Missing hash or fileName' });
+          fileHashes.push({ index: i, fileName, contentHash: null });
+          continue;
+        }
+        
+        // Validate hash format (should be 64 hex characters)
+        if (!VALID_HASH_REGEX.test(file.hash)) {
+          hashErrors.push({ index: i, fileName: file.fileName, error: 'Invalid hash format (expected 64 hex chars)' });
+          fileHashes.push({ index: i, fileName: file.fileName, contentHash: null });
+          continue;
+        }
+        
+        fileHashes.push({ index: i, fileName: file.fileName, contentHash: file.hash.toLowerCase() });
+        
+        log.debug('Hash received from client', {
+          fileName: file.fileName,
+          hashPreview: formatHashPreview(file.hash),
+          index: i,
+          event: 'HASH_RECEIVED'
+        });
+      }
+      
+      const hashDurationMs = Date.now() - hashStartTime;
+      
+      log.info('Hash-only mode processing complete', {
+        totalFiles: files.length,
+        validHashes: fileHashes.filter(h => h.contentHash).length,
+        invalidHashes: hashErrors.length,
+        hashDurationMs,
+        event: 'HASH_ONLY_COMPLETE'
+      });
+      
+    } else {
+      // Image mode: Calculate content hashes from base64 images
+      const hashStartTime = Date.now();
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        if (!file.image || !file.fileName) {
+          const fileName = formatFileNameForLog(file, i);
+          hashErrors.push({ index: i, fileName, error: 'Missing image or fileName' });
+          fileHashes.push({ index: i, fileName, contentHash: null });
+          continue;
+        }
+        
+        try {
+          const contentHash = calculateImageHash(file.image, log);
+          if (!contentHash) {
+            hashErrors.push({ index: i, fileName: file.fileName, error: 'Failed to generate hash' });
+            fileHashes.push({ index: i, fileName: file.fileName, contentHash: null });
+          } else {
+            fileHashes.push({ index: i, fileName: file.fileName, contentHash });
+            log.debug('Hash generated for file', {
+              fileName: file.fileName,
+              hashPreview: formatHashPreview(contentHash),
+              index: i,
+              event: 'HASH_GENERATED'
+            });
+          }
+        } catch (hashErr) {
+          const fileName = formatFileNameForLog(file, i);
+          hashErrors.push({ index: i, fileName, error: hashErr.message });
+          fileHashes.push({ index: i, fileName, contentHash: null });
+          log.warn('Hash calculation failed for file', {
+            fileName,
+            error: hashErr.message,
+            event: 'HASH_FAILED'
+          });
+        }
+      }
+      
+      const hashDurationMs = Date.now() - hashStartTime;
+      
+      log.info('Image mode hash calculation complete', {
+        totalFiles: files.length,
+        successfulHashes: fileHashes.filter(h => h.contentHash).length,
+        failedHashes: hashErrors.length,
+        hashDurationMs,
+        avgHashMs: files.length > 0 ? (hashDurationMs / files.length).toFixed(2) : '0.00',
+        event: 'IMAGE_MODE_COMPLETE'
+      });
+    }
     
     if (hashErrors.length > 0) {
       log.warn('Some files failed hash calculation', {
