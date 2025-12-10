@@ -461,7 +461,8 @@ export class SyncManager {
         try {
             // Dynamic import to respect ESM and alias
             const mod = await import('@/services/localCache');
-            return mod as any;
+            // localCache is a named export, access it correctly
+            return (mod as any).localCache ?? mod.default ?? mod;
         } catch (e) {
             log('warn', 'Failed to load local cache module', { error: (e as Error).message });
             return null;
