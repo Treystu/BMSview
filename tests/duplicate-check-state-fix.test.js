@@ -59,8 +59,8 @@ describe('Duplicate Check State Fix - Code Validation', () => {
       // Check that the timeout is set to 20000ms (20 seconds)
       expect(source).toMatch(/20000.*20-second timeout for duplicate check/);
       
-      // Should log timeout warnings
-      expect(source).toMatch(/Duplicate check timed out after 20 seconds/);
+      // Should log timeout warnings (DUPLICATE_CHECK prefix is used in production)
+      expect(source).toMatch(/timed out after 20 seconds/);
     });
   });
 
