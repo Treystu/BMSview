@@ -31,8 +31,12 @@ const getMimeTypeFromFileName = (fileName: string): string => {
 
 interface FileUploadOptions {
     maxFileSizeMb?: number;
+    initialFiles?: File[];
 }
 
+// Type guard for valid non-Blob BlobPart inputs supported by the Blob constructor in this context.
+// Only string, ArrayBuffer, and ArrayBufferView are checked because these are the only forms
+// expected from our ingestion pipeline.
 const isValidBlobSource = (input: unknown): input is Exclude<BlobPart, Blob> =>
     typeof input === 'string' || input instanceof ArrayBuffer || ArrayBuffer.isView(input);
 
@@ -45,10 +49,11 @@ const ensureFileInstance = (input: unknown): File => {
     const fallbackType = typeof rawType === 'string' ? rawType : 'application/octet-stream';
     const fallbackName = typeof rawName === 'string' ? rawName : 'untitled';
     // Always wrap the payload into a File instance while preserving any existing Blob body.
-    let blobSource: Blob;
     if (input instanceof Blob) {
-        blobSource = input;
-    } else if (isValidBlobSource(input)) {
+        return new File([input], fallbackName, { type: input.type || fallbackType });
+    }
+    let blobSource: Blob;
+    if (isValidBlobSource(input)) {
         blobSource = new Blob([input], { type: fallbackType });
     } else {
         blobSource = new Blob([], { type: fallbackType });
@@ -75,8 +80,8 @@ const readAsDataUrl = (file: Blob, readers: FileReader[]) => new Promise<string>
     reader.readAsDataURL(file);
 });
 
-export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) => {
-    const [files, setFiles] = useState<File[]>([]);
+export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUploadOptions = {}) => {
+    const [files, setFiles] = useState<File[]>(initialFiles);
     const [skippedFiles, setSkippedFiles] = useState<Map<string, string>>(new Map());
     const [previews, setPreviews] = useState<string[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -86,6 +91,17 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
 
     useEffect(() => {
         let isCancelled = false;
+        const readers: FileReader[] = [];
+        const cleanup = () => {
+            isCancelled = true;
+            readers.forEach(reader => {
+                if (reader.readyState === FileReader.LOADING) {
+                    reader.abort();
+                }
+            });
+        };
+
+        setFileError(null);
         const validFiles = files.filter(file => file instanceof Blob);
 
         if (validFiles.length !== files.length) {
@@ -97,19 +113,16 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
 
         if (validFiles.length === 0) {
             setPreviews([]);
-            return;
+            return cleanup;
         }
-
-        setFileError(null);
 
         if (validFiles.every(file => isDuplicateTagged(file))) {
             setPreviews([]);
             setFileError('Previews skipped: all selected files are known duplicates already uploaded.');
-            return;
+            return cleanup;
         }
 
-        const readers: FileReader[] = [];
-
+        // IIFE pattern used because useEffect cannot be async directly. isCancelled guards state updates; cleanup aborts readers.
         (async () => {
             try {
                 const newPreviews = await Promise.all(validFiles.map(file => readAsDataUrl(file, readers)));
@@ -126,14 +139,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
             }
         })();
 
-        return () => {
-            isCancelled = true;
-            readers.forEach(reader => {
-                if (reader.readyState === FileReader.LOADING) {
-                    reader.abort();
-                }
-            });
-        };
+        return cleanup;
     }, [files]);
 
     /**
