@@ -31,10 +31,57 @@ const getMimeTypeFromFileName = (fileName: string): string => {
 
 interface FileUploadOptions {
     maxFileSizeMb?: number;
+    initialFiles?: File[];
 }
 
-export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) => {
-    const [files, setFiles] = useState<File[]>([]);
+// Type guard for valid non-Blob BlobPart inputs supported by the Blob constructor in this context.
+// Only string, ArrayBuffer, and ArrayBufferView are checked because these are the only forms
+// expected from our ingestion pipeline.
+const isValidBlobSource = (input: unknown): input is Exclude<BlobPart, Blob> =>
+    typeof input === 'string' || input instanceof ArrayBuffer || ArrayBuffer.isView(input);
+
+const ensureFileInstance = (input: unknown): File => {
+    if (input instanceof File) {
+        return input;
+    }
+    const rawType = (input as { type?: unknown }).type;
+    const rawName = (input as { name?: unknown }).name;
+    const fallbackType = typeof rawType === 'string' ? rawType : 'application/octet-stream';
+    const fallbackName = typeof rawName === 'string' ? rawName : 'untitled';
+    // Always wrap the payload into a File instance while preserving any existing Blob body.
+    if (input instanceof Blob) {
+        return new File([input], fallbackName, { type: input.type || fallbackType });
+    }
+    let blobSource: Blob;
+    if (isValidBlobSource(input)) {
+        blobSource = new Blob([input], { type: fallbackType });
+    } else {
+        blobSource = new Blob([], { type: fallbackType });
+    }
+    return new File([blobSource], fallbackName, { type: blobSource.type || fallbackType });
+};
+
+const isDuplicateTagged = (file: Blob) => {
+    const fileRecord = file as Record<string, unknown>;
+    return '_isDuplicate' in fileRecord && fileRecord._isDuplicate === true;
+};
+
+const readAsDataUrl = (file: Blob, readers: FileReader[]) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    readers.push(reader);
+    reader.onload = () => {
+        if (typeof reader.result === 'string') {
+            resolve(reader.result);
+        } else {
+            reject(new Error('Preview result was not a data URL string'));
+        }
+    };
+    reader.onerror = () => reject(reader.error || new Error('Failed to read file preview'));
+    reader.readAsDataURL(file);
+});
+
+export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUploadOptions = {}) => {
+    const [files, setFiles] = useState<File[]>(initialFiles);
     const [skippedFiles, setSkippedFiles] = useState<Map<string, string>>(new Map());
     const [previews, setPreviews] = useState<string[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -43,12 +90,56 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
     const maxFileSizeBytes = maxFileSizeMb * 1024 * 1024;
 
     useEffect(() => {
-        const newPreviews = files.map(file => URL.createObjectURL(file));
-        setPreviews(newPreviews);
-        
-        return () => {
-            newPreviews.forEach(url => URL.revokeObjectURL(url));
+        let isCancelled = false;
+        const readers: FileReader[] = [];
+        const cleanup = () => {
+            isCancelled = true;
+            readers.forEach(reader => {
+                if (reader.readyState === FileReader.LOADING) {
+                    reader.abort();
+                }
+            });
         };
+
+        setFileError(null);
+        const validFiles = files.filter(file => file instanceof Blob);
+
+        if (validFiles.length !== files.length) {
+            log('warn', 'Filtered non-blob entries from preview generation.', {
+                total: files.length,
+                filteredOut: files.length - validFiles.length
+            });
+        }
+
+        if (validFiles.length === 0) {
+            setPreviews([]);
+            return cleanup;
+        }
+
+        if (validFiles.every(file => isDuplicateTagged(file))) {
+            setPreviews([]);
+            setFileError('Previews skipped: all selected files are known duplicates already uploaded.');
+            return cleanup;
+        }
+
+        // IIFE pattern used because useEffect cannot be async directly. isCancelled guards state updates; cleanup aborts readers.
+        (async () => {
+            try {
+                const newPreviews = await Promise.all(validFiles.map(file => readAsDataUrl(file, readers)));
+                if (!isCancelled) {
+                    setPreviews(newPreviews);
+                }
+            } catch (error) {
+                log('warn', 'Preview generation failed. Skipping previews to avoid UI crash.', {
+                    error: error instanceof Error ? error.message : String(error)
+                });
+                if (!isCancelled) {
+                    setPreviews([]);
+                }
+            }
+        })();
+
+        return cleanup;
     }, [files]);
 
     /**
@@ -96,7 +187,8 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
             // True duplicates: create wrapper objects with metadata instead of mutating File objects
             for (const dup of trueDuplicates) {
                 // Create a new object that extends the File, avoiding direct mutation
-                const duplicateFile = Object.assign(Object.create(Object.getPrototypeOf(dup.file)), dup.file, {
+                const baseFile = ensureFileInstance(dup.file);
+                const duplicateFile = Object.assign(Object.create(Object.getPrototypeOf(baseFile)), baseFile, {
                     _isDuplicate: true,
                     _analysisData: dup.analysisData,
                     _recordId: dup.recordId,
@@ -108,7 +200,8 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
             
             // Upgrades: create wrapper objects with metadata
             for (const item of needsUpgrade) {
-                const upgradeFile = Object.assign(Object.create(Object.getPrototypeOf(item.file)), item.file, { 
+                const baseFile = ensureFileInstance(item.file);
+                const upgradeFile = Object.assign(Object.create(Object.getPrototypeOf(baseFile)), baseFile, { 
                     _isUpgrade: true 
                 });
                 processedFiles.push(upgradeFile);
@@ -116,7 +209,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
             
             // New files: add as-is
             for (const item of newFiles) {
-                processedFiles.push(item.file);
+                processedFiles.push(ensureFileInstance(item.file));
             }
             
             log('info', 'UNIFIED_DUPLICATE_CHECK: Complete', {
