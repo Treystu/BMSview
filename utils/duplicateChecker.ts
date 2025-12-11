@@ -428,7 +428,9 @@ export async function checkFilesForDuplicates(
             
             const chunkResults = await checkFilesUsingBatchAPI(chunk, log);
             
-            if (chunkResults.length > 0) {
+            // Batch API returns empty array [] on failure, non-empty on success
+            // (successful calls always return one result per input file)
+            if (chunkResults.length === chunk.length) {
                 checkResults.push(...chunkResults);
                 successfulBatches++;
                 log('info', 'DUPLICATE_CHECK: Chunk completed successfully', {
@@ -436,6 +438,27 @@ export async function checkFilesForDuplicates(
                     resultsCount: chunkResults.length,
                     event: 'CHUNK_SUCCESS'
                 });
+            } else if (chunkResults.length > 0) {
+                // Partial success - some files got results, use what we have
+                checkResults.push(...chunkResults);
+                successfulBatches++;
+                log('warn', 'DUPLICATE_CHECK: Chunk partially completed', {
+                    chunkIndex,
+                    expectedCount: chunk.length,
+                    actualCount: chunkResults.length,
+                    event: 'CHUNK_PARTIAL'
+                });
+                // Handle missing files with individual fallback
+                const processedFileNames = new Set(chunkResults.map(r => r.file.name));
+                const missingFiles = chunk.filter(f => !processedFileNames.has(f.name));
+                if (missingFiles.length > 0) {
+                    log('info', 'DUPLICATE_CHECK: Processing missing files individually', {
+                        missingCount: missingFiles.length,
+                        event: 'MISSING_FILES_FALLBACK'
+                    });
+                    const fallbackResults = await checkFilesIndividually(missingFiles, log);
+                    checkResults.push(...fallbackResults);
+                }
             } else {
                 // Batch API failed for this chunk, fall back to individual checks
                 failedBatches++;
