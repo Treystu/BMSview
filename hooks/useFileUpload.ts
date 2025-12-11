@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import JSZip from 'jszip';
-import { sha256Browser } from '../utils';
-import { checkHashes } from '../services/clientService';
+import { checkFilesForDuplicates, type CategorizedFiles } from '../utils/duplicateChecker';
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({
@@ -12,9 +11,6 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
         context
     }));
 };
-
-/** Truncate hash for logging (first 16 chars + ...) */
-const truncateHash = (hash: string): string => hash.substring(0, 16) + '...';
 
 const getMimeTypeFromFileName = (fileName: string): string => {
     const extension = fileName.split('.').pop()?.toLowerCase();
@@ -55,6 +51,97 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
         };
     }, [files]);
 
+    /**
+     * Adds files to the upload queue with duplicate detection and metadata tagging.
+     *
+     * This is the single entry point for adding files, used by both direct image uploads and ZIP extraction.
+     *
+     * - **Duplicate Detection:** Attempts to detect duplicates using `checkFilesForDuplicates`. If duplicate detection fails 
+     *   (e.g., due to a network or backend error), the function falls back to adding all files without duplicate detection 
+     *   or metadata tagging. In fallback mode, no `_isDuplicate`, `_isUpgrade`, or related metadata fields are attached.
+     *
+     * - **Metadata Fields:**
+     *   - **True Duplicates:** Files identified as true duplicates are tagged with:
+     *     - `_isDuplicate: true`
+     *     - `_analysisData`: The analysis data from the existing record
+     *     - `_recordId`: The record ID of the existing analysis
+     *     - `_timestamp`: The timestamp of the existing analysis
+     *   - **Upgrades:** Files that are considered upgrades (e.g., higher quality or newer versions) are tagged with:
+     *     - `_isUpgrade: true`
+     *   - **New Files:** Files that are neither duplicates nor upgrades are added as-is, with no extra metadata fields.
+     *
+     * - **Side Effects:** Updates the `files` state array with the processed files. Note: Duplicates are NOT added to 
+     *   `skippedFiles` to maintain API contract (skippedFiles.size should remain 0).
+     *
+     * - **Caller Responsibility:** The caller (e.g., handleZipFile) is responsible for managing `isProcessing` state.
+     *
+     * @param filesToCheck Array of File objects to check and add.
+     * @returns {Promise<void>}
+     */
+    const checkAndAddFiles = useCallback(async (filesToCheck: File[]) => {
+        if (filesToCheck.length === 0) return;
+        
+        log('info', 'UNIFIED_DUPLICATE_CHECK: Starting for files', {
+            fileCount: filesToCheck.length,
+            fileNames: filesToCheck.slice(0, 5).map(f => f.name),
+            event: 'CHECK_START'
+        });
+        
+        try {
+            const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(filesToCheck, log);
+            
+            // Build files array with metadata
+            const processedFiles: File[] = [];
+            
+            // True duplicates: create wrapper objects with metadata instead of mutating File objects
+            for (const dup of trueDuplicates) {
+                // Create a new object that extends the File, avoiding direct mutation
+                const duplicateFile = Object.assign(Object.create(Object.getPrototypeOf(dup.file)), dup.file, {
+                    _isDuplicate: true,
+                    _analysisData: dup.analysisData,
+                    _recordId: dup.recordId,
+                    _timestamp: dup.timestamp
+                });
+                processedFiles.push(duplicateFile);
+                // Note: NOT adding to skippedFiles to maintain API contract (skippedFiles.size should be 0)
+            }
+            
+            // Upgrades: create wrapper objects with metadata
+            for (const item of needsUpgrade) {
+                const upgradeFile = Object.assign(Object.create(Object.getPrototypeOf(item.file)), item.file, { 
+                    _isUpgrade: true 
+                });
+                processedFiles.push(upgradeFile);
+            }
+            
+            // New files: add as-is
+            for (const item of newFiles) {
+                processedFiles.push(item.file);
+            }
+            
+            log('info', 'UNIFIED_DUPLICATE_CHECK: Complete', {
+                totalFiles: filesToCheck.length,
+                duplicates: trueDuplicates.length,
+                upgrades: needsUpgrade.length,
+                newFiles: newFiles.length,
+                event: 'CHECK_COMPLETE'
+            });
+            
+            setFiles(prev => [...prev, ...processedFiles]);
+            
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log('error', 'UNIFIED_DUPLICATE_CHECK: Failed', {
+                error: errorMessage,
+                fileCount: filesToCheck.length,
+                event: 'CHECK_FAILED'
+            });
+            setFileError(`Unable to check for duplicates: ${errorMessage}`);
+            // Fallback: add files without duplicate detection
+            setFiles(prev => [...prev, ...filesToCheck]);
+        }
+    }, []);
+
     const handleZipFile = useCallback(async (zipFile: File) => {
         setIsProcessing(true);
         setFileError(null);
@@ -74,15 +161,19 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
             });
             const extractedFiles = await Promise.all(imagePromises);
             log('info', 'Successfully extracted files from ZIP.', { ...zipContext, extractedCount: extractedFiles.length });
-            setFiles(prevFiles => [...prevFiles, ...extractedFiles]);
+            
+            // Route through unified duplicate check
+            await checkAndAddFiles(extractedFiles);
+            
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : String(e);
             log('error', 'Error unzipping file.', { ...zipContext, error: errorMessage });
             setFileError("Failed to unzip the file. It may be corrupt.");
         } finally {
+            // Caller manages isProcessing state
             setIsProcessing(false);
         }
-    }, []);
+    }, [checkAndAddFiles]);
 
     const processFileList = useCallback(async (fileList: FileList) => {
         log('info', 'Processing new file list.', { count: fileList.length });
@@ -103,123 +194,6 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
 
         const zipFiles = fileArray.filter(f => f.name.endsWith('.zip') || f.type === 'application/zip' || f.type === 'application/x-zip-compressed');
 
-    const imageProcessingPromise = (async () => {
-            if (validImageFiles.length > 0) {
-                setIsProcessing(true);
-                
-                log('info', 'UPFRONT_DUPLICATE_CHECK: Starting hash calculation for files', {
-                    fileCount: validImageFiles.length,
-                    fileNames: validImageFiles.map(f => f.name),
-                    event: 'HASH_CALC_START'
-                });
-                
-                try {
-                    const hashStartTime = Date.now();
-                    const hashes = await Promise.all(validImageFiles.map(sha256Browser));
-                    const hashDurationMs = Date.now() - hashStartTime;
-                    
-                    log('info', 'UPFRONT_DUPLICATE_CHECK: Hash calculation complete', {
-                        fileCount: hashes.length,
-                        hashPreviews: hashes.map(truncateHash),
-                        hashDurationMs,
-                        event: 'HASH_CALC_COMPLETE'
-                    });
-                    
-                    log('info', 'UPFRONT_DUPLICATE_CHECK: Calling checkHashes API', {
-                        hashCount: hashes.length,
-                        event: 'API_CALL_START'
-                    });
-                    
-                    const apiStartTime = Date.now();
-                    const { duplicates, upgrades } = await checkHashes(hashes);
-                    const apiDurationMs = Date.now() - apiStartTime;
-                    
-                    log('info', 'UPFRONT_DUPLICATE_CHECK: checkHashes API response received', {
-                        duplicatesFound: duplicates.length,
-                        upgradesFound: upgrades.length,
-                        duplicateHashes: duplicates.map(d => truncateHash(d.hash)),
-                        upgradeHashes: upgrades.map(truncateHash),
-                        apiDurationMs,
-                        event: 'API_RESPONSE'
-                    });
-                    
-                    const duplicateMap = new Map(duplicates.map(d => [d.hash, d.data]));
-                    const upgradeSet = new Set(upgrades);
-
-                    const newFiles: File[] = [];
-                    const filesToUpgrade: File[] = [];
-                    const newSkipped = new Map(skippedFiles);
-                    let duplicateCount = 0;
-                    let newFileCount = 0;
-
-                    hashes.forEach((hash, index) => {
-                        const file = validImageFiles[index];
-                        const duplicateData = duplicateMap.get(hash);
-
-                        if (duplicateData) {
-                            log('info', 'UPFRONT_DUPLICATE_CHECK: File identified as duplicate', {
-                                fileName: file.name,
-                                hash: truncateHash(hash),
-                                hasDuplicateData: !!duplicateData,
-                                event: 'FILE_DUPLICATE'
-                            });
-                            // This is a duplicate, add it to the files array with the data
-                            const duplicateFile = Object.assign(file, {
-                                _isDuplicate: true,
-                                _analysisData: duplicateData,
-                            });
-                            newFiles.push(duplicateFile);
-                            duplicateCount++;
-                        } else if (upgradeSet.has(hash)) {
-                            log('info', 'UPFRONT_DUPLICATE_CHECK: File needs upgrade', {
-                                fileName: file.name,
-                                hash: truncateHash(hash),
-                                event: 'FILE_UPGRADE'
-                            });
-                            filesToUpgrade.push(file);
-                        } else {
-                            log('info', 'UPFRONT_DUPLICATE_CHECK: File is new (not found in database)', {
-                                fileName: file.name,
-                                hash: truncateHash(hash),
-                                event: 'FILE_NEW'
-                            });
-                            newFiles.push(file);
-                            newFileCount++;
-                        }
-                    });
-                    
-                    log('info', 'UPFRONT_DUPLICATE_CHECK: Categorization complete', {
-                        totalFiles: validImageFiles.length,
-                        duplicates: duplicateCount,
-                        upgrades: filesToUpgrade.length,
-                        newFiles: newFileCount,
-                        event: 'CATEGORIZE_COMPLETE'
-                    });
-                    
-                    // Add new files and upgrades to the main files list
-                    setFiles(prev => [...prev, ...newFiles, ...filesToUpgrade.map(f => Object.assign(f, { _isUpgrade: true }))]);
-                    setSkippedFiles(newSkipped);
-                } catch (error) {
-                    // Duplicate check failed - log error and show user message
-                    const errorMessage = error instanceof Error ? error.message : String(error);
-                    log('error', 'UPFRONT_DUPLICATE_CHECK: Failed to check for duplicates', {
-                        error: errorMessage,
-                        fileCount: validImageFiles.length,
-                        event: 'CHECK_FAILED'
-                    });
-                    
-                    // Show user-friendly error message
-                    setFileError(`Unable to check for duplicate files: ${errorMessage}. Files will be processed, but duplicates may not be detected.`);
-                    
-                    // Process files anyway (no duplicate detection)
-                    // This ensures users can still upload even if duplicate check fails
-                    setFiles(prev => [...prev, ...validImageFiles]);
-                } finally {
-                    setIsProcessing(false);
-                }
-            }
-        })();
-
         if (oversizedFiles.length > 0) {
             const errorMsg = `The following files are too large (max ${maxFileSizeMb}MB): ${oversizedFiles.join(', ')}. Please resize them and try again.`;
             log('warn', 'Oversized files detected.', { oversizedCount: oversizedFiles.length, fileNames: oversizedFiles, maxSizeMb: maxFileSizeMb });
@@ -228,11 +202,21 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5 }: FileUploadOptions = {}) =
         
         log('info', 'File list processed.', { validImageCount: validImageFiles.length, oversizedCount: oversizedFiles.length, zipCount: zipFiles.length });
         
-        const zipProcessingPromises = zipFiles.map(handleZipFile);
+        // Process image files first, then ZIP files sequentially to avoid concurrent state updates
+        setIsProcessing(true);
+        try {
+            if (validImageFiles.length > 0) {
+                await checkAndAddFiles(validImageFiles);
+            }
+            
+            for (const zipFile of zipFiles) {
+                await handleZipFile(zipFile);
+            }
+        } finally {
+            setIsProcessing(false);
+        }
 
-        await Promise.all([imageProcessingPromise, ...zipProcessingPromises]);
-
-    }, [handleZipFile, maxFileSizeBytes, maxFileSizeMb, skippedFiles]);
+    }, [handleZipFile, checkAndAddFiles, maxFileSizeBytes, maxFileSizeMb]);
 
     const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
         if (event.target.files) {
