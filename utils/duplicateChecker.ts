@@ -364,8 +364,21 @@ export async function checkFilesForDuplicates(
     
     let checkResults: DuplicateCheckResult[];
     
-    // Try batch API first for efficiency (works for any number of files up to 100)
-    if (files.length > 1 && files.length <= 100) {
+    // Use batch API for efficiency - chunk large file sets into 100-file batches
+    // This avoids the slow individual file check fallback
+    const BATCH_API_LIMIT = 100;
+    
+    if (files.length === 0) {
+        checkResults = [];
+    } else if (files.length === 1) {
+        // Single file - use individual check (batch API overhead not worth it)
+        log('info', 'DUPLICATE_CHECK: Single file check', { 
+            fileCount: files.length,
+            event: 'INDIVIDUAL_SELECTED'
+        });
+        checkResults = await checkFilesIndividually(files, log);
+    } else if (files.length <= BATCH_API_LIMIT) {
+        // Small batch - single batch API call
         log('info', 'DUPLICATE_CHECK: Using batch API endpoint', { 
             fileCount: files.length,
             event: 'BATCH_API_SELECTED'
@@ -385,20 +398,87 @@ export async function checkFilesForDuplicates(
             });
             checkResults = await checkFilesIndividually(files, log);
         }
-    } else if (files.length > 100) {
-        // Too many files for batch API, use chunked approach
-        log('info', 'DUPLICATE_CHECK: Too many files for batch API, using chunked processing', { 
-            fileCount: files.length,
-            event: 'CHUNKED_SELECTED'
-        });
-        checkResults = await checkFilesIndividually(files, log);
     } else {
-        // Single file or very small batch - use individual check
-        log('info', 'DUPLICATE_CHECK: Single file check', { 
+        // Large file set - chunk into multiple batch API calls (100 files each)
+        // This is MUCH faster than individual checks (~2s vs ~200s for 300 files)
+        const numChunks = Math.ceil(files.length / BATCH_API_LIMIT);
+        log('info', 'DUPLICATE_CHECK: Large file set - using chunked batch API', { 
             fileCount: files.length,
-            event: 'INDIVIDUAL_SELECTED'
+            numChunks,
+            chunkSize: BATCH_API_LIMIT,
+            event: 'CHUNKED_BATCH_SELECTED'
         });
-        checkResults = await checkFilesIndividually(files, log);
+        
+        checkResults = [];
+        let successfulBatches = 0;
+        let failedBatches = 0;
+        
+        // Process chunks sequentially to avoid overwhelming the backend
+        for (let i = 0; i < files.length; i += BATCH_API_LIMIT) {
+            const chunk = files.slice(i, i + BATCH_API_LIMIT);
+            const chunkIndex = Math.floor(i / BATCH_API_LIMIT);
+            
+            log('info', 'DUPLICATE_CHECK: Processing chunk', {
+                chunkIndex,
+                chunkSize: chunk.length,
+                totalChunks: numChunks,
+                progress: `${chunkIndex + 1}/${numChunks}`,
+                event: 'CHUNK_START'
+            });
+            
+            const chunkResults = await checkFilesUsingBatchAPI(chunk, log);
+            
+            // Batch API returns empty array [] on failure, non-empty on success
+            // (successful calls always return one result per input file)
+            if (chunkResults.length === chunk.length) {
+                checkResults.push(...chunkResults);
+                successfulBatches++;
+                log('info', 'DUPLICATE_CHECK: Chunk completed successfully', {
+                    chunkIndex,
+                    resultsCount: chunkResults.length,
+                    event: 'CHUNK_SUCCESS'
+                });
+            } else if (chunkResults.length > 0) {
+                // Partial success - some files got results, use what we have
+                checkResults.push(...chunkResults);
+                successfulBatches++;
+                log('warn', 'DUPLICATE_CHECK: Chunk partially completed', {
+                    chunkIndex,
+                    expectedCount: chunk.length,
+                    actualCount: chunkResults.length,
+                    event: 'CHUNK_PARTIAL'
+                });
+                // Handle missing files with individual fallback
+                const processedFileNames = new Set(chunkResults.map(r => r.file.name));
+                const missingFiles = chunk.filter(f => !processedFileNames.has(f.name));
+                if (missingFiles.length > 0) {
+                    log('info', 'DUPLICATE_CHECK: Processing missing files individually', {
+                        missingCount: missingFiles.length,
+                        event: 'MISSING_FILES_FALLBACK'
+                    });
+                    const fallbackResults = await checkFilesIndividually(missingFiles, log);
+                    checkResults.push(...fallbackResults);
+                }
+            } else {
+                // Batch API failed for this chunk, fall back to individual checks
+                failedBatches++;
+                log('warn', 'DUPLICATE_CHECK: Chunk batch API failed, using individual fallback', {
+                    chunkIndex,
+                    chunkSize: chunk.length,
+                    event: 'CHUNK_FALLBACK'
+                });
+                const fallbackResults = await checkFilesIndividually(chunk, log);
+                checkResults.push(...fallbackResults);
+            }
+        }
+        
+        log('info', 'DUPLICATE_CHECK: All chunks processed', {
+            totalFiles: files.length,
+            totalResults: checkResults.length,
+            successfulBatches,
+            failedBatches,
+            event: 'CHUNKED_BATCH_COMPLETE'
+        });
     }
 
     // Categorize results into three groups
