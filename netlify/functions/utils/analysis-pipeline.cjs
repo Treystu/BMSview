@@ -60,7 +60,7 @@ const callWeatherFunction = async (lat, lon, timestamp, log) => {
  * @param {Function} log - Logger function
  * @param {Object} context - Execution context
  * @param {string|null} [previousFeedback] - Feedback from previous failed attempt
- * @returns {Promise<Object>} Extracted data
+ * @returns {Promise<{data: Object, tokenMetadata: {inputTokens: number, outputTokens: number, totalTokens: number}}>} Extracted data with token metadata
  */
 const extractBmsData = async (image, mimeType, log, context, previousFeedback = null) => {
     // ... existing code ...
@@ -86,8 +86,21 @@ const extractBmsData = async (image, mimeType, log, context, previousFeedback = 
         const result = await geminiClient.callAPI(prompt, { model: modelName }, log);
         const duration = Date.now() - startTime;
 
+        // Extract token usage metadata from Gemini response
+        const usageMetadata = result.usageMetadata || {};
+        const tokenMetadata = {
+            inputTokens: usageMetadata.promptTokenCount || 0,
+            outputTokens: usageMetadata.candidatesTokenCount || 0,
+            totalTokens: usageMetadata.totalTokenCount || 0
+        };
+
         // ... existing code ...
-        log('info', 'Received response from Gemini API via custom client.', { durationMs: duration });
+        log('info', 'Received response from Gemini API via custom client.', { 
+            durationMs: duration,
+            inputTokens: tokenMetadata.inputTokens,
+            outputTokens: tokenMetadata.outputTokens,
+            totalTokens: tokenMetadata.totalTokens
+        });
 
         const rawText = result.candidates[0]?.content.parts[0]?.text;
         // ... existing code ...
@@ -95,7 +108,8 @@ const extractBmsData = async (image, mimeType, log, context, previousFeedback = 
             throw new Error("Invalid response structure from Gemini API client.");
         }
         // ... existing code ...
-        return cleanAndParseJson(rawText, log);
+        const parsedData = cleanAndParseJson(rawText, log);
+        return { data: parsedData, tokenMetadata };
 
     } catch (error) {
         // ... existing code ...
@@ -174,8 +188,17 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
         }
 
         try {
-            extractedData = await extractBmsData(image.image, image.mimeType, log, context, previousFeedback);
-            log('info', 'Data extraction complete.', logContext);
+            const extractionResult = await extractBmsData(image.image, image.mimeType, log, context, previousFeedback);
+            extractedData = extractionResult.data;
+            // Accumulate token usage across retries
+            inputTokens += extractionResult.tokenMetadata.inputTokens;
+            outputTokens += extractionResult.tokenMetadata.outputTokens;
+            tokensUsed += extractionResult.tokenMetadata.totalTokens;
+            log('info', 'Data extraction complete.', { 
+                ...logContext,
+                inputTokens: extractionResult.tokenMetadata.inputTokens,
+                outputTokens: extractionResult.tokenMetadata.outputTokens
+            });
         } catch (error) {
             log('error', `Data extraction attempt ${attemptNumber} failed.`, {
                 ...logContext,

@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useFileUpload } from '../hooks/useFileUpload';
 import SpinnerIcon from './icons/SpinnerIcon';
 
@@ -9,6 +9,51 @@ interface UploadSectionProps {
   error: string | null;
   hasResults: boolean;
 }
+
+/**
+ * Estimates the AI analysis cost based on file size
+ * Uses Gemini 2.5 Flash pricing: $0.075/1M input tokens, $0.30/1M output tokens
+ * Image tokens are approximately 258 per image regardless of size (Gemini's token counting)
+ * Plus ~2000 tokens for prompt and ~500 tokens for response per image
+ */
+type CostEstimate = {
+  level: 'low' | 'medium' | 'high';
+  label: string;
+  estimatedCost: number;
+  color: string;
+};
+
+const estimateCost = (files: File[]): CostEstimate => {
+  if (files.length === 0) {
+    return { level: 'low', label: 'Low', estimatedCost: 0, color: 'bg-green-100 text-green-800' };
+  }
+
+  // Gemini 2.5 Flash pricing (per million tokens)
+  const INPUT_COST_PER_M = 0.075;  // $0.075 per million input tokens
+  const OUTPUT_COST_PER_M = 0.30;   // $0.30 per million output tokens
+  
+  // Estimated tokens per image analysis:
+  // - Image: ~258 tokens (Gemini's fixed rate for images)
+  // - Prompt: ~2000 tokens
+  // - Response: ~500 tokens
+  const TOKENS_PER_IMAGE = 258 + 2000;
+  const OUTPUT_TOKENS_PER_IMAGE = 500;
+  
+  const totalInputTokens = files.length * TOKENS_PER_IMAGE;
+  const totalOutputTokens = files.length * OUTPUT_TOKENS_PER_IMAGE;
+  
+  const estimatedCost = (totalInputTokens / 1_000_000) * INPUT_COST_PER_M + 
+                        (totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_M;
+  
+  // Cost thresholds (per batch)
+  if (estimatedCost < 0.01) {
+    return { level: 'low', label: 'Low', estimatedCost, color: 'bg-green-100 text-green-800' };
+  } else if (estimatedCost < 0.05) {
+    return { level: 'medium', label: 'Medium', estimatedCost, color: 'bg-yellow-100 text-yellow-800' };
+  } else {
+    return { level: 'high', label: 'High', estimatedCost, color: 'bg-red-100 text-red-800' };
+  }
+};
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({
@@ -30,6 +75,9 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
     handleDrop,
     clearFiles,
   } = useFileUpload({ maxFileSizeMb: 4.5 });
+
+  // Calculate estimated cost when files change
+  const costEstimate = useMemo(() => estimateCost(files), [files]);
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -108,6 +156,21 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
           }
           {isProcessing && <p className="mt-2 text-sm text-secondary">Processing files...</p>}
           {fileError && <p className="mt-4 text-sm text-red-600">{fileError}</p>}
+
+          {/* Estimated Cost Badge */}
+          {files.length > 0 && (
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <span className="text-sm text-neutral">Estimated Cost:</span>
+              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${costEstimate.color}`}>
+                {costEstimate.label}
+                {costEstimate.estimatedCost > 0 && (
+                  <span className="ml-1 opacity-75">
+                    (~${costEstimate.estimatedCost.toFixed(4)})
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
 
           <button
             onClick={handleAnalyzeClick}
