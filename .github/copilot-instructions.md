@@ -287,6 +287,11 @@ All searches and file accesses are logged with:
 - `LOG_LEVEL` - `INFO` (production) or `DEBUG` (development)
 - `URL` - Netlify deployment URL (auto-set in production)
 
+### Cost Management (Optional)
+- `AI_MONTHLY_TOKEN_BUDGET` - Monthly token budget limit (default: 5,000,000 tokens)
+- `AI_MONTHLY_COST_BUDGET` - Monthly cost budget limit in USD (default: $10)
+- `AI_BUDGET_ALERT_THRESHOLD` - Budget alert threshold as decimal (default: 0.8 for 80%)
+
 ## Common Commands
 
 ```bash

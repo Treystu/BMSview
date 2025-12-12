@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 export type CostLevel = 'low' | 'medium' | 'high';
 
@@ -10,12 +10,74 @@ export interface CostEstimate {
     color: string;
 }
 
+export interface ModelPricing {
+    inputPerMillion: number;
+    outputPerMillion: number;
+    description?: string;
+}
+
+export interface ModelPricingResponse {
+    currentModel: {
+        model: string;
+        pricing: ModelPricing;
+    };
+    allModels: Record<string, ModelPricing>;
+    defaultModel: string;
+}
+
+// Default pricing (Gemini 2.5 Flash) - used as fallback
+const DEFAULT_INPUT_COST_PER_M = 0.075;
+const DEFAULT_OUTPUT_COST_PER_M = 0.30;
+
+// Cached pricing from backend
+let cachedPricing: ModelPricingResponse | null = null;
+let pricingFetchPromise: Promise<ModelPricingResponse | null> | null = null;
+
 /**
- * Gemini 2.5 Flash pricing (per million tokens)
- * Input: $0.075/1M, Output: $0.30/1M
+ * Fetch model pricing from backend
+ * Caches result to avoid repeated requests
  */
-const INPUT_COST_PER_M = 0.075;
-const OUTPUT_COST_PER_M = 0.30;
+export async function fetchModelPricing(): Promise<ModelPricingResponse | null> {
+    if (cachedPricing) {
+        return cachedPricing;
+    }
+    
+    if (pricingFetchPromise) {
+        return pricingFetchPromise;
+    }
+    
+    pricingFetchPromise = (async () => {
+        try {
+            const response = await fetch('/.netlify/functions/model-pricing');
+            if (response.ok) {
+                cachedPricing = await response.json();
+                return cachedPricing;
+            }
+        } catch (error) {
+            console.warn('Failed to fetch model pricing, using defaults:', error);
+        }
+        return null;
+    })();
+    
+    return pricingFetchPromise;
+}
+
+/**
+ * Get current model pricing (sync version using cache)
+ * Falls back to defaults if not yet fetched
+ */
+export function getCurrentPricing(): { inputCostPerM: number; outputCostPerM: number } {
+    if (cachedPricing?.currentModel?.pricing) {
+        return {
+            inputCostPerM: cachedPricing.currentModel.pricing.inputPerMillion,
+            outputCostPerM: cachedPricing.currentModel.pricing.outputPerMillion
+        };
+    }
+    return {
+        inputCostPerM: DEFAULT_INPUT_COST_PER_M,
+        outputCostPerM: DEFAULT_OUTPUT_COST_PER_M
+    };
+}
 
 // Analysis token estimates
 const IMAGE_TOKENS = 258; // Gemini's fixed rate for images
@@ -35,12 +97,17 @@ const TOKENS_PER_RESPONSE = 1000;
  * - Image: ~258 tokens (Gemini's fixed rate)
  * - Prompt: ~2000 tokens
  * - Response: ~500 tokens
+ * 
+ * Note: Cost estimates are based on the currently configured model.
+ * Call fetchModelPricing() to ensure estimates use the correct pricing.
  */
 export const estimateAnalysisCost = (fileCount: number): CostEstimate => {
     if (fileCount === 0) {
         return { level: 'low', label: 'Low', estimatedTokens: 0, estimatedCost: 0, color: 'bg-green-100 text-green-800' };
     }
 
+    const { inputCostPerM, outputCostPerM } = getCurrentPricing();
+    
     const TOKENS_PER_IMAGE = IMAGE_TOKENS + PROMPT_TOKENS;
     const OUTPUT_TOKENS_PER_IMAGE = ANALYSIS_RESPONSE_TOKENS;
 
@@ -48,8 +115,8 @@ export const estimateAnalysisCost = (fileCount: number): CostEstimate => {
     const totalOutputTokens = fileCount * OUTPUT_TOKENS_PER_IMAGE;
     const totalTokens = totalInputTokens + totalOutputTokens;
 
-    const estimatedCost = (totalInputTokens / 1_000_000) * INPUT_COST_PER_M +
-        (totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_M;
+    const estimatedCost = (totalInputTokens / 1_000_000) * inputCostPerM +
+        (totalOutputTokens / 1_000_000) * outputCostPerM;
 
     return categorizeEstimate(totalTokens, estimatedCost);
 };
@@ -57,6 +124,9 @@ export const estimateAnalysisCost = (fileCount: number): CostEstimate => {
 /**
  * Estimate cost for insights generation
  * Based on context window size and query complexity
+ * 
+ * Note: Cost estimates are based on the currently configured model.
+ * Call fetchModelPricing() to ensure estimates use the correct pricing.
  * 
  * @param contextWindowDays - Number of days of historical data
  * @param isCustomQuery - Whether this is a custom query (more turns)
@@ -67,6 +137,8 @@ export const estimateInsightsCost = (
     isCustomQuery: boolean = false,
     dataPointCount?: number
 ): CostEstimate => {
+    const { inputCostPerM, outputCostPerM } = getCurrentPricing();
+    
     // Estimate data points based on context window if not provided
     const estimatedDataPoints = dataPointCount || Math.min(contextWindowDays * HOURS_PER_DAY, MAX_HOURLY_DATA_POINTS);
 
@@ -91,8 +163,8 @@ export const estimateInsightsCost = (
         totalOutputTokens += outputTokensPerTurn;
     }
 
-    const estimatedCost = (totalInputTokens / 1_000_000) * INPUT_COST_PER_M +
-        (totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_M;
+    const estimatedCost = (totalInputTokens / 1_000_000) * inputCostPerM +
+        (totalOutputTokens / 1_000_000) * outputCostPerM;
 
     return categorizeEstimate(totalInputTokens + totalOutputTokens, estimatedCost);
 };
@@ -120,6 +192,27 @@ export const formatTokens = (tokens: number): string => {
     return tokens.toString();
 };
 
+/**
+ * Hook to fetch model pricing on component mount
+ * Returns the current model name for display
+ */
+export function useModelPricing(): { currentModel: string | null; isLoading: boolean } {
+    const [currentModel, setCurrentModel] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    
+    useEffect(() => {
+        fetchModelPricing()
+            .then((pricing) => {
+                if (pricing?.currentModel?.model) {
+                    setCurrentModel(pricing.currentModel.model);
+                }
+            })
+            .finally(() => setIsLoading(false));
+    }, []);
+    
+    return { currentModel, isLoading };
+}
+
 interface CostEstimateBadgeProps {
     estimate: CostEstimate;
     showTokens?: boolean;
@@ -130,6 +223,7 @@ interface CostEstimateBadgeProps {
 
 /**
  * Reusable cost estimate badge component
+ * Automatically fetches model pricing from backend on first render
  */
 export const CostEstimateBadge: React.FC<CostEstimateBadgeProps> = ({
     estimate,
@@ -138,6 +232,11 @@ export const CostEstimateBadge: React.FC<CostEstimateBadgeProps> = ({
     className = '',
     size = 'sm'
 }) => {
+    // Fetch pricing on mount (updates cache for subsequent estimates)
+    useEffect(() => {
+        fetchModelPricing();
+    }, []);
+    
     const sizeClasses = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-3 py-1';
 
     return (
