@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import JSZip from 'jszip';
 import { checkFilesForDuplicates, type CategorizedFiles } from '../utils/duplicateChecker';
 
@@ -11,6 +11,8 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
         context
     }));
 };
+
+const MAX_LOGGED_FILE_NAMES = 5;
 
 const getMimeTypeFromFileName = (fileName: string): string => {
     const extension = fileName.split('.').pop()?.toLowerCase();
@@ -89,6 +91,35 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
 
     const maxFileSizeBytes = maxFileSizeMb * 1024 * 1024;
 
+    const duplicateCount = useMemo(
+        () => files.filter(isDuplicateTagged).length,
+        [files]
+    );
+
+    useEffect(() => {
+        if (duplicateCount === 0) return;
+
+        setFiles(prev => {
+            const duplicates: File[] = [];
+            const sanitized: File[] = [];
+
+            for (const file of prev) {
+                if (isDuplicateTagged(file)) {
+                    duplicates.push(file);
+                } else {
+                    sanitized.push(file);
+                }
+            }
+
+            log('warn', 'State validation removed duplicate-tagged files before analysis.', {
+                removedCount: duplicates.length,
+                removedNames: duplicates.slice(0, MAX_LOGGED_FILE_NAMES).map(f => f.name),
+                event: 'STATE_VALIDATION'
+            });
+            return sanitized;
+        });
+    }, [duplicateCount]);
+
     useEffect(() => {
         let isCancelled = false;
         const readers: FileReader[] = [];
@@ -102,23 +133,39 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
         };
 
         setFileError(null);
-        const validFiles = files.filter(file => file instanceof Blob);
+        const validFiles: File[] = [];
+        let nonBlobFiltered = 0;
+        let duplicateFiltered = 0;
 
-        if (validFiles.length !== files.length) {
+        for (const file of files) {
+            if (!(file instanceof Blob)) {
+                nonBlobFiltered += 1;
+                continue;
+            }
+            if (isDuplicateTagged(file)) {
+                duplicateFiltered += 1;
+                continue;
+            }
+            validFiles.push(file);
+        }
+
+        if (nonBlobFiltered > 0) {
             log('warn', 'Filtered non-blob entries from preview generation.', {
                 total: files.length,
-                filteredOut: files.length - validFiles.length
+                filteredOut: nonBlobFiltered
+            });
+        }
+
+        if (duplicateFiltered > 0) {
+            log('info', 'Excluded duplicate-tagged entries from preview generation.', {
+                total: files.length - nonBlobFiltered,
+                filteredOut: duplicateFiltered,
+                event: 'PREVIEW_FILTER'
             });
         }
 
         if (validFiles.length === 0) {
             setPreviews([]);
-            return cleanup;
-        }
-
-        if (validFiles.every(file => isDuplicateTagged(file))) {
-            setPreviews([]);
-            setFileError('Previews skipped: all selected files are known duplicates already uploaded.');
             return cleanup;
         }
 
@@ -171,33 +218,31 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
      */
     const checkAndAddFiles = useCallback(async (filesToCheck: File[]) => {
         if (filesToCheck.length === 0) return;
-        
         log('info', 'UNIFIED_DUPLICATE_CHECK: Starting for files', {
             fileCount: filesToCheck.length,
-            fileNames: filesToCheck.slice(0, 5).map(f => f.name),
+            fileNames: filesToCheck.slice(0, MAX_LOGGED_FILE_NAMES).map(f => f.name),
             event: 'CHECK_START'
         });
         
         try {
             const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(filesToCheck, log);
-            
-            // Build files array with metadata
+
+            const duplicateReasons = new Map<string, string>();
             const processedFiles: File[] = [];
-            
-            // True duplicates: create wrapper objects with metadata instead of mutating File objects
-            for (const dup of trueDuplicates) {
-                // Create a new object that extends the File, avoiding direct mutation
-                const baseFile = ensureFileInstance(dup.file);
-                const duplicateFile = Object.assign(Object.create(Object.getPrototypeOf(baseFile)), baseFile, {
-                    _isDuplicate: true,
-                    _analysisData: dup.analysisData,
-                    _recordId: dup.recordId,
-                    _timestamp: dup.timestamp
+            if (trueDuplicates.length > 0) {
+                trueDuplicates.forEach(dup => {
+                    const baseFile = ensureFileInstance(dup.file);
+                    const duplicateKey = `${baseFile.name} (${baseFile.size} bytes @ ${baseFile.lastModified || 'unknown'})`;
+                    duplicateReasons.set(duplicateKey, 'Already uploaded');
                 });
-                processedFiles.push(duplicateFile);
-                // Note: NOT adding to skippedFiles to maintain API contract (skippedFiles.size should be 0)
+
+                log('info', 'UNIFIED_DUPLICATE_CHECK: Skipping duplicate files from queue.', {
+                    skippedCount: trueDuplicates.length,
+                    skippedNames: Array.from(duplicateReasons.keys()).slice(0, MAX_LOGGED_FILE_NAMES),
+                    event: 'DUPLICATE_SKIPPED'
+                });
             }
-            
+
             // Upgrades: create wrapper objects with metadata
             for (const item of needsUpgrade) {
                 const baseFile = ensureFileInstance(item.file);
@@ -219,9 +264,24 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
                 newFiles: newFiles.length,
                 event: 'CHECK_COMPLETE'
             });
-            
-            setFiles(prev => [...prev, ...processedFiles]);
-            
+
+            if (duplicateReasons.size > 0) {
+                setSkippedFiles(prev => {
+                    const next = new Map(prev);
+                    duplicateReasons.forEach((reason, name) => next.set(name, reason));
+                    return next;
+                });
+            }
+
+            if (processedFiles.length === 0 && duplicateReasons.size > 0) {
+                setFileError('All selected files were previously uploaded and were skipped.');
+                return;
+            }
+
+            if (processedFiles.length > 0) {
+                setFiles(prev => [...prev, ...processedFiles]);
+            }
+
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             log('error', 'UNIFIED_DUPLICATE_CHECK: Failed', {
