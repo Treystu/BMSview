@@ -91,6 +91,7 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
                     };
 
                     // Post the file, endpoint, and metadata
+                    // Note: File objects are transferable in modern browsers for efficient worker communication
                     try {
                         worker.postMessage({ 
                             file, 
