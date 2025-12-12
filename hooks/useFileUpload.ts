@@ -12,7 +12,8 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
     }));
 };
 
-const MAX_LOGGED_FILE_NAMES = 5;
+// Limit log spam while still giving enough context for large batches (10 names max).
+const MAX_LOGGED_FILE_NAMES = 10;
 
 const getMimeTypeFromFileName = (fileName: string): string => {
     const extension = fileName.split('.').pop()?.toLowerCase();
