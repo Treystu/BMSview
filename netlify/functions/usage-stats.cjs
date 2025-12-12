@@ -74,8 +74,7 @@ This issue was automatically created by the BMSview AI Cost Management system.
 
 **Timestamp:** ${new Date().toISOString()}
 `,
-                labels: ['ai-cost', 'auto-generated', usagePercent >= 100 ? 'critical' : 'warning'],
-                skipDuplicateCheck: false
+                labels: ['ai-cost', 'auto-generated', usagePercent >= 100 ? 'critical' : 'warning']
             })
         });
         
