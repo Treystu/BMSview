@@ -22,6 +22,11 @@ const { v4: uuidv4 } = require('uuid');
 
 const log = createLogger('usage-stats');
 
+// Budget defaults - configurable via environment variables
+const DEFAULT_MONTHLY_TOKEN_BUDGET = 5_000_000; // 5M tokens
+const DEFAULT_MONTHLY_COST_BUDGET = 10; // $10
+const DEFAULT_ALERT_THRESHOLD = 0.8; // 80%
+
 /**
  * Create a GitHub issue for budget alert (token-based)
  * @param {number} usagePercent - Current usage percentage
@@ -287,11 +292,11 @@ async function getBudgetStatus() {
     const operationsCollection = await getCollection('ai_operations');
     const alertsCollection = await getCollection('anomaly_alerts');
     
-    // Token-based budget (primary) - default 5M tokens per month
-    const monthlyTokenBudget = parseInt(process.env.AI_MONTHLY_TOKEN_BUDGET || '5000000', 10);
+    // Token-based budget (primary) - configurable via environment variable
+    const monthlyTokenBudget = parseInt(process.env.AI_MONTHLY_TOKEN_BUDGET || String(DEFAULT_MONTHLY_TOKEN_BUDGET), 10);
     // Cost-based budget (secondary) - for reference
-    const monthlyCostBudget = parseFloat(process.env.AI_MONTHLY_COST_BUDGET || '10');
-    const alertThreshold = parseFloat(process.env.AI_BUDGET_ALERT_THRESHOLD || '0.8'); // 80%
+    const monthlyCostBudget = parseFloat(process.env.AI_MONTHLY_COST_BUDGET || String(DEFAULT_MONTHLY_COST_BUDGET));
+    const alertThreshold = parseFloat(process.env.AI_BUDGET_ALERT_THRESHOLD || String(DEFAULT_ALERT_THRESHOLD));
     
     // Calculate current month's usage
     const now = new Date();
