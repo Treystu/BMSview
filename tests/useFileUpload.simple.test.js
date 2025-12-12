@@ -49,14 +49,11 @@ describe('useFileUpload preview safety', () => {
 
         await waitFor(() => {
             expect(result.current.previews).toHaveLength(0);
-            expect(result.current.fileError).toBe('Previews skipped: all selected files are known duplicates already uploaded.');
+            expect(result.current.fileError).toBe('All selected files were previously uploaded and were skipped.');
         });
 
-        expect(result.current.files).toHaveLength(1);
-        const storedFile = result.current.files[0];
-        expect(storedFile).toBeInstanceOf(File);
-        expect(Object.prototype.hasOwnProperty.call(storedFile, '_isDuplicate')).toBe(true);
-        expect((storedFile)._isDuplicate).toBe(true);
+        expect(result.current.files).toHaveLength(0);
+        expect(result.current.skippedFiles.size).toBe(1);
     });
 
     test('generates data URL previews for valid files', async () => {
@@ -119,14 +116,15 @@ describe('useFileUpload preview safety', () => {
         });
 
         await waitFor(() => {
-            expect(result.current.files).toHaveLength(4);
+            expect(result.current.files).toHaveLength(2);
         });
 
         await waitFor(() => {
-            expect(result.current.previews).toHaveLength(4);
+            expect(result.current.previews).toHaveLength(2);
         });
 
         expect(result.current.fileError).toBeNull();
+        expect(result.current.skippedFiles.size).toBe(2);
         global.FileReader = originalFileReader;
     });
 

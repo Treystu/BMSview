@@ -51,24 +51,18 @@ describe('useFileUpload with duplicate detection', () => {
       await result.current.processFileList(dataTransfer.files);
     });
 
-    // All files should be in the files array now (duplicates are marked but not skipped)
-    // existing-perfect.png (duplicate), new-file.png (new), existing-imperfect.png (upgrade)
-    expect(result.current.files.length).toBe(3);
+    // Only new and upgrade files should be kept; duplicates are skipped
+    expect(result.current.files.length).toBe(2);
     
     // Check new file
     expect(result.current.files.some(f => f.name === 'new-file.png')).toBe(true);
-    
-    // Check duplicate file (should be marked)
-    const duplicateFile = result.current.files.find(f => f.name === 'existing-perfect.png');
-    expect(duplicateFile).toBeDefined();
-    expect(duplicateFile._isDuplicate).toBe(true);
     
     // Check upgrade file (should be marked)
     const upgradeFile = result.current.files.find(f => f.name === 'existing-imperfect.png');
     expect(upgradeFile).toBeDefined();
     expect(upgradeFile._isUpgrade).toBe(true);
     
-    // No files should be skipped in the current implementation
-    expect(result.current.skippedFiles.size).toBe(0);
+    // Duplicate should be tracked as skipped
+    expect(result.current.skippedFiles.size).toBe(1);
   });
 });
