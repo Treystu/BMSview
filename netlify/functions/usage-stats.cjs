@@ -48,8 +48,9 @@ async function createBudgetGitHubIssue(usagePercent, currentTokens, monthlyToken
         const alertType = usagePercent >= 100 ? 'exceeded' : 'warning';
         
         // Create feedback object in the format expected by create-github-issue endpoint
+        // ID includes year, month, day, and alert type for uniqueness while allowing duplicate detection
         const feedback = {
-            id: `budget-alert-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${alertType}`,
+            id: `budget-alert-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${alertType}-${Math.round(usagePercent)}pct`,
             timestamp: now.toISOString(),
             systemId: 'system',
             feedbackType: 'cost_management',

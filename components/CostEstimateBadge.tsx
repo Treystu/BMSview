@@ -233,8 +233,9 @@ export const CostEstimateBadge: React.FC<CostEstimateBadgeProps> = ({
     size = 'sm'
 }) => {
     // Fetch pricing on mount (updates cache for subsequent estimates)
+    // Fire-and-forget pattern - errors are handled inside fetchModelPricing
     useEffect(() => {
-        fetchModelPricing();
+        void fetchModelPricing();
     }, []);
     
     const sizeClasses = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-3 py-1';
