@@ -41,58 +41,26 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
     log('info', 'Starting synchronous analysis.', analysisContext);
 
     try {
-        // Offload file read + network call to a worker using a blob fallback so it works
-        // regardless of bundler. If worker fails or times out, fall back to direct fetch.
+        // Offload file read + network call to a worker. If worker fails or times out, fall back to direct fetch.
         if (typeof Worker !== 'undefined') {
             try {
-                const workerScript = `
-                                self.onmessage = async function(e) {
-                                    const { endpoint, fileName, mimeType } = e.data || {};
-                                    const file = e.data.file;
-                                    try {
-                                        // Read file as data URL
-                                        const reader = new FileReader();
-                                        reader.onload = async function() {
-                                            try {
-                                                const dataUrl = reader.result;
-                                                const base64 = typeof dataUrl === 'string' ? dataUrl.split(',')[1] : null;
-                                                if (!base64) throw new Error('Failed to read file in worker');
-                                                const payload = { 
-                                                    image: {
-                                                        image: base64,
-                                                        mimeType,
-                                                        fileName
-                                                    }
-                                                };
-                                                const resp = await fetch(endpoint, {
-                                                    method: 'POST',
-                                                    headers: { 'Content-Type': 'application/json' },
-                                                    body: JSON.stringify(payload)
-                                                });
-                                                const json = await resp.json().catch(() => null);
-                                                self.postMessage({ ok: resp.ok, status: resp.status, json });
-                                            } catch (err) {
-                                                self.postMessage({ error: err.message || String(err) });
-                                            }
-                                        };
-                                        reader.onerror = function(err) {
-                                            self.postMessage({ error: err?.message || 'File read error in worker' });
-                                        };
-                                        reader.readAsDataURL(file);
-                                    } catch (err) {
-                                        self.postMessage({ error: err?.message || String(err) });
-                                    }
-                                };
-                                `;
+                // Use the dedicated worker file bundled by Vite
+                const worker = new Worker(
+                    new URL('../src/workers/analysis.worker.ts', import.meta.url),
+                    { type: 'module' }
+                );
 
-                const blob = new Blob([workerScript], { type: 'application/javascript' });
-                const blobUrl = URL.createObjectURL(blob);
-                const worker = new Worker(blobUrl);
+                // Compute an absolute endpoint URL to ensure it works in WorkerGlobalScope
+                const endpoint = new URL(
+                    forceReanalysis
+                        ? '/.netlify/functions/analyze?sync=true&force=true'
+                        : '/.netlify/functions/analyze?sync=true',
+                    window.location.origin
+                ).toString();
 
                 const workerPromise = new Promise<Response>((resolve, reject) => {
                     const timeout = setTimeout(() => {
                         worker.terminate();
-                        URL.revokeObjectURL(blobUrl);
                         reject(new Error('Worker timed out after 60 seconds'));
                     }, 60000);
 
@@ -101,7 +69,6 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
                         const data = msg.data || {};
                         if (data.error) {
                             worker.terminate();
-                            URL.revokeObjectURL(blobUrl);
                             reject(new Error(data.error));
                             return;
                         }
@@ -114,29 +81,26 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
                         } as unknown as Response;
 
                         worker.terminate();
-                        URL.revokeObjectURL(blobUrl);
                         resolve(fakeResp);
                     };
 
                     worker.onerror = (e) => {
                         clearTimeout(timeout);
                         worker.terminate();
-                        URL.revokeObjectURL(blobUrl);
                         reject(new Error(e?.message || 'Worker error'));
                     };
 
-                    // Post the file, endpoint, and metadata (file is transferable in browsers)
+                    // Post the file, endpoint, and metadata
                     try {
                         worker.postMessage({ 
                             file, 
-                            endpoint: '/.netlify/functions/analyze?sync=true',
+                            endpoint,
                             fileName: file.name,
                             mimeType: file.type
                         });
                     } catch (postErr) {
                         clearTimeout(timeout);
                         worker.terminate();
-                        URL.revokeObjectURL(blobUrl);
                         reject(postErr);
                     }
                 });
