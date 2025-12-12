@@ -168,39 +168,6 @@ async function checkAndCreateBudgetAlert(usagePercent, currentTokens, monthlyTok
     
     return alertRecord;
 }
-            monthlyBudget,
-            month: currentMonth
-        }
-    });
-    
-    // Create GitHub issue
-    const githubIssue = await createBudgetGitHubIssue(usagePercent, currentSpending, monthlyBudget);
-    
-    // Record that we've sent this alert
-    const alertRecord = {
-        id: uuidv4(),
-        month: currentMonth,
-        alertType,
-        usagePercent,
-        currentSpending,
-        monthlyBudget,
-        githubIssue: githubIssue ? {
-            number: githubIssue.number,
-            url: githubIssue.html_url
-        } : null,
-        createdAt: now.toISOString()
-    };
-    
-    await budgetAlertsCollection.insertOne(alertRecord);
-    
-    log.info('Budget alert created', {
-        alertType,
-        usagePercent,
-        hasGitHubIssue: !!githubIssue
-    });
-    
-    return alertRecord;
-}
 
 /**
  * Get daily breakdown of AI costs
