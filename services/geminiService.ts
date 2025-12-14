@@ -91,7 +91,7 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
                     };
 
                     // Post the file, endpoint, and metadata
-                    // Note: File objects are transferable in modern browsers for efficient worker communication
+                    // Note: File objects are cloned using the structured clone algorithm (not transferred) when sent to workers in modern browsers. This is still efficient for worker communication.
                     try {
                         worker.postMessage({ 
                             file, 
