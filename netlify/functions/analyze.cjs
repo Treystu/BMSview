@@ -770,6 +770,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
             id: originalId,
             fileName: record.fileName,
             timestamp: record.timestamp,
+            systemId: record.analysis?.systemId || null, // Top-level for query efficiency
             analysis: record.analysis,
             updatedAt: new Date(),
             _wasUpgraded: true,
@@ -804,6 +805,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
           { id: originalId },
           {
             $set: {
+              systemId: record.analysis?.systemId || null,
               analysis: record.analysis,
               timestamp: record.timestamp,
               fileName: record.fileName,
@@ -824,6 +826,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         id: record.id,
         fileName: record.fileName,
         timestamp: record.timestamp,
+        systemId: record.analysis?.systemId || null, // Top-level for query efficiency
         analysis: record.analysis,
         contentHash,
         createdAt: new Date(),
@@ -838,6 +841,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
       // All admins share the same analysis data indexed by contentHash
       log.debug('Storing new analysis record', { 
         recordId: record.id,
+        systemId: record.analysis?.systemId || null,
         hasContentHash: !!contentHash,
         qualityScore: record.validationScore 
       });
@@ -846,6 +850,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
 
       log.info('Analysis results stored for deduplication', {
         recordId: record.id,
+        systemId: record.analysis?.systemId || null,
         contentHash: contentHash.substring(0, 16) + '...',
         qualityScore: record.validationScore
       });
