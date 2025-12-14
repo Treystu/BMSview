@@ -50,6 +50,7 @@ As of December 2025, BMSview implements a **dual-write pattern** for analysis da
   id: String,                        // UUID v4 (unique record ID)
   fileName: String,                  // Original screenshot filename
   timestamp: String,                 // ISO 8601 UTC (e.g., "2025-12-04T05:46:41.988Z")
+  systemId: String,                  // Linked BMS system ID (top-level for query efficiency)
   analysis: {                        // Extracted BMS data
     overallVoltage: Number,          // Battery pack voltage (V)
     current: Number,                 // Charge/discharge current (A, positive=charging)
@@ -61,7 +62,7 @@ As of December 2025, BMSview implements a **dual-write pattern** for analysis da
     cellVoltages: [Number],          // Individual cell voltages (V)
     cellVoltageDifference: Number,   // Max-min cell voltage (V)
     alerts: [String],                // Active alerts/warnings
-    systemId: String,                // Linked BMS system ID (optional)
+    systemId: String,                // Linked BMS system ID (also nested for backward compat)
     dlNumber: String                 // Device license number (optional)
   },
   contentHash: String,               // SHA-256 hash for deduplication
@@ -83,7 +84,8 @@ As of December 2025, BMSview implements a **dual-write pattern** for analysis da
 ```javascript
 db['analysis-results'].createIndex({ contentHash: 1 }, { unique: true });
 db['analysis-results'].createIndex({ timestamp: -1 });
-db['analysis-results'].createIndex({ 'analysis.systemId': 1, timestamp: -1 });
+db['analysis-results'].createIndex({ systemId: 1, timestamp: -1 }); // Top-level systemId
+db['analysis-results'].createIndex({ 'analysis.systemId': 1, timestamp: -1 }); // Nested for legacy
 ```
 
 **Migration Path**: 
@@ -307,13 +309,25 @@ const historyCollection = await getCollection('history');
 const records = await historyCollection.find({ systemId }).toArray();
 ```
 
-### After (Recommended Pattern):
+### After (Recommended Pattern - December 2025 Update):
 ```javascript
 const analysisCollection = await getCollection('analysis-results');
-const records = await analysisCollection.find({ 'analysis.systemId': systemId }).toArray();
+// Use top-level systemId for best query performance
+const records = await analysisCollection.find({ systemId }).toArray();
 ```
 
-**Note**: Field paths change! In `history`, systemId is top-level. In `analysis-results`, it's nested under `analysis.systemId`.
+### Migration-Compatible Pattern (supports both old and new records):
+```javascript
+const analysisCollection = await getCollection('analysis-results');
+const records = await analysisCollection.find({
+  $or: [
+    { systemId: systemId },
+    { 'analysis.systemId': systemId }
+  ]
+}).toArray();
+```
+
+**Note**: As of December 2025, `analyze.cjs` writes `systemId` at **both** top-level and nested (`analysis.systemId`) for maximum compatibility. New code should query the top-level field for best performance. The `$or` pattern ensures compatibility with any legacy records that only have nested systemId.
 
 ---
 
@@ -321,11 +335,19 @@ const records = await analysisCollection.find({ 'analysis.systemId': systemId })
 
 ### Get All Analysis for a System
 ```javascript
-// Preferred (analysis-results)
+// Preferred (analysis-results) - Use top-level systemId for best performance
 const results = await getCollection('analysis-results');
 const records = await results.find({
-  'analysis.systemId': systemId,
+  systemId: systemId,
   timestamp: { $gte: startDate, $lte: endDate }
+}).sort({ timestamp: 1 }).toArray();
+
+// Migration-compatible (supports both old and new schema)
+const records = await results.find({
+  $or: [
+    { systemId: systemId, timestamp: { $gte: startDate, $lte: endDate } },
+    { 'analysis.systemId': systemId, timestamp: { $gte: startDate, $lte: endDate } }
+  ]
 }).sort({ timestamp: 1 }).toArray();
 
 // Legacy (history) - Still works due to dual-write
@@ -345,7 +367,7 @@ const existing = await results.findOne({ contentHash: sha256Hash });
 ### Get Recent Snapshots
 ```javascript
 const results = await getCollection('analysis-results');
-const recent = await results.find({ 'analysis.systemId': systemId })
+const recent = await results.find({ systemId: systemId })
   .sort({ timestamp: -1 })
   .limit(24)
   .toArray();
@@ -359,8 +381,9 @@ const recent = await results.find({ 'analysis.systemId': systemId })
 2. **Use ISO 8601 UTC timestamps** - `new Date().toISOString()`
 3. **Dual-write is automatic** - `analyze.cjs` handles it
 4. **Migrate readers gradually** - Move from `history` to `analysis-results` over time
-5. **Use proper field paths** - Remember `analysis.systemId` in `analysis-results` vs `systemId` in `history`
-6. **Index your queries** - Check existing indexes before adding new ones
+5. **Query top-level systemId** - Use `{ systemId }` for best performance in `analysis-results` (as of Dec 2025)
+6. **Use migration-compatible queries during transition** - Use `$or` pattern to support both old and new schemas
+7. **Index your queries** - Check existing indexes before adding new ones
 
 ---
 
@@ -380,6 +403,12 @@ A: It's best-effort and non-blocking. Analysis won't fail if dual-write fails, b
 
 **Q: How do I know if data exists in both collections?**  
 A: Check the dual-write logs in `analyze.cjs` or query both collections by `id` field (they share the same UUIDs).
+
+**Q: Why is systemId at both top-level and nested in analysis-results?**  
+A: As of December 2025, we added top-level `systemId` for query efficiency while keeping nested `analysis.systemId` for backward compatibility. New code should query the top-level field. Full Context Mode and other data-heavy features use the `$or` pattern to support both during the transition period.
+
+**Q: Do I need to migrate existing records?**  
+A: Not immediately. The `$or` query pattern in `full-context-builder.cjs` supports both schemas. However, for optimal performance, consider running a migration script to add top-level `systemId` to existing records that only have nested values.
 
 ---
 
