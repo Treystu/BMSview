@@ -26,10 +26,13 @@ async function analyzeSchemaForSystem(systemId, log) {
   // Count records with top-level systemId
   const topLevelCount = await analysisCollection.countDocuments({ systemId });
 
-  // Count records with nested systemId only
+  // Count records with nested systemId only (legacy records without top-level systemId)
   const nestedOnlyCount = await analysisCollection.countDocuments({
     'analysis.systemId': systemId,
-    systemId: null
+    $or: [
+      { systemId: null },
+      { systemId: { $exists: false } }
+    ]
   });
 
   // Count records with both
@@ -208,7 +211,18 @@ exports.handler = async (event, context) => {
             })
           };
         }
-        result = await simulateFullContextQuery(systemId, parseInt(days, 10), log);
+        const daysNum = parseInt(days, 10);
+        if (isNaN(daysNum) || daysNum <= 0 || daysNum > 365) {
+          return {
+            statusCode: 400,
+            headers: getCorsHeaders(),
+            body: JSON.stringify({
+              error: 'days parameter must be a positive integer between 1 and 365',
+              provided: days
+            })
+          };
+        }
+        result = await simulateFullContextQuery(systemId, daysNum, log);
         break;
 
       case 'overview':
