@@ -131,11 +131,21 @@ async function getRawData(systemId, options) {
   try {
     const analysisCollection = await getCollection('analysis-results');
     
-    // Get all analyses within time range
+    // Query both top-level systemId (new schema) and nested analysis.systemId (legacy)
+    // This ensures compatibility during migration period
     const allAnalyses = await analysisCollection.find({
-      systemId,
-      timestamp: { $gte: timeRange.start, $lte: timeRange.end }
+      $or: [
+        { systemId, timestamp: { $gte: timeRange.start, $lte: timeRange.end } },
+        { 'analysis.systemId': systemId, timestamp: { $gte: timeRange.start, $lte: timeRange.end } }
+      ]
     }).sort({ timestamp: 1 }).toArray();
+    
+    log.debug('Raw data query completed', {
+      systemId,
+      timeRange,
+      recordCount: allAnalyses.length,
+      queryPattern: 'top-level OR nested systemId'
+    });
     
     // Extract specific data arrays
     const allCellData = allAnalyses.map(a => ({
