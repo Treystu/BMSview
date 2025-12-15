@@ -101,12 +101,12 @@ describe('Metrics Collector', () => {
   describe('calculateGeminiCost', () => {
     test('calculates cost for gemini-2.5-flash correctly', () => {
       const cost = calculateGeminiCost('gemini-2.5-flash', 1000000, 1000000);
-      expect(cost).toBeCloseTo(0.375, 6); // (1M * 0.075/1M) + (1M * 0.30/1M)
+      expect(cost).toBeCloseTo(0.50, 6); // (1M * 0.10/1M) + (1M * 0.40/1M)
     });
 
     test('uses default model when not specified', () => {
       const cost = calculateGeminiCost(undefined, 1000000, 1000000);
-      expect(cost).toBeCloseTo(0.375, 6);
+      expect(cost).toBeCloseTo(0.50, 6);
     });
 
     test('calculates cost for different models', () => {
@@ -351,8 +351,8 @@ describe('Metrics Collector', () => {
   describe('getModelPricing', () => {
     test('returns correct pricing for known models', () => {
       const flashPricing = getModelPricing('gemini-2.5-flash');
-      expect(flashPricing.inputTokens).toBe(0.075 / 1_000_000);
-      expect(flashPricing.outputTokens).toBe(0.30 / 1_000_000);
+      expect(flashPricing.inputTokens).toBe(0.10 / 1_000_000);
+      expect(flashPricing.outputTokens).toBe(0.40 / 1_000_000);
       
       const proPricing = getModelPricing('gemini-1.5-pro');
       expect(proPricing.inputTokens).toBe(1.25 / 1_000_000);
@@ -361,14 +361,58 @@ describe('Metrics Collector', () => {
 
     test('handles versioned model names via partial matching', () => {
       const pricing = getModelPricing('gemini-2.5-flash-001');
-      expect(pricing.inputTokens).toBe(0.075 / 1_000_000);
-      expect(pricing.outputTokens).toBe(0.30 / 1_000_000);
+      expect(pricing.inputTokens).toBe(0.10 / 1_000_000);
+      expect(pricing.outputTokens).toBe(0.40 / 1_000_000);
     });
 
     test('falls back to default pricing for unknown models', () => {
       const pricing = getModelPricing('unknown-model-xyz');
-      expect(pricing.inputTokens).toBe(0.075 / 1_000_000);
-      expect(pricing.outputTokens).toBe(0.30 / 1_000_000);
+      expect(pricing.inputTokens).toBe(0.10 / 1_000_000);
+      expect(pricing.outputTokens).toBe(0.40 / 1_000_000);
+    });
+
+    test('returns correct pricing for Gemini 3.0 models', () => {
+      const gemini3Pricing = getModelPricing('gemini-3-pro-preview');
+      expect(gemini3Pricing.inputTokens).toBe(2.00 / 1_000_000);
+      expect(gemini3Pricing.outputTokens).toBe(12.00 / 1_000_000);
+    });
+
+    test('returns correct pricing for Gemini 2.0 Pro', () => {
+      const gemini2ProPricing = getModelPricing('gemini-2.0-pro');
+      expect(gemini2ProPricing.inputTokens).toBe(0.50 / 1_000_000);
+      expect(gemini2ProPricing.outputTokens).toBe(5.00 / 1_000_000);
+    });
+
+    test('returns context-aware pricing for 1.5-pro with large context', () => {
+      const standardPricing = getModelPricing('gemini-1.5-pro', 100000); // ≤128k
+      expect(standardPricing.inputTokens).toBe(1.25 / 1_000_000);
+      expect(standardPricing.outputTokens).toBe(5.00 / 1_000_000);
+      expect(standardPricing.isLongContext).toBe(false);
+
+      const longContextPricing = getModelPricing('gemini-1.5-pro', 200000); // >128k
+      expect(longContextPricing.inputTokens).toBe(2.50 / 1_000_000);
+      expect(longContextPricing.outputTokens).toBe(10.00 / 1_000_000);
+      expect(longContextPricing.isLongContext).toBe(true);
+    });
+
+    test('returns context-aware pricing for 1.5-flash with large context', () => {
+      const standardPricing = getModelPricing('gemini-1.5-flash', 100000); // ≤128k
+      expect(standardPricing.inputTokens).toBe(0.075 / 1_000_000);
+      expect(standardPricing.outputTokens).toBe(0.30 / 1_000_000);
+
+      const longContextPricing = getModelPricing('gemini-1.5-flash', 200000); // >128k
+      expect(longContextPricing.inputTokens).toBe(0.15 / 1_000_000);
+      expect(longContextPricing.outputTokens).toBe(0.60 / 1_000_000);
+    });
+
+    test('returns context-aware pricing for 2.5-pro with large context', () => {
+      const standardPricing = getModelPricing('gemini-2.5-pro', 100000); // ≤200k
+      expect(standardPricing.inputTokens).toBe(1.25 / 1_000_000);
+      expect(standardPricing.outputTokens).toBe(10.00 / 1_000_000);
+
+      const longContextPricing = getModelPricing('gemini-2.5-pro', 250000); // >200k
+      expect(longContextPricing.inputTokens).toBe(2.50 / 1_000_000);
+      expect(longContextPricing.outputTokens).toBe(15.00 / 1_000_000);
     });
   });
 
@@ -398,8 +442,8 @@ describe('Metrics Collector', () => {
       const info = getCurrentModelInfo();
       
       expect(info.model).toBe('gemini-2.5-flash');
-      expect(info.pricing.inputPerMillion).toBe(0.075);
-      expect(info.pricing.outputPerMillion).toBe(0.30);
+      expect(info.pricing.inputPerMillion).toBe(0.10);
+      expect(info.pricing.outputPerMillion).toBe(0.40);
     });
 
     test('returns formatted pricing information', () => {
