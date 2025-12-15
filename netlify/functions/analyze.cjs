@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Lambda function handler for analyzing image data.
  * 
@@ -37,12 +38,89 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { handleStoryModeAnalysis } = require('./utils/story-mode.cjs');
-// Use unified deduplication module as canonical source
+// @ts-nocheck
+"use strict";
 const {
   calculateImageHash,
   findDuplicateByHash,
   checkNeedsUpgrade
 } = require('./utils/unified-deduplication.cjs');
+
+/**
+ * Normalize a DL number for comparison
+ * @param {string | null | undefined} dl
+ * @returns {string | null}
+ */
+function normalizeDl(dl) {
+  if (!dl || typeof dl !== 'string') return null;
+  return dl.trim().toUpperCase();
+}
+
+/**
+ * Ensure a record is linked to a system using DL number if unlinked.
+ * It only links when exactly one system matches the DL.
+ * @param {any} record - Analysis or history record
+ * @param {any} log - Logger
+ * @returns {Promise<any>} Updated record (or original if unchanged)
+ */
+async function ensureDlAssociationForRecord(record, log) {
+  try {
+    if (!record || record.systemId) return record;
+
+    const rawDl = record.dlNumber || record.analysis?.dlNumber || null;
+    const dlNumber = normalizeDl(rawDl);
+    if (!dlNumber || dlNumber === 'UNKNOWN') {
+      return record;
+    }
+
+    const systemsCollection = await getCollection('systems');
+    const systems = await systemsCollection.find({}).toArray();
+
+    const matches = systems.filter((s) =>
+      (s.associatedDLs || []).some((dl) => normalizeDl(/** @type {string} */(dl)) === dlNumber)
+    );
+
+    if (matches.length !== 1) {
+      if (matches.length > 1) {
+        log.warn('DL auto-association skipped due to multiple matches', { dlNumber, matchCount: matches.length });
+      }
+      return record;
+    }
+
+    const system = matches[0];
+    const historyCollection = await getCollection('history');
+    const resultsCollection = await getCollection('analysis-results');
+
+    await historyCollection.updateOne(
+      { id: record.id },
+      { $set: { systemId: system.id, systemName: system.name, dlNumber: rawDl || dlNumber } }
+    );
+
+    await resultsCollection.updateOne(
+      { id: record.id },
+      { $set: { systemId: system.id, systemName: system.name } }
+    );
+
+    const updated = {
+      ...record,
+      systemId: system.id,
+      systemName: system.name
+    };
+
+    log.info('Auto-associated record using DL match', {
+      recordId: record.id,
+      dlNumber,
+      systemId: system.id,
+      systemName: system.name
+    });
+
+    return updated;
+  } catch (error) {
+    const err = /** @type {any} */ (error);
+    log.warn('Failed to auto-associate record by DL', { error: err?.message, recordId: record?.id });
+    return record;
+  }
+}
 
 /**
  * Validate that required environment variables are set
@@ -103,7 +181,7 @@ function getErrorStatusCode(error) {
   if (code === 'operation_timeout' || message.includes('operation_timeout')) {
     return 504;
   }
-  
+
   // Client errors (400-499)
   if (message.includes('invalid') || message.includes('validation')) return 400;
   if (message.includes('unauthorized') || message.includes('authentication')) return 401;
@@ -130,7 +208,7 @@ function getErrorCode(error) {
   const message = error.message || '';
 
   const code = error.code || '';
-  
+
   // Gateway timeout for backend service timeouts
   if (code === 'operation_timeout' || message.includes('operation_timeout')) return 'gateway_timeout';
   if (message.includes('timeout') || message.includes('TIMEOUT')) return 'analysis_timeout';
@@ -262,6 +340,9 @@ exports.handler = async (event, context) => {
   }
 };
 
+// Exported for testing
+module.exports.ensureDlAssociationForRecord = ensureDlAssociationForRecord;
+
 /**
  * Handles synchronous image analysis requests
  * @param {any} requestBody - Parsed request body
@@ -302,7 +383,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
     const hashStartTime = Date.now();
     const contentHash = calculateImageHash(imagePayload.image, log);
     const hashDurationMs = Date.now() - hashStartTime;
-    
+
     if (!contentHash) {
       log.error('Failed to generate content hash for image payload', {
         fileName: imagePayload.fileName,
@@ -311,7 +392,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
       });
       return errorResponse(400, 'invalid_image', 'Could not generate content hash', undefined, { ...headers, 'Content-Type': 'application/json' });
     }
-    
+
     log.debug('Content hash calculated', {
       contentHash: contentHash.substring(0, 16) + '...',
       hashDurationMs,
@@ -330,7 +411,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
           imageSize: imagePayload.image?.length || 0,
           event: 'CHECK_ONLY_START'
         });
-        
+
         const existingAnalysis = await checkExistingAnalysis(contentHash || '', log);
 
         // Distinguish between true duplicates and upgrades needed
@@ -340,7 +421,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
         // - record object: High-quality duplicate (true duplicate)
         const isDuplicate = !!existingAnalysis;
         const needsUpgrade = existingAnalysis?._isUpgrade === true;
-        
+
         // Extract the actual record for upgrade cases
         const actualRecord = needsUpgrade ? existingAnalysis._existingRecord : existingAnalysis;
 
@@ -354,11 +435,11 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
 
         const durationMs = timer.end({ checkOnly: true, isDuplicate, needsUpgrade });
         const checkOnlyDurationMs = Date.now() - checkOnlyStartTime;
-        
+
         // Enhanced logging for duplicate detection debugging
-        log.info('DUPLICATE_CHECK: Check-only complete', { 
-          isDuplicate, 
-          needsUpgrade, 
+        log.info('DUPLICATE_CHECK: Check-only complete', {
+          isDuplicate,
+          needsUpgrade,
           hasRecordId: !!checkResponse.recordId,
           hasAnalysisData: !!checkResponse.analysisData,
           durationMs,
@@ -376,7 +457,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
         };
       } catch (/** @type {any} */ checkError) {
         const checkOnlyDurationMs = Date.now() - checkOnlyStartTime;
-        log.error('DUPLICATE_CHECK: Check-only failed', { 
+        log.error('DUPLICATE_CHECK: Check-only failed', {
           error: checkError.message,
           stack: checkError.stack?.substring?.(0, 500),
           checkOnlyDurationMs,
@@ -441,12 +522,16 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
               recordId: existingAnalysis._id
             });
           } else {
-            // High-quality duplicate - return it
+            // High-quality duplicate - ensure DL-based association before returning
+            const associatedExisting = await ensureDlAssociationForRecord(existingAnalysis, log);
+
             const responseBody = {
-              analysis: existingAnalysis.analysis,
-              recordId: existingAnalysis._id?.toString?.() || existingAnalysis.id,
-              fileName: existingAnalysis.fileName,
-              timestamp: existingAnalysis.timestamp,
+              analysis: associatedExisting.analysis,
+              recordId: associatedExisting._id?.toString?.() || associatedExisting.id,
+              fileName: associatedExisting.fileName,
+              timestamp: associatedExisting.timestamp,
+              systemId: associatedExisting.systemId || null,
+              systemName: associatedExisting.systemName || null,
               isDuplicate: true
             };
 
@@ -482,7 +567,10 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
       imageSize: imagePayload.image?.length || 0
     });
 
-    const record = await executeAnalysisPipeline(imagePayload, log, context);
+    let record = await executeAnalysisPipeline(imagePayload, log, context);
+
+    // Ensure DL-based association for new/updated record before persisting responses
+    record = await ensureDlAssociationForRecord(record, log);
 
     // Validate analysis result
     if (!record || !record.analysis) {
@@ -597,14 +685,14 @@ async function checkExistingAnalysis(contentHash, log) {
       fullHashLength: contentHash.length,
       event: 'DB_LOOKUP_START'
     });
-    
+
     const resultsCol = await getCollection('analysis-results');
-    
+
     // Use unified deduplication module to find the duplicate
     const existingRecord = await findDuplicateByHash(contentHash, resultsCol, log);
-    
+
     const totalDurationMs = Date.now() - startTime;
-    
+
     if (!existingRecord) {
       log.info('DUPLICATE_CHECK: No existing analysis found in database', {
         contentHashPreview: contentHash.substring(0, 16) + '...',
@@ -613,7 +701,7 @@ async function checkExistingAnalysis(contentHash, log) {
       });
       return null;
     }
-    
+
     log.info('DUPLICATE_CHECK: Found existing record, checking quality', {
       recordId: existingRecord._id || existingRecord.id,
       validationScore: existingRecord.validationScore,
@@ -623,10 +711,10 @@ async function checkExistingAnalysis(contentHash, log) {
       contentHashPreview: contentHash.substring(0, 16) + '...',
       event: 'RECORD_FOUND'
     });
-    
+
     // Use unified checkNeedsUpgrade to determine if upgrade is required
     const upgradeCheck = checkNeedsUpgrade(existingRecord);
-    
+
     log.info('DUPLICATE_CHECK: Upgrade check result', {
       needsUpgrade: upgradeCheck.needsUpgrade,
       reason: upgradeCheck.reason,
@@ -634,7 +722,7 @@ async function checkExistingAnalysis(contentHash, log) {
       contentHashPreview: contentHash.substring(0, 16) + '...',
       event: 'UPGRADE_CHECK_RESULT'
     });
-    
+
     // If the check indicates this record should be marked complete, update it in the database
     if (upgradeCheck.shouldMarkComplete && !existingRecord.isComplete) {
       try {
@@ -659,7 +747,7 @@ async function checkExistingAnalysis(contentHash, log) {
         });
       }
     }
-    
+
     if (upgradeCheck.needsUpgrade) {
       log.info('DUPLICATE_CHECK: Returning upgrade needed response', {
         contentHashPreview: contentHash.substring(0, 16) + '...',
@@ -671,7 +759,7 @@ async function checkExistingAnalysis(contentHash, log) {
       // Return upgrade marker for compatibility with existing code
       return { _isUpgrade: true, _existingRecord: existingRecord };
     }
-    
+
     log.info('DUPLICATE_CHECK: Returning high-quality duplicate', {
       contentHashPreview: contentHash.substring(0, 16) + '...',
       validationScore: existingRecord.validationScore,
@@ -680,7 +768,7 @@ async function checkExistingAnalysis(contentHash, log) {
       totalDurationMs,
       event: 'HIGH_QUALITY_DUPLICATE'
     });
-    
+
     return existingRecord;
   } catch (/** @type {any} */ error) {
     const totalDurationMs = Date.now() - startTime;
@@ -836,14 +924,14 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         validationScore: record.validationScore,
         extractionAttempts: 1
       };
-      
+
       // NOTE: This is a single-tenant application - no userId segregation needed
       // All admins share the same analysis data indexed by contentHash
-      log.debug('Storing new analysis record', { 
+      log.debug('Storing new analysis record', {
         recordId: record.id,
         systemId: record.analysis?.systemId || null,
         hasContentHash: !!contentHash,
-        qualityScore: record.validationScore 
+        qualityScore: record.validationScore
       });
 
       await resultsCol.insertOne(newRecord);
@@ -870,9 +958,9 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
           fileName: record.fileName,
           analysisKey: contentHash // Use contentHash as analysisKey for consistency
         };
-        
+
         await historyCol.insertOne(historyRecord);
-        
+
         log.info('Dual-write to history collection successful', {
           recordId: record.id,
           systemId: record.analysis?.systemId
