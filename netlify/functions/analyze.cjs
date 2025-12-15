@@ -194,7 +194,7 @@ exports.handler = async (event, context) => {
   const checkOnly = (event.queryStringParameters && event.queryStringParameters.check === 'true');
   const headersIn = event.headers || {};
   const idemKey = headersIn['Idempotency-Key'] || headersIn['idempotency-key'] || headersIn['IDEMPOTENCY-KEY'];
-  let requestContext = { jobId: undefined };
+  const requestContext = { jobId: undefined };
 
   try {
     // Parse and validate request body
@@ -239,7 +239,7 @@ exports.handler = async (event, context) => {
           message: `Analysis failed: ${error.message}`
         });
       }
-    } catch (_) {
+    } catch {
       // Swallow cleanup errors to avoid masking primary error
     }
 
@@ -911,7 +911,7 @@ async function storeIdempotentResponse(idemKey, response, reasonCode = 'new_anal
       { upsert: true }
     );
     // Success - no logging needed (best effort operation)
-  } catch (/** @type {any} */ e) {
+  } catch {
     // Silent fail - this is best effort and we don't want to break the response
   }
 }
@@ -925,7 +925,7 @@ async function storeProgressEvent(jobId, eventData) {
   try {
     const collection = await getCollection('progress-events');
     await collection.insertOne({ jobId, ...eventData, timestamp: new Date() });
-  } catch (/** @type {any} */ error) {
+  } catch {
     // Intentionally swallow errors to avoid masking primary failure
   }
 }

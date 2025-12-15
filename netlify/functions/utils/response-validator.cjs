@@ -45,10 +45,10 @@ function validateResponseFormat(response, userPrompt = '') {
  */
 function validateCSV(response) {
     const lines = response.trim().split('\n');
-    
+
     if (lines.length < 2) {
-        return { 
-            valid: false, 
+        return {
+            valid: false,
             error: 'CSV must have at least a header row and one data row',
             formatType: 'csv'
         };
@@ -67,7 +67,7 @@ function validateCSV(response) {
     // Validate data rows have consistent column counts (allow tolerance for quoted commas)
     for (let i = 1; i < lines.length; i++) {
         if (lines[i].trim() === '') continue; // Skip empty lines
-        
+
         const cols = lines[i].split(',').length;
         if (Math.abs(cols - headerCols) > CSV_COLUMN_TOLERANCE) {
             return {
@@ -86,12 +86,12 @@ function validateCSV(response) {
  */
 function validateMarkdownTable(response) {
     const lines = response.trim().split('\n');
-    
+
     // Look for table pattern: header | separator | data
     let foundTable = false;
     let headerRow = null;
     let separatorRow = null;
-    
+
     for (let i = 0; i < lines.length - 1; i++) {
         if (lines[i].includes('|') && lines[i + 1].includes('---')) {
             foundTable = true;
@@ -162,7 +162,7 @@ function validateMarkdown(response) {
 
     // Check for common markdown elements (at least some structure)
     const hasHeaders = /^#{1,6}\s+.+$/m.test(response);
-    const hasBullets = /^[\*\-]\s+.+$/m.test(response);
+    const hasBullets = /^[*-]\s+.+$/m.test(response);
     const hasBold = /\*\*.+\*\*/.test(response);
     const hasContent = response.length > MIN_CONTENT_LENGTH;
 
@@ -184,7 +184,7 @@ function buildCorrectionPrompt(originalResponse, validationError, formatType, us
     let prompt = `Your previous response had a formatting issue that will cause errors when displayed to the user.\n\n`;
     prompt += `**FORMAT ERROR:** ${validationError}\n\n`;
     prompt += `**YOUR PREVIOUS RESPONSE:**\n${originalResponse.substring(0, MAX_RESPONSE_SNIPPET_LENGTH)}${originalResponse.length > MAX_RESPONSE_SNIPPET_LENGTH ? '...' : ''}\n\n`;
-    
+
     switch (formatType) {
         case 'csv':
             prompt += `**REQUIRED FORMAT:** CSV (Comma-Separated Values)\n`;
@@ -194,7 +194,7 @@ function buildCorrectionPrompt(originalResponse, validationError, formatType, us
             prompt += `- No markdown formatting, no extra text\n`;
             prompt += `- Example:\nDate,SOC,Voltage,Current\n2025-11-23,85.2,52.4,12.5\n2025-11-22,82.1,52.2,11.8\n\n`;
             break;
-            
+
         case 'table':
             prompt += `**REQUIRED FORMAT:** Markdown Table\n`;
             prompt += `- Header row with column names separated by pipes (|)\n`;
@@ -202,7 +202,7 @@ function buildCorrectionPrompt(originalResponse, validationError, formatType, us
             prompt += `- Data rows with values separated by pipes\n`;
             prompt += `- Example:\n| Date | SOC | Voltage |\n|------|-----|--------|\n| 2025-11-23 | 85.2% | 52.4V |\n\n`;
             break;
-            
+
         case 'json':
             prompt += `**REQUIRED FORMAT:** Valid JSON\n`;
             prompt += `- Wrap in \`\`\`json code block\n`;
@@ -210,7 +210,7 @@ function buildCorrectionPrompt(originalResponse, validationError, formatType, us
             prompt += `- Use double quotes for strings\n`;
             prompt += `- Example:\n\`\`\`json\n{\n  "data": [\n    {"date": "2025-11-23", "soc": 85.2}\n  ]\n}\n\`\`\`\n\n`;
             break;
-            
+
         default: // markdown
             prompt += `**REQUIRED FORMAT:** Well-structured Markdown\n`;
             prompt += `- Use headers (## Section Name)\n`;
@@ -219,12 +219,12 @@ function buildCorrectionPrompt(originalResponse, validationError, formatType, us
             prompt += `- Include blank lines between sections\n\n`;
             break;
     }
-    
+
     prompt += `**INSTRUCTIONS:**\n`;
     prompt += `Please rewrite your response using the EXACT format specified above.\n`;
     prompt += `Keep all the same data and insights, just fix the formatting.\n`;
     prompt += `Do not add explanations - just provide the corrected output in the proper format.\n`;
-    
+
     return prompt;
 }
 
@@ -328,7 +328,7 @@ function buildToolSuggestionCorrectionPrompt(originalResponse, detectedSuggestio
     prompt += `- CALL the necessary tools NOW and include their results, OR\n`;
     prompt += `- Provide analysis based on the data you already have\n`;
     prompt += `- Remove ALL tool suggestions and replace with actual findings or calculations\n`;
-    
+
     return prompt;
 }
 

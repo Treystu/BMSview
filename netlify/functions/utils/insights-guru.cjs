@@ -21,13 +21,41 @@ const RECENT_SNAPSHOT_LIMIT = 24;
 const SYNC_CONTEXT_BUDGET_MS = 5000; // Further reduced - sync mode delegates to ReAct loop
 const ASYNC_CONTEXT_BUDGET_MS = 45000;
 
-/**
- * Fetch detailed context prior to prompting Gemini.
- * @param {string|undefined} systemId
- * @param {object} analysisData
- * @param {any} log
- * @param {{ maxMs?: number, mode?: "sync"|"background", skipExpensiveOps?: boolean }} options
- */
+// loadRecentSnapshots is defined early because collectAutoInsightsContext references it below.
+// Keeping it near the top clarifies dependency ordering and avoids hoisting surprises.
+async function loadRecentSnapshots(systemId, log) {
+    try {
+        const collection = await getCollection("history");
+        const cursor = collection.find({ systemId }, {
+            projection: {
+                _id: 0,
+                timestamp: 1,
+                analysis: 1,
+                alerts: 1
+            }
+        }).sort({ timestamp: -1 }).limit(RECENT_SNAPSHOT_LIMIT);
+
+        const documents = await cursor.toArray();
+        return documents.map(doc => {
+            const analysis = doc.analysis || {};
+            const alertsArray = Array.isArray(analysis.alerts) ? analysis.alerts : Array.isArray(doc.alerts) ? doc.alerts : [];
+            return {
+                timestamp: doc.timestamp,
+                voltage: toNullableNumber(analysis.overallVoltage),
+                current: toNullableNumber(analysis.current),
+                soc: toNullableNumber(analysis.stateOfCharge),
+                power: toNullableNumber(analysis.power),
+                remainingCapacity: toNullableNumber(analysis.remainingCapacity),
+                alerts: alertsArray
+            };
+        }).filter(entry => entry.timestamp);
+    } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        log.warn("Failed to load recent snapshots", { systemId, error: err.message });
+        return [];
+    }
+}
+
 async function collectAutoInsightsContext(systemId, analysisData, log, options = {}) {
     const start = Date.now();
     const maxMs = options.maxMs || (options.mode === "background" ? ASYNC_CONTEXT_BUDGET_MS : SYNC_CONTEXT_BUDGET_MS);
@@ -462,7 +490,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
 
     // Mode-specific guidance on tool usage
     // Enhanced mode-specific prompt differentiation based on insightMode parameter
-    
+
     if (customPrompt) {
         // For custom queries in sync mode, encourage tool usage
         prompt += "🎯 CUSTOM QUERY MODE - FULL DATA ACCESS ENABLED:\n";
@@ -536,7 +564,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "you MAY use submitAppFeedback to suggest improvements. This is optional in Battery Guru mode\n";
         prompt += "(prioritized in Full Context Mode). Your feedback helps improve the platform.\n\n";
         prompt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-        
+
         // Add mode-specific data preload check
         if (mode === "background" && contextData?.analytics && !contextData.analytics.error) {
             prompt += "📊 BACKGROUND MODE - COMPREHENSIVE DATA PRELOADED:\n";
@@ -654,7 +682,7 @@ async function buildGuruPrompt({ analysisData, systemId, customPrompt, log, cont
         prompt += "   3. PRESENT the findings in your response\n";
         prompt += "NEVER say 'use the X tool' or 'run Y with parameters' - users literally cannot do this. YOU must execute all tools.\n";
         prompt += "Keep tool calls focused on specific data needed. Maximum 2-3 tool calls recommended.\n\n";
-        
+
         // Optional chart awareness for non-Visual-Guru modes
         prompt += "📊 OPTIONAL: CHART SUPPORT\n";
         prompt += "You MAY include chart configurations when time-series data would benefit from visualization.\n";
@@ -1612,39 +1640,6 @@ function formatStoryContextSection(storyContext) {
     return lines.join("\n");
 }
 
-async function loadRecentSnapshots(systemId, log) {
-    try {
-        const collection = await getCollection("history");
-        const cursor = collection.find({ systemId }, {
-            projection: {
-                _id: 0,
-                timestamp: 1,
-                analysis: 1,
-                alerts: 1
-            }
-        }).sort({ timestamp: -1 }).limit(RECENT_SNAPSHOT_LIMIT);
-
-        const documents = await cursor.toArray();
-        return documents.map(doc => {
-            const analysis = doc.analysis || {};
-            const alertsArray = Array.isArray(analysis.alerts) ? analysis.alerts : Array.isArray(doc.alerts) ? doc.alerts : [];
-            return {
-                timestamp: doc.timestamp,
-                voltage: toNullableNumber(analysis.overallVoltage),
-                current: toNullableNumber(analysis.current),
-                soc: toNullableNumber(analysis.stateOfCharge),
-                power: toNullableNumber(analysis.power),
-                remainingCapacity: toNullableNumber(analysis.remainingCapacity),
-                alerts: alertsArray
-            };
-        }).filter(entry => entry.timestamp);
-    } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        log.warn("Failed to load recent snapshots", { systemId, error: err.message });
-        return [];
-    }
-}
-
 /**
  * Load 90-day daily rollup with hourly averages for comprehensive trend analysis
  * This provides Gemini with deep historical context while managing token usage
@@ -1846,7 +1841,7 @@ function computeDailySummary(hourlyAverages, dayRecords) {
         alerts: r.analysis?.alerts || [],
         soc: r.analysis?.stateOfCharge
     }));
-    
+
     const alertAnalysis = groupAlertEvents(snapshots, { maxGapHours: 6 });
 
     return {

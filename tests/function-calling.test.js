@@ -10,7 +10,7 @@ describe('Gemini Function Calling', () => {
       expect(toolDefinitions).toBeDefined();
       expect(Array.isArray(toolDefinitions)).toBe(true);
       expect(toolDefinitions.length).toBeGreaterThan(0);
-      
+
       const toolNames = toolDefinitions.map(t => t.name);
       expect(toolNames).toContain('getSystemHistory');
       expect(toolNames).toContain('getWeatherData');
@@ -72,10 +72,9 @@ describe('Gemini Function Calling', () => {
       mockLog.info.mockClear();
       await executeToolCall('unknownTool', { test: 'param' }, mockLog);
       expect(mockLog.info).toHaveBeenCalledWith(
-        'Executing tool call',
+        'Executing tool: unknownTool',
         expect.objectContaining({
-          toolName: 'unknownTool',
-          parameters: { test: 'param' }
+          params: { test: 'param' }
         })
       );
     });
@@ -95,7 +94,7 @@ describe('Gemini Function Calling', () => {
     test('getSystemHistory parameters should be well-defined', () => {
       const tool = toolDefinitions.find(t => t.name === 'getSystemHistory');
       const props = tool.parameters.properties;
-      
+
       expect(props.systemId.type).toBe('string');
       expect(props.limit.type).toBe('number');
       expect(props.limit.default).toBe(100);
@@ -106,7 +105,7 @@ describe('Gemini Function Calling', () => {
     test('getWeatherData parameters should be well-defined', () => {
       const tool = toolDefinitions.find(t => t.name === 'getWeatherData');
       const props = tool.parameters.properties;
-      
+
       expect(props.latitude.type).toBe('number');
       expect(props.longitude.type).toBe('number');
       expect(props.timestamp.type).toBe('string');
@@ -118,7 +117,7 @@ describe('Gemini Function Calling', () => {
     test('getSolarEstimate parameters should be well-defined', () => {
       const tool = toolDefinitions.find(t => t.name === 'getSolarEstimate');
       const props = tool.parameters.properties;
-      
+
       expect(props.location.type).toBe('string');
       expect(props.panelWatts.type).toBe('number');
       expect(props.startDate.type).toBe('string');
@@ -128,7 +127,7 @@ describe('Gemini Function Calling', () => {
     test('getSystemAnalytics parameters should be well-defined', () => {
       const tool = toolDefinitions.find(t => t.name === 'getSystemAnalytics');
       const props = tool.parameters.properties;
-      
+
       expect(props.systemId.type).toBe('string');
       expect(tool.parameters.required).toEqual(['systemId']);
     });

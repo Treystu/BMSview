@@ -2,6 +2,7 @@
  * Provides the prompt and schema for the Gemini API call.
  */
 const { Type } = require("@google/genai");
+const { v4: uuidv4 } = require('uuid');
 
 // This is the JSON schema Gemini will be forced to output.
 // MANDATORY FIELDS are marked as required (not nullable) to ensure they're always extracted
@@ -23,7 +24,7 @@ const getResponseSchema = () => ({
         cellVoltageDifference: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Voltage difference in V. If in mV, convert to V by dividing by 1000." },
         cycleCount: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Cycle count. If not visible, use 0." },
         power: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Power in Watts. If in kW, convert to W. If current is negative, power MUST be negative." },
-        
+
         // OPTIONAL FIELDS
         timestampFromImage: { "type": Type.STRING, "nullable": true },
         fullCapacity: { "type": Type.NUMBER, "nullable": true, "description": "The 'Full Cap' or 'Design Cap' value." },
@@ -35,16 +36,16 @@ const getResponseSchema = () => ({
         hardwareVersion: { "type": Type.STRING, "nullable": true },
         snCode: { "type": Type.STRING, "nullable": true },
     },
-    required: ["dlNumber", "stateOfCharge", "overallVoltage", "current", "remainingCapacity", 
-               "chargeMosOn", "dischargeMosOn", "balanceOn", "highestCellVoltage", 
-               "lowestCellVoltage", "averageCellVoltage", "cellVoltageDifference", "cycleCount", "power"]
+    required: ["dlNumber", "stateOfCharge", "overallVoltage", "current", "remainingCapacity",
+        "chargeMosOn", "dischargeMosOn", "balanceOn", "highestCellVoltage",
+        "lowestCellVoltage", "averageCellVoltage", "cellVoltageDifference", "cycleCount", "power"]
 });
 
 // This is the system prompt sent to Gemini with the image.
 // If previousFeedback is provided, it's a retry attempt with validation feedback
 const getImageExtractionPrompt = (previousFeedback = null) => {
     let basePrompt = `You are a meticulous data extraction AI. Analyze the provided BMS screenshot and extract its data into a JSON object, strictly following these rules:`;
-    
+
     // If this is a retry, inject feedback at the top
     if (previousFeedback) {
         basePrompt = `${previousFeedback}
@@ -53,7 +54,7 @@ const getImageExtractionPrompt = (previousFeedback = null) => {
 
 ${basePrompt}`;
     }
-    
+
     return basePrompt + `
 
 **CRITICAL: MANDATORY FIELDS**
@@ -135,7 +136,7 @@ const mapExtractedToAnalysisData = (extracted, log) => {
         return null;
     }
     log('debug', 'Mapping extracted data to analysis schema.', { extractedKeys: Object.keys(extracted) });
-    
+
     // Ensure all mandatory fields have values (apply defaults if missing)
     const analysis = {
         // Mandatory fields with defaults - use ?? to only default on null/undefined
@@ -153,7 +154,7 @@ const mapExtractedToAnalysisData = (extracted, log) => {
         cellVoltageDifference: extracted.cellVoltageDifference ?? 0,
         cycleCount: extracted.cycleCount ?? 0,
         power: extracted.power ?? 0,
-        
+
         // Optional fields
         timestampFromImage: extracted.timestampFromImage || null,
         fullCapacity: extracted.fullCapacity || null,
@@ -164,7 +165,7 @@ const mapExtractedToAnalysisData = (extracted, log) => {
         softwareVersion: extracted.softwareVersion || null,
         hardwareVersion: extracted.hardwareVersion || null,
         snCode: extracted.snCode || null,
-        
+
         // Derived fields
         temperature: extracted.temperatures?.[0] || null,
         numTempSensors: extracted.temperatures?.length || 0,
@@ -178,7 +179,7 @@ const mapExtractedToAnalysisData = (extracted, log) => {
         log('warn', 'Correcting positive power sign for negative current.', { originalPower: analysis.power, current: analysis.current });
         analysis.power = -Math.abs(analysis.power);
     }
-    
+
     // Calculate power if it's zero but we have current and voltage
     if (analysis.power === 0 && analysis.current !== 0 && analysis.overallVoltage !== 0) {
         analysis.power = analysis.current * analysis.overallVoltage;
@@ -190,7 +191,7 @@ const mapExtractedToAnalysisData = (extracted, log) => {
         log('warn', 'Correcting large cell voltage difference (likely mV). Converting to V.', { originalDiff: analysis.cellVoltageDifference });
         analysis.cellVoltageDifference = analysis.cellVoltageDifference / 1000.0;
     }
-    
+
     // Calculate cell voltage statistics if we have cell voltages but missing stats
     if (analysis.cellVoltages && analysis.cellVoltages.length > 0) {
         if (analysis.highestCellVoltage === 0) {
@@ -368,7 +369,7 @@ const mergeAnalysisData = (oldAnalysis, newAnalysis, log) => {
 
     // Merge each field
     for (const key in newAnalysis) {
-        if (newAnalysis.hasOwnProperty(key)) {
+        if (Object.prototype.hasOwnProperty.call(newAnalysis, key)) {
             const newVal = newAnalysis[key];
             const oldVal = oldAnalysis[key];
 
@@ -417,40 +418,40 @@ const validateExtractionQuality = (extractedData, analysisData, log) => {
     let qualityScore = 100; // Start at 100 and deduct points for issues
     const criticalFields = ['dlNumber', 'stateOfCharge', 'overallVoltage', 'current', 'remainingCapacity'];
     const importantFields = ['power', 'cycleCount', 'cellVoltageDifference'];
-    
+
     // Check if critical fields have meaningful values (not defaults)
     if (analysisData.dlNumber === 'UNKNOWN') {
         warnings.push('DL Number not detected - defaulted to UNKNOWN');
         qualityScore -= 15;
     }
-    
+
     if (analysisData.stateOfCharge === 0 && analysisData.overallVoltage > 0) {
         warnings.push('State of Charge is 0% but voltage is present - possible extraction error');
         qualityScore -= 20;
     }
-    
+
     if (analysisData.overallVoltage === 0) {
         warnings.push('Overall voltage is 0V - likely extraction failure');
         qualityScore -= 25;
     }
-    
+
     if (analysisData.remainingCapacity === 0 && analysisData.overallVoltage > 0) {
         warnings.push('Remaining capacity is 0Ah - possible extraction error');
         qualityScore -= 15;
     }
-    
+
     // Check for inconsistent data
     if (analysisData.current !== 0 && analysisData.power === 0) {
         warnings.push('Current present but power is 0W - possible calculation issue');
         qualityScore -= 10;
     }
-    
+
     // Check if important fields are defaulted
     if (analysisData.cycleCount === 0) {
         warnings.push('Cycle count is 0 - may not have been detected');
         qualityScore -= 5;
     }
-    
+
     // Check for cell voltage data quality
     if (analysisData.cellVoltages && analysisData.cellVoltages.length > 0) {
         const allSame = analysisData.cellVoltages.every(v => v === analysisData.cellVoltages[0]);
@@ -462,13 +463,13 @@ const validateExtractionQuality = (extractedData, analysisData, log) => {
         warnings.push('Individual cell voltages not detected - only aggregate data available');
         qualityScore -= 5;
     }
-    
+
     // Temperature data quality
     if (analysisData.temperatures && analysisData.temperatures.length === 0) {
         warnings.push('No temperature sensors detected');
         qualityScore -= 5;
     }
-    
+
     const result = {
         qualityScore: Math.max(0, qualityScore), // Never go below 0
         warnings,
@@ -482,18 +483,18 @@ const validateExtractionQuality = (extractedData, analysisData, log) => {
             }).length
         }
     };
-    
+
     log('info', 'Data extraction quality validation complete.', {
         qualityScore: result.qualityScore,
         warningCount: warnings.length,
         isComplete: result.isComplete,
         fieldsCaptured: result.fieldsCaptured
     });
-    
+
     if (warnings.length > 0) {
         log('warn', 'Data extraction quality warnings detected.', { warnings });
     }
-    
+
     return result;
 };
 

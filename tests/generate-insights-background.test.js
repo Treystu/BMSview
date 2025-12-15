@@ -10,10 +10,16 @@
  * additional configuration. Since this is deprecated, we skip these tests.
  */
 
+// Minimal stubs to satisfy linting even though suites are skipped
+const failJobMock = jest.fn();
+const getInsightsJobMock = jest.fn();
+const processInsightsInBackgroundMock = jest.fn();
+const handler = jest.fn();
+
 describe.skip('generate-insights-background (DEPRECATED)', () => {
-  it('is deprecated and no longer tested', () => {
-    expect(true).toBe(true);
-  });
+    it('is deprecated and no longer tested', () => {
+        expect(true).toBe(true);
+    });
 });
 
 describe.skip('generate-insights-background handler (DEPRECATED)', () => {

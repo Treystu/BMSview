@@ -93,10 +93,10 @@ describe('Admin Panel User Acceptance Tests', () => {
       });
 
       const result = await adminFunction(event);
-      
+
       expect(result.statusCode).toBe(200);
       const systems = JSON.parse(result.body);
-      
+
       expect(systems).toHaveLength(2);
       expect(systems[0].name).toBe('Battery System Alpha');
       expect(systems[0].recordCount).toBe(150);
@@ -124,14 +124,12 @@ describe('Admin Panel User Acceptance Tests', () => {
 
       mockMongoDB.db().collection().aggregate.mockReturnValue({
         toArray: jest.fn().mockResolvedValue(adoptedSystems)
-      });      mockMongoDB.db().collection().aggregate.mockReturnValue({
-        toArray: jest.fn().mockResolvedValue(adoptedSystems)
       });
-      
+
       const result = await adminFunction(event);
       expect(result.statusCode).toBe(200);
       const systems = JSON.parse(result.body);
-      
+
       expect(systems).toHaveLength(1);
       expect(systems[0].name).toBe('Solar Battery Gamma');
       expect(systems[0].adopted).toBe(true);
@@ -154,10 +152,10 @@ describe('Admin Panel User Acceptance Tests', () => {
       mockMongoDB.db().collection().insertOne.mockResolvedValue({ insertedId: 'log-id' });
 
       const result = await adminFunction(event);
-      
+
       expect(result.statusCode).toBe(200);
       const response = JSON.parse(result.body);
-      
+
       expect(response.success).toBe(true);
       expect(response.message).toContain('adopted successfully');
     });
@@ -175,10 +173,10 @@ describe('Admin Panel User Acceptance Tests', () => {
       mockMongoDB.db().collection().findOne.mockResolvedValue(null);
 
       const result = await adminFunction(event);
-      
+
       expect(result.statusCode).toBe(400);
       const response = JSON.parse(result.body);
-      
+
       expect(response.error).toContain('already adopted');
     });
 
@@ -195,17 +193,17 @@ describe('Admin Panel User Acceptance Tests', () => {
           }
         };
 
-              // Mock filtered responses for current filter
+        // Mock filtered responses for current filter
         const filteredSystems = filters[i] === 'all' ? mockDatabase.systems :
-                              filters[i] === 'adopted' ? mockDatabase.systems.filter(s => s.adopted) :
-                              mockDatabase.systems.filter(s => !s.adopted);
+          filters[i] === 'adopted' ? mockDatabase.systems.filter(s => s.adopted) :
+            mockDatabase.systems.filter(s => !s.adopted);
 
         mockMongoDB.db().collection().aggregate.mockReturnValue({
           toArray: jest.fn().mockResolvedValue(filteredSystems)
         });
 
         const result = await adminFunction(event);
-        
+
         expect(result.statusCode).toBe(200);
         const systems = JSON.parse(result.body);
         expect(systems).toHaveLength(expectedCounts[i]);
@@ -237,10 +235,10 @@ describe('Admin Panel User Acceptance Tests', () => {
       });
 
       const result = await adminFunction(event);
-      
+
       expect(result.statusCode).toBe(200);
       const systems = JSON.parse(result.body);
-      
+
       systems.forEach(system => {
         // Verify required UI fields are present
         expect(system).toHaveProperty('id');
@@ -248,14 +246,14 @@ describe('Admin Panel User Acceptance Tests', () => {
         expect(system).toHaveProperty('recordCount');
         expect(system).toHaveProperty('adopted');
         expect(system).toHaveProperty('status');
-        
+
         // Verify data types
         expect(typeof system.id).toBe('string');
         expect(typeof system.name).toBe('string');
         expect(typeof system.recordCount).toBe('number');
         expect(typeof system.adopted).toBe('boolean');
         expect(typeof system.status).toBe('string');
-        
+
         // Verify status values
         expect(['active', 'inactive', 'maintenance']).toContain(system.status);
       });
@@ -314,8 +312,8 @@ describe('Admin Panel User Acceptance Tests', () => {
 
       mockMongoDB.db().collection().aggregate.mockReturnValue({
         toArray: jest.fn().mockRejectedValue(new Error('Database connection failed'))
-      });      const result = await adminFunction(event);
-      
+      }); const result = await adminFunction(event);
+
       expect(result.statusCode).toBe(500);
       const error = JSON.parse(result.body);
       expect(error.error).toContain('Internal server error');
@@ -344,10 +342,10 @@ describe('Admin Panel User Acceptance Tests', () => {
       });
 
       const result = await adminFunction(event);
-      
+
       expect(result.statusCode).toBe(200);
       const systems = JSON.parse(result.body);
-      
+
       const alphaSystem = systems.find(s => s.name === 'Battery System Alpha');
       expect(alphaSystem.status).toBe('active');
       expect(alphaSystem.recordCount).toBeGreaterThan(0);
@@ -387,7 +385,7 @@ describe('Admin Panel User Acceptance Tests', () => {
       // One should succeed, one should fail
       const successCount = results.filter(r => r.statusCode === 200).length;
       const failureCount = results.filter(r => r.statusCode === 400).length;
-      
+
       expect(successCount).toBe(1);
       expect(failureCount).toBe(1);
     });
@@ -417,16 +415,16 @@ describe('Admin Panel User Acceptance Tests', () => {
       });
 
       const result = await adminFunction(event);
-      
+
       expect(result.statusCode).toBe(200);
       const systems = JSON.parse(result.body);
-      
+
       systems.forEach(system => {
         // Verify accessibility-friendly naming
         expect(system.name).toBeTruthy();
         expect(system.name.length).toBeGreaterThan(3);
-        expect(system.name).toMatch(/^[A-Za-z0-9\s\-]+$/);
-        
+        expect(system.name).toMatch(/^[A-Za-z0-9\s-]+$/);
+
         // Verify IDs are URL-friendly
         expect(system.id).toMatch(/^[a-zA-Z0-9\-_]+$/);
       });
@@ -468,7 +466,7 @@ describe('Admin Panel User Acceptance Tests', () => {
 
         if (systems.length > 0) {
           expectedFields = Object.keys(systems[0]);
-          
+
           systems.forEach(system => {
             expect(Object.keys(system)).toEqual(expect.arrayContaining(expectedFields));
           });
@@ -482,7 +480,7 @@ describe('Admin Panel User Acceptance Tests', () => {
 describe('Admin Panel User Scenarios', () => {
   test('Administrator workflow: Review and adopt new systems', async () => {
     const adminFunction = require('../netlify/functions/admin-systems.cjs').handler;
-    
+
     // Step 1: View unadopted systems
     const listEvent = {
       httpMethod: 'GET',

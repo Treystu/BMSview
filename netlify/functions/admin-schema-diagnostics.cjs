@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Admin Schema Diagnostics Endpoint
  * 
@@ -91,11 +92,11 @@ async function analyzeSchemaForSystem(systemId, log) {
       count: historyCount
     },
     schemaStatus: topLevelCount > 0 ? 'UPDATED' : nestedOnlyCount > 0 ? 'LEGACY' : 'NO_DATA',
-    recommendation: topLevelCount === 0 && nestedOnlyCount > 0 
+    recommendation: topLevelCount === 0 && nestedOnlyCount > 0
       ? 'Run migration to add top-level systemId to existing records'
       : topLevelCount > 0
-      ? 'Schema is up to date'
-      : 'No data found for this systemId'
+        ? 'Schema is up to date'
+        : 'No data found for this systemId'
   };
 }
 
@@ -104,7 +105,7 @@ async function analyzeSchemaForSystem(systemId, log) {
  */
 async function simulateFullContextQuery(systemId, days, log) {
   const analysisCollection = await getCollection('analysis-results');
-  
+
   const endDate = new Date();
   const startDate = new Date(endDate);
   startDate.setDate(startDate.getDate() - days);
@@ -176,6 +177,7 @@ async function getAllSystemsOverview(log) {
 
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent(event, context, 'admin-schema-diagnostics');
+  const headers = getCorsHeaders(event);
 
   try {
     log.info('Admin schema diagnostics request', {
@@ -192,7 +194,7 @@ exports.handler = async (event, context) => {
         if (!systemId) {
           return {
             statusCode: 400,
-            headers: getCorsHeaders(),
+            headers,
             body: JSON.stringify({
               error: 'systemId parameter required for analyze action'
             })
@@ -201,11 +203,11 @@ exports.handler = async (event, context) => {
         result = await analyzeSchemaForSystem(systemId, log);
         break;
 
-      case 'simulate':
+      case 'simulate': {
         if (!systemId) {
           return {
             statusCode: 400,
-            headers: getCorsHeaders(),
+            headers,
             body: JSON.stringify({
               error: 'systemId parameter required for simulate action'
             })
@@ -215,7 +217,7 @@ exports.handler = async (event, context) => {
         if (isNaN(daysNum) || daysNum <= 0 || daysNum > 365) {
           return {
             statusCode: 400,
-            headers: getCorsHeaders(),
+            headers,
             body: JSON.stringify({
               error: 'days parameter must be a positive integer between 1 and 365',
               provided: days
@@ -224,6 +226,7 @@ exports.handler = async (event, context) => {
         }
         result = await simulateFullContextQuery(systemId, daysNum, log);
         break;
+      }
 
       case 'overview':
         result = await getAllSystemsOverview(log);
@@ -232,7 +235,7 @@ exports.handler = async (event, context) => {
       default:
         return {
           statusCode: 400,
-          headers: getCorsHeaders(),
+          headers,
           body: JSON.stringify({
             error: `Unknown action: ${action}`,
             validActions: ['analyze', 'simulate', 'overview']
@@ -244,7 +247,7 @@ exports.handler = async (event, context) => {
 
     return {
       statusCode: 200,
-      headers: getCorsHeaders(),
+      headers,
       body: JSON.stringify({
         success: true,
         action,
@@ -261,7 +264,7 @@ exports.handler = async (event, context) => {
 
     return {
       statusCode: 500,
-      headers: getCorsHeaders(),
+      headers,
       body: JSON.stringify({
         error: 'Schema diagnostics failed',
         message: error.message

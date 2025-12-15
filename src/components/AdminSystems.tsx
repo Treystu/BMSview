@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 
 interface System {
   id: string;
@@ -12,8 +12,8 @@ interface System {
 
 interface SystemCardProps {
   system: System;
-  onAdopt: (systemId: string) => void;
-  onRefresh: () => void;
+  onAdopt: (systemId: string) => Promise<void> | void;
+  onRefresh: () => Promise<void> | void;
 }
 
 const SystemCard: React.FC<SystemCardProps> = ({ system, onAdopt, onRefresh }) => {
@@ -28,85 +28,54 @@ const SystemCard: React.FC<SystemCardProps> = ({ system, onAdopt, onRefresh }) =
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusClass = (status: string) => {
     switch (status) {
-      case 'active': return '#10b981';
-      case 'inactive': return '#ef4444';
-      case 'maintenance': return '#f59e0b';
-      default: return '#6b7280';
+      case 'active': return 'bg-emerald-500';
+      case 'inactive': return 'bg-red-500';
+      case 'maintenance': return 'bg-amber-500';
+      default: return 'bg-gray-500';
     }
   };
 
   return (
-    <div className="system-card" style={{
-      border: '1px solid #e5e7eb',
-      borderRadius: '8px',
-      padding: '16px',
-      marginBottom: '16px',
-      backgroundColor: '#ffffff',
-      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ flex: 1 }}>
-          <h3 style={{ margin: '0 0 8px 0', color: '#1f2937' }}>{system.name}</h3>
-          <p style={{ margin: '4px 0', color: '#6b7280', fontSize: '14px' }}>
-            Records: <span style={{ fontWeight: 'bold', color: '#1f2937' }}>{system.recordCount}</span>
+    <div className="system-card border border-gray-200 rounded-lg p-4 mb-4 bg-white shadow">
+      <div className="flex justify-between items-start">
+        <div className="flex-1 space-y-2">
+          <h3 className="m-0 text-gray-900 text-lg font-semibold">{system.name}</h3>
+          <p className="m-0 text-gray-500 text-sm">
+            Records: <span className="font-semibold text-gray-900">{system.recordCount}</span>
           </p>
-          <p style={{ margin: '4px 0', color: '#6b7280', fontSize: '14px' }}>
-            Status: 
-            <span 
-              style={{ 
-                marginLeft: '8px', 
-                padding: '2px 8px', 
-                borderRadius: '4px', 
-                backgroundColor: getStatusColor(system.status),
-                color: 'white',
-                fontSize: '12px',
-                fontWeight: 'bold'
-              }}
+          <p className="m-0 text-gray-500 text-sm flex items-center gap-2">
+            <span>Status:</span>
+            <span
+              className={`px-2 py-0.5 rounded text-white text-xs font-bold ${getStatusClass(system.status)}`}
             >
               {system.status.toUpperCase()}
             </span>
           </p>
           {system.lastActive && (
-            <p style={{ margin: '4px 0', color: '#6b7280', fontSize: '14px' }}>
+            <p className="m-0 text-gray-500 text-sm">
               Last Active: {new Date(system.lastActive).toLocaleString()}
             </p>
           )}
-          <p style={{ margin: '4px 0', color: '#9ca3af', fontSize: '12px' }}>
+          <p className="m-0 text-gray-400 text-xs">
             Created: {new Date(system.createdAt).toLocaleString()}
           </p>
         </div>
-        
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+
+        <div className="flex flex-col gap-2">
           {!system.adopted && (
             <button
               onClick={handleAdopt}
               disabled={loading}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: loading ? '#9ca3af' : '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: '14px'
-              }}
+              className={`px-4 py-2 rounded text-sm text-white ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'}`}
             >
               {loading ? 'Adopting...' : 'Adopt'}
             </button>
           )}
           <button
             onClick={onRefresh}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#f3f4f6',
-              color: '#1f2937',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
+            className="px-4 py-2 rounded border border-gray-300 bg-gray-100 text-gray-800 text-sm hover:bg-gray-200"
           >
             Refresh
           </button>
@@ -116,9 +85,7 @@ const SystemCard: React.FC<SystemCardProps> = ({ system, onAdopt, onRefresh }) =
   );
 };
 
-interface AdminSystemsProps {
-  // No props needed - single-tenant application
-}
+type AdminSystemsProps = Record<string, never>;
 
 const AdminSystems: React.FC<AdminSystemsProps> = () => {
   const [systems, setSystems] = useState<System[]>([]);
@@ -133,21 +100,21 @@ const AdminSystems: React.FC<AdminSystemsProps> = () => {
   const fetchSystems = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      const endpoint = filter === 'unadopted' 
+      const endpoint = filter === 'unadopted'
         ? '/api/unadopted-systems'
-        : filter === 'adopted' 
-        ? '/api/adopted-systems'
-        : '/api/all-systems';
-      
+        : filter === 'adopted'
+          ? '/api/adopted-systems'
+          : '/api/all-systems';
+
       const response = await fetch(endpoint);
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch systems: ${response.statusText}`);
       }
-      
-      const data = await response.json();
+
+      const data: System[] = await response.json();
       setSystems(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error occurred');
@@ -166,12 +133,11 @@ const AdminSystems: React.FC<AdminSystemsProps> = () => {
         },
         body: JSON.stringify({ systemId }),
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to adopt system: ${response.statusText}`);
       }
-      
-      // Refresh the systems list
+
       await fetchSystems();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to adopt system');
@@ -188,88 +154,52 @@ const AdminSystems: React.FC<AdminSystemsProps> = () => {
 
   if (loading) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
+      <div className="p-5 text-center">
         <div>Loading systems...</div>
       </div>
     );
   }
 
   return (
-    <div className="admin-systems" style={{ padding: '20px' }}>
-      <div style={{ marginBottom: '20px' }}>
-        <h2 style={{ margin: '0 0 16px 0', color: '#1f2937' }}>System Management</h2>
-        
-        <div style={{ 
-          display: 'flex', 
-          gap: '8px', 
-          marginBottom: '16px',
-          flexWrap: 'wrap'
-        }}>
+    <div className="admin-systems p-5 space-y-5">
+      <div className="space-y-4">
+        <h2 className="m-0 text-2xl font-semibold text-gray-900">System Management</h2>
+        <div className="flex flex-wrap gap-3">
           <button
             onClick={() => setFilter('all')}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: filter === 'all' ? '#3b82f6' : '#f3f4f6',
-              color: filter === 'all' ? 'white' : '#1f2937',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
+            className={`px-4 py-2 rounded ${filter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}
           >
-            All ({systems.length})
-          </button>
-          <button
-            onClick={() => setFilter('adopted')}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: filter === 'adopted' ? '#3b82f6' : '#f3f4f6',
-              color: filter === 'adopted' ? 'white' : '#1f2937',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Adopted ({systems.filter(s => s.adopted).length})
+            All Systems ({systems.length})
           </button>
           <button
             onClick={() => setFilter('unadopted')}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: filter === 'unadopted' ? '#3b82f6' : '#f3f4f6',
-              color: filter === 'unadopted' ? 'white' : '#1f2937',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
+            className={`px-4 py-2 rounded ${filter === 'unadopted' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}
           >
-            Unadopted ({systems.filter(s => !s.adopted).length})
+            Unadopted Systems ({systems.filter(s => !s.adopted).length})
+          </button>
+          <button
+            onClick={() => setFilter('adopted')}
+            className={`px-4 py-2 rounded ${filter === 'adopted' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-800'}`}
+          >
+            Adopted Systems ({systems.filter(s => s.adopted).length})
           </button>
         </div>
       </div>
 
       {error && (
-        <div style={{
-          backgroundColor: '#fef2f2',
-          border: '1px solid #fecaca',
-          color: '#dc2626',
-          padding: '12px',
-          borderRadius: '4px',
-          marginBottom: '16px'
-        }}>
-          Error: {error}
+        <div className="p-3 rounded bg-red-50 text-red-700">
+          {error}
         </div>
       )}
 
       {filteredSystems.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📦</div>
-          <div style={{ fontSize: '16px' }}>
-            No {filter === 'all' ? '' : filter} systems found
-          </div>
+        <div className="text-center py-10 text-gray-500">
+          <div className="text-5xl mb-4">📦</div>
+          <div className="text-base">No {filter === 'all' ? '' : filter} systems found</div>
         </div>
       ) : (
-        <div>
-          <div style={{ marginBottom: '12px', color: '#6b7280', fontSize: '14px' }}>
+        <div className="grid gap-4">
+          <div className="text-sm text-gray-500">
             Showing {filteredSystems.length} system{filteredSystems.length !== 1 ? 's' : ''}
           </div>
           {filteredSystems.map(system => (

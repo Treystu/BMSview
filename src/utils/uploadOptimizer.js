@@ -18,13 +18,13 @@ class UploadOptimizer {
         this.baseRetryDelay = 10; // speed up retries in tests
         // Keep default retry count to allow recovery scenarios in tests
       }
-    } catch (e) { /* ignore */ }
+    } catch { /* ignore test env detection errors */ }
   }
 
   /**
    * Calculate optimal concurrency based on file count and total size
    */
-  calculateConcurrency(fileCount, totalSize) {
+  calculateConcurrency(fileCount, _totalSize) {
     if (fileCount <= 5) {
       return Math.min(5, fileCount);
     }
@@ -305,7 +305,7 @@ class UploadOptimizer {
       if (typeof localStorage !== 'undefined' && localStorage.getItem('enableTelemetry') === '1') return true;
       if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'test') return true; // always store in tests
       return false;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -328,8 +328,8 @@ class UploadOptimizer {
         this._testMetrics.push(metric);
         this._testMetrics = this._testMetrics.slice(-100); // Keep last 100
       }
-    } catch (e) {
-      // swallow
+    } catch {
+      // swallow telemetry storage errors
     }
   }
 
@@ -354,8 +354,8 @@ class UploadOptimizer {
           // For testing environments without localStorage
           metrics = this._testMetrics;
         }
-      } catch (e) {
-        // ignore
+      } catch {
+        // ignore parse issues
       }
 
       if (metrics.length === 0) {
@@ -380,7 +380,7 @@ class UploadOptimizer {
         averageFileSize: Math.round(totalSize / metrics.length),
         lastUpload: metrics[metrics.length - 1]?.timestamp
       };
-    } catch (error) {
+    } catch {
       return { error: 'Could not retrieve statistics' };
     }
   }
@@ -395,8 +395,8 @@ class UploadOptimizer {
         telemetry.clearMetrics('uploadMetrics');
         return;
       }
-    } catch (e) { }
-    try { localStorage.removeItem('uploadMetrics'); } catch (e) { }
+    } catch { /* ignore missing telemetry module */ }
+    try { localStorage.removeItem('uploadMetrics'); } catch { /* ignore storage cleanup errors */ }
   }
 }
 

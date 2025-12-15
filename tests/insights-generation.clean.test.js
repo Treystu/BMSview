@@ -7,6 +7,8 @@
  * for full integration testing with real services.
  */
 
+const { handler: generateHandler } = require('../netlify/functions/generate-insights-with-tools.cjs');
+
 describe.skip('generate-insights handler', () => {
   test('returns 200 and produces insights for empty measurements', async () => {
     const event = { body: JSON.stringify({ systemId: 't1', batteryData: { measurements: [] } }) };

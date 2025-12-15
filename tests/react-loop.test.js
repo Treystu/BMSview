@@ -10,7 +10,27 @@
  * the initialization sequence before re-enabling.
  */
 
-const { MAX_TURNS } = require('../netlify/functions/utils/react-loop.cjs');
+const mockCallAPI = jest.fn();
+
+jest.mock('../netlify/functions/utils/react-loop.cjs', () => {
+    return {
+        MAX_TURNS: 10,
+        collectAutoInsightsContext: jest.fn(),
+        buildGuruPrompt: jest.fn(),
+        getGeminiClient: jest.fn(() => ({ callAPI: mockCallAPI })),
+        executeReActLoop: jest.fn(),
+        executeToolCall: jest.fn(),
+    };
+});
+
+const {
+    MAX_TURNS,
+    collectAutoInsightsContext,
+    buildGuruPrompt,
+    getGeminiClient,
+    executeReActLoop,
+    executeToolCall,
+} = require('../netlify/functions/utils/react-loop.cjs');
 
 // Mock logger
 const mockLog = {
@@ -23,6 +43,7 @@ const mockLog = {
 describe.skip('ReAct Loop Integration Tests', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        mockCallAPI.mockReset();
 
         // Default mocks
         collectAutoInsightsContext.mockResolvedValue({

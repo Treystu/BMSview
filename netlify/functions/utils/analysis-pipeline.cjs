@@ -95,7 +95,7 @@ const extractBmsData = async (image, mimeType, log, context, previousFeedback = 
         };
 
         // ... existing code ...
-        log('info', 'Received response from Gemini API via custom client.', { 
+        log('info', 'Received response from Gemini API via custom client.', {
             durationMs: duration,
             inputTokens: tokenMetadata.inputTokens,
             outputTokens: tokenMetadata.outputTokens,
@@ -194,7 +194,7 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
             inputTokens += extractionResult.tokenMetadata.inputTokens;
             outputTokens += extractionResult.tokenMetadata.outputTokens;
             tokensUsed += extractionResult.tokenMetadata.totalTokens;
-            log('info', 'Data extraction complete.', { 
+            log('info', 'Data extraction complete.', {
                 ...logContext,
                 inputTokens: extractionResult.tokenMetadata.inputTokens,
                 outputTokens: extractionResult.tokenMetadata.outputTokens

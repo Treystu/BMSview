@@ -292,7 +292,7 @@ describe('Sync Endpoints - Error Handling', () => {
                 }
             }
             // Sanitize: reject items with _id (MongoDB reserved)
-            if (item.hasOwnProperty('_id')) {
+            if (Object.prototype.hasOwnProperty.call(item, '_id')) {
                 throw new Error('Invalid item structure: _id is reserved');
             }
             return true;

@@ -1,13 +1,12 @@
+import crypto from 'crypto';
+import { MongoClient } from 'mongodb';
+
 interface UploadResponse {
   status: 'success' | 'skipped' | 'error';
   reason?: string;
   fileId?: string;
   message?: string;
 }
-
-// Use MongoDB client (mocked in tests) so tests don't require a real server
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { MongoClient } = require('mongodb');
 let __dbPromise: Promise<any> | null = null;
 async function getDb() {
   if (!__dbPromise) {
@@ -32,11 +31,9 @@ async function getContentHash(file: any): Promise<string | null> {
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
     // Node path: use Buffer data if provided
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const nodeCrypto = require('crypto');
     const data: Buffer | undefined = (file && (file.data as Buffer)) || undefined;
     if (data && Buffer.isBuffer(data)) {
-      return nodeCrypto.createHash('sha256').update(data).digest('hex');
+      return crypto.createHash('sha256').update(data).digest('hex');
     }
     return null;
   } catch {
@@ -128,7 +125,7 @@ function validateFilename(filename: string): { valid: boolean; error?: string } 
   return { valid: true };
 }
 
-async function processFile(file: any): Promise<string> {
+async function processFile(_file: any): Promise<string> {
   // Simulate file processing
   const processingSteps = [
     { stage: 'uploaded', progress: 25 },

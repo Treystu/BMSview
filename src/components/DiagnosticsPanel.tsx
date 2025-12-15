@@ -154,12 +154,12 @@ export const DiagnosticsPanel: React.FC = () => {
                     setTimeout(() => {
                         try {
                             suggestionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        } catch (e) {
+                        } catch {
                             // ignore scrolling errors
                         }
                     }, 150);
                 }
-            } catch (e) {
+            } catch {
                 // non-fatal UI enhancement error
             }
         } catch (error) {
