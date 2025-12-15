@@ -20,7 +20,6 @@ const log = createLogger('metrics-collector');
  * - Gemini 1.5: Standard rate ≤128K tokens, higher rate >128K
  * 
  * Current implementation uses standard (lower) rates by default.
- * TODO: Implement context-aware pricing based on actual token counts.
  */
 const GEMINI_PRICING = {
   // ===== Gemini 3.0 Family (Preview) =====
