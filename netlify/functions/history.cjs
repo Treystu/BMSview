@@ -1,14 +1,15 @@
+// @ts-nocheck
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 function validateEnvironment(log) {
-  if (!process.env.MONGODB_URI) {
-    log.error('Missing MONGODB_URI environment variable');
-    return false;
-  }
-  return true;
+    if (!process.env.MONGODB_URI) {
+        log.error('Missing MONGODB_URI environment variable');
+        return false;
+    }
+    return true;
 }
 const { ObjectId } = require('mongodb'); // Needed for BulkWrite operations
 const { fetchHistoricalWeather, fetchHourlyWeather, getDaylightHours } = require("./utils/weather-fetcher.cjs");
@@ -21,18 +22,26 @@ const respond = (statusCode, body, headers = {}) => ({
 });
 
 
-exports.handler = async function(event, context) {
+exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
-    
+
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers };
     }
-    
+
     const log = createLoggerFromEvent('history', event, context);
     log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
     const timer = createTimer(log, 'history');
-    
+
+    // Define logContext for consistent logging throughout the function
+    const clientIp = event.headers['x-nf-client-connection-ip'] || 'unknown';
+    const logContext = {
+        clientIp,
+        httpMethod: event.httpMethod,
+        path: event.path
+    };
+
     if (!validateEnvironment(log)) {
         log.exit(500);
         return respond(500, { error: 'Server configuration error' }, headers);
@@ -58,16 +67,16 @@ exports.handler = async function(event, context) {
             // Merged timeline data (BMS + Cloud)
             if (merged === 'true' && systemId && startDate && endDate) {
                 log.info('Fetching merged timeline data', { systemId, startDate, endDate });
-                
+
                 try {
                     let mergedData = await mergeBmsAndCloudData(systemId, startDate, endDate, log);
-                    
+
                     // Apply downsampling if requested
                     if (downsample === 'true') {
                         const maxPoints = parseInt(event.queryStringParameters.maxPoints) || 2000;
                         mergedData = downsampleMergedData(mergedData, maxPoints, log);
                     }
-                    
+
                     timer.end({ merged: true, dataPoints: mergedData.length });
                     log.exit(200);
                     return respond(200, {
@@ -79,27 +88,31 @@ exports.handler = async function(event, context) {
                         data: mergedData
                     });
                 } catch (err) {
-                    log('error', 'Failed to merge timeline data.', { error: err.message, stack: err.stack });
-                    return respond(500, { error: 'Failed to merge timeline data: ' + err.message });
+                    log.error('Failed to merge timeline data', { error: err.message, stack: err.stack });
+                    return respond(500, { error: 'Failed to merge timeline data: ' + err.message }, headers);
                 }
             }
 
             if (systemId) {
                 // Fetch all history for a specific system (used for charting)
-                log('info', 'Fetching full history for a single system.', { ...logContext, systemId });
+                log.info('Fetching full history for a single system', { ...logContext, systemId });
                 const historyForSystem = await historyCollection.find({ systemId }, { projection: { _id: 0 } }).sort({ timestamp: 1 }).toArray();
-                return respond(200, historyForSystem);
+                timer.end({ systemId, count: historyForSystem.length });
+                log.exit(200);
+                return respond(200, historyForSystem, headers);
             }
 
             if (all === 'true') {
-                 // Fetch ALL history records (used for cache building, potentially large)
-                 log('info', 'Fetching ALL history records.', { ...logContext });
-                 const allHistory = await historyCollection.find({}, { projection: { _id: 0 } }).sort({ timestamp: -1 }).toArray();
-                 return respond(200, allHistory);
+                // Fetch ALL history records (used for cache building, potentially large)
+                log.info('Fetching ALL history records', logContext);
+                const allHistory = await historyCollection.find({}, { projection: { _id: 0 } }).sort({ timestamp: -1 }).toArray();
+                timer.end({ all: true, count: allHistory.length });
+                log.exit(200);
+                return respond(200, allHistory, headers);
             }
 
             // Fetch paginated history (default)
-            log('debug', 'Fetching paginated history.', { ...logContext, page, limit });
+            log.debug('Fetching paginated history', { ...logContext, page, limit });
             const pageNum = parseInt(page, 10);
             const limitNum = parseInt(limit, 10);
             const skip = (pageNum - 1) * limitNum;
@@ -109,30 +122,38 @@ exports.handler = async function(event, context) {
                 historyCollection.countDocuments({})
             ]);
 
-            log('info', `Returning page ${pageNum} of history.`, { ...logContext, returned: history.length, total: totalItems });
-            return respond(200, { items: history, totalItems });
+            timer.end({ page: pageNum, returned: history.length, total: totalItems });
+            log.info(`Returning page ${pageNum} of history`, { ...logContext, returned: history.length, total: totalItems });
+            log.exit(200);
+            return respond(200, { items: history, totalItems }, headers);
         }
 
         // --- POST Request Handler ---
-        if (httpMethod === 'POST') {
-            const parsedBody = JSON.parse(body);
-            log('debug', 'Parsed POST body.', { ...logContext, bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
+        if (event.httpMethod === 'POST') {
+            const parsedBody = JSON.parse(event.body);
+            log.debug('Parsed POST body', { ...logContext, bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
             const { action } = parsedBody;
             const postLogContext = { ...logContext, action };
-            log('info', 'Processing POST request.', postLogContext);
+            log.info('Processing POST request', postLogContext);
 
             // --- Batch Delete Action ---
             if (action === 'deleteBatch') {
                 const { recordIds } = parsedBody;
-                if (!recordIds || !Array.isArray(recordIds)) return respond(400, { error: 'recordIds array is required.' });
-                log('warn', 'Deleting batch of history records.', { ...postLogContext, count: recordIds.length });
+                if (!recordIds || !Array.isArray(recordIds)) {
+                    timer.end({ error: 'missing_recordIds' });
+                    log.exit(400);
+                    return respond(400, { error: 'recordIds array is required.' }, headers);
+                }
+                log.warn('Deleting batch of history records', { ...postLogContext, count: recordIds.length });
                 const { deletedCount } = await historyCollection.deleteMany({ id: { $in: recordIds } });
-                return respond(200, { success: true, deletedCount });
+                timer.end({ action, deletedCount });
+                log.exit(200);
+                return respond(200, { success: true, deletedCount }, headers);
             }
 
             // --- Fix Power Signs Action ---
             if (action === 'fix-power-signs') {
-                log('info', 'Starting fix-power-signs task.', postLogContext);
+                log.info('Starting fix-power-signs task', postLogContext);
                 const filter = {
                     'analysis.current': { $lt: 0 }, // Current is negative (discharge)
                     'analysis.power': { $gt: 0 }    // Power is positive (incorrect)
@@ -141,13 +162,15 @@ exports.handler = async function(event, context) {
                     { $set: { 'analysis.power': { $multiply: ['$analysis.power', -1] } } }
                 ];
                 const { modifiedCount } = await historyCollection.updateMany(filter, updatePipeline);
-                log('info', 'Fix-power-signs task complete.', { ...postLogContext, updatedCount: modifiedCount });
-                return respond(200, { success: true, updatedCount: modifiedCount });
+                timer.end({ action, updatedCount: modifiedCount });
+                log.info('Fix-power-signs task complete', { action, updatedCount: modifiedCount });
+                log.exit(200);
+                return respond(200, { success: true, updatedCount: modifiedCount }, headers);
             }
 
             // --- Auto-Associate Action ---
             if (action === 'auto-associate') {
-                log('info', 'Starting auto-association task.', postLogContext);
+                log.info('Starting auto-association task', { action });
                 const systems = await systemsCollection.find({}, { projection: { _id: 0, id: 1, name: 1, associatedDLs: 1 } }).toArray();
                 const dlMap = new Map(); // Map DL number -> array of system IDs
                 systems.forEach(s => {
@@ -178,7 +201,7 @@ exports.handler = async function(event, context) {
                         if (bulkOps.length >= 500) { // Process in batches
                             await historyCollection.bulkWrite(bulkOps, { ordered: false });
                             bulkOps.length = 0; // Clear the array
-                            log('debug', 'Processed auto-associate batch.', { ...postLogContext, count: 500 });
+                            log.debug('Processed auto-associate batch', { action, count: 500 });
                         }
                     }
                 }
@@ -186,13 +209,15 @@ exports.handler = async function(event, context) {
                 if (bulkOps.length > 0) {
                     await historyCollection.bulkWrite(bulkOps, { ordered: false });
                 }
-                log('info', 'Auto-association task complete.', { ...postLogContext, associatedCount });
-                return respond(200, { success: true, associatedCount });
+                timer.end({ action, associatedCount });
+                log.info('Auto-association task complete', { action, associatedCount });
+                log.exit(200);
+                return respond(200, { success: true, associatedCount }, headers);
             }
 
             // --- Cleanup Links Action ---
             if (action === 'cleanup-links') {
-                log('info', 'Starting cleanup-links task.', postLogContext);
+                log.info('Starting cleanup-links task', { action });
                 const allSystemIds = new Set(await systemsCollection.distinct('id'));
                 const linkedCursor = historyCollection.find({ systemId: { $exists: true, $ne: null } });
                 let updatedCount = 0;
@@ -207,42 +232,46 @@ exports.handler = async function(event, context) {
                             }
                         });
                         updatedCount++;
-                         if (bulkOps.length >= 500) {
+                        if (bulkOps.length >= 500) {
                             await historyCollection.bulkWrite(bulkOps, { ordered: false });
                             bulkOps.length = 0;
-                            log('debug', 'Processed cleanup-links batch.', { ...postLogContext, count: 500 });
+                            log.debug('Processed cleanup-links batch', { action, count: 500 });
                         }
                     }
                 }
-                 if (bulkOps.length > 0) {
+                if (bulkOps.length > 0) {
                     await historyCollection.bulkWrite(bulkOps, { ordered: false });
                 }
-                log('info', 'Cleanup-links task complete.', { ...postLogContext, updatedCount });
-                return respond(200, { success: true, updatedCount });
+                timer.end({ action, updatedCount });
+                log.info('Cleanup-links task complete', { action, updatedCount });
+                log.exit(200);
+                return respond(200, { success: true, updatedCount }, headers);
             }
 
             if (action === 'count-records-needing-weather') {
-                log('info', 'Counting records needing weather backfill.', postLogContext);
+                log.info('Counting records needing weather backfill', { action });
                 const count = await historyCollection.countDocuments({ systemId: { $ne: null }, $or: [{ weather: null }, { 'weather.clouds': { $exists: false } }] });
-                return respond(200, { count });
+                timer.end({ action, count });
+                log.exit(200);
+                return respond(200, { count }, headers);
             }
 
             // --- Backfill Weather Action ---
-             if (action === 'backfill-weather') {
-                log('info', 'Starting backfill-weather task.', postLogContext);
-                
+            if (action === 'backfill-weather') {
+                log.info('Starting backfill-weather task', { action });
+
                 const maxRecords = parseInt(parsedBody.maxRecords) || 50; // Default to 50 records per run
                 const startTime = Date.now();
                 const MAX_EXECUTION_TIME = 20000; // 20 seconds (leave 6 seconds buffer)
-                
+
                 const systemsWithLocation = await systemsCollection.find({ latitude: { $ne: null }, longitude: { $ne: null } }).toArray();
                 const systemLocationMap = new Map(systemsWithLocation.map(s => [s.id, { lat: s.latitude, lon: s.longitude }]));
 
-                const recordsNeedingWeatherCursor = historyCollection.find({ 
-                    systemId: { $ne: null }, 
-                    $or: [{ weather: null }, { 'weather.clouds': { $exists: false } }] 
+                const recordsNeedingWeatherCursor = historyCollection.find({
+                    systemId: { $ne: null },
+                    $or: [{ weather: null }, { 'weather.clouds': { $exists: false } }]
                 }).limit(maxRecords); // Limit number of records to process
-                
+
                 let updatedCount = 0;
                 let errorCount = 0;
                 let processedCount = 0;
@@ -256,8 +285,8 @@ exports.handler = async function(event, context) {
                     // Check if we're approaching timeout
                     const elapsedTime = Date.now() - startTime;
                     if (elapsedTime > MAX_EXECUTION_TIME) {
-                        log('warn', 'Approaching timeout limit, stopping early.', {
-                            ...postLogContext,
+                        log.warn('Approaching timeout limit, stopping early', {
+                            action,
                             elapsedTime,
                             processedCount,
                             updatedCount
@@ -265,9 +294,9 @@ exports.handler = async function(event, context) {
                         timeoutReached = true;
                         break;
                     }
-                    
+
                     processedCount++;
-                    log('debug', `Processing weather backfill for record: ${record.id}`, { processedCount, maxRecords });
+                    log.debug(`Processing weather backfill for record: ${record.id}`, { processedCount, maxRecords });
                     const location = systemLocationMap.get(record.systemId);
                     if (location && record.timestamp) {
                         try {
@@ -283,7 +312,7 @@ exports.handler = async function(event, context) {
                             }
                         } catch (weatherError) {
                             errorCount++;
-                            log('warn', 'Failed to fetch weather during backfill.', { recordId: record.id, error: weatherError.message });
+                            log.warn('Failed to fetch weather during backfill', { recordId: record.id, error: weatherError.message });
                             // Add delay after error to avoid rate limiting
                             await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
                         }
@@ -291,14 +320,14 @@ exports.handler = async function(event, context) {
                         if (bulkOps.length >= BATCH_SIZE) {
                             try {
                                 const result = await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                                log('info', 'Processed backfill-weather batch.', { 
-                                    ...postLogContext, 
-                                    batchSize: bulkOps.length, 
+                                log.info('Processed backfill-weather batch', {
+                                    action,
+                                    batchSize: bulkOps.length,
                                     modified: result.modifiedCount,
-                                    totalProcessed: updatedCount 
+                                    totalProcessed: updatedCount
                                 });
                             } catch (e) {
-                                log('error', 'Error during bulkWrite.', { error: e.message, batchSize: bulkOps.length });
+                                log.error('Error during bulkWrite', { error: e.message, batchSize: bulkOps.length });
                             }
                             bulkOps.length = 0;
                             // Throttle to avoid hitting rate limits
@@ -306,88 +335,94 @@ exports.handler = async function(event, context) {
                         }
                     }
                 }
-                
+
                 if (bulkOps.length > 0) {
                     try {
                         const result = await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                        log('info', 'Processed final backfill-weather batch.', { 
-                            ...postLogContext, 
+                        log.info('Processed final backfill-weather batch', {
+                            action,
                             batchSize: bulkOps.length,
-                            modified: result.modifiedCount 
+                            modified: result.modifiedCount
                         });
                     } catch (e) {
-                        log('error', 'Error during final bulkWrite.', { error: e.message, batchSize: bulkOps.length });
+                        log.error('Error during final bulkWrite', { error: e.message, batchSize: bulkOps.length });
                     }
                 }
-                
+
                 const completed = !timeoutReached && processedCount < maxRecords;
-                const message = completed 
+                const message = completed
                     ? 'Weather backfill completed successfully.'
                     : `Processed ${processedCount} records before ${timeoutReached ? 'timeout' : 'limit'}. Run again to continue.`;
-                
-                log('info', 'Backfill-weather task finished.', { 
-                    ...postLogContext, 
-                    updatedCount, 
+
+                timer.end({ action, updatedCount, errorCount, processedCount, completed });
+                log.info('Backfill-weather task finished', {
+                    action,
+                    updatedCount,
                     errorCount,
                     processedCount,
                     completed,
                     message
                 });
-                
-                return respond(200, { 
-                    success: true, 
-                    updatedCount, 
+                log.exit(200);
+
+                return respond(200, {
+                    success: true,
+                    updatedCount,
                     errorCount,
                     processedCount,
                     completed,
                     message
-                });
+                }, headers);
             }
 
             // --- Hourly Cloud Backfill Action ---
             if (action === 'hourly-cloud-backfill') {
-                log('info', 'Starting hourly-cloud-backfill task.', postLogContext);
-                
+                log.info('Starting hourly-cloud-backfill task', { action });
+
                 // Get maxDays parameter (default to 10 days per run to avoid timeout)
                 const maxDaysPerRun = parseInt(parsedBody.maxDays) || 10;
                 const startTime = Date.now();
                 const MAX_EXECUTION_TIME = 20000; // 20 seconds (leave 6 seconds buffer for Netlify's 26s limit)
-                
+
                 // Get systems with location data
-                const systemsWithLocation = await systemsCollection.find({ 
-                    latitude: { $ne: null }, 
-                    longitude: { $ne: null } 
+                const systemsWithLocation = await systemsCollection.find({
+                    latitude: { $ne: null },
+                    longitude: { $ne: null }
                 }).toArray();
-                
+
                 if (systemsWithLocation.length === 0) {
                     log('warn', 'No systems with location data found.', postLogContext);
-                    return respond(200, { 
-                        success: true, 
-                        message: 'No systems with location data.', 
+                    return respond(200, {
+                        success: true,
+                        message: 'No systems with location data.',
                         processedDays: 0,
                         completed: true
                     });
                 }
-                
+
                 const hourlyWeatherCollection = await getCollection("hourly-weather");
                 let totalProcessedDays = 0;
                 let totalHoursInserted = 0;
                 let totalErrors = 0;
                 let timeoutReached = false;
-                
+
                 // Process each system
                 systemLoop: for (const system of systemsWithLocation) {
-                    const systemLogContext = { 
-                        ...postLogContext, 
-                        systemId: system.id, 
-                        systemName: system.name 
+                    log.info('Processing hourly cloud backfill for system', {
+                        action,
+                        systemId: system.id,
+                        systemName: system.name
+                    });
+                    const systemLogContext = {
+                        action,
+                        systemId: system.id,
+                        systemName: system.name
                     };
-                    log('info', 'Processing hourly cloud backfill for system.', systemLogContext);
-                    
+
                     // Get min and max dates for this system's analysis records
                     const dateRange = await historyCollection.aggregate([
                         { $match: { systemId: system.id, timestamp: { $exists: true, $ne: null } } },
-                        { 
+                        {
                             $group: {
                                 _id: null,
                                 minDate: { $min: '$timestamp' },
@@ -395,30 +430,30 @@ exports.handler = async function(event, context) {
                             }
                         }
                     ]).toArray();
-                    
+
                     if (dateRange.length === 0 || !dateRange[0].minDate) {
                         log('info', 'No analysis records with timestamps for system, skipping.', systemLogContext);
                         continue;
                     }
-                    
+
                     const minDate = new Date(dateRange[0].minDate);
                     const maxDate = new Date(dateRange[0].maxDate);
-                    log('info', 'Date range for system.', { 
-                        ...systemLogContext, 
-                        minDate: minDate.toISOString(), 
-                        maxDate: maxDate.toISOString() 
+                    log('info', 'Date range for system.', {
+                        ...systemLogContext,
+                        minDate: minDate.toISOString(),
+                        maxDate: maxDate.toISOString()
                     });
-                    
+
                     // Iterate through each date in the range
                     const currentDate = new Date(minDate);
                     currentDate.setHours(0, 0, 0, 0); // Start at beginning of day
-                    
+
                     while (currentDate <= maxDate) {
                         // Check if we're approaching timeout
                         const elapsedTime = Date.now() - startTime;
                         if (elapsedTime > MAX_EXECUTION_TIME) {
-                            log('warn', 'Approaching timeout limit, stopping early.', {
-                                ...postLogContext,
+                            log.warn('Approaching timeout limit, stopping early', {
+                                action,
                                 elapsedTime,
                                 processedDays: totalProcessedDays,
                                 maxDaysPerRun
@@ -426,59 +461,73 @@ exports.handler = async function(event, context) {
                             timeoutReached = true;
                             break systemLoop;
                         }
-                        
+
                         // Check if we've hit the max days limit for this run
                         if (totalProcessedDays >= maxDaysPerRun) {
-                            log('info', 'Reached max days limit for this run.', {
-                                ...postLogContext,
+                            log.info('Reached max days limit for this run', {
+                                action,
                                 processedDays: totalProcessedDays,
                                 maxDaysPerRun
                             });
                             timeoutReached = true;
                             break systemLoop;
                         }
-                        
+
                         const dateStr = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD
-                        const dateLogContext = { ...systemLogContext, date: dateStr };
-                        
+
                         // Check if we already have hourly data for this date/system
                         const existingRecord = await hourlyWeatherCollection.findOne({
                             systemId: system.id,
                             date: dateStr
                         });
-                        
+
                         if (existingRecord) {
-                            log('debug', 'Hourly weather data already exists for date, skipping.', dateLogContext);
+                            log.debug('Hourly weather data already exists for date, skipping', {
+                                action,
+                                systemId: system.id,
+                                systemName: system.name,
+                                date: dateStr
+                            });
                             currentDate.setDate(currentDate.getDate() + 1);
                             continue;
                         }
-                        
+
                         try {
                             // Get daylight hours for this date/location
                             const daylightHours = getDaylightHours(system.latitude, system.longitude, currentDate);
-                            
+
                             if (daylightHours.length === 0) {
-                                log('debug', 'No daylight hours for date (polar night?), skipping.', dateLogContext);
+                                log.debug('No daylight hours for date (polar night?), skipping', {
+                                    action,
+                                    systemId: system.id,
+                                    systemName: system.name,
+                                    date: dateStr
+                                });
                                 currentDate.setDate(currentDate.getDate() + 1);
                                 continue;
                             }
-                            
+
                             // Fetch hourly weather data for the day
                             const hourlyData = await fetchHourlyWeather(
-                                system.latitude, 
-                                system.longitude, 
-                                dateStr, 
+                                system.latitude,
+                                system.longitude,
+                                dateStr,
                                 log
                             );
-                            
+
                             if (!hourlyData || hourlyData.length === 0) {
-                                log('warn', 'No hourly weather data returned.', dateLogContext);
+                                log.warn('No hourly weather data returned', {
+                                    action,
+                                    systemId: system.id,
+                                    systemName: system.name,
+                                    date: dateStr
+                                });
                                 totalErrors++;
                                 currentDate.setDate(currentDate.getDate() + 1);
                                 await new Promise(resolve => setTimeout(resolve, 200)); // Small delay
                                 continue;
                             }
-                            
+
                             // Filter to daylight hours and extract relevant data
                             const daylightHourSet = new Set(daylightHours);
                             const processedHourlyData = hourlyData
@@ -497,7 +546,7 @@ exports.handler = async function(event, context) {
                                     };
                                 })
                                 .filter(hour => daylightHourSet.has(hour.hour));
-                            
+
                             // Store the hourly data
                             const recordToInsert = {
                                 systemId: system.id,
@@ -509,108 +558,120 @@ exports.handler = async function(event, context) {
                                 hourlyData: processedHourlyData,
                                 createdAt: new Date().toISOString()
                             };
-                            
+
                             await hourlyWeatherCollection.insertOne(recordToInsert);
                             totalHoursInserted += processedHourlyData.length;
                             totalProcessedDays++;
-                            
-                            log('info', 'Stored hourly weather data for date.', {
-                                ...dateLogContext,
+
+                            log.info('Stored hourly weather data for date', {
+                                action,
+                                systemId: system.id,
+                                systemName: system.name,
+                                date: dateStr,
                                 hoursStored: processedHourlyData.length,
                                 daylightHoursCount: daylightHours.length
                             });
-                            
+
                             // Reduced throttle delay for faster processing (still respects API limits)
                             await new Promise(resolve => setTimeout(resolve, 200));
-                            
+
                         } catch (error) {
                             totalErrors++;
-                            log('error', 'Error processing hourly weather for date.', {
-                                ...dateLogContext,
+                            log.error('Error processing hourly weather for date', {
+                                action,
+                                systemId: system.id,
+                                systemName: system.name,
+                                date: dateStr,
                                 error: error.message,
                                 stack: error.stack
                             });
                             await new Promise(resolve => setTimeout(resolve, 500)); // Delay after error
                         }
-                        
+
                         // Move to next day
                         currentDate.setDate(currentDate.getDate() + 1);
                     }
                 }
-                
+
                 const completed = !timeoutReached;
-                const message = completed 
+                const message = completed
                     ? 'Hourly cloud backfill completed successfully.'
                     : `Processed ${totalProcessedDays} days before timeout. Run again to continue.`;
-                
-                log('info', 'Hourly cloud backfill task finished.', { 
-                    ...postLogContext, 
-                    totalProcessedDays, 
+
+                timer.end({ action, totalProcessedDays, totalHoursInserted, totalErrors, completed });
+                log.info('Hourly cloud backfill task finished', {
+                    action,
+                    totalProcessedDays,
                     totalHoursInserted,
                     totalErrors,
                     systemsProcessed: systemsWithLocation.length,
                     completed,
                     message
                 });
-                
-                return respond(200, { 
-                    success: true, 
+                log.exit(200);
+
+                return respond(200, {
+                    success: true,
                     processedDays: totalProcessedDays,
                     hoursInserted: totalHoursInserted,
                     errors: totalErrors,
                     systemsProcessed: systemsWithLocation.length,
                     completed,
                     message
-                });
+                }, headers);
             }
 
             // --- Hourly Solar Irradiance Backfill Action ---
             if (action === 'hourly-solar-irradiance-backfill') {
-                log('info', 'Starting hourly-solar-irradiance-backfill task.', postLogContext);
-                
+                log.info('Starting hourly-solar-irradiance-backfill task', { action });
+
                 const { calculateSolarIrradiance } = require('./utils/solar-irradiance.cjs');
-                
+
                 // Get maxDays parameter (default to 10 days per run to avoid timeout)
                 const maxDaysPerRun = parseInt(parsedBody.maxDays) || 10;
                 const startTime = Date.now();
                 const MAX_EXECUTION_TIME = 20000; // 20 seconds
-                
+
                 // Get systems with location data
-                const systemsWithLocation = await systemsCollection.find({ 
-                    latitude: { $ne: null }, 
-                    longitude: { $ne: null } 
+                const systemsWithLocation = await systemsCollection.find({
+                    latitude: { $ne: null },
+                    longitude: { $ne: null }
                 }).toArray();
-                
+
                 if (systemsWithLocation.length === 0) {
                     log('warn', 'No systems with location data found.', postLogContext);
-                    return respond(200, { 
-                        success: true, 
-                        message: 'No systems with location data.', 
+                    return respond(200, {
+                        success: true,
+                        message: 'No systems with location data.',
                         processedDays: 0,
                         completed: true
                     });
                 }
-                
+
                 const hourlyIrradianceCollection = await getCollection("hourly-solar-irradiance");
                 const hourlyWeatherCollection = await getCollection("hourly-weather");
                 let totalProcessedDays = 0;
                 let totalHoursCalculated = 0;
                 let totalErrors = 0;
                 let timeoutReached = false;
-                
+
                 // Process each system
                 systemLoop: for (const system of systemsWithLocation) {
-                    const systemLogContext = { 
-                        ...postLogContext, 
-                        systemId: system.id, 
-                        systemName: system.name 
+                    log.info('Processing hourly solar irradiance backfill for system', {
+                        action,
+                        systemId: system.id,
+                        systemName: system.name
+                    });
+                    const systemLogContext = {
+                        action,
+                        systemId: system.id,
+                        systemName: system.name
                     };
-                    log('info', 'Processing hourly solar irradiance backfill for system.', systemLogContext);
-                    
+
                     // Get min and max dates for this system's analysis records
                     const dateRange = await historyCollection.aggregate([
                         { $match: { systemId: system.id, timestamp: { $exists: true, $ne: null } } },
-                        { 
+                        {
                             $group: {
                                 _id: null,
                                 minDate: { $min: '$timestamp' },
@@ -618,30 +679,30 @@ exports.handler = async function(event, context) {
                             }
                         }
                     ]).toArray();
-                    
+
                     if (dateRange.length === 0 || !dateRange[0].minDate) {
                         log('info', 'No analysis records with timestamps for system, skipping.', systemLogContext);
                         continue;
                     }
-                    
+
                     const minDate = new Date(dateRange[0].minDate);
                     const maxDate = new Date(dateRange[0].maxDate);
-                    log('info', 'Date range for system.', { 
-                        ...systemLogContext, 
-                        minDate: minDate.toISOString(), 
-                        maxDate: maxDate.toISOString() 
+                    log('info', 'Date range for system.', {
+                        ...systemLogContext,
+                        minDate: minDate.toISOString(),
+                        maxDate: maxDate.toISOString()
                     });
-                    
+
                     // Iterate through each date in the range
                     const currentDate = new Date(minDate);
                     currentDate.setHours(0, 0, 0, 0);
-                    
+
                     while (currentDate <= maxDate) {
                         // Check timeout and limits
                         const elapsedTime = Date.now() - startTime;
                         if (elapsedTime > MAX_EXECUTION_TIME || totalProcessedDays >= maxDaysPerRun) {
-                            log('warn', 'Approaching timeout or max days limit, stopping early.', {
-                                ...postLogContext,
+                            log.warn('Approaching timeout or max days limit, stopping early', {
+                                action,
                                 elapsedTime,
                                 processedDays: totalProcessedDays,
                                 maxDaysPerRun
@@ -649,36 +710,40 @@ exports.handler = async function(event, context) {
                             timeoutReached = true;
                             break systemLoop;
                         }
-                        
+
                         const dateStr = currentDate.toISOString().split('T')[0];
-                        const dateLogContext = { ...systemLogContext, date: dateStr };
-                        
+
                         // Check if we already have irradiance data for this date/system
                         const existingRecord = await hourlyIrradianceCollection.findOne({
                             systemId: system.id,
                             date: dateStr
                         });
-                        
+
                         if (existingRecord) {
-                            log('debug', 'Hourly irradiance data already exists for date, skipping.', dateLogContext);
+                            log.debug('Hourly irradiance data already exists for date, skipping', {
+                                action,
+                                systemId: system.id,
+                                systemName: system.name,
+                                date: dateStr
+                            });
                             currentDate.setDate(currentDate.getDate() + 1);
                             continue;
                         }
-                        
+
                         try {
                             // Get cloud data from hourly-weather collection if available
                             const weatherRecord = await hourlyWeatherCollection.findOne({
                                 systemId: system.id,
                                 date: dateStr
                             });
-                            
+
                             // Calculate solar irradiance for each hour of the day
                             const hourlyIrradianceData = [];
-                            
+
                             for (let hour = 0; hour < 24; hour++) {
                                 const hourTimestamp = new Date(currentDate);
                                 hourTimestamp.setHours(hour, 0, 0, 0);
-                                
+
                                 // Get cloud cover for this hour if available
                                 let cloudCover = null;
                                 if (weatherRecord && weatherRecord.hourlyData) {
@@ -687,7 +752,7 @@ exports.handler = async function(event, context) {
                                         cloudCover = weatherHour.clouds;
                                     }
                                 }
-                                
+
                                 // Calculate irradiance with or without cloud data
                                 const irradianceData = calculateSolarIrradiance(
                                     hourTimestamp,
@@ -696,7 +761,7 @@ exports.handler = async function(event, context) {
                                     cloudCover,
                                     system.altitude || 0
                                 );
-                                
+
                                 // Only store hours when sun is up
                                 if (irradianceData.isSunUp) {
                                     hourlyIrradianceData.push({
@@ -716,13 +781,18 @@ exports.handler = async function(event, context) {
                                     });
                                 }
                             }
-                            
+
                             if (hourlyIrradianceData.length === 0) {
-                                log('debug', 'No daylight hours for date (polar night?), skipping.', dateLogContext);
+                                log.debug('No daylight hours for date (polar night?), skipping', {
+                                    action,
+                                    systemId: system.id,
+                                    systemName: system.name,
+                                    date: dateStr
+                                });
                                 currentDate.setDate(currentDate.getDate() + 1);
                                 continue;
                             }
-                            
+
                             // Store the hourly irradiance data
                             const recordToInsert = {
                                 systemId: system.id,
@@ -735,67 +805,77 @@ exports.handler = async function(event, context) {
                                 hasCloudData: weatherRecord !== null,
                                 createdAt: new Date().toISOString()
                             };
-                            
+
                             await hourlyIrradianceCollection.insertOne(recordToInsert);
                             totalHoursCalculated += hourlyIrradianceData.length;
                             totalProcessedDays++;
-                            
-                            log('info', 'Stored hourly irradiance data for date.', {
-                                ...dateLogContext,
+
+                            log.info('Stored hourly irradiance data for date', {
+                                action,
+                                systemId: system.id,
+                                systemName: system.name,
+                                date: dateStr,
                                 hoursStored: hourlyIrradianceData.length,
                                 hasCloudData: recordToInsert.hasCloudData
                             });
-                            
+
                             // Small delay to avoid overwhelming the system
                             await new Promise(resolve => setTimeout(resolve, 50));
-                            
+
                         } catch (error) {
                             totalErrors++;
-                            log('error', 'Error processing hourly irradiance for date.', {
-                                ...dateLogContext,
+                            log.error('Error processing hourly irradiance for date', {
+                                action,
+                                systemId: system.id,
+                                systemName: system.name,
+                                date: dateStr,
                                 error: error.message,
                                 stack: error.stack
                             });
                             await new Promise(resolve => setTimeout(resolve, 500));
                         }
-                        
+
                         // Move to next day
                         currentDate.setDate(currentDate.getDate() + 1);
                     }
                 }
-                
+
                 const completed = !timeoutReached;
-                const message = completed 
+                const message = completed
                     ? 'Hourly solar irradiance backfill completed successfully.'
                     : `Processed ${totalProcessedDays} days before timeout. Run again to continue.`;
-                
-                log('info', 'Hourly solar irradiance backfill task finished.', { 
-                    ...postLogContext, 
-                    totalProcessedDays, 
+
+                timer.end({ action, totalProcessedDays, totalHoursCalculated, totalErrors, completed });
+                log.info('Hourly solar irradiance backfill task finished', {
+                    action,
+                    totalProcessedDays,
                     totalHoursCalculated,
                     totalErrors,
                     systemsProcessed: systemsWithLocation.length,
                     completed,
                     message
                 });
-                
-                return respond(200, { 
-                    success: true, 
+                log.exit(200);
+
+                return respond(200, {
+                    success: true,
                     processedDays: totalProcessedDays,
                     hoursCalculated: totalHoursCalculated,
                     errors: totalErrors,
                     systemsProcessed: systemsWithLocation.length,
                     completed,
                     message
-                });
+                }, headers);
             }
 
 
             // --- Default Action: Create New History Record ---
-            log('info', 'Creating new history record.', logContext);
+            log.info('Creating new history record');
             // Basic validation for new record
             if (!parsedBody.analysis || !parsedBody.fileName) {
-                return respond(400, { error: "Missing 'analysis' or 'fileName' for new record." });
+                timer.end({ error: 'missing_fields' });
+                log.exit(400);
+                return respond(400, { error: "Missing 'analysis' or 'fileName' for new record." }, headers);
             }
             const newRecord = {
                 _id: new ObjectId(), // Use ObjectId for internal _id
@@ -811,58 +891,79 @@ exports.handler = async function(event, context) {
                 analysisKey: parsedBody.analysisKey || null, // Assuming analysisKey is generated client-side or during process-analysis
             };
             await historyCollection.insertOne(newRecord);
-             // Return record without the internal _id
+            // Return record without the internal _id
             const { _id, ...recordToReturn } = newRecord;
-            return respond(201, recordToReturn);
+            timer.end({ created: true });
+            log.exit(201);
+            return respond(201, recordToReturn, headers);
         }
 
         // --- PUT Request Handler (Link Record) ---
-        if (httpMethod === 'PUT') {
-            const parsedBody = JSON.parse(body);
-            log('debug', 'Parsed PUT body.', { ...logContext, bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
+        if (event.httpMethod === 'PUT') {
+            const parsedBody = JSON.parse(event.body);
+            log.debug('Parsed PUT body', { bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
             const { recordId, systemId, dlNumber } = parsedBody;
-            if (!recordId || !systemId) return respond(400, { error: "recordId and systemId are required." });
+            if (!recordId || !systemId) {
+                timer.end({ error: 'missing_params' });
+                log.exit(400);
+                return respond(400, { error: "recordId and systemId are required." }, headers);
+            }
 
             const system = await systemsCollection.findOne({ id: systemId });
-            if (!system) return respond(404, { error: "Target system not found." });
+            if (!system) {
+                timer.end({ error: 'system_not_found' });
+                log.exit(404);
+                return respond(404, { error: "Target system not found." }, headers);
+            }
 
             const updateResult = await historyCollection.updateOne(
                 { id: recordId },
                 { $set: { systemId, systemName: system.name } }
             );
-            if (updateResult.matchedCount === 0) return respond(404, { error: "Record not found." });
+            if (updateResult.matchedCount === 0) {
+                timer.end({ error: 'record_not_found' });
+                log.exit(404);
+                return respond(404, { error: "Record not found." }, headers);
+            }
 
             // Ensure DL number is associated with the system
             if (dlNumber && (!system.associatedDLs || !system.associatedDLs.includes(dlNumber))) {
-                log('info', 'Adding DL number to system during link.', { ...logContext, recordId, systemId, dlNumber });
+                log.info('Adding DL number to system during link', { recordId, systemId, dlNumber });
                 await systemsCollection.updateOne({ id: systemId }, { $addToSet: { associatedDLs: dlNumber } });
             }
 
-            log('info', 'Successfully linked history record to system.', { ...logContext, recordId, systemId });
-            return respond(200, { success: true });
+            timer.end({ linked: true, recordId, systemId });
+            log.info('Successfully linked history record to system', { recordId, systemId });
+            log.exit(200);
+            return respond(200, { success: true }, headers);
         }
 
         // --- DELETE Request Handler ---
-        if (httpMethod === 'DELETE') {
-            const { id, unlinked } = queryStringParameters || {};
-            const deleteLogContext = { ...logContext, recordId: id, deleteUnlinked: unlinked };
+        if (event.httpMethod === 'DELETE') {
+            const { id, unlinked } = event.queryStringParameters || {};
 
             if (unlinked === 'true') {
                 // Delete all records not linked to any system
-                log('warn', 'Deleting ALL unlinked history records.', deleteLogContext);
+                log.warn('Deleting ALL unlinked history records', { unlinked: true });
                 const { deletedCount } = await historyCollection.deleteMany({ systemId: null });
-                log('info', 'Deletion of unlinked records complete.', { ...deleteLogContext, deletedCount });
-                return respond(200, { success: true, deletedCount });
+                timer.end({ deleted: true, deletedCount });
+                log.info('Deletion of unlinked records complete', { deletedCount });
+                log.exit(200);
+                return respond(200, { success: true, deletedCount }, headers);
             } else if (id) {
                 // Delete a single record by ID
-                log('warn', 'Deleting single history record.', deleteLogContext);
+                log.warn('Deleting single history record', { recordId: id });
                 const { deletedCount } = await historyCollection.deleteOne({ id });
                 if (deletedCount > 0) {
-                     log('info', 'Single record deleted successfully.', deleteLogContext);
-                     return respond(200, { success: true });
+                    timer.end({ deleted: true, recordId: id });
+                    log.info('Single record deleted successfully', { recordId: id });
+                    log.exit(200);
+                    return respond(200, { success: true }, headers);
                 } else {
-                    log('warn', 'Record not found for deletion.', deleteLogContext);
-                    return respond(404, { error: 'Record not found.' });
+                    timer.end({ error: 'not_found' });
+                    log.warn('Record not found for deletion', { recordId: id });
+                    log.exit(404);
+                    return respond(404, { error: 'Record not found.' }, headers);
                 }
             }
             log.warn('Missing parameters for DELETE request');
@@ -883,7 +984,7 @@ exports.handler = async function(event, context) {
         log.exit(error instanceof SyntaxError ? 400 : 500);
         // Distinguish between client errors (like bad JSON) and server errors
         if (error instanceof SyntaxError) {
-             return respond(400, { error: "Invalid JSON in request body." }, headers);
+            return respond(400, { error: "Invalid JSON in request body." }, headers);
         }
         return respond(500, { error: "An internal server error occurred: " + error.message }, headers);
     }

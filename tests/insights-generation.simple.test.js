@@ -92,13 +92,13 @@ const createMockInsightsGenerator = function () {
 
     generateWithTimeout: function (batteryData, scenario, timeoutMs) {
       var self = this;
-      var timeoutMs = timeoutMs || 45000;
+      var effectiveTimeout = timeoutMs || 45000;
 
       return new Promise(function (resolve, reject) {
         var timeoutPromise = new Promise(function (_, reject) {
           setTimeout(function () {
             reject(new Error('Function timeout'));
-          }, timeoutMs);
+          }, effectiveTimeout);
         });
 
         var mainPromise = self.generateInsights(batteryData, scenario);
@@ -145,8 +145,8 @@ const createBatteryData = function (scenario) {
       break;
 
     case 'degrading':
-      for (var i = 0; i < 100; i++) {
-        var degradation = i * 0.5;
+      for (let i = 0; i < 100; i++) {
+        const degradation = i * 0.5;
         baseData.measurements.push({
           timestamp: new Date(now.getTime() - (100 - i) * 3600000).toISOString(),
           voltage: 3.7 - (degradation / 100) + Math.random() * 0.1,
@@ -160,8 +160,8 @@ const createBatteryData = function (scenario) {
       break;
 
     case 'critical':
-      for (var i = 0; i < 50; i++) {
-        var degradation = i * 1.5;
+      for (let i = 0; i < 50; i++) {
+        const degradation = i * 1.5;
         baseData.measurements.push({
           timestamp: new Date(now.getTime() - (50 - i) * 3600000).toISOString(),
           voltage: 3.2 - (degradation / 100) + Math.random() * 0.2,
@@ -180,7 +180,7 @@ const createBatteryData = function (scenario) {
 
     default:
       // Default healthy data
-      for (var i = 0; i < 10; i++) {
+      for (let i = 0; i < 10; i++) {
         baseData.measurements.push({
           timestamp: new Date(now.getTime() - (10 - i) * 3600000).toISOString(),
           voltage: 3.7,

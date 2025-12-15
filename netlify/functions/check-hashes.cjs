@@ -13,7 +13,12 @@ exports.handler = async (event, context) => {
     }
 
     const log = createLoggerFromEvent('check-hashes', event, context);
-    log.entry({ method: event.httpMethod, path: event.path });
+    log.entry({ 
+        method: event.httpMethod, 
+        path: event.path,
+        hasBody: !!event.body,
+        bodyLength: event.body?.length || 0
+    });
     const timer = createTimer(log, 'check-hashes');
 
     if (event.httpMethod !== 'POST') {
@@ -31,70 +36,162 @@ exports.handler = async (event, context) => {
             return errorResponse(400, 'bad_request', 'Missing or invalid "hashes" array in request body.', null, headers);
         }
 
-        log.info('Checking hashes for existence', { hashCount: hashes.length });
+        const startTime = Date.now();
+        
+        // ENHANCED LOGGING: Log the actual hashes being checked
+        log.info('Checking hashes for existence', { 
+            hashCount: hashes.length,
+            hashPreview: hashes.slice(0, 3).map(h => h.substring(0, 16) + '...'),
+            firstFullHash: hashes[0], // Log first complete hash for debugging
+            event: 'START'
+        });
 
         const collection = await getCollection('analysis-results');
 
-        const criticalFields = [
-            'analysis.dlNumber',
-            'analysis.stateOfCharge',
-            'analysis.overallVoltage',
-            'analysis.current',
-            'analysis.remainingCapacity',
-            'analysis.chargeMosOn',
-            'analysis.dischargeMosOn',
-            'analysis.balanceOn',
-            'analysis.highestCellVoltage',
-            'analysis.lowestCellVoltage',
-            'analysis.averageCellVoltage',
-            'analysis.cellVoltageDifference',
-            'analysis.cycleCount',
-            'analysis.power'
-        ];
+        // Critical fields needed for a complete duplicate (optimization: use object for O(1) lookup)
+        const criticalFieldsMap = {
+            'dlNumber': true,
+            'stateOfCharge': true,
+            'overallVoltage': true,
+            'current': true,
+            'remainingCapacity': true,
+            'chargeMosOn': true,
+            'dischargeMosOn': true,
+            'balanceOn': true,
+            'highestCellVoltage': true,
+            'lowestCellVoltage': true,
+            'averageCellVoltage': true,
+            'cellVoltageDifference': true,
+            'cycleCount': true,
+            'power': true
+        };
+        const criticalFieldsList = Object.keys(criticalFieldsMap);
 
         const query = { contentHash: { $in: hashes } };
+        
+        const queryStartTime = Date.now();
+        
+        // ENHANCED LOGGING: Log query details
+        log.info('Executing MongoDB query', {
+            queryType: 'find',
+            collection: 'analysis-results',
+            hashesInQuery: hashes.length,
+            event: 'QUERY_START'
+        });
+        
+        // Optimized projection - only fetch what we need
         const allMatchingRecords = await collection.find(query, {
-            projection: { contentHash: 1, analysis: 1 }
+            projection: { 
+                contentHash: 1, 
+                'analysis.dlNumber': 1,
+                'analysis.stateOfCharge': 1,
+                'analysis.overallVoltage': 1,
+                'analysis.current': 1,
+                'analysis.remainingCapacity': 1,
+                'analysis.chargeMosOn': 1,
+                'analysis.dischargeMosOn': 1,
+                'analysis.balanceOn': 1,
+                'analysis.highestCellVoltage': 1,
+                'analysis.lowestCellVoltage': 1,
+                'analysis.averageCellVoltage': 1,
+                'analysis.cellVoltageDifference': 1,
+                'analysis.cycleCount': 1,
+                'analysis.power': 1,
+                _id: 1
+            }
         }).toArray();
+
+        const queryDurationMs = Date.now() - queryStartTime;
+        const uniqueHashesFound = new Set(allMatchingRecords.map(r => r.contentHash)).size;
+
+        // ENHANCED LOGGING: Log query results with performance metrics
+        log.info('MongoDB query complete', {
+            recordsFound: allMatchingRecords.length,
+            uniqueHashesFound: uniqueHashesFound,
+            hashesQueried: hashes.length,
+            matchRate: `${Math.round((uniqueHashesFound / hashes.length) * 100)}%`,
+            queryDurationMs: queryDurationMs,
+            avgPerHash: hashes.length > 0 ? `${(queryDurationMs / hashes.length).toFixed(2)}ms` : 'N/A',
+            event: 'QUERY_COMPLETE'
+        });
 
         const duplicates = [];
         const upgrades = new Set();
         const seenHashes = new Set();
+        
+        const processingStartTime = Date.now();
 
+        // Optimized field checking - batch process records
         for (const record of allMatchingRecords) {
             if (seenHashes.has(record.contentHash)) continue;
 
-            const hasAllCriticalFields = criticalFields.every(field => {
-                const fieldValue = field.split('.').reduce((o, i) => o?.[i], record);
-                return fieldValue !== undefined && fieldValue !== null;
-            });
+            // Fast field existence check - short-circuit on first missing field
+            const analysis = record.analysis || {};
+            let hasAllCriticalFields = true;
+            for (const field of criticalFieldsList) {
+                if (analysis[field] === undefined || analysis[field] === null) {
+                    hasAllCriticalFields = false;
+                    break; // Short-circuit on first missing field
+                }
+            }
 
             if (hasAllCriticalFields) {
                 duplicates.push({
                     hash: record.contentHash,
-                    data: { ...record.analysis, _recordId: record._id.toString() },
+                    data: { ...analysis, _recordId: record._id.toString() },
                 });
                 seenHashes.add(record.contentHash);
+                
+                // ENHANCED LOGGING: Log duplicate found (debug level for high volume)
+                log.debug('Duplicate detected', {
+                    hash: record.contentHash.substring(0, 16) + '...',
+                    recordId: record._id.toString(),
+                    dlNumber: analysis.dlNumber
+                });
             } else {
                 upgrades.add(record.contentHash);
+                
+                // ENHANCED LOGGING: Log upgrade needed with missing fields
+                const missingFields = criticalFieldsList.filter(field => 
+                    analysis[field] === undefined || analysis[field] === null
+                );
+                
+                log.debug('Upgrade needed - missing fields', {
+                    hash: record.contentHash.substring(0, 16) + '...',
+                    recordId: record._id.toString(),
+                    missingFields: missingFields,
+                    missingCount: missingFields.length
+                });
             }
         }
+        
+        const processingDurationMs = Date.now() - processingStartTime;
         
         const result = {
             duplicates,
             upgrades: [...upgrades],
         };
 
+        const totalDurationMs = Date.now() - startTime;
         const durationMs = timer.end({ 
             hashesChecked: hashes.length, 
             duplicatesFound: duplicates.length,
-            upgradesNeeded: upgrades.size
+            upgradesNeeded: upgrades.size,
+            queryDurationMs,
+            processingDurationMs,
+            totalDurationMs
         });
+        
         log.info('Hash check complete', { 
             hashesChecked: hashes.length, 
             duplicatesFound: duplicates.length, 
             upgradesNeeded: upgrades.size,
-            durationMs
+            newFiles: hashes.length - duplicates.length - upgrades.size,
+            queryDurationMs,
+            processingDurationMs,
+            totalDurationMs,
+            avgPerHash: `${(totalDurationMs / hashes.length).toFixed(2)}ms`,
+            event: 'COMPLETE'
         });
 
         log.exit(200);

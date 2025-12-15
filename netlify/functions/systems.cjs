@@ -43,6 +43,14 @@ exports.handler = async function(event, context) {
     log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
     const timer = createTimer(log, 'systems');
     
+    // Define logContext for consistent logging throughout the function
+    const clientIp = event.headers['x-nf-client-connection-ip'] || 'unknown';
+    const logContext = { 
+        clientIp, 
+        httpMethod: event.httpMethod,
+        path: event.path
+    };
+    
     if (!validateEnvironment(log)) {
         timer.end({ error: 'env_validation_failed' });
         log.exit(500);
@@ -73,23 +81,29 @@ exports.handler = async function(event, context) {
                 systemsCollection.countDocuments({})
             ]);
             
-            log('info', `Returning page ${pageNum} of systems.`, { ...logContext, returned: systems.length, total: totalItems });
-            return respond(200, { items: systems, totalItems });
+            timer.end({ page: pageNum, returned: systems.length, total: totalItems });
+            log.info(`Returning page ${pageNum} of systems`, { ...logContext, returned: systems.length, total: totalItems });
+            log.exit(200);
+            return respond(200, { items: systems, totalItems }, headers);
         }
 
-        if (httpMethod === 'POST') {
-            const parsedBody = JSON.parse(body);
-            log('debug', 'Parsed POST body.', { ...logContext, body: parsedBody });
+        if (event.httpMethod === 'POST') {
+            const parsedBody = JSON.parse(event.body);
+            log.debug('Parsed POST body', { ...logContext, bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
             const { action } = parsedBody;
             const postLogContext = { ...logContext, action };
 
             if (action === 'merge') {
                 const { primarySystemId, idsToMerge } = parsedBody;
-                log('warn', 'Starting system merge operation.', { ...postLogContext, primarySystemId, idsToMerge });
+                log.warn('Starting system merge operation', { ...postLogContext, primarySystemId, idsToMerge });
                 
                 const systemsToMerge = await systemsCollection.find({ id: { $in: idsToMerge } }).toArray();
                 const primarySystem = systemsToMerge.find(s => s.id === primarySystemId);
-                if (!primarySystem) return respond(404, { error: "Primary system not found." });
+                if (!primarySystem) {
+                    timer.end({ error: 'primary_not_found' });
+                    log.exit(404);
+                    return respond(404, { error: "Primary system not found." }, headers);
+                }
 
                 const idsToDelete = idsToMerge.filter(id => id !== primarySystemId);
                 const allDlsToMerge = systemsToMerge.flatMap(s => s.associatedDLs || []);
@@ -108,7 +122,7 @@ exports.handler = async function(event, context) {
                 });
 
                 if (conflicts.length > 0) {
-                    log('warn', 'Detected conflicts during merge operation.', { ...postLogContext, conflicts });
+                    log.warn('Detected conflicts during merge operation', { ...postLogContext, conflicts });
                 }
 
                 const mergeMetadata = {
@@ -117,57 +131,67 @@ exports.handler = async function(event, context) {
                     conflicts: conflicts.length > 0 ? conflicts : undefined
                 };
 
-                log('debug', `Re-assigning history records from ${idsToDelete.length} systems to primary system.`, postLogContext);
+                log.debug(`Re-assigning history records from ${idsToDelete.length} systems to primary system`, postLogContext);
                 const { modifiedCount } = await historyCollection.updateMany(
                     { systemId: { $in: idsToDelete } },
                     { $set: { systemId: primarySystem.id, systemName: primarySystem.name } }
                 );
-                log('info', `Updated ${modifiedCount} history records during merge.`, postLogContext);
+                log.info(`Updated ${modifiedCount} history records during merge`, { ...postLogContext, modifiedCount });
 
                 await systemsCollection.updateOne(
                     { id: primarySystem.id }, 
                     { $set: { associatedDLs: primarySystem.associatedDLs, mergeMetadata } }
                 );
-                log('info', 'Updated primary system in store.', { ...postLogContext, systemId: primarySystem.id });
+                log.info('Updated primary system in store', { ...postLogContext, systemId: primarySystem.id });
 
                 if (idsToDelete.length > 0) {
                     await systemsCollection.deleteMany({ id: { $in: idsToDelete } });
-                    log('info', 'Deleted merged systems.', { ...postLogContext, deletedCount: idsToDelete.length });
+                    log.info('Deleted merged systems', { ...postLogContext, deletedCount: idsToDelete.length });
                 }
                 
-                log('warn', 'System merge operation completed successfully.', postLogContext);
-                return respond(200, { success: true, conflicts: conflicts.length > 0 ? conflicts : undefined });
+                timer.end({ merged: true, conflicts: conflicts.length });
+                log.warn('System merge operation completed successfully', postLogContext);
+                log.exit(200);
+                return respond(200, { success: true, conflicts: conflicts.length > 0 ? conflicts : undefined }, headers);
             }
 
             // Validate and create new system
             try {
                 const validatedSystem = SystemSchema.parse(parsedBody);
                 const newSystem = { ...validatedSystem, id: uuidv4(), associatedDLs: validatedSystem.associatedDLs || [] };
-                log('info', 'Creating new system.', { ...logContext, systemId: newSystem.id, systemName: newSystem.name });
+                log.info('Creating new system', { ...logContext, systemId: newSystem.id, systemName: newSystem.name });
                 await systemsCollection.insertOne(newSystem);
                 // Return new system without the internal _id
                 const { _id, ...systemToReturn } = newSystem;
-                return respond(201, systemToReturn);
+                timer.end({ created: true, systemId: newSystem.id });
+                log.exit(201);
+                return respond(201, systemToReturn, headers);
             } catch (validationError) {
                 if (validationError.errors) {
-                    log('warn', 'System validation failed.', { ...logContext, errors: validationError.errors });
+                    log.warn('System validation failed', { ...logContext, errors: validationError.errors });
+                    timer.end({ error: 'validation_failed' });
+                    log.exit(400);
                     return respond(400, { 
                         error: 'Validation failed', 
                         details: validationError.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
-                    });
+                    }, headers);
                 }
                 throw validationError;
             }
         }
 
-        if (httpMethod === 'PUT') {
-            const { systemId } = queryStringParameters;
+        if (event.httpMethod === 'PUT') {
+            const { systemId } = event.queryStringParameters || {};
             const putLogContext = { ...logContext, systemId };
-            if (!systemId) return respond(400, { error: 'System ID is required for update.' });
+            if (!systemId) {
+                timer.end({ error: 'missing_systemId' });
+                log.exit(400);
+                return respond(400, { error: 'System ID is required for update.' }, headers);
+            }
             
-            log('info', 'Updating system.', putLogContext);
-            const updateData = JSON.parse(body);
-            log('debug', 'Parsed PUT body.', { ...putLogContext, body: updateData });
+            log.info('Updating system', putLogContext);
+            const updateData = JSON.parse(event.body);
+            log.debug('Parsed PUT body', { ...putLogContext, bodyPreview: JSON.stringify(updateData).substring(0, 100) });
             
             // Validate update data
             try {
@@ -177,18 +201,24 @@ exports.handler = async function(event, context) {
                 const result = await systemsCollection.updateOne({ id: systemId }, { $set: validatedUpdate });
 
                 if (result.matchedCount === 0) {
-                    return respond(404, { error: "System not found." });
+                    timer.end({ error: 'not_found' });
+                    log.exit(404);
+                    return respond(404, { error: "System not found." }, headers);
                 }
                 
                 const updatedSystem = await systemsCollection.findOne({ id: systemId }, { projection: { _id: 0 } });
-                return respond(200, updatedSystem);
+                timer.end({ updated: true, systemId });
+                log.exit(200);
+                return respond(200, updatedSystem, headers);
             } catch (validationError) {
                 if (validationError.errors) {
-                    log('warn', 'System update validation failed.', { ...putLogContext, errors: validationError.errors });
+                    log.warn('System update validation failed', { ...putLogContext, errors: validationError.errors });
+                    timer.end({ error: 'validation_failed' });
+                    log.exit(400);
                     return respond(400, { 
                         error: 'Validation failed', 
                         details: validationError.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
-                    });
+                    }, headers);
                 }
                 throw validationError;
             }

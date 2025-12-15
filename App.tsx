@@ -14,9 +14,10 @@ import {
   registerBmsSystem
 } from './services/clientService';
 import { analyzeBmsScreenshot } from './services/geminiService';
-import { checkFilesForDuplicates } from './utils/duplicateChecker';
+import { checkFilesForDuplicates, partitionCachedFiles, buildRecordFromCachedDuplicate, EMPTY_CATEGORIZATION, type DuplicateCheckResult } from './utils/duplicateChecker';
 import { useAppState } from './state/appState';
 import type { BmsSystem, DisplayableAnalysisResult } from './types';
+import { safeGetItems } from './utils/stateHelpers';
 // ***REMOVED***: No longer need job polling
 // import { getIsActualError } from './utils';
 // import { useJobPolling } from './hooks/useJobPolling';
@@ -104,7 +105,35 @@ function App() {
       
       if (!options?.forceReanalysis) {
         try {
-          const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(files, log);
+          // Layer 1: Client-side cache fast-path (PR #341) - instant for cached duplicates
+          const { cachedDuplicates, cachedUpgrades, remainingFiles } = partitionCachedFiles(files);
+
+          // Process cached duplicates immediately (no network call needed)
+          for (const dup of cachedDuplicates) {
+            dispatch({
+              type: 'SYNC_ANALYSIS_COMPLETE',
+              payload: {
+                fileName: dup.file.name,
+                isDuplicate: true,
+                record: buildRecordFromCachedDuplicate(dup, 'local-duplicate')
+              },
+            });
+          }
+
+          // Prepare cached upgrades as DuplicateCheckResults
+          const cachedUpgradeResults: DuplicateCheckResult[] = cachedUpgrades.map(file => ({
+            file,
+            isDuplicate: true,
+            needsUpgrade: true
+          }));
+
+          // Layer 2-4: Check remaining files via network (hash-only batch API or fallback)
+          const { trueDuplicates, needsUpgrade, newFiles } = remainingFiles.length > 0
+            ? await checkFilesForDuplicates(remainingFiles, log)
+            : EMPTY_CATEGORIZATION;
+
+          // Combine cached upgrades with network-checked upgrades
+          const combinedNeedsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
           
           // Mark true duplicates as skipped immediately (don't analyze these at all)
           for (const dup of trueDuplicates) {
@@ -124,7 +153,7 @@ function App() {
           }
 
           // Update files that need upgrade to "Queued (needs upgrade)" status
-          for (const item of needsUpgrade) {
+          for (const item of combinedNeedsUpgrade) {
             dispatch({ 
               type: 'UPDATE_ANALYSIS_STATUS', 
               payload: { fileName: item.file.name, status: 'Queued (upgrading)' } 
@@ -139,13 +168,15 @@ function App() {
             });
           }
 
-          filesToAnalyze = [...needsUpgrade, ...newFiles];
+          filesToAnalyze = [...combinedNeedsUpgrade, ...newFiles];
           
           log('info', 'Phase 1 complete: Duplicate check finished.', { 
             count: filesToAnalyze.length,
-            upgrades: needsUpgrade.length,
+            upgrades: combinedNeedsUpgrade.length,
             new: newFiles.length,
-            duplicates: trueDuplicates.length
+            duplicates: trueDuplicates.length,
+            cachedDuplicates: cachedDuplicates.length,
+            cachedUpgrades: cachedUpgrades.length
           });
         } catch (duplicateCheckError) {
           // If duplicate check fails entirely, fall back to analyzing all files
@@ -314,7 +345,7 @@ function App() {
                 <AnalysisResult
                   key={result.fileName}
                   result={result}
-                  registeredSystems={state.registeredSystems.items || []}
+                  registeredSystems={safeGetItems(state.registeredSystems)}
                   onLinkRecord={handleLinkRecordToSystem}
                   onReprocess={handleReprocess}
                   onRegisterNewSystem={handleInitiateRegistration}

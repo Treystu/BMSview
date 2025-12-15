@@ -1276,8 +1276,15 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [selectedSystemId, setSelectedSystemId] = useState<string>('');
     const [metricConfig, setMetricConfig] = useState<Partial<Record<MetricKey, { axis: Axis }>>>({ stateOfCharge: { axis: 'left' }, current: { axis: 'right' } });
     const [hiddenMetrics] = useState<Set<MetricKey>>(new Set());
-    const [startDate, setStartDate] = useState<string>('');
-    const [endDate, setEndDate] = useState<string>('');
+    
+    // Initialize with default 30-day range so charts load immediately
+    const [startDate, setStartDate] = useState<string>(() =>
+        new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
+    );
+    const [endDate, setEndDate] = useState<string>(() =>
+        new Date().toISOString().slice(0, 16)
+    );
+    
     const [timelineData, setTimelineData] = useState<any | null>(null);
     const [bandEnabled, setBandEnabled] = useState<boolean>(false);
 
@@ -1332,13 +1339,6 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     }, []);
 
     const stableSetViewBox = useCallback(setViewBox, []);
-
-    // Auto-generate chart when system is selected
-    useEffect(() => {
-        if (selectedSystemId) {
-            prepareChartData();
-        }
-    }, [selectedSystemId]);
 
     // Load predictive data when chartView changes to predictive
     useEffect(() => {
@@ -1533,6 +1533,13 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
         }
     }, [selectedSystemId, history, systems, startDate, endDate, chartDimensions, averagingEnabled, manualBucketSize, useMergedData]);
 
+    // Auto-generate chart when system is selected or date range changes
+    useEffect(() => {
+        if (selectedSystemId) {
+            prepareChartData();
+        }
+    }, [selectedSystemId, prepareChartData]);
+
     const handleResetView = () => {
         setZoomPercentage(100);
         setViewBox({ x: 0, width: chartDimensions.chartWidth });
@@ -1603,7 +1610,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                                     )}
                                 </div>
                                 <div className="lg:col-span-1">
-                                    {analyticsData?.alertAnalysis && analyticsData.alertAnalysis.totalAlerts > 0 && (
+                                    {analyticsData?.alertAnalysis && analyticsData.alertAnalysis.totalEvents > 0 && (
                                         <AlertAnalysis data={analyticsData.alertAnalysis} />
                                     )}
                                 </div>

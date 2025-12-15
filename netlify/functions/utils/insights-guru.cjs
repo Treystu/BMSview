@@ -14,6 +14,7 @@ const { getCollection } = require("./mongodb.cjs");
 const { toolDefinitions, executeToolCall } = require("./gemini-tools.cjs");
 const { calculateSunriseSunset } = require("./weather-fetcher.cjs");
 const { anonymizeSystemProfile } = require("./privacy-utils.cjs");
+const { groupAlertEvents } = require("./analysis-utilities.cjs");
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 const RECENT_SNAPSHOT_LIMIT = 24;
@@ -54,234 +55,236 @@ async function loadRecentSnapshots(systemId, log) {
         return [];
     }
 }
-const start = Date.now();
-const maxMs = options.maxMs || (options.mode === "background" ? ASYNC_CONTEXT_BUDGET_MS : SYNC_CONTEXT_BUDGET_MS);
 
-// In sync mode, skip expensive analytics and rely on ReAct loop instead
-const skipExpensiveOps = options.skipExpensiveOps !== undefined ? options.skipExpensiveOps : (options.mode === "sync");
+async function collectAutoInsightsContext(systemId, analysisData, log, options = {}) {
+    const start = Date.now();
+    const maxMs = options.maxMs || (options.mode === "background" ? ASYNC_CONTEXT_BUDGET_MS : SYNC_CONTEXT_BUDGET_MS);
 
-log.info('Starting context collection', {
-    mode: options.mode,
-    maxMs,
-    skipExpensiveOps,
-    hasSystemId: !!systemId
-});
+    // In sync mode, skip expensive analytics and rely on ReAct loop instead
+    const skipExpensiveOps = options.skipExpensiveOps !== undefined ? options.skipExpensiveOps : (options.mode === "sync");
 
-/** @type {any} */
-const context = {
-    systemProfile: null,
-    initialSummary: null,
-    analytics: null,
-    usagePatterns: {
-        daily: null,
-        anomalies: null
-    },
-    energyBudgets: {
-        current: null,
-        worstCase: null
-    },
-    predictions: {
-        capacity: null,
-        lifetime: null
-    },
-    weather: null,
-    recentSnapshots: [],
-    meta: {
-        steps: [],
-        durationMs: 0,
+    log.info('Starting context collection', {
+        mode: options.mode,
         maxMs,
-        truncated: false
-    }
-};
-
-const shouldStop = () => Date.now() - start >= maxMs;
-
-/**
- * @param {string} label
- * @param {() => Promise<any>} fn
- */
-const runStep = async (label, fn) => {
-    if (shouldStop()) {
-        context.meta.truncated = true;
-        log.debug("Context build budget exhausted", { label, elapsedMs: Date.now() - start, maxMs });
-        return;
-    }
-
-    const stepStart = Date.now();
-    try {
-        const result = await fn();
-        context.meta.steps.push({
-            label,
-            durationMs: Date.now() - stepStart,
-            success: true
-        });
-        return result;
-    } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        context.meta.steps.push({
-            label,
-            durationMs: Date.now() - stepStart,
-            success: false,
-            error: err.message
-        });
-        log.warn("Context step failed", { step: label, error: err.message });
-        return null;
-    }
-};
-
-if (systemId) {
-    context.systemProfile = await runStep("systemProfile", () => loadSystemProfile(systemId, log));
-}
-
-context.initialSummary = await runStep("initialSummary", () => generateInitialSummary(analysisData || {}, systemId || "", log));
-
-if (systemId && !skipExpensiveOps) {
-    // These are expensive operations - skip in sync mode, let Gemini request via ReAct loop
-    log.info('Loading full context (async mode)', { skipExpensiveOps });
-
-    // NEW: Generate comprehensive analytics (includes solar-aware load analysis)
-    try {
-        const { generateComprehensiveAnalytics } = require('./comprehensive-analytics.cjs');
-        context.comprehensiveAnalytics = await runStep("comprehensiveAnalytics", async () => {
-            const system = context.systemProfile || await loadSystemProfile(systemId, log);
-            // Get recent records for analysis
-            const historyCollection = await getCollection('history');
-            const records = await historyCollection
-                .find({ systemId })
-                .sort({ timestamp: -1 })
-                .limit(2000)
-                .toArray();
-
-            return await generateComprehensiveAnalytics(systemId, analysisData, log);
-        });
-    } catch (error) {
-        log.warn('Failed to generate comprehensive analytics', { error: error.message });
-    }
-
-    // Load 90-day daily rollup for comprehensive trend analysis
-    context.dailyRollup90d = await runStep("dailyRollup90d", () => load90DayDailyRollup(systemId, log));
-
-    // NEW: Add comparative periods for week-over-week and month-over-month analysis
-    if (context.dailyRollup90d && context.dailyRollup90d.length > 0) {
-        context.comparativePeriods = await runStep("comparativePeriods", () =>
-            calculateComparativePeriods(context.dailyRollup90d, log)
-        );
-    }
-
-    context.analytics = await runStep("analytics", async () => {
-        const result = await executeToolCall("getSystemAnalytics", { systemId }, log);
-        return normalizeToolResult(result);
+        skipExpensiveOps,
+        hasSystemId: !!systemId
     });
 
-    context.usagePatterns.daily = await runStep("usage.daily", async () => {
-        const result = await executeToolCall("analyze_usage_patterns", { systemId, patternType: "daily", timeRange: "30d" }, log);
-        return normalizeToolResult(result);
-    });
-
-    context.usagePatterns.anomalies = await runStep("usage.anomalies", async () => {
-        const result = await executeToolCall("analyze_usage_patterns", { systemId, patternType: "anomalies", timeRange: "60d" }, log);
-        return normalizeToolResult(result);
-    });
-
-    context.energyBudgets.current = await runStep("energyBudget.current", async () => {
-        const result = await executeToolCall("calculate_energy_budget", { systemId, scenario: "current", timeframe: "30d", includeWeather: true }, log);
-        return normalizeToolResult(result);
-    });
-
-    context.energyBudgets.worstCase = await runStep("energyBudget.worstCase", async () => {
-        const result = await executeToolCall("calculate_energy_budget", { systemId, scenario: "worst_case", timeframe: "30d", includeWeather: true }, log);
-        return normalizeToolResult(result);
-    });
-
-    context.predictions.capacity = await runStep("prediction.capacity", async () => {
-        const result = await executeToolCall("predict_battery_trends", { systemId, metric: "capacity", forecastDays: DEFAULT_LOOKBACK_DAYS, confidenceLevel: true }, log);
-        return normalizeToolResult(result);
-    });
-
-    context.predictions.lifetime = await runStep("prediction.lifetime", async () => {
-        const result = await executeToolCall("predict_battery_trends", { systemId, metric: "lifetime", confidenceLevel: true }, log);
-        return normalizeToolResult(result);
-    });
-} else if (systemId) {
-    log.info('Skipping expensive context preload (sync mode) - Gemini will request via tools if needed', { skipExpensiveOps });
-}
-
-if (systemId) {
-    if (context.systemProfile && context.systemProfile.location) {
-        const { latitude, longitude } = context.systemProfile.location;
-        if (isFiniteNumber(latitude) && isFiniteNumber(longitude)) {
-            context.weather = await runStep("weather.current", async () => {
-                const result = await executeToolCall("getWeatherData", { latitude, longitude, type: "current" }, log);
-                return normalizeToolResult(result);
-            });
+    /** @type {any} */
+    const context = {
+        systemProfile: null,
+        initialSummary: null,
+        analytics: null,
+        usagePatterns: {
+            daily: null,
+            anomalies: null
+        },
+        energyBudgets: {
+            current: null,
+            worstCase: null
+        },
+        predictions: {
+            capacity: null,
+            lifetime: null
+        },
+        weather: null,
+        recentSnapshots: [],
+        meta: {
+            steps: [],
+            durationMs: 0,
+            maxMs,
+            truncated: false
         }
-    }
+    };
 
-    context.recentSnapshots = await runStep("recentSnapshots", () => loadRecentSnapshots(systemId, log));
-}
+    const shouldStop = () => Date.now() - start >= maxMs;
 
-context.batteryFacts = await runStep("batteryFacts", async () =>
-    buildBatteryFacts({ analysisData, systemProfile: context.systemProfile })
-);
+    /**
+     * @param {string} label
+     * @param {() => Promise<any>} fn
+     */
+    const runStep = async (label, fn) => {
+        if (shouldStop()) {
+            context.meta.truncated = true;
+            log.debug("Context build budget exhausted", { label, elapsedMs: Date.now() - start, maxMs });
+            return;
+        }
 
-const nightDischarge = await runStep("nightDischarge", async () =>
-    analyzeNightDischargePatterns({
-        snapshots: context.recentSnapshots,
-        analysisData,
-        systemProfile: context.systemProfile
-    })
-);
-context.nightDischarge = nightDischarge;
-
-context.solarVariance = await runStep("solarVariance", async () =>
-    estimateSolarVariance({
-        snapshots: context.recentSnapshots,
-        analysisData,
-        systemProfile: context.systemProfile,
-        weather: context.weather,
-        nightDischarge
-    })
-);
-
-// Collect active story context for enhanced AI understanding
-// Stories provide admin-supplied narrative and annotations for analysis sequences
-if (systemId) {
-    context.storyContext = await runStep("storyContext", async () => {
+        const stepStart = Date.now();
         try {
-            const storiesCollection = await getCollection('stories');
-            const activeStories = await storiesCollection.find({
-                isActive: true,
-                $or: [
-                    { systemIdentifier: systemId },
-                    { 'events.systemId': systemId }
-                ]
-            }).sort({ updatedAt: -1 }).limit(5).toArray();
-
-            if (activeStories.length === 0) {
-                return null;
-            }
-
-            return buildStoryContextSummary(activeStories, log);
+            const result = await fn();
+            context.meta.steps.push({
+                label,
+                durationMs: Date.now() - stepStart,
+                success: true
+            });
+            return result;
         } catch (error) {
-            log.warn('Failed to load story context', { error: error.message });
+            const err = error instanceof Error ? error : new Error(String(error));
+            context.meta.steps.push({
+                label,
+                durationMs: Date.now() - stepStart,
+                success: false,
+                error: err.message
+            });
+            log.warn("Context step failed", { step: label, error: err.message });
             return null;
         }
+    };
+
+    if (systemId) {
+        context.systemProfile = await runStep("systemProfile", () => loadSystemProfile(systemId, log));
+    }
+
+    context.initialSummary = await runStep("initialSummary", () => generateInitialSummary(analysisData || {}, systemId || "", log));
+
+    if (systemId && !skipExpensiveOps) {
+        // These are expensive operations - skip in sync mode, let Gemini request via ReAct loop
+        log.info('Loading full context (async mode)', { skipExpensiveOps });
+
+        // NEW: Generate comprehensive analytics (includes solar-aware load analysis)
+        try {
+            const { generateComprehensiveAnalytics } = require('./comprehensive-analytics.cjs');
+            context.comprehensiveAnalytics = await runStep("comprehensiveAnalytics", async () => {
+                const system = context.systemProfile || await loadSystemProfile(systemId, log);
+                // Get recent records for analysis
+                const historyCollection = await getCollection('history');
+                const records = await historyCollection
+                    .find({ systemId })
+                    .sort({ timestamp: -1 })
+                    .limit(2000)
+                    .toArray();
+
+                return await generateComprehensiveAnalytics(systemId, analysisData, log);
+            });
+        } catch (error) {
+            log.warn('Failed to generate comprehensive analytics', { error: error.message });
+        }
+
+        // Load 90-day daily rollup for comprehensive trend analysis
+        context.dailyRollup90d = await runStep("dailyRollup90d", () => load90DayDailyRollup(systemId, log));
+
+        // NEW: Add comparative periods for week-over-week and month-over-month analysis
+        if (context.dailyRollup90d && context.dailyRollup90d.length > 0) {
+            context.comparativePeriods = await runStep("comparativePeriods", () =>
+                calculateComparativePeriods(context.dailyRollup90d, log)
+            );
+        }
+
+        context.analytics = await runStep("analytics", async () => {
+            const result = await executeToolCall("getSystemAnalytics", { systemId }, log);
+            return normalizeToolResult(result);
+        });
+
+        context.usagePatterns.daily = await runStep("usage.daily", async () => {
+            const result = await executeToolCall("analyze_usage_patterns", { systemId, patternType: "daily", timeRange: "30d" }, log);
+            return normalizeToolResult(result);
+        });
+
+        context.usagePatterns.anomalies = await runStep("usage.anomalies", async () => {
+            const result = await executeToolCall("analyze_usage_patterns", { systemId, patternType: "anomalies", timeRange: "60d" }, log);
+            return normalizeToolResult(result);
+        });
+
+        context.energyBudgets.current = await runStep("energyBudget.current", async () => {
+            const result = await executeToolCall("calculate_energy_budget", { systemId, scenario: "current", timeframe: "30d", includeWeather: true }, log);
+            return normalizeToolResult(result);
+        });
+
+        context.energyBudgets.worstCase = await runStep("energyBudget.worstCase", async () => {
+            const result = await executeToolCall("calculate_energy_budget", { systemId, scenario: "worst_case", timeframe: "30d", includeWeather: true }, log);
+            return normalizeToolResult(result);
+        });
+
+        context.predictions.capacity = await runStep("prediction.capacity", async () => {
+            const result = await executeToolCall("predict_battery_trends", { systemId, metric: "capacity", forecastDays: DEFAULT_LOOKBACK_DAYS, confidenceLevel: true }, log);
+            return normalizeToolResult(result);
+        });
+
+        context.predictions.lifetime = await runStep("prediction.lifetime", async () => {
+            const result = await executeToolCall("predict_battery_trends", { systemId, metric: "lifetime", confidenceLevel: true }, log);
+            return normalizeToolResult(result);
+        });
+    } else if (systemId) {
+        log.info('Skipping expensive context preload (sync mode) - Gemini will request via tools if needed', { skipExpensiveOps });
+    }
+
+    if (systemId) {
+        if (context.systemProfile && context.systemProfile.location) {
+            const { latitude, longitude } = context.systemProfile.location;
+            if (isFiniteNumber(latitude) && isFiniteNumber(longitude)) {
+                context.weather = await runStep("weather.current", async () => {
+                    const result = await executeToolCall("getWeatherData", { latitude, longitude, type: "current" }, log);
+                    return normalizeToolResult(result);
+                });
+            }
+        }
+
+        context.recentSnapshots = await runStep("recentSnapshots", () => loadRecentSnapshots(systemId, log));
+    }
+
+    context.batteryFacts = await runStep("batteryFacts", async () =>
+        buildBatteryFacts({ analysisData, systemProfile: context.systemProfile })
+    );
+
+    const nightDischarge = await runStep("nightDischarge", async () =>
+        analyzeNightDischargePatterns({
+            snapshots: context.recentSnapshots,
+            analysisData,
+            systemProfile: context.systemProfile
+        })
+    );
+    context.nightDischarge = nightDischarge;
+
+    context.solarVariance = await runStep("solarVariance", async () =>
+        estimateSolarVariance({
+            snapshots: context.recentSnapshots,
+            analysisData,
+            systemProfile: context.systemProfile,
+            weather: context.weather,
+            nightDischarge
+        })
+    );
+
+    // Collect active story context for enhanced AI understanding
+    // Stories provide admin-supplied narrative and annotations for analysis sequences
+    if (systemId) {
+        context.storyContext = await runStep("storyContext", async () => {
+            try {
+                const storiesCollection = await getCollection('stories');
+                const activeStories = await storiesCollection.find({
+                    isActive: true,
+                    $or: [
+                        { systemIdentifier: systemId },
+                        { 'events.systemId': systemId }
+                    ]
+                }).sort({ updatedAt: -1 }).limit(5).toArray();
+
+                if (activeStories.length === 0) {
+                    return null;
+                }
+
+                return buildStoryContextSummary(activeStories, log);
+            } catch (error) {
+                log.warn('Failed to load story context', { error: error.message });
+                return null;
+            }
+        });
+    }
+
+    context.meta.durationMs = Date.now() - start;
+
+    log.info('Context collection complete', {
+        durationMs: context.meta.durationMs,
+        durationSec: (context.meta.durationMs / 1000).toFixed(1),
+        maxMs,
+        truncated: context.meta.truncated,
+        stepsCompleted: context.meta.steps.length,
+        stepsSucceeded: context.meta.steps.filter(s => s.success).length,
+        stepsFailed: context.meta.steps.filter(s => !s.success).length
     });
-}
 
-context.meta.durationMs = Date.now() - start;
-
-log.info('Context collection complete', {
-    durationMs: context.meta.durationMs,
-    durationSec: (context.meta.durationMs / 1000).toFixed(1),
-    maxMs,
-    truncated: context.meta.truncated,
-    stepsCompleted: context.meta.steps.length,
-    stepsSucceeded: context.meta.steps.filter(s => s.success).length,
-    stepsFailed: context.meta.steps.filter(s => !s.success).length
-});
-
-return context;
+    return context;
 }
 
 /**
@@ -1049,19 +1052,15 @@ function formatAnalyticsSection(analytics) {
         }
     }
     if (analytics.alertAnalysis?.totalEvents) {
-        const topAlert = analytics.alertAnalysis.alertCounts?.[0];
+        const topEvent = analytics.alertAnalysis.events?.[0];
         const totalEvents = analytics.alertAnalysis.totalEvents;
-        const totalOccurrences = analytics.alertAnalysis.totalAlerts;
+        const totalDurationMinutes = analytics.alertAnalysis.totalDurationMinutes || 0;
 
-        if (topAlert) {
-            lines.push(`- Alert events: ${totalEvents} distinct events from ${totalOccurrences} screenshot occurrences (top: ${topAlert.alert} - ${topAlert.count} events, ${topAlert.occurrences} occurrences${topAlert.avgDurationHours ? `, avg ${formatNumber(topAlert.avgDurationHours, "h", 1)}` : ""}).`);
+        if (topEvent) {
+            lines.push(`- Alert events: ${totalEvents} distinct events, total downtime ${formatNumber(totalDurationMinutes / 60, "h", 1)} (top: ${topEvent.alert} - ${topEvent.count} events${topEvent.avgDurationMinutes ? `, avg ${formatNumber(topEvent.avgDurationMinutes / 60, "h", 1)}` : ""}).`);
         } else {
-            lines.push(`- Alert events: ${totalEvents} distinct events from ${totalOccurrences} screenshot occurrences.`);
+            lines.push(`- Alert events: ${totalEvents} distinct events, total downtime ${formatNumber(totalDurationMinutes / 60, "h", 1)}.`);
         }
-    } else if (analytics.alertAnalysis?.totalAlerts) {
-        // Fallback for old format
-        const topAlert = analytics.alertAnalysis.alertCounts?.[0];
-        lines.push(`- Alert volume: ${analytics.alertAnalysis.totalAlerts} (top: ${topAlert ? `${topAlert.alert} ×${topAlert.count}` : "none"}).`);
     }
     return lines.join("\n");
 }
@@ -1641,39 +1640,6 @@ function formatStoryContextSection(storyContext) {
     return lines.join("\n");
 }
 
-async function loadRecentSnapshots(systemId, log) {
-    try {
-        const collection = await getCollection("history");
-        const cursor = collection.find({ systemId }, {
-            projection: {
-                _id: 0,
-                timestamp: 1,
-                analysis: 1,
-                alerts: 1
-            }
-        }).sort({ timestamp: -1 }).limit(RECENT_SNAPSHOT_LIMIT);
-
-        const documents = await cursor.toArray();
-        return documents.map(doc => {
-            const analysis = doc.analysis || {};
-            const alertsArray = Array.isArray(analysis.alerts) ? analysis.alerts : Array.isArray(doc.alerts) ? doc.alerts : [];
-            return {
-                timestamp: doc.timestamp,
-                voltage: toNullableNumber(analysis.overallVoltage),
-                current: toNullableNumber(analysis.current),
-                soc: toNullableNumber(analysis.stateOfCharge),
-                power: toNullableNumber(analysis.power),
-                remainingCapacity: toNullableNumber(analysis.remainingCapacity),
-                alerts: alertsArray
-            };
-        }).filter(entry => entry.timestamp);
-    } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        log.warn("Failed to load recent snapshots", { systemId, error: err.message });
-        return [];
-    }
-}
-
 /**
  * Load 90-day daily rollup with hourly averages for comprehensive trend analysis
  * This provides Gemini with deep historical context while managing token usage
@@ -1802,6 +1768,7 @@ async function load90DayDailyRollup(systemId, log) {
 
 /**
  * Compute metrics for an hour's worth of records
+ * Note: Alert events are calculated separately at the daily level using groupAlertEvents
  */
 function computeHourlyMetrics(records) {
     const metrics = {
@@ -1810,8 +1777,7 @@ function computeHourlyMetrics(records) {
         power: [],
         soc: [],
         capacity: [],
-        temperature: [],
-        alertCount: 0
+        temperature: []
     };
 
     for (const record of records) {
@@ -1828,11 +1794,6 @@ function computeHourlyMetrics(records) {
             const avgTemp = a.temperatures.reduce((sum, t) => sum + t, 0) / a.temperatures.length;
             if (isFiniteNumber(avgTemp)) metrics.temperature.push(avgTemp);
         }
-
-        if (Array.isArray(a.alerts) || Array.isArray(record.alerts)) {
-            const alerts = a.alerts || record.alerts;
-            metrics.alertCount += alerts.filter(Boolean).length;
-        }
     }
 
     return {
@@ -1842,7 +1803,6 @@ function computeHourlyMetrics(records) {
         soc: average(metrics.soc),
         capacity: average(metrics.capacity),
         temperature: average(metrics.temperature),
-        alertCount: metrics.alertCount,
         // Add statistical measures for better insights
         voltageStdDev: standardDeviation(metrics.voltage),
         currentStdDev: standardDeviation(metrics.current),
@@ -1864,7 +1824,8 @@ function standardDeviation(values) {
 }
 
 /**
- * Compute daily summary from hourly averages
+ * Compute daily summary from hourly averages and day records
+ * Uses event-based alert grouping instead of raw occurrence counting
  */
 function computeDailySummary(hourlyAverages, dayRecords) {
     const allVoltage = hourlyAverages.map(h => h.voltage).filter(isFiniteNumber);
@@ -1873,6 +1834,15 @@ function computeDailySummary(hourlyAverages, dayRecords) {
     const allSoc = hourlyAverages.map(h => h.soc).filter(isFiniteNumber);
     const allCapacity = hourlyAverages.map(h => h.capacity).filter(isFiniteNumber);
     const allTemp = hourlyAverages.map(h => h.temperature).filter(isFiniteNumber);
+
+    // Calculate alert events for this day using event-based grouping
+    const snapshots = (dayRecords || []).map(r => ({
+        timestamp: r.timestamp,
+        alerts: r.analysis?.alerts || [],
+        soc: r.analysis?.stateOfCharge
+    }));
+    
+    const alertAnalysis = groupAlertEvents(snapshots, { maxGapHours: 6 });
 
     return {
         avgVoltage: average(allVoltage),
@@ -1883,7 +1853,11 @@ function computeDailySummary(hourlyAverages, dayRecords) {
         avgTemperature: average(allTemp),
         minSoc: allSoc.length > 0 ? Math.min(...allSoc) : null,
         maxSoc: allSoc.length > 0 ? Math.max(...allSoc) : null,
-        totalAlerts: hourlyAverages.reduce((sum, h) => sum + (h.alertCount || 0), 0),
+        // Event-based alert metrics
+        alertEvents: alertAnalysis.totalEvents,           // Number of distinct alert events
+        alertOccurrences: alertAnalysis.totalAlertOccurrences, // Raw screenshot count for backwards compat
+        // Backwards compatibility: Use event count as primary metric
+        totalAlerts: alertAnalysis.totalEvents,
         coverage: (hourlyAverages.length / 24 * 100).toFixed(1) + '%' // % of day covered
     };
 }
@@ -2452,7 +2426,7 @@ function summarizeContextForClient(context, analysisData) {
             latestVoltage: toNullableNumber(latestSnapshot?.voltage),
             netAhDelta: calculateDelta(latestSnapshot?.remainingCapacity, earliestSnapshot?.remainingCapacity),
             netSocDelta: calculateDelta(latestSnapshot?.soc, earliestSnapshot?.soc),
-            alertCount: recentSnapshots.reduce((acc, snap) => acc + (Array.isArray(snap.alerts) ? snap.alerts.length : 0), 0)
+            alertOccurrences: recentSnapshots.reduce((acc, snap) => acc + (Array.isArray(snap.alerts) ? snap.alerts.length : 0), 0)  // Raw occurrence count for summary
         } : null,
         meta: {
             contextBuildMs: context.meta?.durationMs ?? null,

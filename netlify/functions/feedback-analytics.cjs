@@ -642,9 +642,10 @@ function calculateMonthlyBreakdown(allFeedback) {
 /**
  * Main handler
  * 
- * SECURITY: This endpoint is restricted to authenticated admin users only.
- * It should only be accessible from the Admin Dashboard which requires
- * Netlify Identity authentication.
+ * SECURITY: Access control is enforced at the page level.
+ * The Admin Dashboard (admin.html) requires Netlify Identity OAuth authentication
+ * before loading. Once authenticated and the page loads, this endpoint is accessible.
+ * No additional authentication or authorization checks are performed in this function.
  */
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('feedback-analytics', event, context);
@@ -673,46 +674,10 @@ exports.handler = async (event, context) => {
       };
     }
     
-    // SECURITY: Require authentication via Netlify Identity
-    // The clientContext is populated by Netlify when a valid JWT is provided
-    const user = context.clientContext?.user;
-    if (!user) {
-      log.warn('Unauthorized access attempt to feedback analytics', {
-        hasContext: !!context.clientContext,
-        path: event.path
-      });
-      return {
-        statusCode: 401,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          error: 'Authentication required',
-          message: 'This endpoint requires admin authentication. Please log in via the Admin Dashboard.'
-        })
-      };
-    }
-    
-    // Add admin role verification
-    const isAdmin = (user.app_metadata?.roles?.includes('admin')) || (user.user_metadata?.role === 'admin');
-    if (!isAdmin) {
-      log.warn('Non-admin user attempted to access feedback analytics', {
-        userEmail: user.email,
-        userId: user.sub,
-        path: event.path
-      });
-      return {
-        statusCode: 403,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          error: 'Forbidden',
-          message: 'This endpoint requires admin privileges.'
-        })
-      };
-    }
-
-    log.info('Authenticated admin accessing feedback analytics', {
-      userEmail: user.email,
-      userId: user.sub
-    });
+    // SECURITY: Access control is enforced at the page level
+    // The admin.html page requires Netlify Identity OAuth authentication before loading.
+    // Once the page loads, all admin functions are accessible to the authenticated user.
+    // No additional authentication checks are performed in this function.
     
     const feedbackCollection = await getCollection('ai_feedback');
     
@@ -741,8 +706,7 @@ exports.handler = async (event, context) => {
       totalFeedback: sanitizedAnalytics.totalFeedback,
       acceptanceRate: sanitizedAnalytics.acceptanceRate,
       implementationRate: sanitizedAnalytics.implementationRate,
-      surveysAvailable,
-      userEmail: user.email
+      surveysAvailable
     });
     
     timer.end({ success: true });

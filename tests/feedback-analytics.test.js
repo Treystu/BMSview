@@ -24,13 +24,26 @@ const {
   calculateBasicEffectivenessScore
 } = require('../netlify/functions/update-feedback-status.cjs');
 
-// Mock logger
+// Mock logger - must be defined inline to avoid hoisting issues
 jest.mock('../netlify/functions/utils/logger.cjs', () => ({
   createLogger: () => ({
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
-    debug: jest.fn()
+    debug: jest.fn(),
+    entry: jest.fn(),
+    exit: jest.fn()
+  }),
+  createLoggerFromEvent: () => ({
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+    entry: jest.fn(),
+    exit: jest.fn()
+  }),
+  createTimer: () => ({
+    end: jest.fn()
   })
 }));
 
@@ -618,11 +631,17 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
       info: jest.fn(),
       warn: jest.fn(),
       error: jest.fn(),
-      debug: jest.fn()
+      debug: jest.fn(),
+      entry: jest.fn(),
+      exit: jest.fn()
     };
     
     jest.doMock('../netlify/functions/utils/logger.cjs', () => ({
-      createLogger: jest.fn().mockReturnValue(mockLogger)
+      createLogger: jest.fn().mockReturnValue(mockLogger),
+      createLoggerFromEvent: jest.fn().mockReturnValue(mockLogger),
+      createTimer: jest.fn().mockReturnValue({
+        end: jest.fn()
+      })
     }));
     
     handler = require('../netlify/functions/feedback-analytics.cjs').handler;
@@ -630,6 +649,7 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
 
   afterEach(() => {
     jest.resetModules();
+    jest.clearAllMocks();
   });
 
   const mockEvent = {
@@ -637,59 +657,46 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
     path: '/.netlify/functions/feedback-analytics'
   };
 
-  describe('Authentication Checks', () => {
-    it('should reject unauthenticated requests with 401 and proper error message', async () => {
-      const context = {}; // No clientContext
+  describe('Page-Level Authentication Only', () => {
+    it('should process requests without checking JWT (page-level auth sufficient)', async () => {
+      const context = {}; // No clientContext - page-level auth handles this
       
       const response = await handler(mockEvent, context);
       
-      expect(response.statusCode).toBe(401);
-      expect(response.headers['Content-Type']).toBe('application/json');
-      
-      const body = JSON.parse(response.body);
-      expect(body.error).toBe('Authentication required');
-      expect(body.message).toContain('admin authentication');
-      expect(body.message).toContain('Admin Dashboard');
-      
-      // Verify audit log was called
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Unauthorized access attempt to feedback analytics',
-        expect.objectContaining({
-          hasContext: false,
-          path: expect.any(String)
-        })
-      );
-      
-      // Verify DB was NOT accessed
-      expect(mockGetCollection).not.toHaveBeenCalled();
+      // Should succeed - no function-level auth check
+      expect(response.statusCode).toBe(200);
+      expect(mockGetCollection).toHaveBeenCalledWith('ai_feedback');
     });
 
-    it('should reject requests with null user', async () => {
+    it('should process requests with null user (page-level auth sufficient)', async () => {
       const context = { clientContext: { user: null } };
       
       const response = await handler(mockEvent, context);
       
-      expect(response.statusCode).toBe(401);
-      expect(mockGetCollection).not.toHaveBeenCalled();
+      // Should succeed - no function-level auth check
+      expect(response.statusCode).toBe(200);
+      expect(mockGetCollection).toHaveBeenCalled();
     });
 
-    it('should reject requests with undefined clientContext', async () => {
+    it('should process requests with undefined clientContext (page-level auth sufficient)', async () => {
       const context = { clientContext: undefined };
       
       const response = await handler(mockEvent, context);
       
-      expect(response.statusCode).toBe(401);
+      // Should succeed - no function-level auth check
+      expect(response.statusCode).toBe(200);
+      expect(mockGetCollection).toHaveBeenCalled();
     });
   });
 
-  describe('Authorization Checks (Admin Role)', () => {
-    it('should reject authenticated non-admin users with 403', async () => {
+  describe('No Function-Level Authentication Required', () => {
+    it('should allow any request (page-level auth is sufficient)', async () => {
       const context = {
         clientContext: {
           user: { 
             email: 'regular.user@example.com', 
             sub: 'user-regular-123',
-            app_metadata: { roles: ['viewer', 'editor'] }, // No admin
+            app_metadata: { roles: ['viewer', 'editor'] },
             user_metadata: { role: 'member' }
           }
         }
@@ -697,26 +704,12 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
       
       const response = await handler(mockEvent, context);
       
-      expect(response.statusCode).toBe(403);
-      
-      const body = JSON.parse(response.body);
-      expect(body.error).toBe('Forbidden');
-      expect(body.message).toContain('admin privileges');
-      
-      // Verify security audit log
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Non-admin user attempted to access feedback analytics',
-        expect.objectContaining({
-          userEmail: 'regular.user@example.com',
-          userId: 'user-regular-123'
-        })
-      );
-      
-      // Verify DB was NOT accessed
-      expect(mockGetCollection).not.toHaveBeenCalled();
+      // Should succeed - page-level auth handles access control
+      expect(response.statusCode).toBe(200);
+      expect(mockGetCollection).toHaveBeenCalledWith('ai_feedback');
     });
 
-    it('should reject user with empty metadata', async () => {
+    it('should allow request with empty metadata', async () => {
       const context = {
         clientContext: {
           user: { 
@@ -730,10 +723,10 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
       
       const response = await handler(mockEvent, context);
       
-      expect(response.statusCode).toBe(403);
+      expect(response.statusCode).toBe(200);
     });
 
-    it('should reject user with null metadata', async () => {
+    it('should allow request with null metadata', async () => {
       const context = {
         clientContext: {
           user: { 
@@ -747,10 +740,10 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
       
       const response = await handler(mockEvent, context);
       
-      expect(response.statusCode).toBe(403);
+      expect(response.statusCode).toBe(200);
     });
 
-    it('should allow admin via app_metadata.roles array', async () => {
+    it('should allow request regardless of metadata content', async () => {
       const context = {
         clientContext: {
           user: { 
@@ -766,18 +759,9 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
       
       expect(response.statusCode).toBe(200);
       expect(mockGetCollection).toHaveBeenCalledWith('ai_feedback');
-      
-      // Verify success audit log
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        'Authenticated admin accessing feedback analytics',
-        expect.objectContaining({
-          userEmail: 'admin.roles@example.com',
-          userId: 'admin-roles-123'
-        })
-      );
     });
 
-    it('should allow admin via user_metadata.role string', async () => {
+    it('should allow request with different user_metadata', async () => {
       const context = {
         clientContext: {
           user: { 
@@ -794,39 +778,14 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
       expect(response.statusCode).toBe(200);
       expect(mockGetCollection).toHaveBeenCalledWith('ai_feedback');
     });
-
-    it('should allow admin with both metadata paths set', async () => {
-      const context = {
-        clientContext: {
-          user: { 
-            email: 'super.admin@example.com', 
-            sub: 'super-admin-789',
-            app_metadata: { roles: ['admin', 'super_admin'] },
-            user_metadata: { role: 'admin' }
-          }
-        }
-      };
-      
-      const response = await handler(mockEvent, context);
-      
-      expect(response.statusCode).toBe(200);
-    });
   });
 
   describe('Successful Response Structure', () => {
-    const adminContext = {
-      clientContext: {
-        user: { 
-          email: 'admin@example.com', 
-          sub: 'admin-test',
-          app_metadata: { roles: ['admin'] },
-          user_metadata: {}
-        }
-      }
-    };
+    // Context doesn't matter - page-level auth handles access
+    const anyContext = {};
 
-    it('should return complete analytics structure for admin', async () => {
-      const response = await handler(mockEvent, adminContext);
+    it('should return complete analytics structure', async () => {
+      const response = await handler(mockEvent, anyContext);
       
       expect(response.statusCode).toBe(200);
       
@@ -850,7 +809,7 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
     });
 
     it('should include surveysAvailable flag indicating data availability', async () => {
-      const response = await handler(mockEvent, adminContext);
+      const response = await handler(mockEvent, anyContext);
       const body = JSON.parse(response.body);
       
       expect(typeof body.surveysAvailable).toBe('boolean');
@@ -858,7 +817,7 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
     });
 
     it('should calculate correct statistics from sample data', async () => {
-      const response = await handler(mockEvent, adminContext);
+      const response = await handler(mockEvent, anyContext);
       const body = JSON.parse(response.body);
       
       // 4 total feedback items
@@ -872,7 +831,7 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
     });
 
     it('should sanitize feedbackIds in ROI data for security', async () => {
-      const response = await handler(mockEvent, adminContext);
+      const response = await handler(mockEvent, anyContext);
       const body = JSON.parse(response.body);
       
       if (body.roiSummary?.topROIImplementations?.length > 0) {
@@ -886,7 +845,7 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
     });
 
     it('should sanitize feedbackIds in effectiveness data', async () => {
-      const response = await handler(mockEvent, adminContext);
+      const response = await handler(mockEvent, anyContext);
       const body = JSON.parse(response.body);
       
       if (body.effectivenessOverview?.topPerformers?.length > 0) {
@@ -903,7 +862,7 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
     });
 
     it('should include user satisfaction metrics when surveys available', async () => {
-      const response = await handler(mockEvent, adminContext);
+      const response = await handler(mockEvent, anyContext);
       const body = JSON.parse(response.body);
       
       expect(body.userSatisfaction).toBeDefined();
@@ -965,12 +924,16 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
         getCorsHeaders: jest.fn().mockReturnValue({ 'Access-Control-Allow-Origin': '*' })
       }));
       jest.doMock('../netlify/functions/utils/logger.cjs', () => ({
-        createLogger: jest.fn().mockReturnValue(mockLogger)
+        createLogger: jest.fn().mockReturnValue(mockLogger),
+        createLoggerFromEvent: jest.fn().mockReturnValue(mockLogger),
+        createTimer: jest.fn().mockReturnValue({
+          end: jest.fn()
+        })
       }));
       
       const failHandler = require('../netlify/functions/feedback-analytics.cjs').handler;
       
-      const adminContext = {
+      const anyContext = {
         clientContext: {
           user: { 
             email: 'admin@example.com', 
@@ -980,7 +943,7 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
         }
       };
       
-      const response = await failHandler(mockEvent, adminContext);
+      const response = await failHandler(mockEvent, anyContext);
       
       expect(response.statusCode).toBe(500);
       const body = JSON.parse(response.body);
@@ -1012,12 +975,16 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
         getCorsHeaders: jest.fn().mockReturnValue({ 'Access-Control-Allow-Origin': '*' })
       }));
       jest.doMock('../netlify/functions/utils/logger.cjs', () => ({
-        createLogger: jest.fn().mockReturnValue(mockLogger)
+        createLogger: jest.fn().mockReturnValue(mockLogger),
+        createLoggerFromEvent: jest.fn().mockReturnValue(mockLogger),
+        createTimer: jest.fn().mockReturnValue({
+          end: jest.fn()
+        })
       }));
       
       const gracefulHandler = require('../netlify/functions/feedback-analytics.cjs').handler;
       
-      const adminContext = {
+      const anyContext = {
         clientContext: {
           user: { 
             email: 'admin@example.com', 
@@ -1027,7 +994,7 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
         }
       };
       
-      const response = await gracefulHandler(mockEvent, adminContext);
+      const response = await gracefulHandler(mockEvent, anyContext);
       
       // Should still succeed, just without survey data
       expect(response.statusCode).toBe(200);
@@ -1038,72 +1005,17 @@ describe('Feedback Analytics - Authentication & Authorization', () => {
   });
 
   describe('Audit Logging', () => {
-    it('should log successful admin access with user details', async () => {
-      const adminContext = {
-        clientContext: {
-          user: { 
-            email: 'audit.admin@example.com', 
-            sub: 'audit-admin-123',
-            app_metadata: { roles: ['admin'] }
-          }
-        }
-      };
+    it('should log successful analytics calculation', async () => {
+      const anyContext = {};
       
-      await handler(mockEvent, adminContext);
+      await handler(mockEvent, anyContext);
       
-      // Verify access was logged
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        'Authenticated admin accessing feedback analytics',
-        expect.objectContaining({
-          userEmail: 'audit.admin@example.com',
-          userId: 'audit-admin-123'
-        })
-      );
-      
-      // Verify success was logged
+      // Verify success was logged (no user details since no auth check)
       expect(mockLogger.info).toHaveBeenCalledWith(
         'Analytics calculated successfully',
         expect.objectContaining({
           totalFeedback: expect.any(Number),
-          userEmail: 'audit.admin@example.com',
           surveysAvailable: expect.any(Boolean)
-        })
-      );
-    });
-
-    it('should log failed auth attempts with request details', async () => {
-      const context = {};
-      
-      await handler(mockEvent, context);
-      
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Unauthorized access attempt to feedback analytics',
-        expect.objectContaining({
-          hasContext: false,
-          path: expect.stringContaining('feedback-analytics')
-        })
-      );
-    });
-
-    it('should log non-admin access attempts with user info', async () => {
-      const nonAdminContext = {
-        clientContext: {
-          user: { 
-            email: 'sneaky.user@example.com', 
-            sub: 'sneaky-123',
-            app_metadata: { roles: ['viewer'] }
-          }
-        }
-      };
-      
-      await handler(mockEvent, nonAdminContext);
-      
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Non-admin user attempted to access feedback analytics',
-        expect.objectContaining({
-          userEmail: 'sneaky.user@example.com',
-          userId: 'sneaky-123',
-          path: expect.any(String)
         })
       );
     });

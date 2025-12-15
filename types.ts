@@ -207,7 +207,8 @@ export enum InsightMode {
   WITH_TOOLS = 'with-tools',      // AI "Battery Guru" with function calling (default, most comprehensive)
   FULL_CONTEXT = 'full-context',  // Full Context Mode with AI Feedback capability
   STANDARD = 'standard',          // Legacy endpoint (proxies to WITH_TOOLS for backward compatibility)
-  VISUAL_GURU = 'visual-guru'     // Visual Guru Expert mode - infographic-style, chart-focused output
+  VISUAL_GURU = 'visual-guru',    // Visual Guru Expert mode - infographic-style, chart-focused output
+  ASYNC_WORKLOAD = 'async-workload' // Netlify Async Workload - durable, unlimited timeout, multi-step execution
 }
 
 // Human-readable descriptions for each mode
@@ -253,6 +254,18 @@ export const InsightModeDescriptions: Record<InsightMode, { label: string; descr
       'Short, affirmative phrases about visual clarity',
       'Best for dashboards and visual reports'
     ]
+  },
+  [InsightMode.ASYNC_WORKLOAD]: {
+    label: '⚡ Async Workload (Experimental)',
+    description: 'Durable async execution with unlimited timeout and multi-step resilience',
+    features: [
+      'Unlimited execution time (no timeout limits)',
+      'Automatic retries with intelligent backoff',
+      'Multi-step workflow with independent retry per step',
+      'State persistence across failures',
+      'Best for complex analysis requiring extended processing',
+      'Event-driven with priority and scheduling support'
+    ]
   }
 };
 
@@ -275,6 +288,7 @@ export interface AIFeedback {
   feedbackType: 'feature_request' | 'api_suggestion' | 'data_format' | 'bug_report' | 'optimization';
   category: 'weather_api' | 'data_structure' | 'ui_ux' | 'performance' | 'integration' | 'analytics';
   priority: 'low' | 'medium' | 'high' | 'critical';
+  guruSource: 'diagnostics-guru' | 'battery-guru' | 'visual-guru' | 'full-context-guru' | 'quick-guru' | 'manual';
   status: 'pending' | 'reviewed' | 'accepted' | 'implemented' | 'rejected';
   geminiModel: string;
   contextHash: string;

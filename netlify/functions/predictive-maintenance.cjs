@@ -1,6 +1,6 @@
 const { GoogleGenAI } = require('@google/genai');
 const { getCollection } = require('./utils/mongodb.cjs');
-const { createLogger, createTimer } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -23,7 +23,7 @@ function getGenAI() {
 }
 
 exports.handler = async (event, context) => {
-  const log = createLogger('predictive-maintenance', context);
+  const log = createLoggerFromEvent('predictive-maintenance', event, context);
   const timer = createTimer(log, 'predictive-maintenance-handler');
   log.entry({ method: event.httpMethod, path: event.path });
   // Enable CORS
@@ -286,10 +286,10 @@ function calculateFailureRisk(measurements, maintenanceHistory) {
   else level = 'Very Low';
 
   return {
-      level,
-      confidence: null,
-      factors: riskFactors
-    };
+    level,
+    confidence: null,
+    factors: riskFactors
+  };
 }
 
 function identifyWeakComponents(components, measurements) {
@@ -297,47 +297,55 @@ function identifyWeakComponents(components, measurements) {
 
   for (const component of components) {
     let riskLevel = 'Low';
-    let issues = [];
+    const issues = [];
 
     // Analyze based on component type and measurement data
     switch (component.type) {
       case 'battery_cell':
-        const cellEfficiency = calculateCellEfficiency(component, measurements);
-        if (cellEfficiency < 0.7) {
-          riskLevel = 'High';
-          issues.push('Low cell efficiency');
-        } else if (cellEfficiency < 0.85) {
-          riskLevel = 'Medium';
-          issues.push('Moderate efficiency degradation');
+        {
+          const cellEfficiency = calculateCellEfficiency(component, measurements);
+          if (cellEfficiency < 0.7) {
+            riskLevel = 'High';
+            issues.push('Low cell efficiency');
+          } else if (cellEfficiency < 0.85) {
+            riskLevel = 'Medium';
+            issues.push('Moderate efficiency degradation');
+          }
+          break;
         }
-        break;
 
       case 'thermal_sensor':
-        const tempVariation = calculateTemperatureVariation(measurements);
-        if (tempVariation > 10) {
-          riskLevel = 'Medium';
-          issues.push('Temperature reading instability');
+        {
+          const tempVariation = calculateTemperatureVariation(measurements);
+          if (tempVariation > 10) {
+            riskLevel = 'Medium';
+            issues.push('Temperature reading instability');
+          }
+          break;
         }
-        break;
 
       case 'voltage_regulator':
-        const voltageVariation = calculateVoltageVariation(measurements);
-        if (voltageVariation > 0.15) {
-          riskLevel = 'High';
-          issues.push('Voltage regulation issues');
+        {
+          const voltageVariation = calculateVoltageVariation(measurements);
+          if (voltageVariation > 0.15) {
+            riskLevel = 'High';
+            issues.push('Voltage regulation issues');
+          }
+          break;
         }
-        break;
 
       case 'cooling_system':
-        const avgTemp = measurements.reduce((sum, m) => sum + m.temperature, 0) / measurements.length;
-        if (avgTemp > 45) {
-          riskLevel = 'High';
-          issues.push('Inadequate cooling performance');
-        } else if (avgTemp > 40) {
-          riskLevel = 'Medium';
-          issues.push('Reduced cooling efficiency');
+        {
+          const avgTemp = measurements.reduce((sum, m) => sum + m.temperature, 0) / measurements.length;
+          if (avgTemp > 45) {
+            riskLevel = 'High';
+            issues.push('Inadequate cooling performance');
+          } else if (avgTemp > 40) {
+            riskLevel = 'Medium';
+            issues.push('Reduced cooling efficiency');
+          }
+          break;
         }
-        break;
     }
 
     analysis.push({
@@ -428,7 +436,7 @@ async function generateAIInsights(systemData, timeHorizon, log) {
   try {
     log.debug('Calling Gemini API for AI insights', { systemName: systemData.system?.name, timeHorizon });
     const genAI = getGenAI();
-    
+
     // Use environment variable with fallback
     const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
@@ -460,15 +468,15 @@ async function generateAIInsights(systemData, timeHorizon, log) {
       model: modelName,
       contents: prompt
     });
-    
+
     const insights = response.text || '';
     log.debug('Received AI insights from Gemini', { insightsLength: insights.length });
 
     return {
-          text: insights,
-          processedAt: new Date().toISOString(),
-          confidence: null // Placeholder confidence score
-        };
+      text: insights,
+      processedAt: new Date().toISOString(),
+      confidence: null // Placeholder confidence score
+    };
   } catch (error) {
     log.error('Error generating AI insights', { error: error.message, stack: error.stack });
     return {

@@ -5,6 +5,8 @@
  * They are currently skipped for unit testing. Enable for full integration testing.
  */
 
+const { handler: generateHandler } = require('../netlify/functions/generate-insights-with-tools.cjs');
+
 describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
   // Mock context and timer
   const mockContext = {
@@ -178,51 +180,51 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
     });
   });
 
-    test('should respect timeout in sync mode', async () => {
-      // Mock a tool that takes too long to execute
-      const slowTool = jest.fn().mockImplementation(() => {
-        return new Promise(resolve => setTimeout(() => resolve('tool result'), 200));
-      });
-  
-      const event = {
-        body: JSON.stringify({ measurements: [] }),
-        queryStringParameters: { sync: 'true', timeout: '100' }
-      };
-  
-      // Mock the handler to simulate a timeout
-      const response = {
-        statusCode: 504,
-        body: JSON.stringify({ success: false, error: 'Request timed out' })
-      };
-  
-      // Call the handler and assert the response
-      const result = await generateHandler(event, mockContext);
-      expect(result.statusCode).toBe(504);
-      expect(JSON.parse(result.body).error).toBe('Request timed out');
+  test('should respect timeout in sync mode', async () => {
+    // Mock a tool that takes too long to execute
+    const slowTool = jest.fn().mockImplementation(() => {
+      return new Promise(resolve => setTimeout(() => resolve('tool result'), 200));
     });
-  
-    test('should handle tool execution errors gracefully', async () => {
-      // Mock a tool that throws an error
-      const errorTool = jest.fn().mockImplementation(() => {
-        throw new Error('Tool failed');
-      });
-  
-      const event = {
-        body: JSON.stringify({ measurements: [] }),
-        queryStringParameters: { sync: 'true' }
-      };
-  
-      // Mock the handler to simulate a tool error
-      const response = {
-        statusCode: 500,
-        body: JSON.stringify({ success: false, error: 'Internal Server Error' })
-      };
-  
-      // Call the handler and assert the response
-      const result = await generateHandler(event, mockContext);
-      expect(result.statusCode).toBe(500);
-      expect(JSON.parse(result.body).error).toBe('Internal Server Error');
+
+    const event = {
+      body: JSON.stringify({ measurements: [] }),
+      queryStringParameters: { sync: 'true', timeout: '100' }
+    };
+
+    // Mock the handler to simulate a timeout
+    const response = {
+      statusCode: 504,
+      body: JSON.stringify({ success: false, error: 'Request timed out' })
+    };
+
+    // Call the handler and assert the response
+    const result = await generateHandler(event, mockContext);
+    expect(result.statusCode).toBe(504);
+    expect(JSON.parse(result.body).error).toBe('Request timed out');
+  });
+
+  test('should handle tool execution errors gracefully', async () => {
+    // Mock a tool that throws an error
+    const errorTool = jest.fn().mockImplementation(() => {
+      throw new Error('Tool failed');
     });
+
+    const event = {
+      body: JSON.stringify({ measurements: [] }),
+      queryStringParameters: { sync: 'true' }
+    };
+
+    // Mock the handler to simulate a tool error
+    const response = {
+      statusCode: 500,
+      body: JSON.stringify({ success: false, error: 'Internal Server Error' })
+    };
+
+    // Call the handler and assert the response
+    const result = await generateHandler(event, mockContext);
+    expect(result.statusCode).toBe(500);
+    expect(JSON.parse(result.body).error).toBe('Internal Server Error');
+  });
   describe('Error Handling', () => {
     test('handles missing timer gracefully', async () => {
       const event = {

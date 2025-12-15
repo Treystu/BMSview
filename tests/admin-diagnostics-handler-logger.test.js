@@ -48,7 +48,7 @@ describe('Admin Diagnostics Handler Logger Integration', () => {
     originalLog = console.log;
     originalError = console.error;
     originalWarn = console.warn;
-    
+
     console.log = jest.fn();
     console.error = jest.fn();
     console.warn = jest.fn();
@@ -108,7 +108,7 @@ describe('Admin Diagnostics Handler Logger Integration', () => {
     expect(response).toBeDefined();
     expect(response.statusCode).toBe(200);
     expect(response.body).toBeDefined();
-    
+
     const body = JSON.parse(response.body);
     expect(body).toHaveProperty('status');
     expect(body).toHaveProperty('testId');
@@ -117,8 +117,10 @@ describe('Admin Diagnostics Handler Logger Integration', () => {
   });
 
   test('logger should be called during handler execution', async () => {
+    // Use POST request instead of OPTIONS to ensure logger is initialized
     const mockEvent = {
-      httpMethod: 'OPTIONS',
+      httpMethod: 'POST',
+      body: JSON.stringify({ selectedTests: [] }),
       headers: {}
     };
 
@@ -132,15 +134,15 @@ describe('Admin Diagnostics Handler Logger Integration', () => {
 
     // Verify logger was called (console.log should be invoked)
     expect(console.log).toHaveBeenCalled();
-    
+
     // Check if log output contains expected structure
     const logCalls = console.log.mock.calls;
     const hasValidLogStructure = logCalls.some(call => {
       if (typeof call[0] === 'string') {
         try {
           const logEntry = JSON.parse(call[0]);
-          return logEntry.function === 'admin-diagnostics' && 
-                 logEntry.requestId === 'test-logger-call';
+          return logEntry.function === 'admin-diagnostics' &&
+            logEntry.requestId === 'test-logger-call';
         } catch {
           return false;
         }

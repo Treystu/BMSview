@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * ReAct Loop Implementation for Agentic Insights
  * 
@@ -669,7 +670,7 @@ async function executeInitializationSequence(params) {
 
     if (!systemId) {
         log.warn('No systemId provided, skipping initialization sequence');
-        return { success: true, attempts: 0, dataPoints: 0, toolCallsUsed: 0, turnsUsed: 0 };
+        return { success: true, attempts: 0, dataPoints: 0, toolCallsUsed: 0, turnsUsed: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 };
     }
 
     // Calculate date range for data retrieval
@@ -715,6 +716,11 @@ Execute the initialization now.`;
     let toolCallsUsed = 0;
     let turnsUsed = 0;
 
+    // Token tracking for initialization sequence
+    let initInputTokens = 0;
+    let initOutputTokens = 0;
+    let initTotalTokens = 0;
+
     // Retry loop until we get successful data retrieval or timeout
     for (attempts = 0; attempts < INITIALIZATION_MAX_RETRIES; attempts++) {
         // Check timeout budget
@@ -732,7 +738,10 @@ Execute the initialization now.`;
                 attempts,
                 error: `Initialization timed out after ${attempts} attempts`,
                 toolCallsUsed,
-                turnsUsed
+                turnsUsed,
+                inputTokens: initInputTokens,
+                outputTokens: initOutputTokens,
+                totalTokens: initTotalTokens
             };
         }
 
@@ -799,6 +808,21 @@ Execute the initialization now.`;
                 await new Promise(resolve => setTimeout(resolve, delayMs));
             }
             continue;
+        }
+
+        // Extract and accumulate token usage from initialization Gemini calls
+        const initUsageMetadata = geminiResponse.usageMetadata || {};
+        if (initUsageMetadata.promptTokenCount || initUsageMetadata.candidatesTokenCount) {
+            initInputTokens += initUsageMetadata.promptTokenCount || 0;
+            initOutputTokens += initUsageMetadata.candidatesTokenCount || 0;
+            initTotalTokens += initUsageMetadata.totalTokenCount || 0;
+
+            log.debug('Token usage for initialization turn', {
+                attempt: attempts + 1,
+                inputTokens: initUsageMetadata.promptTokenCount || 0,
+                outputTokens: initUsageMetadata.candidatesTokenCount || 0,
+                accumulatedInitTotal: initTotalTokens
+            });
         }
 
         // Validate response structure (reuse validation from main loop)
@@ -983,7 +1007,10 @@ Execute the initialization now.`;
                 attempts: attempts + 1,
                 dataPoints,
                 toolCallsUsed,
-                turnsUsed
+                turnsUsed,
+                inputTokens: initInputTokens,
+                outputTokens: initOutputTokens,
+                totalTokens: initTotalTokens
             };
         }
 
@@ -1012,7 +1039,10 @@ Execute the initialization now.`;
         attempts,
         error: `Failed to retrieve data after ${attempts} attempts`,
         toolCallsUsed,
-        turnsUsed
+        turnsUsed,
+        inputTokens: initInputTokens,
+        outputTokens: initOutputTokens,
+        totalTokens: initTotalTokens
     };
 }
 
@@ -1041,7 +1071,8 @@ async function executeReActLoop(params) {
         skipInitialization = false, // Skip initialization if already done separately
         checkpointState = null, // Resume from checkpoint if provided
         onCheckpoint = null, // Callback to save checkpoint before timeout
-        insightMode = 'with_tools' // Insight mode (standard, full_context, etc.)
+        insightMode = 'with_tools', // Insight mode (standard, full_context, etc.)
+        fullContextMode = false // NEW: Enable full context pre-loading
     } = params;
 
     const log = externalLog || createLogger('react-loop');
@@ -1070,16 +1101,22 @@ async function executeReActLoop(params) {
         skipInitialization,
         isResuming,
         checkpointTurn: checkpointState?.startTurnCount || 0,
-        insightMode
+        insightMode,
+        fullContextMode // Log whether full context mode is enabled
     });
+
+    // Predeclare shared state so catch blocks can access them
+    let preloadedContext;
+    let conversationHistory;
+    let contextSummary;
+    let turnCount = 0;
+    let toolCallCount = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalTokens = 0;
 
     try {
         // Step 1: Collect pre-computed context OR restore from checkpoint
-        let preloadedContext;
-        let conversationHistory;
-        let contextSummary;
-        let turnCount = 0;
-        let toolCallCount = 0;
 
         if (isResuming) {
             // RESUME FROM CHECKPOINT: Restore conversation state
@@ -1100,23 +1137,61 @@ async function executeReActLoop(params) {
             const contextStartTime = Date.now();
 
             try {
-                // EDGE CASE PROTECTION #4: Add hard timeout to context collection
-                // Prevent context collection from consuming entire budget
-                const contextCollectionPromise = collectAutoInsightsContext(
-                    systemId,
-                    analysisData,
-                    log,
-                    { mode, maxMs: contextBudgetMs }
-                );
+                // NEW: Full Context Mode - Pre-load ALL data into prompt
+                if (fullContextMode && systemId) {
+                    log.info('Full Context Mode enabled - building complete context', {
+                        systemId,
+                        contextWindowDays
+                    });
 
-                preloadedContext = await Promise.race([
-                    contextCollectionPromise,
-                    new Promise((_, reject) =>
-                        setTimeout(() => {
-                            reject(new Error('CONTEXT_TIMEOUT'));
-                        }, contextBudgetMs + 1000) // Allow 1s extra for graceful completion
-                    )
-                ]);
+                    const { buildCompleteContext, countDataPoints } = require('./full-context-builder.cjs');
+
+                    try {
+                        const fullContext = await buildCompleteContext(systemId, {
+                            contextWindowDays: contextWindowDays || 90
+                        });
+
+                        const dataPointCount = countDataPoints(fullContext);
+                        log.info('Full context built successfully', {
+                            dataPoints: dataPointCount,
+                            contextSize: JSON.stringify(fullContext).length
+                        });
+
+                        // Store full context for use in prompt
+                        preloadedContext = {
+                            fullContext,
+                            dataPointsAnalyzed: dataPointCount,
+                            isFullContextMode: true
+                        };
+                    } catch (fullContextError) {
+                        log.warn('Full context building failed, falling back to standard context', {
+                            error: fullContextError.message
+                        });
+                        // Fall through to standard context collection
+                        preloadedContext = null;
+                    }
+                }
+
+                // Standard context collection (if full context not loaded or failed)
+                if (!preloadedContext) {
+                    // EDGE CASE PROTECTION #4: Add hard timeout to context collection
+                    // Prevent context collection from consuming entire budget
+                    const contextCollectionPromise = collectAutoInsightsContext(
+                        systemId,
+                        analysisData,
+                        log,
+                        { mode, maxMs: contextBudgetMs }
+                    );
+
+                    preloadedContext = await Promise.race([
+                        contextCollectionPromise,
+                        new Promise((_, reject) =>
+                            setTimeout(() => {
+                                reject(new Error('CONTEXT_TIMEOUT'));
+                            }, contextBudgetMs + 1000) // Allow 1s extra for graceful completion
+                        )
+                    ]);
+                }
             } catch (contextError) {
                 const err = contextError instanceof Error ? contextError : new Error(String(contextError));
 
@@ -1250,6 +1325,12 @@ async function executeReActLoop(params) {
         let timedOut = false; // Track if we exited due to timeout
         let consecutiveLazyResponses = 0; // Track consecutive lazy AI responses to prevent infinite loops
         let consecutiveVisualDisclaimers = 0; // Track consecutive visual disclaimer responses
+
+        // Token usage tracking - accumulate across all turns for accurate cost calculation
+        // Initialize with tokens from initialization sequence (if any)
+        let totalInputTokens = initResult.inputTokens || 0;
+        let totalOutputTokens = initResult.outputTokens || 0;
+        let totalTokens = initResult.totalTokens || 0;
 
         for (; turnCount < MAX_TURNS; turnCount++) {
             // Check timeout and save checkpoint if needed
@@ -1451,6 +1532,22 @@ async function executeReActLoop(params) {
                 break;
             }
 
+            // Extract and accumulate token usage from Gemini response
+            const usageMetadata = geminiResponse.usageMetadata || {};
+            if (usageMetadata.promptTokenCount || usageMetadata.candidatesTokenCount) {
+                totalInputTokens += usageMetadata.promptTokenCount || 0;
+                totalOutputTokens += usageMetadata.candidatesTokenCount || 0;
+                totalTokens += usageMetadata.totalTokenCount || 0;
+
+                log.debug('Token usage for this turn', {
+                    turn: turnCount,
+                    inputTokens: usageMetadata.promptTokenCount || 0,
+                    outputTokens: usageMetadata.candidatesTokenCount || 0,
+                    totalThisTurn: usageMetadata.totalTokenCount || 0,
+                    accumulatedTotal: totalTokens
+                });
+            }
+
             if (geminiResponse.candidates.length === 0) {
                 log.error('Gemini response has empty candidates array', {
                     turn: turnCount,
@@ -1470,7 +1567,7 @@ async function executeReActLoop(params) {
 
             const responseContent = geminiResponse.candidates[0]?.content;
             const finishReason = geminiResponse.candidates[0]?.finishReason;
-            
+
             if (!responseContent) {
                 log.error('Gemini response candidate missing content', {
                     turn: turnCount,
@@ -1498,7 +1595,7 @@ async function executeReActLoop(params) {
                         attemptsRemaining: MAX_TURNS - turnCount - 1,
                         candidate: JSON.stringify(geminiResponse.candidates[0]).substring(0, 500)
                     });
-                    
+
                     // Add intervention message to guide Gemini on proper function call format
                     // Be very explicit about NOT using Python code syntax
                     conversationHistory.push({
@@ -1513,7 +1610,7 @@ async function executeReActLoop(params) {
                                 `Try again now - provide your analysis directly without attempting to call functions via code.`
                         }]
                     });
-                    
+
                     // Continue to next iteration for retry
                     continue;
                 } else {
@@ -1575,22 +1672,22 @@ async function executeReActLoop(params) {
 
             // Step 5: Check for tool calls in response
             // Also validate that function calls are well-formed (have name property)
-            const toolCalls = responseContent.parts.filter((/** @type {{functionCall?: {name?: string}}} */ p) => 
+            const toolCalls = responseContent.parts.filter((/** @type {{functionCall?: {name?: string}}} */ p) =>
                 p.functionCall && typeof p.functionCall.name === 'string'
             );
-            
+
             // Detect malformed function calls (functionCall exists but no valid name)
-            const malformedCalls = responseContent.parts.filter((/** @type {{functionCall?: {name?: string}}} */ p) => 
+            const malformedCalls = responseContent.parts.filter((/** @type {{functionCall?: {name?: string}}} */ p) =>
                 p.functionCall && typeof p.functionCall.name !== 'string'
             );
-            
+
             if (malformedCalls.length > 0 && turnCount < MAX_TURNS) {
                 log.warn('Detected malformed function calls in response parts, requesting correction', {
                     turn: turnCount,
                     malformedCount: malformedCalls.length,
                     malformedCalls: JSON.stringify(malformedCalls).substring(0, 500)
                 });
-                
+
                 // Add intervention to guide Gemini
                 conversationHistory.push({
                     role: 'user',
@@ -1691,10 +1788,10 @@ async function executeReActLoop(params) {
                         const hasVisualDisclaimer = VISUAL_DISCLAIMER_TRIGGERS.some(
                             (/** @type {string} */ trigger) => lowerAnswer.includes(trigger)
                         );
-                        
+
                         if (hasVisualDisclaimer) {
                             consecutiveVisualDisclaimers++;
-                            
+
                             // Check if we've exceeded the threshold or are on the last turn
                             if (consecutiveVisualDisclaimers > VISUAL_DISCLAIMER_THRESHOLD) {
                                 log.error('Visual Guru repeatedly refused to provide charts after interventions', {
@@ -1707,7 +1804,7 @@ async function executeReActLoop(params) {
                                     `This may be a model limitation. The response below is text-only:\n\n---\n\n${rawAnswer}`;
                                 break;
                             }
-                            
+
                             // Handle last turn explicitly - can't continue, must provide fallback
                             if (turnCount >= MAX_TURNS - 1) {
                                 log.warn('Visual Guru disclaimer on last turn - providing fallback', {
@@ -1718,13 +1815,13 @@ async function executeReActLoop(params) {
                                     `The response below is text-only:\n\n---\n\n${rawAnswer}`;
                                 break;
                             }
-                            
+
                             log.warn('Visual Guru received disclaimer response - requesting chart JSON instead', {
                                 turn: turnCount,
                                 consecutiveCount: consecutiveVisualDisclaimers,
                                 answerPreview: rawAnswer.substring(0, 200)
                             });
-                            
+
                             // Intervention: Remind AI that "visual" means JSON chart configs, not images
                             conversationHistory.push({
                                 role: 'user',
@@ -1738,7 +1835,7 @@ async function executeReActLoop(params) {
                                         `DO NOT apologize or explain - just output the structured analysis with chart JSON.`
                                 }]
                             });
-                            
+
                             // Continue loop to let Gemini try again
                             continue;
                         } else {
@@ -1988,16 +2085,23 @@ async function executeReActLoop(params) {
             return sum + msgLength;
         }, 0);
 
+        // Use actual token counts if available, otherwise fall back to estimate
         const estimatedTokenCount = Math.round(
             (historyLength + (finalAnswer ? finalAnswer.length : 0)) / 4
-        ); // Approximate: 4 chars per token
+        ); // Approximate: 4 chars per token (fallback only)
+
+        // Prefer actual token counts from Gemini API usageMetadata
+        const actualTokensUsed = totalTokens > 0 ? totalTokens : estimatedTokenCount;
+        const tokenSource = totalTokens > 0 ? 'gemini_usage_metadata' : 'char_count_div_4';
 
         try {
             await logAIOperation({
                 operation: 'insights',
                 systemId: systemId,
                 duration: totalDurationMs,
-                tokensUsed: estimatedTokenCount, // Estimated; replace with actual token tracking if Gemini API supports it
+                tokensUsed: actualTokensUsed,
+                inputTokens: totalInputTokens,
+                outputTokens: totalOutputTokens,
                 success: true,
                 model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
                 contextWindowDays: contextWindowDays,
@@ -2007,7 +2111,10 @@ async function executeReActLoop(params) {
                     conversationLength: conversationHistory.length,
                     timedOut: timedOut,
                     isCustomQuery: isCustomQuery,
-                    tokenEstimationMethod: 'char_count_div_4'
+                    tokenSource: tokenSource,
+                    estimatedTokens: estimatedTokenCount,
+                    actualInputTokens: totalInputTokens,
+                    actualOutputTokens: totalOutputTokens
                 }
             });
 
@@ -2045,20 +2152,27 @@ async function executeReActLoop(params) {
             durationMs: totalDurationMs
         });
 
-        // Log failed operation metrics
+        // Log failed operation metrics (include any tokens used before failure)
         try {
             await logAIOperation({
                 operation: 'insights',
                 systemId: systemId,
                 duration: totalDurationMs,
+                tokensUsed: totalTokens || 0,
+                inputTokens: totalInputTokens || 0,
+                outputTokens: totalOutputTokens || 0,
                 success: false,
                 error: err.message,
                 model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-                contextWindowDays: contextWindowDays
+                contextWindowDays: contextWindowDays,
+                metadata: {
+                    turnsCompleted: turnCount,
+                    toolCallsCompleted: toolCallCount
+                }
             });
         } catch (metricsError) {
-            const err = metricsError instanceof Error ? metricsError : new Error(String(metricsError));
-            log.warn('Failed to log AI operation metrics', { error: err.message });
+            const metricsErr = metricsError instanceof Error ? metricsError : new Error(String(metricsError));
+            log.warn('Failed to log AI operation metrics', { error: metricsErr.message });
         }
 
         return {

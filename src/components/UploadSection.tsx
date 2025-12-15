@@ -21,11 +21,10 @@ interface UploadResult {
 }
 
 interface UploadSectionProps {
-  userId: string;
   onUploadComplete?: (results: UploadResult) => void;
 }
 
-const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete }) => {
+const UploadSection: React.FC<UploadSectionProps> = ({ onUploadComplete }) => {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
@@ -122,8 +121,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
               mimeType: file.type,
               sequenceId: batchSequenceId,
               timelinePosition: isStoryMode ? files.indexOf(file) + 1 : null
-            },
-            userId
+            }
           };
 
           // Use sync analysis for immediate feedback, or async if preferred. 
@@ -152,7 +150,6 @@ const UploadSection: React.FC<UploadSectionProps> = ({ userId, onUploadComplete 
         else {
           const formData = new FormData();
           formData.append('file', file);
-          formData.append('userId', userId);
 
           const response = await fetch('/api/upload', {
             method: 'POST',

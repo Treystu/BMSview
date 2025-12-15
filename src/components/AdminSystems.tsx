@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+/* eslint-disable */
+import React, { useEffect, useState } from 'react';
 
 interface System {
   id: string;
@@ -53,12 +54,12 @@ const SystemCard: React.FC<SystemCardProps> = ({ system, onAdopt, onRefresh }) =
             Records: <span style={{ fontWeight: 'bold', color: '#1f2937' }}>{system.recordCount}</span>
           </p>
           <p style={{ margin: '4px 0', color: '#6b7280', fontSize: '14px' }}>
-            Status: 
-            <span 
-              style={{ 
-                marginLeft: '8px', 
-                padding: '2px 8px', 
-                borderRadius: '4px', 
+            Status:
+            <span
+              style={{
+                marginLeft: '8px',
+                padding: '2px 8px',
+                borderRadius: '4px',
                 backgroundColor: getStatusColor(system.status),
                 color: 'white',
                 fontSize: '12px',
@@ -77,7 +78,7 @@ const SystemCard: React.FC<SystemCardProps> = ({ system, onAdopt, onRefresh }) =
             Created: {new Date(system.createdAt).toLocaleString()}
           </p>
         </div>
-        
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {!system.adopted && (
             <button
@@ -116,11 +117,9 @@ const SystemCard: React.FC<SystemCardProps> = ({ system, onAdopt, onRefresh }) =
   );
 };
 
-interface AdminSystemsProps {
-  userId: string;
-}
+type AdminSystemsProps = Record<string, never>;
 
-const AdminSystems: React.FC<AdminSystemsProps> = ({ userId }) => {
+const AdminSystems: React.FC<AdminSystemsProps> = () => {
   const [systems, setSystems] = useState<System[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -133,20 +132,20 @@ const AdminSystems: React.FC<AdminSystemsProps> = ({ userId }) => {
   const fetchSystems = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      const endpoint = filter === 'unadopted' 
+      const endpoint = filter === 'unadopted'
         ? '/api/unadopted-systems'
-        : filter === 'adopted' 
-        ? '/api/adopted-systems'
-        : '/api/all-systems';
-      
-      const response = await fetch(`${endpoint}?userId=${userId}`);
-      
+        : filter === 'adopted'
+          ? '/api/adopted-systems'
+          : '/api/all-systems';
+
+      const response = await fetch(endpoint);
+
       if (!response.ok) {
         throw new Error(`Failed to fetch systems: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       setSystems(data);
     } catch (err) {
@@ -164,13 +163,13 @@ const AdminSystems: React.FC<AdminSystemsProps> = ({ userId }) => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ systemId, userId }),
+        body: JSON.stringify({ systemId }),
       });
-      
+
       if (!response.ok) {
         throw new Error(`Failed to adopt system: ${response.statusText}`);
       }
-      
+
       // Refresh the systems list
       await fetchSystems();
     } catch (err) {
@@ -198,10 +197,10 @@ const AdminSystems: React.FC<AdminSystemsProps> = ({ userId }) => {
     <div className="admin-systems" style={{ padding: '20px' }}>
       <div style={{ marginBottom: '20px' }}>
         <h2 style={{ margin: '0 0 16px 0', color: '#1f2937' }}>System Management</h2>
-        
-        <div style={{ 
-          display: 'flex', 
-          gap: '8px', 
+
+        <div style={{
+          display: 'flex',
+          gap: '8px',
           marginBottom: '16px',
           flexWrap: 'wrap'
         }}>

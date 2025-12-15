@@ -1,4 +1,5 @@
 import type { Handler, HandlerEvent, HandlerContext } from "@netlify/functions";
+import { createLoggerFromEvent, createTimer } from "./utils/logger.cjs";
 
 interface SolarEstimateParams {
   location: string;
@@ -9,33 +10,48 @@ interface SolarEstimateParams {
 
 const SOLAR_API_BASE_URL = "https://sunestimate.netlify.app/api/calculate";
 
+const sanitizeHeaders = (headers: Record<string, string | undefined> = {}) => {
+  const redacted = { ...headers };
+  if (redacted.authorization) redacted.authorization = "[REDACTED]";
+  if (redacted.cookie) redacted.cookie = "[REDACTED]";
+  if (redacted["x-api-key"]) redacted["x-api-key"] = "[REDACTED]";
+  return redacted;
+};
+
 export const handler: Handler = async (
   event: HandlerEvent,
   context: HandlerContext
 ) => {
-  const startTime = Date.now();
-  const requestId = event.headers['x-request-id'] || event.headers['x-correlation-id'] || crypto.randomUUID();
-  
-  const logEntry = (level: string, message: string, data?: object) => {
-    console.log(JSON.stringify({
-      level,
-      timestamp: new Date().toISOString(),
-      functionName: 'solar-estimate',
-      requestId,
-      message,
-      ...data
-    }));
-  };
+  const log = createLoggerFromEvent("solar-estimate", event, context);
+  const timer = createTimer(log, "solar-estimate");
 
-  logEntry('info', 'Solar estimate request received', { 
-    method: event.httpMethod, 
+  log.entry({
+    method: event.httpMethod,
     path: event.path,
-    query: event.queryStringParameters 
+    query: event.queryStringParameters,
+    headers: sanitizeHeaders(event.headers as Record<string, string>),
+    bodyLength: event.body ? event.body.length : 0,
   });
+
+  if (event.httpMethod === "OPTIONS") {
+    timer.end({ outcome: "preflight" });
+    log.exit(200, { outcome: "preflight" });
+    return {
+      statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+      },
+      body: "",
+    };
+  }
 
   // Only allow GET requests
   if (event.httpMethod !== "GET") {
-    logEntry('warn', 'Method not allowed', { method: event.httpMethod });
+    log.warn("Method not allowed", { method: event.httpMethod });
+    timer.end({ outcome: "method_not_allowed" });
+    log.exit(405, { outcome: "method_not_allowed" });
     return {
       statusCode: 405,
       body: JSON.stringify({ error: "Method not allowed" }),
@@ -48,7 +64,9 @@ export const handler: Handler = async (
 
     // Validation
     if (!location) {
-      logEntry('warn', 'Missing location parameter');
+      log.warn("Missing location parameter");
+      timer.end({ outcome: "validation_error", field: "location" });
+      log.exit(400, { outcome: "validation_error", field: "location" });
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "Location is required (zip code or lat,lon)" }),
@@ -56,7 +74,9 @@ export const handler: Handler = async (
     }
 
     if (!panelWatts || isNaN(Number(panelWatts)) || Number(panelWatts) <= 0) {
-      logEntry('warn', 'Invalid panelWatts parameter', { panelWatts });
+      log.warn("Invalid panelWatts parameter", { panelWatts });
+      timer.end({ outcome: "validation_error", field: "panelWatts" });
+      log.exit(400, { outcome: "validation_error", field: "panelWatts" });
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "Valid panel wattage is required" }),
@@ -64,7 +84,9 @@ export const handler: Handler = async (
     }
 
     if (!startDate || !endDate) {
-      logEntry('warn', 'Missing date parameters', { startDate, endDate });
+      log.warn("Missing date parameters", { startDate, endDate });
+      timer.end({ outcome: "validation_error", field: "dates" });
+      log.exit(400, { outcome: "validation_error", field: "dates" });
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "Start date and end date are required (YYYY-MM-DD format)" }),
@@ -74,7 +96,9 @@ export const handler: Handler = async (
     // Validate date format (basic check)
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
-      logEntry('warn', 'Invalid date format', { startDate, endDate });
+      log.warn("Invalid date format", { startDate, endDate });
+      timer.end({ outcome: "validation_error", field: "date_format" });
+      log.exit(400, { outcome: "validation_error", field: "date_format" });
       return {
         statusCode: 400,
         body: JSON.stringify({ error: "Invalid date format. Use YYYY-MM-DD" }),
@@ -88,9 +112,10 @@ export const handler: Handler = async (
     apiUrl.searchParams.append("startDate", startDate);
     apiUrl.searchParams.append("endDate", endDate);
 
-    logEntry('debug', 'Calling external solar API', { url: apiUrl.toString() });
+    log.debug("Calling external solar API", { url: apiUrl.toString() });
 
     // Make the request to the external Solar API
+    const apiStart = Date.now();
     const response = await fetch(apiUrl.toString(), {
       method: "GET",
       headers: {
@@ -98,12 +123,12 @@ export const handler: Handler = async (
       },
     });
 
-    const apiDurationMs = Date.now() - startTime;
+    const apiDurationMs = Date.now() - apiStart;
 
     // Handle non-200 responses
     if (!response.ok) {
       const errorText = await response.text();
-      logEntry('error', 'External API error', { 
+      log.error("External API error", { 
         status: response.status, 
         errorText: errorText.substring(0, 500),
         apiDurationMs 
@@ -118,6 +143,8 @@ export const handler: Handler = async (
         errorMessage = errorText || errorMessage;
       }
 
+      timer.end({ outcome: "error", status: response.status, apiDurationMs });
+      log.exit(response.status, { outcome: "error" });
       return {
         statusCode: response.status,
         body: JSON.stringify({ error: errorMessage }),
@@ -127,13 +154,15 @@ export const handler: Handler = async (
     // Parse and return the successful response
     const data = await response.json();
     
-    const durationMs = Date.now() - startTime;
-    logEntry('info', 'Solar estimate completed successfully', { 
-      dailyEstimatesCount: data.dailyEstimates?.length || 0,
+    const dailyEstimatesCount = data.dailyEstimates?.length || 0;
+    const durationMs = timer.end({ outcome: "success", apiDurationMs, dailyEstimatesCount });
+    log.info("Solar estimate completed successfully", { 
+      dailyEstimatesCount,
       durationMs,
       apiDurationMs
     });
 
+    log.exit(200, { outcome: "success" });
     return {
       statusCode: 200,
       headers: {
@@ -144,18 +173,19 @@ export const handler: Handler = async (
     };
 
   } catch (error) {
-    const durationMs = Date.now() - startTime;
-    logEntry('error', 'Unexpected error in solar estimate', { 
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-      durationMs
+    const err = error as Error;
+    log.error("Unexpected error in solar estimate", { 
+      error: err?.message || "Unknown error",
+      stack: err?.stack,
+      durationMs: timer.end({ outcome: "exception" })
     });
+    log.exit(500, { outcome: "exception" });
     
     return {
       statusCode: 500,
       body: JSON.stringify({ 
         error: "Internal server error while fetching solar estimate",
-        details: error instanceof Error ? error.message : "Unknown error"
+        details: err?.message || "Unknown error"
       }),
     };
   }

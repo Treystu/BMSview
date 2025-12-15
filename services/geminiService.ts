@@ -41,58 +41,26 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
     log('info', 'Starting synchronous analysis.', analysisContext);
 
     try {
-        // Offload file read + network call to a worker using a blob fallback so it works
-        // regardless of bundler. If worker fails or times out, fall back to direct fetch.
+        // Offload file read + network call to a worker. If worker fails or times out, fall back to direct fetch.
         if (typeof Worker !== 'undefined') {
             try {
-                const workerScript = `
-                                self.onmessage = async function(e) {
-                                    const { endpoint, fileName, mimeType } = e.data || {};
-                                    const file = e.data.file;
-                                    try {
-                                        // Read file as data URL
-                                        const reader = new FileReader();
-                                        reader.onload = async function() {
-                                            try {
-                                                const dataUrl = reader.result;
-                                                const base64 = typeof dataUrl === 'string' ? dataUrl.split(',')[1] : null;
-                                                if (!base64) throw new Error('Failed to read file in worker');
-                                                const payload = { 
-                                                    image: {
-                                                        image: base64,
-                                                        mimeType,
-                                                        fileName
-                                                    }
-                                                };
-                                                const resp = await fetch(endpoint, {
-                                                    method: 'POST',
-                                                    headers: { 'Content-Type': 'application/json' },
-                                                    body: JSON.stringify(payload)
-                                                });
-                                                const json = await resp.json().catch(() => null);
-                                                self.postMessage({ ok: resp.ok, status: resp.status, json });
-                                            } catch (err) {
-                                                self.postMessage({ error: err.message || String(err) });
-                                            }
-                                        };
-                                        reader.onerror = function(err) {
-                                            self.postMessage({ error: err?.message || 'File read error in worker' });
-                                        };
-                                        reader.readAsDataURL(file);
-                                    } catch (err) {
-                                        self.postMessage({ error: err?.message || String(err) });
-                                    }
-                                };
-                                `;
+                // Use the dedicated worker file bundled by Vite
+                const worker = new Worker(
+                    new URL('../src/workers/analysis.worker.ts', import.meta.url),
+                    { type: 'module' }
+                );
 
-                const blob = new Blob([workerScript], { type: 'application/javascript' });
-                const blobUrl = URL.createObjectURL(blob);
-                const worker = new Worker(blobUrl);
+                // Compute an absolute endpoint URL to ensure it works in WorkerGlobalScope
+                const endpoint = new URL(
+                    forceReanalysis
+                        ? '/.netlify/functions/analyze?sync=true&force=true'
+                        : '/.netlify/functions/analyze?sync=true',
+                    window.location.origin
+                ).toString();
 
                 const workerPromise = new Promise<Response>((resolve, reject) => {
                     const timeout = setTimeout(() => {
                         worker.terminate();
-                        URL.revokeObjectURL(blobUrl);
                         reject(new Error('Worker timed out after 60 seconds'));
                     }, 60000);
 
@@ -101,7 +69,6 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
                         const data = msg.data || {};
                         if (data.error) {
                             worker.terminate();
-                            URL.revokeObjectURL(blobUrl);
                             reject(new Error(data.error));
                             return;
                         }
@@ -114,29 +81,27 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
                         } as unknown as Response;
 
                         worker.terminate();
-                        URL.revokeObjectURL(blobUrl);
                         resolve(fakeResp);
                     };
 
                     worker.onerror = (e) => {
                         clearTimeout(timeout);
                         worker.terminate();
-                        URL.revokeObjectURL(blobUrl);
                         reject(new Error(e?.message || 'Worker error'));
                     };
 
-                    // Post the file, endpoint, and metadata (file is transferable in browsers)
+                    // Post the file, endpoint, and metadata
+                    // Note: File objects are cloned using the structured clone algorithm (not transferred) when sent to workers in modern browsers. This is still efficient for worker communication.
                     try {
                         worker.postMessage({ 
                             file, 
-                            endpoint: '/.netlify/functions/analyze?sync=true',
+                            endpoint,
                             fileName: file.name,
                             mimeType: file.type
                         });
                     } catch (postErr) {
                         clearTimeout(timeout);
                         worker.terminate();
-                        URL.revokeObjectURL(blobUrl);
                         reject(postErr);
                     }
                 });
@@ -250,15 +215,28 @@ export const checkFileDuplicate = async (file: File): Promise<{
     timestamp?: string;
     analysisData?: any;
 }> => {
+    const startTime = Date.now();
     const checkContext = { fileName: file.name, fileSize: file.size };
-    log('info', 'Checking file for duplicates.', checkContext);
+    log('info', 'DUPLICATE_CHECK: Starting individual file check', { ...checkContext, event: 'FILE_CHECK_START' });
 
     try {
+        const readStartTime = Date.now();
         const imagePayload = await fileWithMetadataToBase64(file);
+        const readDurationMs = Date.now() - readStartTime;
+        
+        log('debug', 'DUPLICATE_CHECK: File read complete', {
+            fileName: file.name,
+            readDurationMs,
+            imageSize: imagePayload.image?.length || 0,
+            event: 'FILE_READ_COMPLETE'
+        });
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
-            log('warn', 'Duplicate check timed out after 20 seconds.', { fileName: file.name });
+            log('warn', 'DUPLICATE_CHECK: Request timed out after 20 seconds', { 
+                fileName: file.name,
+                event: 'TIMEOUT'
+            });
             controller.abort();
         }, 20000); // 20-second timeout for duplicate check (increased from 10s to handle batch checks better)
 
@@ -266,6 +244,13 @@ export const checkFileDuplicate = async (file: File): Promise<{
             image: imagePayload
         };
 
+        const fetchStartTime = Date.now();
+        log('debug', 'DUPLICATE_CHECK: Calling backend API', {
+            fileName: file.name,
+            endpoint: '/.netlify/functions/analyze?sync=true&check=true',
+            event: 'API_CALL_START'
+        });
+        
         const response = await fetch('/.netlify/functions/analyze?sync=true&check=true', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -274,15 +259,27 @@ export const checkFileDuplicate = async (file: File): Promise<{
         });
 
         clearTimeout(timeoutId);
+        
+        const fetchDurationMs = Date.now() - fetchStartTime;
+        const totalDurationMs = Date.now() - startTime;
 
         if (!response.ok) {
             // Differentiate between expected and unexpected failures
             if (response.status === 404 || response.status === 501) {
                 // Endpoint not implemented - expected, fall back gracefully
-                log('info', 'Duplicate check endpoint not available, will perform full analysis.', { status: response.status });
+                log('info', 'DUPLICATE_CHECK: Endpoint not available, treating as new file', { 
+                    status: response.status,
+                    fileName: file.name,
+                    event: 'ENDPOINT_NOT_AVAILABLE'
+                });
             } else {
                 // Unexpected error - log as warning
-                log('warn', 'Duplicate check endpoint returned error, assuming not duplicate.', { status: response.status });
+                log('warn', 'DUPLICATE_CHECK: API error, treating as new file', { 
+                    status: response.status,
+                    fileName: file.name,
+                    totalDurationMs,
+                    event: 'API_ERROR'
+                });
             }
             return { isDuplicate: false, needsUpgrade: false };
         }
@@ -295,10 +292,18 @@ export const checkFileDuplicate = async (file: File): Promise<{
             analysisData?: any;
         } = await response.json();
         
-        log('info', 'Duplicate check complete.', { 
+        // Enhanced logging with full result details
+        log('info', 'DUPLICATE_CHECK: Backend response received', { 
             fileName: file.name, 
             isDuplicate: !!result.isDuplicate,
-            needsUpgrade: !!result.needsUpgrade
+            needsUpgrade: !!result.needsUpgrade,
+            hasRecordId: !!result.recordId,
+            hasTimestamp: !!result.timestamp,
+            hasAnalysisData: !!result.analysisData,
+            readDurationMs,      // Time to read file and convert to base64
+            fetchDurationMs,     // Time for HTTP request to backend (includes network latency)
+            totalDurationMs,     // Total = read + fetch + overhead (JSON parsing, etc.)
+            event: 'API_RESPONSE'
         });
         
         return {
@@ -313,10 +318,14 @@ export const checkFileDuplicate = async (file: File): Promise<{
         // Detect timeout errors specifically
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         const isTimeout = error instanceof Error && error.name === 'AbortError';
-        log('warn', 'Duplicate check failed, assuming not duplicate.', { 
+        const totalDurationMs = Date.now() - startTime;
+        
+        log('warn', 'DUPLICATE_CHECK: File check failed, treating as new file', { 
             ...checkContext, 
             error: errorMessage,
-            isTimeout 
+            isTimeout,
+            totalDurationMs,
+            event: 'FILE_CHECK_ERROR'
         });
         return { isDuplicate: false, needsUpgrade: false };
     }

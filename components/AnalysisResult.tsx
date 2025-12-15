@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { streamInsights } from '../services/clientService';
 import { hasOpenCircuitBreakers, resetAllCircuitBreakers } from '../services/circuitBreakerService';
 import type { AnalysisData, BmsSystem, DisplayableAnalysisResult, WeatherData } from '../types';
@@ -11,6 +11,7 @@ import SunIcon from './icons/SunIcon';
 import ThermometerIcon from './icons/ThermometerIcon';
 import TypewriterMarkdown from './TypewriterMarkdown';
 import VisualInsightsRenderer from './VisualInsightsRenderer';
+import { CostEstimateBadge, estimateInsightsCost } from './CostEstimateBadge';
 
 // Loading state messages for each insight mode
 const InsightModeLoadingStates: Record<InsightMode, { title: string; description: string }> = {
@@ -29,6 +30,10 @@ const InsightModeLoadingStates: Record<InsightMode, { title: string; description
   [InsightMode.VISUAL_GURU]: {
     title: '📊 Visual Guru Expert Analyzing...',
     description: 'Generating infographic-style insights with charts for time-based metrics. Optimized for visual clarity and dashboard-ready output.'
+  },
+  [InsightMode.ASYNC_WORKLOAD]: {
+    title: '⚡ Async Workload Queued...',
+    description: 'Your analysis has been queued in Netlify\'s durable async system. This workload can run unlimited time with automatic retries. Check status via polling.'
   }
 };
 
@@ -119,6 +124,17 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
     const option = contextWindowOptions.find(opt => opt.days === days);
     return option ? option.label : `${days} days`;
   };
+
+  // Calculate estimated cost based on context window and query type
+  const standardInsightsCostEstimate = useMemo(
+    () => estimateInsightsCost(contextWindowDays, false),
+    [contextWindowDays]
+  );
+  
+  const customQueryCostEstimate = useMemo(
+    () => estimateInsightsCost(contextWindowDays, true),
+    [contextWindowDays]
+  );
 
   const handleGenerateInsights = async (prompt?: string, overrideMode?: InsightMode) => {
     if (!consentGranted) {
@@ -501,19 +517,22 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-4">
-            <button
-              type="button"
-              onClick={() => handleGenerateInsights()}
-              disabled={!consentGranted}
-              className={`w-full sm:w-auto font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform flex items-center justify-center gap-2 ${
-                consentGranted
-                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 hover:scale-105 text-white cursor-pointer'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              <span>🔍</span>
-              <span>Generate AI Insights</span>
-            </button>
+            <div className="flex flex-col items-center sm:items-start gap-2">
+              <button
+                type="button"
+                onClick={() => handleGenerateInsights()}
+                disabled={!consentGranted}
+                className={`w-full sm:w-auto font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform flex items-center justify-center gap-2 ${
+                  consentGranted
+                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 hover:scale-105 text-white cursor-pointer'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                <span>🔍</span>
+                <span>Generate AI Insights</span>
+              </button>
+              <CostEstimateBadge estimate={standardInsightsCostEstimate} showTokens={true} size="sm" />
+            </div>
             <p className="text-sm text-gray-600 text-center sm:text-left">
               AI will intelligently query historical data and analyze trends for comprehensive insights.
             </p>
@@ -531,19 +550,24 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary"
               placeholder="e.g., I want to run an extra 5A load all night. Will I have enough power until sunrise?"
             />
-            <button
-              type="button"
-              onClick={() => handleGenerateInsights(customPrompt)}
-              disabled={!customPrompt.trim() || !consentGranted}
-              className={`w-full sm:w-auto font-bold py-2 px-4 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2 ${
-                customPrompt.trim() && consentGranted
-                  ? 'bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white'
-                  : 'bg-gray-400 text-gray-200 cursor-not-allowed'
-              }`}
-            >
-              <span>💬</span>
-              <span>Submit Custom Query</span>
-            </button>
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleGenerateInsights(customPrompt)}
+                disabled={!customPrompt.trim() || !consentGranted}
+                className={`w-full sm:w-auto font-bold py-2 px-4 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2 ${
+                  customPrompt.trim() && consentGranted
+                    ? 'bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white'
+                    : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                }`}
+              >
+                <span>💬</span>
+                <span>Submit Custom Query</span>
+              </button>
+              {customPrompt.trim() && (
+                <CostEstimateBadge estimate={customQueryCostEstimate} showTokens={true} size="sm" />
+              )}
+            </div>
           </div>
         </div>
       )}

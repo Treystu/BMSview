@@ -376,17 +376,15 @@ export class SyncManager {
             // 2. Batch push via sync-push endpoint (systems)
             if (pendingSystems.length > 0) {
                 await this.pushBatch('systems', pendingSystems.map(({ _syncStatus, ...rest }) => rest));
-                for (const item of pendingSystems) {
-                    await localCache.systems.markAsSynced(item.id, new Date().toISOString());
-                }
+                // Mark all pushed items as synced in batch
+                await localCache.markAsSynced('systems', pendingSystems.map(item => item.id), new Date().toISOString());
             }
 
             // 2b. Batch push via sync-push endpoint (history)
             if (pendingHistory.length > 0) {
                 await this.pushBatch('history', pendingHistory.map(({ _syncStatus, ...rest }) => rest));
-                for (const item of pendingHistory) {
-                    await localCache.history.markAsSynced(item.id, new Date().toISOString());
-                }
+                // Mark all pushed items as synced in batch
+                await localCache.markAsSynced('history', pendingHistory.map(item => item.id), new Date().toISOString());
             }
 
             // 3. Pull incremental updates for both collections
@@ -452,8 +450,7 @@ export class SyncManager {
     private async loadLocalCache(): Promise<null | {
         getMetadata: (collection: 'systems' | 'history' | 'analytics' | 'weather') => Promise<{ lastModified: string | null; recordCount: number; checksum: string | null }>;
         getPendingItems: () => Promise<{ systems: any[]; history: any[]; analytics: any[] }>;
-        systems: { markAsSynced: (id: string, serverTimestamp?: string) => Promise<void> };
-        history: { markAsSynced: (id: string, serverTimestamp?: string) => Promise<void> };
+        markAsSynced: (collection: 'systems' | 'history' | 'analytics' | 'weather', ids: string[], serverTimestamp?: string) => Promise<void>;
         // Minimal writes for pull
         systemsCache?: { put: (item: any) => Promise<void>; bulkPut?: (items: any[]) => Promise<void> };
         historyCache?: { put: (item: any) => Promise<void>; bulkPut?: (items: any[]) => Promise<void> };
@@ -461,7 +458,8 @@ export class SyncManager {
         try {
             // Dynamic import to respect ESM and alias
             const mod = await import('@/services/localCache');
-            return mod as any;
+            // localCache is a named export, access it correctly
+            return (mod as any).localCache ?? mod.default ?? mod;
         } catch (e) {
             log('warn', 'Failed to load local cache module', { error: (e as Error).message });
             return null;

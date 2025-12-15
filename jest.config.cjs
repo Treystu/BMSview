@@ -25,6 +25,12 @@ module.exports = {
   ],
   moduleFileExtensions: ['js', 'jsx', 'ts', 'tsx', 'json', 'node', 'cjs', 'mjs'],
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1'
+    '^@/(.*)$': '<rootDir>/src/$1',
+    '^components/(.*)$': '<rootDir>/components/$1',
+    '^services/(.*)$': '<rootDir>/services/$1',
+    '^state/(.*)$': '<rootDir>/state/$1',
+    '^hooks/(.*)$': '<rootDir>/hooks/$1',
+    '^utils/(.*)$': '<rootDir>/utils/$1',
+    '^@types/(.*)$': '<rootDir>/types/$1'
   }
 };

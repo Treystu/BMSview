@@ -25,7 +25,7 @@ import {
     updateBmsSystem
 } from '../services/clientService';
 import { analyzeBmsScreenshot } from '../services/geminiService';
-import { checkFilesForDuplicates } from '../utils/duplicateChecker';
+import { checkFilesForDuplicates, partitionCachedFiles, buildRecordFromCachedDuplicate, type DuplicateCheckResult } from '../utils/duplicateChecker';
 import { useAdminState } from '../state/adminState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
 import BulkUpload from './BulkUpload';
@@ -42,8 +42,10 @@ import HistoryTable from './admin/HistoryTable';
 import SystemsTable from './admin/SystemsTable';
 import ReconciliationDashboard from './admin/reconciliation/ReconciliationDashboard';
 import MonitoringDashboard from './admin/MonitoringDashboard';
+import CostDashboard from './CostDashboard';
 import { getNestedValue } from './admin/columnDefinitions';
 import { AIFeedbackDashboard } from './AIFeedbackDashboard';
+import { DiagnosticsGuru } from './DiagnosticsGuru';
 
 interface NetlifyUser {
     email: string;
@@ -180,9 +182,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
      * ***MODIFIED***: This is the new, simpler bulk analysis handler.
      * It processes files one by one and gets results immediately.
      */
-    const handleBulkAnalyze = async (files: File[]) => {
-        if (files.length === 0) return;
-        log('info', 'Starting bulk analysis.', { fileCount: files.length, isStoryMode });
+    const handleBulkAnalyze = async (files: File[] | FileList | null | undefined) => {
+        const normalizedFiles = Array.isArray(files) ? files : Array.from(files || []);
+        if (normalizedFiles.length === 0) return;
+        log('info', 'Starting bulk analysis.', { fileCount: normalizedFiles.length, isStoryMode });
 
         if (isStoryMode) {
             try {
@@ -215,14 +218,45 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             });
         }
 
-        const initialResults: DisplayableAnalysisResult[] = files.map(f => ({
+        const initialResults: DisplayableAnalysisResult[] = normalizedFiles.map(f => ({
             fileName: f.name, data: null, error: 'Checking for duplicates...', file: f, submittedAt: Date.now()
         }));
         dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults });
 
         try {
-            // ***PHASE 1: Check ALL files for duplicates upfront - categorize into three groups***
-            const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(files, log);
+            // Layer 1: Client-side cache fast-path (PR #341) - instant for cached duplicates
+            const { cachedDuplicates, cachedUpgrades, remainingFiles } = partitionCachedFiles(normalizedFiles);
+
+            // Process cached duplicates immediately (no network call needed)
+            for (const dup of cachedDuplicates) {
+                const record = buildRecordFromCachedDuplicate(dup, 'cached');
+                dispatch({
+                    type: 'UPDATE_BULK_JOB_COMPLETED',
+                    payload: { record, fileName: dup.file.name }
+                });
+            }
+
+            // Prepare cached upgrades as DuplicateCheckResults
+            const cachedUpgradeResults: DuplicateCheckResult[] = cachedUpgrades.map(file => ({
+                file,
+                isDuplicate: true,
+                needsUpgrade: true
+            }));
+
+            // PHASE 1: Check remaining files for duplicates upfront - categorize into three groups
+            let trueDuplicates: DuplicateCheckResult[] = [];
+            let needsUpgrade: DuplicateCheckResult[] = [];
+            let newFiles: DuplicateCheckResult[] = [];
+
+            if (remainingFiles.length > 0) {
+                const result = await checkFilesForDuplicates(remainingFiles, log);
+                trueDuplicates = result.trueDuplicates;
+                needsUpgrade = result.needsUpgrade;
+                newFiles = result.newFiles;
+            }
+
+            // Combine cached upgrades with network-checked upgrades
+            needsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
             
             // Mark true duplicates as skipped immediately (don't analyze these at all)
             for (const dup of trueDuplicates) {
@@ -256,7 +290,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             log('info', 'Phase 2: Starting analysis of non-duplicate files.', { 
                 count: filesToAnalyze.length,
                 upgrades: needsUpgrade.length,
-                new: newFiles.length
+                new: newFiles.length,
+                cachedDuplicates: cachedDuplicates.length,
+                cachedUpgrades: cachedUpgrades.length
             });
             
             let consecutiveRateLimitErrors = 0; // Track consecutive 429 errors across all files
@@ -925,6 +961,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                 <AIFeedbackDashboard />
                             </div>
                         </section>
+                        <section id="diagnostics-guru-section">
+                            <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">🔧 Diagnostics Guru</h2>
+                            <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
+                                <DiagnosticsGuru />
+                            </div>
+                        </section>
                         <section id="ip-management-section">
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">API Security & IP Management</h2>
                             <IpManagement />
@@ -945,6 +987,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             onFixPowerSigns={handleFixPowerSigns}
                             cleanupProgress={cleanupProgress} // This prop was missing, adding it back
                         />
+                        <section id="cost-dashboard-section">
+                            <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">💰 AI Cost Management</h2>
+                            <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
+                                <CostDashboard />
+                            </div>
+                        </section>
                         <section id="monitoring-dashboard-section">
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">AI Feedback Monitoring</h2>
                             <div className="bg-gray-800 p-4 rounded-lg shadow-inner">

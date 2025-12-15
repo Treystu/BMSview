@@ -4,14 +4,30 @@
   functions = "netlify/functions"
 
 [build.environment]
-  NODE_VERSION = "22"
+  AWS_LAMBDA_JS_RUNTIME = "nodejs20.x"
+  NODE_VERSION = "20"
 
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
 
-# Background function configuration for long-running insights generation
+# Global functions configuration
+# Use esbuild bundler and externalize dependencies to ensure they're available at runtime
+# This fixes "Cannot find module 'mongodb'" errors in async workload schedulers
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["mongodb", "@netlify/async-workloads"]
+
+# Async Workloads configuration for insights generation
+# Uses Netlify's durable async workload system for extended execution
+# The external mongodb dependency is loaded from node_modules at runtime
 [functions."generate-insights-background"]
-  external_node_modules = ["@google/generative-ai"]
+  async_workloads = true
+  [functions."generate-insights-background".build_options]
+    format = "esm"
+
+# Trigger endpoint for async workloads
+# Dynamic import() loads @netlify/async-workloads at runtime from node_modules
+[functions."generate-insights-async-trigger"]
 
 # Admin diagnostics function - needs longer timeout for comprehensive testing
 [functions."admin-diagnostics"]
@@ -44,6 +60,13 @@
   for = "/"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+
+# Content Security Policy headers for all pages
+# worker-src allows blob: URLs for Web Workers (client-side hashing)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://identity.netlify.com https://aistudiocdn.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; frame-src https://identity.netlify.com https://app.netlify.com https://*.netlify.com;"
 
 [context.production.environment]
   LOG_LEVEL = "INFO"

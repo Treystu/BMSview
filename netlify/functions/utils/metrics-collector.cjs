@@ -12,34 +12,125 @@ const { v4: uuidv4 } = require('uuid');
 const log = createLogger('metrics-collector');
 
 /**
- * Gemini API Pricing (as of 2024)
- * Based on Google's published rates
+ * Gemini API Pricing (as of December 2024)
+ * Based on Google's published rates: https://ai.google.dev/pricing
+ * 
+ * Note: Prices vary by context window size for some models.
+ * These are the standard rates for prompts <= 128K tokens.
  */
 const GEMINI_PRICING = {
+  // Gemini 2.5 Flash - Latest multimodal model (preview)
   'gemini-2.5-flash': {
-    inputTokens: 0.075 / 1000000,   // $0.075 per million input tokens
-    outputTokens: 0.30 / 1000000,   // $0.30 per million output tokens
+    inputTokens: 0.075 / 1_000_000,   // $0.075 per million input tokens
+    outputTokens: 0.30 / 1_000_000,   // $0.30 per million output tokens
+    description: 'Gemini 2.5 Flash - Fast multimodal model'
   },
+  'gemini-2.5-flash-preview-05-20': {
+    inputTokens: 0.075 / 1_000_000,
+    outputTokens: 0.30 / 1_000_000,
+    description: 'Gemini 2.5 Flash Preview'
+  },
+  // Gemini 2.0 Flash - Experimental
+  'gemini-2.0-flash': {
+    inputTokens: 0.10 / 1_000_000,    // $0.10 per million input tokens  
+    outputTokens: 0.40 / 1_000_000,   // $0.40 per million output tokens
+    description: 'Gemini 2.0 Flash - Experimental'
+  },
+  'gemini-2.0-flash-exp': {
+    inputTokens: 0.10 / 1_000_000,
+    outputTokens: 0.40 / 1_000_000,
+    description: 'Gemini 2.0 Flash Experimental'
+  },
+  // Gemini 1.5 Flash
   'gemini-1.5-flash': {
-    inputTokens: 0.075 / 1000000,
-    outputTokens: 0.30 / 1000000,
+    inputTokens: 0.075 / 1_000_000,
+    outputTokens: 0.30 / 1_000_000,
+    description: 'Gemini 1.5 Flash - Fast and versatile'
   },
+  'gemini-1.5-flash-latest': {
+    inputTokens: 0.075 / 1_000_000,
+    outputTokens: 0.30 / 1_000_000,
+    description: 'Gemini 1.5 Flash Latest'
+  },
+  'gemini-1.5-flash-8b': {
+    inputTokens: 0.0375 / 1_000_000,  // $0.0375 per million (cheaper 8B variant)
+    outputTokens: 0.15 / 1_000_000,   // $0.15 per million
+    description: 'Gemini 1.5 Flash 8B - Budget option'
+  },
+  // Gemini 1.5 Pro
   'gemini-1.5-pro': {
-    inputTokens: 1.25 / 1000000,
-    outputTokens: 5.00 / 1000000,
+    inputTokens: 1.25 / 1_000_000,
+    outputTokens: 5.00 / 1_000_000,
+    description: 'Gemini 1.5 Pro - Most capable'
+  },
+  'gemini-1.5-pro-latest': {
+    inputTokens: 1.25 / 1_000_000,
+    outputTokens: 5.00 / 1_000_000,
+    description: 'Gemini 1.5 Pro Latest'
+  },
+  // Gemini 1.0 Pro (legacy)
+  'gemini-1.0-pro': {
+    inputTokens: 0.50 / 1_000_000,
+    outputTokens: 1.50 / 1_000_000,
+    description: 'Gemini 1.0 Pro - Legacy'
+  },
+  'gemini-pro': {
+    inputTokens: 0.50 / 1_000_000,
+    outputTokens: 1.50 / 1_000_000,
+    description: 'Gemini Pro - Legacy alias'
   }
 };
 
 /**
- * Calculate cost for Gemini API usage
+ * Get pricing for a model, with fallback to default
  * @param {string} model - Model name
+ * @returns {Object} Pricing info
+ */
+function getModelPricing(model) {
+  // Try exact match first
+  if (GEMINI_PRICING[model]) {
+    return GEMINI_PRICING[model];
+  }
+  
+  // Try partial match (for versioned model names like gemini-2.5-flash-001)
+  const baseModel = Object.keys(GEMINI_PRICING).find(key => model.startsWith(key));
+  if (baseModel) {
+    return GEMINI_PRICING[baseModel];
+  }
+  
+  // Default to gemini-2.5-flash pricing
+  log.warn('Unknown model, using default pricing', { model, defaultModel: 'gemini-2.5-flash' });
+  return GEMINI_PRICING['gemini-2.5-flash'];
+}
+
+/**
+ * Calculate cost for Gemini API usage
+ * @param {string} model - Model name (reads from env if not provided)
  * @param {number} inputTokens - Number of input tokens
  * @param {number} outputTokens - Number of output tokens
  * @returns {number} Cost in USD
  */
-function calculateGeminiCost(model = 'gemini-2.5-flash', inputTokens = 0, outputTokens = 0) {
-  const pricing = GEMINI_PRICING[model] || GEMINI_PRICING['gemini-2.5-flash'];
+function calculateGeminiCost(model, inputTokens = 0, outputTokens = 0) {
+  const effectiveModel = model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const pricing = getModelPricing(effectiveModel);
   return (inputTokens * pricing.inputTokens) + (outputTokens * pricing.outputTokens);
+}
+
+/**
+ * Get current model and its pricing info
+ * @returns {Object} Model info with pricing
+ */
+function getCurrentModelInfo() {
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const pricing = getModelPricing(model);
+  return {
+    model,
+    pricing: {
+      inputPerMillion: pricing.inputTokens * 1_000_000,
+      outputPerMillion: pricing.outputTokens * 1_000_000,
+      description: pricing.description
+    }
+  };
 }
 
 /**
@@ -426,5 +517,8 @@ module.exports = {
   getCostMetrics,
   checkForAnomalies,
   getRealtimeMetrics,
-  calculateGeminiCost
+  calculateGeminiCost,
+  getCurrentModelInfo,
+  getModelPricing,
+  GEMINI_PRICING
 };

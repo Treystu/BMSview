@@ -10,7 +10,9 @@ const {
   trackFeedbackImplementation,
   getCostMetrics,
   getRealtimeMetrics,
-  calculateGeminiCost
+  calculateGeminiCost,
+  getModelPricing,
+  getCurrentModelInfo
 } = require('../netlify/functions/utils/metrics-collector.cjs');
 
 // Mock MongoDB
@@ -343,6 +345,72 @@ describe('Metrics Collector', () => {
       
       expect(metrics.currentOperationsPerMinute).toBeGreaterThan(0);
       expect(metrics.averageLatency).toBeGreaterThan(0);
+    });
+  });
+
+  describe('getModelPricing', () => {
+    test('returns correct pricing for known models', () => {
+      const flashPricing = getModelPricing('gemini-2.5-flash');
+      expect(flashPricing.inputTokens).toBe(0.075 / 1_000_000);
+      expect(flashPricing.outputTokens).toBe(0.30 / 1_000_000);
+      
+      const proPricing = getModelPricing('gemini-1.5-pro');
+      expect(proPricing.inputTokens).toBe(1.25 / 1_000_000);
+      expect(proPricing.outputTokens).toBe(5.00 / 1_000_000);
+    });
+
+    test('handles versioned model names via partial matching', () => {
+      const pricing = getModelPricing('gemini-2.5-flash-001');
+      expect(pricing.inputTokens).toBe(0.075 / 1_000_000);
+      expect(pricing.outputTokens).toBe(0.30 / 1_000_000);
+    });
+
+    test('falls back to default pricing for unknown models', () => {
+      const pricing = getModelPricing('unknown-model-xyz');
+      expect(pricing.inputTokens).toBe(0.075 / 1_000_000);
+      expect(pricing.outputTokens).toBe(0.30 / 1_000_000);
+    });
+  });
+
+  describe('getCurrentModelInfo', () => {
+    const originalEnv = process.env.GEMINI_MODEL;
+
+    afterEach(() => {
+      // Restore original env
+      if (originalEnv !== undefined) {
+        process.env.GEMINI_MODEL = originalEnv;
+      } else {
+        delete process.env.GEMINI_MODEL;
+      }
+    });
+
+    test('reads GEMINI_MODEL environment variable correctly', () => {
+      process.env.GEMINI_MODEL = 'gemini-1.5-pro';
+      const info = getCurrentModelInfo();
+      
+      expect(info.model).toBe('gemini-1.5-pro');
+      expect(info.pricing.inputPerMillion).toBe(1.25);
+      expect(info.pricing.outputPerMillion).toBe(5.00);
+    });
+
+    test('returns default model when env not set', () => {
+      delete process.env.GEMINI_MODEL;
+      const info = getCurrentModelInfo();
+      
+      expect(info.model).toBe('gemini-2.5-flash');
+      expect(info.pricing.inputPerMillion).toBe(0.075);
+      expect(info.pricing.outputPerMillion).toBe(0.30);
+    });
+
+    test('returns formatted pricing information', () => {
+      process.env.GEMINI_MODEL = 'gemini-2.0-flash';
+      const info = getCurrentModelInfo();
+      
+      expect(info).toHaveProperty('model');
+      expect(info).toHaveProperty('pricing');
+      expect(info.pricing).toHaveProperty('inputPerMillion');
+      expect(info.pricing).toHaveProperty('outputPerMillion');
+      expect(info.pricing).toHaveProperty('description');
     });
   });
 });

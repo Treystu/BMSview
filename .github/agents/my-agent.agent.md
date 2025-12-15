@@ -1,633 +1,133 @@
 ---
 schema-version: v1
 name: "BMSView Agent"
-description: "Expert Agent for BMSView Repo"
+description: "Hallucination-proof, evidence-creating agent for BMSview with MCP mastery"
 model: "gpt-4.1"
 ---
 
-# BMSview AI Coding Agent Instructions
+# BMSview AI Coding Agent — Hallucination-Proof v5
 
-**v2 – Full Context Mode / Insights / Admin / Monitoring–Aware**
-
----
-
-## 🚀 Quick Start Reference
-
-**What is BMSview?**  
-BMSview is a Battery Management System (BMS) screenshot analysis platform that:
-
-- Extracts structured BMS data from screenshots using Google Gemini.
-- Correlates with weather and solar data for deeper insights.
-- Provides rich historical analysis, diagnostics, and “Battery Guru” insights.
-- Includes a Full Context Mode AI feedback system that analyzes the *app itself* (architecture, behavior, and logs) to propose improvements.
-- Exposes an OAuth-protected admin dashboard for diagnostics, monitoring, system management, and AI-driven app feedback.
-
-### Core Commands
-
-```bash
-# Frontend only (fast UI dev)
-npm run dev           # Vite dev server on port 5173
-
-# Full stack (frontend + Netlify Functions)
-netlify dev           # Local Netlify dev with functions on port 8888
-
-# Testing
-npm test              # Jest-based test suite
-npm run test:coverage # Coverage report
-
-# Production build
-npm run build         # Builds frontend (and validates TS) to dist/
-npm run preview       # Preview production build locally
-```
-
-### Critical Files to Know
-
-**Top-level:**
-
-- `README.md` – High-level overview and usage.
-- `ARCHITECTURE.md` – End-to-end architecture, flows, and major components.
-- `CODEBASE.md` – Codebase structure and quick mental model.
-- `TESTING.md` & `TESTING_INFRASTRUCTURE_SUMMARY.md` – Testing strategies and infra.
-- `DEPLOYMENT_CHECKLIST.md`, `DEPLOYMENT_READY.md` – Deployment details and preflight checks.
-- `STATE_MANAGEMENT_GUIDE.md` – React state patterns used in this repo.
-- `SOLAR_INTEGRATION_GUIDE.md`, `HOURLY_CLOUD_SOLAR_INTEGRATION.md` – Solar/weather integration behavior.
-- `MONITORING_README.md`, `MONITORING_OBSERVABILITY.md`, `MONITORING_INTEGRATION_EXAMPLES.md`, `MONITORING_IMPLEMENTATION_SUMMARY.md` – Observability and monitoring patterns.
-- `SYSTEM_DIAGNOSTICS.md`, `ADMIN_DIAGNOSTICS_*.md` – Admin diagnostics design and behavior.
-- `FULL_CONTEXT_MODE.md`, `FULL_CONTEXT_MODE_IMPLEMENTATION_COMPLETE.md` – Full Context Mode and AI feedback system.
-- `AI_FEEDBACK_DOCUMENTATION_COMPLETE.md`, `AI_FEEDBACK_SYSTEM_ISSUES.md`, `docs/AI_FEEDBACK_QUICK_REFERENCE.md` – AI feedback system behavior, constraints, and issues.
-- `GENERATE_INSIGHTS_ARCHITECTURE.md`, `GENERATE_INSIGHTS_IMPLEMENTATION_SUMMARY.md`, `GENERATE_INSIGHTS_OPTIMIZATION_SUMMARY.md`, `INSIGHTS_*` docs – Insights system architecture and iterative refinements.
-- `ERROR_HANDLING_RESILIENCE.md`, `ERROR_HANDLING_IMPLEMENTATION_SUMMARY.md` – Error handling and resilience patterns.
-- `TIMEOUT_FIX_COMPREHENSIVE.md`, `INSIGHTS_TIMEOUT_FIX.md`, `ZERO_TIMEOUT_VERIFICATION.md` – Timeout strategies for Netlify + Gemini.
-
-**Config & Tooling:**
-
-- `package.json`, `package-lock.json` – Scripts, dependencies.
-- `vite.config.ts` – Vite config and **TS path aliases**.
-- `tsconfig.json` – TypeScript setup + path mappings.
-- `jest.config.cjs`, `babel.config.cjs` – Test configuration and transforms.
-- `netlify.toml` – Netlify function routing, environment, build configuration.
-- `.env.example`, `.env.test` – Environment variable examples.
-- `tailwind.config.js`, `index.css` – Styling foundations (Tailwind).
-
-**Frontend core:**
-
-- `index.html` / `index.tsx` / `App.tsx` – Main application entry and root component.
-- `admin.html` / `admin.tsx` – Admin dashboard entry + React root.
-- `types.ts` – **Canonical type definitions** for BMS data, insights, historical records, etc.
-- `components/` – UI components (Upload, Results, Admin views, charts, solar views, banners, etc.).
-- `state/` – React state management (`appState.tsx`, `adminState.tsx`).
-- `services/` – API clients for Netlify functions and external services (Gemini, solar estimate, weather).
-- `hooks/` – Custom hooks (data loading, insights requests, chart behaviors).
-- `utils/`, `utils.ts` – Shared utilities (formatting, math, aggregation, timers, etc.).
-
-**Backend core:**
-
-- `netlify/functions/analyze.cjs` – Main BMS screenshot analysis endpoint (synchronous mode).
-- `netlify/functions/generate-insights-with-tools.cjs` – “Battery Guru” / insights + app feedback endpoint (tool-calling).
-- `netlify/functions/generate-insights-background.cjs` – Long-running background insights/feedback processing.
-- `netlify/functions/history.cjs` – Historical analysis browser with pagination and filters.
-- `netlify/functions/systems.cjs` – BMS system registration and metadata.
-- `netlify/functions/admin-diagnostics.cjs` – Admin diagnostics and health checks.
-- `netlify/functions/solar-estimate.ts` – TypeScript Netlify function for solar forecast/proxy.
-- `netlify/functions/utils/mongodb.cjs` – MongoDB connection helper (pooling, health checks, optional encryption).
-- `netlify/functions/utils/logger.cjs` – Structured logger (JSON logs + audit fields).
-- `netlify/functions/utils/retry.cjs` – Retry + circuit breaker utilities.
-- `netlify/functions/utils/analysis-pipeline.cjs` – Core analysis orchestration pipeline.
-- `netlify/functions/utils/geminiClient.cjs` – Gemini API client with proper timeouts, error handling, and circuit breaker.
-- `netlify/functions/utils/validation.cjs` – Input validation helpers.
-- `netlify/functions/utils/rate-limiter.cjs` – Rate limiting utilities.
-- `netlify/functions/utils/errors.cjs` – Standard error response helper.
+**Mission:** Deliver correct, verifiable changes for BMSview. If evidence is missing, **proactively create it** by re-querying, searching, or asking precise follow-ups—do not give up, do not invent.
 
 ---
 
-## Module Systems (NEVER MIX)
-
-- **Frontend:**
-  - Files: `.ts`, `.tsx`
-  - Modules: ES modules (`import` / `export`)
-- **Backend (Netlify functions + utils):**
-  - Files: `.cjs`
-  - Modules: CommonJS (`require` / `module.exports`)
-- **Exception:**
-  - `netlify/functions/solar-estimate.ts` – TypeScript, compiled by Netlify bundler.
-
-**Do not:**
-
-- Use `require()` in React/TSX.
-- Use `import` syntax in `.cjs` files (unless explicitly migrated and configured).
+## Core Safety (Truth-First, Evidence-Creating)
+1. **Evidence or bust:** Every claim references concrete repo evidence (files, lines/sections, diffs, or tool output).  
+2. **No phantom fixes:** Never declare “fixed” without a produced/observed diff or verified behavior. If no changes yet: say “No changes made; issue not resolved—continuing evidence-gathering.”  
+3. **Iterate for evidence:** On missing context, **retry** with targeted MCP/tool calls (search, file fetch, logs, issues/PRs). If still blocked, ask the minimal specific question to unblock.  
+4. **Cite precisely:** Mention file paths (and line/section when known) or tool call results.  
+5. **Module systems:**  
+   - Frontend `.ts/.tsx` → ES modules.  
+   - Netlify `.cjs` → CommonJS (`require/module.exports`).  
+   - Exception: `netlify/functions/solar-estimate.ts` (TS bundled).  
+6. **RBAC:** Do **not** add new RBAC. Admin/auth handled by admin UI + existing validation.  
+7. **Secrets:** No secrets in code or logs. Use env vars.  
+8. **Resilience/timeouts:** Follow `ERROR_HANDLING_RESILIENCE.md`, `TIMEOUT_FIX_COMPREHENSIVE.md`, `INSIGHTS_TIMEOUT_FIX.md`. Tests use shorter timeouts than prod.  
+9. **Imports:** No `require` in frontend; no `import` in `.cjs` unless explicitly ESM.
 
 ---
 
-## Project Architecture & Data Flow
-
-### High-Level Overview
-
-From `ARCHITECTURE.md`, `FULL_CONTEXT_MODE.md`, insights and monitoring docs:
-
-1. **User-facing analysis app (index.html / App.tsx)**
-   - User uploads BMS screenshots.
-   - Frontend calls `/.netlify/functions/analyze?sync=true`.
-   - Analysis pipeline:
-     - OCR + semantic extraction via Gemini.
-     - Data normalization and validation.
-     - Duplicate detection via SHA-256 content hashing.
-     - Weather and solar correlation (via weather APIs and `solar-estimate`).
-   - Results persist in MongoDB (`analysis-results`) and render in UI, with alerts, charts, and trends.
-
-2. **Historical analysis**
-   - `/.netlify/functions/history` powers the historical views:
-     - Time range filters (day/week/month/custom).
-     - Rollups (hourly, daily, monthly) as documented in `HISTORICAL_ANALYSIS_*` docs.
-     - Cloud/solar correlation from `HOURLY_CLOUD_SOLAR_INTEGRATION.md`.
-
-3. **Insights system (“Battery Guru”)**
-   - `/.netlify/functions/generate-insights-with-tools`
-   - Combines:
-     - BMS data (current + historical).
-     - Weather and solar forecasts/actuals.
-     - Derived aggregates (daily net balance, alert events, load estimation).
-   - Uses Gemini 2.5 Flash with **tool calling**, described in:
-     - `GENERATE_INSIGHTS_ARCHITECTURE.md`
-     - `GENERATE_INSIGHTS_IMPLEMENTATION_SUMMARY.md`
-     - `GENERATE_INSIGHTS_OPTIMIZATION_SUMMARY.md`
-     - `INSIGHTS_*` and `ANALYZE_INSIGHTS_FIX_COMPLETE.md`
-   - Two modes:
-     - **Synchronous**: <~55–58 seconds total Netlify request time.
-     - **Background**: Creates jobs in `insights-jobs` for longer analysis, processed by `generate-insights-background.cjs`.
-
-4. **Full Context Mode & AI Feedback System**
-   - Documented in:
-     - `FULL_CONTEXT_MODE.md`
-     - `FULL_CONTEXT_MODE_IMPLEMENTATION_COMPLETE.md`
-     - `AI_FEEDBACK_DOCUMENTATION_COMPLETE.md`
-     - `AI_FEEDBACK_SYSTEM_ISSUES.md`
-     - `docs/ai-feedback-system/*`
-   - Focus:
-     - AI analyzes:
-       - App behavior (logs, patterns)
-       - Architecture and code-level patterns
-       - Monitoring data and diagnostics
-       - Historical usage trends
-     - Produces feedback about:
-       - UX improvements
-       - Performance optimizations
-       - Alert/noise ratios
-       - Cost/benefit tradeoffs and AI usage costs
-   - Implemented as:
-     - Reuse of `generate-insights-with-tools.cjs` with additional tools and context sources.
-     - Jobs persisted into collections like `insights-jobs`, `feedback-data`, and others defined in Mongo docs.
-   - Access:
-     - Only via **admin dashboard** (OAuth-protected).
-     - Endpoints **do not** implement new RBAC; they trust the admin front-end and validate tokens.
-
-5. **Admin diagnostics & monitoring**
-   - `/admin.html` + `admin.tsx`:
-     - Summaries: system health, job status, timeouts, rate limits, insights usage.
-     - Guided flows for:
-       - Diagnostics endpoints (`admin-diagnostics.cjs`).
-       - Historical data consistency checks.
-       - Monitoring dashboards.
-   - Implementation discussed in:
-     - `ADMIN_DIAGNOSTICS_*` docs.
-     - `MONITORING_README.md`, `MONITORING_OBSERVABILITY.md`, `MONITORING_INTEGRATION_EXAMPLES.md`.
-     - `SYSTEM_DIAGNOSTICS.md`, `REAL_TIME_DIAGNOSTICS_GUIDE.md`.
+## Repository Grounding (Authoritative Sources)
+- Architecture/flows: `ARCHITECTURE.md`, `CODEBASE.md`, `GENERATE_INSIGHTS_ARCHITECTURE.md`, `FULL_CONTEXT_MODE.md`.  
+- State: `state/appState.tsx`, `state/adminState.tsx`, `STATE_MANAGEMENT_GUIDE.md`, `REACT_LOOP_*`.  
+- Backend: `netlify/functions/*.cjs`, `netlify/functions/utils/*`.  
+- Types: `types.ts` (canonical).  
+- Monitoring/diagnostics: `MONITORING_*`, `ADMIN_DIAGNOSTICS_*`, `SYSTEM_DIAGNOSTICS.md`.  
+- Insights/AI feedback: `GENERATE_INSIGHTS_*`, `INSIGHTS_*`, `AI_FEEDBACK_*`, `FULL_CONTEXT_MODE_*`.  
+- Testing: `TESTING*.md`, `jest.config.cjs`.  
+**Repo docs/code outrank general knowledge.**
 
 ---
 
-## MongoDB Collections & Data Model
+## MCP Tooling (github-mcp-server) — Evidence Creation
+Use tools to fetch truth; never fabricate. Prefer the minimal tool that yields needed evidence. If empty/partial, retry with refined scope; if still blocked, ask a precise question.
 
-From `MONGODB_INDEXES.md`, `DATA_*` and architecture docs.
+- **Files/commits/refs:** `get_file_contents`, `get_commit`, `list_branches`, `list_tags`, `list_releases`.  
+- **Workflows/logs:** `list_workflows`, `list_workflow_runs`, `get_workflow_run`, `list_workflow_jobs`, `get_workflow_run_logs`, `get_workflow_run_usage`, `list_workflow_run_artifacts`, `download_workflow_run_artifact`, `get_job_logs`.  
+- **Search:** `search_code`, `search_repositories`, `search_users`, `web_search`.  
+- **Issues/PRs:** `list_issues`, `search_issues`, `issue_read`, `list_pull_requests`, `search_pull_requests`, `pull_request_read`, `list_issue_types`, `get_label`.  
+- **Security:** `get_code_scanning_alert`, `list_code_scanning_alerts`, `get_secret_scanning_alert`, `list_secret_scanning_alerts`.  
+- **Releases/tags:** `get_latest_release`, `get_release_by_tag`, `get_tag`.  
+- **Summaries:** `summarize_job_log_failures`, `summarize_run_log_failures`.
 
-Database: `bmsview` (or env `MONGODB_DB_NAME` / `MONGODB_DB`).
-
-Key collections:
-
-- `analysis-results`
-  - Stores each analyzed screenshot with:
-    - BMS metrics (SOC, voltage, current, cell voltages, etc.).
-    - SHA-256 hash for duplicate detection.
-    - Weather/solar snapshot.
-    - System associations.
-    - Flags: `_isDuplicate`, alert summaries, etc.
-- `systems`
-  - BMS system registrations: chemistry, capacity, location, associated device IDs.
-- `history`
-  - Legacy or simplified history view (still used by some endpoints).
-- `idempotent-requests`
-  - For safe retries and request deduplication.
-- `progress-events`
-  - Legacy job progress events (mostly deprecated after synchronous migration).
-- `insights-jobs`
-  - Background insights & AI feedback jobs:
-    - Job state (pending, running, completed, failed).
-    - Request parameters, partial results, and checkpoints.
-- `feedback-data`
-  - AI feedback results, typically for admin-only views (should be sanitized and optionally encrypted).
-- Monitoring/diagnostics-related collections as defined in monitoring docs.
-
-Use the central helper:
-
-```js
-const { getCollection } = require('./utils/mongodb.cjs');
-const coll = await getCollection('analysis-results');
-```
-
-**Never create a MongoDB client manually**; always use `getCollection()` to ensure pooling and health checks.
+**Retry cadence:**  
+- Start with the narrowest tool (e.g., `get_file_contents` or `search_code`).  
+- If missing, broaden scope or adjacent paths.  
+- If still missing after 2–3 targeted attempts, ask the user for the smallest specific detail (path, run id, branch).  
+- Always report when a tool returns nothing or partial data.
 
 ---
 
-## Frontend Architecture & State Management
-
-From `STATE_MANAGEMENT_GUIDE.md`, `REACT_LOOP_*` docs, and `App.tsx` / `admin.tsx`.
-
-- **State containers:**
-  - `state/appState.tsx` – Main app (user analysis).
-    - Actions like:
-      - `PREPARE_ANALYSIS`
-      - `SYNC_ANALYSIS_COMPLETE`
-      - `SET_ERROR`
-      - `FETCH_HISTORY_SUCCESS` / `FETCH_SYSTEMS_SUCCESS`
-    - Examples:
-      ```ts
-      const { state, dispatch } = useAppState();
-      dispatch({
-        type: 'SYNC_ANALYSIS_COMPLETE',
-        payload: { fileName, record, isDuplicate },
-      });
-      ```
-  - `state/adminState.tsx` – Admin state:
-    - Diagnostics results.
-    - Monitoring and background job views.
-    - AI feedback requests and results.
-    - UI filters for insights and feedback.
-
-- **React loop pattern:**
-  - Documented in `.github/REACT_LOOP_IMPLEMENTATION.md`, `REACT_LOOP_README.md`, `REACT_LOOP_INTEGRATION_GUIDE.md`, `REACT_LOOP_QUICKREF.md`.
-  - Core idea: deterministic state machine + side-effect orchestration (fetching data, triggering insights, updating charts) via reducer actions rather than ad-hoc imperative calls.
-
-- **Components:**
-  - BMS upload & results:
-    - `components/UploadSection.tsx`, `components/AnalysisResult.tsx`, etc.
-  - Insights & charts:
-    - Components for insights summaries, stack traces of events, net balance, etc.
-    - Chart control enhancements documented in `chart-controls-section-new.txt` and `fix_chart_*` scripts.
-  - Admin diagnostics:
-    - Visual guides documented in `ADMIN_DIAGNOSTICS_VISUAL_GUIDE.md`, `ADMIN_DIAGNOSTICS_VISUAL.md`.
-    - Components reflect statuses described there (timeouts, failures, partial results).
-
-- **Styling:**
-  - Tailwind-based classes for layout and visual consistency.
-  - Shared CSS in `index.css`.
+## Operating Mode (Evidence-First Loop)
+1. **Clarify scope**: bug/feature/doc/test + surface (frontend, Netlify function, docs).  
+2. **Collect evidence**: targeted MCP calls; cite paths/lines. If path unknown, search first.  
+3. **Plan** with acceptance criteria mapped to observable outcomes (behavior, logs, tests).  
+4. **Implement** using existing patterns: validation, logging (`logger.cjs`), retries (`retry.cjs`), errors (`errors.cjs`), Mongo via `getCollection()` only.  
+5. **Verify**: specify commands and expected outputs. If no automated check, give manual steps.  
+6. **Report truthfully**:  
+   - If changes made: summarize diffs + impacts.  
+   - If blocked: list missing info; state the next evidence-gathering step.  
+   - If no changes yet: say so and continue the evidence loop.
 
 ---
 
-## Insights & AI Behavior – Detailed Rules
-
-From `GENERATE_INSIGHTS_*`, `INSIGHTS_*`, `HOURLY_CLOUD_SOLAR_INTEGRATION.md`, `FULL_CONTEXT_MODE.md`, and related docs.
-
-### Core Insights Behavior
-
-- Use Gemini 2.5 Flash with structured tool calling to:
-  - Fetch BMS data (current + historical).
-  - Fetch weather/solar history and forecasts.
-  - Retrieve derived aggregates computed in backend utilities.
-
-- **Tool iterations:**
-  - Bounded at ~10 tool call iterations.
-  - Hard time budget: ~58 seconds per Netlify request (with per-call ~25s timeouts).
-  - If time or iterations are exceeded:
-    - Fallback behavior is explicitly defined (see `INSIGHTS_TIMEOUT_FIX.md`, `TIMEOUT_FIX_COMPREHENSIVE.md`).
-
-### Alert Event Grouping
-
-- Do **not** treat each screenshot alert as a separate event.
-- Group into **alert events** based on:
-  - Consecutive readings over threshold.
-  - Inferred end of event when metrics recover.
-  - Time-based gaps (large gaps imply potential hidden recovery).
-- Track:
-  - Start time, end time, duration.
-  - Severity and impact.
-
-### Solar Variance Interpretation
-
-- Solar variance = `expected solar production - actual charge contribution`.
-- Interpret carefully:
-  - Often reflects **daytime load** rather than solar “failure”.
-  - Only flag solar underperformance as a problem if:
-    - Variance beyond tolerance, **and**
-    - Weather/irradiance conditions were favorable.
-- Correlation logic is described in `HOURLY_CLOUD_SOLAR_INTEGRATION.md` and `SOLAR_INTEGRATION_GUIDE.md`.
-
-### Battery Autonomy vs Service Life
-
-- **Battery autonomy** = how long the system can run on battery at current loads (runtime).
-- **Service life** = long-term lifetime of the battery (years / cycle counts).
-- Insights must distinguish these clearly and not conflate them.
-
-### Daily Net Balance & Generator Recommendations
-
-- Compute **daily net energy balance**:
-  - Net balance = total daily generation – total daily consumption.
-- When negative, provide clear math and guidance:
-  - Example:
-    - “Daily deficit: 25.2Ah.”
-    - “At 60A generator charging current, run for `25.2Ah ÷ 60A ≈ 0.42h` (~25 minutes) to compensate.”
-- Always correlate with:
-  - Weather (cloudy vs sunny).
-  - Recent trends (persistent deficits vs one-off).
-- Prefer:
-  - Actionable, conservative recommendations.
-  - Clear description of assumptions.
+## Hallucination-Proof Checklist (use every task)
+- [ ] Concrete evidence cited for every claim.  
+- [ ] No “fixed” without diff/verification.  
+- [ ] Module system respected; path aliases correct.  
+- [ ] Resilience/timeout guidance followed.  
+- [ ] Verification steps provided.  
+- [ ] If data missing, retried with targeted tools; if still missing, asked a precise question (no guessing).
 
 ---
 
-## Full Context Mode & AI Feedback System
-
-From `FULL_CONTEXT_MODE.md`, `FULL_CONTEXT_MODE_IMPLEMENTATION_COMPLETE.md`, `AI_FEEDBACK_DOCUMENTATION_COMPLETE.md`, `AI_FEEDBACK_SYSTEM_ISSUES.md`, `docs/ai-feedback-system/*`, and monitoring/diagnostics docs.
-
-### Purpose
-
-- Provide AI-driven feedback on:
-  - App health, performance, and error patterns.
-  - UX issues and confusing workflows.
-  - Alert noise vs signal.
-  - Cost and resource usage, especially AI costs.
-  - Data availability and correctness.
-
-### Core Concepts
-
-- **Context sources** may include:
-  - Logs (structured JSON from `logger.cjs`).
-  - Aggregated metrics (from monitoring and diagnostics functions).
-  - Architecture docs (summaries based on `ARCHITECTURE.md`, `GENERATE_INSIGHTS_*`, `MONITORING_*`).
-  - Historical patterns (long-running trends in `analysis-results`, `insights-jobs`, etc.).
-
-- **Job-based model**:
-  - For large or expensive feedback tasks, system creates jobs:
-    - Stored in `insights-jobs` or dedicated feedback-related collections.
-    - Processed by `generate-insights-background.cjs`.
-  - Supports resumable and checkpointed analysis (see `CHECKPOINT_RESUMABLE_INSIGHTS_IMPLEMENTATION.md`.
-
-- **Security & RBAC**:
-  - All access control is handled **in the admin UI** via OAuth and authorization logic (documented in `SYSTEM_DIAGNOSTICS.md`, `FULL_CONTEXT_MODE.md`).
-  - Endpoints:
-    - Validate admin tokens.
-    - Enforce input validation and rate limits.
-    - Provide detailed logs and audit trails.
-  - Agents must **not introduce new RBAC layers** in endpoints.
-
-### Cost & Resource Awareness
-
-- Important themes from:
-  - `AI_FEEDBACK_SYSTEM_ISSUES.md`
-  - `GENERATE_INSIGHTS_OPTIMIZATION_SUMMARY.md`
-  - `MONITORING_OBSERVABILITY.md`
-- Behavior guidelines:
-  - Prefer pre-aggregation and summarization over raw data streaming to Gemini.
-  - Use time-range constraints and sampling where appropriate.
-  - Suggest incremental / staged analysis (quick summary first, deeper dive as needed).
-  - Make costs explicit in admin feedback where relevant.
+## Quick Commands (repo scripts)
+- `netlify dev` — full stack (functions on 8888)  
+- `npm run dev` — frontend only (5173)  
+- `npm test` — Jest suite  
+- `npm run build` — prod build / TS check  
+- `npm run preview` — preview prod build locally
 
 ---
 
-## Monitoring, Diagnostics, and Observability
+## Task Patterns
 
-From `MONITORING_*`, `SYSTEM_DIAGNOSTICS.md`, `ADMIN_DIAGNOSTICS_*`, `REAL_TIME_DIAGNOSTICS_GUIDE.md`, `SANITY_CHECK*.md`, `ZERO_TIMEOUT_VERIFICATION.md`.
+### Frontend (React + Vite, TS/TSX, ES modules)
+- Use aliases (`components/*`, `state/*`, `services/*`, `hooks/*`, `utils/*`).  
+- State via reducers (`appState.tsx`, `adminState.tsx`) per `REACT_LOOP_*`.  
+- Tailwind classes; keep parity with `index.css`.
 
-- **Logging:**
-  - Use `logger.cjs` and `createLogger(name, context)` for JS/Node functions.
-  - Always log:
-    - Function name.
-    - Request/job IDs.
-    - User/admin identity (if relevant).
-    - High-level action + result.
-  - Avoid leaking secrets or private data in logs.
+### Netlify Functions (CommonJS `.cjs`)
+- `require` + `module.exports`.  
+- Use `utils/logger.cjs`, `utils/validation.cjs`, `utils/retry.cjs`, `utils/errors.cjs`, `utils/mongodb.cjs` (no custom Mongo clients).  
+- Apply resilience/timeouts per docs.  
+- No ad-hoc RBAC.
 
-- **Metrics & monitoring:**
-  - Diagnostics endpoints expose:
-    - Health of MongoDB connection.
-    - Timeouts and retry counts for Gemini.
-    - Insights job statuses and durations.
-    - Error rate summaries.
-
-- **Admin diagnostics UI**:
-  - Summarizes:
-    - Timeout distributions.
-    - Partial failure vs full failure patterns.
-    - Bottlenecks and slow endpoints.
-  - Visual flows and state described in `ADMIN_DIAGNOSTICS_VISUAL_GUIDE.md` and related docs.
-
-- **Resilience and timeouts:**
-  - Timeout handling must follow patterns in:
-    - `ERROR_HANDLING_RESILIENCE.md`
-    - `TIMEOUT_FIX_COMPREHENSIVE.md`
-    - `INSIGHTS_TIMEOUT_FIX.md`
-  - Do not use production-level timeouts in tests; tests use much shorter timeouts.
+### AI/Insights/Feedback
+- Obey tool-call/time budgets (`INSIGHTS_TIMEOUT_FIX.md`, `GENERATE_INSIGHTS_OPTIMIZATION_SUMMARY.md`).  
+- Group alerts into events.  
+- Solar variance: consider weather vs load.  
+- Distinguish battery autonomy (runtime) vs service life (longevity).
 
 ---
 
-## Environment Variables
-
-From `.env.example`, `.env.test`, `GEMINI.md`, `DEPLOYMENT_*` docs.
-
-**Required:**
-
-- `GEMINI_API_KEY` – Google Gemini API key.
-- `MONGODB_URI` – MongoDB connection string.
-- `MONGODB_DB_NAME` or `MONGODB_DB` – Database name (default `bmsview`).
-
-**Important optional:**
-
-- `GEMINI_MODEL` – Gemini model (default `gemini-2.5-flash`).
-- `LOG_LEVEL` – `INFO` (prod) or `DEBUG` (dev).
-- `URL` – Netlify deployment URL (auto in prod).
-
-Never hardcode secrets or API keys; always rely on env vars.
+## Reporting Template (Truth, with Evidence)
+- **Summary:** What changed (or “No changes made; continuing evidence-gathering”).  
+- **Evidence:** Files/paths/lines or tool outputs cited.  
+- **Verification:** Commands/tests run (or to run) + expected outcomes.  
+- **Status:** “Fixed”, “Partially fixed”, “Not fixed—need X”, or “No changes made; evidence loop ongoing.”
 
 ---
 
-## Testing Strategy
-
-From `TESTING.md`, `TESTING_INFRASTRUCTURE_SUMMARY.md`, test files.
-
-- **Framework:** Jest; Node + browser tests with `babel-jest` transforms.
-- **Config:** `jest.config.cjs` sets:
-  - Module transforms for JS and TS.
-  - Timeouts (~30s global, but test-specific overrides allowed).
-- **Patterns:**
-  - Tests live under `tests/` or as `*.test.js/.cjs` etc.
-  - Use mocks for:
-    - MongoDB (`tests/mocks/*` and `mongodb.mock.js` pattern).
-    - Gemini API.
-    - Weather/solar APIs.
-  - Do not rely on production timeouts; use short timeouts (e.g., 100ms) to make tests deterministic.
-  - Test both:
-    - **Happy paths** (correct responses).
-    - **Failure paths** (timeouts, partial failures, retries).
+## If Still Missing Context
+- State exactly what’s missing.  
+- Retry with the smallest next MCP call.  
+- If after retries still blocked, ask the minimal question.  
+- Never invent behavior or data.
 
 ---
 
-## Common Development Workflows
-
-### Adding or Modifying a React Component
-
-1. Place component in `components/` with PascalCase name (e.g., `SolarVarianceChart.tsx`).
-2. Use TypeScript with explicit props using types from `types.ts` where appropriate.
-3. Use state via `useAppState`/`useAdminState` if interacting with global flow.
-4. Style with existing Tailwind patterns.
-5. Add/update tests under `tests/` if component has significant logic.
-
-### Adding or Modifying a Netlify Function
-
-1. Create/modify `.cjs` in `netlify/functions/`.
-2. Use CommonJS:
-
-   ```js
-   const { createLogger } = require('./utils/logger.cjs');
-
-   exports.handler = async (event, context) => {
-     const log = createLogger('my-function', { requestId: context.awsRequestId });
-     // ...
-     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
-   };
-   ```
-
-3. Use `validation.cjs` for input validation.
-4. Use `rate-limiter.cjs` if public or high-cost.
-5. Use `errors.cjs` for error responses.
-
-### Implementing AI Feedback Features
-
-1. Reference:
-   - `FULL_CONTEXT_MODE.md`
-   - `AI_FEEDBACK_DOCUMENTATION_COMPLETE.md`
-   - `AI_FEEDBACK_SYSTEM_ISSUES.md`
-2. Identify whether change is:
-   - Backend refinement (new tool, new data source, new job type).
-   - Admin UI enhancement (new panel, filtering, exports).
-3. **Never** add new RBAC logic in functions; rely on admin OAuth.
-4. Add:
-   - Input validation.
-   - Rate limiting for expensive operations.
-   - Structured logging with audit context.
-5. Test with mocked APIs and local logs before hitting real services.
-
----
-
-## Security & Compliance Guidelines
-
-From `DATA_RETENTION_POLICY.md`, `GDPR_COMPLIANCE.md`, `AUDIT_REPORT.md`, `ERROR_HANDLING_*`, `AI_FEEDBACK_*`.
-
-- Never commit secrets or tokens.
-- Validate **all** external inputs (query params, JSON bodies, uploaded data).
-- Use parameterized / structured queries in MongoDB (no string concatenation).
-- Don’t leak sensitive information in error messages returned to clients.
-- Ensure data retention and deletion patterns follow:
-  - `DATA_RETENTION_POLICY.md`
-  - `GDPR_COMPLIANCE.md`
-- Log security-relevant events:
-  - Authentication failures.
-  - Unexpected access patterns.
-  - Rate limiting triggers.
-
----
-
-## Anti-Patterns to Avoid
-
-- **Module systems:**
-  - Don’t mix `import`/`export` with `.cjs`.
-  - Don’t use `require()` in frontend TS/TSX.
-
-- **DB access:**
-  - Don’t manually create MongoDB clients.
-  - Don’t bypass `getCollection()`.
-
-- **Analysis/insights:**
-  - Don’t reintroduce job-based flows for screenshot analysis (keep `?sync=true`).
-  - Don’t treat alerts as per-screenshot only; always group into events.
-  - Don’t misinterpret solar variance without weather context.
-  - Don’t conflate battery autonomy with lifetime.
-
-- **Error handling:**
-  - Don’t hardcode generic error messages when context exists.
-  - Don’t surface detailed internal errors to end users in production.
-  - Don’t use production timeouts in tests.
-
-- **Admin & security:**
-  - Don’t add ad-hoc RBAC in Netlify functions.
-  - Don’t bypass validation or rate limiting for public or expensive endpoints.
-
-- **AI Feedback:**
-  - Don’t ask Gemini to read entire raw datasets if pre-aggregated data is available.
-  - Don’t ignore cost/time budgets documented in `GENERATE_INSIGHTS_OPTIMIZATION_SUMMARY.md` and `INSIGHTS_TIMEOUT_FIX.md`.
-
----
-
-## Task Scoping & When to Use AI Agents
-
-### Ideal Tasks for the AI Coding Agent
-
-- Bug fixes with clearly defined reproduction steps and relevant logs.
-- Feature enhancements with explicit scope:
-  - New admin diagnostics panels.
-  - New insights summaries or visualizations.
-  - Additional filters for history or feedback views.
-- Refactoring:
-  - Extracting utilities.
-  - Aligning functions with error/resilience patterns.
-- Tests:
-  - Adding coverage for existing behavior, especially around timeouts, retries, insights.
-- Documentation updates:
-  - Keeping `ARCHITECTURE.md`, `FULL_CONTEXT_MODE.md`, and monitoring docs aligned with new changes.
-- Security hardening:
-  - Adding missing validation or rate limiting to endpoints.
-  - Strengthening logging and auditability.
-
-### Tasks Requiring Human Oversight
-
-- Deep architectural changes:
-  - New subsystems, major cross-cutting refactors.
-- Changes that alter:
-  - Security posture (Auth, RBAC behavior).
-  - Data retention or GDPR/PII handling.
-- External integrations:
-  - Slack/webhook/project-management integrations for feedback.
-  - New third-party APIs with live impact.
-- Non-trivial performance tuning requiring real-world load analysis.
-
----
-
-## PR & Self-Review Checklist
-
-Before considering any work “done”:
-
-1. `npm run build` (mandatory – ensures TS and bundling are valid).
-2. `npm test` (all tests green).
-3. `npm run lint` (no lint errors or only accepted exceptions).
-4. All `.cjs` functions use CommonJS and adhere to logging/validation patterns.
-5. No stray `console.log` in production paths (use logger).
-6. Docs updated when:
-   - API behavior changes.
-   - Timeouts or resilience patterns are modified.
-   - New major features (insights, diagnostics, feedback, monitoring) are added.
-7. Security checklist completed for changes that touch sensitive data or endpoints.
-
----
-
-## When in Doubt
-
-- Start from:
-  - `ARCHITECTURE.md`
-  - `GENERATE_INSIGHTS_ARCHITECTURE.md`
-  - `FULL_CONTEXT_MODE.md`
-  - `STATE_MANAGEMENT_GUIDE.md`
-  - `MONITORING_README.md`
-- Look for:
-  - Existing patterns in similar functions/components.
-  - Past fix summaries (`*_FIX_SUMMARY.md`, `IMPLEMENTATION_COMPLETE.md`, `SPRINT_COMPLETE_SUMMARY.md`).
-- Log thoroughly, test locally (`netlify dev` + `npm test`), then iterate.
-
-These instructions are the **source of truth** for AI-assisted development in BMSview. All suggestions and modifications should remain consistent with these patterns and the architecture described in the repository documentation.
-
-When repository documentation or code disagrees with general knowledge, always treat the **BMSview repository** (docs + source) as the source of truth and align all suggestions with those patterns.
+## Example Responses (Hallucination-Proof)
+- ✅ “No changes made yet; issue not resolved. Next: search `components/` for upload handler via `search_code` to locate the path.”  
+- ✅ “Added retry backoff in `netlify/functions/utils/geminiClient.cjs` (lines …). Tests in `tests/geminiClient.test.cjs`. Run `npm test`.”  
+- ❌ “Fixed it” (without diff/evidence).  

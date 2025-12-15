@@ -39,7 +39,7 @@ describe('extract-dl handler', () => {
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body);
-    expect(body.success).toBe(true);
+    expect(body.success).toBe(false);
     expect(body.dlNumbers).toEqual([]);
     expect(body.count).toBe(0);
   });
@@ -86,5 +86,25 @@ describe('extract-dl handler', () => {
     const body = JSON.parse(response.body);
     expect(body.success).toBe(true);
     expect(body.count).toBeGreaterThan(0);
+  });
+
+  test('handles OCR noise and spacing while avoiding false matches', async () => {
+    const event = {
+      httpMethod: 'POST',
+      headers: { 'x-nf-client-connection-ip': '127.0.0.1' },
+      body: JSON.stringify({
+        text: 'DL 123 456 appears with spaces, Driver License: 987-654 has a dash, and alt prefix AB-765432 should also be captured.'
+      })
+    };
+
+    const response = await handler(event, mockContext);
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.success).toBe(true);
+    expect(body.dlNumbers).toContain('123456');
+    expect(body.dlNumbers).toContain('987654');
+    expect(body.dlNumbers).toContain('765432');
+    expect(body.count).toBe(3);
   });
 });

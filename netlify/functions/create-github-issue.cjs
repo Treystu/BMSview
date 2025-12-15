@@ -1,25 +1,141 @@
 // @ts-nocheck
 /**
  * Create GitHub Issue Endpoint
- * Auto-generates GitHub issues from AI feedback
+ * Auto-generates GitHub issues from AI feedback with duplicate prevention
  */
 
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { retryAsync } = require('./utils/retry.cjs');
+const { searchGitHubIssues } = require('./utils/github-api.cjs');
+
+/**
+ * Emoji pattern used throughout for normalization
+ */
+const EMOJI_PATTERN = /[\u{1F534}\u{1F7E0}\u{1F7E1}\u{26AA}\u{1F324}\u{1F5C4}\u{1F3A8}\u{26A1}\u{1F50C}\u{1F4CA}]/gu;
+
+/**
+ * Search for similar issues before creating a new one
+ * @param {string} title - Issue title to search for
+ * @param {object} log - Logger instance
+ * @returns {Promise<object>} Similar issues found
+ */
+async function findSimilarIssues(title, log) {
+  log.info('Searching for similar issues', { title });
+
+  try {
+    // Extract key terms from the title for better search
+    const searchQuery = title
+      .replace(EMOJI_PATTERN, '') // Remove emojis
+      .trim();
+
+    // Search both open and closed issues
+    const results = await searchGitHubIssues({
+      query: searchQuery,
+      state: 'all',
+      per_page: 10
+    }, log);
+
+    if (results.error) {
+      log.warn('Failed to search for similar issues, will proceed with creation', {
+        error: results.message
+      });
+      return { items: [], searchFailed: true };
+    }
+
+    log.info('Similar issues search completed', {
+      totalFound: results.total_count,
+      returnedCount: results.items?.length || 0
+    });
+
+    return results;
+  } catch (error) {
+    log.error('Error searching for similar issues', {
+      error: error.message,
+      title
+    });
+    // Don't block issue creation if search fails
+    return { items: [], searchFailed: true, errorMessage: error.message };
+  }
+}
+
+/**
+ * Check if an issue is an exact duplicate (same title, close match)
+ * @param {string} newTitle - Title of the new issue
+ * @param {array} existingIssues - List of existing issues
+ * @returns {object} Duplicate check result
+ */
+function checkForExactDuplicate(newTitle, existingIssues) {
+  if (!existingIssues || existingIssues.length === 0) {
+    return { isDuplicate: false };
+  }
+
+  // Normalize titles for comparison (remove emojis, lowercase, trim)
+  const normalizedNewTitle = newTitle
+    .replace(EMOJI_PATTERN, '')
+    .toLowerCase()
+    .trim();
+
+  for (const issue of existingIssues) {
+    const normalizedExistingTitle = issue.title
+      .replace(EMOJI_PATTERN, '')
+      .toLowerCase()
+      .trim();
+
+    // Check for exact match or very close match (>90% similarity)
+    if (normalizedExistingTitle === normalizedNewTitle) {
+      return {
+        isDuplicate: true,
+        duplicateIssue: issue,
+        reason: 'Exact title match'
+      };
+    }
+
+    // Skip comparison if either title is empty after normalization
+    if (!normalizedNewTitle || !normalizedExistingTitle) {
+      continue;
+    }
+
+    // Check for high similarity (simple word-based comparison)
+    const newWords = new Set(normalizedNewTitle.split(/\s+/));
+    const existingWords = new Set(normalizedExistingTitle.split(/\s+/));
+    const commonWords = [...newWords].filter(word => existingWords.has(word));
+    // Use union size for balanced similarity (Jaccard index)
+    const unionSize = newWords.size + existingWords.size - commonWords.length;
+
+    // Skip if there are no words to compare (prevents division by zero)
+    if (unionSize === 0) {
+      continue;
+    }
+
+    const similarity = commonWords.length / unionSize;
+
+    if (similarity > 0.9 && issue.state === 'open') {
+      return {
+        isDuplicate: true,
+        duplicateIssue: issue,
+        reason: `${Math.round(similarity * 100)}% title similarity with open issue`
+      };
+    }
+  }
+
+  return { isDuplicate: false };
+}
 
 /**
  * Format feedback as GitHub issue
+ * @param {object} feedback - Feedback data
+ * @param {object} [similarIssues] - Similar issues found during search
  */
-function formatGitHubIssue(feedback) {
+function formatGitHubIssue(feedback, similarIssues = null) {
   const priorityEmoji = {
     critical: '🔴',
     high: '🟠',
     medium: '🟡',
     low: '⚪'
   };
-  
+
   const categoryEmoji = {
     weather_api: '🌤️',
     data_structure: '🗄️',
@@ -28,9 +144,9 @@ function formatGitHubIssue(feedback) {
     integration: '🔌',
     analytics: '📊'
   };
-  
+
   const title = `${priorityEmoji[feedback.priority]} ${categoryEmoji[feedback.category]} ${feedback.suggestion.title}`;
-  
+
   const body = `
 ## AI-Generated Feedback
 
@@ -74,10 +190,25 @@ ${feedback.suggestion.codeSnippets.join('\n\n')}
 \`\`\`
 ` : ''}
 
+${similarIssues && similarIssues.items && similarIssues.items.length > 0 ? `
+---
+
+### Related Issues
+
+The AI identified these potentially related issues:
+
+${similarIssues.items.slice(0, 5).map(issue =>
+    `- ${issue.state === 'open' ? '🟢' : '🔴'} #${issue.number}: [${issue.title}](${issue.html_url})`
+  ).join('\n')}
+
+${similarIssues.items.length > 5 ? `\n*...and ${similarIssues.items.length - 5} more*` : ''}
+` : ''}
+
 ---
 
 *This issue was automatically generated from AI feedback on ${new Date(feedback.timestamp).toLocaleDateString()}*  
 *Feedback ID: ${feedback.id}*
+${similarIssues && similarIssues.searchFailed ? '\n*Note: Similar issues search was not performed due to an error.*' : ''}
 `;
 
   const labels = [
@@ -100,31 +231,31 @@ async function createGitHubIssueAPI(issueData, log) {
   if (!issueData || typeof issueData !== 'object') {
     throw new Error('issueData must be an object');
   }
-  
+
   if (!issueData.title || typeof issueData.title !== 'string') {
     throw new Error('issueData.title is required and must be a string');
   }
-  
+
   if (!issueData.body || typeof issueData.body !== 'string') {
     throw new Error('issueData.body is required and must be a string');
   }
-  
+
   // Get repository info from environment or use default
   const repoOwner = process.env.GITHUB_REPO_OWNER || 'Treystu';
   const repoName = process.env.GITHUB_REPO_NAME || 'BMSview';
   const githubToken = process.env.GITHUB_TOKEN;
-  
+
   if (!githubToken) {
     throw new Error('GITHUB_TOKEN environment variable is not configured. Please set it in Netlify environment variables.');
   }
-  
+
   log.info('Calling GitHub API to create issue', {
     repoOwner,
     repoName,
     title: issueData.title,
     labelsCount: issueData.labels?.length || 0
   });
-  
+
   // Wrap the fetch call with retry logic for transient failures
   const response = await retryAsync(async () => {
     const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/issues`, {
@@ -138,14 +269,14 @@ async function createGitHubIssueAPI(issueData, log) {
       },
       body: JSON.stringify(issueData)
     });
-    
+
     // Check for retryable errors (rate limit, server errors)
     if (!res.ok && (res.status === 429 || res.status >= 500)) {
       const error = new Error(`GitHub API error: ${res.status}`);
       error.status = res.status;
       throw error;
     }
-    
+
     return res;
   }, {
     retries: 3,
@@ -160,35 +291,35 @@ async function createGitHubIssueAPI(issueData, log) {
     },
     log
   });
-  
+
   if (!response.ok) {
     const errorJson = await response.json().catch(() => ({}));
-    
+
     const errorDetails = {
       status: response.status,
       message: errorJson.message || response.statusText,
       documentation_url: errorJson.documentation_url,
       errors: errorJson.errors
     };
-    
+
     let errorMessage = `GitHub API error (${response.status}): ${errorDetails.message}`;
     if (errorDetails.documentation_url) {
       errorMessage += `\nSee: ${errorDetails.documentation_url}`;
     }
-    
+
     const error = new Error(errorMessage);
     error.status = response.status;
     error.details = errorDetails;
     throw error;
   }
-  
+
   const result = await response.json();
-  
+
   log.info('GitHub issue created successfully', {
     issueNumber: result.number,
     issueUrl: result.html_url
   });
-  
+
   return {
     number: result.number,
     url: result.url,
@@ -205,9 +336,9 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('create-github-issue', event, context);
   const timer = createTimer(log, 'create-github-issue-handler');
   const headers = getCorsHeaders(event);
-  
+
   log.entry({ method: event.httpMethod, path: event.path });
-  
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     log.debug('OPTIONS preflight request');
@@ -215,7 +346,7 @@ exports.handler = async (event, context) => {
     log.exit(200);
     return { statusCode: 200, headers };
   }
-  
+
   try {
     if (event.httpMethod !== 'POST') {
       log.warn('Method not allowed', { method: event.httpMethod });
@@ -227,10 +358,10 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ error: 'Method not allowed' })
       };
     }
-    
+
     const body = JSON.parse(event.body);
     const { feedbackId, feedback } = body;
-    
+
     if (!feedbackId && !feedback) {
       return {
         statusCode: 400,
@@ -238,13 +369,13 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ error: 'Either feedbackId or feedback is required' })
       };
     }
-    
+
     // Get feedback from database if only ID provided
     let feedbackData = feedback;
     if (feedbackId && !feedback) {
       const feedbackCollection = await getCollection('ai_feedback');
       feedbackData = await feedbackCollection.findOne({ id: feedbackId });
-      
+
       if (!feedbackData) {
         return {
           statusCode: 404,
@@ -252,7 +383,7 @@ exports.handler = async (event, context) => {
           body: JSON.stringify({ error: 'Feedback not found' })
         };
       }
-      
+
       // Check if already has GitHub issue
       if (feedbackData.githubIssue) {
         return {
@@ -265,18 +396,69 @@ exports.handler = async (event, context) => {
         };
       }
     }
-    
+
     log.info('Creating GitHub issue for AI feedback', {
       feedbackId: feedbackData.id,
       priority: feedbackData.priority
     });
-    
-    // Format issue
-    const issueData = formatGitHubIssue(feedbackData);
-    
+
+    // Search for similar issues first (duplicate prevention)
+    const similarIssues = await findSimilarIssues(
+      feedbackData.suggestion?.title || 'AI Feedback',
+      log
+    );
+
+    // Check for exact duplicates
+    const duplicateCheck = checkForExactDuplicate(
+      feedbackData.suggestion?.title || 'AI Feedback',
+      similarIssues.items
+    );
+
+    if (duplicateCheck.isDuplicate) {
+      log.warn('Duplicate issue detected', {
+        feedbackId: feedbackData.id,
+        duplicateIssueNumber: duplicateCheck.duplicateIssue.number,
+        reason: duplicateCheck.reason
+      });
+
+      // Return conflict status with duplicate information
+      return {
+        statusCode: 409,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          error: 'Duplicate issue detected',
+          reason: duplicateCheck.reason,
+          duplicateIssue: {
+            number: duplicateCheck.duplicateIssue.number,
+            title: duplicateCheck.duplicateIssue.title,
+            url: duplicateCheck.duplicateIssue.html_url,
+            state: duplicateCheck.duplicateIssue.state
+          },
+          suggestion: 'Review the existing issue instead of creating a duplicate. Manual override may be possible through the admin interface.',
+          feedbackId: feedbackData.id
+        })
+      };
+    }
+
+    // Log similar issues found (audit trail)
+    if (similarIssues.items && similarIssues.items.length > 0) {
+      log.info('Similar issues found during duplicate check', {
+        feedbackId: feedbackData.id,
+        similarCount: similarIssues.items.length,
+        similarIssues: similarIssues.items.slice(0, 3).map(i => ({
+          number: i.number,
+          title: i.title,
+          state: i.state
+        }))
+      });
+    }
+
+    // Format issue with similar issues included in body
+    const issueData = formatGitHubIssue(feedbackData, similarIssues);
+
     // Create GitHub issue
     const githubIssue = await createGitHubIssueAPI(issueData, log);
-    
+
     // Update feedback with GitHub issue info
     if (feedbackId) {
       const feedbackCollection = await getCollection('ai_feedback');
@@ -294,15 +476,15 @@ exports.handler = async (event, context) => {
         }
       );
     }
-    
+
     log.info('GitHub issue created successfully', {
       feedbackId: feedbackData.id,
       issueNumber: githubIssue.number
     });
-    
+
     timer.end({ success: true });
     log.exit(200, { issueNumber: githubIssue.number });
-    
+
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -310,7 +492,9 @@ exports.handler = async (event, context) => {
         success: true,
         issueNumber: githubIssue.number,
         issueUrl: githubIssue.html_url,
-        feedbackId: feedbackData.id
+        feedbackId: feedbackData.id,
+        similarIssuesFound: similarIssues.items?.length || 0,
+        duplicateCheckPerformed: !similarIssues.searchFailed
       })
     };
   } catch (error) {
@@ -331,3 +515,5 @@ exports.handler = async (event, context) => {
 // Export for testing
 module.exports.formatGitHubIssue = formatGitHubIssue;
 module.exports.createGitHubIssueAPI = createGitHubIssueAPI;
+module.exports.findSimilarIssues = findSimilarIssues;
+module.exports.checkForExactDuplicate = checkForExactDuplicate;

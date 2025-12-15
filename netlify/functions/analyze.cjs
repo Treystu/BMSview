@@ -1,21 +1,29 @@
 /**
  * Lambda function handler for analyzing image data.
- * * Dependencies:
+ * 
+ * **PRIVACY NOTICE**: This is an unauthenticated API endpoint. Analysis results are stored
+ * and retrieved based on image content hash (SHA-256) only, without user isolation. 
+ * Anyone with the same BMS screenshot can view the analysis results. Do not upload
+ * screenshots containing sensitive or private information.
+ * 
+ * Dependencies:
  * - utils/errors: { errorResponse } - Error handling utilities
  * - utils/validation: { parseJsonBody, validateAnalyzeRequest, validateImagePayload } - Request validation
  * - utils/logger: { createLogger, createTimer } - Logging and timing utilities
  * - utils/analysis-pipeline: { performAnalysisPipeline } - Core analysis implementation
- * - utils/hash: { sha256HexFromBase64 } - Content hashing utilities
+ * - utils/unified-deduplication: Canonical duplicate detection and content hashing
  * - utils/mongodb: { getCollection } - MongoDB connection and collection access
  * - utils/retry: { withTimeout, retryAsync, circuitBreaker } - Retry and circuit breaker patterns
- * * Required Environment Variables:
+ * 
+ * Required Environment Variables:
  * - ANALYSIS_TIMEOUT_MS: Analysis pipeline timeout (default: 60000)
  * - ANALYSIS_RETRIES: Number of retry attempts (default: 2)
  * - ANALYSIS_RETRY_BASE_MS: Base delay between retries (default: 250)
  * - ANALYSIS_RETRY_JITTER_MS: Jitter added to retry delay (default: 200)
  * - CB_FAILURES: Circuit breaker failure threshold (default: 5)
  * - CB_OPEN_MS: Circuit breaker open duration (default: 30000)
- * * MongoDB Collections Used:
+ * 
+ * MongoDB Collections Used:
  * - idempotent-requests: Stores request/response pairs for idempotency
  * - analysis-results: Stores analysis results and content hashes for deduplication
  * - progress-events: Stores legacy job progress events
@@ -25,11 +33,16 @@ const { errorResponse } = require('./utils/errors.cjs');
 const { parseJsonBody, validateAnalyzeRequest, validateImagePayload } = require('./utils/validation.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
-const { sha256HexFromBase64 } = require('./utils/hash.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { handleStoryModeAnalysis } = require('./utils/story-mode.cjs');
+// Use unified deduplication module as canonical source
+const {
+  calculateImageHash,
+  findDuplicateByHash,
+  checkNeedsUpgrade
+} = require('./utils/unified-deduplication.cjs');
 
 /**
  * Validate that required environment variables are set
@@ -84,13 +97,20 @@ function validateEnvironment(log) {
  */
 function getErrorStatusCode(error) {
   const message = error.message || '';
+  const code = error.code || '';
 
+  // Gateway timeout for backend service timeouts (504)
+  if (code === 'operation_timeout' || message.includes('operation_timeout')) {
+    return 504;
+  }
+  
   // Client errors (400-499)
   if (message.includes('invalid') || message.includes('validation')) return 400;
   if (message.includes('unauthorized') || message.includes('authentication')) return 401;
   if (message.includes('forbidden')) return 403;
   if (message.includes('not found')) return 404;
-  if (message.includes('timeout') || message.includes('TIMEOUT')) return 408;
+  // Client-side timeout (408) for generic timeout messages
+  if (message.includes('timeout') || message.includes('TIMEOUT') || message.includes('timed out')) return 408;
   if (message.includes('quota') || message.includes('rate limit')) return 429;
 
   // Service errors (500-599)
@@ -109,6 +129,10 @@ function getErrorStatusCode(error) {
 function getErrorCode(error) {
   const message = error.message || '';
 
+  const code = error.code || '';
+  
+  // Gateway timeout for backend service timeouts
+  if (code === 'operation_timeout' || message.includes('operation_timeout')) return 'gateway_timeout';
   if (message.includes('timeout') || message.includes('TIMEOUT')) return 'analysis_timeout';
   if (message.includes('quota') || message.includes('rate limit')) return 'quota_exceeded';
   if (message.includes('ECONNREFUSED') || message.includes('connection')) return 'database_unavailable';
@@ -116,6 +140,17 @@ function getErrorCode(error) {
   if (message.includes('Gemini')) return 'ai_service_error';
 
   return 'analysis_failed';
+}
+
+/**
+ * Extract record ID from an analysis record
+ * Handles both MongoDB ObjectId and string ID formats
+ * @param {Object} record - Analysis record
+ * @returns {string|undefined} Record ID as string
+ */
+function extractRecordId(record) {
+  if (!record) return undefined;
+  return record.id || record._id?.toString?.() || record._id;
 }
 
 /**
@@ -159,7 +194,7 @@ exports.handler = async (event, context) => {
   const checkOnly = (event.queryStringParameters && event.queryStringParameters.check === 'true');
   const headersIn = event.headers || {};
   const idemKey = headersIn['Idempotency-Key'] || headersIn['idempotency-key'] || headersIn['IDEMPOTENCY-KEY'];
-  let requestContext = { jobId: undefined };
+  const requestContext = { jobId: undefined };
 
   try {
     // Parse and validate request body
@@ -204,7 +239,7 @@ exports.handler = async (event, context) => {
           message: `Analysis failed: ${error.message}`
         });
       }
-    } catch (_) {
+    } catch {
       // Swallow cleanup errors to avoid masking primary error
     }
 
@@ -263,34 +298,75 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
       return errorResponse(400, 'invalid_image', imageValidation.error || 'Invalid image', undefined, { ...headers, 'Content-Type': 'application/json' });
     }
 
-    // Calculate content hash for deduplication
-    const contentHash = sha256HexFromBase64(imagePayload.image);
+    // Calculate content hash for deduplication using unified function
+    const hashStartTime = Date.now();
+    const contentHash = calculateImageHash(imagePayload.image, log);
+    const hashDurationMs = Date.now() - hashStartTime;
+    
     if (!contentHash) {
+      log.error('Failed to generate content hash for image payload', {
+        fileName: imagePayload.fileName,
+        imageSize: imagePayload.image?.length || 0,
+        event: 'HASH_FAILED'
+      });
       return errorResponse(400, 'invalid_image', 'Could not generate content hash', undefined, { ...headers, 'Content-Type': 'application/json' });
     }
-
-    // Extract userId for data isolation
-    const userId = context.clientContext?.user?.sub || requestBody.userId;
+    
+    log.debug('Content hash calculated', {
+      contentHash: contentHash.substring(0, 16) + '...',
+      hashDurationMs,
+      imageSize: imagePayload.image?.length || 0,
+      fileName: imagePayload.fileName,
+      event: 'HASH_CALCULATED'
+    });
 
     // ***NEW: Check-only mode - return duplicate status without full analysis***
     if (checkOnly) {
+      const checkOnlyStartTime = Date.now();
       try {
-        const existingAnalysis = await checkExistingAnalysis(contentHash || '', log, userId || '');
+        log.info('DUPLICATE_CHECK: Starting check-only mode', {
+          contentHash: contentHash.substring(0, 16) + '...',
+          fileName: imagePayload.fileName,
+          imageSize: imagePayload.image?.length || 0,
+          event: 'CHECK_ONLY_START'
+        });
+        
+        const existingAnalysis = await checkExistingAnalysis(contentHash || '', log);
 
         // Distinguish between true duplicates and upgrades needed
+        // checkExistingAnalysis returns:
+        // - null: No duplicate found
+        // - { _isUpgrade: true, _existingRecord: ... }: Low-quality duplicate needs upgrade
+        // - record object: High-quality duplicate (true duplicate)
         const isDuplicate = !!existingAnalysis;
-        const needsUpgrade = existingAnalysis?._isUpgrade || false;
+        const needsUpgrade = existingAnalysis?._isUpgrade === true;
+        
+        // Extract the actual record for upgrade cases
+        const actualRecord = needsUpgrade ? existingAnalysis._existingRecord : existingAnalysis;
 
         const checkResponse = {
           isDuplicate,
           needsUpgrade,
-          recordId: existingAnalysis?.id || existingAnalysis?._id,
-          timestamp: existingAnalysis?.timestamp,
-          analysisData: !needsUpgrade && existingAnalysis ? existingAnalysis.analysis : null
+          recordId: extractRecordId(actualRecord),
+          timestamp: actualRecord?.timestamp,
+          analysisData: (!needsUpgrade && actualRecord) ? actualRecord.analysis : null
         };
 
         const durationMs = timer.end({ checkOnly: true, isDuplicate, needsUpgrade });
-        log.info('Check-only request complete', { isDuplicate, needsUpgrade, durationMs });
+        const checkOnlyDurationMs = Date.now() - checkOnlyStartTime;
+        
+        // Enhanced logging for duplicate detection debugging
+        log.info('DUPLICATE_CHECK: Check-only complete', { 
+          isDuplicate, 
+          needsUpgrade, 
+          hasRecordId: !!checkResponse.recordId,
+          hasAnalysisData: !!checkResponse.analysisData,
+          durationMs,
+          checkOnlyDurationMs,
+          fileName: imagePayload.fileName,
+          contentHashPreview: contentHash.substring(0, 16) + '...',
+          event: 'CHECK_ONLY_COMPLETE'
+        });
         log.exit(200);
 
         return {
@@ -299,7 +375,15 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
           body: JSON.stringify(checkResponse)
         };
       } catch (/** @type {any} */ checkError) {
-        log.warn('Check-only request failed', { error: checkError.message });
+        const checkOnlyDurationMs = Date.now() - checkOnlyStartTime;
+        log.error('DUPLICATE_CHECK: Check-only failed', { 
+          error: checkError.message,
+          stack: checkError.stack?.substring?.(0, 500),
+          checkOnlyDurationMs,
+          fileName: imagePayload.fileName,
+          contentHashPreview: contentHash?.substring?.(0, 16) + '...',
+          event: 'CHECK_ONLY_ERROR'
+        });
         return {
           statusCode: 200,
           headers: { ...headers, 'Content-Type': 'application/json' },
@@ -337,7 +421,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
 
     if (!forceReanalysis) {
       try {
-        const existingAnalysis = await checkExistingAnalysis(contentHash || '', log, userId || '');
+        const existingAnalysis = await checkExistingAnalysis(contentHash || '', log);
 
         if (existingAnalysis) {
           // Check if checkExistingAnalysis flagged this as needing upgrade
@@ -407,7 +491,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
 
     // Store results for future deduplication (best effort)
     try {
-      await storeAnalysisResults(record, contentHash || '', log, forceReanalysis, isUpgrade, existingRecordToUpgrade, userId);
+      await storeAnalysisResults(record, contentHash || '', log, forceReanalysis, isUpgrade, existingRecordToUpgrade);
     } catch (/** @type {any} */ storageError) {
       // Log but don't fail - storage is not critical for immediate response
       log.warn('Failed to store analysis results for deduplication', {
@@ -462,10 +546,10 @@ async function handleLegacyAnalysis(requestBody, headers, log, requestContext) {
     return errorResponse(400, 'missing_parameters', validated.error || 'Missing parameters', validated.details, { ...headers, 'Content-Type': 'application/json' });
   }
 
-  const { jobId, fileData, userId } = /** @type {any} */ (validated).value;
+  const { jobId, fileData } = /** @type {any} */ (validated).value;
   requestContext.jobId = jobId;
 
-  log.info('Legacy analyze request received.', { jobId, userId, fileBytes: fileData ? fileData.length : 0 });
+  log.info('Legacy analyze request received.', { jobId, fileBytes: fileData ? fileData.length : 0 });
   log.exit(202, { mode: 'legacy' });
   return {
     statusCode: 202,
@@ -499,90 +583,113 @@ async function checkIdempotency(idemKey, log) {
 }
 
 /**
- * Checks for existing analysis by content hash
+ * Checks for existing analysis by content hash using unified deduplication
+ * This is now a thin wrapper around the canonical unified-deduplication module
  * @param {string} contentHash - Content hash to check
  * @param {any} log - Logger instance
- * @param {any} userId - User ID
- * @returns {Promise<any>} Existing analysis if found and high quality, null if should re-analyze
+ * @returns {Promise<any>} Existing analysis if found, { _isUpgrade: true, _existingRecord } if upgrade needed, or null
  */
-async function checkExistingAnalysis(contentHash, log, userId) {
+async function checkExistingAnalysis(contentHash, log) {
+  const startTime = Date.now();
   try {
-    if (!userId) {
-      log.debug('Skipping duplicate check: No userId provided');
+    log.info('DUPLICATE_CHECK: Starting database lookup', {
+      contentHashPreview: contentHash.substring(0, 16) + '...',
+      fullHashLength: contentHash.length,
+      event: 'DB_LOOKUP_START'
+    });
+    
+    const resultsCol = await getCollection('analysis-results');
+    
+    // Use unified deduplication module to find the duplicate
+    const existingRecord = await findDuplicateByHash(contentHash, resultsCol, log);
+    
+    const totalDurationMs = Date.now() - startTime;
+    
+    if (!existingRecord) {
+      log.info('DUPLICATE_CHECK: No existing analysis found in database', {
+        contentHashPreview: contentHash.substring(0, 16) + '...',
+        totalDurationMs,
+        event: 'NOT_FOUND'
+      });
       return null;
     }
-
-    const resultsCol = await getCollection('analysis-results');
-    const existing = await resultsCol.findOne({ contentHash, userId });
-    if (existing) {
-      log.info('Dedupe: existing analysis found for content hash.', {
-        contentHash: contentHash.substring(0, 16) + '...',
-        needsReview: existing.needsReview,
-        validationScore: existing.validationScore,
-        extractionAttempts: existing.extractionAttempts || 1
-      });
-
-      const criticalFields = [
-        'dlNumber', 'stateOfCharge', 'overallVoltage', 'current', 'remainingCapacity',
-        'chargeMosOn', 'dischargeMosOn', 'balanceOn', 'highestCellVoltage',
-        'lowestCellVoltage', 'averageCellVoltage', 'cellVoltageDifference',
-        'cycleCount', 'power'
-      ];
-
-      const hasAllCriticalFields = criticalFields.every(field =>
-        existing.analysis &&
-        existing.analysis[field] !== null &&
-        existing.analysis[field] !== undefined
-      );
-
-      // Check for missing critical fields first (highest priority)
-      if (!hasAllCriticalFields) {
-        log.warn('Existing record is missing critical fields. Will re-analyze to improve.', {
-          contentHash: contentHash.substring(0, 16) + '...',
-          extractionAttempts: existing.extractionAttempts || 1
+    
+    log.info('DUPLICATE_CHECK: Found existing record, checking quality', {
+      recordId: existingRecord._id || existingRecord.id,
+      validationScore: existingRecord.validationScore,
+      extractionAttempts: existingRecord.extractionAttempts || 1,
+      isComplete: existingRecord.isComplete || false,
+      hasAnalysis: !!existingRecord.analysis,
+      contentHashPreview: contentHash.substring(0, 16) + '...',
+      event: 'RECORD_FOUND'
+    });
+    
+    // Use unified checkNeedsUpgrade to determine if upgrade is required
+    const upgradeCheck = checkNeedsUpgrade(existingRecord);
+    
+    log.info('DUPLICATE_CHECK: Upgrade check result', {
+      needsUpgrade: upgradeCheck.needsUpgrade,
+      reason: upgradeCheck.reason,
+      shouldMarkComplete: upgradeCheck.shouldMarkComplete,
+      contentHashPreview: contentHash.substring(0, 16) + '...',
+      event: 'UPGRADE_CHECK_RESULT'
+    });
+    
+    // If the check indicates this record should be marked complete, update it in the database
+    if (upgradeCheck.shouldMarkComplete && !existingRecord.isComplete) {
+      try {
+        const resultsCol = await getCollection('analysis-results');
+        await resultsCol.updateOne(
+          { _id: existingRecord._id },
+          { $set: { isComplete: true, completedAt: new Date() } }
+        );
+        log.info('DUPLICATE_CHECK: Marked record as complete', {
+          recordId: existingRecord._id,
+          reason: upgradeCheck.reason || 'High quality or retry exhausted',
+          event: 'MARKED_COMPLETE'
         });
-        return { _isUpgrade: true, _existingRecord: existing };
-      }
-
-      // ***FIXED: Check if this record has already been retried with no improvement***
-      // Use epsilon comparison for floating point and validate both quality scores exist
-      const hasBeenRetriedWithNoImprovement =
-        (existing.validationScore !== undefined && existing.validationScore < 100) &&
-        (existing.extractionAttempts || 1) >= 2 &&
-        existing._wasUpgraded &&
-        existing._previousQuality !== undefined &&
-        existing._newQuality !== undefined &&
-        Math.abs(existing._previousQuality - existing._newQuality) < 0.01; // Epsilon comparison
-
-      if (hasBeenRetriedWithNoImprovement) {
-        log.info('Existing record was already retried with identical results - assuming full extraction.', {
-          contentHash: contentHash.substring(0, 16) + '...',
-          validationScore: existing.validationScore,
-          extractionAttempts: existing.extractionAttempts,
-          previousQuality: existing._previousQuality,
-          newQuality: existing._newQuality
+        // Update local record for consistency
+        existingRecord.isComplete = true;
+      } catch (markError) {
+        // Log but don't fail - marking complete is not critical
+        log.warn('DUPLICATE_CHECK: Failed to mark record as complete', {
+          error: markError.message,
+          recordId: existingRecord._id,
+          event: 'MARK_COMPLETE_FAILED'
         });
-        return existing; // Return as-is, no further retry needed
       }
-
-      // ***FIXED: Auto-retry if confidence score < 100% with proper undefined handling***
-      const validationScore = existing.validationScore ?? 0; // Default to 0 if undefined
-      if (validationScore < 100 && (existing.extractionAttempts || 1) < 2) {
-        log.warn('Existing record has low confidence score. Will re-analyze to improve.', {
-          contentHash: contentHash.substring(0, 16) + '...',
-          validationScore: validationScore,
-          extractionAttempts: existing.extractionAttempts || 1
-        });
-        return { _isUpgrade: true, _existingRecord: existing };
-      }
-
-      return existing;
     }
-    return null;
+    
+    if (upgradeCheck.needsUpgrade) {
+      log.info('DUPLICATE_CHECK: Returning upgrade needed response', {
+        contentHashPreview: contentHash.substring(0, 16) + '...',
+        upgradeReason: upgradeCheck.reason,
+        recordId: existingRecord._id || existingRecord.id,
+        totalDurationMs,
+        event: 'UPGRADE_NEEDED'
+      });
+      // Return upgrade marker for compatibility with existing code
+      return { _isUpgrade: true, _existingRecord: existingRecord };
+    }
+    
+    log.info('DUPLICATE_CHECK: Returning high-quality duplicate', {
+      contentHashPreview: contentHash.substring(0, 16) + '...',
+      validationScore: existingRecord.validationScore,
+      isComplete: existingRecord.isComplete || false,
+      recordId: existingRecord._id || existingRecord.id,
+      totalDurationMs,
+      event: 'HIGH_QUALITY_DUPLICATE'
+    });
+    
+    return existingRecord;
   } catch (/** @type {any} */ error) {
-    log.warn('Duplicate check failed', {
+    const totalDurationMs = Date.now() - startTime;
+    log.error('DUPLICATE_CHECK: Database lookup failed', {
       error: error.message,
-      contentHash: contentHash.substring(0, 16) + '...'
+      stack: error.stack?.substring?.(0, 500),
+      contentHashPreview: contentHash.substring(0, 16) + '...',
+      totalDurationMs,
+      event: 'DB_LOOKUP_ERROR'
     });
     // Re-throw to let caller decide how to handle
     throw error;
@@ -637,14 +744,9 @@ async function executeAnalysisPipeline(imagePayload, log, context) {
  * @param {boolean} isUpgrade - Whether this is upgrading a low-quality record
  * @param {any} existingRecordToUpgrade - Existing record being upgraded (if applicable)
  */
-async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false, isUpgrade = false, existingRecordToUpgrade = null, userId = null) {
+async function storeAnalysisResults(record, contentHash, log, forceReanalysis = false, isUpgrade = false, existingRecordToUpgrade = null) {
   try {
     const resultsCol = await getCollection('analysis-results');
-
-    if (!userId) {
-      log.warn('Skipping result storage: No userId provided');
-      return;
-    }
 
     // If upgrading, update the existing record instead of inserting
     if (isUpgrade && existingRecordToUpgrade) {
@@ -657,16 +759,18 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
       const originalId = existingRecordToUpgrade.id ||
         (existingRecordToUpgrade._id?.toString ? existingRecordToUpgrade._id.toString() : existingRecordToUpgrade._id);
 
-      // ***SECURITY NOTE: This update uses contentHash only for filtering***
-      // Enforcing tenant/user scoping to prevent cross-user record modifications
+      // Use contentHash as the primary deduplication key
+      // NOTE: This is a single-tenant application - all admins share the same analysis data.
+      // The contentHash uniquely identifies an image across all users.
       const updateResult = await resultsCol.updateOne(
-        { contentHash, userId },
+        { contentHash },
         {
           $set: {
             // Keep the original ID - do NOT overwrite with new UUID
             id: originalId,
             fileName: record.fileName,
             timestamp: record.timestamp,
+            systemId: record.analysis?.systemId || null, // Top-level for query efficiency
             analysis: record.analysis,
             updatedAt: new Date(),
             _wasUpgraded: true,
@@ -693,13 +797,36 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
 
       // ***CRITICAL FIX: Update the record object to return the original ID to the caller***
       record.id = originalId;
+
+      // DUAL-WRITE: Update history collection as well
+      try {
+        const historyCol = await getCollection('history');
+        await historyCol.updateOne(
+          { id: originalId },
+          {
+            $set: {
+              systemId: record.analysis?.systemId || null,
+              analysis: record.analysis,
+              timestamp: record.timestamp,
+              fileName: record.fileName,
+              validationScore: newQuality
+            }
+          }
+        );
+        log.debug('Dual-write update to history collection successful', { recordId: originalId });
+      } catch (/** @type {any} */ historyError) {
+        log.warn('Dual-write update to history collection failed (non-fatal)', {
+          error: historyError && historyError.message ? historyError.message : String(historyError),
+          recordId: originalId
+        });
+      }
     } else {
       // New record - insert
-      await resultsCol.insertOne({
+      const newRecord = {
         id: record.id,
-        userId, // Store userId for isolation
         fileName: record.fileName,
         timestamp: record.timestamp,
+        systemId: record.analysis?.systemId || null, // Top-level for query efficiency
         analysis: record.analysis,
         contentHash,
         createdAt: new Date(),
@@ -708,13 +835,55 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         validationWarnings: record.validationWarnings,
         validationScore: record.validationScore,
         extractionAttempts: 1
+      };
+      
+      // NOTE: This is a single-tenant application - no userId segregation needed
+      // All admins share the same analysis data indexed by contentHash
+      log.debug('Storing new analysis record', { 
+        recordId: record.id,
+        systemId: record.analysis?.systemId || null,
+        hasContentHash: !!contentHash,
+        qualityScore: record.validationScore 
       });
+
+      await resultsCol.insertOne(newRecord);
 
       log.info('Analysis results stored for deduplication', {
         recordId: record.id,
+        systemId: record.analysis?.systemId || null,
         contentHash: contentHash.substring(0, 16) + '...',
         qualityScore: record.validationScore
       });
+
+      // DUAL-WRITE: Also save to history collection for backward compatibility
+      // This ensures tools (request_bms_data, insights-guru) can access the data
+      try {
+        const historyCol = await getCollection('history');
+        const historyRecord = {
+          id: record.id,
+          timestamp: record.timestamp,
+          systemId: record.analysis?.systemId || null,
+          systemName: null, // Will be filled when linked to a system
+          analysis: record.analysis,
+          weather: record.weather || null,
+          dlNumber: record.analysis?.dlNumber || null,
+          fileName: record.fileName,
+          analysisKey: contentHash // Use contentHash as analysisKey for consistency
+        };
+        
+        await historyCol.insertOne(historyRecord);
+        
+        log.info('Dual-write to history collection successful', {
+          recordId: record.id,
+          systemId: record.analysis?.systemId
+        });
+      } catch (/** @type {any} */ historyError) {
+        log.warn('Dual-write to history collection failed (non-fatal)', {
+          error: historyError && historyError.message ? historyError.message : String(historyError),
+          recordId: record.id
+        });
+        // Don't throw - this is best effort dual-write
+      }
     }
   } catch (/** @type {any} */ e) {
     log.warn('Failed to persist analysis-results record.', {
@@ -742,7 +911,7 @@ async function storeIdempotentResponse(idemKey, response, reasonCode = 'new_anal
       { upsert: true }
     );
     // Success - no logging needed (best effort operation)
-  } catch (/** @type {any} */ e) {
+  } catch {
     // Silent fail - this is best effort and we don't want to break the response
   }
 }
@@ -756,7 +925,7 @@ async function storeProgressEvent(jobId, eventData) {
   try {
     const collection = await getCollection('progress-events');
     await collection.insertOne({ jobId, ...eventData, timestamp: new Date() });
-  } catch (/** @type {any} */ error) {
+  } catch {
     // Intentionally swallow errors to avoid masking primary failure
   }
 }

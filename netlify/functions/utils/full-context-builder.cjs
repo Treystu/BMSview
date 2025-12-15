@@ -131,11 +131,21 @@ async function getRawData(systemId, options) {
   try {
     const analysisCollection = await getCollection('analysis-results');
     
-    // Get all analyses within time range
+    // Query both top-level systemId (new schema) and nested analysis.systemId (legacy)
+    // This ensures compatibility during migration period
     const allAnalyses = await analysisCollection.find({
-      systemId,
-      timestamp: { $gte: timeRange.start, $lte: timeRange.end }
+      $or: [
+        { systemId, timestamp: { $gte: timeRange.start, $lte: timeRange.end } },
+        { 'analysis.systemId': systemId, timestamp: { $gte: timeRange.start, $lte: timeRange.end } }
+      ]
     }).sort({ timestamp: 1 }).toArray();
+    
+    log.debug('Raw data query completed', {
+      systemId,
+      timeRange,
+      recordCount: allAnalyses.length,
+      queryPattern: 'top-level OR nested systemId'
+    });
     
     // Extract specific data arrays
     const allCellData = allAnalyses.map(a => ({
@@ -203,6 +213,7 @@ async function getRawData(systemId, options) {
 
 /**
  * Run all analytical tools
+ * CRITICAL FIX: Add defensive checks for rawData properties
  */
 async function runAnalyticalTools(systemId, rawData, options) {
   const log = createLogger('full-context-builder:tools');
@@ -211,17 +222,22 @@ async function runAnalyticalTools(systemId, rawData, options) {
     // Import statistical tools
     const stats = require('./statistical-tools.cjs');
     
-    // Extract time series data
-    const voltageTimeSeries = rawData.allVoltageReadings
-      .filter(r => r.voltage != null)
+    // CRITICAL FIX: Ensure arrays exist before accessing
+    const allVoltageReadings = Array.isArray(rawData.allVoltageReadings) ? rawData.allVoltageReadings : [];
+    const allCurrentReadings = Array.isArray(rawData.allCurrentReadings) ? rawData.allCurrentReadings : [];
+    const allAnalyses = Array.isArray(rawData.allAnalyses) ? rawData.allAnalyses : [];
+    
+    // Extract time series data with defensive filtering
+    const voltageTimeSeries = allVoltageReadings
+      .filter(r => r && r.voltage != null)
       .map(r => ({ timestamp: r.timestamp, value: r.voltage }));
     
-    const currentTimeSeries = rawData.allCurrentReadings
-      .filter(r => r.current != null)
+    const currentTimeSeries = allCurrentReadings
+      .filter(r => r && r.current != null)
       .map(r => ({ timestamp: r.timestamp, value: r.current }));
     
-    const socTimeSeries = rawData.allAnalyses
-      .filter(a => a.analysis?.stateOfCharge != null)
+    const socTimeSeries = allAnalyses
+      .filter(a => a && a.analysis && a.analysis.stateOfCharge != null)
       .map(a => ({ timestamp: a.timestamp, value: a.analysis.stateOfCharge }));
     
     // Run tools in parallel
@@ -261,22 +277,26 @@ async function runAnalyticalTools(systemId, rawData, options) {
 
 /**
  * Get external data sources
+ * CRITICAL FIX: Add defensive checks for rawData.allAnalyses
  */
 async function getExternalData(systemId, rawData, options) {
   const log = createLogger('full-context-builder:external');
   
   try {
+    // CRITICAL FIX: Ensure allAnalyses array exists
+    const allAnalyses = Array.isArray(rawData.allAnalyses) ? rawData.allAnalyses : [];
+    
     // Get weather history from analysis records
-    const weatherHistory = rawData.allAnalyses
-      .filter(a => a.weather)
+    const weatherHistory = allAnalyses
+      .filter(a => a && a.weather)
       .map(a => ({
         timestamp: a.timestamp,
         ...a.weather
       }));
     
     // Solar production data (if available)
-    const solarProduction = rawData.allAnalyses
-      .filter(a => a.analysis?.predictedSolarChargeAmphours != null)
+    const solarProduction = allAnalyses
+      .filter(a => a && a.analysis && a.analysis.predictedSolarChargeAmphours != null)
       .map(a => ({
         timestamp: a.timestamp,
         predicted: a.analysis.predictedSolarChargeAmphours,
@@ -347,7 +367,9 @@ async function calculateComputedMetrics(systemId, rawData, options) {
   const log = createLogger('full-context-builder:computed');
   
   try {
-    const latestAnalysis = rawData.allAnalyses[rawData.allAnalyses.length - 1];
+    // CRITICAL FIX: Ensure allAnalyses array exists and has items
+    const allAnalyses = Array.isArray(rawData.allAnalyses) ? rawData.allAnalyses : [];
+    const latestAnalysis = allAnalyses.length > 0 ? allAnalyses[allAnalyses.length - 1] : null;
     
     if (!latestAnalysis || !latestAnalysis.analysis) {
       return {
@@ -366,7 +388,7 @@ async function calculateComputedMetrics(systemId, rawData, options) {
     const remainingLifeExpectancy = estimateRemainingLife(latestAnalysis.analysis);
     
     // Calculate degradation rate from historical data
-    const performanceDegradation = calculateDegradationRate(rawData.allAnalyses);
+    const performanceDegradation = calculateDegradationRate(allAnalyses);
     
     return {
       healthScore,

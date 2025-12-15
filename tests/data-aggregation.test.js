@@ -43,7 +43,7 @@ describe('Data Aggregation Module', () => {
 
     test('should group records into hourly buckets', () => {
       const baseTime = new Date('2024-01-15T12:00:00Z');
-      
+
       const records = [
         {
           timestamp: new Date(baseTime.getTime() + 10 * 60 * 1000).toISOString(), // 12:10
@@ -64,7 +64,7 @@ describe('Data Aggregation Module', () => {
       expect(result.length).toBe(2); // 2 hour buckets (12:00 and 13:00)
       expect(result[0].dataPoints).toBe(2); // 2 records in 12:00 bucket
       expect(result[1].dataPoints).toBe(1); // 1 record in 13:00 bucket
-      
+
       // Check timestamps are truncated to hour
       expect(result[0].timestamp).toBe('2024-01-15T12:00:00.000Z');
       expect(result[1].timestamp).toBe('2024-01-15T13:00:00.000Z');
@@ -72,22 +72,22 @@ describe('Data Aggregation Module', () => {
 
     test('should calculate correct averages for bucket metrics', () => {
       const baseTime = new Date('2024-01-15T12:00:00Z');
-      
+
       const records = [
         {
           timestamp: new Date(baseTime.getTime() + 10 * 60 * 1000).toISOString(),
-          analysis: { 
-            current: 10, 
-            power: 500, 
+          analysis: {
+            current: 10,
+            power: 500,
             stateOfCharge: 60,
             overallVoltage: 50.0
           }
         },
         {
           timestamp: new Date(baseTime.getTime() + 30 * 60 * 1000).toISOString(),
-          analysis: { 
-            current: 20, 
-            power: 1000, 
+          analysis: {
+            current: 20,
+            power: 1000,
             stateOfCharge: 65,
             overallVoltage: 50.0
           }
@@ -99,12 +99,12 @@ describe('Data Aggregation Module', () => {
       expect(result.length).toBe(1);
       expect(result[0].dataPoints).toBe(2);
       expect(result[0].metrics).toBeDefined();
-      
+
       // Average current should be 15A
       if (result[0].metrics.avgCurrent !== undefined) {
         expect(result[0].metrics.avgCurrent).toBeCloseTo(15, 1);
       }
-      
+
       // Average power should be 750W
       if (result[0].metrics.avgPower !== undefined) {
         expect(result[0].metrics.avgPower).toBeCloseTo(750, 1);
@@ -113,7 +113,7 @@ describe('Data Aggregation Module', () => {
 
     test('should sort results by timestamp ascending', () => {
       const baseTime = new Date('2024-01-15T12:00:00Z');
-      
+
       // Add records out of order
       const records = [
         {
@@ -134,14 +134,14 @@ describe('Data Aggregation Module', () => {
 
       expect(result.length).toBe(3);
       // Should be sorted 12:00, 13:00, 14:00
-      expect(new Date(result[0].timestamp).getHours()).toBe(12);
-      expect(new Date(result[1].timestamp).getHours()).toBe(13);
-      expect(new Date(result[2].timestamp).getHours()).toBe(14);
+      expect(new Date(result[0].timestamp).getUTCHours()).toBe(12);
+      expect(new Date(result[1].timestamp).getUTCHours()).toBe(13);
+      expect(new Date(result[2].timestamp).getUTCHours()).toBe(14);
     });
 
     test('should handle records without analysis data', () => {
       const baseTime = new Date('2024-01-15T12:00:00Z');
-      
+
       const records = [
         {
           timestamp: baseTime.toISOString(),
@@ -162,7 +162,7 @@ describe('Data Aggregation Module', () => {
 
     test('should calculate compression ratio correctly', () => {
       const baseTime = new Date('2024-01-15T12:00:00Z');
-      
+
       // Create 10 records all within the same hour
       const records = Array.from({ length: 10 }, (_, i) => ({
         timestamp: new Date(baseTime.getTime() + i * 5 * 60 * 1000).toISOString(), // Every 5 min
@@ -173,7 +173,7 @@ describe('Data Aggregation Module', () => {
 
       expect(result.length).toBe(1); // All in same hour
       expect(result[0].dataPoints).toBe(10);
-      
+
       // Logger should report compression ratio
       expect(mockLogger.info).toHaveBeenCalledWith(
         'Hourly aggregation complete',
@@ -187,13 +187,13 @@ describe('Data Aggregation Module', () => {
 
     test('should handle large datasets efficiently', () => {
       const baseTime = new Date('2024-01-01T00:00:00Z');
-      
+
       // Create 1000 records spanning 10 days (100 per day)
       const records = Array.from({ length: 1000 }, (_, i) => ({
         timestamp: new Date(baseTime.getTime() + i * 2.4 * 60 * 60 * 1000).toISOString(), // ~2.4h intervals
-        analysis: { 
-          current: 10 + Math.sin(i / 10) * 5, 
-          power: 500 + Math.sin(i / 10) * 250 
+        analysis: {
+          current: 10 + Math.sin(i / 10) * 5,
+          power: 500 + Math.sin(i / 10) * 250
         }
       }));
 
@@ -203,7 +203,7 @@ describe('Data Aggregation Module', () => {
 
       // Should complete in reasonable time (<500ms for 1000 records)
       expect(duration).toBeLessThan(500);
-      
+
       // Should create approximately 100 hourly buckets per day (2.4h intervals means ~10 records per day, grouping into 24 hour buckets)
       // For 1000 records spanning 10 days with 2.4h intervals, we expect roughly all 1000 to be in different buckets
       expect(result.length).toBeGreaterThan(100);
@@ -219,7 +219,7 @@ describe('Data Aggregation Module', () => {
       }
 
       const baseTime = new Date('2024-01-15T00:00:00Z');
-      
+
       const records = [
         {
           timestamp: new Date(baseTime.getTime() + 6 * 60 * 60 * 1000).toISOString(), // Day 1, 6am
@@ -262,7 +262,7 @@ describe('Data Aggregation Module', () => {
 
       // createCompactSummary expects hourly aggregated data, not raw records
       const hourly = dataAggregation.aggregateHourlyData(records, mockLogger);
-      
+
       if (hourly.length > 0) {
         try {
           const summary = dataAggregation.createCompactSummary(hourly, mockLogger);
@@ -295,7 +295,7 @@ describe('Data Aggregation Module', () => {
       ];
 
       const result = dataAggregation.aggregateHourlyData(records, mockLogger);
-      
+
       // Should not throw, should return some result
       expect(result).toBeDefined();
       expect(Array.isArray(result)).toBe(true);
@@ -340,7 +340,7 @@ describe('Data Aggregation Module', () => {
       ];
 
       const result = dataAggregation.aggregateHourlyData(records, mockLogger);
-      
+
       // Should handle without error
       expect(result).toBeDefined();
       expect(result.length).toBeGreaterThan(0);
@@ -349,7 +349,7 @@ describe('Data Aggregation Module', () => {
     test('should handle timezone differences correctly', () => {
       // Create records in different timezones but same hour UTC
       const utcTime = new Date('2024-01-15T12:30:00Z');
-      
+
       const records = [
         {
           timestamp: utcTime.toISOString(),
@@ -362,7 +362,7 @@ describe('Data Aggregation Module', () => {
       ];
 
       const result = dataAggregation.aggregateHourlyData(records, mockLogger);
-      
+
       // Both should be in same bucket (12:00 UTC)
       expect(result.length).toBe(1);
       expect(result[0].dataPoints).toBe(2);
@@ -387,11 +387,11 @@ describe('Data Aggregation Module', () => {
 
       // Should complete in under 2 seconds
       expect(duration).toBeLessThan(2000);
-      
+
       // Should compress to hourly (10000 minutes = ~167 hours)
       expect(result.length).toBeGreaterThan(150);
       expect(result.length).toBeLessThan(180);
-      
+
       // Compression ratio should be significant
       const compressionRatio = records.length / result.length;
       expect(compressionRatio).toBeGreaterThan(50);
@@ -399,7 +399,7 @@ describe('Data Aggregation Module', () => {
 
     test('should not exceed memory limits with large datasets', () => {
       const baseTime = Date.now();
-      
+
       // Create 50k records
       const records = Array.from({ length: 50000 }, (_, i) => ({
         timestamp: new Date(baseTime - (50000 - i) * 60 * 1000).toISOString(),

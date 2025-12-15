@@ -50,6 +50,8 @@ exports.handler = async (event, context) => {
     } = body;
     
     if (!feedbackId || !status) {
+      timer.end({ success: false, error: 'missing_fields' });
+      log.exit(400, { outcome: 'validation_error', fields: ['feedbackId', 'status'] });
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -60,6 +62,8 @@ exports.handler = async (event, context) => {
     // Validate status
     const validStatuses = ['pending', 'reviewed', 'accepted', 'implemented', 'rejected'];
     if (!validStatuses.includes(status)) {
+      timer.end({ success: false, error: 'invalid_status' });
+      log.exit(400, { outcome: 'validation_error', field: 'status' });
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },

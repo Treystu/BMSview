@@ -14,18 +14,26 @@ function validateEnvironment(log) {
 
 exports.handler = async function(event, context) {
   const headers = getCorsHeaders(event);
+  const log = createLoggerFromEvent('contact', event, context);
+  const timer = createTimer(log, 'contact-form');
+  const sanitizedHeaders = event.headers ? {
+    ...event.headers,
+    authorization: event.headers.authorization ? '[REDACTED]' : undefined,
+    cookie: event.headers.cookie ? '[REDACTED]' : undefined,
+    'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
+  } : {};
+  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters, headers: sanitizedHeaders, bodyLength: event.body ? event.body.length : 0 });
   
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
+    timer.end({ outcome: 'preflight' });
+    log.exit(200, { outcome: 'preflight' });
     return { statusCode: 200, headers };
   }
   
-  const log = createLoggerFromEvent('contact', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
-  const timer = createTimer(log, 'contact-form');
-  
   if (!validateEnvironment(log)) {
-    log.exit(500);
+    timer.end({ outcome: 'configuration_error' });
+    log.exit(500, { outcome: 'configuration_error' });
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -35,7 +43,8 @@ exports.handler = async function(event, context) {
 
   if (event.httpMethod !== 'POST') {
     log.warn('Method not allowed', { method: event.httpMethod });
-    log.exit(405);
+    timer.end({ outcome: 'method_not_allowed' });
+    log.exit(405, { outcome: 'method_not_allowed' });
     return { statusCode: 405, headers, body: 'Method Not Allowed' };
   }
 

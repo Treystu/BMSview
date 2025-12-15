@@ -1,7 +1,8 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useFileUpload } from '../hooks/useFileUpload';
 import SpinnerIcon from './icons/SpinnerIcon';
+import { CostEstimateBadge, estimateAnalysisCost } from './CostEstimateBadge';
 
 interface UploadSectionProps {
   onAnalyze: (files: File[]) => void;
@@ -30,6 +31,9 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
     handleDrop,
     clearFiles,
   } = useFileUpload({ maxFileSizeMb: 4.5 });
+
+  // Calculate estimated cost when files change
+  const costEstimate = useMemo(() => estimateAnalysisCost(files.length), [files.length]);
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -108,6 +112,13 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
           }
           {isProcessing && <p className="mt-2 text-sm text-secondary">Processing files...</p>}
           {fileError && <p className="mt-4 text-sm text-red-600">{fileError}</p>}
+
+          {/* Estimated Cost Badge */}
+          {files.length > 0 && (
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <CostEstimateBadge estimate={costEstimate} showTokens={true} />
+            </div>
+          )}
 
           <button
             onClick={handleAnalyzeClick}

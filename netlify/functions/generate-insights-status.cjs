@@ -37,7 +37,7 @@ function extractJobId(event) {
 
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
-  
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
@@ -67,8 +67,8 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          error: 'jobId is required' 
+        body: JSON.stringify({
+          error: 'jobId is required'
         })
       };
     }
@@ -87,9 +87,9 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 404,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           error: 'Job not found',
-          jobId 
+          jobId
         })
       };
     }
@@ -116,13 +116,13 @@ exports.handler = async (event, context) => {
       // Issue 236: Enhanced error context for failed jobs
       response.error = job.error;
       response.failedAt = job.updatedAt;
-      
+
       // Extract meaningful failure reason from error message
       const failureReason = extractFailureReason(job.error, job.progress || []);
       response.failureReason = failureReason.reason;
       response.failureCategory = failureReason.category;
       response.suggestions = failureReason.suggestions;
-      
+
       // Include last progress event for context
       if (job.progress && job.progress.length > 0) {
         response.lastProgressEvent = job.progress[job.progress.length - 1];
@@ -132,7 +132,7 @@ exports.handler = async (event, context) => {
       response.progress = job.progress || [];
       response.partialInsights = job.partialInsights;
       response.progressCount = (job.progress || []).length;
-      
+
       // Include current stage info for status bar
       if (job.progress && job.progress.length > 0) {
         const lastEvent = job.progress[job.progress.length - 1];
@@ -141,8 +141,8 @@ exports.handler = async (event, context) => {
     }
 
     const durationMs = timer.end({ jobId, status: job.status });
-    log.info('Status check completed', { 
-      jobId, 
+    log.info('Status check completed', {
+      jobId,
       status: job.status,
       durationMs
     });
@@ -183,7 +183,7 @@ exports.handler = async (event, context) => {
  */
 function extractFailureReason(errorMessage, progress) {
   const message = (errorMessage || '').toLowerCase();
-  
+
   // Default response
   let result = {
     reason: errorMessage || 'Unknown error occurred',
@@ -280,7 +280,7 @@ function extractFailureReason(errorMessage, progress) {
         result.reason += ` (${lastEvent.data.message})`;
       }
     }
-    
+
     // Check for tool-specific failures
     const toolErrorEvent = progress.find(e => e.type === 'tool_call' && e.data?.error);
     if (toolErrorEvent) {
@@ -302,16 +302,20 @@ function formatCurrentStage(lastEvent) {
 
   switch (lastEvent.type) {
     case 'tool_call':
-      const toolName = lastEvent.data?.toolName || 'unknown';
-      return `🔧 Fetching ${formatToolName(toolName)}...`;
+      {
+        const toolName = lastEvent.data?.toolName || 'unknown';
+        return `🔧 Fetching ${formatToolName(toolName)}...`;
+      }
     case 'tool_response':
       return '✓ Data received, analyzing...';
     case 'ai_response':
       return '🤖 AI generating insights...';
     case 'iteration':
-      const iter = lastEvent.data?.iteration || '?';
-      const max = lastEvent.data?.maxIterations || '?';
-      return `📈 Analysis iteration ${iter}/${max}`;
+      {
+        const iter = lastEvent.data?.iteration || '?';
+        const max = lastEvent.data?.maxIterations || '?';
+        return `📈 Analysis iteration ${iter}/${max}`;
+      }
     case 'status':
       return lastEvent.data?.message || 'Processing...';
     case 'error':
@@ -329,7 +333,7 @@ function formatCurrentStage(lastEvent) {
 function formatToolName(toolName) {
   // Normalize tool name to lowercase for consistent matching
   const normalizedName = (toolName || '').toLowerCase();
-  
+
   const nameMap = {
     'request_bms_data': 'BMS historical data',
     'calculate_energy_budget': 'energy budget',

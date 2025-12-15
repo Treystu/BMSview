@@ -6,6 +6,8 @@
  * They are currently skipped for unit testing. Enable for full integration testing.
  */
 
+const { handler: generateHandler } = require('../netlify/functions/generate-insights-with-tools.cjs');
+
 describe.skip('Generate Insights with AnalysisData Format', () => {
   let mockContext;
 

@@ -1,0 +1,1102 @@
+/**
+ * Diagnostics Steps - Step Implementations for Async Workload
+ * 
+ * Each function represents a step in the diagnostics workload.
+ * Steps are independently retryable and persist state.
+ */
+
+const { executeToolCall, toolDefinitions } = require('./gemini-tools.cjs');
+const { createInsightsJob, getInsightsJob, saveCheckpoint, completeJob, failJob } = require('./insights-jobs.cjs');
+const { getCollection } = require('./mongodb.cjs');
+
+/**
+ * Helper to update job step state
+ * State is stored in checkpointState.state for consistency with insights-jobs pattern
+ */
+async function updateJobStep(jobId, stateUpdate, log) {
+  return await saveCheckpoint(jobId, { state: stateUpdate }, log);
+}
+
+/**
+ * Get available tool definitions for validation
+ * @returns {Array} List of available tool names
+ */
+function getAvailableTools() {
+  return toolDefinitions.map(t => t.name);
+}
+
+/**
+ * Tool test definitions - what to test for each tool
+ */
+const TOOL_TESTS = [
+  {
+    name: 'request_bms_data',
+    validTest: { systemId: 'test-system', metric: 'soc', time_range_start: '2025-11-01T00:00:00Z', time_range_end: '2025-11-30T23:59:59Z', granularity: 'daily_avg' },
+    edgeCaseTest: { systemId: 'test-system', metric: 'all', time_range_start: '2025-12-01T00:00:00Z', time_range_end: '2025-12-01T01:00:00Z', granularity: 'raw' }
+  },
+  {
+    name: 'getWeatherData',
+    validTest: { latitude: 40.7128, longitude: -74.0060, type: 'current' },
+    edgeCaseTest: { latitude: 0, longitude: 0, type: 'forecast' }
+  },
+  {
+    name: 'getSolarEstimate',
+    validTest: { location: '40.7128,-74.0060', panelWatts: 400, startDate: '2025-11-01', endDate: '2025-11-30' },
+    edgeCaseTest: { location: '-90,180', panelWatts: 100, startDate: '2025-12-01', endDate: '2025-12-01' }
+  },
+  {
+    name: 'getSystemAnalytics',
+    validTest: { systemId: 'test-system' },
+    edgeCaseTest: { systemId: 'nonexistent-system-12345' }
+  },
+  {
+    name: 'predict_battery_trends',
+    validTest: { systemId: 'test-system', metric: 'capacity', forecastDays: 30, confidenceLevel: true },
+    edgeCaseTest: { systemId: 'test-system', metric: 'lifetime', confidenceLevel: false }
+  },
+  {
+    name: 'analyze_usage_patterns',
+    validTest: { systemId: 'test-system', patternType: 'daily', timeRange: '30d' },
+    edgeCaseTest: { systemId: 'test-system', patternType: 'anomalies', timeRange: '7d' }
+  },
+  {
+    name: 'calculate_energy_budget',
+    validTest: { systemId: 'test-system', scenario: 'current', timeframe: '30d', includeWeather: true },
+    edgeCaseTest: { systemId: 'test-system', scenario: 'worst_case', timeframe: '7d', includeWeather: false }
+  },
+  {
+    name: 'get_hourly_soc_predictions',
+    validTest: { systemId: 'test-system', hoursBack: 24 },
+    edgeCaseTest: { systemId: 'test-system', hoursBack: 168 }
+  },
+  {
+    name: 'searchGitHubIssues',
+    validTest: { query: 'diagnostics', state: 'all', per_page: 5 },
+    edgeCaseTest: { query: '', state: 'open', per_page: 1 }
+  },
+  {
+    name: 'getCodebaseFile',
+    validTest: { path: 'package.json', ref: 'main' },
+    edgeCaseTest: { path: 'netlify/functions/utils/gemini-tools.cjs' }
+  },
+  {
+    name: 'listDirectory',
+    validTest: { path: 'netlify/functions', ref: 'main' },
+    edgeCaseTest: { path: 'components' }
+  }
+];
+
+/**
+ * Step 1: Initialize diagnostics workload
+ * Gracefully handles errors - creates job even if some steps fail
+ */
+async function initializeDiagnostics(log, context) {
+  try {
+    log.info('Initializing diagnostics workload');
+    log.debug('Creating diagnostics job');
+    
+    // Create job in insights-jobs collection
+    const jobId = `diag_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    
+    const initialState = {
+      workloadType: 'diagnostics',
+      currentStep: 'initialize',
+      stepIndex: 0,
+      totalSteps: TOOL_TESTS.length + 3, // tests + analyze + submit + finalize
+      toolsToTest: TOOL_TESTS,
+      toolIndex: 0,
+      results: [],
+      failures: [],
+      feedbackSubmitted: [],
+      progress: 0,
+      message: 'Diagnostics initialized',
+      startTime: Date.now()
+    };
+    
+    log.debug('Initial state created', { 
+      jobId, 
+      totalSteps: initialState.totalSteps,
+      toolCount: TOOL_TESTS.length,
+      workloadType: initialState.workloadType
+    });
+    
+    // Create job using standard createInsightsJob signature
+    let job;
+    try {
+      job = await createInsightsJob({
+        systemId: 'diagnostics-system',
+        customPrompt: 'Diagnostic self-test'
+      }, log);
+    } catch (createErr) {
+      log.error('Could not create insights job, creating minimal job record', { error: createErr.message });
+      // Fallback: create minimal job directly
+      const collection = await getCollection('insights-jobs');
+      await collection.insertOne({
+        id: jobId,
+        status: 'pending',
+        checkpointState: { state: initialState },
+        createdAt: new Date(),
+        systemId: 'diagnostics-system'
+      });
+      
+      log.info('Diagnostics workload initialized (fallback mode)', { jobId, totalSteps: initialState.totalSteps });
+      
+      return {
+        workloadId: jobId,
+        nextStep: 'test_tool',
+        totalSteps: initialState.totalSteps
+      };
+    }
+    
+    log.debug('Job created', { originalJobId: job.id, newJobId: jobId });
+    
+    // Update the job ID to use our diagnostics-specific format
+    try {
+      const collection = await getCollection('insights-jobs');
+      await collection.updateOne(
+        { id: job.id },
+        { 
+          $set: { 
+            id: jobId,
+            checkpointState: { state: initialState },
+            status: 'pending'
+          } 
+        }
+      );
+    } catch (updateErr) {
+      log.warn('Could not update job ID, using original ID', { error: updateErr.message, originalId: job.id });
+      // Use original job ID if update fails
+      return {
+        workloadId: job.id,
+        nextStep: 'test_tool',
+        totalSteps: initialState.totalSteps
+      };
+    }
+    
+    log.info('Diagnostics workload initialized', { jobId, totalSteps: initialState.totalSteps });
+    log.debug('Job updated in database', { jobId });
+    
+    return {
+      workloadId: jobId,
+      nextStep: 'test_tool',
+      totalSteps: initialState.totalSteps
+    };
+  } catch (error) {
+    // Ultimate fallback - return error but allow process to continue
+    log.error(
+      'Initialization failed completely',
+      process.env.LOG_LEVEL === 'DEBUG'
+        ? { error: error.message, stack: error.stack }
+        : { error: error.message }
+    );
+    throw error; // Re-throw initialization errors as they prevent the entire workflow
+  }
+}
+
+/**
+ * Step 2-N: Test individual tool
+ * Gracefully handles all errors - never fails, captures errors as diagnostic data
+ */
+async function testTool(workloadId, state, log, context) {
+  try {
+    const toolIndex = state.toolIndex || 0;
+    const currentStepIndex = state.stepIndex || 0;
+    
+    log.debug('Testing tool', { toolIndex, currentStepIndex, totalTools: TOOL_TESTS.length });
+    
+    if (toolIndex >= TOOL_TESTS.length) {
+      log.debug('All tools tested, moving to analysis phase');
+      // All tools tested, move to analysis
+      const nextState = {
+        ...state,
+        currentStep: 'analyze_failures',
+        stepIndex: TOOL_TESTS.length + 1, // Step 12 - analyzing failures
+        message: 'All tools tested, analyzing results',
+        progress: Math.round((TOOL_TESTS.length / (state.totalSteps || TOOL_TESTS.length + 3)) * 100)
+      };
+      
+      try {
+        await updateJobStep(workloadId, nextState, log);
+      } catch (updateErr) {
+        log.error('Could not update job step, continuing', { error: updateErr.message });
+      }
+      
+      return {
+        success: true,
+        nextStep: 'analyze_failures',
+        message: `Completed testing ${TOOL_TESTS.length} tools`
+      };
+    }
+    
+    const toolTest = TOOL_TESTS[toolIndex];
+    log.info('Testing tool', { tool: toolTest.name, index: toolIndex });
+    log.debug('Tool test parameters', { 
+      toolName: toolTest.name,
+      hasValidTest: !!toolTest.validTest,
+      hasEdgeCaseTest: !!toolTest.edgeCaseTest,
+      validTestKeys: Object.keys(toolTest.validTest || {}),
+      edgeCaseTestKeys: Object.keys(toolTest.edgeCaseTest || {})
+    });
+    
+    const result = {
+      tool: toolTest.name,
+      validTest: { success: false, error: null, duration: 0 },
+      edgeCaseTest: { success: false, error: null, duration: 0 },
+      timestamp: new Date().toISOString()
+    };
+    
+    const newFailures = [];
+    
+    // Test with valid parameters - NEVER throw, always capture errors
+    try {
+      const start = Date.now();
+      const response = await executeToolCall(toolTest.name, toolTest.validTest, log);
+      result.validTest.duration = Date.now() - start;
+      result.validTest.success = !response.error;
+      result.validTest.response = response;
+      if (response.error) {
+        result.validTest.error = response.error;
+        newFailures.push({
+          tool: toolTest.name,
+          testType: 'valid',
+          error: response.error,
+          params: toolTest.validTest
+        });
+      }
+    } catch (error) {
+      log.warn('Valid test threw exception (captured as diagnostic)', { 
+        tool: toolTest.name, 
+        error: error.message 
+      });
+      result.validTest.error = error.message;
+      result.validTest.duration = 0;
+      newFailures.push({
+        tool: toolTest.name,
+        testType: 'valid',
+        error: error.message,
+        params: toolTest.validTest
+      });
+    }
+    
+    // Test with edge case parameters - NEVER throw, always capture errors
+    try {
+      const start = Date.now();
+      const response = await executeToolCall(toolTest.name, toolTest.edgeCaseTest, log);
+      result.edgeCaseTest.duration = Date.now() - start;
+      result.edgeCaseTest.success = !response.error;
+      result.edgeCaseTest.response = response;
+      if (response.error) {
+        result.edgeCaseTest.error = response.error;
+        newFailures.push({
+          tool: toolTest.name,
+          testType: 'edge_case',
+          error: response.error,
+          params: toolTest.edgeCaseTest
+        });
+      }
+    } catch (error) {
+      log.warn('Edge case test threw exception (captured as diagnostic)', { 
+        tool: toolTest.name, 
+        error: error.message 
+      });
+      result.edgeCaseTest.error = error.message;
+      result.edgeCaseTest.duration = 0;
+      newFailures.push({
+        tool: toolTest.name,
+        testType: 'edge_case',
+        error: error.message,
+        params: toolTest.edgeCaseTest
+      });
+    }
+    
+    // Create immutable state update - defensive with defaults
+    const updatedState = {
+      ...state,
+      results: [...(state.results || []), result],
+      failures: [...(state.failures || []), ...newFailures],
+      toolIndex: toolIndex + 1,
+      stepIndex: toolIndex + 1, // Update stepIndex to match tool progression (1-indexed for display)
+      progress: Math.round(((toolIndex + 1) / (state.totalSteps || TOOL_TESTS.length + 3)) * 100),
+      message: `Tested ${toolTest.name} (${toolIndex + 1}/${TOOL_TESTS.length})`
+    };
+    
+    // Persist state - don't fail if this errors
+    try {
+      await updateJobStep(workloadId, updatedState, log);
+    } catch (updateErr) {
+      log.error('Could not persist state, continuing with in-memory state', { 
+        error: updateErr.message,
+        tool: toolTest.name
+      });
+    }
+    
+    log.info('Tool test complete', {
+      tool: toolTest.name,
+      validSuccess: result.validTest.success,
+      edgeCaseSuccess: result.edgeCaseTest.success,
+      failures: updatedState.failures.length
+    });
+    
+    return {
+      success: true,
+      nextStep: 'test_tool',
+      currentTool: toolTest.name,
+      toolIndex: updatedState.toolIndex,
+      totalTools: TOOL_TESTS.length,
+      progress: updatedState.progress
+    };
+  } catch (error) {
+    // Ultimate fallback - even if entire test step fails, continue
+    log.error('Entire tool test step failed, skipping tool', { 
+      error: error.message,
+      toolIndex: state.toolIndex
+    });
+    // Only log stack trace in debug mode to avoid leaking sensitive info
+    if (process.env.LOG_LEVEL === 'DEBUG') {
+      log.debug('Tool test error stack', { stack: error.stack });
+    }
+    
+    const safeToolIndex = (state.toolIndex || 0) + 1;
+    const safeTool = TOOL_TESTS[state.toolIndex || 0];
+    
+    const recoveryState = {
+      ...state,
+      results: [...(state.results || []), {
+        tool: safeTool?.name || 'unknown',
+        validTest: { success: false, error: `Fatal error: ${error.message}`, duration: 0 },
+        edgeCaseTest: { success: false, error: `Skipped due to fatal error`, duration: 0 },
+        timestamp: new Date().toISOString()
+      }],
+      failures: [...(state.failures || []), {
+        tool: safeTool?.name || 'unknown',
+        testType: 'fatal',
+        error: `Fatal testing error: ${error.message}`,
+        params: {}
+      }],
+      toolIndex: safeToolIndex,
+      stepIndex: safeToolIndex, // safeToolIndex is already 1-indexed (toolIndex + 1) for display
+      progress: Math.round((safeToolIndex / (state.totalSteps || TOOL_TESTS.length + 3)) * 100),
+      message: `Error testing tool, continuing (${safeToolIndex}/${TOOL_TESTS.length})`
+    };
+    
+    try {
+      await updateJobStep(workloadId, recoveryState, log);
+    } catch (updateErr) {
+      log.error('Could not persist recovery state', { error: updateErr.message });
+    }
+    
+    return {
+      success: true, // Continue despite error
+      nextStep: safeToolIndex >= TOOL_TESTS.length ? 'analyze_failures' : 'test_tool',
+      currentTool: safeTool?.name || 'unknown',
+      toolIndex: safeToolIndex,
+      totalTools: TOOL_TESTS.length,
+      progress: recoveryState.progress,
+      warning: 'Tool test encountered fatal error but continued'
+    };
+  }
+}
+
+/**
+ * Step N+1: Analyze failures
+ * CRITICAL FIX: Gracefully handles all errors - never fails, always completes
+ */
+async function analyzeFailures(workloadId, state, log, context) {
+  try {
+    // CRITICAL FIX: Defensive - ensure failures array exists
+    const failures = Array.isArray(state.failures) ? state.failures : [];
+    
+    log.info('Analyzing failures', { 
+      workloadId,
+      failureCount: failures.length 
+    });
+    
+    // Categorize failures with error handling for each failure
+    const categorized = {
+      network_error: [],
+      database_error: [],
+      invalid_parameters: [],
+      no_data: [],
+      token_limit: [],
+      circuit_open: [],
+      unknown: []
+    };
+    
+    // CRITICAL FIX: Gracefully handle each failure individually
+    failures.forEach((failure, index) => {
+      try {
+        const errorMsg = ((failure && failure.error) || '').toLowerCase();
+        
+        if (errorMsg.includes('network') || errorMsg.includes('timeout') || errorMsg.includes('econnrefused')) {
+          categorized.network_error.push(failure);
+        } else if (errorMsg.includes('mongodb') || errorMsg.includes('database') || errorMsg.includes('collection')) {
+          categorized.database_error.push(failure);
+        } else if (errorMsg.includes('invalid') || errorMsg.includes('required') || errorMsg.includes('parameter')) {
+          categorized.invalid_parameters.push(failure);
+        } else if (errorMsg.includes('not found') || errorMsg.includes('no data') || errorMsg.includes('empty')) {
+          categorized.no_data.push(failure);
+        } else if (errorMsg.includes('token') && errorMsg.includes('limit')) {
+          categorized.token_limit.push(failure);
+        } else if (errorMsg.includes('circuit') && errorMsg.includes('open')) {
+          categorized.circuit_open.push(failure);
+        } else {
+          categorized.unknown.push(failure);
+        }
+      } catch (err) {
+        log.warn('Error categorizing individual failure, adding to unknown', { 
+          workloadId,
+          error: err.message, 
+          failureIndex: index
+        });
+        categorized.unknown.push(failure);
+      }
+    });
+    
+    // Update state with results
+    const updatedState = {
+      ...state,
+      categorizedFailures: categorized,
+      currentStep: 'submit_feedback',
+      stepIndex: TOOL_TESTS.length + 1, // Increment stepIndex for analyze_failures step
+      message: 'Failures analyzed, preparing feedback submissions',
+      progress: Math.round(((TOOL_TESTS.length + 1) / (state.totalSteps || TOOL_TESTS.length + 3)) * 100)
+    };
+    
+    await updateJobStep(workloadId, updatedState, log);
+    
+    log.info('Failure analysis complete', {
+      workloadId,
+      categories: Object.keys(categorized).map(cat => `${cat}: ${categorized[cat].length}`)
+    });
+    
+    return {
+      success: true,
+      nextStep: 'submit_feedback',
+      categorized
+    };
+  } catch (error) {
+    // CRITICAL FIX: Even if analysis fails entirely, continue to next step
+    log.error('Error during failure analysis, continuing anyway', { 
+      workloadId,
+      error: error.message,
+      stack: process.env.LOG_LEVEL === 'DEBUG' ? error.stack : undefined
+    });
+    
+    const safeState = {
+      ...state,
+      categorizedFailures: { unknown: Array.isArray(state.failures) ? state.failures : [] },
+      currentStep: 'submit_feedback',
+      stepIndex: TOOL_TESTS.length + 1, // Increment stepIndex even on error
+      message: 'Failure analysis had errors, continuing with best effort',
+      progress: Math.round(((TOOL_TESTS.length + 1) / (state.totalSteps || TOOL_TESTS.length + 3)) * 100),
+      analysisError: error.message
+    };
+    
+    try {
+      await updateJobStep(workloadId, safeState, log);
+    } catch (updateErr) {
+      log.error('Could not update job step, continuing anyway', { 
+        workloadId,
+        error: updateErr.message 
+      });
+    }
+    
+    return {
+      success: true, // CRITICAL: Always report success to continue
+      nextStep: 'submit_feedback',
+      categorized: { unknown: Array.isArray(state.failures) ? state.failures : [] },
+      warning: 'Analysis encountered errors but continued'
+    };
+  }
+}
+
+/**
+ * Step N+2: Submit feedback for failures
+ * CRITICAL FIX: Gracefully handles all errors - never fails, continues with best effort
+ */
+async function submitFeedbackForFailures(workloadId, state, log, context) {
+  try {
+    log.info('Submitting feedback for failures', { workloadId });
+    
+    const { submitFeedbackToDatabase } = require('./feedback-manager.cjs');
+    const feedbackIds = [];
+    
+    // CRITICAL FIX: Defensive - ensure categorizedFailures exists and is an object
+    const categorizedFailures = (state.categorizedFailures && typeof state.categorizedFailures === 'object') 
+      ? state.categorizedFailures 
+      : {};
+    
+    // Submit one feedback item per unique failure category
+    for (const [category, failures] of Object.entries(categorizedFailures)) {
+      if (!failures || !Array.isArray(failures) || failures.length === 0) continue;
+      
+      try {
+        const toolsAffected = [...new Set(failures.map(f => (f && f.tool) || 'unknown'))];
+        
+        const feedbackData = {
+          systemId: 'diagnostics-system',
+          feedbackType: 'bug_report',
+          category: getCategoryFromErrorType(category),
+          priority: getPriorityFromErrorType(category, failures.length),
+          guruSource: 'diagnostics-guru',
+          content: {
+            title: `Tool Failure: ${category.replace(/_/g, ' ')} (${failures.length} failures)`,
+            description: `Diagnostic testing found ${failures.length} ${category.replace(/_/g, ' ')} failures across ${toolsAffected.length} tools.\n\n**Affected Tools:**\n${toolsAffected.map(t => `- ${t}`).join('\n')}\n\n**Sample Errors:**\n${failures.slice(0, 3).map(f => `- ${(f && f.tool) || 'unknown'} (${(f && f.testType) || 'unknown'}): ${(f && f.error) || 'No error message'}`).join('\n')}`,
+            rationale: `These failures impact insights generation quality and may prevent users from getting accurate analysis.`,
+            implementation: getImplementationSuggestion(category),
+            expectedBenefit: `Improved tool reliability, better insights quality, reduced error rates`,
+            estimatedEffort: getEstimatedEffort(category),
+            codeSnippets: [],
+            affectedComponents: toolsAffected
+          }
+        };
+        
+        try {
+          const result = await submitFeedbackToDatabase(feedbackData, context);
+          feedbackIds.push({
+            category,
+            feedbackId: result.id,
+            isDuplicate: result.isDuplicate,
+            failureCount: failures.length
+          });
+          log.info('Feedback submitted', { 
+            workloadId,
+            category, 
+            feedbackId: result.id, 
+            isDuplicate: result.isDuplicate 
+          });
+        } catch (error) {
+          // CRITICAL FIX: Don't fail on rate limits - log and continue
+          log.error('Failed to submit feedback for category, continuing', { 
+            workloadId,
+            category, 
+            error: error.message 
+          });
+          feedbackIds.push({
+            category,
+            feedbackId: null,
+            error: error.message,
+            failureCount: failures.length
+          });
+        }
+      } catch (categoryErr) {
+        log.error('Error processing category, skipping', { 
+          workloadId,
+          category, 
+          error: categoryErr.message 
+        });
+      }
+    }
+    
+    const updatedState = {
+      ...state,
+      feedbackSubmitted: feedbackIds,
+      currentStep: 'finalize',
+      stepIndex: TOOL_TESTS.length + 2, // Increment stepIndex for submit_feedback step
+      message: 'Feedback submitted, finalizing diagnostics',
+      progress: Math.round(((TOOL_TESTS.length + 2) / (state.totalSteps || TOOL_TESTS.length + 3)) * 100)
+    };
+    
+    try {
+      await updateJobStep(workloadId, updatedState, log);
+    } catch (updateErr) {
+      log.error('Could not update job step, continuing anyway', { 
+        workloadId,
+        error: updateErr.message 
+      });
+    }
+    
+    return {
+      success: true,
+      nextStep: 'finalize',
+      feedbackSubmitted: feedbackIds
+    };
+  } catch (error) {
+    // CRITICAL FIX: Even if feedback submission fails entirely, continue to finalization
+    log.error('Error during feedback submission, continuing to finalize', { 
+      workloadId,
+      error: error.message,
+      stack: process.env.LOG_LEVEL === 'DEBUG' ? error.stack : undefined
+    });
+    
+    const safeState = {
+      ...state,
+      feedbackSubmitted: [],
+      currentStep: 'finalize',
+      stepIndex: TOOL_TESTS.length + 2, // Increment stepIndex even on error
+      message: 'Feedback submission had errors, finalizing anyway',
+      progress: Math.round(((TOOL_TESTS.length + 2) / (state.totalSteps || TOOL_TESTS.length + 3)) * 100),
+      feedbackError: error.message
+    };
+    
+    try {
+      await updateJobStep(workloadId, safeState, log);
+    } catch (updateErr) {
+      log.error('Could not update job step, continuing anyway', { 
+        workloadId,
+        error: updateErr.message 
+      });
+    }
+    
+    return {
+      success: true, // CRITICAL: Always report success to continue
+      nextStep: 'finalize',
+      feedbackSubmitted: [],
+      warning: 'Feedback submission encountered errors but continued'
+    };
+  }
+}
+
+/**
+ * Step N+3: Finalize diagnostics
+ * CRITICAL FIX: Gracefully handles all errors - always completes with summary
+ */
+async function finalizeDiagnostics(workloadId, state, log, context) {
+  try {
+    log.info('Finalizing diagnostics', { workloadId });
+    
+    // CRITICAL FIX: Defensive defaults for all state properties
+    const results = Array.isArray(state.results) ? state.results : [];
+    const feedbackSubmitted = Array.isArray(state.feedbackSubmitted) ? state.feedbackSubmitted : [];
+    const categorizedFailures = (state.categorizedFailures && typeof state.categorizedFailures === 'object') 
+      ? state.categorizedFailures 
+      : {};
+    const startTime = typeof state.startTime === 'number' ? state.startTime : Date.now();
+    
+    let totalTests = 0;
+    let passedTests = 0;
+    
+    // CRITICAL FIX: Safe calculation with error handling for each result
+    results.forEach((r, index) => {
+      try {
+        if (r && typeof r === 'object') {
+          if (r.validTest && typeof r.validTest === 'object') {
+            totalTests++;
+            if (r.validTest.success) passedTests++;
+          }
+          if (r.edgeCaseTest && typeof r.edgeCaseTest === 'object') {
+            totalTests++;
+            if (r.edgeCaseTest.success) passedTests++;
+          }
+        }
+      } catch (err) {
+        log.warn('Error counting test result, skipping', { 
+          workloadId,
+          tool: r?.tool, 
+          resultIndex: index,
+          error: err.message 
+        });
+      }
+    });
+    
+    // Determine if any critical failures need GitHub issues
+    const criticalFailures = [];
+    Object.entries(categorizedFailures).forEach(([category, failures]) => {
+      if (Array.isArray(failures) && failures.length > 0) {
+        const priority = getPriorityFromErrorType(category, failures.length);
+        if (priority === 'critical' || priority === 'high') {
+          criticalFailures.push({
+            category,
+            count: failures.length,
+            priority,
+            tools: [...new Set(failures.map(f => (f && f.tool) || 'unknown'))]
+          });
+        }
+      }
+    });
+    
+    // Try to create GitHub issues for critical failures
+    const githubIssuesCreated = [];
+    if (criticalFailures.length > 0 && process.env.GITHUB_TOKEN) {
+      log.info('Creating GitHub issues for critical failures', { 
+        workloadId,
+        criticalFailureCount: criticalFailures.length 
+      });
+      
+      const { createGitHubIssueAPI } = require('../create-github-issue.cjs');
+      for (const failure of criticalFailures) {
+        try {
+          
+          const issueTitle = `🔧 Diagnostics: ${failure.category.replace(/_/g, ' ')} (${failure.count} failures)`;
+          const issueBody = `## Diagnostic Testing Found ${failure.priority.toUpperCase()} Priority Failures
+
+**Category:** ${failure.category.replace(/_/g, ' ')}  
+**Failure Count:** ${failure.count}  
+**Priority:** ${failure.priority}  
+**Affected Tools:** ${failure.tools.join(', ')}  
+**Detected:** ${new Date().toISOString()}
+
+### Details
+
+The Diagnostics Guru systematic testing found ${failure.count} ${failure.category.replace(/_/g, ' ')} failures across ${failure.tools.length} tools.
+
+### Recommendation
+
+${getImplementationSuggestion(failure.category)}
+
+### Next Steps
+
+1. Review the AI Feedback dashboard for detailed error information
+2. Investigate the root cause of these failures
+3. Implement fixes following the recommendations above
+4. Re-run diagnostics to verify the fixes
+
+---
+
+*This issue was automatically created by Diagnostics Guru workload ${workloadId}*`;
+
+          const githubIssue = await createGitHubIssueAPI({
+            title: issueTitle,
+            body: issueBody,
+            labels: ['ai-generated', `priority-${failure.priority}`, 'diagnostics', 'bug']
+          }, log);
+          
+          githubIssuesCreated.push({
+            category: failure.category,
+            issueNumber: githubIssue.number,
+            issueUrl: githubIssue.html_url
+          });
+          
+          log.info('GitHub issue created for critical failure', {
+            workloadId,
+            category: failure.category,
+            issueNumber: githubIssue.number,
+            issueUrl: githubIssue.html_url
+          });
+        } catch (issueErr) {
+          log.error('Failed to create GitHub issue for critical failure', {
+            workloadId,
+            category: failure.category,
+            error: issueErr.message
+          });
+          // Don't fail diagnostics if GitHub issue creation fails
+        }
+      }
+    } else if (criticalFailures.length > 0) {
+      log.warn('Critical failures detected but GITHUB_TOKEN not configured', {
+        workloadId,
+        criticalFailureCount: criticalFailures.length
+      });
+    }
+    
+    // Detailed results per tool for the summary
+    const toolResults = results.map(r => ({
+      tool: r?.tool || 'unknown',
+      validTestPassed: r?.validTest?.success || false,
+      edgeCaseTestPassed: r?.edgeCaseTest?.success || false,
+      validTestDuration: r?.validTest?.duration || 0,
+      edgeCaseTestDuration: r?.edgeCaseTest?.duration || 0,
+      validTestError: r?.validTest?.error || null,
+      edgeCaseTestError: r?.edgeCaseTest?.error || null
+    }));
+    
+    const summary = {
+      totalToolsTested: results.length,
+      totalTests,
+      passedTests,
+      failedTests: totalTests - passedTests,
+      failureRate: totalTests > 0 ? ((totalTests - passedTests) / totalTests * 100).toFixed(1) + '%' : '0%',
+      averageResponseTime: calculateAverageResponseTime(results),
+      categorizedFailures,
+      feedbackSubmitted,
+      criticalFailures,
+      githubIssuesCreated, // Include created GitHub issues
+      toolResults, // Detailed per-tool results
+      duration: Date.now() - startTime,
+      completedAt: new Date().toISOString(),
+      errors: {
+        analysisError: state.analysisError || null,
+        feedbackError: state.feedbackError || null
+      },
+      recommendations: generateRecommendations(results, categorizedFailures, feedbackSubmitted, githubIssuesCreated)
+    };
+    
+    const finalState = {
+      ...state,
+      summary,
+      stepIndex: TOOL_TESTS.length + 3, // Final step index (all steps complete)
+      progress: 100,
+      message: 'Diagnostics complete'
+    };
+    
+    // CRITICAL FIX: Safe completion with fallback
+    try {
+      await completeJob(workloadId, {
+        insights: `## Diagnostics Summary\n\n**Pass Rate:** ${passedTests}/${totalTests} (${totalTests > 0 ? (passedTests/totalTests*100).toFixed(1) : '0'}%)\n\n**Failures:** ${totalTests - passedTests}\n**Feedback Items:** ${feedbackSubmitted.length}\n**Duration:** ${(summary.duration/1000).toFixed(1)}s\n\n${summary.errors.analysisError ? '⚠️ Analysis had errors\n' : ''}${summary.errors.feedbackError ? '⚠️ Feedback submission had errors\n' : ''}`,
+        state: finalState
+      }, log);
+    } catch (completeErr) {
+      log.error('Could not mark job as complete, trying manual update', { 
+        workloadId,
+        error: completeErr.message 
+      });
+      try {
+        await updateJobStep(workloadId, finalState, log);
+      } catch (updateErr) {
+        log.error('Could not update final state, continuing anyway', { 
+          workloadId,
+          error: updateErr.message 
+        });
+      }
+    }
+    
+    log.info('Diagnostics complete', { workloadId, summary });
+    
+    return {
+      success: true,
+      complete: true,
+      summary
+    };
+  } catch (error) {
+    // CRITICAL FIX: Even finalization errors should not fail - return best effort summary
+    log.error('Error during finalization, returning best effort summary', { 
+      workloadId,
+      error: error.message,
+      stack: process.env.LOG_LEVEL === 'DEBUG' ? error.stack : undefined
+    });
+    
+    // CRITICAL FIX: Build emergency summary with safe access
+    const emergencySummary = {
+      totalToolsTested: Array.isArray(state.results) ? state.results.length : 0,
+      totalTests: 'unknown',
+      passedTests: 'unknown',
+      failedTests: 'unknown',
+      failureRate: 'unknown',
+      averageResponseTime: 'unknown',
+      categorizedFailures: (state.categorizedFailures && typeof state.categorizedFailures === 'object') 
+        ? state.categorizedFailures 
+        : {},
+      feedbackSubmitted: Array.isArray(state.feedbackSubmitted) ? state.feedbackSubmitted : [],
+      duration: typeof state.startTime === 'number' ? Date.now() - state.startTime : 'unknown',
+      completedAt: new Date().toISOString(),
+      errors: {
+        analysisError: state.analysisError || null,
+        feedbackError: state.feedbackError || null,
+        finalizationError: error.message
+      }
+    };
+    
+    // CRITICAL FIX: Try to save emergency summary
+    try {
+      await updateJobStep(workloadId, {
+        ...state,
+        summary: emergencySummary,
+        stepIndex: TOOL_TESTS.length + 3, // Final step index even on error
+        progress: 100,
+        message: 'Diagnostics completed with errors'
+      }, log);
+    } catch (updateErr) {
+      log.error('Could not save emergency summary, continuing anyway', { 
+        workloadId,
+        error: updateErr.message 
+      });
+    }
+    
+    return {
+      success: true, // CRITICAL: Report success so process completes
+      complete: true,
+      summary: emergencySummary,
+      warning: 'Finalization encountered errors but completed'
+    };
+  }
+}
+
+/**
+ * Helper: Map error type to feedback category
+ */
+function getCategoryFromErrorType(errorType) {
+  const mapping = {
+    network_error: 'integration',
+    database_error: 'data_structure',
+    invalid_parameters: 'data_structure',
+    no_data: 'analytics',
+    token_limit: 'performance',
+    circuit_open: 'performance',
+    unknown: 'analytics'
+  };
+  return mapping[errorType] || 'analytics';
+}
+
+/**
+ * Helper: Determine priority from error type and count
+ */
+function getPriorityFromErrorType(errorType, count) {
+  if (errorType === 'database_error' || errorType === 'network_error') return 'critical';
+  if (count > 3) return 'high';
+  if (count > 1) return 'medium';
+  return 'low';
+}
+
+/**
+ * Helper: Get implementation suggestion
+ */
+function getImplementationSuggestion(errorType) {
+  const suggestions = {
+    network_error: 'Add retry logic with exponential backoff. Increase timeout thresholds.',
+    database_error: 'Check MongoDB connection health. Add connection pooling. Verify indexes.',
+    invalid_parameters: 'Improve parameter validation. Add better error messages. Update tool definitions.',
+    no_data: 'Add data availability checks. Provide more helpful "no data" messages.',
+    token_limit: 'Implement data sampling for large queries. Add pagination support.',
+    circuit_open: 'Review circuit breaker thresholds. Add better cooldown mechanisms.',
+    unknown: 'Add more detailed error logging. Categorize error types better.'
+  };
+  return suggestions[errorType] || 'Investigate root cause and implement appropriate fix.';
+}
+
+/**
+ * Helper: Estimate effort
+ */
+function getEstimatedEffort(errorType) {
+  if (errorType === 'database_error' || errorType === 'network_error') return 'days';
+  if (errorType === 'invalid_parameters') return 'hours';
+  return 'days';
+}
+
+/**
+ * Helper: Calculate average response time
+ * Gracefully handles missing or invalid data
+ * @param {Array} results - Array of test result objects
+ * @returns {string} Average response time in ms, 'N/A' if no valid data, or 'Error' on exception
+ */
+function calculateAverageResponseTime(results) {
+  try {
+    if (!results || results.length === 0) return 'N/A';
+    
+    let totalDuration = 0;
+    let count = 0;
+    
+    results.forEach(r => {
+      try {
+        if (r && r.validTest && typeof r.validTest.duration === 'number' && r.validTest.duration > 0) {
+          totalDuration += r.validTest.duration;
+          count++;
+        }
+        if (r && r.edgeCaseTest && typeof r.edgeCaseTest.duration === 'number' && r.edgeCaseTest.duration > 0) {
+          totalDuration += r.edgeCaseTest.duration;
+          count++;
+        }
+      } catch (err) {
+        // Skip invalid results
+      }
+    });
+    
+    return count > 0 ? Math.round(totalDuration / count) + 'ms' : 'N/A';
+  } catch (error) {
+    return 'Error';
+  }
+}
+
+/**
+ * Helper: Generate recommendations based on diagnostic results
+ * @param {Array} results - Test results
+ * @param {Object} categorizedFailures - Categorized failure data
+ * @param {Array} feedbackSubmitted - Feedback submission results
+ * @param {Array} githubIssuesCreated - GitHub issues created for critical failures
+ * @returns {Array} Recommendations for next steps
+ */
+function generateRecommendations(results, categorizedFailures, feedbackSubmitted, githubIssuesCreated = []) {
+  const recommendations = [];
+  
+  try {
+    // Count failures by category
+    const failureCounts = {};
+    Object.entries(categorizedFailures).forEach(([category, failures]) => {
+      if (Array.isArray(failures) && failures.length > 0) {
+        failureCounts[category] = failures.length;
+      }
+    });
+    
+    // Recommendations based on failure patterns
+    if (failureCounts.network_error) {
+      recommendations.push({
+        category: 'network',
+        severity: 'high',
+        message: `${failureCounts.network_error} network/timeout errors detected`,
+        action: 'Review timeout configurations and network connectivity. Consider increasing retry thresholds.'
+      });
+    }
+    
+    if (failureCounts.database_error) {
+      recommendations.push({
+        category: 'database',
+        severity: 'critical',
+        message: `${failureCounts.database_error} database errors detected`,
+        action: 'Check MongoDB connection health, verify indexes, and review connection pooling settings.'
+      });
+    }
+    
+    if (failureCounts.invalid_parameters) {
+      recommendations.push({
+        category: 'validation',
+        severity: 'medium',
+        message: `${failureCounts.invalid_parameters} parameter validation failures`,
+        action: 'Improve parameter validation in tool definitions and add better error messages.'
+      });
+    }
+    
+    if (failureCounts.circuit_open) {
+      recommendations.push({
+        category: 'resilience',
+        severity: 'high',
+        message: `${failureCounts.circuit_open} circuit breaker triggered`,
+        action: 'Review circuit breaker thresholds and cooldown mechanisms.'
+      });
+    }
+    
+    // Recommendations based on feedback submission
+    const failedSubmissions = feedbackSubmitted.filter(fb => fb && fb.error);
+    if (failedSubmissions.length > 0) {
+      recommendations.push({
+        category: 'feedback',
+        severity: 'low',
+        message: `${failedSubmissions.length} feedback submissions failed`,
+        action: 'Check rate limiting on feedback API. Some categories may be duplicates.'
+      });
+    }
+    
+    // Recommendations for GitHub issues created
+    if (githubIssuesCreated && githubIssuesCreated.length > 0) {
+      recommendations.push({
+        category: 'github',
+        severity: 'info',
+        message: `Created ${githubIssuesCreated.length} GitHub issue(s) for critical failures`,
+        action: `Review and address the following issues: ${githubIssuesCreated.map(i => `#${i.issueNumber}`).join(', ')}`
+      });
+    }
+    
+    // General recommendation
+    if (recommendations.length === 0) {
+      recommendations.push({
+        category: 'general',
+        severity: 'info',
+        message: 'All diagnostics passed successfully',
+        action: 'No immediate action required. System is healthy.'
+      });
+    } else {
+      recommendations.push({
+        category: 'general',
+        severity: 'info',
+        message: `Review ${feedbackSubmitted.filter(fb => fb && fb.feedbackId).length} submitted feedback items in AI Feedback dashboard`,
+        action: 'Validate feedback and create GitHub issues for confirmed bugs.'
+      });
+    }
+    
+    return recommendations;
+  } catch (error) {
+    return [{
+      category: 'error',
+      severity: 'low',
+      message: 'Failed to generate recommendations',
+      action: 'Review diagnostic logs manually.'
+    }];
+  }
+}
+
+module.exports = {
+  initializeDiagnostics,
+  testTool,
+  analyzeFailures,
+  submitFeedbackForFailures,
+  finalizeDiagnostics,
+  TOOL_TESTS
+};
