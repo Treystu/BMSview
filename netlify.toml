@@ -10,14 +10,22 @@
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
 
+# Global functions configuration
+# Use esbuild bundler and externalize dependencies to ensure they're available at runtime
+# This fixes "Cannot find module 'mongodb'" errors in async workload schedulers
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["mongodb", "@netlify/async-workloads"]
+
 # Async Workloads configuration for insights generation
 # Uses Netlify's durable async workload system for extended execution
-# CRITICAL: Using default bundler which includes dependencies in function zip
+# The external mongodb dependency is loaded from node_modules at runtime
 [functions."generate-insights-background"]
   async_workloads = true
+  [functions."generate-insights-background".build_options]
+    format = "esm"
 
 # Trigger endpoint for async workloads
-# CRITICAL: Using default bundler which includes dependencies in function zip
 # Dynamic import() loads @netlify/async-workloads at runtime from node_modules
 [functions."generate-insights-async-trigger"]
 
