@@ -20,9 +20,9 @@
  */
 
 import { asyncWorkloadFn, ErrorDoNotRetry, ErrorRetryAfterDelay } from '@netlify/async-workloads';
-import { createLogger } from './utils/logger.cjs';
-import { getInsightsJob, updateJobStatus, saveCheckpoint, completeJob, failJob } from './utils/insights-jobs.cjs';
+import { completeJob, createInsightsJob, failJob, getInsightsJob, saveCheckpoint, updateJobStatus } from './utils/insights-jobs.cjs';
 import { processInsightsInBackground } from './utils/insights-processor.cjs';
+import { createLogger } from './utils/logger.cjs';
 
 // Retry delay constants (in milliseconds)
 const RATE_LIMIT_RETRY_DELAY_MS = 300000; // 5 minutes
@@ -38,7 +38,7 @@ const TRANSIENT_ERROR_RETRY_DELAY_MS = 30000; // 30 seconds
  */
 const handler = asyncWorkloadFn(async (event) => {
   const { eventName, eventData, eventId, attempt, step, sendEvent } = event;
-  
+
   const log = createLogger('generate-insights-async-workload', { eventId, attempt });
   log.info('Async workload invoked', {
     eventName,
@@ -67,10 +67,33 @@ const handler = asyncWorkloadFn(async (event) => {
     // STEP 1: Initialize and validate
     await step.run('initialize-workload', async () => {
       log.info('Step 1: Initialize workload', { jobId });
-      
+
+      // Ensure job exists; if trigger was DB-free, create it now
+      let existingJob = await getInsightsJob(jobId, log);
+      if (!existingJob) {
+        log.info('Job not found in DB; creating from event payload', {
+          jobId,
+          hasAnalysisData: !!analysisData,
+          hasSystemId: !!systemId
+        });
+
+        const created = await createInsightsJob({
+          jobId,
+          analysisData,
+          systemId,
+          customPrompt,
+          contextWindowDays,
+          maxIterations,
+          modelOverride,
+          fullContextMode
+        }, log);
+
+        existingJob = created;
+      }
+
       // Update job status to processing
       await updateJobStatus(jobId, 'processing', log);
-      
+
       // Save initial checkpoint
       await saveCheckpoint(jobId, {
         state: {
@@ -80,7 +103,7 @@ const handler = asyncWorkloadFn(async (event) => {
           startTime: Date.now()
         }
       }, log);
-      
+
       log.info('Workload initialized', { jobId, eventId });
     });
 
@@ -96,15 +119,15 @@ const handler = asyncWorkloadFn(async (event) => {
     if (!jobData) {
       await step.run('fetch-job-data', async () => {
         log.info('Step 2: Fetching job data from database', { jobId });
-        
+
         const job = await getInsightsJob(jobId, log);
-        
+
         if (!job) {
           // Mark as failed and don't retry (job doesn't exist)
           await failJob(jobId, 'Job not found in database', log);
           throw new ErrorDoNotRetry(`Job ${jobId} not found in database`);
         }
-        
+
         // Extract all parameters from job
         jobData = job.analysisData;
         systemIdFromJob = job.systemId;
@@ -113,8 +136,8 @@ const handler = asyncWorkloadFn(async (event) => {
         maxIterationsFromJob = job.maxIterations;
         modelOverrideFromJob = job.modelOverride;
         fullContextModeFromJob = job.fullContextMode;
-        
-        log.info('Job data loaded', { 
+
+        log.info('Job data loaded', {
           jobId,
           hasData: !!jobData,
           hasSystemId: !!systemIdFromJob
@@ -125,11 +148,11 @@ const handler = asyncWorkloadFn(async (event) => {
     // STEP 3: Validate required data
     await step.run('validate-data', async () => {
       log.info('Step 3: Validating data', { jobId });
-      
+
       if (!jobData || !systemIdFromJob) {
         throw new ErrorDoNotRetry('Missing required data: analysisData and systemId are required');
       }
-      
+
       await saveCheckpoint(jobId, {
         state: {
           step: 'validate',
@@ -144,7 +167,7 @@ const handler = asyncWorkloadFn(async (event) => {
     let insights;
     await step.run('process-insights', async () => {
       log.info('Step 4: Processing insights with unlimited timeout', { jobId });
-      
+
       try {
         const result = await processInsightsInBackground(
           jobId,
@@ -159,10 +182,10 @@ const handler = asyncWorkloadFn(async (event) => {
             fullContextMode: fullContextModeFromJob
           }
         );
-        
+
         if (!result || !result.success) {
           const errorMsg = result?.error || 'Processing failed without details';
-          
+
           // Check if this is a retryable error
           if (errorMsg.includes('timeout') || errorMsg.includes('ECONNREFUSED')) {
             // Retry after delay for transient errors
@@ -183,14 +206,14 @@ const handler = asyncWorkloadFn(async (event) => {
             throw new ErrorDoNotRetry(`Business logic error: ${errorMsg}`);
           }
         }
-        
+
         insights = result.insights;
-        
+
         log.info('Insights processed successfully', {
           jobId,
           hasInsights: !!insights
         });
-        
+
         await saveCheckpoint(jobId, {
           state: {
             step: 'process',
@@ -198,20 +221,20 @@ const handler = asyncWorkloadFn(async (event) => {
             hasInsights: !!insights
           }
         }, log);
-        
+
       } catch (error) {
         // Re-throw ErrorDoNotRetry and ErrorRetryAfterDelay as-is
         if (error instanceof ErrorDoNotRetry || error instanceof ErrorRetryAfterDelay) {
           throw error;
         }
-        
+
         // For other errors, wrap with retry logic
         log.error('Processing error', {
           jobId,
           error: error.message,
           stack: error.stack
         });
-        
+
         throw new ErrorRetryAfterDelay({
           message: `Unexpected error during processing: ${error.message}`,
           retryDelay: 60000, // 1 minute
@@ -223,9 +246,9 @@ const handler = asyncWorkloadFn(async (event) => {
     // STEP 5: Store results in database
     await step.run('store-results', async () => {
       log.info('Step 5: Storing results', { jobId, hasInsights: !!insights });
-      
+
       await completeJob(jobId, insights, log);
-      
+
       await saveCheckpoint(jobId, {
         state: {
           step: 'complete',
@@ -233,14 +256,14 @@ const handler = asyncWorkloadFn(async (event) => {
           completedAt: Date.now()
         }
       }, log);
-      
+
       log.info('Results stored successfully', { jobId });
     });
 
     // STEP 6: Send completion event (optional - for event chaining)
     await step.run('send-completion-event', async () => {
       log.info('Step 6: Sending completion event', { jobId });
-      
+
       // Send a follow-up event for notification, analytics, etc.
       try {
         await sendEvent('insights-completed', {
@@ -252,7 +275,7 @@ const handler = asyncWorkloadFn(async (event) => {
           },
           priority: 4 // Raised priority for more timely notification events
         });
-        
+
         log.info('Completion event sent', { jobId });
       } catch (eventError) {
         // Don't fail the whole workload if completion event fails
@@ -312,19 +335,19 @@ export default handler;
 export const asyncWorkloadConfig = {
   // Workload name for identification
   name: 'generate-insights-background',
-  
+
   // Events this workload should handle
   events: ['generate-insights'],
-  
+
   // Maximum number of retries before dead-lettering (15 retries)
   maxRetries: 15,
-  
+
   // Event filter - only process events with valid job data
   eventFilter: (event) => {
     const { eventData } = event;
     return Boolean(eventData && eventData.jobId);
   },
-  
+
   // Custom exponential backoff schedule
   // Attempt 1: 5s, Attempt 2: 10s, Attempt 3: 30s, Attempt 4+: 60s
   backoffSchedule: (attempt) => {

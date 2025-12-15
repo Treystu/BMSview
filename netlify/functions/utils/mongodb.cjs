@@ -18,6 +18,7 @@ const log = createLogger("utils/mongodb");
 
 // Retrieve MongoDB connection string; may be undefined in test environments.
 const MONGODB_URI = process.env.MONGODB_URI;
+const FORCE_TEST_MOCK = process.env.FORCE_TEST_MOCK === '1' || !!process.env.JEST_WORKER_ID || process.env.NODE_ENV === 'test';
 // Support both MONGODB_DB_NAME and MONGODB_DB for backward compatibility
 const DB_NAME = process.env.MONGODB_DB_NAME || process.env.MONGODB_DB || "bmsview";
 // Encryption key for field-level encryption (must be 32 bytes for AES-256)
@@ -112,8 +113,8 @@ async function connectToDatabase() {
     // Create new connection with OPTIMIZED pooling configuration
     connectionPromise = (async () => {
         try {
-            // If MONGODB_URI is missing, use a mock DB for test environments
-            if (!MONGODB_URI) {
+            // If we're in a test environment or URI is missing, use a mock DB
+            if (FORCE_TEST_MOCK || !MONGODB_URI) {
                 log.info('MONGODB_URI not set - using mock DB');
                 cachedClient = null;
                 cachedDb = {
@@ -338,12 +339,12 @@ function getEncryptionKey() {
     if (!ENCRYPTION_KEY) {
         throw new Error('DATA_ENCRYPTION_KEY environment variable is not set');
     }
-    
+
     // Return cached key if available (PBKDF2 is expensive)
     if (cachedDerivedKey) {
         return cachedDerivedKey;
     }
-    
+
     // Derive key using PBKDF2 with fixed salt for deterministic derivation
     // The salt is application-specific and provides domain separation
     cachedDerivedKey = crypto.pbkdf2Sync(
@@ -353,13 +354,13 @@ function getEncryptionKey() {
         PBKDF2_KEY_LENGTH,        // 32 bytes = 256 bits for AES-256
         PBKDF2_DIGEST             // SHA-256 hash function
     );
-    
+
     log.info('Encryption key derived using PBKDF2', {
         iterations: PBKDF2_ITERATIONS,
         keyLength: PBKDF2_KEY_LENGTH,
         digest: PBKDF2_DIGEST
     });
-    
+
     return cachedDerivedKey;
 }
 
@@ -494,10 +495,10 @@ function hashData(data) {
     return crypto.createHash('sha256').update(plaintext).digest('hex');
 }
 
-module.exports = { 
-    connectToDatabase, 
-    getCollection, 
-    closeConnection, 
+module.exports = {
+    connectToDatabase,
+    getCollection,
+    closeConnection,
     getDb,
     // Encryption utilities
     encryptData,

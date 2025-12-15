@@ -1,14 +1,14 @@
 /**
- * Generate Insights Async Trigger - Job Creation Endpoint
+ * Generate Insights Async Trigger - DB-free enqueue endpoint
  * 
- * This endpoint creates a job in MongoDB for background processing.
- * It does NOT trigger the async workload directly - that's handled by Netlify's
- * infrastructure which invokes generate-insights-background.mjs automatically.
+ * This endpoint validates input, rate-limits, generates a jobId, and enqueues
+ * the async workload. MongoDB access and job persistence are handled entirely
+ * by the background handler to keep this trigger bundle lightweight.
  * 
  * ARCHITECTURE:
- * 1. Trigger endpoint (this file): Creates job with "pending" status in MongoDB
- * 2. Netlify infrastructure: Automatically invokes background handler for pending jobs
- * 3. Background handler: Uses @netlify/async-workloads features to process the job
+ * 1. Trigger endpoint (this file): Generate jobId + enqueue async workload event
+ * 2. Netlify async workloads: Invoke generate-insights-background.mjs with event data
+ * 3. Background handler: Creates/updates job in MongoDB and processes the job
  * 
  * SECURITY HARDENING:
  * - Rate limiting per user/system
@@ -22,18 +22,56 @@
  * - Purpose: Save API calls by returning cached analysis if image already processed
  * - Note: User can still generate different insights on same analysis with different prompts
  * 
- * NOTE: This is CommonJS (.cjs) for compatibility.
- * The @netlify/async-workloads package is ONLY used in the background handler,
- * not here in the trigger. This avoids package import issues.
+ * NOTE: This is CommonJS (.cjs) for compatibility. @netlify/async-workloads is
+ * only touched by the async client (externalized) and the background handler.
  */
 
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
-const { createInsightsJob } = require('./utils/insights-jobs.cjs');
-const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
-const { sanitizeJobId, sanitizeSystemId, SanitizationError } = require('./utils/security-sanitizer.cjs');
+const { sanitizeSystemId, SanitizationError } = require('./utils/security-sanitizer.cjs');
 const { calculateImageHash } = require('./utils/unified-deduplication.cjs');
-const { getCollection } = require('./utils/mongodb.cjs');
+const { triggerInsightsWorkload } = require('./utils/insights-async-client.cjs');
+
+const generateJobId = () => `insights_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+// Lightweight in-memory rate limiter (per-instance) to avoid bundling MongoDB
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 20; // conservative cap for async insights trigger
+const rateBuckets = new Map();
+
+const applyInMemoryRateLimit = (event, log) => {
+  const identifier = event.headers['x-forwarded-for']
+    || event.headers['x-nf-client-connection-ip']
+    || event.headers['client-ip']
+    || 'global';
+
+  const now = Date.now();
+  const existing = rateBuckets.get(identifier) || { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+
+  if (now >= existing.resetAt) {
+    existing.count = 0;
+    existing.resetAt = now + RATE_LIMIT_WINDOW_MS;
+  }
+
+  existing.count += 1;
+  rateBuckets.set(identifier, existing);
+
+  if (existing.count > RATE_LIMIT_MAX) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
+    log?.warn?.('Rate limit exceeded (in-memory)', { identifier, count: existing.count, limit: RATE_LIMIT_MAX });
+    return {
+      limited: true,
+      identifier,
+      limit: RATE_LIMIT_MAX,
+      headers: { 'Retry-After': `${retryAfterSeconds}` }
+    };
+  }
+
+  return {
+    limited: false,
+    headers: { 'X-RateLimit-Limit': `${RATE_LIMIT_MAX}`, 'X-RateLimit-Remaining': `${Math.max(0, RATE_LIMIT_MAX - existing.count)}` }
+  };
+};
 
 /**
  * Handler for triggering async workload via job creation
@@ -43,9 +81,9 @@ const { getCollection } = require('./utils/mongodb.cjs');
  * This trigger just creates a job in MongoDB, and Netlify's infrastructure
  * will automatically invoke the background handler to process it.
  */
-exports.handler = async (event, context) => {
+exports.handler = async (event) => {
   const headers = getCorsHeaders(event);
-  
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
@@ -53,7 +91,7 @@ exports.handler = async (event, context) => {
 
   const log = createLoggerFromEvent('generate-insights-async-trigger', event);
   const timer = createTimer();
-  
+
   try {
     log.info('Async trigger invoked', {
       method: event.httpMethod,
@@ -61,14 +99,14 @@ exports.handler = async (event, context) => {
       clientIp: event.headers['x-forwarded-for'] || event.headers['x-nf-client-connection-ip']
     });
 
-    // Apply rate limiting
-    const rateLimitResult = await applyRateLimit(event, 'async-insights', log);
+    // Apply lightweight in-memory rate limiting (per Lambda instance)
+    const rateLimitResult = applyInMemoryRateLimit(event, log);
     if (rateLimitResult.limited) {
       log.warn('Rate limit exceeded', {
         identifier: rateLimitResult.identifier,
         limit: rateLimitResult.limit
       });
-      
+
       return {
         statusCode: 429,
         headers: {
@@ -84,7 +122,7 @@ exports.handler = async (event, context) => {
     }
 
     const rateLimitHeaders = rateLimitResult?.headers || {};
-    
+
     const body = event.body ? JSON.parse(event.body) : {};
     const {
       analysisData,
@@ -124,15 +162,7 @@ exports.handler = async (event, context) => {
     // Sanitize inputs
     const sanitizedSystemId = sanitizeSystemId(systemId, log);
 
-    // INSIGHTS-SPECIFIC DUPLICATE CHECK
-    // This is DIFFERENT from analysis duplicate detection:
-    // - Analysis duplicate: Checks if same image was uploaded (main app flow)
-    // - Insights duplicate: Checks if image was already ANALYZED (to avoid wasting API calls)
-    // 
-    // Purpose: If the BMS screenshot was already analyzed, return existing analysis data
-    // instead of re-running analysis. User can still generate insights with different
-    // prompts/parameters on the same analysis data.
-    console.log('[ASYNC-TRIGGER] Checking for existing analysis to avoid re-processing');
+    // Optional: content hash for downstream dedup (background owns DB lookup)
     let contentHash = null;
     if (analysisData && analysisData.image) {
       try {
@@ -145,52 +175,10 @@ exports.handler = async (event, context) => {
       }
     }
 
-    // Check for existing analysis with same content hash
-    if (contentHash) {
-      try {
-        console.log('[ASYNC-TRIGGER] Querying database for existing analysis');
-        const resultsCol = await getCollection('analysis-results');
-        const existingAnalysis = await resultsCol.findOne({ contentHash });
-        
-        if (existingAnalysis) {
-          console.log('[ASYNC-TRIGGER] Existing analysis found! Returning cached result:', {
-            recordId: existingAnalysis._id,
-            timestamp: existingAnalysis.timestamp,
-            hasAnalysis: !!existingAnalysis.analysis
-          });
-          
-          log.info('Existing analysis found, returning cached result (insights duplicate check)', {
-            contentHash: contentHash.substring(0, 16) + '...',
-            recordId: existingAnalysis._id
-          });
+    const jobId = generateJobId();
 
-          // Return existing analysis immediately (no job creation needed)
-          // This saves API calls and improves response time
-          return {
-            statusCode: 200,
-            headers: {
-              ...headers,
-              ...rateLimitHeaders
-            },
-            body: JSON.stringify({
-              isDuplicate: true,
-              recordId: existingAnalysis._id,
-              timestamp: existingAnalysis.timestamp,
-              analysisData: existingAnalysis.analysis,
-              message: 'This image has already been analyzed. Returning existing results.'
-            })
-          };
-        } else {
-          console.log('[ASYNC-TRIGGER] No existing analysis found - will process image');
-        }
-      } catch (dbError) {
-        console.error('[ASYNC-TRIGGER] Database check failed:', dbError.message);
-        log.warn('Duplicate check failed, proceeding with analysis', { error: dbError.message });
-        // Continue with job creation if duplicate check fails
-      }
-    }
-
-    log.info('Creating insights job', {
+    log.info('Enqueuing async insights workload', {
+      jobId,
       systemId: sanitizedSystemId,
       hasCustomPrompt: !!customPrompt,
       contextWindowDays,
@@ -199,42 +187,24 @@ exports.handler = async (event, context) => {
       contentHash: contentHash ? contentHash.substring(0, 16) + '...' : 'none'
     });
 
-    // Create job in MongoDB
-    let job;
-    try {
-      console.log('[ASYNC-TRIGGER] Creating job with params:', { systemId: sanitizedSystemId, hasAnalysisData: !!analysisData });
-      job = await createInsightsJob({
-        systemId: sanitizedSystemId,
-        analysisData,
-        customPrompt,
-        contextWindowDays,
-        maxIterations,
-        modelOverride,
-        fullContextMode
-      }, log);  // Pass log as second argument
-      console.log('[ASYNC-TRIGGER] Job created successfully:', job.id);
-      log.info('Job created', { jobId: job.id });
-    } catch (jobError) {
-      console.error('[ASYNC-TRIGGER] Job creation failed:', jobError.message, jobError.stack);
-      log.error('Failed to create job', { error: jobError.message, stack: jobError.stack });
-      throw new Error(`Job creation failed: ${jobError.message}`);
-    }
+    const { eventId } = await triggerInsightsWorkload({
+      jobId,
+      analysisData,
+      systemId: sanitizedSystemId,
+      customPrompt,
+      contextWindowDays,
+      maxIterations,
+      modelOverride,
+      fullContextMode
+    });
 
-    // Job created successfully - background handler will pick it up
-    // NOTE: We do NOT import @netlify/async-workloads here. That package is ONLY for use
-    // inside the async workload handler (generate-insights-background.mjs).
-    // The trigger just creates a job with "pending" status, and the background handler
-    // polls for pending jobs and processes them using the async workload features.
-    console.log('[ASYNC-TRIGGER] Job created with pending status - background handler will process');
-    
-    log.info('Job created for async processing', {
-      jobId: job.id,
-      status: 'pending',
+    log.info('Async workload queued', {
+      jobId,
+      eventId,
+      status: 'queued',
       duration: timer.end()
     });
 
-    // Return immediately with job ID for status polling
-    // The background handler will pick up this job and process it
     return {
       statusCode: 202, // Accepted
       headers: {
@@ -242,26 +212,15 @@ exports.handler = async (event, context) => {
         ...rateLimitHeaders
       },
       body: JSON.stringify({
-        jobId: job.id,
-        status: 'pending',
-        statusUrl: `/.netlify/functions/generate-insights-status?jobId=${job.id}`,
-        message: 'Job created successfully. Background processing will begin shortly. Poll the statusUrl for updates.'
+        jobId,
+        eventId,
+        status: 'queued',
+        statusUrl: `/.netlify/functions/generate-insights-status?jobId=${jobId}`,
+        message: 'Job accepted. Background processing will begin shortly. Poll the statusUrl for updates.'
       })
     };
 
   } catch (error) {
-    if (error instanceof RateLimitError) {
-      log.warn('Rate limit error caught', { error: error.message });
-      return {
-        statusCode: 429,
-        headers,
-        body: JSON.stringify({
-          error: 'RATE_LIMIT_ERROR',
-          message: error.message
-        })
-      };
-    }
-
     if (error instanceof SanitizationError) {
       log.warn('Sanitization error caught', { error: error.message });
       return {

@@ -12,7 +12,7 @@
 
 [functions."generate-insights-async-trigger"]
   node_bundler = "esbuild"
-  external_node_modules = ["@netlify/async-workloads"]
+  # Keep the trigger DB-free and lightweight; let esbuild bundle only what is used
   [functions."generate-insights-async-trigger".build_options]
     format = "esm"
 
@@ -20,7 +20,7 @@
 # Uses Netlify's durable async workload system for extended execution
 [functions."generate-insights-background"]
   node_bundler = "esbuild"
-  external_node_modules = ["@netlify/async-workloads"]
+  external_node_modules = ["@netlify/async-workloads", "mongodb"]
   async_workloads = true
   [functions."generate-insights-background".build_options]
     format = "esm"

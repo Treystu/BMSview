@@ -27,10 +27,10 @@ const COLLECTION_NAME = 'insights-jobs';
  * @returns {Promise<Object>} Created job object with jobId
  */
 async function createInsightsJob(params, log) {
-  const { analysisData, systemId, customPrompt, initialSummary, contextWindowDays, maxIterations, modelOverride } = params;
-  
-  const jobId = `insights_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
+  const { analysisData, systemId, customPrompt, initialSummary, contextWindowDays, maxIterations, modelOverride, fullContextMode, jobId: providedJobId } = params;
+
+  const jobId = providedJobId || `insights_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
   const job = {
     id: jobId,
     status: 'queued',
@@ -41,6 +41,7 @@ async function createInsightsJob(params, log) {
     contextWindowDays,
     maxIterations,
     modelOverride,
+    fullContextMode,
     progress: [],
     partialInsights: null,
     finalInsights: null,
@@ -49,21 +50,21 @@ async function createInsightsJob(params, log) {
     createdAt: new Date(),
     updatedAt: new Date()
   };
-  
+
   try {
     const collection = await getCollection(COLLECTION_NAME);
     await collection.insertOne(job);
-    
-    log.info('Insights job created', { 
-      jobId, 
+
+    log.info('Insights job created', {
+      jobId,
       hasSystemId: !!systemId,
       hasCustomPrompt: !!customPrompt,
       summaryKeys: initialSummary ? Object.keys(initialSummary) : []
     });
-    
+
     return job;
   } catch (error) {
-    log.error('Failed to create insights job', { 
+    log.error('Failed to create insights job', {
       error: error.message,
       jobId
     });
@@ -82,15 +83,15 @@ async function getInsightsJob(jobId, log) {
   try {
     const collection = await getCollection(COLLECTION_NAME);
     const job = await collection.findOne({ id: jobId });
-    
+
     if (!job) {
       log.warn('Insights job not found', { jobId });
       return null;
     }
-    
+
     return job;
   } catch (error) {
-    log.error('Failed to get insights job', { 
+    log.error('Failed to get insights job', {
       error: error.message,
       jobId
     });
@@ -111,18 +112,18 @@ async function updateJobStatus(jobId, status, log) {
     const collection = await getCollection(COLLECTION_NAME);
     const result = await collection.updateOne(
       { id: jobId },
-      { 
-        $set: { 
-          status, 
-          updatedAt: new Date() 
-        } 
+      {
+        $set: {
+          status,
+          updatedAt: new Date()
+        }
       }
     );
-    
+
     log.info('Job status updated', { jobId, status, matched: result.matchedCount });
     return result.matchedCount > 0;
   } catch (error) {
-    log.error('Failed to update job status', { 
+    log.error('Failed to update job status', {
       error: error.message,
       jobId,
       status
@@ -147,25 +148,25 @@ async function addProgressEvent(jobId, progressEvent, log) {
       timestamp: new Date(),
       ...progressEvent
     };
-    
+
     const collection = await getCollection(COLLECTION_NAME);
     const result = await collection.updateOne(
       { id: jobId },
-      { 
+      {
         $push: { progress: event },
         $set: { updatedAt: new Date() }
       }
     );
-    
-    log.debug('Progress event added', { 
-      jobId, 
+
+    log.debug('Progress event added', {
+      jobId,
       eventType: progressEvent.type,
-      matched: result.matchedCount 
+      matched: result.matchedCount
     });
-    
+
     return result.matchedCount > 0;
   } catch (error) {
-    log.error('Failed to add progress event', { 
+    log.error('Failed to add progress event', {
       error: error.message,
       jobId,
       eventType: progressEvent.type
@@ -187,23 +188,23 @@ async function updatePartialInsights(jobId, partialInsights, log) {
     const collection = await getCollection(COLLECTION_NAME);
     const result = await collection.updateOne(
       { id: jobId },
-      { 
-        $set: { 
-          partialInsights, 
-          updatedAt: new Date() 
-        } 
+      {
+        $set: {
+          partialInsights,
+          updatedAt: new Date()
+        }
       }
     );
-    
-    log.debug('Partial insights updated', { 
-      jobId, 
+
+    log.debug('Partial insights updated', {
+      jobId,
       insightsLength: partialInsights?.length,
-      matched: result.matchedCount 
+      matched: result.matchedCount
     });
-    
+
     return result.matchedCount > 0;
   } catch (error) {
-    log.error('Failed to update partial insights', { 
+    log.error('Failed to update partial insights', {
       error: error.message,
       jobId
     });
@@ -224,23 +225,23 @@ async function completeJob(jobId, finalInsights, log) {
     const collection = await getCollection(COLLECTION_NAME);
     const result = await collection.updateOne(
       { id: jobId },
-      { 
-        $set: { 
+      {
+        $set: {
           status: 'completed',
-          finalInsights, 
-          updatedAt: new Date() 
-        } 
+          finalInsights,
+          updatedAt: new Date()
+        }
       }
     );
-    
-    log.info('Job completed', { 
+
+    log.info('Job completed', {
       jobId,
-      matched: result.matchedCount 
+      matched: result.matchedCount
     });
-    
+
     return result.matchedCount > 0;
   } catch (error) {
-    log.error('Failed to complete job', { 
+    log.error('Failed to complete job', {
       error: error.message,
       jobId
     });
@@ -261,24 +262,24 @@ async function failJob(jobId, errorMessage, log) {
     const collection = await getCollection(COLLECTION_NAME);
     const result = await collection.updateOne(
       { id: jobId },
-      { 
-        $set: { 
+      {
+        $set: {
           status: 'failed',
           error: errorMessage,
-          updatedAt: new Date() 
-        } 
+          updatedAt: new Date()
+        }
       }
     );
-    
-    log.warn('Job failed', { 
+
+    log.warn('Job failed', {
       jobId,
       error: errorMessage,
-      matched: result.matchedCount 
+      matched: result.matchedCount
     });
-    
+
     return result.matchedCount > 0;
   } catch (error) {
-    log.error('Failed to mark job as failed', { 
+    log.error('Failed to mark job as failed', {
       error: error.message,
       jobId
     });
@@ -302,25 +303,25 @@ async function failJob(jobId, errorMessage, log) {
 async function saveCheckpoint(jobId, checkpointState, log) {
   const MAX_SAVE_RETRIES = 3;
   const BASE_RETRY_DELAY_MS = 200; // Base delay for linear backoff (200ms, 400ms, 600ms)
-  
+
   for (let attempt = 1; attempt <= MAX_SAVE_RETRIES; attempt++) {
     try {
       const collection = await getCollection(COLLECTION_NAME);
       const result = await collection.updateOne(
         { id: jobId },
-        { 
-          $set: { 
+        {
+          $set: {
             checkpointState,
-            updatedAt: new Date() 
-          } 
+            updatedAt: new Date()
+          }
         },
-        { 
+        {
           // EDGE CASE PROTECTION: Set short timeout on MongoDB operation
           maxTimeMS: 2000 // 2 second max
         }
       );
-      
-      log.info('Checkpoint saved', { 
+
+      log.info('Checkpoint saved', {
         jobId,
         turnCount: checkpointState.turnCount,
         toolCallCount: checkpointState.toolCallCount,
@@ -328,17 +329,17 @@ async function saveCheckpoint(jobId, checkpointState, log) {
         matched: result.matchedCount,
         attempt
       });
-      
+
       return result.matchedCount > 0;
     } catch (error) {
       const isLastAttempt = attempt === MAX_SAVE_RETRIES;
-      
-      log.warn(`Failed to save checkpoint (attempt ${attempt}/${MAX_SAVE_RETRIES})`, { 
+
+      log.warn(`Failed to save checkpoint (attempt ${attempt}/${MAX_SAVE_RETRIES})`, {
         error: error.message,
         jobId,
         willRetry: !isLastAttempt
       });
-      
+
       if (isLastAttempt) {
         // EDGE CASE PROTECTION: Don't throw - return false to indicate failure
         // This prevents checkpoint save failure from crashing the entire function
@@ -349,12 +350,12 @@ async function saveCheckpoint(jobId, checkpointState, log) {
         });
         return false;
       }
-      
+
       // Wait before retry with linear backoff (200ms, 400ms, 600ms)
       await new Promise(resolve => setTimeout(resolve, BASE_RETRY_DELAY_MS * attempt));
     }
   }
-  
+
   return false; // Should never reach here, but be safe
 }
 
@@ -367,13 +368,13 @@ async function saveCheckpoint(jobId, checkpointState, log) {
 async function ensureIndexes(log) {
   try {
     const collection = await getCollection(COLLECTION_NAME);
-    
+
     // Index on job ID for fast lookups
     await collection.createIndex({ id: 1 }, { unique: true });
-    
+
     // Index on status and creation time for cleanup queries
     await collection.createIndex({ status: 1, createdAt: 1 });
-    
+
     // TTL index to auto-cleanup old jobs after 30 days
     // Note: If a TTL index with different expireAfterSeconds exists, it won't be updated.
     // Manual cleanup required: db.insights-jobs.dropIndex({ createdAt: 1 })
@@ -382,7 +383,7 @@ async function ensureIndexes(log) {
       { createdAt: 1 },
       { expireAfterSeconds: 2592000 } // 30 days
     );
-    
+
     log.info('Insights jobs indexes ensured');
   } catch (error) {
     log.error('Failed to ensure indexes', { error: error.message });
