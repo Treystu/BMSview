@@ -87,10 +87,15 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   // Available Gemini models (presets)
   const availableModels = [
     { value: '', label: 'Default (2.5 Flash)' },
-    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-3-pro-preview', label: 'Gemini 3.0 Pro Preview' },
     { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-2.0-pro', label: 'Gemini 2.0 Pro' },
     { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash Exp' },
     { value: 'gemini-2.0-flash-thinking-exp-1219', label: 'Gemini 2.0 Flash Thinking' },
+    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+    { value: 'gemini-1.5-flash-8b', label: 'Gemini 1.5 Flash 8B' },
     { value: 'gemini-exp-1206', label: 'Gemini Exp 1206' },
     { value: 'learnlm-1.5-pro-experimental', label: 'LearnLM 1.5 Pro Experimental' },
     { value: 'custom', label: 'Custom Model (enter below)' },
@@ -455,6 +460,14 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
             </label>
             <p className="text-xs text-gray-600 mb-3">
               Select a preset model or enter a custom model name. Pro models provide better analysis for complex queries but take longer.
+              <a 
+                href="https://ai.google.dev/gemini-api/docs/pricing" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="ml-1 text-blue-600 hover:text-blue-800 underline"
+              >
+                View official pricing
+              </a>
             </p>
             <select
               id="model-override"

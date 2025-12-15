@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react';
 
+/**
+ * Cost Estimation Badge Component
+ * 
+ * Estimates and displays the cost of AI operations based on token usage.
+ * Pricing data is synchronized with official Google Gemini pricing:
+ * https://ai.google.dev/gemini-api/docs/pricing
+ * 
+ * Updated: December 2025
+ */
+
 export type CostLevel = 'low' | 'medium' | 'high';
 
 export interface CostEstimate {
@@ -26,8 +36,9 @@ export interface ModelPricingResponse {
 }
 
 // Default pricing (Gemini 2.5 Flash) - used as fallback
-const DEFAULT_INPUT_COST_PER_M = 0.075;
-const DEFAULT_OUTPUT_COST_PER_M = 0.30;
+// Updated Dec 2025 to match official Google pricing
+const DEFAULT_INPUT_COST_PER_M = 0.10;
+const DEFAULT_OUTPUT_COST_PER_M = 0.40;
 
 // Cached pricing from backend
 let cachedPricing: ModelPricingResponse | null = null;

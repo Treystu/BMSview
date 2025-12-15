@@ -12,28 +12,71 @@ const { v4: uuidv4 } = require('uuid');
 const log = createLogger('metrics-collector');
 
 /**
- * Gemini API Pricing (as of December 2024)
- * Based on Google's published rates: https://ai.google.dev/pricing
+ * Gemini API Pricing (as of December 2025)
+ * Based on official Google rates: https://ai.google.dev/gemini-api/docs/pricing
  * 
- * Note: Prices vary by context window size for some models.
- * These are the standard rates for prompts <= 128K tokens.
+ * IMPORTANT: Prices vary by context window size for most models.
+ * - Gemini 3.0, 2.5, 2.0: Standard rate ≤200K tokens, higher rate >200K
+ * - Gemini 1.5: Standard rate ≤128K tokens, higher rate >128K
+ * 
+ * Current implementation uses standard (lower) rates by default.
+ * TODO: Implement context-aware pricing based on actual token counts.
  */
 const GEMINI_PRICING = {
-  // Gemini 2.5 Flash - Latest multimodal model (preview)
+  // ===== Gemini 3.0 Family (Preview) =====
+  // Context threshold: 200K tokens
+  // Reference: https://ai.google.dev/gemini-api/docs/pricing
+  'gemini-3-pro-preview': {
+    inputTokens: 2.00 / 1_000_000,    // $2.00 per million (≤200K context)
+    outputTokens: 12.00 / 1_000_000,  // $12.00 per million (≤200K context)
+    inputTokensLongContext: 4.00 / 1_000_000,   // $4.00 per million (>200K context)
+    outputTokensLongContext: 18.00 / 1_000_000, // $18.00 per million (>200K context)
+    contextThreshold: 200_000,
+    description: 'Gemini 3.0 Pro Preview - Most advanced model'
+  },
+
+  // ===== Gemini 2.5 Family =====
+  // Context threshold: 200K tokens
+  // Reference: https://ai.google.dev/gemini-api/docs/pricing
+  'gemini-2.5-pro': {
+    inputTokens: 1.25 / 1_000_000,    // $1.25 per million (≤200K context)
+    outputTokens: 10.00 / 1_000_000,  // $10.00 per million (≤200K context)
+    inputTokensLongContext: 2.50 / 1_000_000,   // $2.50 per million (>200K context)
+    outputTokensLongContext: 15.00 / 1_000_000, // $15.00 per million (>200K context)
+    contextThreshold: 200_000,
+    description: 'Gemini 2.5 Pro - Highly capable'
+  },
   'gemini-2.5-flash': {
-    inputTokens: 0.075 / 1_000_000,   // $0.075 per million input tokens
-    outputTokens: 0.30 / 1_000_000,   // $0.30 per million output tokens
+    inputTokens: 0.10 / 1_000_000,    // $0.10 per million (≤200K context)
+    outputTokens: 0.40 / 1_000_000,   // $0.40 per million (≤200K context)
+    inputTokensLongContext: 0.10 / 1_000_000,   // Same for >200K (no price increase)
+    outputTokensLongContext: 0.40 / 1_000_000,  // Same for >200K (no price increase)
+    contextThreshold: 200_000,
     description: 'Gemini 2.5 Flash - Fast multimodal model'
   },
   'gemini-2.5-flash-preview-05-20': {
-    inputTokens: 0.075 / 1_000_000,
-    outputTokens: 0.30 / 1_000_000,
-    description: 'Gemini 2.5 Flash Preview'
+    inputTokens: 0.10 / 1_000_000,
+    outputTokens: 0.40 / 1_000_000,
+    description: 'Gemini 2.5 Flash Preview (legacy)'
   },
-  // Gemini 2.0 Flash - Experimental
+
+  // ===== Gemini 2.0 Family =====
+  // Context threshold: 200K tokens
+  // Reference: https://ai.google.dev/gemini-api/docs/pricing
+  'gemini-2.0-pro': {
+    inputTokens: 0.50 / 1_000_000,    // $0.50 per million (≤200K context)
+    outputTokens: 5.00 / 1_000_000,   // $5.00 per million (≤200K context)
+    inputTokensLongContext: 1.00 / 1_000_000,   // $1.00 per million (>200K context)
+    outputTokensLongContext: 7.50 / 1_000_000,  // $7.50 per million (>200K context)
+    contextThreshold: 200_000,
+    description: 'Gemini 2.0 Pro - Production ready'
+  },
   'gemini-2.0-flash': {
-    inputTokens: 0.10 / 1_000_000,    // $0.10 per million input tokens  
-    outputTokens: 0.40 / 1_000_000,   // $0.40 per million output tokens
+    inputTokens: 0.10 / 1_000_000,    // $0.10 per million (≤200K context)
+    outputTokens: 0.40 / 1_000_000,   // $0.40 per million (≤200K context)
+    inputTokensLongContext: 0.10 / 1_000_000,   // Same for >200K (no price increase)
+    outputTokensLongContext: 0.40 / 1_000_000,  // Same for >200K (no price increase)
+    contextThreshold: 200_000,
     description: 'Gemini 2.0 Flash - Experimental'
   },
   'gemini-2.0-flash-exp': {
@@ -41,34 +84,65 @@ const GEMINI_PRICING = {
     outputTokens: 0.40 / 1_000_000,
     description: 'Gemini 2.0 Flash Experimental'
   },
-  // Gemini 1.5 Flash
+  'gemini-2.0-flash-thinking-exp-1219': {
+    inputTokens: 0.10 / 1_000_000,
+    outputTokens: 0.40 / 1_000_000,
+    description: 'Gemini 2.0 Flash Thinking Experimental'
+  },
+
+  // ===== Gemini 1.5 Family =====
+  // Context threshold: 128K tokens (different from 2.x/3.x!)
+  // Reference: https://ai.google.dev/gemini-api/docs/pricing
+  'gemini-1.5-pro': {
+    inputTokens: 1.25 / 1_000_000,    // $1.25 per million (≤128K context)
+    outputTokens: 5.00 / 1_000_000,   // $5.00 per million (≤128K context)
+    inputTokensLongContext: 2.50 / 1_000_000,   // $2.50 per million (>128K context)
+    outputTokensLongContext: 10.00 / 1_000_000, // $10.00 per million (>128K context)
+    contextThreshold: 128_000,
+    description: 'Gemini 1.5 Pro - Most capable 1.5 model'
+  },
+  'gemini-1.5-pro-latest': {
+    inputTokens: 1.25 / 1_000_000,
+    outputTokens: 5.00 / 1_000_000,
+    inputTokensLongContext: 2.50 / 1_000_000,
+    outputTokensLongContext: 10.00 / 1_000_000,
+    contextThreshold: 128_000,
+    description: 'Gemini 1.5 Pro Latest'
+  },
   'gemini-1.5-flash': {
-    inputTokens: 0.075 / 1_000_000,
-    outputTokens: 0.30 / 1_000_000,
+    inputTokens: 0.075 / 1_000_000,   // $0.075 per million (≤128K context)
+    outputTokens: 0.30 / 1_000_000,   // $0.30 per million (≤128K context)
+    inputTokensLongContext: 0.15 / 1_000_000,   // $0.15 per million (>128K context)
+    outputTokensLongContext: 0.60 / 1_000_000,  // $0.60 per million (>128K context)
+    contextThreshold: 128_000,
     description: 'Gemini 1.5 Flash - Fast and versatile'
   },
   'gemini-1.5-flash-latest': {
     inputTokens: 0.075 / 1_000_000,
     outputTokens: 0.30 / 1_000_000,
+    inputTokensLongContext: 0.15 / 1_000_000,
+    outputTokensLongContext: 0.60 / 1_000_000,
+    contextThreshold: 128_000,
     description: 'Gemini 1.5 Flash Latest'
   },
   'gemini-1.5-flash-8b': {
-    inputTokens: 0.0375 / 1_000_000,  // $0.0375 per million (cheaper 8B variant)
-    outputTokens: 0.15 / 1_000_000,   // $0.15 per million
+    inputTokens: 0.0375 / 1_000_000,  // $0.0375 per million (≤128K context)
+    outputTokens: 0.15 / 1_000_000,   // $0.15 per million (≤128K context)
+    inputTokensLongContext: 0.075 / 1_000_000,  // $0.075 per million (>128K context)
+    outputTokensLongContext: 0.30 / 1_000_000,  // $0.30 per million (>128K context)
+    contextThreshold: 128_000,
     description: 'Gemini 1.5 Flash 8B - Budget option'
   },
-  // Gemini 1.5 Pro
-  'gemini-1.5-pro': {
-    inputTokens: 1.25 / 1_000_000,
-    outputTokens: 5.00 / 1_000_000,
-    description: 'Gemini 1.5 Pro - Most capable'
+  'gemini-1.5-flash-8b-latest': {
+    inputTokens: 0.0375 / 1_000_000,
+    outputTokens: 0.15 / 1_000_000,
+    inputTokensLongContext: 0.075 / 1_000_000,
+    outputTokensLongContext: 0.30 / 1_000_000,
+    contextThreshold: 128_000,
+    description: 'Gemini 1.5 Flash 8B Latest'
   },
-  'gemini-1.5-pro-latest': {
-    inputTokens: 1.25 / 1_000_000,
-    outputTokens: 5.00 / 1_000_000,
-    description: 'Gemini 1.5 Pro Latest'
-  },
-  // Gemini 1.0 Pro (legacy)
+
+  // ===== Gemini 1.0 Family (Legacy) =====
   'gemini-1.0-pro': {
     inputTokens: 0.50 / 1_000_000,
     outputTokens: 1.50 / 1_000_000,
@@ -84,23 +158,51 @@ const GEMINI_PRICING = {
 /**
  * Get pricing for a model, with fallback to default
  * @param {string} model - Model name
- * @returns {Object} Pricing info
+ * @param {number} contextTokens - Optional: number of context tokens to determine pricing tier
+ * @returns {Object} Pricing info with standard and optionally long-context rates
  */
-function getModelPricing(model) {
+function getModelPricing(model, contextTokens = 0) {
+  let pricing = null;
+  
   // Try exact match first
   if (GEMINI_PRICING[model]) {
-    return GEMINI_PRICING[model];
+    pricing = GEMINI_PRICING[model];
+  } else {
+    // Try partial match (for versioned model names like gemini-2.5-flash-001)
+    const baseModel = Object.keys(GEMINI_PRICING).find(key => model.startsWith(key));
+    if (baseModel) {
+      pricing = GEMINI_PRICING[baseModel];
+    }
   }
   
-  // Try partial match (for versioned model names like gemini-2.5-flash-001)
-  const baseModel = Object.keys(GEMINI_PRICING).find(key => model.startsWith(key));
-  if (baseModel) {
-    return GEMINI_PRICING[baseModel];
+  // Default to gemini-2.5-flash pricing if no match found
+  if (!pricing) {
+    log.warn('Unknown model, using default pricing', { model, defaultModel: 'gemini-2.5-flash' });
+    pricing = GEMINI_PRICING['gemini-2.5-flash'];
   }
   
-  // Default to gemini-2.5-flash pricing
-  log.warn('Unknown model, using default pricing', { model, defaultModel: 'gemini-2.5-flash' });
-  return GEMINI_PRICING['gemini-2.5-flash'];
+  // If context tokens provided and model has context threshold, determine which pricing tier to use
+  if (contextTokens > 0 && pricing.contextThreshold) {
+    const useLongContext = contextTokens > pricing.contextThreshold;
+    if (useLongContext && pricing.inputTokensLongContext) {
+      return {
+        inputTokens: pricing.inputTokensLongContext,
+        outputTokens: pricing.outputTokensLongContext,
+        description: `${pricing.description} (Long Context >${(pricing.contextThreshold / 1000).toFixed(0)}K)`,
+        contextThreshold: pricing.contextThreshold,
+        isLongContext: true
+      };
+    }
+  }
+  
+  // Return standard pricing
+  return {
+    inputTokens: pricing.inputTokens,
+    outputTokens: pricing.outputTokens,
+    description: pricing.description,
+    contextThreshold: pricing.contextThreshold,
+    isLongContext: false
+  };
 }
 
 /**
@@ -108,11 +210,12 @@ function getModelPricing(model) {
  * @param {string} model - Model name (reads from env if not provided)
  * @param {number} inputTokens - Number of input tokens
  * @param {number} outputTokens - Number of output tokens
+ * @param {number} contextTokens - Optional: total context size for context-aware pricing
  * @returns {number} Cost in USD
  */
-function calculateGeminiCost(model, inputTokens = 0, outputTokens = 0) {
+function calculateGeminiCost(model, inputTokens = 0, outputTokens = 0, contextTokens = 0) {
   const effectiveModel = model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const pricing = getModelPricing(effectiveModel);
+  const pricing = getModelPricing(effectiveModel, contextTokens);
   return (inputTokens * pricing.inputTokens) + (outputTokens * pricing.outputTokens);
 }
 
