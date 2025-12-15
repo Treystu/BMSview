@@ -40,42 +40,50 @@ exports.handler = async function(event, context) {
         }
 
         // Extract DL numbers using regex patterns
-        // Common BMS DL patterns: DL123456, DL-123456, DL 123456, etc.
+        // Common BMS DL patterns: DL123456, DL-123456, DL 123456, Driver License: 123456, etc.
         const dlPatterns = [
-            /DL[-\s]?(\d{6,8})/gi,
-            /DL[:\s]?(\d{6,8})/gi,
-            /DL(\d{6,8})/gi,
-            /\b[A-Z]{2}\d{6,8}\b/gi // General pattern for 2 letters + 6-8 digits
+            /\bDL(?:[#\s:-]|\s+No\.?)?[\s:-]*([A-Z]{0,2}\d[\d\s-]{5,11})/gi,
+            /\bD\/L\b[\s:-]*([A-Z]{0,2}\d[\d\s-]{5,11})/gi,
+            /\bdrivers?\s+licen[cs]e\b[\s:-]*([A-Z]{0,2}\d[\d\s-]{5,11})/gi
         ];
 
-        let extractedDLs = new Set();
-        
+        const extractedDLs = new Set();
+
         for (const pattern of dlPatterns) {
-            const matches = text.match(pattern);
-            if (matches) {
-                for (const match of matches) {
-                    // Extract just the numeric part
-                    const numericMatch = match.match(/\d+/);
-                    if (numericMatch) {
-                        extractedDLs.add(numericMatch[0]);
-                    }
+            for (const match of text.matchAll(pattern)) {
+                const candidate = (match[1] || match[0] || '').trim();
+                const digitsOnly = candidate.replace(/\D/g, '');
+
+                if (digitsOnly.length >= 6 && digitsOnly.length <= 8) {
+                    extractedDLs.add(digitsOnly);
+                } else {
+                    log.debug('Discarded DL candidate', { candidate, digitsOnlyLength: digitsOnly.length });
                 }
             }
         }
 
         const dlNumbers = Array.from(extractedDLs);
+        const success = dlNumbers.length > 0;
         
         timer.end({ dlCount: dlNumbers.length });
-        log.info('DL extraction completed', { 
-            dlCount: dlNumbers.length,
-            dlNumbers: dlNumbers.slice(0, 5) // Log first 5 to avoid logging too much
-        });
+        if (success) {
+            log.info('DL extraction completed', { 
+                dlCount: dlNumbers.length,
+                dlNumbers: dlNumbers.slice(0, 5) // Log first 5 to avoid logging too much
+            });
+        } else {
+            log.warn('No DL numbers extracted from text', { 
+                dlCount: 0,
+                textPreview: text.slice(0, 200),
+                textLength: text.length
+            });
+        }
         log.exit(200);
 
         return respond(200, { 
             dlNumbers,
             count: dlNumbers.length,
-            success: true
+            success
         }, headers);
 
     } catch (error) {
