@@ -14,13 +14,19 @@
  */
 
 const { getCollection } = require('./utils/mongodb.cjs');
-const { createLoggerFromEvent, createTimer, createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { getCostMetrics, getRealtimeMetrics, createAlert } = require('./utils/metrics-collector.cjs');
 const { v4: uuidv4 } = require('uuid');
 
-const log = createLogger('usage-stats');
+const sanitizeHeaders = (headers = {}) => {
+    const redacted = { ...headers };
+    if (redacted.authorization) redacted.authorization = '[REDACTED]';
+    if (redacted.cookie) redacted.cookie = '[REDACTED]';
+    if (redacted['x-api-key']) redacted['x-api-key'] = '[REDACTED]';
+    return redacted;
+};
 
 // Budget defaults - configurable via environment variables
 const DEFAULT_MONTHLY_TOKEN_BUDGET = 5_000_000; // 5M tokens
@@ -35,7 +41,7 @@ const DEFAULT_ALERT_THRESHOLD = 0.8; // 80%
  * @param {number} monthlyTokenBudget - Monthly token budget limit
  * @returns {Promise<Object|null>} GitHub issue response or null
  */
-async function createBudgetGitHubIssue(usagePercent, currentTokens, monthlyTokenBudget) {
+async function createBudgetGitHubIssue(usagePercent, currentTokens, monthlyTokenBudget, log) {
     try {
         const baseUrl = process.env.URL || 'http://localhost:8888';
         const formatTokens = (tokens) => {
@@ -104,7 +110,7 @@ async function createBudgetGitHubIssue(usagePercent, currentTokens, monthlyToken
  * @param {number} alertThreshold - Alert threshold (e.g., 0.8 for 80%)
  * @returns {Promise<Object|null>} Alert created or null
  */
-async function checkAndCreateBudgetAlert(usagePercent, currentTokens, monthlyTokenBudget, alertThreshold) {
+async function checkAndCreateBudgetAlert(usagePercent, currentTokens, monthlyTokenBudget, alertThreshold, log) {
     // Only alert if above threshold
     if (usagePercent < alertThreshold * 100) {
         return null;
@@ -144,7 +150,7 @@ async function checkAndCreateBudgetAlert(usagePercent, currentTokens, monthlyTok
     });
     
     // Create GitHub issue
-    const githubIssue = await createBudgetGitHubIssue(usagePercent, currentTokens, monthlyTokenBudget);
+    const githubIssue = await createBudgetGitHubIssue(usagePercent, currentTokens, monthlyTokenBudget, log);
     
     // Record that we've sent this alert
     const alertRecord = {
@@ -358,7 +364,7 @@ async function getBudgetStatus() {
     // Check and create budget alert if threshold exceeded (token-based)
     // This is async but we don't wait for it to complete
     if (status !== 'healthy') {
-        checkAndCreateBudgetAlert(tokenUsagePercent, usage.totalTokens, monthlyTokenBudget, alertThreshold)
+        checkAndCreateBudgetAlert(tokenUsagePercent, usage.totalTokens, monthlyTokenBudget, alertThreshold, log)
             .catch(err => log.warn('Failed to check/create budget alert', { error: err.message }));
     }
     
@@ -412,21 +418,30 @@ async function getBudgetStatus() {
  * Main handler for usage stats endpoint
  */
 exports.handler = async (event, context) => {
+    const log = createLoggerFromEvent('usage-stats', event, context);
+    const timer = createTimer(log, 'usage-stats');
     const headers = getCorsHeaders(event);
+    
+    log.entry({ 
+        method: event.httpMethod,
+        path: event.path, 
+        query: event.queryStringParameters,
+        headers: sanitizeHeaders(event.headers),
+        bodyLength: event.body ? event.body.length : 0
+    });
     
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {
+        timer.end({ outcome: 'preflight' });
+        log.exit(200, { outcome: 'preflight' });
         return { statusCode: 200, headers };
     }
     
     if (event.httpMethod !== 'GET') {
+        timer.end({ outcome: 'method_not_allowed' });
+        log.exit(405, { outcome: 'method_not_allowed' });
         return errorResponse(405, 'method_not_allowed', 'Method not allowed', undefined, headers);
     }
-    
-    const log = createLoggerFromEvent('usage-stats', event, context);
-    const timer = createTimer(log, 'usage-stats');
-    
-    log.entry({ path: event.path, query: event.queryStringParameters });
     
     try {
         const query = event.queryStringParameters || {};
@@ -512,7 +527,7 @@ exports.handler = async (event, context) => {
         
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        log.error('Failed to get usage stats', { error: errorMessage });
+        log.error('Failed to get usage stats', { error: errorMessage, stack: error?.stack });
         timer.end({ error: true });
         log.exit(500);
         

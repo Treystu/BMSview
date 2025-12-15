@@ -26,18 +26,28 @@ const { errorResponse } = require('./utils/errors.cjs');
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
   
+  const log = createLoggerFromEvent('admin-scan-duplicates', event, context);
+  const timer = createTimer(log, 'admin-scan-duplicates');
+  
+  const sanitizedHeaders = event.headers ? {
+    ...event.headers,
+    authorization: event.headers.authorization ? '[REDACTED]' : undefined,
+    cookie: event.headers.cookie ? '[REDACTED]' : undefined,
+    'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
+  } : {};
+  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters, headers: sanitizedHeaders, bodyLength: event.body ? event.body.length : 0 });
+  
   if (event.httpMethod === 'OPTIONS') {
+    timer.end({ outcome: 'preflight' });
+    log.exit(200, { outcome: 'preflight' });
     return { statusCode: 200, headers };
   }
   
   if (event.httpMethod !== 'GET') {
+    timer.end({ outcome: 'method_not_allowed' });
+    log.exit(405, { outcome: 'method_not_allowed' });
     return errorResponse(405, 'method_not_allowed', 'Method not allowed', undefined, headers);
   }
-  
-  const log = createLoggerFromEvent('admin-scan-duplicates', event, context);
-  const timer = createTimer(log, 'admin-scan-duplicates');
-  
-  log.entry({ method: event.httpMethod, path: event.path });
   
   try {
     const resultsCol = await getCollection('analysis-results');

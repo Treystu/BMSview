@@ -68,6 +68,8 @@ exports.handler = async (event, context) => {
     } = body;
 
     if (!systemId) {
+      timer.end({ success: false, error: 'missing_systemId' });
+      log.exit(400, { outcome: 'validation_error', field: 'systemId' });
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
