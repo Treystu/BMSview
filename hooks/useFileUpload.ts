@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from 'react';
 import JSZip from 'jszip';
-import { checkFilesForDuplicates, type CategorizedFiles } from '../utils/duplicateChecker';
+import { useCallback, useEffect, useState } from 'react';
+import { checkFilesForDuplicates } from '../utils/duplicateChecker';
 
-const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
+const log = (level: string, message: string, context: object = {}) => {
     console.log(JSON.stringify({
         level: level.toUpperCase(),
         timestamp: new Date().toISOString(),
@@ -65,7 +65,7 @@ const ensureFileInstance = (input: unknown): File => {
 };
 
 const isDuplicateTagged = (file: Blob) => {
-    const fileRecord = file as Record<string, unknown>;
+    const fileRecord = file as unknown as Record<string, unknown>;
     return '_isDuplicate' in fileRecord && fileRecord._isDuplicate === true;
 };
 
@@ -192,7 +192,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
             fileNames: filesToCheck.slice(0, MAX_LOGGED_FILE_NAMES).map(f => f.name),
             event: 'CHECK_START'
         });
-        
+
         try {
             const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(filesToCheck, log);
 
@@ -207,17 +207,17 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
             // Upgrades: create wrapper objects with metadata
             for (const item of needsUpgrade) {
                 const baseFile = ensureFileInstance(item.file);
-                const upgradeFile = Object.assign(Object.create(Object.getPrototypeOf(baseFile)), baseFile, { 
-                    _isUpgrade: true 
-                });
-                processedFiles.push(upgradeFile);
+                // Preserve the native File/Blob brand by mutating the real File instance instead of cloning.
+                // Cloning via Object.assign/Object.create strips internal slots and breaks FileReader in Safari/Chromium.
+                (baseFile as any)._isUpgrade = true;
+                processedFiles.push(baseFile);
             }
-            
+
             // New files: add as-is
             for (const item of newFiles) {
                 processedFiles.push(ensureFileInstance(item.file));
             }
-            
+
             if (duplicateReasons.size > 0) {
                 log('info', 'UNIFIED_DUPLICATE_CHECK: Skipping duplicate files from queue.', {
                     skippedCount: trueDuplicates.length,
@@ -283,10 +283,10 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
             });
             const extractedFiles = await Promise.all(imagePromises);
             log('info', 'Successfully extracted files from ZIP.', { ...zipContext, extractedCount: extractedFiles.length });
-            
+
             // Route through unified duplicate check
             await checkAndAddFiles(extractedFiles);
-            
+
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : String(e);
             log('error', 'Error unzipping file.', { ...zipContext, error: errorMessage });
@@ -305,7 +305,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
         const validImageFiles: File[] = [];
         const oversizedFiles: string[] = [];
         const imageFiles = fileArray.filter(f => f.type.startsWith('image/'));
-        
+
         for (const f of imageFiles) {
             if (f.size > maxFileSizeBytes) {
                 oversizedFiles.push(f.name);
@@ -321,16 +321,16 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
             log('warn', 'Oversized files detected.', { oversizedCount: oversizedFiles.length, fileNames: oversizedFiles, maxSizeMb: maxFileSizeMb });
             setFileError(errorMsg);
         }
-        
+
         log('info', 'File list processed.', { validImageCount: validImageFiles.length, oversizedCount: oversizedFiles.length, zipCount: zipFiles.length });
-        
+
         // Process image files first, then ZIP files sequentially to avoid concurrent state updates
         setIsProcessing(true);
         try {
             if (validImageFiles.length > 0) {
                 await checkAndAddFiles(validImageFiles);
             }
-            
+
             for (const zipFile of zipFiles) {
                 await handleZipFile(zipFile);
             }
@@ -345,7 +345,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
             processFileList(event.target.files);
         }
     }, [processFileList]);
-    
+
     const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
         event.preventDefault();
         event.stopPropagation();
