@@ -11,7 +11,7 @@
  * - Non-blocking for admins
  */
 
-const { createLogger } = require('./utils/logger.cjs');
+const { createLoggerFromEvent } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { 
   initializeDiagnostics,
@@ -57,7 +57,7 @@ exports.handler = async (event, context) => {
     return { statusCode: 200, headers };
   }
   
-  const log = createLogger('diagnostics-workload', context);
+  const log = createLoggerFromEvent('diagnostics-workload', event, context);
   log.entry({ method: event.httpMethod, path: event.path });
   
   // Sanitize headers for DEBUG logging
