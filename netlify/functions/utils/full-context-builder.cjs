@@ -148,10 +148,38 @@ async function getRawData(systemId, options) {
       ]
     }).sort({ timestamp: 1 }).toArray();
 
+    // Fallback: some legacy records store timestamps as Dates while others are strings.
+    // If the mixed-type query above returns too few records, run a normalization pass
+    // without timestamp typing constraints and filter manually.
+    let normalizedFallback = [];
+    if (allAnalyses.length < 4) {
+      const looseMatches = await analysisCollection.find({
+        $or: [
+          { systemId },
+          { 'analysis.systemId': systemId }
+        ]
+      }).sort({ timestamp: 1 }).toArray();
+
+      const rangeStartMs = startDate.getTime();
+      const rangeEndMs = endDate.getTime();
+
+      normalizedFallback = looseMatches.filter((item) => {
+        const ts = item.timestamp instanceof Date ? item.timestamp.getTime() : new Date(item.timestamp).getTime();
+        if (Number.isNaN(ts)) return false;
+        return ts >= rangeStartMs && ts <= rangeEndMs;
+      });
+
+      log.debug('Applied mixed timestamp fallback filter', {
+        systemId,
+        looseMatchCount: looseMatches.length,
+        fallbackCount: normalizedFallback.length
+      });
+    }
+
     // Deduplicate in case records match multiple OR branches
     const uniqueAnalyses = [];
     const seen = new Set();
-    for (const item of allAnalyses) {
+    for (const item of [...allAnalyses, ...normalizedFallback]) {
       const key = `${item.systemId || item.analysis?.systemId || 'unknown'}|${String(item.timestamp)}`;
       if (!seen.has(key)) {
         seen.add(key);
