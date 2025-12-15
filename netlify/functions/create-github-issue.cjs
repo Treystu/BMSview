@@ -13,7 +13,7 @@ const { searchGitHubIssues } = require('./utils/github-api.cjs');
 /**
  * Emoji pattern used throughout for normalization
  */
-const EMOJI_PATTERN = /[\u{1F534}\u{1F7E0}\u{1F7E1}\u{26AA}\u{1F324}\u{1F5C4}\u{1F3A8}\u{26A1}\u{1F50C}\u{1F4CA}]/gu;
+const EMOJI_PATTERN = /[\u{1F534}\u{1F7E0}\u{1F7E1}\u{26AA}\u{1F324}\u{1F5C4}\u{1F3A8}\u{26A1}\u{1F50C}\u{1F4CA}]\uFE0F?/gu;
 
 /**
  * Search for similar issues before creating a new one

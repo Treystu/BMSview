@@ -4142,6 +4142,7 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 200,  // Return 200 for handled errors so frontend can parse response
       headers: /** @type {any} */ ({
+        ...headers,
         'Content-Type': 'application/json',
         'X-Diagnostic-Id': testId,
         'X-Diagnostic-Status': 'error'

@@ -247,7 +247,9 @@ function calculateFailureRisk(measurements, maintenanceHistory) {
   }
 
   // Check temperature trends
-  const avgTemperature = measurements.reduce((sum, m) => sum + m.temperature, 0) / measurements.length;
+  const avgTemperature = measurements.length > 0
+    ? measurements.reduce((sum, m) => sum + m.temperature, 0) / measurements.length
+    : 0;
   if (avgTemperature > 40) {
     riskScore += 25;
     riskFactors.push('Elevated operating temperature');
@@ -336,7 +338,10 @@ function identifyWeakComponents(components, measurements) {
 
       case 'cooling_system':
         {
-          const avgTemp = measurements.reduce((sum, m) => sum + m.temperature, 0) / measurements.length;
+          const avgTemp = measurements.length > 0
+            ? measurements.reduce((sum, m) => sum + m.temperature, 0) / measurements.length
+            : 0;
+
           if (avgTemp > 45) {
             riskLevel = 'High';
             issues.push('Inadequate cooling performance');

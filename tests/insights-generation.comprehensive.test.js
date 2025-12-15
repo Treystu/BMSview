@@ -181,20 +181,9 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
   });
 
   test('should respect timeout in sync mode', async () => {
-    // Mock a tool that takes too long to execute
-    const slowTool = jest.fn().mockImplementation(() => {
-      return new Promise(resolve => setTimeout(() => resolve('tool result'), 200));
-    });
-
     const event = {
       body: JSON.stringify({ measurements: [] }),
       queryStringParameters: { sync: 'true', timeout: '100' }
-    };
-
-    // Mock the handler to simulate a timeout
-    const response = {
-      statusCode: 504,
-      body: JSON.stringify({ success: false, error: 'Request timed out' })
     };
 
     // Call the handler and assert the response
@@ -204,20 +193,9 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
   });
 
   test('should handle tool execution errors gracefully', async () => {
-    // Mock a tool that throws an error
-    const errorTool = jest.fn().mockImplementation(() => {
-      throw new Error('Tool failed');
-    });
-
     const event = {
       body: JSON.stringify({ measurements: [] }),
       queryStringParameters: { sync: 'true' }
-    };
-
-    // Mock the handler to simulate a tool error
-    const response = {
-      statusCode: 500,
-      body: JSON.stringify({ success: false, error: 'Internal Server Error' })
     };
 
     // Call the handler and assert the response

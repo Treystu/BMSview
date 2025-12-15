@@ -571,6 +571,7 @@ async function executeToolCall(name, params, log) {
       case 'getSystemAnalytics':
         return await getSystemAnalytics(params, log);
       case 'getHourlySocPredictions':
+      case 'get_hourly_soc_predictions':
         return await getHourlySocPredictions(params, log);
       case 'submitAppFeedback':
         return await submitAppFeedback(params, log);

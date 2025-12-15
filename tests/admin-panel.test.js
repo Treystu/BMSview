@@ -124,8 +124,6 @@ describe('Admin Panel User Acceptance Tests', () => {
 
       mockMongoDB.db().collection().aggregate.mockReturnValue({
         toArray: jest.fn().mockResolvedValue(adoptedSystems)
-      }); mockMongoDB.db().collection().aggregate.mockReturnValue({
-        toArray: jest.fn().mockResolvedValue(adoptedSystems)
       });
 
       const result = await adminFunction(event);

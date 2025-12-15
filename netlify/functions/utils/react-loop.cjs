@@ -1328,9 +1328,9 @@ async function executeReActLoop(params) {
 
         // Token usage tracking - accumulate across all turns for accurate cost calculation
         // Initialize with tokens from initialization sequence (if any)
-        let totalInputTokens = initResult.inputTokens || 0;
-        let totalOutputTokens = initResult.outputTokens || 0;
-        let totalTokens = initResult.totalTokens || 0;
+        totalInputTokens = initResult.inputTokens || 0;
+        totalOutputTokens = initResult.outputTokens || 0;
+        totalTokens = initResult.totalTokens || 0;
 
         for (; turnCount < MAX_TURNS; turnCount++) {
             // Check timeout and save checkpoint if needed

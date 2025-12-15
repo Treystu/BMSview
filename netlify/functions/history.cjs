@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck - Dynamic Mongo shapes and Netlify event typing; tracked for future typing hardening
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
@@ -20,6 +20,79 @@ const respond = (statusCode, body, headers = {}) => ({
     body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json', ...headers },
 });
+
+async function verifyGoogleIdToken(event, log) {
+    const authHeader = event.headers?.authorization || '';
+    const bearerPrefix = 'Bearer ';
+
+    if (!authHeader.startsWith(bearerPrefix)) {
+        return { ok: false, reason: 'missing' };
+    }
+
+    if (!process.env.GOOGLE_CLIENT_ID) {
+        log.warn('GOOGLE_CLIENT_ID not configured; skipping Google ID token verification');
+        return { ok: false, reason: 'client_id_missing' };
+    }
+
+    const idToken = authHeader.slice(bearerPrefix.length).trim();
+
+    try {
+        const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+        if (!res.ok) {
+            const text = await res.text();
+            log.warn('Google ID token verification failed', { status: res.status, body: text });
+            return { ok: false, reason: 'invalid_token' };
+        }
+
+        const tokenInfo = await res.json();
+
+        if (tokenInfo.aud !== process.env.GOOGLE_CLIENT_ID) {
+            log.warn('Google ID token audience mismatch', { expected: process.env.GOOGLE_CLIENT_ID, received: tokenInfo.aud });
+            return { ok: false, reason: 'aud_mismatch' };
+        }
+
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        if (tokenInfo.exp && Number(tokenInfo.exp) < nowSeconds) {
+            log.warn('Google ID token expired', { exp: tokenInfo.exp, now: nowSeconds });
+            return { ok: false, reason: 'expired' };
+        }
+
+        return {
+            ok: true,
+            email: tokenInfo.email,
+            sub: tokenInfo.sub,
+            hd: tokenInfo.hd,
+        };
+    } catch (error) {
+        log.error('Failed to verify Google ID token', { error: error.message });
+        return { ok: false, reason: 'verification_failed' };
+    }
+}
+
+async function ensureAdminAuthorized(event, headers, log) {
+    // Preferred path: Google ID token from OAuth-protected admin UI
+    const googleAuth = await verifyGoogleIdToken(event, log);
+    if (googleAuth.ok) {
+        log.info('Authorized via Google OAuth', { email: googleAuth.email, sub: googleAuth.sub, domain: googleAuth.hd });
+        return null;
+    }
+
+    const adminToken = process.env.ADMIN_ACCESS_TOKEN;
+
+    // If no token is configured, fail closed to prevent unauthenticated destructive calls
+    if (!adminToken) {
+        log.error('ADMIN_ACCESS_TOKEN not configured; blocking write operation');
+        return respond(403, { error: 'Admin access not configured' }, headers);
+    }
+
+    const provided = event.headers?.['x-admin-token'] || event.queryStringParameters?.adminKey;
+    if (provided !== adminToken) {
+        log.warn('Unauthorized admin operation attempt', { method: event.httpMethod, path: event.path });
+        return respond(403, { error: 'Unauthorized' }, headers);
+    }
+
+    return null;
+}
 
 
 exports.handler = async function (event, context) {
@@ -45,6 +118,14 @@ exports.handler = async function (event, context) {
     if (!validateEnvironment(log)) {
         log.exit(500);
         return respond(500, { error: 'Server configuration error' }, headers);
+    }
+
+    if (event.httpMethod !== 'GET') {
+        const authResponse = await ensureAdminAuthorized(event, headers, log);
+        if (authResponse) {
+            log.exit(403);
+            return authResponse;
+        }
     }
 
     try {

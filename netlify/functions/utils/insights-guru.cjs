@@ -21,8 +21,8 @@ const RECENT_SNAPSHOT_LIMIT = 24;
 const SYNC_CONTEXT_BUDGET_MS = 5000; // Further reduced - sync mode delegates to ReAct loop
 const ASYNC_CONTEXT_BUDGET_MS = 45000;
 
-// ... (skipping to loadRecentSnapshots)
-
+// loadRecentSnapshots is defined early because collectAutoInsightsContext references it below.
+// Keeping it near the top clarifies dependency ordering and avoids hoisting surprises.
 async function loadRecentSnapshots(systemId, log) {
     try {
         const collection = await getCollection("history");
@@ -1841,7 +1841,7 @@ function computeDailySummary(hourlyAverages, dayRecords) {
         alerts: r.analysis?.alerts || [],
         soc: r.analysis?.stateOfCharge
     }));
-    
+
     const alertAnalysis = groupAlertEvents(snapshots, { maxGapHours: 6 });
 
     return {
