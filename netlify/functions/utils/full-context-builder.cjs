@@ -21,28 +21,28 @@ const FEEDBACK_QUERY_LIMIT = 50; // Maximum feedback items to fetch
 async function buildCompleteContext(systemId, options = {}) {
   const log = createLogger('full-context-builder');
   const startTime = Date.now();
-  
+
   try {
     log.info('Building complete context', { systemId, options });
-    
+
     // Get all raw data
     const raw = await getRawData(systemId, options);
-    
+
     // Run analytical tools
     const toolOutputs = await runAnalyticalTools(systemId, raw, options);
-    
+
     // Get external data sources
     const external = await getExternalData(systemId, raw, options);
-    
+
     // Get system metadata
     const metadata = await getSystemMetadata(systemId, options);
-    
+
     // Calculate computed metrics
     const computed = await calculateComputedMetrics(systemId, raw, options);
-    
+
     // Get existing feedback to prevent duplicates
     const existingFeedback = await getExistingFeedback(systemId, options);
-    
+
     const context = {
       raw,
       toolOutputs,
@@ -54,7 +54,7 @@ async function buildCompleteContext(systemId, options = {}) {
       buildDurationMs: Date.now() - startTime,
       systemId
     };
-    
+
     log.info('Complete context built successfully', {
       systemId,
       rawDataPoints: countDataPoints(raw),
@@ -62,7 +62,7 @@ async function buildCompleteContext(systemId, options = {}) {
       totalSize: JSON.stringify(context).length,
       durationMs: Date.now() - startTime
     });
-    
+
     return context;
   } catch (error) {
     log.error('Failed to build complete context', { systemId, error: error.message });
@@ -78,14 +78,14 @@ async function buildCompleteContext(systemId, options = {}) {
  */
 async function getExistingFeedback(systemId, options = {}) {
   const log = createLogger('full-context-builder:existing-feedback');
-  
+
   try {
     const feedbackCollection = await getCollection('ai_feedback');
-    
+
     // Get recent feedback that hasn't been rejected
     const retentionDate = new Date();
     retentionDate.setDate(retentionDate.getDate() - FEEDBACK_RETENTION_DAYS);
-    
+
     const existingFeedback = await feedbackCollection.find({
       $or: [
         { systemId }, // System-specific feedback
@@ -94,16 +94,16 @@ async function getExistingFeedback(systemId, options = {}) {
       timestamp: { $gte: retentionDate },
       status: { $nin: ['rejected', 'implemented'] } // Only pending/approved items
     }).sort({ timestamp: -1 }).limit(FEEDBACK_QUERY_LIMIT).toArray();
-    
+
     // Return summarized feedback for context (reduce token usage)
     return existingFeedback.map(fb => {
       const description = fb.suggestion?.description;
-      const truncatedDescription = description 
-        ? (description.length > FEEDBACK_DESCRIPTION_TRUNCATE_LENGTH 
-            ? description.substring(0, FEEDBACK_DESCRIPTION_TRUNCATE_LENGTH) + '...'
-            : description)
+      const truncatedDescription = description
+        ? (description.length > FEEDBACK_DESCRIPTION_TRUNCATE_LENGTH
+          ? description.substring(0, FEEDBACK_DESCRIPTION_TRUNCATE_LENGTH) + '...'
+          : description)
         : null;
-      
+
       return {
         id: fb.id,
         type: fb.feedbackType,
@@ -127,64 +127,83 @@ async function getExistingFeedback(systemId, options = {}) {
 async function getRawData(systemId, options) {
   const log = createLogger('full-context-builder:raw-data');
   const timeRange = getTimeRange(options);
-  
+
   try {
     const analysisCollection = await getCollection('analysis-results');
-    
+    const startIso = timeRange.start;
+    const endIso = timeRange.end;
+    const startDate = new Date(timeRange.start);
+    const endDate = new Date(timeRange.end);
+
     // Query both top-level systemId (new schema) and nested analysis.systemId (legacy)
     // This ensures compatibility during migration period
     const allAnalyses = await analysisCollection.find({
       $or: [
-        { systemId, timestamp: { $gte: timeRange.start, $lte: timeRange.end } },
-        { 'analysis.systemId': systemId, timestamp: { $gte: timeRange.start, $lte: timeRange.end } }
+        // String timestamps (ISO)
+        { systemId, timestamp: { $gte: startIso, $lte: endIso } },
+        { 'analysis.systemId': systemId, timestamp: { $gte: startIso, $lte: endIso } },
+        // Date objects (legacy/variant schemas)
+        { systemId, timestamp: { $gte: startDate, $lte: endDate } },
+        { 'analysis.systemId': systemId, timestamp: { $gte: startDate, $lte: endDate } }
       ]
     }).sort({ timestamp: 1 }).toArray();
-    
+
+    // Deduplicate in case records match multiple OR branches
+    const uniqueAnalyses = [];
+    const seen = new Set();
+    for (const item of allAnalyses) {
+      const key = `${item.systemId || item.analysis?.systemId || 'unknown'}|${String(item.timestamp)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueAnalyses.push(item);
+      }
+    }
+
     log.debug('Raw data query completed', {
       systemId,
       timeRange,
-      recordCount: allAnalyses.length,
-      queryPattern: 'top-level OR nested systemId'
+      recordCount: uniqueAnalyses.length,
+      queryPattern: 'top-level OR nested systemId with mixed timestamp types'
     });
-    
+
     // Extract specific data arrays
-    const allCellData = allAnalyses.map(a => ({
+    const allCellData = uniqueAnalyses.map(a => ({
       timestamp: a.timestamp,
       cellVoltages: a.analysis?.cellVoltages || [],
       highestCell: a.analysis?.highestCellVoltage,
       lowestCell: a.analysis?.lowestCellVoltage,
       difference: a.analysis?.cellVoltageDifference
     }));
-    
-    const allTemperatureReadings = allAnalyses.map(a => ({
+
+    const allTemperatureReadings = uniqueAnalyses.map(a => ({
       timestamp: a.timestamp,
       temperature: a.analysis?.temperature,
       temperatures: a.analysis?.temperatures,
       mosTemperature: a.analysis?.mosTemperature
     }));
-    
-    const allVoltageReadings = allAnalyses.map(a => ({
+
+    const allVoltageReadings = uniqueAnalyses.map(a => ({
       timestamp: a.timestamp,
       voltage: a.analysis?.overallVoltage
     }));
-    
-    const allCurrentReadings = allAnalyses.map(a => ({
+
+    const allCurrentReadings = uniqueAnalyses.map(a => ({
       timestamp: a.timestamp,
       current: a.analysis?.current,
       power: a.analysis?.power
     }));
-    
-    const allAlarms = allAnalyses.flatMap(a => 
+
+    const allAlarms = uniqueAnalyses.flatMap(a =>
       (a.analysis?.alerts || []).map(alert => ({
         timestamp: a.timestamp,
         alert
       }))
     );
-    
-    const allStateChanges = detectStateChanges(allAnalyses);
-    
+
+    const allStateChanges = detectStateChanges(uniqueAnalyses);
+
     return {
-      allAnalyses,
+      allAnalyses: uniqueAnalyses,
       allCellData,
       allTemperatureReadings,
       allVoltageReadings,
@@ -192,7 +211,7 @@ async function getRawData(systemId, options) {
       allAlarms,
       allStateChanges,
       timeRange,
-      totalDataPoints: allAnalyses.length
+      totalDataPoints: uniqueAnalyses.length
     };
   } catch (error) {
     log.error('Failed to get raw data', { systemId, error: error.message });
@@ -217,29 +236,29 @@ async function getRawData(systemId, options) {
  */
 async function runAnalyticalTools(systemId, rawData, options) {
   const log = createLogger('full-context-builder:tools');
-  
+
   try {
     // Import statistical tools
     const stats = require('./statistical-tools.cjs');
-    
+
     // CRITICAL FIX: Ensure arrays exist before accessing
     const allVoltageReadings = Array.isArray(rawData.allVoltageReadings) ? rawData.allVoltageReadings : [];
     const allCurrentReadings = Array.isArray(rawData.allCurrentReadings) ? rawData.allCurrentReadings : [];
     const allAnalyses = Array.isArray(rawData.allAnalyses) ? rawData.allAnalyses : [];
-    
+
     // Extract time series data with defensive filtering
     const voltageTimeSeries = allVoltageReadings
       .filter(r => r && r.voltage != null)
       .map(r => ({ timestamp: r.timestamp, value: r.voltage }));
-    
+
     const currentTimeSeries = allCurrentReadings
       .filter(r => r && r.current != null)
       .map(r => ({ timestamp: r.timestamp, value: r.current }));
-    
+
     const socTimeSeries = allAnalyses
       .filter(a => a && a.analysis && a.analysis.stateOfCharge != null)
       .map(a => ({ timestamp: a.timestamp, value: a.analysis.stateOfCharge }));
-    
+
     // Run tools in parallel
     const [
       statisticalAnalysis,
@@ -256,7 +275,7 @@ async function runAnalyticalTools(systemId, rawData, options) {
         soc: socTimeSeries.map(t => t.value)
       })
     ]);
-    
+
     return {
       statisticalAnalysis: statisticalAnalysis.status === 'fulfilled' ? statisticalAnalysis.value : null,
       trendAnalysis: trendAnalysis.status === 'fulfilled' ? trendAnalysis.value : null,
@@ -281,11 +300,11 @@ async function runAnalyticalTools(systemId, rawData, options) {
  */
 async function getExternalData(systemId, rawData, options) {
   const log = createLogger('full-context-builder:external');
-  
+
   try {
     // CRITICAL FIX: Ensure allAnalyses array exists
     const allAnalyses = Array.isArray(rawData.allAnalyses) ? rawData.allAnalyses : [];
-    
+
     // Get weather history from analysis records
     const weatherHistory = allAnalyses
       .filter(a => a && a.weather)
@@ -293,7 +312,7 @@ async function getExternalData(systemId, rawData, options) {
         timestamp: a.timestamp,
         ...a.weather
       }));
-    
+
     // Solar production data (if available)
     const solarProduction = allAnalyses
       .filter(a => a && a.analysis && a.analysis.predictedSolarChargeAmphours != null)
@@ -302,7 +321,7 @@ async function getExternalData(systemId, rawData, options) {
         predicted: a.analysis.predictedSolarChargeAmphours,
         actual: a.analysis.remainingCapacity
       }));
-    
+
     return {
       weatherHistory,
       solarProduction,
@@ -324,16 +343,16 @@ async function getExternalData(systemId, rawData, options) {
  */
 async function getSystemMetadata(systemId, options) {
   const log = createLogger('full-context-builder:metadata');
-  
+
   try {
     const systemsCollection = await getCollection('systems');
     const systemConfig = await systemsCollection.findOne({ id: systemId });
-    
+
     if (!systemConfig) {
       log.warn('System not found', { systemId });
       return { error: 'System not found' };
     }
-    
+
     return {
       systemConfig: {
         name: systemConfig.name,
@@ -365,12 +384,12 @@ async function getSystemMetadata(systemId, options) {
  */
 async function calculateComputedMetrics(systemId, rawData, options) {
   const log = createLogger('full-context-builder:computed');
-  
+
   try {
     // CRITICAL FIX: Ensure allAnalyses array exists and has items
     const allAnalyses = Array.isArray(rawData.allAnalyses) ? rawData.allAnalyses : [];
     const latestAnalysis = allAnalyses.length > 0 ? allAnalyses[allAnalyses.length - 1] : null;
-    
+
     if (!latestAnalysis || !latestAnalysis.analysis) {
       return {
         healthScore: null,
@@ -380,16 +399,16 @@ async function calculateComputedMetrics(systemId, rawData, options) {
         costAnalysis: null
       };
     }
-    
+
     // Calculate basic health score (0-100)
     const healthScore = calculateHealthScore(latestAnalysis.analysis);
-    
+
     // Estimate remaining life based on cycle count
     const remainingLifeExpectancy = estimateRemainingLife(latestAnalysis.analysis);
-    
+
     // Calculate degradation rate from historical data
     const performanceDegradation = calculateDegradationRate(allAnalyses);
-    
+
     return {
       healthScore,
       remainingLifeExpectancy,
@@ -421,11 +440,11 @@ const HEALTH_SCORE_THRESHOLDS = {
 function getTimeRange(options) {
   const end = new Date();
   const start = new Date();
-  
+
   // Default to last 90 days
   const days = options.contextWindowDays || 90;
   start.setDate(start.getDate() - days);
-  
+
   return {
     start: start.toISOString(),
     end: end.toISOString(),
@@ -436,7 +455,7 @@ function getTimeRange(options) {
 function detectStateChanges(analyses) {
   const changes = [];
   let prevStatus = null;
-  
+
   for (const analysis of analyses) {
     const status = analysis.analysis?.status;
     if (status && status !== prevStatus) {
@@ -448,13 +467,13 @@ function detectStateChanges(analyses) {
       prevStatus = status;
     }
   }
-  
+
   return changes;
 }
 
 function calculateHealthScore(analysis) {
   let score = 100;
-  
+
   // Deduct points for issues using configurable thresholds
   if (analysis.cellVoltageDifference > HEALTH_SCORE_THRESHOLDS.CELL_VOLTAGE_DIFF_MAX) {
     score -= HEALTH_SCORE_THRESHOLDS.CELL_VOLTAGE_DIFF_PENALTY;
@@ -468,17 +487,17 @@ function calculateHealthScore(analysis) {
   if (analysis.temperature > HEALTH_SCORE_THRESHOLDS.TEMP_HIGH_THRESHOLD) {
     score -= HEALTH_SCORE_THRESHOLDS.TEMP_HIGH_PENALTY;
   }
-  
+
   return Math.max(0, Math.min(100, score));
 }
 
 function estimateRemainingLife(analysis) {
   const cycleCount = analysis.cycleCount || 0;
   const typicalLifeCycles = 3000; // LiFePO4 typical
-  
+
   const remainingCycles = Math.max(0, typicalLifeCycles - cycleCount);
   const remainingYears = remainingCycles / 365; // Assuming 1 cycle per day
-  
+
   return {
     remainingCycles,
     remainingYears: Math.round(remainingYears * 10) / 10,
@@ -488,19 +507,19 @@ function estimateRemainingLife(analysis) {
 
 function calculateDegradationRate(analyses) {
   if (analyses.length < 2) return null;
-  
+
   const first = analyses[0];
   const last = analyses[analyses.length - 1];
-  
+
   const firstCapacity = first.analysis?.fullCapacity;
   const lastCapacity = last.analysis?.fullCapacity;
-  
+
   if (!firstCapacity || !lastCapacity) return null;
-  
+
   const degradation = ((firstCapacity - lastCapacity) / firstCapacity) * 100;
   const timeDays = (new Date(last.timestamp) - new Date(first.timestamp)) / (1000 * 60 * 60 * 24);
   const degradationPerYear = (degradation / timeDays) * 365;
-  
+
   return {
     totalDegradation: Math.round(degradation * 100) / 100,
     degradationPerYear: Math.round(degradationPerYear * 100) / 100,
@@ -510,7 +529,7 @@ function calculateDegradationRate(analyses) {
 
 function countDataPoints(obj) {
   let count = 0;
-  
+
   function traverse(item) {
     if (Array.isArray(item)) {
       count += item.length;
@@ -519,7 +538,7 @@ function countDataPoints(obj) {
       Object.values(item).forEach(traverse);
     }
   }
-  
+
   traverse(obj);
   return count;
 }
