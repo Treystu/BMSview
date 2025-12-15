@@ -14,7 +14,7 @@
  */
 
 const { getCollection } = require('./utils/mongodb.cjs');
-const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { getCostMetrics, getRealtimeMetrics, createAlert } = require('./utils/metrics-collector.cjs');
@@ -293,7 +293,7 @@ async function getDailyBreakdown(startDate, endDate) {
  * Get budget status and alerts (token-based primary, cost secondary)
  * @returns {Promise<Object>} Budget status
  */
-async function getBudgetStatus() {
+async function getBudgetStatus(log = createLogger('usage-stats-budget')) {
     const operationsCollection = await getCollection('ai_operations');
     const alertsCollection = await getCollection('anomaly_alerts');
     
@@ -449,7 +449,7 @@ exports.handler = async (event, context) => {
         
         // Check for budget endpoint
         if (path.endsWith('/budget')) {
-            const budgetStatus = await getBudgetStatus();
+            const budgetStatus = await getBudgetStatus(log);
             timer.end({ endpoint: 'budget' });
             log.exit(200);
             
@@ -493,7 +493,7 @@ exports.handler = async (event, context) => {
         const realtimeMetrics = await getRealtimeMetrics();
         
         // Get budget status
-        const budgetStatus = await getBudgetStatus();
+        const budgetStatus = await getBudgetStatus(log);
         
         const response = {
             period,

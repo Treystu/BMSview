@@ -66,44 +66,63 @@ function matches(doc, query) {
 }
 
 function createCollection(name) {
+  const backingArray = getCollectionArray(name);
   return {
+    _items: backingArray,
     findOne: jest.fn(async (query) => {
-      const arr = getCollectionArray(name);
-      return arr.find(doc => matches(doc, query)) || null;
+      return backingArray.find(doc => matches(doc, query)) || null;
     }),
     insertOne: jest.fn(async (document) => {
-      const arr = getCollectionArray(name);
       const _id = document._id || `${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const doc = { _id, ...document };
-      arr.push(doc);
+      backingArray.push(doc);
       return { insertedId: _id };
     }),
     insertMany: jest.fn(async (documents) => {
-      const arr = getCollectionArray(name);
       for (const document of documents) {
         const _id = document._id || `${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        arr.push({ _id, ...document });
+        backingArray.push({ _id, ...document });
       }
       return { insertedCount: documents.length };
     }),
     updateOne: jest.fn(async (filter, update) => {
-      const arr = getCollectionArray(name);
-      const idx = arr.findIndex(doc => matches(doc, filter));
+      const idx = backingArray.findIndex(doc => matches(doc, filter));
       if (idx === -1) return { modifiedCount: 0 };
       if (update && update.$set) {
-        arr[idx] = { ...arr[idx], ...update.$set };
+        backingArray[idx] = { ...backingArray[idx], ...update.$set };
       }
       return { modifiedCount: 1 };
     }),
     deleteMany: jest.fn(async (filter) => {
-      const arr = getCollectionArray(name);
-      const before = arr.length;
-      const remaining = arr.filter(doc => !matches(doc, filter));
+      const before = backingArray.length;
+      const remaining = backingArray.filter(doc => !matches(doc, filter));
       store[name] = remaining;
       return { deletedCount: before - remaining.length };
     }),
-    aggregate: jest.fn(() => ({ toArray: jest.fn().mockResolvedValue([]) })),
-    toArray: jest.fn(async () => getCollectionArray(name).slice())
+    aggregate: jest.fn(() => ({
+      toArray: jest.fn().mockImplementation(async () => {
+        if (name === 'ai_operations') {
+          const totalCost = backingArray.reduce((sum, item) => sum + (item.cost || 0), 0);
+          const totalTokens = backingArray.reduce((sum, item) => sum + (item.tokensUsed || 0), 0);
+          const totalInputTokens = backingArray.reduce((sum, item) => sum + (item.inputTokens || 0), 0);
+          const totalOutputTokens = backingArray.reduce((sum, item) => sum + (item.outputTokens || 0), 0);
+          const operationCount = backingArray.length;
+          const analysisOps = backingArray.filter(item => item.operation === 'analysis').length;
+          const insightsOps = backingArray.filter(item => item.operation === 'insights').length;
+          return [{
+            totalCost,
+            totalTokens,
+            totalInputTokens,
+            totalOutputTokens,
+            operationCount,
+            analysisOps,
+            insightsOps
+          }];
+        }
+        return [];
+      })
+    })),
+    toArray: jest.fn(async () => backingArray.slice())
   };
 }
 

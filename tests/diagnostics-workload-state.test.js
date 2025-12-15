@@ -10,15 +10,20 @@ jest.mock('../netlify/functions/utils/mongodb.cjs', () => ({
   getCollection: jest.fn()
 }));
 
-jest.mock('../netlify/functions/utils/logger.cjs', () => ({
-  createLogger: jest.fn(() => ({
+jest.mock('../netlify/functions/utils/logger.cjs', () => {
+  const mockLogger = {
     entry: jest.fn(),
     debug: jest.fn(),
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn()
-  }))
-}));
+  };
+  const createLogger = jest.fn(() => mockLogger);
+  return {
+    createLogger,
+    createLoggerFromEvent: jest.fn(() => mockLogger)
+  };
+});
 
 jest.mock('../netlify/functions/utils/cors.cjs', () => ({
   getCorsHeaders: jest.fn(() => ({ 'Access-Control-Allow-Origin': '*' }))
