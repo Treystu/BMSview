@@ -51,7 +51,11 @@ exports.handler = async function(event, context) {
 
         for (const pattern of dlPatterns) {
             for (const match of text.matchAll(pattern)) {
-                const candidate = (match[1] || match[0] || '').trim();
+                if (typeof match[1] === 'undefined') {
+                    log.warn('Regex match missing expected capture group', { pattern: pattern.toString(), match });
+                    continue;
+                }
+                const candidate = match[1].trim();
                 const digitsOnly = candidate.replace(/\D/g, '');
 
                 if (digitsOnly.length >= 6 && digitsOnly.length <= 8) {
