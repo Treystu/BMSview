@@ -56,6 +56,9 @@ const GEMINI_PRICING = {
   'gemini-2.5-flash-preview-05-20': {
     inputTokens: 0.10 / 1_000_000,
     outputTokens: 0.40 / 1_000_000,
+    inputTokensLongContext: 0.10 / 1_000_000,   // Same for >200K (no price increase)
+    outputTokensLongContext: 0.40 / 1_000_000,  // Same for >200K (no price increase)
+    contextThreshold: 200_000,
     description: 'Gemini 2.5 Flash Preview (legacy)'
   },
 
