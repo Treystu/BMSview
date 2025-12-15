@@ -182,9 +182,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
      * ***MODIFIED***: This is the new, simpler bulk analysis handler.
      * It processes files one by one and gets results immediately.
      */
-    const handleBulkAnalyze = async (files: File[]) => {
-        if (files.length === 0) return;
-        log('info', 'Starting bulk analysis.', { fileCount: files.length, isStoryMode });
+    const handleBulkAnalyze = async (files: File[] | FileList | null | undefined) => {
+        const normalizedFiles = Array.isArray(files) ? files : Array.from(files || []);
+        if (normalizedFiles.length === 0) return;
+        log('info', 'Starting bulk analysis.', { fileCount: normalizedFiles.length, isStoryMode });
 
         if (isStoryMode) {
             try {
@@ -217,14 +218,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             });
         }
 
-        const initialResults: DisplayableAnalysisResult[] = files.map(f => ({
+        const initialResults: DisplayableAnalysisResult[] = normalizedFiles.map(f => ({
             fileName: f.name, data: null, error: 'Checking for duplicates...', file: f, submittedAt: Date.now()
         }));
         dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults });
 
         try {
             // Layer 1: Client-side cache fast-path (PR #341) - instant for cached duplicates
-            const { cachedDuplicates, cachedUpgrades, remainingFiles } = partitionCachedFiles(files);
+            const { cachedDuplicates, cachedUpgrades, remainingFiles } = partitionCachedFiles(normalizedFiles);
 
             // Process cached duplicates immediately (no network call needed)
             for (const dup of cachedDuplicates) {

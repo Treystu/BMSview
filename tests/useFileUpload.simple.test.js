@@ -49,7 +49,7 @@ describe('useFileUpload preview safety', () => {
 
         await waitFor(() => {
             expect(result.current.previews).toHaveLength(0);
-            expect(result.current.fileError).toBe('All selected files were previously uploaded and were skipped.');
+            expect(result.current.fileError).toBe('All selected files are duplicates of previously uploaded files and were skipped. Please choose different files or review the skipped list.');
         });
 
         expect(result.current.files).toHaveLength(0);
