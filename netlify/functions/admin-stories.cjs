@@ -14,18 +14,27 @@ const { v4: uuidv4 } = require('uuid');
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
 
+  const log = createLoggerFromEvent('admin-stories', event, context);
+  const timer = createTimer(log, 'admin-stories');
+  const sanitizedHeaders = event.headers ? {
+    ...event.headers,
+    authorization: event.headers.authorization ? '[REDACTED]' : undefined,
+    cookie: event.headers.cookie ? '[REDACTED]' : undefined,
+    'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
+  } : {};
+  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters, headers: sanitizedHeaders, bodyLength: event.body ? event.body.length : 0 });
+
   if (event.httpMethod === 'OPTIONS') {
+    timer.end({ outcome: 'preflight' });
+    log.exit(200, { outcome: 'preflight' });
     return { statusCode: 200, headers };
   }
-
-  const log = createLoggerFromEvent('admin-stories', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
-  const timer = createTimer(log, 'admin-stories');
 
   try {
     if (!process.env.MONGODB_URI) {
       log.error('MONGODB_URI is not set');
-      log.exit(500);
+      timer.end({ outcome: 'configuration_error' });
+      log.exit(500, { outcome: 'configuration_error' });
       return errorResponse(500, 'server_error', 'Server configuration error', null, headers);
     }
 

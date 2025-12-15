@@ -32,24 +32,33 @@ const clearCollection = async (collectionName, log) => {
 
 exports.handler = async function(event, context) {
     const headers = getCorsHeaders(event);
+    const log = createLoggerFromEvent('data-management', event, context);
+    const timer = createTimer(log, 'data-management');
+    const sanitizedHeaders = event.headers ? {
+        ...event.headers,
+        authorization: event.headers.authorization ? '[REDACTED]' : undefined,
+        cookie: event.headers.cookie ? '[REDACTED]' : undefined,
+        'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
+    } : {};
+    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters, headers: sanitizedHeaders, bodyLength: event.body ? event.body.length : 0 });
     
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {
+        timer.end({ outcome: 'preflight' });
+        log.exit(200, { outcome: 'preflight' });
         return { statusCode: 200, headers };
     }
     
-    const log = createLoggerFromEvent('data-management', event, context);
-    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
-    const timer = createTimer(log, 'data-management');
-    
     if (!validateEnvironment(log)) {
-        log.exit(500);
+        timer.end({ outcome: 'configuration_error' });
+        log.exit(500, { outcome: 'configuration_error' });
         return respond(500, { error: 'Server configuration error' }, headers);
     }
 
     if (event.httpMethod !== 'DELETE') {
         log.warn('Method not allowed', { method: event.httpMethod });
-        log.exit(405);
+        timer.end({ outcome: 'method_not_allowed' });
+        log.exit(405, { outcome: 'method_not_allowed' });
         return respond(405, { error: 'Method Not Allowed' }, headers);
     }
     
