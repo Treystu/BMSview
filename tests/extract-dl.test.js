@@ -93,7 +93,7 @@ describe('extract-dl handler', () => {
       httpMethod: 'POST',
       headers: { 'x-nf-client-connection-ip': '127.0.0.1' },
       body: JSON.stringify({
-        text: 'DL 123 456 appears with spaces, Driver License: 987-654 has a dash, but code AB765432 should not match.'
+        text: 'DL 123 456 appears with spaces, Driver License: 987-654 has a dash, and alt prefix AB-765432 should also be captured.'
       })
     };
 
@@ -104,7 +104,7 @@ describe('extract-dl handler', () => {
     expect(body.success).toBe(true);
     expect(body.dlNumbers).toContain('123456');
     expect(body.dlNumbers).toContain('987654');
-    expect(body.count).toBe(2);
-    expect(body.dlNumbers).not.toContain('765432');
+    expect(body.dlNumbers).toContain('765432');
+    expect(body.count).toBe(3);
   });
 });
