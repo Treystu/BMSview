@@ -177,7 +177,9 @@ function getModelPricing(model, contextTokens = 0) {
     pricing = GEMINI_PRICING[model];
   } else {
     // Try partial match (for versioned model names like gemini-2.5-flash-001)
-    const baseModel = Object.keys(GEMINI_PRICING).find(key => model.startsWith(key));
+    const baseModel = Object.keys(GEMINI_PRICING)
+      .sort((a, b) => b.length - a.length)
+      .find(key => model.startsWith(key));
     if (baseModel) {
       pricing = GEMINI_PRICING[baseModel];
     }
