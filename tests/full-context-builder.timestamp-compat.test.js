@@ -72,7 +72,14 @@ jest.mock('../netlify/functions/utils/mongodb.cjs', () => {
                     return {
                         sort: jest.fn(() => ({
                             toArray: jest.fn(async () => matched)
-                        }))
+                        })),
+                        toArray: jest.fn(async () => matched)
+                    };
+                }),
+                aggregate: jest.fn(() => {
+                    // Force agg to return nulls so builder uses the manual-scan fallback
+                    return {
+                        toArray: jest.fn(async () => [{ minDate: null, maxDate: null }])
                     };
                 })
             };

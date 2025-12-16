@@ -28,7 +28,11 @@ async function buildCompleteContext(systemId, options = {}) {
     // Get all raw data
     const raw = await getRawData(systemId, options);
 
-    if (!raw || raw.totalDataPoints === 0) {
+    // IMPORTANT: Full-context mode requires at least one actual analysis record.
+    // countDataPoints(raw) can be 0 even when records exist (e.g., fields missing),
+    // so we gate on raw.totalDataPoints / raw.allAnalyses length instead.
+    const recordCount = raw?.totalDataPoints || (Array.isArray(raw?.allAnalyses) ? raw.allAnalyses.length : 0);
+    if (!raw || recordCount === 0) {
       throw new Error(`No historical data available for system ${systemId}. Ensure uploads exist and retry.`);
     }
 
@@ -139,6 +143,24 @@ async function getRawData(systemId, options) {
     const startDate = new Date(timeRange.start);
     const endDate = new Date(timeRange.end);
 
+    log.info('Raw data query starting', {
+      systemId,
+      range: timeRange,
+      startIso,
+      endIso,
+      startDateValid: !Number.isNaN(startDate.getTime()),
+      endDateValid: !Number.isNaN(endDate.getTime())
+    });
+
+    // Guard against invalid ISO strings (prevents silent empty queries)
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      log.warn('Computed time range produced invalid Date objects; falling back to loose query', {
+        systemId,
+        startIso,
+        endIso
+      });
+    }
+
     // Query both top-level systemId (new schema) and nested analysis.systemId (legacy)
     // This ensures compatibility during migration period
     const allAnalyses = await analysisCollection.find({
@@ -151,6 +173,11 @@ async function getRawData(systemId, options) {
         { 'analysis.systemId': systemId, timestamp: { $gte: startDate, $lte: endDate } }
       ]
     }).sort({ timestamp: 1 }).toArray();
+
+    log.debug('Mixed-type bounded query results', {
+      systemId,
+      matched: allAnalyses.length
+    });
 
     // Fallback: some legacy records store timestamps as Dates while others are strings.
     // If the mixed-type query above returns too few records, run a normalization pass
@@ -167,11 +194,26 @@ async function getRawData(systemId, options) {
       const rangeStartMs = startDate.getTime();
       const rangeEndMs = endDate.getTime();
 
+      let invalidTimestampCount = 0;
       normalizedFallback = looseMatches.filter((item) => {
         const ts = item.timestamp instanceof Date ? item.timestamp.getTime() : new Date(item.timestamp).getTime();
-        if (Number.isNaN(ts)) return false;
+        if (Number.isNaN(ts)) {
+          invalidTimestampCount++;
+          return false;
+        }
         return ts >= rangeStartMs && ts <= rangeEndMs;
       });
+
+      if (invalidTimestampCount > 0) {
+        log.warn('Some records had unparseable timestamps during fallback filter', {
+          systemId,
+          invalidTimestampCount,
+          examples: looseMatches
+            .filter((item) => !(item.timestamp instanceof Date) && Number.isNaN(new Date(item.timestamp).getTime()))
+            .slice(0, 3)
+            .map((item) => String(item.timestamp))
+        });
+      }
 
       log.debug('Applied mixed timestamp fallback filter', {
         systemId,
@@ -511,14 +553,61 @@ async function getActualDateRange(systemId, log) {
 
   const [result] = await collection.aggregate(pipeline).toArray();
 
-  if (result?.minDate && result?.maxDate) {
-    return { minDate: new Date(result.minDate), maxDate: new Date(result.maxDate) };
+  const normalizeMaybeDate = (value) => {
+    if (!value) return null;
+    const d = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  const aggMin = normalizeMaybeDate(result?.minDate);
+  const aggMax = normalizeMaybeDate(result?.maxDate);
+
+  // Mongo $min/$max can behave unexpectedly if timestamps are mixed string/Date.
+  // If aggregation outputs are invalid, fall back to manual scan.
+  if (aggMin && aggMax) {
+    return { minDate: aggMin, maxDate: aggMax };
+  }
+
+  if (result?.minDate || result?.maxDate) {
+    log.warn('Aggregation date range invalid (mixed timestamp types?) - falling back to manual scan', {
+      systemId,
+      minDateRaw: String(result?.minDate),
+      maxDateRaw: String(result?.maxDate)
+    });
+  }
+
+  try {
+    const docs = await collection.find({ $or: [{ systemId }, { 'analysis.systemId': systemId }] }, { projection: { timestamp: 1 } }).toArray();
+    let minMs = Infinity;
+    let maxMs = -Infinity;
+    let invalidCount = 0;
+    for (const doc of docs) {
+      const ts = doc.timestamp instanceof Date ? doc.timestamp.getTime() : new Date(doc.timestamp).getTime();
+      if (Number.isNaN(ts)) {
+        invalidCount++;
+        continue;
+      }
+      if (ts < minMs) minMs = ts;
+      if (ts > maxMs) maxMs = ts;
+    }
+
+    if (Number.isFinite(minMs) && Number.isFinite(maxMs)) {
+      if (invalidCount > 0) {
+        log.warn('Manual scan skipped invalid timestamps', { systemId, invalidCount, total: docs.length });
+      }
+      return { minDate: new Date(minMs), maxDate: new Date(maxMs) };
+    }
+  } catch (scanError) {
+    log.warn('Manual scan for date range failed, continuing to history fallback', {
+      systemId,
+      error: scanError.message
+    });
   }
 
   // Fallback to history collection
   const history = await getCollection('history');
   const [historyResult] = await history.aggregate([
-    { $match: { systemId } },
+    { $match: { $or: [{ systemId }, { 'analysis.systemId': systemId }] } },
     { $group: { _id: null, minDate: { $min: '$timestamp' }, maxDate: { $max: '$timestamp' } } }
   ]).toArray();
 

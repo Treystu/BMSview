@@ -283,11 +283,13 @@ exports.handler = async (event, context) => {
           body: JSON.stringify({
             success: false,
             error: 'model_timeout',
-            message: stalledReason || 'The AI model is consistently timing out. Try using gemini-2.5-flash or reduce query complexity.',
+            message:
+              stalledReason ||
+              'The AI model is consistently timing out in sync mode. Try background mode (unlimited runtime) or reduce query complexity.',
             details: {
               jobId: job?.id,
               canResume: false,
-              suggestion: 'Switch to a faster model or simplify your query'
+              suggestion: 'Use background mode for slow models (e.g., gemini-2.5-pro), or simplify your query'
             }
           })
         };

@@ -39,22 +39,25 @@ const CONTEXT_COMPRESSION_THRESHOLD = 50; // Compress history after 50 turns
  * @returns {Promise<Object>} Job object with resume capability
  */
 async function getOrCreateResumableJob(params, log) {
-  const { 
-    resumeJobId, 
-    analysisData, 
-    systemId, 
+  const {
+    resumeJobId,
+    analysisData,
+    systemId,
     customPrompt,
     contextWindowDays,
     maxIterations,
     modelOverride
   } = params;
 
+  // Normalize model name for decisions (Gemini models can be slow, especially Pro)
+  const effectiveModel = (modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash').toLowerCase();
+
   // If resumeJobId provided, try to load existing job
   if (resumeJobId) {
     log.info('Attempting to resume existing job', { resumeJobId });
-    
+
     const existingJob = await getInsightsJob(resumeJobId, log);
-    
+
     if (!existingJob) {
       log.warn('Resume job not found, creating new job', { resumeJobId });
       // Fall through to create new job
@@ -66,9 +69,9 @@ async function getOrCreateResumableJob(params, log) {
         isComplete: true
       };
     } else if (existingJob.status === 'failed') {
-      log.warn('Resume job previously failed, creating new job', { 
+      log.warn('Resume job previously failed, creating new job', {
         resumeJobId,
-        previousError: existingJob.error 
+        previousError: existingJob.error
       });
       // Fall through to create new job
     } else {
@@ -76,19 +79,23 @@ async function getOrCreateResumableJob(params, log) {
       const checkpoint = existingJob.checkpointState;
       const previousTurn = checkpoint?.turnCount || 0;
       const previousRetryCount = checkpoint?.sameCheckpointRetryCount || 0;
-      
-      log.info('Found resumable job', { 
+
+      log.info('Found resumable job', {
         resumeJobId,
         status: existingJob.status,
         hasCheckpoint: !!checkpoint,
         checkpointTurnCount: previousTurn,
         previousRetryCount
       });
-      
+
       // STALL DETECTION: If we're resuming from the same turn multiple times,
       // the model may be too slow for our timeout budget (e.g., gemini-2.5-pro)
       // After 5 retries at the same turn, fail with helpful message
-      const MAX_SAME_TURN_RETRIES = 5;
+      // Pro models can legitimately take longer per turn; allow more retries before declaring a stall.
+      // Note: retries are per function invocation. Higher values increase total wall-clock time but
+      // reduce false-negative stalls for slower models.
+      const isSlowModel = /\bpro\b/.test(effectiveModel);
+      const MAX_SAME_TURN_RETRIES = isSlowModel ? 15 : 5;
       if (previousRetryCount > MAX_SAME_TURN_RETRIES) {
         log.error('Job stalled - no progress after multiple retries at same checkpoint', {
           resumeJobId,
@@ -96,16 +103,20 @@ async function getOrCreateResumableJob(params, log) {
           retryCount: previousRetryCount,
           maxRetries: MAX_SAME_TURN_RETRIES
         });
-        
+
         return {
           job: existingJob,
           isResume: false,
           isComplete: false,
           isStalled: true,
-          stalledReason: `The AI model is too slow for the current timeout configuration. After ${previousRetryCount} attempts, no progress was made beyond turn ${previousTurn}. Try using a faster model (gemini-2.5-flash) or reduce the complexity of your query.`
+          stalledReason:
+            `The AI model (${effectiveModel}) didn’t have enough time to advance beyond turn ${previousTurn} ` +
+            `after ${previousRetryCount} resume attempts.\n\n` +
+            `Recommended fix: run this request in background mode (unlimited runtime) so the model can finish. ` +
+            `If you must stay in sync mode, reduce the time range or simplify the query.`
         };
       }
-      
+
       // Create a new checkpoint object with incremented retry count
       // This helps detect if we're stuck at the same point
       const updatedCheckpoint = checkpoint ? {
@@ -113,7 +124,7 @@ async function getOrCreateResumableJob(params, log) {
         sameCheckpointRetryCount: (checkpoint.sameCheckpointRetryCount || 0) + 1,
         lastResumeAttempt: new Date().toISOString()
       } : null;
-      
+
       return {
         job: existingJob,
         isResume: true,
@@ -125,7 +136,7 @@ async function getOrCreateResumableJob(params, log) {
 
   // Create new job
   log.info('Creating new resumable job');
-  
+
   const newJob = await createInsightsJob({
     analysisData,
     systemId,
@@ -157,16 +168,16 @@ async function getOrCreateResumableJob(params, log) {
  */
 function createCheckpointState(state, previousCheckpoint = null) {
   const { conversationHistory, turnCount, toolCallCount, contextSummary, startTime } = state;
-  
+
   // Compress conversation history if too large
   const compressedHistory = compressConversationHistory(conversationHistory, turnCount);
-  
+
   // Track retry count at same turn for stall detection
   // Reset to 0 if progress was made (turn advanced), otherwise keep previous count
   const previousTurn = previousCheckpoint?.turnCount || 0;
   const madeProgress = turnCount > previousTurn;
   const sameCheckpointRetryCount = madeProgress ? 0 : (previousCheckpoint?.sameCheckpointRetryCount || 0);
-  
+
   return {
     conversationHistory: compressedHistory,
     turnCount,
@@ -191,21 +202,21 @@ function createCheckpointState(state, previousCheckpoint = null) {
 function compressConversationHistory(history, currentTurn) {
   // EDGE CASE PROTECTION #5: More aggressive compression threshold
   const MEMORY_SAFE_THRESHOLD = 30; // Compress after 30 exchanges instead of 50
-  
+
   // If history is small, don't compress
   if (history.length < MEMORY_SAFE_THRESHOLD) {
     return history;
   }
-  
+
   // EDGE CASE PROTECTION #6: Keep fewer messages to prevent memory issues
   // Keep first 3 exchanges (initial prompt + setup)
   const keepInitial = 3;
   // Keep last 15 exchanges (recent context) - reduced from 20
   const keepRecent = 15;
-  
+
   const initial = history.slice(0, keepInitial);
   const recent = history.slice(-keepRecent);
-  
+
   // Create summary marker for omitted section
   const omittedCount = history.length - keepInitial - keepRecent;
   const summaryMarker = {
@@ -214,7 +225,7 @@ function compressConversationHistory(history, currentTurn) {
       text: `[Checkpoint: ${omittedCount} conversation turns omitted for space. Resumed at turn ${currentTurn}]`
     }]
   };
-  
+
   return [...initial, summaryMarker, ...recent];
 }
 
@@ -229,37 +240,37 @@ function validateCheckpoint(checkpoint, log) {
   if (!checkpoint) {
     return { valid: false, error: 'No checkpoint state provided' };
   }
-  
+
   if (!checkpoint.conversationHistory || !Array.isArray(checkpoint.conversationHistory)) {
     return { valid: false, error: 'Invalid or missing conversation history' };
   }
-  
+
   if (typeof checkpoint.turnCount !== 'number' || checkpoint.turnCount < 0) {
     return { valid: false, error: 'Invalid turn count' };
   }
-  
+
   if (typeof checkpoint.toolCallCount !== 'number' || checkpoint.toolCallCount < 0) {
     return { valid: false, error: 'Invalid tool call count' };
   }
-  
+
   // Check version compatibility
   if (checkpoint.version && checkpoint.version !== '1.0') {
-    log.warn('Checkpoint version mismatch', { 
+    log.warn('Checkpoint version mismatch', {
       checkpointVersion: checkpoint.version,
       currentVersion: '1.0'
     });
     // Continue anyway - might still work
   }
-  
+
   log.info('Checkpoint validation passed', {
     historyLength: checkpoint.conversationHistory.length,
     turnCount: checkpoint.turnCount,
     toolCallCount: checkpoint.toolCallCount,
-    checkpointAge: checkpoint.checkpointedAt 
-      ? Date.now() - new Date(checkpoint.checkpointedAt).getTime() 
+    checkpointAge: checkpoint.checkpointedAt
+      ? Date.now() - new Date(checkpoint.checkpointedAt).getTime()
       : 'unknown'
   });
-  
+
   return { valid: true };
 }
 
@@ -276,12 +287,12 @@ function validateCheckpoint(checkpoint, log) {
 function createCheckpointCallback(jobId, timeoutMs, log, initialCheckpoint = null) {
   let lastCheckpointTime = Date.now();
   let previousCheckpoint = initialCheckpoint;
-  
-  return async function(currentState) {
+
+  return async function (currentState) {
     const now = Date.now();
     const elapsed = now - currentState.startTime;
     const timeSinceLastCheckpoint = now - lastCheckpointTime;
-    
+
     // ALWAYS save checkpoint when called by the react-loop.
     // Previously this had conditional logic that could skip saves, but the react-loop
     // is responsible for deciding when to checkpoint, so we should always save here.
@@ -293,12 +304,12 @@ function createCheckpointCallback(jobId, timeoutMs, log, initialCheckpoint = nul
       historyLength: currentState.conversationHistory?.length || 0,
       timeSinceLastCheckpoint
     });
-    
+
     const checkpoint = createCheckpointState(currentState, previousCheckpoint);
     await saveCheckpoint(jobId, checkpoint, log);
     lastCheckpointTime = now;
     previousCheckpoint = checkpoint; // Update reference for next save
-    
+
     return true; // Checkpoint saved
   };
 }
@@ -314,17 +325,17 @@ function createCheckpointCallback(jobId, timeoutMs, log, initialCheckpoint = nul
 function planResume(checkpoint, params, log) {
   const { maxIterations, contextWindowDays } = params;
   const { turnCount, toolCallCount } = checkpoint;
-  
+
   // Calculate remaining budget
   const remainingTurns = maxIterations ? maxIterations - turnCount : 10;
-  
+
   log.info('Planning resume strategy', {
     checkpointTurn: turnCount,
     checkpointToolCalls: toolCallCount,
     remainingTurns,
     maxIterations
   });
-  
+
   return {
     conversationHistory: checkpoint.conversationHistory,
     startTurnCount: turnCount,

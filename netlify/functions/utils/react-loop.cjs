@@ -1169,10 +1169,13 @@ async function executeReActLoop(params) {
                         contextWindowDays: contextWindowDays || 30
                     });
 
+                    // NOTE: countDataPoints(fullContext) can be 0 even when historical records exist
+                    // (e.g., missing optional arrays). Gate on actual record count instead.
+                    const recordCount = fullContext?.raw?.totalDataPoints || 0;
                     const dataPointCount = countDataPoints(fullContext);
 
-                    if (!dataPointCount) {
-                        throw new Error(`Full-context preload returned 0 data points for systemId ${systemId}. Verify uploads exist and retry.`);
+                    if (!recordCount) {
+                        throw new Error(`No historical data available for system ${systemId}. Ensure uploads exist and retry.`);
                     }
 
                     log.info('Full context built successfully', {
@@ -1184,6 +1187,7 @@ async function executeReActLoop(params) {
                     preloadedContext = {
                         fullContext,
                         dataPointsAnalyzed: dataPointCount,
+                        recordCount,
                         isFullContextMode: true
                     };
                 }
