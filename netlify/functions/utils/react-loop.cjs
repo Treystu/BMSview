@@ -1087,7 +1087,22 @@ async function executeReActLoop(params) {
     const totalBudgetMs = SYNC_TOTAL_BUDGET_MS;
 
     // Check if resuming from checkpoint
-    const isResuming = !!(checkpointState && checkpointState.conversationHistory);
+    let isResuming = !!(checkpointState && checkpointState.conversationHistory);
+
+    // If resuming in full-context mode but checkpoint has no context data, force a fresh preload
+    if (isResuming && fullContextMode) {
+        const hasContextData = Boolean(
+            checkpointState?.contextSummary?.totalRecords ||
+            checkpointState?.contextSummary?.dataPoints ||
+            checkpointState?.contextSummary?.rawDataPoints ||
+            (checkpointState?.contextSummary && Object.keys(checkpointState.contextSummary).length > 0)
+        );
+
+        if (!hasContextData) {
+            log.warn('Checkpoint missing context for full-context resume; rebuilding context from scratch');
+            isResuming = false;
+        }
+    }
 
     log.info('Starting ReAct loop with checkpoint support', {
         mode,
@@ -1138,6 +1153,10 @@ async function executeReActLoop(params) {
 
             try {
                 // NEW: Full Context Mode - Pre-load ALL data into prompt
+                if (fullContextMode && !systemId) {
+                    throw new Error('Full-context mode requires a valid systemId. Provide systemId and retry.');
+                }
+
                 if (fullContextMode && systemId) {
                     log.info('Full Context Mode enabled - building complete context', {
                         systemId,
@@ -1146,30 +1165,27 @@ async function executeReActLoop(params) {
 
                     const { buildCompleteContext, countDataPoints } = require('./full-context-builder.cjs');
 
-                    try {
-                        const fullContext = await buildCompleteContext(systemId, {
-                            contextWindowDays: contextWindowDays || 90
-                        });
+                    const fullContext = await buildCompleteContext(systemId, {
+                        contextWindowDays: contextWindowDays || 30
+                    });
 
-                        const dataPointCount = countDataPoints(fullContext);
-                        log.info('Full context built successfully', {
-                            dataPoints: dataPointCount,
-                            contextSize: JSON.stringify(fullContext).length
-                        });
+                    const dataPointCount = countDataPoints(fullContext);
 
-                        // Store full context for use in prompt
-                        preloadedContext = {
-                            fullContext,
-                            dataPointsAnalyzed: dataPointCount,
-                            isFullContextMode: true
-                        };
-                    } catch (fullContextError) {
-                        log.warn('Full context building failed, falling back to standard context', {
-                            error: fullContextError.message
-                        });
-                        // Fall through to standard context collection
-                        preloadedContext = null;
+                    if (!dataPointCount) {
+                        throw new Error(`Full-context preload returned 0 data points for systemId ${systemId}. Verify uploads exist and retry.`);
                     }
+
+                    log.info('Full context built successfully', {
+                        dataPoints: dataPointCount,
+                        contextSize: JSON.stringify(fullContext).length
+                    });
+
+                    // Store full context for use in prompt
+                    preloadedContext = {
+                        fullContext,
+                        dataPointsAnalyzed: dataPointCount,
+                        isFullContextMode: true
+                    };
                 }
 
                 // Standard context collection (if full context not loaded or failed)
@@ -1180,7 +1196,7 @@ async function executeReActLoop(params) {
                         systemId,
                         analysisData,
                         log,
-                        { mode, maxMs: contextBudgetMs }
+                        { mode, maxMs: contextBudgetMs, fullContextMode }
                     );
 
                     preloadedContext = await Promise.race([
@@ -1194,6 +1210,11 @@ async function executeReActLoop(params) {
                 }
             } catch (contextError) {
                 const err = contextError instanceof Error ? contextError : new Error(String(contextError));
+
+                if (fullContextMode) {
+                    // In full-context mode, surface the failure instead of silently degrading
+                    throw err;
+                }
 
                 if (err.message === 'CONTEXT_TIMEOUT') {
                     log.warn('Context collection exceeded budget, continuing with minimal context', {

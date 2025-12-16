@@ -20,6 +20,76 @@ const DEFAULT_LOOKBACK_DAYS = 30;
 const RECENT_SNAPSHOT_LIMIT = 24;
 const SYNC_CONTEXT_BUDGET_MS = 5000; // Further reduced - sync mode delegates to ReAct loop
 const ASYNC_CONTEXT_BUDGET_MS = 45000;
+const FORCED_CONTEXT_DAYS = 30;
+
+const MS_IN_DAY = 24 * 60 * 60 * 1000;
+
+function clampToAvailableRange(minDate, maxDate, days = FORCED_CONTEXT_DAYS) {
+    if (!minDate || !maxDate) return null;
+
+    const endMs = Math.min(Date.now(), new Date(maxDate).getTime());
+    const startMs = Math.max(new Date(minDate).getTime(), endMs - days * MS_IN_DAY);
+
+    return {
+        start: new Date(startMs).toISOString(),
+        end: new Date(endMs).toISOString(),
+        days
+    };
+}
+
+async function getActualDateRange(systemId, log) {
+    const collection = await getCollection('analysis-results');
+
+    const [primary] = await collection.aggregate([
+        { $match: { $or: [{ systemId }, { 'analysis.systemId': systemId }] } },
+        { $group: { _id: null, minDate: { $min: '$timestamp' }, maxDate: { $max: '$timestamp' }, total: { $sum: 1 } } }
+    ]).toArray();
+
+    if (primary?.minDate && primary?.maxDate) {
+        return primary;
+    }
+
+    // Fallback to history collection if analysis-results empty
+    const history = await getCollection('history');
+    const [fallback] = await history.aggregate([
+        { $match: { systemId } },
+        { $group: { _id: null, minDate: { $min: '$timestamp' }, maxDate: { $max: '$timestamp' }, total: { $sum: 1 } } }
+    ]).toArray();
+
+    return fallback || { minDate: null, maxDate: null, total: 0 };
+}
+
+async function fetchForcedTimeseries(systemId, range, log) {
+    const metrics = ['soc', 'voltage', 'power', 'current'];
+    const datasets = {};
+    let totalPoints = 0;
+    let analytics = null;
+
+    // Try analytics first (fast aggregate)
+    try {
+        analytics = normalizeToolResult(await executeToolCall('getSystemAnalytics', { systemId }, log));
+        if (analytics?.dataPoints > 0) {
+            return { totalPoints: analytics.dataPoints, analytics, datasets, range };
+        }
+    } catch (err) {
+        log.warn('getSystemAnalytics failed during forced preload, will fall back to request_bms_data', { error: err.message });
+    }
+
+    for (const metric of metrics) {
+        const res = normalizeToolResult(await executeToolCall('request_bms_data', {
+            systemId,
+            metric,
+            granularity: 'daily_avg',
+            time_range_start: range.start,
+            time_range_end: range.end
+        }, log));
+
+        datasets[metric] = res;
+        totalPoints += res?.dataPoints || 0;
+    }
+
+    return { totalPoints, analytics, datasets, range };
+}
 
 // loadRecentSnapshots is defined early because collectAutoInsightsContext references it below.
 // Keeping it near the top clarifies dependency ordering and avoids hoisting surprises.
@@ -60,8 +130,11 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
     const start = Date.now();
     const maxMs = options.maxMs || (options.mode === "background" ? ASYNC_CONTEXT_BUDGET_MS : SYNC_CONTEXT_BUDGET_MS);
 
-    // In sync mode, skip expensive analytics and rely on ReAct loop instead
-    const skipExpensiveOps = options.skipExpensiveOps !== undefined ? options.skipExpensiveOps : (options.mode === "sync");
+    // In full-context/background modes, force expensive ops; otherwise follow existing heuristic
+    const skipExpensiveOps = (() => {
+        if (options.fullContextMode || options.mode === 'background') return false;
+        return options.skipExpensiveOps !== undefined ? options.skipExpensiveOps : (options.mode === "sync");
+    })();
 
     log.info('Starting context collection', {
         mode: options.mode,
@@ -132,8 +205,20 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
         }
     };
 
+    let availableRange = null;
+
     if (systemId) {
         context.systemProfile = await runStep("systemProfile", () => loadSystemProfile(systemId, log));
+
+        availableRange = await runStep('availableRange', async () => {
+            const range = await getActualDateRange(systemId, log);
+            const clamped = clampToAvailableRange(range.minDate, range.maxDate, options.contextWindowDays || FORCED_CONTEXT_DAYS);
+            return { ...range, clamped };
+        });
+
+        if ((options.fullContextMode || options.mode === 'background') && (!availableRange || !availableRange.clamped)) {
+            throw new Error('No historical data found for this system. Upload data and retry the full-context request.');
+        }
     }
 
     context.initialSummary = await runStep("initialSummary", () => generateInitialSummary(analysisData || {}, systemId || "", log));
@@ -207,6 +292,24 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
         });
     } else if (systemId) {
         log.info('Skipping expensive context preload (sync mode) - Gemini will request via tools if needed', { skipExpensiveOps });
+    }
+
+    // Forced real data fetch for full-context/background to avoid empty context
+    if (systemId && (options.fullContextMode || options.mode === 'background')) {
+        const clamped = availableRange?.clamped || clampToAvailableRange(availableRange?.minDate, availableRange?.maxDate, options.contextWindowDays || FORCED_CONTEXT_DAYS);
+
+        if (!clamped) {
+            throw new Error('No queryable date range detected for this system. Ensure data exists within the last 30 days.');
+        }
+
+        const forced = await fetchForcedTimeseries(systemId, clamped, log);
+
+        if (!forced || forced.totalPoints === 0) {
+            throw new Error(`Full-context preload returned 0 data points for ${systemId} between ${clamped.start} and ${clamped.end}. Upload data and retry.`);
+        }
+
+        context.forcedTimeseries = forced;
+        context.meta.forcedRange = clamped;
     }
 
     if (systemId) {

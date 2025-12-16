@@ -28,6 +28,10 @@ async function buildCompleteContext(systemId, options = {}) {
     // Get all raw data
     const raw = await getRawData(systemId, options);
 
+    if (!raw || raw.totalDataPoints === 0) {
+      throw new Error(`No historical data available for system ${systemId}. Ensure uploads exist and retry.`);
+    }
+
     // Run analytical tools
     const toolOutputs = await runAnalyticalTools(systemId, raw, options);
 
@@ -126,7 +130,7 @@ async function getExistingFeedback(systemId, options = {}) {
  */
 async function getRawData(systemId, options) {
   const log = createLogger('full-context-builder:raw-data');
-  const timeRange = getTimeRange(options);
+  const timeRange = await computeTimeRange(systemId, options);
 
   try {
     const analysisCollection = await getCollection('analysis-results');
@@ -465,18 +469,77 @@ const HEALTH_SCORE_THRESHOLDS = {
   TEMP_HIGH_PENALTY: 10                // Points deducted for high temp
 };
 
-function getTimeRange(options) {
-  const end = new Date();
-  const start = new Date();
+async function computeTimeRange(systemId, options) {
+  const log = createLogger('full-context-builder:time-range');
+  const targetDays = options.contextWindowDays || 30;
 
-  // Default to last 90 days
-  const days = options.contextWindowDays || 90;
-  start.setDate(start.getDate() - days);
+  try {
+    const { minDate, maxDate } = await getActualDateRange(systemId, log);
+
+    if (!minDate || !maxDate) {
+      throw new Error('No historical data available for this system');
+    }
+
+    const clamped = clampToAvailableRange(minDate, maxDate, targetDays);
+
+    if (!clamped) {
+      throw new Error('Unable to clamp time range to available data');
+    }
+
+    return { ...clamped, days: targetDays };
+  } catch (error) {
+    log.warn('Falling back to default time range due to error', { error: error.message });
+
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - targetDays);
+
+    return {
+      start: start.toISOString(),
+      end: end.toISOString(),
+      days: targetDays
+    };
+  }
+}
+
+async function getActualDateRange(systemId, log) {
+  const collection = await getCollection('analysis-results');
+  const pipeline = [
+    { $match: { $or: [{ systemId }, { 'analysis.systemId': systemId }] } },
+    { $group: { _id: null, minDate: { $min: '$timestamp' }, maxDate: { $max: '$timestamp' } } }
+  ];
+
+  const [result] = await collection.aggregate(pipeline).toArray();
+
+  if (result?.minDate && result?.maxDate) {
+    return { minDate: new Date(result.minDate), maxDate: new Date(result.maxDate) };
+  }
+
+  // Fallback to history collection
+  const history = await getCollection('history');
+  const [historyResult] = await history.aggregate([
+    { $match: { systemId } },
+    { $group: { _id: null, minDate: { $min: '$timestamp' }, maxDate: { $max: '$timestamp' } } }
+  ]).toArray();
+
+  if (historyResult?.minDate && historyResult?.maxDate) {
+    return { minDate: new Date(historyResult.minDate), maxDate: new Date(historyResult.maxDate) };
+  }
+
+  return { minDate: null, maxDate: null };
+}
+
+function clampToAvailableRange(minDate, maxDate, days) {
+  if (!minDate || !maxDate) return null;
+
+  const now = Date.now();
+  const maxMs = new Date(maxDate).getTime();
+  const endMs = Math.min(now, maxMs);
+  const startMs = Math.max(new Date(minDate).getTime(), endMs - days * 24 * 60 * 60 * 1000);
 
   return {
-    start: start.toISOString(),
-    end: end.toISOString(),
-    days
+    start: new Date(startMs).toISOString(),
+    end: new Date(endMs).toISOString()
   };
 }
 
