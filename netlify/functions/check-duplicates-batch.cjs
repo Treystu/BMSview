@@ -8,8 +8,30 @@
  */
 
 // Defensive module initialization to catch and log any module loading errors
+/** @type {Error|null} */
 let initError = null;
-let errorResponse, parseJsonBody, createLoggerFromEvent, createTimer, getCollection, getCorsHeaders, calculateImageHash, checkNeedsUpgrade, formatHashPreview, createStandardEntryMeta, logDebugRequestSummary;
+/** @type {(...args: any[]) => any} */
+let errorResponse;
+/** @type {(...args: any[]) => any} */
+let parseJsonBody;
+/** @type {(...args: any[]) => any} */
+let createLoggerFromEvent;
+/** @type {(...args: any[]) => any} */
+let createTimer;
+/** @type {(...args: any[]) => any} */
+let getCollection;
+/** @type {(...args: any[]) => any} */
+let getCorsHeaders;
+/** @type {(...args: any[]) => any} */
+let calculateImageHash;
+/** @type {(...args: any[]) => any} */
+let checkNeedsUpgrade;
+/** @type {(...args: any[]) => any} */
+let formatHashPreview;
+/** @type {(...args: any[]) => any} */
+let createStandardEntryMeta;
+/** @type {(...args: any[]) => any} */
+let logDebugRequestSummary;
 
 try {
   ({ errorResponse } = require('./utils/errors.cjs'));
@@ -21,12 +43,26 @@ try {
   // Use unified deduplication module as canonical source
   ({ calculateImageHash, checkNeedsUpgrade, formatHashPreview } = require('./utils/unified-deduplication.cjs'));
 } catch (e) {
-  initError = e;
-  console.error('CHECK-DUPLICATES-BATCH MODULE INIT ERROR:', e.message, e.stack);
+  const initException = e instanceof Error ? e : new Error(String(e));
+  initError = initException;
+  console.error('CHECK-DUPLICATES-BATCH MODULE INIT ERROR:', initException.message, initException.stack);
 }
 
 // Limit logged file names to avoid log bloat while keeping context for debugging
 const MAX_FILE_NAMES_LOGGED = 10;
+/**
+ * @typedef {{ fileName?: string, hash?: string, image?: string, mimeType?: string }} BatchDuplicateFile
+ */
+/**
+ * @typedef {{ index: number, fileName: string, contentHash: string | null }} BatchHashEntry
+ */
+/**
+ * @typedef {{ index: number, fileName: string, error: string }} BatchHashError
+ */
+/**
+ * @param {BatchDuplicateFile} file
+ * @param {number} index
+ */
 const formatFileNameForLog = (file, index) => file?.fileName || `file-${index}`;
 
 // Shared constant for hash validation (SHA-256 produces 64 hex characters)
@@ -35,7 +71,7 @@ const VALID_HASH_REGEX = /^[a-f0-9]{64}$/i;
 /**
  * Batch check for existing analyses by content hash
  * @param {string[]} contentHashes - Array of content hashes to check
- * @param {any} log - Logger instance
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log - Logger instance
  * @returns {Promise<Map<string, any>>} Map of contentHash -> existing record
  */
 async function batchCheckExistingAnalyses(contentHashes, log) {
@@ -74,8 +110,9 @@ async function batchCheckExistingAnalyses(contentHashes, log) {
     return resultMap;
   } catch (error) {
     const totalDurationMs = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : String(error);
     log.error('Batch duplicate check failed', {
-      error: error.message,
+      error: errorMessage,
       hashCount: contentHashes.length,
       totalDurationMs,
       event: 'BATCH_CHECK_ERROR'
@@ -96,7 +133,7 @@ function checkIfNeedsUpgrade(existing) {
   }
 
   // Use the canonical checkNeedsUpgrade function from unified deduplication
-  return checkNeedsUpgrade(existing);
+  return /** @type {{ needsUpgrade: boolean, reason?: string }} */ (checkNeedsUpgrade(existing));
 }
 
 /**
@@ -127,6 +164,32 @@ exports.handler = async (event, context) => {
     };
   }
 
+  if (
+    !errorResponse ||
+    !parseJsonBody ||
+    !createLoggerFromEvent ||
+    !createTimer ||
+    !getCollection ||
+    !getCorsHeaders ||
+    !createStandardEntryMeta ||
+    !logDebugRequestSummary ||
+    !calculateImageHash ||
+    !checkNeedsUpgrade ||
+    !formatHashPreview
+  ) {
+    console.error('CHECK-DUPLICATES-BATCH missing helper modules after initialization');
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        error: {
+          code: 'module_init_failed',
+          message: 'Required dependencies are unavailable'
+        }
+      })
+    };
+  }
+
   const headers = getCorsHeaders(event);
 
   if (event.httpMethod === 'OPTIONS') {
@@ -137,6 +200,7 @@ exports.handler = async (event, context) => {
     return errorResponse(405, 'method_not_allowed', 'Method not allowed', undefined, headers);
   }
 
+  /** @type {any} */
   const log = createLoggerFromEvent('check-duplicates-batch', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, {
@@ -144,6 +208,7 @@ exports.handler = async (event, context) => {
     includeBody: true,
     bodyMaxStringLength: 20000
   });
+  /** @type {any} */
   const timer = createTimer(log, 'check-duplicates-batch');
 
   // Log request body size for debugging payload issues (PR #339)
@@ -175,18 +240,21 @@ exports.handler = async (event, context) => {
     );
   }
 
+  /**
+   * @type {{ ok?: boolean, value?: { files?: BatchDuplicateFile[] }, error?: string } | undefined }
+   */
   let parsed;
   try {
     // Parse request body
     parsed = parseJsonBody(event, log);
-    if (!parsed.ok) {
-      log.warn('Invalid JSON body', { error: parsed.error });
+    if (!parsed || !parsed.ok) {
+      log.warn('Invalid JSON body', { error: parsed?.error });
       timer.end({ error: 'invalid_json' });
       log.exit(400);
-      return errorResponse(400, 'invalid_request', parsed.error || 'Invalid JSON', undefined, headers);
+      return errorResponse(400, 'invalid_request', parsed?.error || 'Invalid JSON', undefined, headers);
     }
 
-    const { files } = parsed.value;
+    const { files } = /** @type {{ files: BatchDuplicateFile[] }} */ (parsed.value);
 
     if (!Array.isArray(files) || files.length === 0) {
       log.warn('Invalid files array', { filesType: typeof files, filesLength: files?.length });
@@ -241,7 +309,9 @@ exports.handler = async (event, context) => {
     });
 
     // Process based on mode (PR #339)
+    /** @type {BatchHashEntry[]} */
     let fileHashes = [];
+    /** @type {BatchHashError[]} */
     const hashErrors = [];
 
     if (isHashOnlyMode) {
@@ -315,11 +385,12 @@ exports.handler = async (event, context) => {
           }
         } catch (hashErr) {
           const fileName = formatFileNameForLog(file, i);
-          hashErrors.push({ index: i, fileName, error: hashErr.message });
+          const hashErrMessage = hashErr instanceof Error ? hashErr.message : String(hashErr);
+          hashErrors.push({ index: i, fileName, error: hashErrMessage });
           fileHashes.push({ index: i, fileName, contentHash: null });
           log.warn('Hash calculation failed for file', {
             fileName,
-            error: hashErr.message,
+            error: hashErrMessage,
             event: 'HASH_FAILED'
           });
         }
@@ -352,7 +423,7 @@ exports.handler = async (event, context) => {
     // Get all valid hashes
     const validHashes = fileHashes
       .filter(h => h.contentHash)
-      .map(h => h.contentHash);
+      .map(h => /** @type {string} */(h.contentHash));
 
     if (validHashes.length === 0) {
       log.warn('No valid hashes generated, returning non-duplicate results', {
@@ -445,22 +516,24 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
     timer.end({ error: true });
     log.error('Batch duplicate check failed', {
-      error: error.message,
-      stack: error.stack,
+      error: errorMessage,
+      stack: errorStack,
       fileCount: Array.isArray(parsed?.value?.files) ? parsed.value.files.length : undefined,
       event: 'BATCH_ERROR'
     });
 
-    const statusCode = error.message?.includes('timeout') ? 408 : 500;
+    const statusCode = errorMessage.includes('timeout') ? 408 : 500;
     log.exit(statusCode);
 
     return errorResponse(
       statusCode,
       'batch_check_failed',
       'Batch duplicate check failed',
-      { message: error.message },
+      { message: errorMessage },
       headers
     );
   }

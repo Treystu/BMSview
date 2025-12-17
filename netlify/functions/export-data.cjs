@@ -18,6 +18,9 @@ const {
     logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ */
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
         log.error('Missing MONGODB_URI environment variable');
@@ -29,13 +32,17 @@ function validateEnvironment(log) {
 /**
  * Convert array of objects to CSV string
  */
+/**
+ * @param {Array<Record<string, any>>} data
+ * @param {string[]} headers
+ */
 function arrayToCSV(data, headers) {
     if (!data || data.length === 0) {
         return headers.join(',') + '\n';
     }
 
-    const rows = data.map(obj => {
-        return headers.map(header => {
+    const rows = data.map(/** @param {Record<string, any>} obj */(obj) => {
+        return headers.map(/** @param {string} header */(header) => {
             let value = obj[header];
 
             // Handle nested objects and arrays
@@ -63,6 +70,9 @@ function arrayToCSV(data, headers) {
 
 /**
  * Export history data as CSV
+ */
+/**
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
  */
 async function exportHistoryCSV(log) {
     const collection = await getCollection('history');
@@ -115,6 +125,9 @@ async function exportHistoryCSV(log) {
 /**
  * Export systems data as CSV
  */
+/**
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ */
 async function exportSystemsCSV(log) {
     const collection = await getCollection('systems');
     const systems = await collection.find({}).sort({ name: 1 }).toArray();
@@ -146,8 +159,12 @@ async function exportSystemsCSV(log) {
 /**
  * Export full database backup as JSON
  */
+/**
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ */
 async function exportFullBackup(log) {
     const collections = ['systems', 'history'];
+    /** @type {{ exportDate: string, version: string, collections: Record<string, any[]> }} */
     const backup = {
         exportDate: new Date().toISOString(),
         version: '1.0',
@@ -172,8 +189,13 @@ async function exportFullBackup(log) {
 /**
  * Main handler
  */
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async (event, context) => {
     const log = createLoggerFromEvent('export-data', event, context);
+    /** @type {any} */
     const timer = createTimer(log, 'export-data-handler');
 
     const headers = {
@@ -184,6 +206,16 @@ exports.handler = async (event, context) => {
 
     log.entry(createStandardEntryMeta(event));
     logDebugRequestSummary(log, event, { label: 'Export data request', includeBody: false });
+
+    if (!validateEnvironment(log)) {
+        timer.end({ success: false, error: 'configuration' });
+        log.exit(500);
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({ error: 'Server configuration error' })
+        };
+    }
 
     if (event.httpMethod === 'OPTIONS') {
         log.debug('OPTIONS preflight request');
@@ -253,15 +285,17 @@ exports.handler = async (event, context) => {
         };
 
     } catch (error) {
-        log.error('Export failed', { error: error.message, stack: error.stack });
-        timer.end({ success: false, error: error.message });
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        log.error('Export failed', { error: message, stack });
+        timer.end({ success: false, error: message });
         log.exit(500);
         return {
             statusCode: 500,
             headers,
             body: JSON.stringify({
                 error: 'Export failed',
-                message: error.message
+                message
             })
         };
     }

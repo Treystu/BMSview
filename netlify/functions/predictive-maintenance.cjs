@@ -6,6 +6,9 @@ const {
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {import('./utils/logger.cjs').LogFunction} log
+ */
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
     log.error('Missing MONGODB_URI environment variable');
@@ -26,8 +29,14 @@ function getGenAI() {
   return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 }
 
+/**
+ * @param {import('@netlify/functions').HandlerEvent} event
+ * @param {import('@netlify/functions').HandlerContext} context
+ */
 exports.handler = async (event, context) => {
+  /** @type {import('./utils/logger.cjs').LogFunction} */
   const log = createLoggerFromEvent('predictive-maintenance', event, context);
+  /** @type {any} */
   const timer = createTimer(log, 'predictive-maintenance-handler');
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Predictive maintenance request', includeBody: true, bodyMaxStringLength: 20000 });
@@ -66,7 +75,8 @@ exports.handler = async (event, context) => {
 
   try {
     log.debug('Parsing request body', logContext);
-    const { systemId, timeHorizon = '30' } = JSON.parse(event.body);
+    const parsedBody = event.body ? JSON.parse(event.body) : {};
+    const { systemId, timeHorizon = '30' } = parsedBody;
 
     const requestContext = { ...logContext, systemId, timeHorizon };
     log.info('Processing predictive maintenance request', requestContext);
@@ -123,7 +133,9 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
-    log.error('Predictive maintenance error', { ...logContext, error: error.message, stack: error.stack });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    log.error('Predictive maintenance error', { ...logContext, error: errorMessage, stack: errorStack });
     const durationMs = timer.end({ success: false });
     log.exit(500);
     return {
@@ -131,20 +143,24 @@ exports.handler = async (event, context) => {
       headers,
       body: JSON.stringify({
         error: 'Predictive maintenance failed',
-        details: error.message
+        details: errorMessage
       })
     };
   }
 };
 
+/**
+ * @param {string} systemId
+ * @param {import('./utils/logger.cjs').LogFunction} log
+ */
 async function getSystemData(systemId, log) {
   try {
     log.debug('Fetching system data from database', { systemId });
     // Get system information
     const systemsCollection = await getCollection('systems');
-    const system = await systemsCollection.findOne({
+    const system = await systemsCollection.findOne(/** @type {any} */({
       _id: systemId
-    });
+    }));
 
     if (!system) {
       return null;
@@ -184,11 +200,18 @@ async function getSystemData(systemId, log) {
       lastMeasurement: measurements[0]?.timestamp || null
     };
   } catch (error) {
-    log.error('Error getting system data', { systemId, error: error.message, stack: error.stack });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    log.error('Error getting system data', { systemId, error: errorMessage, stack: errorStack });
     throw error;
   }
 }
 
+/**
+ * @param {any} systemData
+ * @param {number} timeHorizon
+ * @param {import('./utils/logger.cjs').LogFunction} log
+ */
 async function generatePredictiveInsights(systemData, timeHorizon, log) {
   log.debug('Generating predictive insights', { timeHorizon, dataPoints: systemData.dataPoints });
   const { system, measurements, maintenanceHistory, components } = systemData;
@@ -207,7 +230,7 @@ async function generatePredictiveInsights(systemData, timeHorizon, log) {
   );
 
   // Use AI for enhanced predictions
-  const aiInsights = await generateAIInsights(systemData, timeHorizon);
+  const aiInsights = await generateAIInsights(systemData, timeHorizon, log);
 
   return {
     overall: {
@@ -231,6 +254,10 @@ async function generatePredictiveInsights(systemData, timeHorizon, log) {
   };
 }
 
+/**
+ * @param {any[]} measurements
+ * @param {any[]} maintenanceHistory
+ */
 function calculateFailureRisk(measurements, maintenanceHistory) {
   if (measurements.length === 0) {
     return { level: 'Unknown', confidence: 0, factors: [] };
@@ -253,7 +280,7 @@ function calculateFailureRisk(measurements, maintenanceHistory) {
 
   // Check temperature trends
   const avgTemperature = measurements.length > 0
-    ? measurements.reduce((sum, m) => sum + m.temperature, 0) / measurements.length
+    ? measurements.reduce((sum, /** @type {any} */ m) => sum + (m?.temperature || 0), 0) / measurements.length
     : 0;
   if (avgTemperature > 40) {
     riskScore += 25;
@@ -269,7 +296,7 @@ function calculateFailureRisk(measurements, maintenanceHistory) {
 
   // Check maintenance frequency
   const daysSinceLastMaintenance = maintenanceHistory.length > 0
-    ? (new Date() - new Date(maintenanceHistory[0].date)) / (1000 * 60 * 60 * 24)
+    ? (Number(new Date()) - Number(new Date(maintenanceHistory[0].date))) / (1000 * 60 * 60 * 24)
     : 365;
 
   if (daysSinceLastMaintenance > 90) {
@@ -299,6 +326,10 @@ function calculateFailureRisk(measurements, maintenanceHistory) {
   };
 }
 
+/**
+ * @param {any[]} components
+ * @param {any[]} measurements
+ */
 function identifyWeakComponents(components, measurements) {
   const analysis = [];
 
@@ -311,10 +342,10 @@ function identifyWeakComponents(components, measurements) {
       case 'battery_cell':
         {
           const cellEfficiency = calculateCellEfficiency(component, measurements);
-          if (cellEfficiency < 0.7) {
+          if (cellEfficiency != null && cellEfficiency < 0.7) {
             riskLevel = 'High';
             issues.push('Low cell efficiency');
-          } else if (cellEfficiency < 0.85) {
+          } else if (cellEfficiency != null && cellEfficiency < 0.85) {
             riskLevel = 'Medium';
             issues.push('Moderate efficiency degradation');
           }
@@ -344,7 +375,7 @@ function identifyWeakComponents(components, measurements) {
       case 'cooling_system':
         {
           const avgTemp = measurements.length > 0
-            ? measurements.reduce((sum, m) => sum + m.temperature, 0) / measurements.length
+            ? measurements.reduce((sum, /** @type {any} */ m) => sum + (m.temperature || 0), 0) / measurements.length
             : 0;
 
           if (avgTemp > 45) {
@@ -370,11 +401,16 @@ function identifyWeakComponents(components, measurements) {
   }
 
   return analysis.sort((a, b) => {
-    const riskOrder = { 'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1 };
-    return riskOrder[b.riskLevel] - riskOrder[a.riskLevel];
+    const riskOrder = /** @type {Record<string, number>} */ ({ 'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1 });
+    return (riskOrder[b.riskLevel] ?? 0) - (riskOrder[a.riskLevel] ?? 0);
   });
 }
 
+/**
+ * @param {any[]} measurements
+ * @param {any[]} maintenanceHistory
+ * @param {number} timeHorizon
+ */
 function generateOptimalSchedule(measurements, maintenanceHistory, timeHorizon) {
   const urgency = calculateMaintenanceUrgency(measurements, maintenanceHistory);
   const schedule = [];
@@ -438,10 +474,15 @@ function generateOptimalSchedule(measurements, maintenanceHistory, timeHorizon) 
     nextMaintenance: schedule[0]?.date || null,
     totalTasks: schedule.length,
     schedule: schedule.slice(0, 10), // Return next 10 tasks
-    estimatedCost: schedule.reduce((sum, task) => sum + task.estimatedCost, 0)
+    estimatedCost: schedule.reduce((sum, /** @type {any} */ task) => sum + (task.estimatedCost || 0), 0)
   };
 }
 
+/**
+ * @param {any} systemData
+ * @param {number} timeHorizon
+ * @param {import('./utils/logger.cjs').LogFunction} log
+ */
 async function generateAIInsights(systemData, timeHorizon, log) {
   try {
     log.debug('Calling Gemini API for AI insights', { systemName: systemData.system?.name, timeHorizon });
@@ -488,16 +529,21 @@ async function generateAIInsights(systemData, timeHorizon, log) {
       confidence: null // Placeholder confidence score
     };
   } catch (error) {
-    log.error('Error generating AI insights', { error: error.message, stack: error.stack });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    log.error('Error generating AI insights', { error: errorMessage, stack: errorStack });
     return {
       text: 'AI insights unavailable at this time',
-      error: error.message,
+      error: errorMessage,
       processedAt: new Date().toISOString()
     };
   }
 }
 
 // Helper functions
+/**
+ * @param {any[]} measurements
+ */
 function countChargeCycles(measurements) {
   let cycles = 0;
   let wasCharging = false;
@@ -512,23 +558,33 @@ function countChargeCycles(measurements) {
   return cycles;
 }
 
+/**
+ * @param {any[]} measurements
+ */
 function calculateVoltageVariation(measurements) {
   if (measurements.length < 2) return 0;
 
-  const voltages = measurements.map(m => m.voltage);
+  const voltages = measurements.map((/** @type {any} */ m) => m.voltage || 0);
   const avg = voltages.reduce((sum, v) => sum + v, 0) / voltages.length;
   const variance = voltages.reduce((sum, v) => sum + Math.pow(v - avg, 2), 0) / voltages.length;
 
   return Math.sqrt(variance) / avg;
 }
 
+/**
+ * @param {any[]} measurements
+ */
 function calculateTemperatureVariation(measurements) {
   if (measurements.length < 2) return 0;
 
-  const temperatures = measurements.map(m => m.temperature);
+  const temperatures = measurements.map((/** @type {any} */ m) => m.temperature || 0);
   return Math.max(...temperatures) - Math.min(...temperatures);
 }
 
+/**
+ * @param {any} component
+ * @param {any[]} measurements
+ */
 function calculateCellEfficiency(component, measurements) {
   // A more realistic calculation based on remaining and original capacity
   if (component.originalCapacity && component.remainingCapacity) {
@@ -538,8 +594,12 @@ function calculateCellEfficiency(component, measurements) {
   return null;
 }
 
+/**
+ * @param {string} type
+ * @param {string} riskLevel
+ */
 function generateComponentRecommendation(type, riskLevel) {
-  const recommendations = {
+  const recommendations = /** @type {Record<string, Record<string, string>>} */({
     battery_cell: {
       High: 'Immediate cell balancing and capacity test',
       Medium: 'Schedule cell health assessment',
@@ -560,11 +620,15 @@ function generateComponentRecommendation(type, riskLevel) {
       Medium: 'Clean cooling components',
       Low: 'Check cooling performance'
     }
-  };
+  });
 
   return recommendations[type]?.[riskLevel] || 'Standard maintenance recommended';
 }
 
+/**
+ * @param {any} component
+ * @param {any[]} measurements
+ */
 function estimateComponentLifespan(component, measurements) {
   const baseLifespan = {
     battery_cell: 2000,
@@ -574,15 +638,20 @@ function estimateComponentLifespan(component, measurements) {
   };
 
   const cycles = countChargeCycles(measurements);
-  const remaining = Math.max(0, baseLifespan[component.type] - cycles);
+  const typeKey = /** @type {keyof typeof baseLifespan} */ (component.type);
+  const remaining = Math.max(0, (baseLifespan[typeKey] || 0) - cycles);
 
   return {
     estimatedCycles: remaining,
     estimatedDays: Math.round(remaining / 2), // Assuming 2 cycles per day
-    condition: remaining > baseLifespan[component.type] * 0.5 ? 'Good' : 'Worn'
+    condition: remaining > (baseLifespan[typeKey] || 0) * 0.5 ? 'Good' : 'Worn'
   };
 }
 
+/**
+ * @param {any[]} measurements
+ * @param {any[]} maintenanceHistory
+ */
 function calculateMaintenanceUrgency(measurements, maintenanceHistory) {
   const riskScore = calculateFailureRisk(measurements, maintenanceHistory);
 
@@ -595,90 +664,99 @@ function calculateMaintenanceUrgency(measurements, maintenanceHistory) {
   }
 }
 
+/**
+ * @param {string} task
+ * @param {number} duration
+ */
 function calculateTaskCost(task, duration) {
-  const hourlyRate = 75; // $75 per hour
-  return Math.round((duration / 60) * hourlyRate);
+  const hourlyRate = 100;
+  return (duration / 60) * hourlyRate + (task.includes('Immediate') ? 200 : 0);
 }
 
+/**
+ * @param {any[]} measurements
+ * @param {number} timeHorizon
+ */
 function calculateExpectedDegradation(measurements, timeHorizon) {
   if (measurements.length < 2) return 0;
 
-  const first = measurements[measurements.length - 1];
-  const last = measurements[0];
-  const daysSpan = Math.floor((new Date(last.timestamp) - new Date(first.timestamp)) / (1000 * 60 * 60 * 24));
+  const recent = measurements[0];
+  const oldest = measurements[measurements.length - 1];
+  const daysSpan = Math.floor((Number(new Date(recent.timestamp)) - Number(new Date(oldest.timestamp))) / (1000 * 60 * 60 * 24));
 
-  const dailyDegradation = (first.capacity - last.capacity) / daysSpan;
-  return Math.abs(dailyDegradation * timeHorizon);
+  if (!daysSpan) return 0;
+
+  const dailyDegradation = (oldest.capacity - recent.capacity) / daysSpan;
+  return dailyDegradation * timeHorizon;
 }
 
+/**
+ * @param {any[]} measurements
+ * @param {number} timeHorizon
+ */
 function generateCapacityForecast(measurements, timeHorizon) {
   if (measurements.length === 0) return [];
 
-  const latest = measurements[0];
-  const forecast = [];
+  const latestCapacity = measurements[0].capacity || 0;
+  const expectedDegradation = calculateExpectedDegradation(measurements, timeHorizon);
 
-  for (let day = 1; day <= Math.min(timeHorizon, 30); day += 7) {
-    const degradation = 0.001 * day; // 0.1% degradation per day
-    forecast.push({
-      day,
-      predictedCapacity: latest.capacity * (1 - degradation)
-    });
-  }
-
-  return forecast;
+  return [
+    { day: 0, capacity: latestCapacity },
+    { day: timeHorizon, capacity: Math.max(0, latestCapacity - expectedDegradation) }
+  ];
 }
 
+/**
+ * @param {any[]} measurements
+ */
 function calculateEfficiencyTrend(measurements) {
-  if (measurements.length < 10) return 'insufficient_data';
+  if (measurements.length < 2) return 'Stable';
 
-  const recent = measurements.slice(0, 10);
-  const older = measurements.slice(10, 20);
+  const half = Math.floor(measurements.length / 2);
+  const recent = measurements.slice(0, half);
+  const older = measurements.slice(half);
 
-  const recentAvg = recent.reduce((sum, m) => sum + (m.efficiency || 0.8), 0) / recent.length;
-  const olderAvg = older.reduce((sum, m) => sum + (m.efficiency || 0.8), 0) / older.length;
+  const recentAvg = recent.reduce((sum, /** @type {any} */ m) => sum + (m.efficiency || 0.8), 0) / recent.length;
+  const olderAvg = older.reduce((sum, /** @type {any} */ m) => sum + (m.efficiency || 0.8), 0) / older.length;
 
-  if (recentAvg > olderAvg + 0.05) return 'improving';
-  if (recentAvg < olderAvg - 0.05) return 'declining';
-  return 'stable';
+  if (recentAvg > olderAvg + 0.05) return 'Improving';
+  if (recentAvg < olderAvg - 0.05) return 'Declining';
+  return 'Stable';
 }
 
+/**
+ * @param {any} failureRisk
+ * @param {any[]} componentAnalysis
+ * @param {any} maintenanceSchedule
+ */
 function generateRecommendations(failureRisk, componentAnalysis, maintenanceSchedule) {
   const recommendations = [];
 
   if (failureRisk.level === 'Critical' || failureRisk.level === 'High') {
-    recommendations.push({
-      priority: 'Critical',
-      action: 'Schedule immediate professional inspection',
-      reason: 'High failure risk detected'
-    });
+    recommendations.push('Schedule immediate full system diagnostics.');
   }
 
-  const highRiskComponents = componentAnalysis.filter(c => c.riskLevel === 'High');
+  const highRiskComponents = componentAnalysis.filter((/** @type {any} */ c) => c.riskLevel === 'High');
   if (highRiskComponents.length > 0) {
-    recommendations.push({
-      priority: 'High',
-      action: 'Address high-risk components',
-      reason: `${highRiskComponents.length} components require immediate attention`
-    });
+    recommendations.push(`Inspect high-risk components: ${highRiskComponents.map((c) => c.name).join(', ')}`);
   }
 
   if (maintenanceSchedule.urgency === 'Critical') {
-    recommendations.push({
-      priority: 'High',
-      action: 'Follow accelerated maintenance schedule',
-      reason: 'System requires frequent monitoring'
-    });
+    recommendations.push('Increase maintenance frequency to weekly until stability improves.');
   }
 
-  recommendations.push({
-    priority: 'Medium',
-    action: 'Implement performance monitoring dashboard',
-    reason: 'Continuous monitoring will help prevent failures'
-  });
+  if (recommendations.length === 0) {
+    recommendations.push('Maintain standard monthly inspections and monitoring.');
+  }
 
   return recommendations;
 }
 
+/**
+ * @param {string} systemId
+ * @param {any} predictions
+ * @param {import('./utils/logger.cjs').LogFunction} log
+ */
 async function storePredictions(systemId, predictions, log) {
   try {
     log.debug('Storing predictions in database', { systemId });
@@ -690,6 +768,13 @@ async function storePredictions(systemId, predictions, log) {
     });
     log.debug('Predictions stored successfully', { systemId });
   } catch (error) {
-    log.error('Error storing predictions', { systemId, error: error.message, stack: error.stack });
+    const err = /** @type {Error & { message?: string; stack?: string }} */ (error);
+    if (log && typeof log.error === 'function') {
+      log.error('Error storing predictions', {
+        systemId,
+        error: err && err.message ? err.message : 'Unknown error',
+        stack: err && err.stack ? err.stack : undefined
+      });
+    }
   }
 }

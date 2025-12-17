@@ -15,10 +15,15 @@ const {
  * to improve AI insight generation
  */
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
 
   const log = createLoggerFromEvent('admin-stories', event, context);
+  /** @type {any} */
   const timer = createTimer(log, 'admin-stories');
   const sanitizedHeaders = event.headers ? {
     ...event.headers,
@@ -40,7 +45,7 @@ exports.handler = async (event, context) => {
       log.error('MONGODB_URI is not set');
       timer.end({ outcome: 'configuration_error' });
       log.exit(500, { outcome: 'configuration_error' });
-      return errorResponse(500, 'server_error', 'Server configuration error', null, headers);
+      return errorResponse(500, 'server_error', 'Server configuration error', undefined, headers);
     }
 
     const storiesCollection = await getCollection('stories');
@@ -51,9 +56,11 @@ exports.handler = async (event, context) => {
       // Get a specific story by ID
       if (id) {
         log.info('Fetching story by ID', { id });
-        const story = await storiesCollection.findOne({
-          $or: [{ id }, { _id: ObjectId.isValid(id) ? new ObjectId(id) : null }]
-        });
+        /** @type {any} */
+        const storyFilter = ObjectId.isValid(id)
+          ? { $or: [{ id }, { _id: new ObjectId(id) }] }
+          : { id };
+        const story = await storiesCollection.findOne(storyFilter);
 
         if (!story) {
           log.warn('Story not found', { id });
@@ -80,6 +87,7 @@ exports.handler = async (event, context) => {
       const skip = (pageNum - 1) * limitNum;
 
       // Build filter
+      /** @type {Record<string, any>} */
       const filter = {};
       if (isActive !== undefined) {
         filter.isActive = isActive === 'true';
@@ -88,7 +96,7 @@ exports.handler = async (event, context) => {
         filter.systemIdentifier = systemIdentifier;
       }
       if (tags) {
-        filter.tags = { $in: tags.split(',').map(t => t.trim()) };
+        filter.tags = { $in: tags.split(',').map(/** @param {string} t */(t) => t.trim()) };
       }
 
       log.info('Listing stories', { page: pageNum, limit: limitNum, filter });
@@ -127,7 +135,7 @@ exports.handler = async (event, context) => {
       try {
         body = JSON.parse(event.body);
       } catch (e) {
-        return errorResponse(400, 'bad_request', 'Invalid JSON body', null, headers);
+        return errorResponse(400, 'bad_request', 'Invalid JSON body', undefined, headers);
       }
 
       // Add event to existing story
@@ -135,17 +143,16 @@ exports.handler = async (event, context) => {
         const { analysisId, annotation, contextNotes } = body;
 
         if (!analysisId) {
-          return errorResponse(400, 'bad_request', 'Missing analysisId', null, headers);
+          return errorResponse(400, 'bad_request', 'Missing analysisId', undefined, headers);
         }
 
         // Fetch the analysis record to get its timestamp
         const analysisCollection = await getCollection('analysis-results');
-        const analysis = await analysisCollection.findOne({
-          $or: [
-            { _id: ObjectId.isValid(analysisId) ? new ObjectId(analysisId) : null },
-            { id: analysisId }
-          ]
-        });
+        /** @type {any} */
+        const analysisFilter = ObjectId.isValid(analysisId)
+          ? { $or: [{ _id: new ObjectId(analysisId) }, { id: analysisId }] }
+          : { id: analysisId };
+        const analysis = await analysisCollection.findOne(analysisFilter);
 
         if (!analysis) {
           return errorResponse(404, 'not_found', 'Analysis not found', { analysisId }, headers);
@@ -164,14 +171,16 @@ exports.handler = async (event, context) => {
         };
 
         const updateResult = await storiesCollection.updateOne(
-          { $or: [{ id }, { _id: ObjectId.isValid(id) ? new ObjectId(id) : null }] },
-          {
+          /** @type {any} */(ObjectId.isValid(id)
+            ? { $or: [{ id }, { _id: new ObjectId(id) }] }
+            : { id }),
+          /** @type {any} */({
             $push: { events: newEvent },
             $set: {
               updatedAt: new Date().toISOString(),
               'metadata.totalEvents': { $add: ['$metadata.totalEvents', 1] }
             }
-          }
+          })
         );
 
         if (updateResult.modifiedCount === 0) {
@@ -193,7 +202,7 @@ exports.handler = async (event, context) => {
       const { title, description, systemIdentifier, events, tags, isActive = true } = body;
 
       if (!title) {
-        return errorResponse(400, 'bad_request', 'Missing required field: title', null, headers);
+        return errorResponse(400, 'bad_request', 'Missing required field: title', undefined, headers);
       }
 
       const storyId = uuidv4();
@@ -229,17 +238,18 @@ exports.handler = async (event, context) => {
     // PUT - Update a story
     if (event.httpMethod === 'PUT') {
       if (!id) {
-        return errorResponse(400, 'bad_request', 'Missing story ID', null, headers);
+        return errorResponse(400, 'bad_request', 'Missing story ID', undefined, headers);
       }
 
       let body;
       try {
         body = JSON.parse(event.body);
       } catch (e) {
-        return errorResponse(400, 'bad_request', 'Invalid JSON body', null, headers);
+        return errorResponse(400, 'bad_request', 'Invalid JSON body', undefined, headers);
       }
 
       const { title, description, systemIdentifier, events, tags, isActive } = body;
+      /** @type {Record<string, any>} */
       const updateFields = { updatedAt: new Date().toISOString() };
 
       if (title !== undefined) updateFields.title = title;
@@ -254,7 +264,9 @@ exports.handler = async (event, context) => {
       if (isActive !== undefined) updateFields.isActive = isActive;
 
       const updateResult = await storiesCollection.updateOne(
-        { $or: [{ id }, { _id: ObjectId.isValid(id) ? new ObjectId(id) : null }] },
+        /** @type {any} */(ObjectId.isValid(id)
+          ? { $or: [{ id }, { _id: new ObjectId(id) }] }
+          : { id }),
         { $set: updateFields }
       );
 
@@ -266,7 +278,7 @@ exports.handler = async (event, context) => {
 
       // Fetch and return updated story
       const updatedStory = await storiesCollection.findOne({
-        $or: [{ id }, { _id: ObjectId.isValid(id) ? new ObjectId(id) : null }]
+        $or: ObjectId.isValid(id) ? [{ id }, { _id: new ObjectId(id) }] : [{ id }]
       });
 
       return {
@@ -279,7 +291,7 @@ exports.handler = async (event, context) => {
     // DELETE - Delete a story or remove event from story
     if (event.httpMethod === 'DELETE') {
       if (!id) {
-        return errorResponse(400, 'bad_request', 'Missing story ID', null, headers);
+        return errorResponse(400, 'bad_request', 'Missing story ID', undefined, headers);
       }
 
       // Remove event from story
@@ -287,11 +299,11 @@ exports.handler = async (event, context) => {
         const { eventIndex } = event.queryStringParameters || {};
 
         if (eventIndex === undefined) {
-          return errorResponse(400, 'bad_request', 'Missing eventIndex', null, headers);
+          return errorResponse(400, 'bad_request', 'Missing eventIndex', undefined, headers);
         }
 
         const story = await storiesCollection.findOne({
-          $or: [{ id }, { _id: ObjectId.isValid(id) ? new ObjectId(id) : null }]
+          $or: ObjectId.isValid(id) ? [{ id }, { _id: new ObjectId(id) }] : [{ id }]
         });
 
         if (!story) {
@@ -306,15 +318,15 @@ exports.handler = async (event, context) => {
         story.events.splice(index, 1);
 
         await storiesCollection.updateOne(
-          { $or: [{ id }, { _id: ObjectId.isValid(id) ? new ObjectId(id) : null }] },
-          {
+          /** @type {any} */(ObjectId.isValid(id) ? { $or: [{ id }, { _id: new ObjectId(id) }] } : { id }),
+          /** @type {any} */({
             $set: {
               events: story.events,
               updatedAt: new Date().toISOString(),
               'metadata.totalEvents': story.events.length,
               'metadata.dateRange': calculateDateRange(story.events)
             }
-          }
+          })
         );
 
         log.info('Removed event from story', { storyId: id, eventIndex: index });
@@ -327,7 +339,7 @@ exports.handler = async (event, context) => {
 
       // Delete entire story
       const result = await storiesCollection.deleteOne({
-        $or: [{ id }, { _id: ObjectId.isValid(id) ? new ObjectId(id) : null }]
+        $or: ObjectId.isValid(id) ? [{ id }, { _id: new ObjectId(id) }] : [{ id }]
       });
 
       if (result.deletedCount === 0) {
@@ -345,18 +357,24 @@ exports.handler = async (event, context) => {
     log.warn('Method not allowed', { method: event.httpMethod });
     timer.end({ error: 'method_not_allowed' });
     log.exit(405);
-    return errorResponse(405, 'method_not_allowed', `Method ${event.httpMethod} not allowed`, null, headers);
+    return errorResponse(405, 'method_not_allowed', `Method ${event.httpMethod} not allowed`, undefined, headers);
 
   } catch (error) {
     timer.end({ error: true });
-    log.error('Error in admin-stories endpoint', { error: error.message, stack: error.stack });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    log.error('Error in admin-stories endpoint', { error: message, stack });
     log.exit(500);
-    return errorResponse(500, 'internal_error', 'Failed to process request', { message: error.message }, headers);
+    return errorResponse(500, 'internal_error', 'Failed to process request', { message }, headers);
   }
 };
 
 /**
  * Calculate the date range for a list of events
+ */
+/**
+ * Calculate the date range for a list of events
+ * @param {any[]} events
  */
 function calculateDateRange(events) {
   if (!events || events.length === 0) {
@@ -364,8 +382,8 @@ function calculateDateRange(events) {
   }
 
   const timestamps = events
-    .map(e => e.timestamp ? new Date(e.timestamp).getTime() : null)
-    .filter(t => t !== null);
+    .map(/** @param {any} e */(e) => e.timestamp ? new Date(e.timestamp).getTime() : null)
+    .filter(/** @param {number|null} t */(t) => t !== null);
 
   if (timestamps.length === 0) {
     return { start: null, end: null };
@@ -380,20 +398,28 @@ function calculateDateRange(events) {
 /**
  * Update story metadata after changes
  */
+/**
+ * @param {any} storiesCollection
+ * @param {string} storyId
+ */
 async function updateStoryMetadata(storiesCollection, storyId) {
-  const story = await storiesCollection.findOne({
-    $or: [{ id: storyId }, { _id: ObjectId.isValid(storyId) ? new ObjectId(storyId) : null }]
-  });
+  const story = await storiesCollection.findOne(
+    /** @type {any} */(ObjectId.isValid(storyId)
+      ? { $or: [{ id: storyId }, { _id: new ObjectId(storyId) }] }
+      : { id: storyId })
+  );
 
   if (story) {
     await storiesCollection.updateOne(
-      { $or: [{ id: storyId }, { _id: ObjectId.isValid(storyId) ? new ObjectId(storyId) : null }] },
-      {
+      /** @type {any} */(ObjectId.isValid(storyId)
+        ? { $or: [{ id: storyId }, { _id: new ObjectId(storyId) }] }
+        : { id: storyId }),
+      /** @type {any} */({
         $set: {
           'metadata.totalEvents': story.events ? story.events.length : 0,
           'metadata.dateRange': calculateDateRange(story.events || [])
         }
-      }
+      })
     );
   }
 }

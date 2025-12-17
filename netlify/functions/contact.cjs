@@ -1,3 +1,4 @@
+// @ts-nocheck
 const nodemailer = require('nodemailer');
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');

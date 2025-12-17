@@ -15,6 +15,10 @@ const {
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
 
@@ -26,6 +30,7 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('circuit-breaker-reset', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Circuit breaker reset request', includeBody: true });
+  /** @type {any} */
   const timer = createTimer(log, 'circuit-breaker-reset');
 
   try {
@@ -41,6 +46,7 @@ exports.handler = async (event, context) => {
       resetAllTools: !!resetAllTools
     });
 
+    /** @type {Record<string, any>} */
     const results = {};
 
     // Reset global circuit breakers
@@ -111,9 +117,11 @@ exports.handler = async (event, context) => {
 
   } catch (error) {
     timer.end({ error: true });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
     log.error('Failed to reset circuit breaker', {
-      error: error.message,
-      stack: error.stack
+      error: message,
+      stack
     });
     log.exit(500);
 
@@ -122,7 +130,7 @@ exports.handler = async (event, context) => {
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         error: 'Failed to reset circuit breaker',
-        message: error.message
+        message
       })
     };
   }

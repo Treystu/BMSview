@@ -6,6 +6,19 @@ const {
     logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @typedef {{ timestamp: string | number | Date, systemId?: string, analysis?: any, weather?: any, id?: string }} HistoryRecord
+ */
+/**
+ * @typedef {{ hour: number, values: Record<string, any> }} HourlyStat
+ */
+/**
+ * @typedef {{ hour: number, currents: number[] }} SunnyHourStat
+ */
+
+/**
+ * @param {import('./utils/logger.cjs').LogFunction} log
+ */
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
         log.error('Missing MONGODB_URI environment variable');
@@ -14,25 +27,37 @@ function validateEnvironment(log) {
     return true;
 }
 
+/**
+ * @param {number} statusCode
+ * @param {any} body
+ */
 const respond = (statusCode, body) => ({
     statusCode,
     body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json' },
 });
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async function (event, context) {
+    /** @type {import('./utils/logger.cjs').LogFunction} */
     const log = createLoggerFromEvent('system-analytics', event, context);
+    /** @type {any} */
     const timer = createTimer(log, 'system-analytics-handler');
     const withRetry = createRetryWrapper(log);
     const { httpMethod, queryStringParameters } = event;
 
-    log.entry(createStandardEntryMeta(event, { query: queryStringParameters }));
+    if (typeof log.entry === 'function') {
+        log.entry(createStandardEntryMeta(event, { query: queryStringParameters }));
+    }
     logDebugRequestSummary(log, event, { label: 'System analytics request', includeBody: false });
 
     if (httpMethod !== 'GET') {
         log.warn('Method not allowed', { method: httpMethod });
         timer.end();
-        log.exit(405);
+        if (typeof log.exit === 'function') log.exit(405);
         return respond(405, { error: 'Method Not Allowed' });
     }
 
@@ -41,7 +66,7 @@ exports.handler = async function (event, context) {
         if (!systemId) {
             log.warn('Missing systemId parameter');
             timer.end();
-            log.exit(400);
+            if (typeof log.exit === 'function') log.exit(400);
             return respond(400, { error: 'systemId is required.' });
         }
 
@@ -51,7 +76,8 @@ exports.handler = async function (event, context) {
         const historyCollection = await getCollection("history");
         const allHistory = await withRetry(() => historyCollection.find({}).toArray());
 
-        const systemHistory = allHistory.filter(record => record.systemId === systemId && record.analysis);
+        /** @type {HistoryRecord[]} */
+        const systemHistory = /** @type {HistoryRecord[]} */ (allHistory).filter(record => record.systemId === systemId && record.analysis);
         log.info(`Found ${systemHistory.length} history records for system.`, requestLogContext);
 
         if (systemHistory.length === 0) {
@@ -68,7 +94,9 @@ exports.handler = async function (event, context) {
             'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds'
         ];
 
+        /** @type {HourlyStat[]} */
         const hourlyStats = Array.from({ length: 24 }, (_, i) => {
+            /** @type {HourlyStat} */
             const stats = { hour: i, values: {} };
             metricsToAverage.forEach(metric => {
                 if (metric === 'current' || metric === 'power') {
@@ -80,7 +108,7 @@ exports.handler = async function (event, context) {
             return stats;
         });
 
-        systemHistory.forEach(record => {
+        systemHistory.forEach((record) => {
             try {
                 const hour = new Date(record.timestamp).getUTCHours();
                 const { analysis, weather } = record;
@@ -110,13 +138,14 @@ exports.handler = async function (event, context) {
             }
         });
 
-        const hourlyAverages = hourlyStats.map(stats => {
+        const hourlyAverages = hourlyStats.map((stats) => {
+            /** @type {{ hour: number, metrics: Record<string, any> }} */
             const hourData = { hour: stats.hour, metrics: {} };
 
             metricsToAverage.forEach(metric => {
                 if (metric === 'current' || metric === 'power') {
-                    const chargeValues = stats.values[metric].charge;
-                    const dischargeValues = stats.values[metric].discharge;
+                    const chargeValues = /** @type {number[]} */ (stats.values[metric].charge || []);
+                    const dischargeValues = /** @type {number[]} */ (stats.values[metric].discharge || []);
                     const avgCharge = chargeValues.length > 0 ? chargeValues.reduce((a, b) => a + b, 0) / chargeValues.length : 0;
                     const avgDischarge = dischargeValues.length > 0 ? dischargeValues.reduce((a, b) => a + b, 0) / dischargeValues.length : 0;
                     if (chargeValues.length > 0 || dischargeValues.length > 0) {
@@ -128,7 +157,7 @@ exports.handler = async function (event, context) {
                         };
                     }
                 } else {
-                    const allValues = stats.values[metric].all;
+                    const allValues = /** @type {number[]} */ (stats.values[metric].all || []);
                     const avg = allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0;
                     if (allValues.length > 0) {
                         hourData.metrics[metric] = {
@@ -144,6 +173,7 @@ exports.handler = async function (event, context) {
 
 
         // --- Performance Baseline (Sunny Day Charging) ---
+        /** @type {SunnyHourStat[]} */
         const sunnyDayChargingStatsByHour = Array.from({ length: 24 }, (_, i) => ({
             hour: i,
             currents: [],
@@ -151,13 +181,14 @@ exports.handler = async function (event, context) {
 
         const sunnyDayHistory = systemHistory.filter(r =>
             r.weather && r.weather.clouds < 30 && // Sunny is < 30% cloud cover
-            r.analysis.current != null && r.analysis.current > 0.5 // Is charging
+            r.analysis?.current != null && r.analysis.current > 0.5 // Is charging
         );
 
         sunnyDayHistory.forEach(record => {
             try {
                 const hour = new Date(record.timestamp).getUTCHours();
-                sunnyDayChargingStatsByHour[hour].currents.push(record.analysis.current);
+                const currentValue = Number(record.analysis?.current);
+                sunnyDayChargingStatsByHour[hour].currents.push(currentValue);
             } catch (e) { /* ignore invalid date */ }
         });
 
@@ -177,6 +208,7 @@ exports.handler = async function (event, context) {
         systemHistory.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
         // 2. Normalization Helper
+        /** @param {any} alert */
         const normalizeAlert = (alert) => {
             if (!alert) return 'Unknown Alert';
             return alert
@@ -215,7 +247,7 @@ exports.handler = async function (event, context) {
 
             const currentAlerts = new Set();
             if (record.analysis.alerts && Array.isArray(record.analysis.alerts)) {
-                record.analysis.alerts.forEach(rawAlert => {
+                record.analysis.alerts.forEach((/** @type {any} */ rawAlert) => {
                     const normalized = normalizeAlert(rawAlert);
                     currentAlerts.add(normalized);
                 });
@@ -310,13 +342,15 @@ exports.handler = async function (event, context) {
 
         log.info('Successfully generated system analytics.', requestLogContext);
         timer.end({ success: true });
-        log.exit(200, { systemId });
+        if (typeof log.exit === 'function') log.exit(200, { systemId });
         return respond(200, analyticsData);
 
     } catch (error) {
-        log.error('Critical error in system-analytics function.', { errorMessage: error.message, stack: error.stack });
-        timer.end({ success: false, error: error.message });
-        log.exit(500);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        log.error('Critical error in system-analytics function.', { errorMessage, stack: errorStack });
+        timer.end({ success: false, error: errorMessage });
+        if (typeof log.exit === 'function') log.exit(500);
         return respond(500, { error: "An internal server error occurred." });
     }
 };

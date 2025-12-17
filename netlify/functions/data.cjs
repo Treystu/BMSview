@@ -7,6 +7,9 @@ const {
     logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {import('./utils/logger.cjs').LogFunction} log
+ */
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
         log.error('Missing MONGODB_URI environment variable');
@@ -15,12 +18,21 @@ function validateEnvironment(log) {
     return true;
 }
 
+/**
+ * @param {number} statusCode
+ * @param {any} body
+ * @param {Record<string, any>} [headers]
+ */
 const respond = (statusCode, body, headers = {}) => ({
     statusCode,
     body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json', ...headers },
 });
 
+/**
+ * @param {string} collectionName
+ * @param {import('./utils/logger.cjs').LogFunction} log
+ */
 const clearCollection = async (collectionName, log) => {
     log.warn('Starting to clear collection', { collectionName });
     try {
@@ -29,14 +41,21 @@ const clearCollection = async (collectionName, log) => {
         log.warn('Finished clearing collection', { collectionName, deletedCount });
         return deletedCount;
     } catch (error) {
-        log.error('Failed to clear collection', { collectionName, error: error.message });
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        log.error('Failed to clear collection', { collectionName, error: errorMessage });
         return 0;
     }
 };
 
+/**
+ * @param {import('@netlify/functions').HandlerEvent} event
+ * @param {import('@netlify/functions').HandlerContext} context
+ */
 exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
+    /** @type {import('./utils/logger.cjs').LogFunction} */
     const log = createLoggerFromEvent('data-management', event, context);
+    /** @type {any} */
     const timer = createTimer(log, 'data-management');
     const sanitizedHeaders = event.headers ? {
         ...event.headers,
@@ -70,6 +89,7 @@ exports.handler = async function (event, context) {
     try {
         const { store: collectionToClearName } = event.queryStringParameters || {};
         // Map old blob store names to new MongoDB collection names
+        /** @type {Record<string, string>} */
         const collectionMap = {
             "bms-systems": "systems",
             "bms-history": "history",
@@ -99,6 +119,7 @@ exports.handler = async function (event, context) {
         }
 
         log.warn('Clearing ALL application data from all collections');
+        /** @type {Record<string, number>} */
         const deletionResults = {};
         for (const collectionName of allCollections) {
             deletionResults[collectionName] = await clearCollection(collectionName, log);
@@ -111,7 +132,9 @@ exports.handler = async function (event, context) {
 
     } catch (error) {
         timer.end({ error: true });
-        log.error('Critical error during data clearing operation', { error: error.message, stack: error.stack });
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        log.error('Critical error during data clearing operation', { error: errorMessage, stack: errorStack });
         log.exit(500);
         return respond(500, { error: "An internal server error occurred while clearing data." }, headers);
     }

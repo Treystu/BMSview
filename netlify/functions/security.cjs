@@ -8,6 +8,9 @@ const {
     logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ */
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
         log.error('Missing MONGODB_URI environment variable');
@@ -17,37 +20,59 @@ function validateEnvironment(log) {
 }
 
 class HttpError extends Error {
+    /**
+     * @param {number} statusCode
+     * @param {string} message
+     */
     constructor(statusCode, message) {
         super(message);
         this.statusCode = statusCode;
     }
 }
 
+/** @param {string} ip */
 const ipToInt = (ip) => ip.split('.').reduce((int, octet) => (int << 8) + parseInt(octet, 10), 0) >>> 0;
 
+/**
+ * @param {string} ip
+ * @param {string} cidr
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ */
 const isIpInCidr = (ip, cidr, log) => {
     try {
-        const [range, bitsStr = 32] = cidr.split('/');
+        const [range, bitsStr = '32'] = cidr.split('/');
         const bits = parseInt(bitsStr, 10);
         const mask = -1 << (32 - bits);
         return (ipToInt(ip) & mask) === (ipToInt(range) & mask);
     } catch (e) {
-        log.error(`Error in isIpInCidr`, { ip, cidr, errorMessage: e.message });
+        const message = e instanceof Error ? e.message : String(e);
+        log.error(`Error in isIpInCidr`, { ip, cidr, errorMessage: message });
         return false;
     }
 };
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ * @param {string} type
+ */
 const getIpRanges = async (log, type) => {
     try {
+        /** @type {any} */
         const securityCollection = await getCollection("security");
-        const doc = await securityCollection.findOne({ _id: 'ip_config' });
+        const doc = await securityCollection.findOne(/** @type {any} */({ _id: 'ip_config' }));
         return doc ? (doc[type] || []) : [];
     } catch (error) {
-        log.error(`Could not fetch ${type} ranges from MongoDB`, { errorMessage: error.message });
+        const message = error instanceof Error ? error.message : String(error);
+        log.error(`Could not fetch ${type} ranges from MongoDB`, { errorMessage: message });
         return [];
     }
 };
 
+/**
+ * @param {string} ip
+ * @param {string[]} ranges
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ */
 const isIpInRanges = (ip, ranges, log) => {
     for (const range of ranges) {
         if (range.includes('/') ? isIpInCidr(ip, range, log) : ip === range) return true;
@@ -62,6 +87,10 @@ const isIpInRanges = (ip, ranges, log) => {
  * 2. Checks if limit is exceeded
  * 3. Updates atomically if within limit
  * 4. Prevents race conditions using MongoDB's atomic operations
+ */
+/**
+ * @param {any} request
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
  */
 const checkRateLimit = async (request, log) => {
     const ip = request.headers['x-nf-client-connection-ip'];
@@ -90,7 +119,7 @@ const checkRateLimit = async (request, log) => {
 
         // STEP 2: Calculate current request count in window
         const timestamps = currentDoc?.timestamps || [];
-        const recentTimestamps = timestamps.filter(ts => new Date(ts) > windowStart);
+        const recentTimestamps = timestamps.filter(/** @param {any} ts */(ts) => new Date(ts) > windowStart);
         const currentCount = recentTimestamps.length;
 
         log.debug('Current rate limit status', {
@@ -138,12 +167,18 @@ const checkRateLimit = async (request, log) => {
 
     } catch (error) {
         if (error instanceof HttpError) throw error;
-        log.error('Error during rate limit check', { ...logContext, errorMessage: error.message, stack: error.stack });
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        log.error('Error during rate limit check', { ...logContext, errorMessage: message, stack });
         // Fail open on database errors to prevent service disruption
         log.warn('Rate limit check failed, allowing request through', logContext);
     }
 };
 
+/**
+ * @param {any} request
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ */
 const checkSecurity = async (request, log) => {
     const ip = request.headers['x-nf-client-connection-ip'];
     const logContext = { clientIp: ip };
@@ -167,16 +202,23 @@ const checkSecurity = async (request, log) => {
 
     } catch (error) {
         if (error instanceof HttpError) throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
         log.error(`A critical error occurred during the security check`, {
             ...logContext,
-            errorMessage: error.message,
-            stack: error.stack
+            errorMessage: message,
+            stack
         });
     }
 };
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async function (event, context) {
     const log = createLoggerFromEvent('security-handler', event, context);
+    /** @type {any} */
     const timer = createTimer(log, 'security-handler');
 
     log.entry(createStandardEntryMeta(event));
@@ -215,8 +257,9 @@ exports.handler = async function (event, context) {
                 headers: { 'Content-Type': 'application/json' }
             };
         }
-        log.error('Security handler error', { ...logContext, error: error.message });
-        timer.end({ success: false, error: error.message });
+        const message = error instanceof Error ? error.message : String(error);
+        log.error('Security handler error', { ...logContext, error: message });
+        timer.end({ success: false, error: message });
         log.exit(500);
         return {
             statusCode: 500,

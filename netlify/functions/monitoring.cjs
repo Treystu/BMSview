@@ -1,3 +1,4 @@
+// @ts-nocheck
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');

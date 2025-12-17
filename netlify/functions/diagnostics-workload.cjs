@@ -13,6 +13,7 @@
 
 const { createLoggerFromEvent } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { getInsightsJob, saveCheckpoint } = require('./utils/insights-jobs.cjs');
 const {
   createStandardEntryMeta,
   logDebugRequestSummary
@@ -53,7 +54,7 @@ exports.getDefaultState = getDefaultState;
  * Simple async workload handler (manual implementation since @netlify/async-workloads may not be available)
  * This follows the pattern described in issue #274 but uses jobs collection for state persistence
  */
-exports.handler = async (event, context) => {
+exports.handler = async (/** @type {any} */ event, /** @type {any} */ context) => {
   const headers = getCorsHeaders(event);
 
   // Handle preflight
@@ -111,8 +112,8 @@ exports.handler = async (event, context) => {
     // Execute next step
     if (action === 'step' && workloadId) {
       log.debug('Executing step', { workloadId });
-      const { getInsightsJob, saveCheckpoint } = require('./utils/insights-jobs.cjs');
-      const job = await getInsightsJob(workloadId);
+      /** @type {any} */
+      const job = await getInsightsJob(workloadId, log);
 
       if (!job) {
         log.warn('Workload not found for step execution', { workloadId });
@@ -159,14 +160,14 @@ exports.handler = async (event, context) => {
         case 'initialize':
           log.debug('Step: initialize - moving to test_tool');
           // Already done, move to testing
-          await saveCheckpoint(workloadId, {
+          await saveCheckpoint(workloadId, /** @type {any} */({
             state: {
               ...jobState,
               currentStep: 'test_tool',
               stepIndex: 0,
               message: 'Starting tool tests'
             }
-          }, log);
+          }), log);
           stepResult = { success: true, nextStep: 'test_tool' };
           break;
 
@@ -204,22 +205,23 @@ exports.handler = async (event, context) => {
 
       log.debug('Step result', { currentStep, stepResult });
 
+      const { success: stepSuccess = true, ...restStepResult } = stepResult || {};
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          success: true,
+          success: stepSuccess,
           workloadId,
           step: currentStep,
-          ...stepResult
+          ...restStepResult
         })
       };
     }
 
     // Get status
     if (action === 'status' && workloadId) {
-      const { getInsightsJob } = require('./utils/insights-jobs.cjs');
-      const job = await getInsightsJob(workloadId);
+      /** @type {any} */
+      const job = await getInsightsJob(workloadId, log);
 
       log.debug('Status request', { workloadId, jobFound: !!job });
 
@@ -237,7 +239,7 @@ exports.handler = async (event, context) => {
 
       // CRITICAL FIX: Merge with default state to prevent undefined property access
       const defaultState = getDefaultState();
-      const rawState = job.checkpointState?.state || {};
+      const rawState = job?.checkpointState?.state || {};
       const jobState = {
         ...defaultState,
         ...rawState,
@@ -303,7 +305,7 @@ exports.handler = async (event, context) => {
         // Log individual tool results for detailed debugging
         if (response.summary.toolResults && response.summary.toolResults.length > 0) {
           log.info('TOOL RESULTS DETAIL', {
-            tools: response.summary.toolResults.map(t => ({
+            tools: response.summary.toolResults.map((/** @type {any} */ t) => ({
               tool: t.tool,
               valid: t.validTestPassed,
               edge: t.edgeCaseTestPassed
@@ -314,7 +316,7 @@ exports.handler = async (event, context) => {
         // Log recommendations
         if (response.summary.recommendations && response.summary.recommendations.length > 0) {
           log.info('RECOMMENDATIONS', {
-            recommendations: response.summary.recommendations.map(r => ({
+            recommendations: response.summary.recommendations.map((/** @type {any} */ r) => ({
               severity: r.severity,
               message: r.message
             }))
@@ -351,9 +353,11 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
     log.error('Diagnostics workload error', {
-      error: error.message,
-      stack: error.stack
+      error: errorMessage,
+      stack: errorStack
     });
 
     return {
@@ -361,7 +365,7 @@ exports.handler = async (event, context) => {
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         success: false,
-        error: error.message
+        error: errorMessage
       })
     };
   }

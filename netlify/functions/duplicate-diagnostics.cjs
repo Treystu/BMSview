@@ -36,9 +36,11 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('duplicate-diagnostics', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Duplicate diagnostics request', includeBody: false });
+  /** @type {any} */
   const timer = createTimer(log, 'duplicate-diagnostics');
 
   try {
+    /** @type {any} */
     const resultsCol = await getCollection('analysis-results');
 
     // Check indexes
@@ -46,7 +48,7 @@ exports.handler = async (event, context) => {
     const indexes = await resultsCol.indexes();
     const indexDurationMs = Date.now() - indexStartTime;
 
-    const contentHashIndex = indexes.find(idx => idx.key && idx.key.contentHash !== undefined);
+    const contentHashIndex = indexes.find(/** @param {any} idx */(idx) => idx.key && idx.key.contentHash !== undefined);
     const hasContentHashIndex = !!contentHashIndex;
 
     // Get collection stats
@@ -131,7 +133,7 @@ exports.handler = async (event, context) => {
           hasContentHashIndex,
           contentHashIndexDetails: contentHashIndex || null,
           totalIndexes: indexes.length,
-          allIndexes: indexes.map(idx => ({
+          allIndexes: indexes.map(/** @param {any} idx */(idx) => ({
             name: idx.name,
             key: idx.key,
             unique: idx.unique,
@@ -157,7 +159,7 @@ exports.handler = async (event, context) => {
             : 'CRITICAL: contentHash index is missing - duplicate detection will be very slow'
         },
         qualityDistribution: {
-          byValidationScore: scoreRanges.map(r => ({
+          byValidationScore: scoreRanges.map(/** @param {any} r */(r) => ({
             range: r._id === 0 ? '0-49%' :
               r._id === 50 ? '50-79%' :
                 r._id === 80 ? '80-89%' :
@@ -166,7 +168,7 @@ exports.handler = async (event, context) => {
                       'null',
             count: r.count
           })),
-          byExtractionAttempts: attemptCounts.map(r => ({
+          byExtractionAttempts: attemptCounts.map(/** @param {any} r */(r) => ({
             attempts: r._id,
             count: r.count
           })),
@@ -195,9 +197,11 @@ exports.handler = async (event, context) => {
 
   } catch (error) {
     timer.end({ error: true });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
     log.error('Duplicate diagnostics failed', {
-      error: error.message,
-      stack: error.stack,
+      error: message,
+      stack,
       event: 'DIAGNOSTICS_ERROR'
     });
 
@@ -207,7 +211,7 @@ exports.handler = async (event, context) => {
       500,
       'diagnostics_failed',
       'Duplicate diagnostics failed',
-      { message: error.message },
+      { message },
       headers
     );
   }

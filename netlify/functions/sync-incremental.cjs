@@ -1,5 +1,11 @@
 "use strict";
 
+/**
+ * @typedef {import('./utils/jsdoc-types.cjs').LogLike} LogLike
+ * @typedef {import('./utils/jsdoc-types.cjs').FallbackField} FallbackField
+ * @typedef {import('./utils/jsdoc-types.cjs').CollectionConfig} CollectionConfig
+ */
+
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { getCorsHeaders } = require("./utils/cors.cjs");
@@ -8,6 +14,7 @@ const {
     logDebugRequestSummary
 } = require("./utils/handler-logging.cjs");
 
+/** @param {LogLike} log */
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
         log.error('Missing MONGODB_URI environment variable');
@@ -24,6 +31,7 @@ const JSON_HEADERS = {
 
 const ISO_UTC_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
+/** @type {Record<string, CollectionConfig>} */
 const COLLECTION_CONFIG = {
     systems: {
         dbName: "systems",
@@ -55,6 +63,10 @@ const COLLECTION_CONFIG = {
     }
 };
 
+/**
+ * @param {number} statusCode
+ * @param {any} body
+ */
 function jsonResponse(statusCode, body) {
     return {
         statusCode,
@@ -63,6 +75,7 @@ function jsonResponse(statusCode, body) {
     };
 }
 
+/** @param {any} value */
 function normalizeToIsoString(value) {
     if (!value) {
         return null;
@@ -86,7 +99,13 @@ function normalizeToIsoString(value) {
     return null;
 }
 
+/**
+ * @param {string} sinceIso
+ * @param {Date} sinceDate
+ * @param {FallbackField[]} fallbackFields
+ */
 function buildIncrementalFilter(sinceIso, sinceDate, fallbackFields) {
+    /** @type {any[]} */
     const orClauses = [
         { updatedAt: { $exists: true, $gte: sinceIso } },
         { updatedAt: { $exists: true, $gte: sinceDate } }
@@ -106,8 +125,16 @@ function buildIncrementalFilter(sinceIso, sinceDate, fallbackFields) {
     return { $or: orClauses };
 }
 
+/**
+ * @param {any[]} records
+ * @param {FallbackField[]} fallbackFields
+ * @param {string} serverTime
+ * @param {LogLike} log
+ * @param {string} collectionKey
+ */
 function normalizeRecordTimestamps(records, fallbackFields, serverTime, log, collectionKey) {
     let missingCount = 0;
+    /** @type {any[]} */
     const missingIds = [];
 
     const normalizedRecords = records.map(record => {
@@ -150,6 +177,10 @@ function normalizeRecordTimestamps(records, fallbackFields, serverTime, log, col
     return normalizedRecords;
 }
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
 
@@ -164,6 +195,7 @@ exports.handler = async function (event, context) {
         label: "Sync incremental request",
         includeBody: false
     });
+    /** @type {any} */
     const timer = createTimer(log, "sync-incremental");
     const requestStartedAt = Date.now();
 
@@ -205,7 +237,7 @@ exports.handler = async function (event, context) {
         return errorResponse(400, "invalid_since", "The 'since' parameter could not be parsed as a valid date.");
     }
 
-    const config = COLLECTION_CONFIG[collectionKey];
+    const config = COLLECTION_CONFIG[String(collectionKey)];
     if (!config) {
         log.warn("Unsupported collection requested", { collection: collectionKey });
         return errorResponse(400, "invalid_collection", `Collection '${collectionKey}' is not supported.`);
@@ -213,6 +245,7 @@ exports.handler = async function (event, context) {
 
     try {
         const collection = await getCollection(config.dbName);
+        /** @type {FallbackField[]} */
         const fallbackFields = config.fallbackUpdatedAtFields || [];
         const filter = buildIncrementalFilter(since, sinceDate, fallbackFields);
 
@@ -225,6 +258,7 @@ exports.handler = async function (event, context) {
         const deletedRecords = await deletedCollection.find({ collection: config.dbName }, { projection: { _id: 0 } }).toArray();
         const deletedQueryDurationMs = Date.now() - deletedQueryStartedAt;
 
+        /** @type {string[]} */
         const deletedIds = [];
         for (const record of deletedRecords) {
             const deletedAtIso = normalizeToIsoString(record.deletedAt);
@@ -263,9 +297,10 @@ exports.handler = async function (event, context) {
             deletedIds
         });
     } catch (error) {
+        const err = /** @type {any} */ (error);
         log.error("Failed to execute incremental sync", {
-            message: error.message,
-            stack: error.stack,
+            message: err && err.message ? err.message : String(error),
+            stack: err && err.stack ? err.stack : undefined,
             collection: collectionKey,
             durationMs: Date.now() - requestStartedAt
         });

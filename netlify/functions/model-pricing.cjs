@@ -14,10 +14,27 @@ const {
 } = require('./utils/handler-logging.cjs');
 
 /**
+ * @typedef {{
+ *  inputTokens: number,
+ *  outputTokens: number,
+ *  description?: string
+ * }} GeminiPricing
+ */
+
+/**
+ * @typedef {Record<string, GeminiPricing>} GeminiPricingMap
+ */
+
+/**
  * Main handler for model pricing endpoint
+ */
+/**
+ * @param {any} event
+ * @param {any} context
  */
 exports.handler = async (event, context) => {
     const log = createLoggerFromEvent('model-pricing', event, context);
+    /** @type {any} */
     const timer = createTimer(log, 'model-pricing');
     const headers = getCorsHeaders(event);
     log.entry(createStandardEntryMeta(event));
@@ -41,15 +58,20 @@ exports.handler = async (event, context) => {
     }
 
     try {
+        /** @type {Record<string, unknown>} */
         const queryParams = event.queryStringParameters || {};
-        const requestedModel = queryParams.model;
+        const requestedModel = typeof queryParams.model === 'string' ? queryParams.model : undefined;
+
+        /** @type {GeminiPricingMap} */
+        const PRICING_MAP = /** @type {any} */ (GEMINI_PRICING);
 
         // If specific model requested, return pricing for that model
         if (requestedModel) {
             log.info('Fetching pricing for specific model', { requestedModel });
-            const pricing = getModelPricing(requestedModel);
-            const isKnown = !!GEMINI_PRICING[requestedModel] ||
-                Object.keys(GEMINI_PRICING).some(key => requestedModel.startsWith(key));
+            /** @type {GeminiPricing} */
+            const pricing = /** @type {any} */ (getModelPricing(requestedModel));
+            const isKnown = !!PRICING_MAP[requestedModel] ||
+                Object.keys(PRICING_MAP).some(key => requestedModel.startsWith(key));
 
             timer.end({ outcome: 'success', model: requestedModel, isKnown });
             log.exit(200, { outcome: 'success', model: requestedModel });
@@ -72,8 +94,9 @@ exports.handler = async (event, context) => {
         const currentModelInfo = getCurrentModelInfo();
 
         // Format all pricing for frontend consumption
+        /** @type {Record<string, { inputPerMillion: number, outputPerMillion: number, description?: string }>} */
         const allPricing = {};
-        for (const [model, pricing] of Object.entries(GEMINI_PRICING)) {
+        for (const [model, pricing] of /** @type {[string, GeminiPricing][]} */ (Object.entries(PRICING_MAP))) {
             allPricing[model] = {
                 inputPerMillion: pricing.inputTokens * 1_000_000,
                 outputPerMillion: pricing.outputTokens * 1_000_000,
@@ -94,7 +117,9 @@ exports.handler = async (event, context) => {
         };
 
     } catch (error) {
-        log.error('Failed to get model pricing', { error: error.message, stack: error.stack });
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        log.error('Failed to get model pricing', { error: message, stack });
         timer.end({ outcome: 'error' });
         log.exit(500, { outcome: 'error' });
 
@@ -103,7 +128,7 @@ exports.handler = async (event, context) => {
             headers: { ...headers, 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 error: 'Failed to retrieve model pricing',
-                message: error.message
+                message
             })
         };
     }

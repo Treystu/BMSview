@@ -5,11 +5,18 @@ const {
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ */
 function validateEnvironment(log) {
   // No specific env vars required for this function, but good practice to have the hook.
   return true;
 }
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
 
@@ -40,7 +47,8 @@ exports.handler = async (event, context) => {
       requestMethod: event.httpMethod,
       headers: sanitizeHeaders(event.headers),
       bodyKeys: Object.keys(body),
-      bodyStructure: analyzeStructure(body),
+      /** @type {Record<string, unknown>} */
+      bodyStructure: /** @type {Record<string, unknown>} */ (analyzeStructure(body)),
       timestamp: new Date().toISOString()
     };
 
@@ -63,21 +71,26 @@ exports.handler = async (event, context) => {
       })
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
     log.error('Debug insights failed', {
-      error: error.message,
-      stack: error.stack
+      error: message,
+      stack
     });
     log.exit(500);
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: error.message })
+      body: JSON.stringify({ error: message })
     };
   }
 };
 
 /**
  * Sanitize headers for logging (remove sensitive values)
+ */
+/**
+ * @param {Record<string, string> | undefined | null} headers
  */
 function sanitizeHeaders(headers) {
   if (!headers) return {};
@@ -91,6 +104,11 @@ function sanitizeHeaders(headers) {
   return sanitized;
 }
 
+/**
+ * @param {unknown} obj
+ * @param {number} [depth]
+ * @returns {unknown}
+ */
 function analyzeStructure(obj, depth = 0) {
   if (depth > 3) return '[too deep]';
 
@@ -99,8 +117,9 @@ function analyzeStructure(obj, depth = 0) {
   }
 
   if (obj && typeof obj === 'object') {
+    /** @type {Record<string, unknown>} */
     const result = {};
-    for (const [key, value] of Object.entries(obj)) {
+    for (const [key, value] of Object.entries(/** @type {Record<string, unknown>} */(obj))) {
       result[key] = analyzeStructure(value, depth + 1);
     }
     return result;
@@ -109,6 +128,9 @@ function analyzeStructure(obj, depth = 0) {
   return typeof obj;
 }
 
+/**
+ * @param {Record<string, any>} body
+ */
 function generateRecommendations(body) {
   const recommendations = [];
 

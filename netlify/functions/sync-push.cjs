@@ -1,5 +1,10 @@
 "use strict";
 
+/**
+ * @typedef {import('./utils/jsdoc-types.cjs').LogLike} LogLike
+ * @typedef {import('./utils/jsdoc-types.cjs').CollectionConfig} CollectionConfig
+ */
+
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const {
@@ -7,6 +12,7 @@ const {
     logDebugRequestSummary
 } = require("./utils/handler-logging.cjs");
 
+/** @param {LogLike} log */
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
         log.error('Missing MONGODB_URI environment variable');
@@ -21,6 +27,7 @@ const JSON_HEADERS = {
     "Cache-Control": "no-store"
 };
 
+/** @type {Record<string, { dbName: string }>} */
 const COLLECTION_CONFIG = {
     systems: {
         dbName: "systems"
@@ -36,6 +43,10 @@ const COLLECTION_CONFIG = {
     }
 };
 
+/**
+ * @param {number} statusCode
+ * @param {any} body
+ */
 function jsonResponse(statusCode, body) {
     return {
         statusCode,
@@ -44,6 +55,10 @@ function jsonResponse(statusCode, body) {
     };
 }
 
+/**
+ * @param {Record<string, any>} rawItem
+ * @param {string} serverTime
+ */
 function sanitizeItem(rawItem, serverTime) {
     const sanitized = { ...rawItem };
 
@@ -54,8 +69,13 @@ function sanitizeItem(rawItem, serverTime) {
     return sanitized;
 }
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async function (event, context) {
     const log = createLoggerFromEvent("sync-push", event, context);
+    /** @type {any} */
     const timer = createTimer(log, 'sync-push-handler');
 
     log.entry(createStandardEntryMeta(event));
@@ -87,11 +107,13 @@ exports.handler = async function (event, context) {
         return errorResponse(400, "missing_body", "Request body is required.");
     }
 
+    /** @type {any} */
     let payload;
     try {
         payload = JSON.parse(event.body);
     } catch (error) {
-        log.warn("Invalid JSON payload", { error: error.message });
+        const err = /** @type {any} */ (error);
+        log.warn("Invalid JSON payload", { error: err && err.message ? err.message : String(error) });
         return errorResponse(400, "invalid_json", "Request body must be valid JSON.");
     }
 
@@ -114,6 +136,7 @@ exports.handler = async function (event, context) {
     }
 
     const serverTime = new Date().toISOString();
+    /** @type {any[]} */
     const operations = [];
     let skipped = 0;
 
@@ -187,14 +210,15 @@ exports.handler = async function (event, context) {
             bulkDurationMs
         });
     } catch (error) {
+        const err = /** @type {any} */ (error);
         log.error("Failed to execute sync push", {
-            message: error.message,
-            stack: error.stack,
+            message: err && err.message ? err.message : String(error),
+            stack: err && err.stack ? err.stack : undefined,
             collection: collectionKey,
             durationMs: Date.now() - requestStartedAt
         });
         log.exit(500, { collection: collectionKey });
-        timer.end({ success: false, error: error.message });
+        timer.end({ success: false, error: err && err.message ? err.message : String(error) });
         return errorResponse(500, "sync_push_error", "Failed to persist items for the requested collection.");
     }
 };

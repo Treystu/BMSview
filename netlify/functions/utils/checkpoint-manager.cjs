@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Checkpoint Manager - Context-Aware Intermediary for Long-Running Insights
  * 

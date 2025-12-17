@@ -13,6 +13,9 @@ const {
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ */
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
     log.error('Missing MONGODB_URI environment variable');
@@ -21,8 +24,13 @@ function validateEnvironment(log) {
   return true;
 }
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('get-hourly-soc-predictions', event, context);
+  /** @type {any} */
   const timer = createTimer(log, 'get-hourly-soc-predictions-handler');
   const headers = getCorsHeaders(event);
 
@@ -35,6 +43,16 @@ exports.handler = async (event, context) => {
     timer.end();
     log.exit(200);
     return { statusCode: 200, headers };
+  }
+
+  if (!validateEnvironment(log)) {
+    timer.end({ success: false, error: 'configuration' });
+    log.exit(500);
+    return {
+      statusCode: 500,
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: true, message: 'Server configuration error' })
+    };
   }
 
   try {
@@ -60,7 +78,8 @@ exports.handler = async (event, context) => {
     log.info('Hourly SOC predictions request', { systemId, hoursBack });
 
     // Get predictions
-    const predictions = await predictHourlySoc(systemId, hoursBack, log);
+    /** @type {any} */
+    const predictions = await predictHourlySoc(systemId, hoursBack, /** @type {any} */(log));
 
     log.info('Hourly SOC predictions completed', {
       systemId,
@@ -78,12 +97,14 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
     log.error('Hourly SOC predictions failed', {
-      error: error.message,
-      stack: error.stack
+      error: message,
+      stack
     });
 
-    timer.end({ success: false, error: error.message });
+    timer.end({ success: false, error: message });
     log.exit(500);
 
     return {
@@ -91,7 +112,7 @@ exports.handler = async (event, context) => {
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         error: true,
-        message: error.message
+        message
       })
     };
   }

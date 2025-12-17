@@ -7,6 +7,10 @@ const {
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
 
@@ -20,6 +24,7 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('stories', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Stories request', includeBody: false });
+  /** @type {any} */
   const timer = createTimer(log, 'stories');
 
   try {
@@ -27,7 +32,7 @@ exports.handler = async (event, context) => {
       log.error('MONGODB_URI is not set');
       timer.end({ error: 'missing_mongodb' });
       log.exit(500);
-      return errorResponse(500, 'server_error', 'Server configuration error', null, headers);
+      return errorResponse(500, 'server_error', 'Server configuration error', undefined, headers);
     }
 
     const storiesCollection = await getCollection('stories');
@@ -98,7 +103,7 @@ exports.handler = async (event, context) => {
       const { id } = event.queryStringParameters || {};
 
       if (!id) {
-        return errorResponse(400, 'bad_request', 'Missing required query parameter: id', null, headers);
+        return errorResponse(400, 'bad_request', 'Missing required query parameter: id', undefined, headers);
       }
 
       log.info('Deleting story', { id });
@@ -123,12 +128,14 @@ exports.handler = async (event, context) => {
     log.warn('Method not allowed', { method: event.httpMethod });
     timer.end({ error: 'method_not_allowed' });
     log.exit(405);
-    return errorResponse(405, 'method_not_allowed', `Method ${event.httpMethod} not allowed`, null, headers);
+    return errorResponse(405, 'method_not_allowed', `Method ${event.httpMethod} not allowed`, undefined, headers);
 
   } catch (error) {
     timer.end({ error: true });
-    log.error('Error in stories endpoint', { error: error.message, stack: error.stack });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    log.error('Error in stories endpoint', { error: message, stack });
     log.exit(500);
-    return errorResponse(500, 'internal_error', 'Failed to process request', { message: error.message }, headers);
+    return errorResponse(500, 'internal_error', 'Failed to process request', { message }, headers);
   }
 };

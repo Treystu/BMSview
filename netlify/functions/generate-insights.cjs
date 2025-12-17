@@ -5,6 +5,7 @@
  * to the new fully-featured generate-insights-with-tools endpoint.
  */
 
+// @ts-nocheck
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 

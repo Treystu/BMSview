@@ -12,6 +12,9 @@ const {
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ */
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
     log.error('Missing MONGODB_URI environment variable');
@@ -22,7 +25,7 @@ function validateEnvironment(log) {
 
 /**
  * Extract jobId from event (POST body or query params)
- * @param {Object} event - Netlify event
+ * @param {any} event - Netlify event
  * @returns {string|null} jobId if found
  */
 function extractJobId(event) {
@@ -39,6 +42,10 @@ function extractJobId(event) {
   return null;
 }
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
 
@@ -49,10 +56,17 @@ exports.handler = async (event, context) => {
 
   // Extract jobId for logging context
   const jobId = extractJobId(event);
+  const jobIdForLog = typeof jobId === 'string' ? jobId : '';
 
-  const log = createLoggerFromEvent('generate-insights-status', event, context, { jobId });
-  log.entry(createStandardEntryMeta(event, { jobId }));
+  const log = createLoggerFromEvent(
+    'generate-insights-status',
+    event,
+    context,
+    jobIdForLog ? { jobId: jobIdForLog } : undefined
+  );
+  log.entry(createStandardEntryMeta(event, jobIdForLog ? { jobId: jobIdForLog } : undefined));
   logDebugRequestSummary(log, event, { label: 'Generate insights status request', includeBody: true, bodyMaxStringLength: 20000 });
+  /** @type {any} */
   const timer = createTimer(log, 'status-check');
 
   if (!validateEnvironment(log)) {
@@ -81,7 +95,9 @@ exports.handler = async (event, context) => {
     log.debug('Fetching job status', { jobId });
 
     // Get job from database
+    /** @type {any} */
     const dbTimer = createTimer(log, 'database-lookup');
+    /** @type {any} */
     const job = await getInsightsJob(jobId, log);
     dbTimer.end({ found: !!job });
 
@@ -102,6 +118,7 @@ exports.handler = async (event, context) => {
     log.info('Job status retrieved', { jobId, status: job.status });
 
     // Build response based on job status
+    /** @type {Record<string, any>} */
     const response = {
       jobId: job.id,
       status: job.status,
@@ -161,11 +178,13 @@ exports.handler = async (event, context) => {
 
   } catch (error) {
     timer.end({ error: true });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
     log.error('Status check failed', {
-      error: error.message,
-      stack: error.stack,
+      error: message,
+      stack,
       jobId,
-      errorType: error.constructor?.name
+      errorType: error instanceof Error ? error.constructor?.name : typeof error
     });
 
     log.exit(500);
@@ -174,7 +193,7 @@ exports.handler = async (event, context) => {
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         error: 'Failed to check job status',
-        message: error.message
+        message
       })
     };
   }
@@ -183,7 +202,7 @@ exports.handler = async (event, context) => {
 /**
  * Issue 236: Extract meaningful failure reason from error message and progress events
  * @param {string} errorMessage - Raw error message
- * @param {Array} progress - Progress events from the job
+ * @param {any[]} progress - Progress events from the job
  * @returns {{ reason: string, category: string, suggestions: string[] }}
  */
 function extractFailureReason(errorMessage, progress) {
@@ -299,7 +318,7 @@ function extractFailureReason(errorMessage, progress) {
 
 /**
  * Issue 236: Format current processing stage for status bar display
- * @param {Object} lastEvent - Last progress event
+ * @param {any} lastEvent - Last progress event
  * @returns {string} - Human-readable stage description
  */
 function formatCurrentStage(lastEvent) {
@@ -339,6 +358,7 @@ function formatToolName(toolName) {
   // Normalize tool name to lowercase for consistent matching
   const normalizedName = (toolName || '').toLowerCase();
 
+  /** @type {Record<string, string>} */
   const nameMap = {
     'request_bms_data': 'BMS historical data',
     'calculate_energy_budget': 'energy budget',

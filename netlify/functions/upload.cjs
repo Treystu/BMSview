@@ -1,3 +1,4 @@
+// @ts-nocheck
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs');

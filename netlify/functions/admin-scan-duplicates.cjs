@@ -30,7 +30,9 @@ const {
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
 
+  /** @type {import('./utils/logger.cjs').LogFunction} */
   const log = createLoggerFromEvent('admin-scan-duplicates', event, context);
+  /** @type {any} */
   const timer = createTimer(log, 'admin-scan-duplicates');
 
   const sanitizedHeaders = event.headers ? {
@@ -93,12 +95,12 @@ exports.handler = async (event, context) => {
       if (!group._id) continue; // Skip groups without contentHash
 
       // Sort records within each group by timestamp (earliest first)
-      const sortedRecords = group.records.sort((a, b) =>
+      const sortedRecords = group.records.sort((/** @type {any} */ a, /** @type {any} */ b) =>
         new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
 
       // Add contentHash to each record for display
-      const formattedSet = sortedRecords.map(record => ({
+      const formattedSet = sortedRecords.map((/** @type {any} */ record) => ({
         ...record,
         systemName: record.systemId,
         contentHash: group._id.substring(0, 16) + '...'
@@ -141,9 +143,11 @@ exports.handler = async (event, context) => {
 
   } catch (error) {
     timer.end({ error: true });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
     log.error('Admin duplicate scan failed', {
-      error: error.message,
-      stack: error.stack,
+      error: errorMessage,
+      stack: errorStack,
       event: 'SCAN_ERROR'
     });
 
@@ -153,7 +157,7 @@ exports.handler = async (event, context) => {
       500,
       'scan_failed',
       'Failed to scan for duplicates',
-      { message: error.message },
+      { message: error instanceof Error ? error.message : 'Unknown error' },
       headers
     );
   }

@@ -11,6 +11,10 @@ const {
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
 
@@ -34,21 +38,27 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({ success: true, message: 'All tests passed' })
     };
   } catch (error) {
-    log.error('Integration tests failed', { error: error.message, stack: error.stack });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    log.error('Integration tests failed', { error: message, stack });
     log.exit(500);
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ success: false, message: error.message })
+      body: JSON.stringify({ success: false, message })
     };
   }
 };
 
 // Mock logger for internal test functions
 const mockLogger = {
+  /** @param {string} msg @param {any} [ctx] */
   debug: (msg, ctx) => console.log(`[DEBUG] ${msg}`, ctx || ''),
+  /** @param {string} msg @param {any} [ctx] */
   info: (msg, ctx) => console.log(`[INFO] ${msg}`, ctx || ''),
+  /** @param {string} msg @param {any} [ctx] */
   warn: (msg, ctx) => console.log(`[WARN] ${msg}`, ctx || ''),
+  /** @param {string} msg @param {any} [ctx] */
   error: (msg, ctx) => console.log(`[ERROR] ${msg}`, ctx || ''),
 };
 
@@ -201,11 +211,13 @@ async function runAllTests() {
 
     return 0;
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
     console.error('\n╔════════════════════════════════════════════════════════════╗');
     console.error('║                    TEST FAILED ❌                          ║');
     console.error('╚════════════════════════════════════════════════════════════╝\n');
-    console.error('Error:', error.message);
-    console.error('Stack:', error.stack);
+    console.error('Error:', message);
+    console.error('Stack:', stack);
     return 1;
   }
 }

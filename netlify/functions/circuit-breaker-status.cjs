@@ -15,6 +15,10 @@ const {
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
 
@@ -26,17 +30,47 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('circuit-breaker-status', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Circuit breaker status request', includeBody: false });
+  /** @type {any} */
   const timer = createTimer(log, 'circuit-breaker-status');
 
   try {
     log.debug('Fetching circuit breaker status');
 
     // Get current status of global circuit breakers (legacy retry.cjs)
-    const globalStatus = getCircuitBreakerStatus();
+    /**
+     * @type {{
+     *  breakers: Array<{ key: any, state: string, failures: any, openUntil: any, isOpen: any }>,
+     *  total: number,
+     *  open: number,
+     *  closed: number,
+     *  anyOpen: boolean,
+     *  halfOpen?: number
+     * }}
+     */
+    const globalStatus = /** @type {any} */ (getCircuitBreakerStatus());
 
     // Get per-tool circuit breaker status
     const toolRegistry = getRegistry();
-    const toolSummary = toolRegistry.getSummary();
+    /**
+     * @type {{
+     *  breakers: Array<{
+     *    toolName: string,
+     *    state: string,
+     *    failureCount: number,
+     *    totalRequests: number,
+     *    totalFailures: number,
+     *    failureRate: number,
+     *    lastFailureTime?: number | null,
+     *    config: any
+     *  }>,
+     *  total: number,
+     *  open: number,
+     *  halfOpen: number,
+     *  closed: number,
+     *  anyOpen: boolean
+     * }}
+     */
+    const toolSummary = /** @type {any} */ (toolRegistry.getSummary());
 
     // Format for client consumption
     const response = {
@@ -108,9 +142,11 @@ exports.handler = async (event, context) => {
 
   } catch (error) {
     timer.end({ error: true });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
     log.error('Failed to retrieve circuit breaker status', {
-      error: error.message,
-      stack: error.stack
+      error: message,
+      stack
     });
     log.exit(500);
 
@@ -119,7 +155,7 @@ exports.handler = async (event, context) => {
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         error: 'Failed to retrieve circuit breaker status',
-        message: error.message
+        message
       })
     };
   }

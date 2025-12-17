@@ -9,6 +9,14 @@ const {
     logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @typedef {import('./utils/jsdoc-types.cjs').LogLike} LogLike
+ */
+
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async (event, context) => {
     const headers = getCorsHeaders(event);
 
@@ -19,12 +27,13 @@ exports.handler = async (event, context) => {
     const log = createLoggerFromEvent('check-hashes', event, context);
     log.entry(createStandardEntryMeta(event));
     logDebugRequestSummary(log, event, { label: 'Check hashes request', includeBody: true });
+    /** @type {any} */
     const timer = createTimer(log, 'check-hashes');
 
     if (event.httpMethod !== 'POST') {
         log.warn('Method not allowed', { method: event.httpMethod });
         log.exit(405);
-        return errorResponse(405, 'method_not_allowed', 'Method Not Allowed', null, headers);
+        return errorResponse(405, 'method_not_allowed', 'Method Not Allowed', undefined, headers);
     }
 
     try {
@@ -33,7 +42,7 @@ exports.handler = async (event, context) => {
         if (!Array.isArray(hashes) || hashes.length === 0) {
             log.warn('Invalid hashes array in request');
             log.exit(400);
-            return errorResponse(400, 'bad_request', 'Missing or invalid "hashes" array in request body.', null, headers);
+            return errorResponse(400, 'bad_request', 'Missing or invalid "hashes" array in request body.', undefined, headers);
         }
 
         const startTime = Date.now();
@@ -173,7 +182,7 @@ exports.handler = async (event, context) => {
         };
 
         const totalDurationMs = Date.now() - startTime;
-        const durationMs = timer.end({
+        timer.end({
             hashesChecked: hashes.length,
             duplicatesFound: duplicates.length,
             upgradesNeeded: upgrades.size,
@@ -203,8 +212,10 @@ exports.handler = async (event, context) => {
 
     } catch (error) {
         timer.end({ error: true });
-        log.error('Error checking hashes', { error: error.message, stack: error.stack });
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        log.error('Error checking hashes', { error: message, stack });
         log.exit(500);
-        return errorResponse(500, 'internal_error', 'An internal error occurred while checking hashes.', null, headers);
+        return errorResponse(500, 'internal_error', 'An internal error occurred while checking hashes.', undefined, headers);
     }
 };

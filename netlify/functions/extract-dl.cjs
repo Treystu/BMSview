@@ -20,12 +20,21 @@ const dlRegexes = [
     new RegExp(`\\b[A-Z]{2,3}-(${digitPattern})\\b`, 'gi')
 ];
 
+/**
+ * @param {number} statusCode
+ * @param {unknown} body
+ * @param {Record<string, any>} headers
+ */
 const respond = (statusCode, body, headers = {}) => ({
     statusCode,
     body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json', ...headers },
 });
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
 
@@ -37,6 +46,7 @@ exports.handler = async function (event, context) {
     const log = createLoggerFromEvent('extract-dl', event, context);
     log.entry(createStandardEntryMeta(event));
     logDebugRequestSummary(log, event, { label: 'Extract DL request', includeBody: true, bodyMaxStringLength: 20000 });
+    /** @type {any} */
     const timer = createTimer(log, 'extract-dl');
 
     if (event.httpMethod !== 'POST') {
@@ -109,9 +119,11 @@ exports.handler = async function (event, context) {
 
     } catch (error) {
         timer.end({ error: true });
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
         log.error('Critical error in extract-dl function', {
-            error: error.message,
-            stack: error.stack
+            error: message,
+            stack
         });
         log.exit(500);
         return respond(500, { error: 'Internal server error during DL extraction.' }, headers);

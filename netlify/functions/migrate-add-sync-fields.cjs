@@ -7,6 +7,13 @@ const {
     logDebugRequestSummary
 } = require("./utils/handler-logging.cjs");
 
+/**
+ * @typedef {import('./utils/jsdoc-types.cjs').LogLike} LogLike
+ */
+
+/**
+ * @param {LogLike} log
+ */
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
         log.error('Missing MONGODB_URI environment variable');
@@ -29,6 +36,10 @@ const TARGET_COLLECTIONS = [
     "analysis-results"
 ];
 
+/**
+ * @param {number} statusCode
+ * @param {unknown} body
+ */
 function jsonResponse(statusCode, body) {
     return {
         statusCode,
@@ -37,6 +48,10 @@ function jsonResponse(statusCode, body) {
     };
 }
 
+/**
+ * @param {unknown} value
+ * @param {string} fallback
+ */
 function normalizeTimestamp(value, fallback) {
     if (!value) {
         return fallback;
@@ -60,6 +75,11 @@ function normalizeTimestamp(value, fallback) {
     return fallback;
 }
 
+/**
+ * @param {string} collectionName
+ * @param {string} serverTimeIso
+ * @param {LogLike} log
+ */
 async function migrateCollection(collectionName, serverTimeIso, log) {
     const collection = await getCollection(collectionName);
 
@@ -73,12 +93,14 @@ async function migrateCollection(collectionName, serverTimeIso, log) {
     };
 
     const cursor = collection.find(filter);
+    /** @type {any[]} */
     const operations = [];
     let examined = 0;
     let modified = 0;
 
     for await (const doc of cursor) {
         examined += 1;
+        /** @type {Record<string, any>} */
         const setPayload = {};
 
         if (!doc.updatedAt) {
@@ -129,8 +151,14 @@ async function migrateCollection(collectionName, serverTimeIso, log) {
     return { collection: collectionName, examined, modified, total };
 }
 
+/**
+ * @param {string} serverTimeIso
+ * @param {Array<{ collection: string, total: number }>} migrationSummaries
+ * @param {LogLike} log
+ */
 async function ensureSyncMetadata(serverTimeIso, migrationSummaries, log) {
     const syncMetadataCollection = await getCollection("sync-metadata");
+    /** @type {any[]} */
     const bulkOperations = [];
 
     for (const summary of migrationSummaries) {
@@ -161,14 +189,22 @@ async function ensureSyncMetadata(serverTimeIso, migrationSummaries, log) {
     log.info("sync-metadata collection prepared", { collections: TARGET_COLLECTIONS.length });
 }
 
+/**
+ * @param {LogLike} log
+ */
 async function ensureDeletedRecordsIndexes(log) {
     const deletedRecords = await getCollection("deleted-records");
     await deletedRecords.createIndex({ collection: 1, deletedAt: 1 });
     log.info("deleted-records indexes ensured");
 }
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async function (event, context) {
     const log = createLoggerFromEvent("migrate-add-sync-fields", event, context);
+    /** @type {any} */
     const timer = createTimer(log, 'migrate-add-sync-fields-handler');
 
     log.entry(createStandardEntryMeta(event));
@@ -196,6 +232,7 @@ exports.handler = async function (event, context) {
     const serverTimeIso = new Date().toISOString();
 
     try {
+        /** @type {any[]} */
         const results = [];
 
         for (const collectionName of TARGET_COLLECTIONS) {
@@ -216,9 +253,11 @@ exports.handler = async function (event, context) {
             serverTime: serverTimeIso
         });
     } catch (error) {
-        log.error("Migration failed", { message: error.message, stack: error.stack });
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        log.error("Migration failed", { message, stack });
         log.exit(500, {});
-        timer.end({ success: false, error: error.message });
+        timer.end({ success: false, error: message });
         return errorResponse(500, "migration_error", "Failed to perform sync field migration.");
     }
 };

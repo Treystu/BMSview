@@ -16,6 +16,9 @@ const {
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').LogLike} log
+ */
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
     log.error('Missing MONGODB_URI environment variable');
@@ -37,8 +40,13 @@ const RETRY_LINEAR_INCREMENT_MS = 1000; // Add 1 second per retry
 /**
  * Main handler for initialization
  */
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('initialize-insights', event, context);
+  /** @type {any} */
   const timer = createTimer(log, 'initialize-insights-handler');
   const headers = getCorsHeaders(event);
 
@@ -204,11 +212,11 @@ Execute the initialization now.`;
       conversationHistory.push(responseContent);
 
       // Check for tool calls
-      const toolCalls = responseContent.parts.filter(p => p.functionCall);
+      const toolCalls = responseContent.parts.filter(/** @param {any} p */(p) => p.functionCall);
 
       if (toolCalls.length === 0) {
-        const textParts = responseContent.parts.filter(p => p.text);
-        const responseText = textParts.map(p => p.text).join(' ');
+        const textParts = responseContent.parts.filter(/** @param {any} p */(p) => p.text);
+        const responseText = textParts.map(/** @param {any} p */(p) => p.text).join(' ');
 
         log.warn('Gemini did not call request_bms_data', {
           attempt: attempts + 1,
@@ -239,21 +247,23 @@ Execute the initialization now.`;
 
         try {
           const toolResult = await executeToolCall(toolName, toolArgs, log);
+          /** @type {any} */
+          const toolResultAny = toolResult;
 
           // Add tool result to conversation
           conversationHistory.push({
             role: 'function',
-            parts: [{
+            parts: /** @type {any} */ ([{
               functionResponse: {
                 name: toolName,
-                response: { result: toolResult }
+                response: { result: toolResultAny }
               }
-            }]
+            }])
           });
 
           // Check if this was request_bms_data and it succeeded
-          if (toolName === 'request_bms_data' && toolResult && !toolResult.error) {
-            dataPoints = toolResult.dataPoints || 0;
+          if (toolName === 'request_bms_data' && toolResultAny && !toolResultAny.error) {
+            dataPoints = toolResultAny.dataPoints || 0;
             if (dataPoints > 0) {
               dataRetrieved = true;
               log.info('Initialization data successfully retrieved', {
@@ -266,10 +276,10 @@ Execute the initialization now.`;
                 attempt: attempts + 1
               });
             }
-          } else if (toolResult && toolResult.error) {
+          } else if (toolResultAny && toolResultAny.error) {
             log.error('Tool execution returned error', {
               toolName,
-              error: toolResult.message || toolResult.error,
+              error: toolResultAny.message || toolResultAny.error,
               attempt: attempts + 1
             });
           }
@@ -283,7 +293,7 @@ Execute the initialization now.`;
 
           conversationHistory.push({
             role: 'function',
-            parts: [{
+            parts: /** @type {any} */ ([{
               functionResponse: {
                 name: toolName,
                 response: {
@@ -291,7 +301,7 @@ Execute the initialization now.`;
                   message: `Tool failed: ${err.message}`
                 }
               }
-            }]
+            }])
           });
         }
       }

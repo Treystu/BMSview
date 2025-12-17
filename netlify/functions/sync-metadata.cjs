@@ -1,5 +1,12 @@
 "use strict";
 
+/**
+ * @typedef {import('./utils/jsdoc-types.cjs').LogLike} LogLike
+ * @typedef {import('./utils/jsdoc-types.cjs').TimerLike} TimerLike
+ * @typedef {import('./utils/jsdoc-types.cjs').FallbackField} FallbackField
+ * @typedef {import('./utils/jsdoc-types.cjs').CollectionConfig} CollectionConfig
+ */
+
 const crypto = require("crypto");
 const { getCollection } = require("./utils/mongodb.cjs");
 const {
@@ -7,6 +14,7 @@ const {
     logDebugRequestSummary
 } = require("./utils/handler-logging.cjs");
 
+/** @param {LogLike} log */
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
         log.error('Missing MONGODB_URI environment variable');
@@ -24,6 +32,7 @@ const JSON_HEADERS = {
 
 const ISO_UTC_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
+/** @type {Record<string, CollectionConfig>} */
 const COLLECTION_CONFIG = {
     systems: {
         dbName: "systems",
@@ -55,6 +64,10 @@ const COLLECTION_CONFIG = {
     }
 };
 
+/**
+ * @param {number} statusCode
+ * @param {any} body
+ */
 function jsonResponse(statusCode, body) {
     return {
         statusCode,
@@ -63,6 +76,7 @@ function jsonResponse(statusCode, body) {
     };
 }
 
+/** @param {any} value */
 function normalizeToIsoString(value) {
     if (!value) {
         return null;
@@ -86,6 +100,10 @@ function normalizeToIsoString(value) {
     return null;
 }
 
+/**
+ * @param {any} doc
+ * @param {FallbackField[]} fallbackFields
+ */
 function resolveUpdatedAt(doc, fallbackFields) {
     const directUpdatedAt = normalizeToIsoString(doc.updatedAt);
     if (directUpdatedAt) {
@@ -109,6 +127,10 @@ function resolveUpdatedAt(doc, fallbackFields) {
     return null;
 }
 
+/**
+ * @param {any[]} records
+ * @param {FallbackField[]} fallbackFields
+ */
 function buildChecksumPayload(records, fallbackFields) {
     const payload = [];
     let lastModified = null;
@@ -141,6 +163,7 @@ function buildChecksumPayload(records, fallbackFields) {
     };
 }
 
+/** @param {string[]} payload */
 async function calculateChecksum(payload) {
     if (!payload.length) {
         return null;
@@ -152,8 +175,13 @@ async function calculateChecksum(payload) {
     return hash.digest("hex");
 }
 
+/**
+ * @param {any} event
+ * @param {any} context
+ */
 exports.handler = async function (event, context) {
     const log = createLoggerFromEvent("sync-metadata", event, context);
+    /** @type {any} */
     const timer = createTimer(log, 'sync-metadata-handler');
 
     log.entry(createStandardEntryMeta(event));
@@ -194,7 +222,10 @@ exports.handler = async function (event, context) {
 
     try {
         const collection = await getCollection(config.dbName);
+        /** @type {FallbackField[]} */
         const fallbackFields = config.fallbackUpdatedAtFields || [];
+
+        /** @type {Record<string, 0 | 1>} */
         const projection = { _id: 0, id: 1, updatedAt: 1 };
         for (const field of fallbackFields) {
             projection[field.name] = 1;
@@ -233,14 +264,15 @@ exports.handler = async function (event, context) {
             serverTime
         });
     } catch (error) {
+        const err = /** @type {any} */ (error);
         log.error("Failed to compute sync metadata", {
-            message: error.message,
-            stack: error.stack,
+            message: err && err.message ? err.message : String(error),
+            stack: err && err.stack ? err.stack : undefined,
             collection: collectionKey,
             durationMs: Date.now() - requestStartedAt
         });
         log.exit(500, { collection: collectionKey });
-        timer.end({ success: false, error: error.message });
+        timer.end({ success: false, error: err && err.message ? err.message : String(error) });
         return errorResponse(500, "metadata_error", "Failed to compute metadata for the requested collection.");
     }
 };
