@@ -9,7 +9,7 @@
 
 // Defensive module initialization to catch and log any module loading errors
 let initError = null;
-let errorResponse, parseJsonBody, createLoggerFromEvent, createTimer, getCollection, getCorsHeaders, calculateImageHash, checkNeedsUpgrade, formatHashPreview;
+let errorResponse, parseJsonBody, createLoggerFromEvent, createTimer, getCollection, getCorsHeaders, calculateImageHash, checkNeedsUpgrade, formatHashPreview, createStandardEntryMeta, logDebugRequestSummary;
 
 try {
   ({ errorResponse } = require('./utils/errors.cjs'));
@@ -17,6 +17,7 @@ try {
   ({ createLoggerFromEvent, createTimer } = require('./utils/logger.cjs'));
   ({ getCollection } = require('./utils/mongodb.cjs'));
   ({ getCorsHeaders } = require('./utils/cors.cjs'));
+  ({ createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs'));
   // Use unified deduplication module as canonical source
   ({ calculateImageHash, checkNeedsUpgrade, formatHashPreview } = require('./utils/unified-deduplication.cjs'));
 } catch (e) {
@@ -39,21 +40,21 @@ const VALID_HASH_REGEX = /^[a-f0-9]{64}$/i;
  */
 async function batchCheckExistingAnalyses(contentHashes, log) {
   const startTime = Date.now();
-  
+
   try {
     const collectionStartTime = Date.now();
     const resultsCol = await getCollection('analysis-results');
     const collectionDurationMs = Date.now() - collectionStartTime;
-    
+
     // Use $in query to fetch all matching records in one go
     const queryStartTime = Date.now();
     const existingRecords = await resultsCol.find({
       contentHash: { $in: contentHashes }
     }).toArray();
     const queryDurationMs = Date.now() - queryStartTime;
-    
+
     const totalDurationMs = Date.now() - startTime;
-    
+
     log.info('Batch duplicate check complete', {
       requestedCount: contentHashes.length,
       foundCount: existingRecords.length,
@@ -63,13 +64,13 @@ async function batchCheckExistingAnalyses(contentHashes, log) {
       avgPerHashMs: (totalDurationMs / contentHashes.length).toFixed(2),
       event: 'BATCH_CHECK_COMPLETE'
     });
-    
+
     // Convert array to Map for O(1) lookups
     const resultMap = new Map();
     for (const record of existingRecords) {
       resultMap.set(record.contentHash, record);
     }
-    
+
     return resultMap;
   } catch (error) {
     const totalDurationMs = Date.now() - startTime;
@@ -93,7 +94,7 @@ function checkIfNeedsUpgrade(existing) {
   if (!existing) {
     return { needsUpgrade: false };
   }
-  
+
   // Use the canonical checkNeedsUpgrade function from unified deduplication
   return checkNeedsUpgrade(existing);
 }
@@ -125,30 +126,35 @@ exports.handler = async (event, context) => {
       })
     };
   }
-  
+
   const headers = getCorsHeaders(event);
-  
+
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
-  
+
   if (event.httpMethod !== 'POST') {
     return errorResponse(405, 'method_not_allowed', 'Method not allowed', undefined, headers);
   }
-  
+
   const log = createLoggerFromEvent('check-duplicates-batch', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, {
+    label: 'Batch duplicate check request',
+    includeBody: true,
+    bodyMaxStringLength: 20000
+  });
   const timer = createTimer(log, 'check-duplicates-batch');
-  
+
   // Log request body size for debugging payload issues (PR #339)
   const bodySize = event.body ? event.body.length : 0;
   const bodySizeMB = (bodySize / (1024 * 1024)).toFixed(2);
-  log.info('Request body size', { 
+  log.info('Request body size', {
     bodySizeBytes: bodySize,
     bodySizeMB,
     event: 'REQUEST_SIZE'
   });
-  
+
   // Check for payload too large (Netlify limit is 6MB) (PR #339)
   const MAX_PAYLOAD_SIZE = 6 * 1024 * 1024; // 6MB in bytes
   if (bodySize > MAX_PAYLOAD_SIZE) {
@@ -168,7 +174,7 @@ exports.handler = async (event, context) => {
       headers
     );
   }
-  
+
   let parsed;
   try {
     // Parse request body
@@ -179,34 +185,34 @@ exports.handler = async (event, context) => {
       log.exit(400);
       return errorResponse(400, 'invalid_request', parsed.error || 'Invalid JSON', undefined, headers);
     }
-    
+
     const { files } = parsed.value;
-    
+
     if (!Array.isArray(files) || files.length === 0) {
       log.warn('Invalid files array', { filesType: typeof files, filesLength: files?.length });
       timer.end({ error: 'invalid_files' });
       log.exit(400);
       return errorResponse(400, 'invalid_request', 'files must be a non-empty array', undefined, headers);
     }
-    
+
     if (files.length > 100) {
       log.warn('Too many files in batch', { fileCount: files.length });
       timer.end({ error: 'too_many_files' });
       log.exit(400);
       return errorResponse(400, 'invalid_request', 'Maximum 100 files per batch', undefined, headers);
     }
-    
+
     log.info('Processing batch duplicate check', {
       fileCount: files.length,
       fileNames: files.slice(0, MAX_FILE_NAMES_LOGGED).map((f, idx) => formatFileNameForLog(f, idx)),
       event: 'BATCH_START'
     });
-    
+
     // Detect mode: hash-only or image mode (PR #339)
     // Validate that all files follow the same mode (no mixed batches allowed)
     const hasHash = files.some(f => f.hash);
     const hasImage = files.some(f => f.image);
-    
+
     if (hasHash && hasImage) {
       log.warn('Mixed mode batch detected (some files have hash, some have image)', {
         filesWithHash: files.filter(f => f.hash).length,
@@ -223,44 +229,44 @@ exports.handler = async (event, context) => {
         headers
       );
     }
-    
+
     const isHashOnlyMode = hasHash;
     const isImageMode = hasImage;
-    
+
     log.info('Batch mode detected', {
       mode: isHashOnlyMode ? 'hash-only' : isImageMode ? 'image' : 'unknown',
       filesWithHash: files.filter(f => f.hash).length,
       filesWithImage: files.filter(f => f.image).length,
       event: 'MODE_DETECTED'
     });
-    
+
     // Process based on mode (PR #339)
     let fileHashes = [];
     const hashErrors = [];
-    
+
     if (isHashOnlyMode) {
       // Hash-only mode: Use provided hashes directly (no calculation needed)
       const hashStartTime = Date.now();
-      
+
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        
+
         if (!file.hash || !file.fileName) {
           const fileName = formatFileNameForLog(file, i);
           hashErrors.push({ index: i, fileName, error: 'Missing hash or fileName' });
           fileHashes.push({ index: i, fileName, contentHash: null });
           continue;
         }
-        
+
         // Validate hash format (should be 64 hex characters)
         if (!VALID_HASH_REGEX.test(file.hash)) {
           hashErrors.push({ index: i, fileName: file.fileName, error: 'Invalid hash format (expected 64 hex chars)' });
           fileHashes.push({ index: i, fileName: file.fileName, contentHash: null });
           continue;
         }
-        
+
         fileHashes.push({ index: i, fileName: file.fileName, contentHash: file.hash.toLowerCase() });
-        
+
         log.debug('Hash received from client', {
           fileName: file.fileName,
           hashPreview: formatHashPreview(file.hash),
@@ -268,9 +274,9 @@ exports.handler = async (event, context) => {
           event: 'HASH_RECEIVED'
         });
       }
-      
+
       const hashDurationMs = Date.now() - hashStartTime;
-      
+
       log.info('Hash-only mode processing complete', {
         totalFiles: files.length,
         validHashes: fileHashes.filter(h => h.contentHash).length,
@@ -278,21 +284,21 @@ exports.handler = async (event, context) => {
         hashDurationMs,
         event: 'HASH_ONLY_COMPLETE'
       });
-      
+
     } else {
       // Image mode: Calculate content hashes from base64 images
       const hashStartTime = Date.now();
-      
+
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        
+
         if (!file.image || !file.fileName) {
           const fileName = formatFileNameForLog(file, i);
           hashErrors.push({ index: i, fileName, error: 'Missing image or fileName' });
           fileHashes.push({ index: i, fileName, contentHash: null });
           continue;
         }
-        
+
         try {
           const contentHash = calculateImageHash(file.image, log);
           if (!contentHash) {
@@ -318,9 +324,9 @@ exports.handler = async (event, context) => {
           });
         }
       }
-      
+
       const hashDurationMs = Date.now() - hashStartTime;
-      
+
       log.info('Image mode hash calculation complete', {
         totalFiles: files.length,
         successfulHashes: fileHashes.filter(h => h.contentHash).length,
@@ -330,7 +336,7 @@ exports.handler = async (event, context) => {
         event: 'IMAGE_MODE_COMPLETE'
       });
     }
-    
+
     if (hashErrors.length > 0) {
       log.warn('Some files failed hash calculation', {
         errorCount: hashErrors.length,
@@ -342,7 +348,7 @@ exports.handler = async (event, context) => {
         event: 'HASH_ERRORS'
       });
     }
-    
+
     // Get all valid hashes
     const validHashes = fileHashes
       .filter(h => h.contentHash)
@@ -354,17 +360,17 @@ exports.handler = async (event, context) => {
         event: 'NO_VALID_HASHES'
       });
     }
-    
+
     // Batch check MongoDB
     let existingRecordsMap = new Map();
     if (validHashes.length > 0) {
       existingRecordsMap = await batchCheckExistingAnalyses(validHashes, log);
     }
-    
+
     // Build results array
     const results = fileHashes.map(fileHash => {
       const { fileName, contentHash } = fileHash;
-      
+
       if (!contentHash) {
         return {
           fileName,
@@ -373,9 +379,9 @@ exports.handler = async (event, context) => {
           error: 'Failed to calculate content hash'
         };
       }
-      
+
       const existing = existingRecordsMap.get(contentHash);
-      
+
       if (!existing) {
         return {
           fileName,
@@ -383,9 +389,9 @@ exports.handler = async (event, context) => {
           needsUpgrade: false
         };
       }
-      
+
       const upgradeCheck = checkIfNeedsUpgrade(existing);
-      
+
       // Note: analysisData intentionally excluded to prevent PII leakage
       // Clients should use the recordId to fetch full analysis via authenticated endpoint
       return {
@@ -399,18 +405,18 @@ exports.handler = async (event, context) => {
         upgradeReason: upgradeCheck.reason
       };
     });
-    
+
     const duplicateCount = results.filter(r => r.isDuplicate && !r.needsUpgrade).length;
     const upgradeCount = results.filter(r => r.needsUpgrade).length;
     const newCount = results.filter(r => !r.isDuplicate).length;
-    
-    const durationMs = timer.end({ 
+
+    const durationMs = timer.end({
       fileCount: files.length,
       duplicates: duplicateCount,
       upgrades: upgradeCount,
       new: newCount
     });
-    
+
     log.info('Batch duplicate check complete', {
       totalFiles: files.length,
       duplicates: duplicateCount,
@@ -420,9 +426,9 @@ exports.handler = async (event, context) => {
       avgPerFileMs: (durationMs / files.length).toFixed(2),
       event: 'BATCH_COMPLETE'
     });
-    
+
     log.exit(200);
-    
+
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -437,7 +443,7 @@ exports.handler = async (event, context) => {
         }
       })
     };
-    
+
   } catch (error) {
     timer.end({ error: true });
     log.error('Batch duplicate check failed', {
@@ -446,10 +452,10 @@ exports.handler = async (event, context) => {
       fileCount: Array.isArray(parsed?.value?.files) ? parsed.value.files.length : undefined,
       event: 'BATCH_ERROR'
     });
-    
+
     const statusCode = error.message?.includes('timeout') ? 408 : 500;
     log.exit(statusCode);
-    
+
     return errorResponse(
       statusCode,
       'batch_check_failed',

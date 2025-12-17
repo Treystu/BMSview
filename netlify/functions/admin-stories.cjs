@@ -4,6 +4,10 @@ const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
 const { v4: uuidv4 } = require('uuid');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 /**
  * Admin Stories - CRUD operations for story management
@@ -22,7 +26,8 @@ exports.handler = async (event, context) => {
     cookie: event.headers.cookie ? '[REDACTED]' : undefined,
     'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
   } : {};
-  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters, headers: sanitizedHeaders, bodyLength: event.body ? event.body.length : 0 });
+  log.entry(createStandardEntryMeta(event, { query: event.queryStringParameters, headers: sanitizedHeaders }));
+  logDebugRequestSummary(log, event, { label: 'Admin stories request', includeBody: true, bodyMaxStringLength: 20000 });
 
   if (event.httpMethod === 'OPTIONS') {
     timer.end({ outcome: 'preflight' });
@@ -46,10 +51,10 @@ exports.handler = async (event, context) => {
       // Get a specific story by ID
       if (id) {
         log.info('Fetching story by ID', { id });
-        const story = await storiesCollection.findOne({ 
+        const story = await storiesCollection.findOne({
           $or: [{ id }, { _id: ObjectId.isValid(id) ? new ObjectId(id) : null }]
         });
-        
+
         if (!story) {
           log.warn('Story not found', { id });
           timer.end({ found: false });
@@ -128,7 +133,7 @@ exports.handler = async (event, context) => {
       // Add event to existing story
       if (action === 'add-event' && id) {
         const { analysisId, annotation, contextNotes } = body;
-        
+
         if (!analysisId) {
           return errorResponse(400, 'bad_request', 'Missing analysisId', null, headers);
         }
@@ -160,9 +165,9 @@ exports.handler = async (event, context) => {
 
         const updateResult = await storiesCollection.updateOne(
           { $or: [{ id }, { _id: ObjectId.isValid(id) ? new ObjectId(id) : null }] },
-          { 
+          {
             $push: { events: newEvent },
-            $set: { 
+            $set: {
               updatedAt: new Date().toISOString(),
               'metadata.totalEvents': { $add: ['$metadata.totalEvents', 1] }
             }
@@ -280,7 +285,7 @@ exports.handler = async (event, context) => {
       // Remove event from story
       if (action === 'remove-event') {
         const { eventIndex } = event.queryStringParameters || {};
-        
+
         if (eventIndex === undefined) {
           return errorResponse(400, 'bad_request', 'Missing eventIndex', null, headers);
         }
@@ -302,8 +307,8 @@ exports.handler = async (event, context) => {
 
         await storiesCollection.updateOne(
           { $or: [{ id }, { _id: ObjectId.isValid(id) ? new ObjectId(id) : null }] },
-          { 
-            $set: { 
+          {
+            $set: {
               events: story.events,
               updatedAt: new Date().toISOString(),
               'metadata.totalEvents': story.events.length,

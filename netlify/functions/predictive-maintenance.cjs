@@ -1,6 +1,10 @@
 const { GoogleGenAI } = require('@google/genai');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -25,7 +29,8 @@ function getGenAI() {
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('predictive-maintenance', event, context);
   const timer = createTimer(log, 'predictive-maintenance-handler');
-  log.entry({ method: event.httpMethod, path: event.path });
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Predictive maintenance request', includeBody: true, bodyMaxStringLength: 20000 });
   // Enable CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',

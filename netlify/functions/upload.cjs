@@ -1,5 +1,6 @@
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const multiparty = require('multiparty');
 
@@ -25,7 +26,8 @@ exports.handler = async (event, context) => {
   }
 
   const log = createLoggerFromEvent('upload', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Upload request', includeBody: false });
   const timer = createTimer(log, 'upload-handler');
 
   if (event.httpMethod !== 'POST') {
@@ -44,9 +46,9 @@ exports.handler = async (event, context) => {
     // Parse multipart form data
     const formData = await parseMultipartData(event, log);
     const { file } = formData;
-    
+
     log.info('Processing upload request', { fileName: file?.name, fileSize: file?.size });
-    
+
     if (!file) {
       log.warn('Missing required fields', { hasFile: !!file });
       timer.end({ error: 'missing_fields' });
@@ -101,8 +103,8 @@ exports.handler = async (event, context) => {
     // Update record with processing results
     await uploadsCollection.updateOne(
       { _id: uploadRecord.insertedId },
-      { 
-        $set: { 
+      {
+        $set: {
           status: processingResult.success ? 'completed' : 'failed',
           completedAt: new Date(),
           processingResult: processingResult,
@@ -196,7 +198,7 @@ async function parseMultipartData(event, log) {
     if (event.isBase64Encoded) {
       req.body = Buffer.from(event.body, 'base64');
     }
-    
+
     form.parse(req);
   });
 }
@@ -204,7 +206,7 @@ async function parseMultipartData(event, log) {
 async function processFile(file, uploadId, log) {
   const fileContext = { fileName: file.name, fileSize: file.size, contentType: file.type, uploadId };
   log.debug('Starting file processing', fileContext);
-  
+
   try {
     // Validate file
     log.debug('Validating file', fileContext);
@@ -235,11 +237,11 @@ async function processFile(file, uploadId, log) {
     log.debug('Extracting battery metrics', fileContext);
     const metrics = await extractBatteryMetrics(parsedData, log);
     log.debug('Metrics extracted', { ...fileContext, recordCount: metrics.recordCount, batteryType: metrics.batteryType });
-    
+
     // Store measurements in database
     log.debug('Storing measurements', { ...fileContext, measurementCount: metrics.measurements.length });
     await storeMeasurements(uploadId, metrics.measurements, log);
-    
+
     // Store file metadata
     log.debug('Storing file metadata', fileContext);
     const filesCollection = await getCollection('files');
@@ -275,7 +277,7 @@ async function processFile(file, uploadId, log) {
 
 function validateFile(file, log) {
   log.debug('Validating file constraints', { fileName: file.name, fileSize: file.size });
-  
+
   // Check file size (max 50MB)
   if (file.size > 50 * 1024 * 1024) {
     log.debug('File size validation failed', { fileName: file.name, fileSize: file.size, maxSize: 50 * 1024 * 1024 });
@@ -288,7 +290,7 @@ function validateFile(file, log) {
   // Check file extension
   const allowedExtensions = ['.csv', '.json', '.txt', '.log', '.xml'];
   const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
-  
+
   if (!allowedExtensions.includes(fileExtension)) {
     log.debug('File extension validation failed', { fileName: file.name, extension: fileExtension, allowed: allowedExtensions });
     return {
@@ -313,9 +315,9 @@ function validateFile(file, log) {
 async function parseFileContent(file, log) {
   const content = file.data.toString('utf8');
   const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
-  
+
   log.debug('Parsing file content', { fileName: file.name, extension: fileExtension, contentLength: content.length });
-  
+
   switch (fileExtension) {
     case '.csv':
       log.debug('Using CSV parser', { fileName: file.name });
@@ -341,14 +343,14 @@ function parseCSV(content, log) {
   const lines = content.trim().split('\n');
   const headers = lines[0].split(',').map(h => h.trim());
   const measurements = [];
-  
+
   for (let i = 1; i < lines.length; i++) {
     const values = lines[i].split(',').map(v => v.trim());
     const measurement = {};
-    
+
     headers.forEach((header, index) => {
       const value = values[index];
-      
+
       // Try to parse as number, otherwise keep as string
       if (!isNaN(value) && value !== '') {
         measurement[header] = parseFloat(value);
@@ -356,15 +358,15 @@ function parseCSV(content, log) {
         measurement[header] = value;
       }
     });
-    
+
     // Add timestamp if not present
     if (!measurement.timestamp) {
       measurement.timestamp = new Date(Date.now() - (lines.length - i) * 60000).toISOString();
     }
-    
+
     measurements.push(measurement);
   }
-  
+
   return { format: 'csv', measurements };
 }
 
@@ -372,7 +374,7 @@ function parseJSON(content, log) {
   try {
     log.debug('Parsing JSON content', { contentLength: content.length });
     const data = JSON.parse(content);
-    
+
     // Handle different JSON structures
     if (Array.isArray(data)) {
       log.debug('JSON array detected', { measurementCount: data.length });
@@ -398,17 +400,17 @@ function parseTextLog(content, log) {
   log.debug('Parsing text/log content', { contentLength: content.length, lineCount: content.split('\n').length });
   const lines = content.trim().split('\n');
   const measurements = [];
-  
+
   // Try to parse structured log format
   for (const line of lines) {
     if (line.trim() === '') continue;
-    
+
     // Simple key-value parsing
     const measurement = {
       timestamp: new Date().toISOString(),
       rawLog: line
     };
-    
+
     // Extract numeric values from log line
     const numbers = line.match(/[-+]?\d*\.?\d+/g);
     if (numbers && numbers.length >= 3) {
@@ -417,10 +419,10 @@ function parseTextLog(content, log) {
       measurement.capacity = parseFloat(numbers[2]);
       measurement.temperature = numbers[3] ? parseFloat(numbers[3]) : 25.0;
     }
-    
+
     measurements.push(measurement);
   }
-  
+
   return { format: 'text', measurements };
 }
 
@@ -428,12 +430,12 @@ function parseXML(content, log) {
   log.debug('Parsing XML content', { contentLength: content.length });
   const parser = new XMLParser();
   const jsonObj = parser.parse(content);
-  
+
   let measurements = [];
-  
+
   if (jsonObj.measurements && jsonObj.measurements.measurement) {
-    measurements = Array.isArray(jsonObj.measurements.measurement) 
-      ? jsonObj.measurements.measurement 
+    measurements = Array.isArray(jsonObj.measurements.measurement)
+      ? jsonObj.measurements.measurement
       : [jsonObj.measurements.measurement];
   } else {
     log.warn('No measurements found in XML', { xmlContent: content.substring(0, 500) });
@@ -446,41 +448,41 @@ function parseXML(content, log) {
 async function extractBatteryMetrics(parsedData, log) {
   log.debug('Extracting battery metrics', { format: parsedData.format, measurementCount: parsedData.measurements?.length });
   const measurements = parsedData.measurements || [];
-  
+
   // Calculate derived metrics
   for (let i = 0; i < measurements.length; i++) {
     const measurement = measurements[i];
-    
+
     // Calculate state of charge if not present
     if (!measurement.soc && measurement.capacity) {
       measurement.soc = Math.min(100, (measurement.capacity / 100) * 100);
     }
-    
+
     // Determine charging state
     if (!measurement.state && measurement.current) {
-      measurement.state = measurement.current > 0 ? 'charging' : 
-                        measurement.current < 0 ? 'discharging' : 'idle';
+      measurement.state = measurement.current > 0 ? 'charging' :
+        measurement.current < 0 ? 'discharging' : 'idle';
     }
-    
+
     // Calculate power
     if (measurement.voltage && measurement.current) {
       measurement.power = measurement.voltage * measurement.current;
     }
-    
+
     // Add record index
     measurement.recordIndex = i;
   }
-  
+
   // Calculate date range
   const timestamps = measurements
     .map(m => new Date(m.timestamp))
     .filter(t => !isNaN(t.getTime()));
-  
+
   const dateRange = timestamps.length > 0 ? {
     start: new Date(Math.min(...timestamps.map(t => t.getTime()))),
     end: new Date(Math.max(...timestamps.map(t => t.getTime())))
   } : null;
-  
+
   return {
     measurements,
     dateRange,
@@ -491,13 +493,13 @@ async function extractBatteryMetrics(parsedData, log) {
 
 function inferBatteryType(measurements) {
   if (measurements.length === 0) return 'unknown';
-  
+
   const avgVoltage = measurements.reduce((sum, m) => sum + (m.voltage || 0), 0) / measurements.length;
-  
+
   if (avgVoltage >= 3.6 && avgVoltage <= 3.8) return 'lithium-ion';
   if (avgVoltage >= 2.0 && avgVoltage <= 2.2) return 'lead-acid';
   if (avgVoltage >= 1.2 && avgVoltage <= 1.4) return 'nimh';
-  
+
   return 'unknown';
 }
 
@@ -506,7 +508,7 @@ async function storeMeasurements(uploadId, measurements, log) {
     log.debug('No measurements to store', { uploadId });
     return;
   }
-  
+
   log.debug('Preparing measurements for storage', { uploadId, measurementCount: measurements.length });
   // Add uploadId to each measurement
   const measurementsWithId = measurements.map(m => ({
@@ -514,18 +516,18 @@ async function storeMeasurements(uploadId, measurements, log) {
     uploadId,
     processedAt: new Date()
   }));
-  
+
   // Insert in batches for better performance
   const batchSize = 1000;
   const batches = Math.ceil(measurementsWithId.length / batchSize);
   log.debug('Storing measurements in batches', { uploadId, total: measurementsWithId.length, batchSize, batches });
-  
+
   const measurementsCollection = await getCollection('measurements');
   for (let i = 0; i < measurementsWithId.length; i += batchSize) {
     const batch = measurementsWithId.slice(i, i + batchSize);
     await measurementsCollection.insertMany(batch);
     log.debug('Inserted measurement batch', { uploadId, batchNumber: Math.floor(i / batchSize) + 1, batchSize: batch.length });
   }
-  
+
   log.info('All measurements stored successfully', { uploadId, total: measurementsWithId.length });
 }

@@ -6,18 +6,23 @@
 
 const { createLoggerFromEvent } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
-  
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
-  
+
   const log = createLoggerFromEvent('test-generate-insights', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
-  
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Test generate insights request', includeBody: true, bodyMaxStringLength: 20000 });
+
   try {
     log.info('Starting integration tests');
     await runAllTests();
@@ -49,13 +54,13 @@ const mockLogger = {
 
 async function testDataAggregation() {
   console.log('\n=== Testing Data Aggregation ===\n');
-  
+
   const { aggregateHourlyData } = require('./utils/data-aggregation.cjs');
-  
+
   // Create mock records spanning 24 hours
   const mockRecords = [];
   const baseTime = new Date('2025-11-01T00:00:00Z');
-  
+
   for (let i = 0; i < 48; i++) {
     const timestamp = new Date(baseTime.getTime() + i * 30 * 60 * 1000); // Every 30 minutes
     mockRecords.push({
@@ -72,68 +77,68 @@ async function testDataAggregation() {
       }
     });
   }
-  
+
   const hourlyData = aggregateHourlyData(mockRecords, mockLogger);
-  
+
   console.log(`Input records: ${mockRecords.length}`);
   console.log(`Output hours: ${hourlyData.length}`);
   console.log(`Compression ratio: ${(mockRecords.length / hourlyData.length).toFixed(2)}x`);
   console.log('\nSample hourly data point:');
   console.log(JSON.stringify(hourlyData[0], null, 2));
-  
+
   // Validate structure
   if (!hourlyData[0].timestamp) throw new Error('Missing timestamp');
   if (!hourlyData[0].dataPoints) throw new Error('Missing dataPoints');
   if (!hourlyData[0].metrics) throw new Error('Missing metrics');
   if (!hourlyData[0].metrics.avgVoltage) throw new Error('Missing avgVoltage');
-  
+
   console.log('\n✅ Data aggregation test passed!\n');
   return hourlyData;
 }
 
 async function testToolDefinitions() {
   console.log('\n=== Testing Tool Definitions ===\n');
-  
+
   const { toolDefinitions } = require('./utils/gemini-tools.cjs');
-  
+
   console.log(`Total tools: ${toolDefinitions.length}`);
-  
+
   for (const tool of toolDefinitions) {
     console.log(`\n Tool: ${tool.name}`);
     console.log(`   Description: ${tool.description.substring(0, 80)}...`);
     console.log(`   Required params: ${tool.parameters.required.join(', ')}`);
   }
-  
+
   // Validate request_bms_data tool
   const bmsTool = toolDefinitions.find(t => t.name === 'request_bms_data');
   if (!bmsTool) throw new Error('request_bms_data tool not found');
-  
+
   const requiredParams = ['systemId', 'metric', 'time_range_start', 'time_range_end'];
   for (const param of requiredParams) {
     if (!bmsTool.parameters.required.includes(param)) {
       throw new Error(`Missing required parameter: ${param}`);
     }
   }
-  
+
   console.log('\n✅ Tool definitions test passed!\n');
 }
 
 async function testPromptBuilding() {
   console.log('\n=== Testing Prompt Building ===\n');
-  
+
   // This would normally require database access, so we'll skip actual execution
   console.log('Note: Prompt building test requires database access - skipping execution');
   console.log('In production, buildEnhancedPrompt will:');
   console.log('1. Load 30 days of hourly averaged data if systemId provided');
   console.log('2. Include tool definitions in system instructions');
   console.log('3. Format instructions for JSON responses (tool_call or final_answer)');
-  
+
   console.log('\n✅ Prompt building logic validated!\n');
 }
 
 async function testJSONParsing() {
   console.log('\n=== Testing JSON Response Parsing ===\n');
-  
+
   // Test tool call response
   const toolCallResponse = {
     tool_call: 'request_bms_data',
@@ -145,29 +150,29 @@ async function testJSONParsing() {
       granularity: 'hourly_avg'
     }
   };
-  
+
   const toolCallJSON = JSON.stringify(toolCallResponse);
   const parsedToolCall = JSON.parse(toolCallJSON);
-  
+
   if (!parsedToolCall.tool_call) throw new Error('tool_call not found in parsed response');
   if (!parsedToolCall.parameters) throw new Error('parameters not found in parsed response');
-  
+
   console.log('✓ Tool call response parses correctly');
   console.log(JSON.stringify(parsedToolCall, null, 2));
-  
+
   // Test final answer response
   const finalAnswerResponse = {
     final_answer: 'Based on 30 days of data, your battery shows excellent health...'
   };
-  
+
   const finalAnswerJSON = JSON.stringify(finalAnswerResponse);
   const parsedFinalAnswer = JSON.parse(finalAnswerJSON);
-  
+
   if (!parsedFinalAnswer.final_answer) throw new Error('final_answer not found in parsed response');
-  
+
   console.log('\n✓ Final answer response parses correctly');
   console.log(JSON.stringify(parsedFinalAnswer, null, 2));
-  
+
   console.log('\n✅ JSON parsing test passed!\n');
 }
 
@@ -175,17 +180,17 @@ async function runAllTests() {
   console.log('╔════════════════════════════════════════════════════════════╗');
   console.log('║     Generate Insights Function Calling - Test Suite       ║');
   console.log('╚════════════════════════════════════════════════════════════╝');
-  
+
   try {
     await testDataAggregation();
     await testToolDefinitions();
     await testPromptBuilding();
     await testJSONParsing();
-    
+
     console.log('\n╔════════════════════════════════════════════════════════════╗');
     console.log('║                   ALL TESTS PASSED ✅                      ║');
     console.log('╚════════════════════════════════════════════════════════════╝\n');
-    
+
     console.log('Summary of improvements:');
     console.log('• Data aggregation reduces token usage by ~50-90%');
     console.log('• True function calling enables iterative data requests');
@@ -193,7 +198,7 @@ async function runAllTests() {
     console.log('• Gemini can request additional data as needed');
     console.log('• Timeout protection: 20s per iteration, 55s total');
     console.log('• Enhanced error handling with user-friendly messages');
-    
+
     return 0;
   } catch (error) {
     console.error('\n╔════════════════════════════════════════════════════════════╗');

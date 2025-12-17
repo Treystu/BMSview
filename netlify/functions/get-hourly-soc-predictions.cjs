@@ -8,6 +8,10 @@
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { predictHourlySoc } = require('./utils/forecasting.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -21,9 +25,10 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('get-hourly-soc-predictions', event, context);
   const timer = createTimer(log, 'get-hourly-soc-predictions-handler');
   const headers = getCorsHeaders(event);
-  
-  log.entry({ method: event.httpMethod, path: event.path });
-  
+
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Hourly SOC predictions request', includeBody: true, bodyMaxStringLength: 20000 });
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     log.debug('OPTIONS preflight request');
@@ -77,7 +82,7 @@ exports.handler = async (event, context) => {
       error: error.message,
       stack: error.stack
     });
-    
+
     timer.end({ success: false, error: error.message });
     log.exit(500);
 

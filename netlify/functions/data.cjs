@@ -2,13 +2,17 @@
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const {
+    createStandardEntryMeta,
+    logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 function validateEnvironment(log) {
-  if (!process.env.MONGODB_URI) {
-    log.error('Missing MONGODB_URI environment variable');
-    return false;
-  }
-  return true;
+    if (!process.env.MONGODB_URI) {
+        log.error('Missing MONGODB_URI environment variable');
+        return false;
+    }
+    return true;
 }
 
 const respond = (statusCode, body, headers = {}) => ({
@@ -30,7 +34,7 @@ const clearCollection = async (collectionName, log) => {
     }
 };
 
-exports.handler = async function(event, context) {
+exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
     const log = createLoggerFromEvent('data-management', event, context);
     const timer = createTimer(log, 'data-management');
@@ -40,15 +44,16 @@ exports.handler = async function(event, context) {
         cookie: event.headers.cookie ? '[REDACTED]' : undefined,
         'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
     } : {};
-    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters, headers: sanitizedHeaders, bodyLength: event.body ? event.body.length : 0 });
-    
+    log.entry(createStandardEntryMeta(event, { query: event.queryStringParameters, headers: sanitizedHeaders }));
+    logDebugRequestSummary(log, event, { label: 'Data management request', includeBody: false });
+
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {
         timer.end({ outcome: 'preflight' });
         log.exit(200, { outcome: 'preflight' });
         return { statusCode: 200, headers };
     }
-    
+
     if (!validateEnvironment(log)) {
         timer.end({ outcome: 'configuration_error' });
         log.exit(500, { outcome: 'configuration_error' });
@@ -61,7 +66,7 @@ exports.handler = async function(event, context) {
         log.exit(405, { outcome: 'method_not_allowed' });
         return respond(405, { error: 'Method Not Allowed' }, headers);
     }
-    
+
     try {
         const { store: collectionToClearName } = event.queryStringParameters || {};
         // Map old blob store names to new MongoDB collection names

@@ -3,6 +3,10 @@
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { getCorsHeaders } = require("./utils/cors.cjs");
+const {
+    createStandardEntryMeta,
+    logDebugRequestSummary
+} = require("./utils/handler-logging.cjs");
 
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
@@ -155,7 +159,11 @@ exports.handler = async function (event, context) {
     }
 
     const log = createLoggerFromEvent("sync-incremental", event, context);
-    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+    log.entry(createStandardEntryMeta(event));
+    logDebugRequestSummary(log, event, {
+        label: "Sync incremental request",
+        includeBody: false
+    });
     const timer = createTimer(log, "sync-incremental");
     const requestStartedAt = Date.now();
 

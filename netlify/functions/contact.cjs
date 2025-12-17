@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 function validateEnvironment(log) {
@@ -12,25 +13,19 @@ function validateEnvironment(log) {
   return true;
 }
 
-exports.handler = async function(event, context) {
+exports.handler = async function (event, context) {
   const headers = getCorsHeaders(event);
   const log = createLoggerFromEvent('contact', event, context);
   const timer = createTimer(log, 'contact-form');
-  const sanitizedHeaders = event.headers ? {
-    ...event.headers,
-    authorization: event.headers.authorization ? '[REDACTED]' : undefined,
-    cookie: event.headers.cookie ? '[REDACTED]' : undefined,
-    'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
-  } : {};
-  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters, headers: sanitizedHeaders, bodyLength: event.body ? event.body.length : 0 });
-  
+  log.entry(createStandardEntryMeta(event));
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     timer.end({ outcome: 'preflight' });
     log.exit(200, { outcome: 'preflight' });
     return { statusCode: 200, headers };
   }
-  
+
   if (!validateEnvironment(log)) {
     timer.end({ outcome: 'configuration_error' });
     log.exit(500, { outcome: 'configuration_error' });
@@ -51,35 +46,35 @@ exports.handler = async function(event, context) {
   try {
     let body;
     try {
-        const bodyLength = event.body ? event.body.length : 0;
-        log.debug('Parsing request body', { bodyLength });
-        body = JSON.parse(event.body);
-        log.debug('Request body parsed successfully');
+      const bodyLength = event.body ? event.body.length : 0;
+      log.debug('Parsing request body', { bodyLength });
+      body = JSON.parse(event.body);
+      log.debug('Request body parsed successfully');
     } catch (e) {
-        log.error('Failed to parse request body', { error: e.message });
-        log.exit(400);
-        return { 
-          statusCode: 400, 
-          headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: 'Invalid JSON in request body.' }) 
-        };
+      log.error('Failed to parse request body', { error: e.message });
+      log.exit(400);
+      return {
+        statusCode: 400,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Invalid JSON in request body.' })
+      };
     }
-    
+
     const { name, email, message } = body;
     log.info('Processing contact form submission', { senderName: name, senderEmail: email });
 
     if (!name || !email || !message) {
       log.warn('Missing required form fields');
       log.exit(400);
-      return { 
-        statusCode: 400, 
+      return {
+        statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ error: 'Missing required form fields.' }) 
+        body: JSON.stringify({ error: 'Missing required form fields.' })
       };
     }
-    
+
     const { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, CONTACT_EMAIL_RECIPIENT } = process.env;
-    
+
     log.debug('Nodemailer environment loaded', {
       hasHost: !!EMAIL_HOST,
       hasPort: !!EMAIL_PORT,
@@ -117,11 +112,11 @@ exports.handler = async function(event, context) {
 
     log.debug('Attempting to send email via nodemailer');
     const info = await sendMailWithRetry(transporter, mailOptions, log);
-    
+
     timer.end({ success: true });
     log.info('Email sent successfully', { messageId: info.messageId });
     log.exit(200);
-    
+
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },

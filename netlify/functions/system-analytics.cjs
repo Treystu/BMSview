@@ -1,13 +1,17 @@
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { createRetryWrapper } = require("./utils/retry.cjs");
+const {
+    createStandardEntryMeta,
+    logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 function validateEnvironment(log) {
-  if (!process.env.MONGODB_URI) {
-    log.error('Missing MONGODB_URI environment variable');
-    return false;
-  }
-  return true;
+    if (!process.env.MONGODB_URI) {
+        log.error('Missing MONGODB_URI environment variable');
+        return false;
+    }
+    return true;
 }
 
 const respond = (statusCode, body) => ({
@@ -21,8 +25,9 @@ exports.handler = async function (event, context) {
     const timer = createTimer(log, 'system-analytics-handler');
     const withRetry = createRetryWrapper(log);
     const { httpMethod, queryStringParameters } = event;
-    
-    log.entry({ method: httpMethod, path: event.path, query: queryStringParameters });
+
+    log.entry(createStandardEntryMeta(event, { query: queryStringParameters }));
+    logDebugRequestSummary(log, event, { label: 'System analytics request', includeBody: false });
 
     if (httpMethod !== 'GET') {
         log.warn('Method not allowed', { method: httpMethod });

@@ -1,4 +1,5 @@
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const {
@@ -28,7 +29,8 @@ exports.handler = async (event, context) => {
   }
 
   const log = createLoggerFromEvent('monitoring', event, context);
-  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Monitoring request', includeBody: false });
   const timer = createTimer(log, 'monitoring');
 
   try {
@@ -42,23 +44,23 @@ exports.handler = async (event, context) => {
       case 'realtime':
         result = await handleRealtimeMetrics(log, headers);
         break;
-      
+
       case 'cost':
         result = await handleCostMetrics(log, headers, params);
         break;
-      
+
       case 'alerts':
         result = await handleAlerts(log, headers, params);
         break;
-      
+
       case 'trends':
         result = await handleTrends(log, headers, params);
         break;
-      
+
       case 'feedback':
         result = await handleFeedbackStats(log, headers);
         break;
-      
+
       case 'dashboard':
       default:
         result = await handleDashboard(log, headers, params);
@@ -85,9 +87,9 @@ exports.handler = async (event, context) => {
  */
 async function handleRealtimeMetrics(log, headers) {
   const metrics = await getRealtimeMetrics();
-  
+
   log.info('Realtime metrics retrieved', { metrics });
-  
+
   return {
     statusCode: 200,
     headers,
@@ -102,11 +104,11 @@ async function handleCostMetrics(log, headers, params) {
   const period = params.period || 'daily';
   const startDate = params.startDate ? new Date(params.startDate) : null;
   const endDate = params.endDate ? new Date(params.endDate) : null;
-  
+
   const costMetrics = await getCostMetrics(period, startDate, endDate);
-  
+
   log.info('Cost metrics retrieved', { period, costMetrics });
-  
+
   return {
     statusCode: 200,
     headers,
@@ -123,15 +125,15 @@ async function handleAlerts(log, headers, params) {
   // Validate limit to prevent excessive queries (1-1000 range)
   const parsedLimit = parseInt(params.limit || '50', 10);
   const limit = Number.isNaN(parsedLimit) ? 50 : Math.max(1, Math.min(parsedLimit, 1000));
-  
+
   const alerts = await collection
     .find({ resolved })
     .sort({ timestamp: -1 })
     .limit(limit)
     .toArray();
-  
+
   log.info('Alerts retrieved', { count: alerts.length, resolved });
-  
+
   return {
     statusCode: 200,
     headers,
@@ -148,7 +150,7 @@ async function handleTrends(log, headers, params) {
   const parsedHours = parseInt(params.hours || '24', 10);
   const hours = Number.isNaN(parsedHours) ? 24 : Math.min(parsedHours, 168);
   const startDate = new Date(Date.now() - hours * 60 * 60 * 1000);
-  
+
   // Aggregate by hour
   const trends = await collection.aggregate([
     {
@@ -177,16 +179,16 @@ async function handleTrends(log, headers, params) {
       $sort: { _id: 1 }
     }
   ]).toArray();
-  
+
   const formattedTrends = trends.map(t => ({
     timestamp: t._id,
     avgDuration: Math.round(t.avgDuration),
     errorCount: t.errorCount,
     successCount: t.successCount
   }));
-  
+
   log.info('Performance trends retrieved', { hours, dataPoints: formattedTrends.length });
-  
+
   return {
     statusCode: 200,
     headers,
@@ -199,7 +201,7 @@ async function handleTrends(log, headers, params) {
  */
 async function handleFeedbackStats(log, headers) {
   const collection = await getCollection('feedback_tracking');
-  
+
   // Use aggregation pipeline for efficient stats calculation
   // Only consider feedback from the last 90 days to prevent loading all historical data
   const now = new Date();
@@ -207,7 +209,8 @@ async function handleFeedbackStats(log, headers) {
 
   const pipeline = [
     { $match: { suggestedAt: { $gte: ninetyDaysAgo.toISOString() } } },
-    { $group: {
+    {
+      $group: {
         _id: '$status',
         count: { $sum: 1 },
         effectivenessSum: {
@@ -253,9 +256,9 @@ async function handleFeedbackStats(log, headers) {
     averageEffectiveness: implementedCount > 0 ? effectivenessSum / implementedCount : 0,
     statusBreakdown
   };
-  
+
   log.info('Feedback stats retrieved', { stats });
-  
+
   return {
     statusCode: 200,
     headers,
@@ -268,7 +271,7 @@ async function handleFeedbackStats(log, headers) {
  */
 async function handleDashboard(log, headers, params) {
   const period = params.period || 'daily';
-  
+
   // Get all metrics in parallel
   const [realtimeMetrics, costMetrics, alerts, trends, feedbackStats] = await Promise.all([
     getRealtimeMetrics(),
@@ -295,7 +298,7 @@ async function handleDashboard(log, headers, params) {
           },
           { $sort: { _id: 1 } }
         ]).toArray();
-        
+
         return trends.map(t => ({
           timestamp: t._id,
           avgDuration: Math.round(t.avgDuration),
@@ -309,7 +312,8 @@ async function handleDashboard(log, headers, params) {
         const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
         const pipeline = [
           { $match: { suggestedAt: { $gte: ninetyDaysAgo.toISOString() } } },
-          { $group: {
+          {
+            $group: {
               _id: '$status',
               count: { $sum: 1 },
               effectivenessSum: {
@@ -325,11 +329,11 @@ async function handleDashboard(log, headers, params) {
           }
         ];
         const results = await col.aggregate(pipeline).toArray();
-        
+
         let totalSuggestions = 0;
         let implementedCount = 0;
         let effectivenessSum = 0;
-        
+
         for (const r of results) {
           totalSuggestions += r.count;
           if (r._id === 'implemented') {
@@ -337,7 +341,7 @@ async function handleDashboard(log, headers, params) {
             effectivenessSum = r.effectivenessSum;
           }
         }
-        
+
         return {
           totalSuggestions,
           implementationRate: totalSuggestions > 0 ? implementedCount / totalSuggestions : 0,
@@ -345,7 +349,7 @@ async function handleDashboard(log, headers, params) {
         };
       })
   ]);
-  
+
   const dashboard = {
     realtimeMetrics,
     costMetrics,
@@ -353,12 +357,12 @@ async function handleDashboard(log, headers, params) {
     performanceTrends: trends,
     feedbackStats
   };
-  
+
   log.info('Dashboard data retrieved', {
     alertCount: alerts.length,
     trendDataPoints: trends.length
   });
-  
+
   return {
     statusCode: 200,
     headers,

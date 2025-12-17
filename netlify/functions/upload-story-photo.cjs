@@ -1,6 +1,7 @@
 const { getCollection } = require('./utils/mongodb.cjs');
 const { v4: uuidv4 } = require("uuid");
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -17,7 +18,8 @@ exports.handler = async (event, context) => {
   const timer = createTimer(log, 'upload-story-photo-handler');
   const headers = getCorsHeaders(event);
 
-  log.entry({ method: event.httpMethod, path: event.path });
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Upload story photo request', includeBody: true, bodyMaxStringLength: 20000 });
 
   if (event.httpMethod === 'OPTIONS') {
     log.debug('OPTIONS preflight request');

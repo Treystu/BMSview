@@ -4,6 +4,10 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
+const {
+    createStandardEntryMeta,
+    logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 exports.handler = async (event, context) => {
     const headers = getCorsHeaders(event);
@@ -13,12 +17,8 @@ exports.handler = async (event, context) => {
     }
 
     const log = createLoggerFromEvent('check-hashes', event, context);
-    log.entry({ 
-        method: event.httpMethod, 
-        path: event.path,
-        hasBody: !!event.body,
-        bodyLength: event.body?.length || 0
-    });
+    log.entry(createStandardEntryMeta(event));
+    logDebugRequestSummary(log, event, { label: 'Check hashes request', includeBody: true });
     const timer = createTimer(log, 'check-hashes');
 
     if (event.httpMethod !== 'POST') {
@@ -37,9 +37,9 @@ exports.handler = async (event, context) => {
         }
 
         const startTime = Date.now();
-        
+
         // ENHANCED LOGGING: Log the actual hashes being checked
-        log.info('Checking hashes for existence', { 
+        log.info('Checking hashes for existence', {
             hashCount: hashes.length,
             hashPreview: hashes.slice(0, 3).map(h => h.substring(0, 16) + '...'),
             firstFullHash: hashes[0], // Log first complete hash for debugging
@@ -68,9 +68,9 @@ exports.handler = async (event, context) => {
         const criticalFieldsList = Object.keys(criticalFieldsMap);
 
         const query = { contentHash: { $in: hashes } };
-        
+
         const queryStartTime = Date.now();
-        
+
         // ENHANCED LOGGING: Log query details
         log.info('Executing MongoDB query', {
             queryType: 'find',
@@ -78,11 +78,11 @@ exports.handler = async (event, context) => {
             hashesInQuery: hashes.length,
             event: 'QUERY_START'
         });
-        
+
         // Optimized projection - only fetch what we need
         const allMatchingRecords = await collection.find(query, {
-            projection: { 
-                contentHash: 1, 
+            projection: {
+                contentHash: 1,
                 'analysis.dlNumber': 1,
                 'analysis.stateOfCharge': 1,
                 'analysis.overallVoltage': 1,
@@ -118,7 +118,7 @@ exports.handler = async (event, context) => {
         const duplicates = [];
         const upgrades = new Set();
         const seenHashes = new Set();
-        
+
         const processingStartTime = Date.now();
 
         // Optimized field checking - batch process records
@@ -141,7 +141,7 @@ exports.handler = async (event, context) => {
                     data: { ...analysis, _recordId: record._id.toString() },
                 });
                 seenHashes.add(record.contentHash);
-                
+
                 // ENHANCED LOGGING: Log duplicate found (debug level for high volume)
                 log.debug('Duplicate detected', {
                     hash: record.contentHash.substring(0, 16) + '...',
@@ -150,12 +150,12 @@ exports.handler = async (event, context) => {
                 });
             } else {
                 upgrades.add(record.contentHash);
-                
+
                 // ENHANCED LOGGING: Log upgrade needed with missing fields
-                const missingFields = criticalFieldsList.filter(field => 
+                const missingFields = criticalFieldsList.filter(field =>
                     analysis[field] === undefined || analysis[field] === null
                 );
-                
+
                 log.debug('Upgrade needed - missing fields', {
                     hash: record.contentHash.substring(0, 16) + '...',
                     recordId: record._id.toString(),
@@ -164,27 +164,27 @@ exports.handler = async (event, context) => {
                 });
             }
         }
-        
+
         const processingDurationMs = Date.now() - processingStartTime;
-        
+
         const result = {
             duplicates,
             upgrades: [...upgrades],
         };
 
         const totalDurationMs = Date.now() - startTime;
-        const durationMs = timer.end({ 
-            hashesChecked: hashes.length, 
+        const durationMs = timer.end({
+            hashesChecked: hashes.length,
             duplicatesFound: duplicates.length,
             upgradesNeeded: upgrades.size,
             queryDurationMs,
             processingDurationMs,
             totalDurationMs
         });
-        
-        log.info('Hash check complete', { 
-            hashesChecked: hashes.length, 
-            duplicatesFound: duplicates.length, 
+
+        log.info('Hash check complete', {
+            hashesChecked: hashes.length,
+            duplicatesFound: duplicates.length,
             upgradesNeeded: upgrades.size,
             newFiles: hashes.length - duplicates.length - upgrades.size,
             queryDurationMs,

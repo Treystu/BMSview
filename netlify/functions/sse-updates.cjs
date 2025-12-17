@@ -1,4 +1,5 @@
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 
@@ -52,20 +53,20 @@ async function sendHeartbeat(channel, log, stream = null) {
   if (!connection) return false;
 
   try {
-    const heartbeat = formatSSEMessage('heartbeat', { 
-      timestamp: new Date().toISOString(), 
+    const heartbeat = formatSSEMessage('heartbeat', {
+      timestamp: new Date().toISOString(),
       channel,
       connectionAge: Date.now() - connection.startedAt.getTime()
     });
-    
+
     // Write to stream if available (Edge Functions)
     if (stream && typeof stream.write === 'function') {
       stream.write(heartbeat);
     }
-    
+
     // Update last heartbeat timestamp
     connection.lastHeartbeat = new Date();
-    
+
     log.debug('Heartbeat sent', { channel, connectionAge: Date.now() - connection.startedAt.getTime() });
     return true;
   } catch (error) {
@@ -94,12 +95,12 @@ async function broadcastEvent(channel, eventType, eventData, log, stream = null)
 
   try {
     const message = formatSSEMessage(eventType, eventData, Date.now().toString());
-    
+
     // Write to stream if available (Edge Functions or long-running context)
     if (stream && typeof stream.write === 'function') {
       stream.write(message);
     }
-    
+
     // Store message in connection history for replay
     if (!connection.messageHistory) {
       connection.messageHistory = [];
@@ -109,19 +110,19 @@ async function broadcastEvent(channel, eventType, eventData, log, stream = null)
       data: eventData,
       timestamp: new Date()
     });
-    
+
     // Keep only last 50 messages
     if (connection.messageHistory.length > 50) {
       connection.messageHistory = connection.messageHistory.slice(-50);
     }
-    
-    log.debug('Event broadcast', { 
-      channel, 
-      eventType, 
+
+    log.debug('Event broadcast', {
+      channel,
+      eventType,
       dataSize: JSON.stringify(eventData).length,
       historySize: connection.messageHistory.length
     });
-    
+
     return 1;
   } catch (error) {
     log.error('Broadcast failed', { channel, eventType, error: error.message });
@@ -138,7 +139,7 @@ async function broadcastEvent(channel, eventType, eventData, log, stream = null)
 async function monitorAnalysisProgress(channel, log, stream = null) {
   try {
     const progressCol = await getCollection('progress-events');
-    
+
     // Get recent progress events (last 5 minutes)
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
     const recentEvents = await progressCol.find({
@@ -199,7 +200,7 @@ async function monitorSystemHealth(channel, log, stream = null) {
 async function monitorInsightsGeneration(channel, log, stream = null) {
   try {
     const jobsCol = await getCollection('insights-jobs');
-    
+
     // Get active insights jobs
     const activeJobs = await jobsCol.find({
       status: { $in: ['pending', 'running'] }
@@ -238,7 +239,8 @@ exports.handler = async (event, context) => {
   }
 
   const log = createLoggerFromEvent('sse-updates', event, context);
-  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'SSE updates request', includeBody: false });
   const timer = createTimer(log, 'sse-updates');
 
   try {

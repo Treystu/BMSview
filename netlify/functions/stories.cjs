@@ -2,6 +2,10 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
@@ -14,7 +18,8 @@ exports.handler = async (event, context) => {
   }
 
   const log = createLoggerFromEvent('stories', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Stories request', includeBody: false });
   const timer = createTimer(log, 'stories');
 
   try {
@@ -35,7 +40,7 @@ exports.handler = async (event, context) => {
       if (id) {
         log.info('Fetching story by ID', { id });
         const story = await storiesCollection.findOne({ id });
-        
+
         if (!story) {
           log.warn('Story not found', { id });
           timer.end({ found: false });

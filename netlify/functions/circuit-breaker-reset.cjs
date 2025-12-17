@@ -10,17 +10,22 @@ const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { resetCircuitBreaker, resetAllCircuitBreakers } = require('./utils/retry.cjs');
 const { getRegistry } = require('./utils/tool-circuit-breakers.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
-  
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
 
   const log = createLoggerFromEvent('circuit-breaker-reset', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Circuit breaker reset request', includeBody: true });
   const timer = createTimer(log, 'circuit-breaker-reset');
 
   try {
@@ -55,7 +60,7 @@ exports.handler = async (event, context) => {
 
     // Reset tool-specific circuit breakers
     const toolRegistry = getRegistry();
-    
+
     if (resetAllTools) {
       const count = toolRegistry.resetAll(log);
       results.tools = {
@@ -90,9 +95,9 @@ exports.handler = async (event, context) => {
       };
     }
 
-    timer.end({ 
-      globalReset: !!results.global, 
-      toolsReset: !!results.tools 
+    timer.end({
+      globalReset: !!results.global,
+      toolsReset: !!results.tools
     });
     log.exit(200);
     return {

@@ -5,6 +5,7 @@
  */
 
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { buildCompleteContext, countDataPoints } = require('./utils/full-context-builder.cjs');
 const { submitFeedbackToDatabase } = require('./utils/feedback-manager.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
@@ -53,16 +54,16 @@ When you identify improvement opportunities, use the submitAppFeedback function 
  */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
-  
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
-  
+
   const log = createLoggerFromEvent('generate-insights-full-context', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
+  log.entry(createStandardEntryMeta(event));
   const timer = createTimer(log, 'full-context-insights');
-  
+
   try {
     if (event.httpMethod !== 'POST') {
       log.warn('Method not allowed', { method: event.httpMethod });
@@ -73,11 +74,19 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ error: 'Method not allowed' })
       };
     }
-    
+
     log.debug('Parsing request body');
     const body = JSON.parse(event.body);
     const { systemId, enableFeedback = true, contextWindowDays = 90, customPrompt } = body;
-    
+
+    // Ensure systemId shows up even if we only looked for it in the body (not query)
+    log.debug('Parsed request', {
+      systemId,
+      enableFeedback,
+      contextWindowDays,
+      hasCustomPrompt: !!customPrompt
+    });
+
     if (!systemId) {
       log.warn('Missing systemId in request');
       log.exit(400);
@@ -87,14 +96,14 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ error: 'systemId is required' })
       };
     }
-    
+
     log.info('Full context insights requested', {
       systemId,
       enableFeedback,
       contextWindowDays,
       hasCustomPrompt: !!customPrompt
     });
-    
+
     // Build complete context with ALL data
     log.debug('Building complete context', { systemId, contextWindowDays });
     const contextTimer = createTimer(log, 'context-building');
@@ -102,10 +111,10 @@ exports.handler = async (event, context) => {
       contextWindowDays
     });
     contextTimer.end({ dataPoints: countDataPoints(fullContext) });
-    
+
     // Prepare tools for Gemini
     const tools = [];
-    
+
     if (enableFeedback) {
       // Add feedback submission tool
       tools.push({
@@ -138,18 +147,18 @@ exports.handler = async (event, context) => {
                   rationale: { type: 'string', description: 'Why this improvement matters' },
                   implementation: { type: 'string', description: 'How to implement it' },
                   expectedBenefit: { type: 'string', description: 'Expected benefits' },
-                  estimatedEffort: { 
-                    type: 'string', 
+                  estimatedEffort: {
+                    type: 'string',
                     enum: ['hours', 'days', 'weeks'],
                     description: 'Estimated effort to implement'
                   },
-                  codeSnippets: { 
-                    type: 'array', 
+                  codeSnippets: {
+                    type: 'array',
                     items: { type: 'string' },
                     description: 'Example code snippets if applicable'
                   },
-                  affectedComponents: { 
-                    type: 'array', 
+                  affectedComponents: {
+                    type: 'array',
                     items: { type: 'string' },
                     description: 'Components that would be affected'
                   }
@@ -162,20 +171,20 @@ exports.handler = async (event, context) => {
         }]
       });
     }
-    
+
     // Build existing feedback section to prevent duplicates (trimmed to avoid extra whitespace)
     const existingFeedbackSection = fullContext.existingFeedback?.length > 0
       ? [
-          '⚠️ EXISTING FEEDBACK (DO NOT DUPLICATE):',
-          'The following feedback has already been submitted. DO NOT create similar suggestions:',
-          ...fullContext.existingFeedback.map(fb => 
-            `- [${fb.status}] ${fb.title} (${fb.type}/${fb.category}, priority: ${fb.priority})${fb.description ? `\n  Description: ${fb.description}` : ''}`
-          ),
-          '',
-          'Before submitting ANY new feedback, check this list carefully. Only submit genuinely NEW ideas.'
-        ].join('\n')
+        '⚠️ EXISTING FEEDBACK (DO NOT DUPLICATE):',
+        'The following feedback has already been submitted. DO NOT create similar suggestions:',
+        ...fullContext.existingFeedback.map(fb =>
+          `- [${fb.status}] ${fb.title} (${fb.type}/${fb.category}, priority: ${fb.priority})${fb.description ? `\n  Description: ${fb.description}` : ''}`
+        ),
+        '',
+        'Before submitting ANY new feedback, check this list carefully. Only submit genuinely NEW ideas.'
+      ].join('\n')
       : '';
-    
+
     // Create comprehensive prompt (using array join to avoid template literal whitespace)
     const promptLines = [
       'Analyze this COMPLETE battery management system data:',
@@ -184,11 +193,11 @@ exports.handler = async (event, context) => {
       `Data Points Analyzed: ${countDataPoints(fullContext)}`,
       `Time Range: ${fullContext.raw?.timeRange?.days || 90} days`,
     ];
-    
+
     if (existingFeedbackSection) {
       promptLines.push('', existingFeedbackSection);
     }
-    
+
     promptLines.push(
       '',
       'FULL CONTEXT:',
@@ -205,23 +214,23 @@ exports.handler = async (event, context) => {
       'If you identify any opportunities to improve the BMSview application itself, use the submitAppFeedback function.',
       '⚠️ IMPORTANT: Check the EXISTING FEEDBACK section above before submitting. Do NOT duplicate existing suggestions.'
     );
-    
+
     const prompt = customPrompt || promptLines.join('\n');
-    
+
     // Execute insights generation using the existing geminiClient for consistency
     log.debug('Initializing Gemini client');
     const { getGeminiClient } = require('./utils/geminiClient.cjs');
     const geminiClient = getGeminiClient();
-    
+
     // Convert tools to function declarations for the API
     const toolDefs = tools.flatMap(t => t.function_declarations || []);
     log.debug('Tool definitions prepared', { toolCount: toolDefs.length });
-    
+
     // Prepend system instruction to the prompt for context
     const fullPrompt = `${GEMINI_SYSTEM_PROMPT}\n\n${prompt}`;
-    
+
     // Call Gemini API via the existing client (handles rate limiting, circuit breaker, retries)
-    log.debug('Calling Gemini API', { 
+    log.debug('Calling Gemini API', {
       model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       promptLength: fullPrompt.length,
       hasTools: toolDefs.length > 0
@@ -232,20 +241,20 @@ exports.handler = async (event, context) => {
       model: process.env.GEMINI_MODEL || 'gemini-2.5-flash'
     }, log);
     geminiTimer.end({ hasResponse: !!response });
-    
+
     // Extract text from the REST API response structure
     const responseText = response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     log.debug('Gemini response received', { responseLength: responseText.length });
-    
+
     // Process function calls (feedback submissions) from the response
     const feedbackSubmissions = [];
     const functionCalls = response?.candidates?.[0]?.content?.parts?.filter(p => p.functionCall) || [];
-    
+
     if (functionCalls.length > 0) {
       log.info('Processing AI feedback submissions', {
         count: functionCalls.length
       });
-      
+
       for (const part of functionCalls) {
         const call = part.functionCall;
         if (call.name === 'submitAppFeedback') {
@@ -255,7 +264,7 @@ exports.handler = async (event, context) => {
               geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
               ...call.args
             }, context);
-            
+
             feedbackSubmissions.push({
               feedbackId: feedbackResult.id,
               isDuplicate: feedbackResult.isDuplicate,
@@ -271,13 +280,13 @@ exports.handler = async (event, context) => {
         }
       }
     }
-    
-    const durationMs = timer.end({ 
+
+    const durationMs = timer.end({
       systemId,
       dataPointsAnalyzed: countDataPoints(fullContext),
-      feedbackSubmitted: feedbackSubmissions.length 
+      feedbackSubmitted: feedbackSubmissions.length
     });
-    
+
     log.info('Full context insights generated', {
       systemId,
       dataPointsAnalyzed: countDataPoints(fullContext),
@@ -285,7 +294,7 @@ exports.handler = async (event, context) => {
       feedbackSubmitted: feedbackSubmissions.length,
       durationMs
     });
-    
+
     log.exit(200, { systemId, durationMs });
     return {
       statusCode: 200,
@@ -309,8 +318,8 @@ exports.handler = async (event, context) => {
     };
   } catch (error) {
     timer.end({ error: true });
-    log.error('Full context insights error', { 
-      error: error.message, 
+    log.error('Full context insights error', {
+      error: error.message,
       stack: error.stack,
       errorType: error.constructor?.name
     });

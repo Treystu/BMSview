@@ -11,6 +11,10 @@
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getGeminiClient } = require('./utils/geminiClient.cjs');
 const { toolDefinitions, executeToolCall } = require('./utils/gemini-tools.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -37,9 +41,10 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('initialize-insights', event, context);
   const timer = createTimer(log, 'initialize-insights-handler');
   const headers = getCorsHeaders(event);
-  
-  log.entry({ method: event.httpMethod, path: event.path });
-  
+
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Initialize insights request', includeBody: true, bodyMaxStringLength: 20000 });
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     log.debug('OPTIONS preflight request');
@@ -61,7 +66,7 @@ exports.handler = async (event, context) => {
   try {
     // Parse request
     const body = event.body ? JSON.parse(event.body) : {};
-    const { 
+    const {
       systemId,
       contextWindowDays = 30,
       modelOverride
@@ -73,9 +78,9 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           success: false,
-          error: 'systemId is required for initialization' 
+          error: 'systemId is required for initialization'
         })
       };
     }
@@ -91,7 +96,7 @@ exports.handler = async (event, context) => {
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - contextWindowDays);
-    
+
     const initPrompt = `
 🔧 INITIALIZATION SEQUENCE - MANDATORY DATA VERIFICATION
 
@@ -141,7 +146,7 @@ Execute the initialization now.`;
           elapsedMs,
           timeoutMs: INITIALIZATION_TIMEOUT_MS
         });
-        
+
         return {
           statusCode: 408,
           headers: { ...headers, 'Content-Type': 'application/json' },
@@ -155,7 +160,7 @@ Execute the initialization now.`;
       }
 
       turnsUsed++;
-      
+
       log.info(`Initialization attempt ${attempts + 1}`, { elapsedMs });
 
       let geminiResponse;
@@ -172,7 +177,7 @@ Execute the initialization now.`;
           attempt: attempts + 1,
           error: err.message
         });
-        
+
         // Linear backoff
         const delayMs = Math.min(RETRY_LINEAR_INCREMENT_MS * (attempts + 1), 10000);
         await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -187,7 +192,7 @@ Execute the initialization now.`;
           hasResponse: !!geminiResponse,
           hasCandidates: !!geminiResponse?.candidates
         });
-        
+
         conversationHistory.push({
           role: 'user',
           parts: [{ text: 'Your response was empty or invalid. Please call request_bms_data with the parameters specified above.' }]
@@ -200,16 +205,16 @@ Execute the initialization now.`;
 
       // Check for tool calls
       const toolCalls = responseContent.parts.filter(p => p.functionCall);
-      
+
       if (toolCalls.length === 0) {
         const textParts = responseContent.parts.filter(p => p.text);
         const responseText = textParts.map(p => p.text).join(' ');
-        
+
         log.warn('Gemini did not call request_bms_data', {
           attempt: attempts + 1,
           responseText: responseText.substring(0, 500)
         });
-        
+
         conversationHistory.push({
           role: 'user',
           parts: [{ text: `You did not call the request_bms_data tool. You MUST call it with the exact parameters provided. Do it now.` }]
@@ -224,7 +229,7 @@ Execute the initialization now.`;
       for (const toolCall of toolCalls) {
         const toolName = toolCall.functionCall.name;
         const toolArgs = toolCall.functionCall.args;
-        
+
         log.info(`Initialization tool call: ${toolName}`, {
           attempt: attempts + 1,
           toolArgs: JSON.stringify(toolArgs).substring(0, 500)
@@ -234,7 +239,7 @@ Execute the initialization now.`;
 
         try {
           const toolResult = await executeToolCall(toolName, toolArgs, log);
-          
+
           // Add tool result to conversation
           conversationHistory.push({
             role: 'function',
@@ -275,7 +280,7 @@ Execute the initialization now.`;
             error: err.message,
             attempt: attempts + 1
           });
-          
+
           conversationHistory.push({
             role: 'function',
             parts: [{
@@ -294,7 +299,7 @@ Execute the initialization now.`;
       // Check if we successfully retrieved data
       if (dataRetrieved && dataPoints > 0) {
         const durationMs = Date.now() - startTime;
-        
+
         log.info('Initialization sequence SUCCEEDED', {
           attempts: attempts + 1,
           dataPoints,
@@ -302,10 +307,10 @@ Execute the initialization now.`;
           turnsUsed,
           durationMs
         });
-        
+
         timer.end({ success: true, dataPoints });
         log.exit(200, { dataPoints, attempts: attempts + 1 });
-        
+
         // Return success with session data for handoff
         return {
           statusCode: 200,
@@ -341,7 +346,7 @@ Execute the initialization now.`;
 
     // Exhausted all retries
     const durationMs = Date.now() - startTime;
-    
+
     log.error('Initialization failed after all retries', {
       attempts,
       maxRetries: MAX_RETRIES,
@@ -365,7 +370,7 @@ Execute the initialization now.`;
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     const durationMs = Date.now() - startTime;
-    
+
     log.error('Initialization failed with exception', {
       error: err.message,
       stack: err.stack,

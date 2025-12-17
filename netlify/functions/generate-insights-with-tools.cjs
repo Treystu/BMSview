@@ -14,6 +14,7 @@
  */
 
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { executeReActLoop } = require('./utils/react-loop.cjs');
 const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
 const { sanitizeInsightsRequest, SanitizationError } = require('./utils/security-sanitizer.cjs');
@@ -71,7 +72,7 @@ exports.handler = async (event, context) => {
   }
 
   const log = createLoggerFromEvent('generate-insights-with-tools', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
+  log.entry(createStandardEntryMeta(event));
   const timer = createTimer(log, 'generate-insights-with-tools');
   const startTime = Date.now();
 
@@ -187,6 +188,21 @@ exports.handler = async (event, context) => {
     const resumeJobId = sanitizedBody.resumeJobId;
     const consentGranted = sanitizedBody.consentGranted;
     const fullContextMode = sanitizedBody.fullContextMode || false; // NEW: Enable full context pre-loading
+
+    log.debug('Request parameters (sanitized)', {
+      systemId,
+      mode,
+      insightMode,
+      fullContextMode,
+      contextWindowDays,
+      maxIterations,
+      modelOverride,
+      hasAnalysisData: !!analysisData,
+      hasCustomPrompt: !!customPrompt,
+      initializationComplete,
+      resumeJobId,
+      clientIp
+    });
 
     // =====================
     // SECURITY: Consent Verification with Audit Logging

@@ -6,6 +6,7 @@
  */
 
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -28,9 +29,9 @@ const { handler: newHandler } = require('./generate-insights-with-tools.cjs');
 const handler = async (event, context) => {
   const log = createLoggerFromEvent('generate-insights-legacy', event, context);
   const timer = createTimer(log, 'generate-insights-legacy-handler');
-  
-  log.entry({ method: event.httpMethod, path: event.path });
-  
+
+  log.entry(createStandardEntryMeta(event));
+
   if (!validateEnvironment(log)) {
     timer.end({ success: false, error: 'configuration' });
     log.exit(500);
@@ -40,7 +41,7 @@ const handler = async (event, context) => {
       body: JSON.stringify({ error: 'Server configuration error' })
     };
   }
-  
+
   try {
     log.info('Legacy endpoint called, proxying to new implementation', {
       method: event.httpMethod,
@@ -49,10 +50,10 @@ const handler = async (event, context) => {
 
     // Simply delegate to the new handler
     const result = await newHandler(event, context);
-    
+
     timer.end({ success: true, statusCode: result.statusCode });
     log.exit(result.statusCode);
-    
+
     return result;
   } catch (error) {
     log.error('Error in legacy generate-insights proxy', {

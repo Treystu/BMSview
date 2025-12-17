@@ -1,8 +1,10 @@
+// @ts-nocheck
 /**
  * User acceptance testing for admin panel updates
  */
 
-const { MongoClient } = require('mongodb');
+// Admin function uses the shared MongoDB helper (mocked below)
+const { getCollection } = require('../netlify/functions/utils/mongodb.cjs');
 
 // Mock database for testing
 const mockDatabase = {
@@ -43,23 +45,27 @@ const mockDatabase = {
 };
 
 // Mock MongoDB setup - defined at top level
-const mockMongoDB = {
-  connect: jest.fn().mockResolvedValue(null),
-  close: jest.fn().mockResolvedValue(null),
-  db: jest.fn().mockReturnValue({
-    collection: jest.fn().mockReturnValue({
-      findOne: jest.fn(),
-      updateOne: jest.fn(),
-      insertOne: jest.fn(),
-      aggregate: jest.fn().mockReturnValue({
-        toArray: jest.fn()
-      })
+const mockCollections = {
+  systems: {
+    findOne: jest.fn(),
+    updateOne: jest.fn(),
+    insertOne: jest.fn(),
+    aggregate: jest.fn().mockReturnValue({
+      toArray: jest.fn()
     })
-  })
+  },
+  records: {
+    aggregate: jest.fn().mockReturnValue({
+      toArray: jest.fn()
+    })
+  },
+  'system-adoption-log': {
+    insertOne: jest.fn()
+  }
 };
 
-jest.mock('mongodb', () => ({
-  MongoClient: jest.fn(() => mockMongoDB)
+jest.mock('../netlify/functions/utils/mongodb.cjs', () => ({
+  getCollection: jest.fn(async (name) => mockCollections[name])
 }));
 
 describe('Admin Panel User Acceptance Tests', () => {
@@ -69,10 +75,10 @@ describe('Admin Panel User Acceptance Tests', () => {
     // Clear mock calls before each test
     jest.clearAllMocks();
     // Reset the mock implementations
-    mockMongoDB.db().collection().findOne.mockReset();
-    mockMongoDB.db().collection().updateOne.mockReset();
-    mockMongoDB.db().collection().aggregate.mockReset();
-    mockMongoDB.db().collection().insertOne.mockReset();
+    mockCollections.systems.findOne.mockReset();
+    mockCollections.systems.updateOne.mockReset();
+    mockCollections.systems.aggregate.mockReset();
+    mockCollections['system-adoption-log'].insertOne.mockReset();
     // Import admin function fresh for each test
     adminFunction = require('../netlify/functions/admin-systems.cjs').handler;
   });
@@ -88,7 +94,7 @@ describe('Admin Panel User Acceptance Tests', () => {
       };
 
       const unadoptedSystems = mockDatabase.systems.filter(s => !s.adopted);
-      mockMongoDB.db().collection().aggregate.mockReturnValue({
+      mockCollections.systems.aggregate.mockReturnValue({
         toArray: jest.fn().mockResolvedValue(unadoptedSystems)
       });
 
@@ -122,7 +128,7 @@ describe('Admin Panel User Acceptance Tests', () => {
           lastActive: new Date().toISOString()
         }));
 
-      mockMongoDB.db().collection().aggregate.mockReturnValue({
+      mockCollections.systems.aggregate.mockReturnValue({
         toArray: jest.fn().mockResolvedValue(adoptedSystems)
       });
 
@@ -147,9 +153,9 @@ describe('Admin Panel User Acceptance Tests', () => {
       };
 
       // Mock successful adoption
-      mockMongoDB.db().collection().findOne.mockResolvedValue(mockDatabase.systems[0]);
-      mockMongoDB.db().collection().updateOne.mockResolvedValue({ modifiedCount: 1 });
-      mockMongoDB.db().collection().insertOne.mockResolvedValue({ insertedId: 'log-id' });
+      mockCollections.systems.findOne.mockResolvedValue(mockDatabase.systems[0]);
+      mockCollections.systems.updateOne.mockResolvedValue({ modifiedCount: 1 });
+      mockCollections['system-adoption-log'].insertOne.mockResolvedValue({ insertedId: 'log-id' });
 
       const result = await adminFunction(event);
 
@@ -170,7 +176,7 @@ describe('Admin Panel User Acceptance Tests', () => {
       };
 
       // Mock already adopted system
-      mockMongoDB.db().collection().findOne.mockResolvedValue(null);
+      mockCollections.systems.findOne.mockResolvedValue(null);
 
       const result = await adminFunction(event);
 
@@ -198,7 +204,7 @@ describe('Admin Panel User Acceptance Tests', () => {
           filters[i] === 'adopted' ? mockDatabase.systems.filter(s => s.adopted) :
             mockDatabase.systems.filter(s => !s.adopted);
 
-        mockMongoDB.db().collection().aggregate.mockReturnValue({
+        mockCollections.systems.aggregate.mockReturnValue({
           toArray: jest.fn().mockResolvedValue(filteredSystems)
         });
 
@@ -230,7 +236,7 @@ describe('Admin Panel User Acceptance Tests', () => {
         lastActive: s.adopted ? new Date().toISOString() : null
       }));
 
-      mockMongoDB.db().collection().aggregate.mockReturnValue({
+      mockCollections.systems.aggregate.mockReturnValue({
         toArray: jest.fn().mockResolvedValue(systemsWithMetadata)
       });
 
@@ -288,7 +294,7 @@ describe('Admin Panel User Acceptance Tests', () => {
         }
       };
 
-      mockMongoDB.db().collection().aggregate.mockReturnValue({
+      mockCollections.systems.aggregate.mockReturnValue({
         toArray: jest.fn().mockImplementation(() => Promise.resolve(mockGetSystems()))
       });
 
@@ -310,7 +316,7 @@ describe('Admin Panel User Acceptance Tests', () => {
         }
       };
 
-      mockMongoDB.db().collection().aggregate.mockReturnValue({
+      mockCollections.systems.aggregate.mockReturnValue({
         toArray: jest.fn().mockRejectedValue(new Error('Database connection failed'))
       }); const result = await adminFunction(event);
 
@@ -331,7 +337,7 @@ describe('Admin Panel User Acceptance Tests', () => {
       };
 
       // Use mockMongoDB directly to set up the mock for this test
-      mockMongoDB.db().collection().aggregate.mockReturnValue({
+      mockCollections.systems.aggregate.mockReturnValue({
         toArray: jest.fn().mockResolvedValue(mockDatabase.systems.map(s => ({
           ...s,
           id: s._id,
@@ -364,7 +370,7 @@ describe('Admin Panel User Acceptance Tests', () => {
       const counter = { count: 0 };
 
       // Simulate race condition using the counter object
-      mockMongoDB.db().collection().findOne
+      mockCollections.systems.findOne
         .mockImplementationOnce(() => Promise.resolve({
           ...mockDatabase.systems[0],
           adopted: false,
@@ -372,7 +378,7 @@ describe('Admin Panel User Acceptance Tests', () => {
         }))
         .mockImplementationOnce(() => Promise.resolve(null));
 
-      mockMongoDB.db().collection().updateOne
+      mockCollections.systems.updateOne
         .mockImplementationOnce(() => Promise.resolve({ modifiedCount: 1 }))
         .mockImplementationOnce(() => Promise.resolve({ modifiedCount: 0 }));
 
@@ -410,7 +416,7 @@ describe('Admin Panel User Acceptance Tests', () => {
         createdAt: new Date().toISOString()
       }));
 
-      mockMongoDB.db().collection().aggregate.mockReturnValue({
+      mockCollections.systems.aggregate.mockReturnValue({
         toArray: jest.fn().mockResolvedValue(formattedSystems)
       });
 
@@ -457,7 +463,7 @@ describe('Admin Panel User Acceptance Tests', () => {
         }));
 
         // Set up mock for this filter iteration
-        mockMongoDB.db().collection().aggregate.mockReturnValue({
+        mockCollections.systems.aggregate.mockReturnValue({
           toArray: jest.fn().mockResolvedValue(formattedData)
         });
 
@@ -496,9 +502,9 @@ describe('Admin Panel User Scenarios', () => {
       { _id: 'system-new-2', name: 'Emergency Backup', adopted: false, recordCount: 25 }
     ];
 
-    mockMongoDB.db().collection().findOne.mockResolvedValue(unadoptedSystems[0]);
-    mockMongoDB.db().collection().updateOne.mockResolvedValue({ modifiedCount: 1 });
-    mockMongoDB.db().collection().aggregate.mockReturnValue({
+    mockCollections.systems.findOne.mockResolvedValue(unadoptedSystems[0]);
+    mockCollections.systems.updateOne.mockResolvedValue({ modifiedCount: 1 });
+    mockCollections.systems.aggregate.mockReturnValue({
       toArray: jest.fn().mockResolvedValue(unadoptedSystems)
     });
 
@@ -533,7 +539,7 @@ describe('Admin Panel User Scenarios', () => {
       { _id: 'system-new-1', name: 'New Battery System', adopted: true, adoptedBy: 'workflow-admin', recordCount: 50 }
     ];
 
-    mockMongoDB.db().collection().aggregate.mockReturnValue({
+    mockCollections.systems.aggregate.mockReturnValue({
       toArray: jest.fn().mockResolvedValue(adoptedSystems)
     });
 

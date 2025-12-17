@@ -1,28 +1,29 @@
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 function validateEnvironment(log) {
-  if (!process.env.MONGODB_URI) {
-    log.error('Missing MONGODB_URI environment variable');
-    return false;
-  }
-  return true;
+    if (!process.env.MONGODB_URI) {
+        log.error('Missing MONGODB_URI environment variable');
+        return false;
+    }
+    return true;
 }
 const { z } = require("zod");
 
 // System validation schema
 const SystemSchema = z.object({
-  name: z.string().min(1, "System name is required"),
-  chemistry: z.enum(["LiFePO4", "LiPo", "LiIon", "LeadAcid", "NiMH", "Other"]).optional(),
-  voltage: z.number().positive("Voltage must be positive").optional(),
-  capacity: z.number().positive("Capacity must be positive").optional(),
-  latitude: z.number().min(-90).max(90).optional(),
-  longitude: z.number().min(-180).max(180).optional(),
-  associatedDLs: z.array(z.string()).optional(),
-  notes: z.string().optional(),
-  location: z.string().optional()
+    name: z.string().min(1, "System name is required"),
+    chemistry: z.enum(["LiFePO4", "LiPo", "LiIon", "LeadAcid", "NiMH", "Other"]).optional(),
+    voltage: z.number().positive("Voltage must be positive").optional(),
+    capacity: z.number().positive("Capacity must be positive").optional(),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    associatedDLs: z.array(z.string()).optional(),
+    notes: z.string().optional(),
+    location: z.string().optional()
 });
 
 const respond = (statusCode, body, headers = {}) => ({
@@ -31,32 +32,32 @@ const respond = (statusCode, body, headers = {}) => ({
     headers: { 'Content-Type': 'application/json', ...headers },
 });
 
-exports.handler = async function(event, context) {
+exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
-    
+
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers };
     }
-    
+
     const log = createLoggerFromEvent('systems', event, context);
-    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+    log.entry(createStandardEntryMeta(event));
     const timer = createTimer(log, 'systems');
-    
+
     // Define logContext for consistent logging throughout the function
     const clientIp = event.headers['x-nf-client-connection-ip'] || 'unknown';
-    const logContext = { 
-        clientIp, 
+    const logContext = {
+        clientIp,
         httpMethod: event.httpMethod,
         path: event.path
     };
-    
+
     if (!validateEnvironment(log)) {
         timer.end({ error: 'env_validation_failed' });
         log.exit(500);
         return respond(500, { error: 'Server configuration error' }, headers);
     }
-    
+
     try {
         const systemsCollection = await getCollection("systems");
         const historyCollection = await getCollection("history");
@@ -70,7 +71,7 @@ exports.handler = async function(event, context) {
                 log.exit(system ? 200 : 404);
                 return system ? respond(200, system, headers) : respond(404, { error: "System not found." }, headers);
             }
-            
+
             log.debug('Fetching paginated systems', { page, limit });
             const pageNum = parseInt(page, 10);
             const limitNum = parseInt(limit, 10);
@@ -80,7 +81,7 @@ exports.handler = async function(event, context) {
                 systemsCollection.find({}, { projection: { _id: 0 } }).sort({ name: 1 }).skip(skip).limit(limitNum).toArray(),
                 systemsCollection.countDocuments({})
             ]);
-            
+
             timer.end({ page: pageNum, returned: systems.length, total: totalItems });
             log.info(`Returning page ${pageNum} of systems`, { ...logContext, returned: systems.length, total: totalItems });
             log.exit(200);
@@ -89,14 +90,15 @@ exports.handler = async function(event, context) {
 
         if (event.httpMethod === 'POST') {
             const parsedBody = JSON.parse(event.body);
-            log.debug('Parsed POST body', { ...logContext, bodyPreview: JSON.stringify(parsedBody).substring(0, 100) });
+            // Do not log body contents (may contain user notes/PII). Safe signal only.
+            log.debug('Parsed POST body', { ...logContext, bodyLength: event.body ? event.body.length : 0 });
             const { action } = parsedBody;
             const postLogContext = { ...logContext, action };
 
             if (action === 'merge') {
                 const { primarySystemId, idsToMerge } = parsedBody;
                 log.warn('Starting system merge operation', { ...postLogContext, primarySystemId, idsToMerge });
-                
+
                 const systemsToMerge = await systemsCollection.find({ id: { $in: idsToMerge } }).toArray();
                 const primarySystem = systemsToMerge.find(s => s.id === primarySystemId);
                 if (!primarySystem) {
@@ -139,7 +141,7 @@ exports.handler = async function(event, context) {
                 log.info(`Updated ${modifiedCount} history records during merge`, { ...postLogContext, modifiedCount });
 
                 await systemsCollection.updateOne(
-                    { id: primarySystem.id }, 
+                    { id: primarySystem.id },
                     { $set: { associatedDLs: primarySystem.associatedDLs, mergeMetadata } }
                 );
                 log.info('Updated primary system in store', { ...postLogContext, systemId: primarySystem.id });
@@ -148,7 +150,7 @@ exports.handler = async function(event, context) {
                     await systemsCollection.deleteMany({ id: { $in: idsToDelete } });
                     log.info('Deleted merged systems', { ...postLogContext, deletedCount: idsToDelete.length });
                 }
-                
+
                 timer.end({ merged: true, conflicts: conflicts.length });
                 log.warn('System merge operation completed successfully', postLogContext);
                 log.exit(200);
@@ -171,8 +173,8 @@ exports.handler = async function(event, context) {
                     log.warn('System validation failed', { ...logContext, errors: validationError.errors });
                     timer.end({ error: 'validation_failed' });
                     log.exit(400);
-                    return respond(400, { 
-                        error: 'Validation failed', 
+                    return respond(400, {
+                        error: 'Validation failed',
                         details: validationError.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
                     }, headers);
                 }
@@ -188,16 +190,16 @@ exports.handler = async function(event, context) {
                 log.exit(400);
                 return respond(400, { error: 'System ID is required for update.' }, headers);
             }
-            
+
             log.info('Updating system', putLogContext);
             const updateData = JSON.parse(event.body);
             log.debug('Parsed PUT body', { ...putLogContext, bodyPreview: JSON.stringify(updateData).substring(0, 100) });
-            
+
             // Validate update data
             try {
                 const { id, ...dataToUpdate } = updateData; // Ensure `id` is not in the update payload
                 const validatedUpdate = SystemSchema.partial().parse(dataToUpdate);
-                
+
                 const result = await systemsCollection.updateOne({ id: systemId }, { $set: validatedUpdate });
 
                 if (result.matchedCount === 0) {
@@ -205,7 +207,7 @@ exports.handler = async function(event, context) {
                     log.exit(404);
                     return respond(404, { error: "System not found." }, headers);
                 }
-                
+
                 const updatedSystem = await systemsCollection.findOne({ id: systemId }, { projection: { _id: 0 } });
                 timer.end({ updated: true, systemId });
                 log.exit(200);
@@ -215,8 +217,8 @@ exports.handler = async function(event, context) {
                     log.warn('System update validation failed', { ...putLogContext, errors: validationError.errors });
                     timer.end({ error: 'validation_failed' });
                     log.exit(400);
-                    return respond(400, { 
-                        error: 'Validation failed', 
+                    return respond(400, {
+                        error: 'Validation failed',
                         details: validationError.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
                     }, headers);
                 }
@@ -226,37 +228,37 @@ exports.handler = async function(event, context) {
 
         if (event.httpMethod === 'DELETE') {
             const { systemId } = event.queryStringParameters || {};
-            
+
             if (!systemId) {
                 log.warn('System ID missing for deletion');
                 timer.end({ error: 'missing_systemId' });
                 log.exit(400);
                 return respond(400, { error: 'System ID is required for deletion.' }, headers);
             }
-            
+
             log.info('Attempting to delete system', { systemId });
-            
+
             // Check if system has linked records
             const linkedCount = await historyCollection.countDocuments({ systemId });
-            
+
             if (linkedCount > 0) {
                 log.warn('Cannot delete system with linked records', { systemId, linkedCount });
                 timer.end({ error: 'has_linked_records' });
                 log.exit(400);
-                return respond(400, { 
-                    error: `Cannot delete system with ${linkedCount} linked records. Please unlink or delete the records first.` 
+                return respond(400, {
+                    error: `Cannot delete system with ${linkedCount} linked records. Please unlink or delete the records first.`
                 }, headers);
             }
-            
+
             const result = await systemsCollection.deleteOne({ id: systemId });
-            
+
             if (result.deletedCount === 0) {
                 log.warn('System not found for deletion', { systemId });
                 timer.end({ found: false });
                 log.exit(404);
                 return respond(404, { error: 'System not found.' }, headers);
             }
-            
+
             timer.end({ deleted: true });
             log.info('System deleted successfully', { systemId });
             log.exit(200);

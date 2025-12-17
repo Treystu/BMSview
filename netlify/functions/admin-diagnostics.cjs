@@ -3,6 +3,10 @@ const { getDb, getCollection } = require('./utils/mongodb.cjs');
 const { ObjectId } = require('mongodb');
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 /**
  * @param {import('./utils/logger.cjs').LogFunction} log
@@ -3793,7 +3797,8 @@ exports.handler = async (event, context) => {
   // Create logger with full event context for correlation
   const log = createLoggerFromEvent('admin-diagnostics', event, context);
   logger = log; // Retain shared reference for helper functions that rely on module-scope logger
-  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters, headers: sanitizedHeaders, bodyLength: event.body ? event.body.length : 0 });
+  log.entry(createStandardEntryMeta(event, { query: event.queryStringParameters, headers: sanitizedHeaders }));
+  logDebugRequestSummary(log, event, { label: 'Admin diagnostics request', includeBody: true, bodyMaxStringLength: 20000 });
   const timer = createTimer(log, 'admin-diagnostics');
 
   // Handle CORS preflight early

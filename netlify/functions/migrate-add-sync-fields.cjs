@@ -2,13 +2,17 @@
 
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const {
+    createStandardEntryMeta,
+    logDebugRequestSummary
+} = require("./utils/handler-logging.cjs");
 
 function validateEnvironment(log) {
-  if (!process.env.MONGODB_URI) {
-    log.error('Missing MONGODB_URI environment variable');
-    return false;
-  }
-  return true;
+    if (!process.env.MONGODB_URI) {
+        log.error('Missing MONGODB_URI environment variable');
+        return false;
+    }
+    return true;
 }
 const { errorResponse } = require("./utils/errors.cjs");
 
@@ -166,16 +170,20 @@ async function ensureDeletedRecordsIndexes(log) {
 exports.handler = async function (event, context) {
     const log = createLoggerFromEvent("migrate-add-sync-fields", event, context);
     const timer = createTimer(log, 'migrate-add-sync-fields-handler');
-    
-    log.entry({ method: event.httpMethod, path: event.path });
-    
+
+    log.entry(createStandardEntryMeta(event));
+    logDebugRequestSummary(log, event, {
+        label: "Migrate add sync fields request",
+        includeBody: true
+    });
+
     if (!validateEnvironment(log)) {
-      timer.end({ success: false, error: 'configuration' });
-      log.exit(500);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: 'Server configuration error' })
-      };
+        timer.end({ success: false, error: 'configuration' });
+        log.exit(500);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Server configuration error' })
+        };
     }
 
     if (event.httpMethod !== "POST") {

@@ -13,13 +13,17 @@
 
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const {
+    createStandardEntryMeta,
+    logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 function validateEnvironment(log) {
-  if (!process.env.MONGODB_URI) {
-    log.error('Missing MONGODB_URI environment variable');
-    return false;
-  }
-  return true;
+    if (!process.env.MONGODB_URI) {
+        log.error('Missing MONGODB_URI environment variable');
+        return false;
+    }
+    return true;
 }
 
 /**
@@ -29,31 +33,31 @@ function arrayToCSV(data, headers) {
     if (!data || data.length === 0) {
         return headers.join(',') + '\n';
     }
-    
+
     const rows = data.map(obj => {
         return headers.map(header => {
             let value = obj[header];
-            
+
             // Handle nested objects and arrays
             if (value && typeof value === 'object') {
                 value = JSON.stringify(value);
             }
-            
+
             // Handle null/undefined
             if (value === null || value === undefined) {
                 value = '';
             }
-            
+
             // Escape quotes and wrap in quotes if needed
             value = String(value);
             if (/[,"\n\r]/.test(value)) {
                 value = '"' + value.replace(/"/g, '""') + '"';
             }
-            
+
             return value;
         }).join(',');
     });
-    
+
     return [headers.join(','), ...rows].join('\n');
 }
 
@@ -63,18 +67,18 @@ function arrayToCSV(data, headers) {
 async function exportHistoryCSV(log) {
     const collection = await getCollection('history');
     const records = await collection.find({}).sort({ timestamp: -1 }).toArray();
-    
+
     log.info('Exporting history data', { count: records.length });
-    
+
     const headers = [
         'id', 'timestamp', 'systemId', 'systemName', 'dlNumber', 'fileName',
-        'stateOfCharge', 'overallVoltage', 'current', 'power', 'remainingCapacity', 
+        'stateOfCharge', 'overallVoltage', 'current', 'power', 'remainingCapacity',
         'fullCapacity', 'cycleCount', 'temperature', 'mosTemperature',
         'chargeMosOn', 'dischargeMosOn', 'balanceOn',
         'highestCellVoltage', 'lowestCellVoltage', 'averageCellVoltage', 'cellVoltageDifference',
         'status', 'alerts', 'weather_temp', 'weather_clouds', 'weather_uvi'
     ];
-    
+
     const flattenedRecords = records.map(record => ({
         id: record.id,
         timestamp: record.timestamp,
@@ -104,7 +108,7 @@ async function exportHistoryCSV(log) {
         weather_clouds: record.weather?.clouds ?? '',
         weather_uvi: record.weather?.uvi ?? ''
     }));
-    
+
     return arrayToCSV(flattenedRecords, headers);
 }
 
@@ -114,14 +118,14 @@ async function exportHistoryCSV(log) {
 async function exportSystemsCSV(log) {
     const collection = await getCollection('systems');
     const systems = await collection.find({}).sort({ name: 1 }).toArray();
-    
+
     log.info('Exporting systems data', { count: systems.length });
-    
+
     const headers = [
         'id', 'name', 'description', 'location', 'latitude', 'longitude',
         'capacity', 'voltage', 'associatedDLs', 'createdAt', 'updatedAt'
     ];
-    
+
     const flattenedSystems = systems.map(system => ({
         id: system.id,
         name: system.name || '',
@@ -135,7 +139,7 @@ async function exportSystemsCSV(log) {
         createdAt: system.createdAt || '',
         updatedAt: system.updatedAt || ''
     }));
-    
+
     return arrayToCSV(flattenedSystems, headers);
 }
 
@@ -149,19 +153,19 @@ async function exportFullBackup(log) {
         version: '1.0',
         collections: {}
     };
-    
+
     for (const collectionName of collections) {
         const collection = await getCollection(collectionName);
         const data = await collection.find({}).toArray();
         backup.collections[collectionName] = data;
         log.info(`Backed up collection: ${collectionName}`, { count: data.length });
     }
-    
-    log.info('Full backup created', { 
+
+    log.info('Full backup created', {
         collectionsCount: Object.keys(backup.collections).length,
         totalRecords: Object.values(backup.collections).reduce((sum, arr) => sum + arr.length, 0)
     });
-    
+
     return JSON.stringify(backup, null, 2);
 }
 
@@ -171,22 +175,23 @@ async function exportFullBackup(log) {
 exports.handler = async (event, context) => {
     const log = createLoggerFromEvent('export-data', event, context);
     const timer = createTimer(log, 'export-data-handler');
-    
+
     const headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'GET, OPTIONS'
     };
-    
-    log.entry({ method: event.httpMethod, path: event.path });
-    
+
+    log.entry(createStandardEntryMeta(event));
+    logDebugRequestSummary(log, event, { label: 'Export data request', includeBody: false });
+
     if (event.httpMethod === 'OPTIONS') {
         log.debug('OPTIONS preflight request');
         timer.end();
         log.exit(200);
         return { statusCode: 200, headers };
     }
-    
+
     if (event.httpMethod !== 'GET') {
         log.warn('Method not allowed', { method: event.httpMethod });
         timer.end();
@@ -197,18 +202,18 @@ exports.handler = async (event, context) => {
             body: JSON.stringify({ error: 'Method not allowed' })
         };
     }
-    
+
     const params = event.queryStringParameters || {};
     const type = params.type || 'history'; // history, systems, full
     const format = params.format || 'csv'; // csv, json
-    
+
     log.info('Export data request', { type, format });
-    
+
     try {
         let data = '';
         let contentType = '';
         let filename = '';
-        
+
         if (type === 'history' && format === 'csv') {
             data = await exportHistoryCSV(log);
             contentType = 'text/csv';
@@ -225,18 +230,18 @@ exports.handler = async (event, context) => {
             return {
                 statusCode: 400,
                 headers,
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     error: 'Invalid parameters',
                     validTypes: ['history', 'systems', 'full'],
                     validFormats: ['csv', 'json']
                 })
             };
         }
-        
+
         log.info('Export completed', { type, format, size: data.length });
         timer.end({ success: true });
         log.exit(200, { type, format, size: data.length });
-        
+
         return {
             statusCode: 200,
             headers: {
@@ -246,7 +251,7 @@ exports.handler = async (event, context) => {
             },
             body: data
         };
-        
+
     } catch (error) {
         log.error('Export failed', { error: error.message, stack: error.stack });
         timer.end({ success: false, error: error.message });
@@ -254,9 +259,9 @@ exports.handler = async (event, context) => {
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ 
-                error: 'Export failed', 
-                message: error.message 
+            body: JSON.stringify({
+                error: 'Export failed',
+                message: error.message
             })
         };
     }

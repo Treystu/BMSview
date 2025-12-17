@@ -1,5 +1,8 @@
-const { MongoClient } = require('mongodb');
+// @ts-nocheck
+
+const { getCollection } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 // Validate environment variables
@@ -13,24 +16,18 @@ function validateEnvironment(log) {
 
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
-  
+
   const log = createLoggerFromEvent('admin-systems', event, context);
   const timer = createTimer(log, 'admin-systems');
-  const sanitizedHeaders = event.headers ? {
-    ...event.headers,
-    authorization: event.headers.authorization ? '[REDACTED]' : undefined,
-    cookie: event.headers.cookie ? '[REDACTED]' : undefined,
-    'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
-  } : {};
-  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters, headers: sanitizedHeaders, bodyLength: event.body ? event.body.length : 0 });
-  
+  log.entry(createStandardEntryMeta(event));
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     timer.end({ outcome: 'preflight' });
     log.exit(200, { outcome: 'preflight' });
     return { statusCode: 200, headers };
   }
-  
+
   if (!validateEnvironment(log)) {
     timer.end({ outcome: 'configuration_error' });
     log.exit(500, { outcome: 'configuration_error' });
@@ -41,32 +38,30 @@ exports.handler = async (event, context) => {
     };
   }
 
-  const client = new MongoClient(process.env.MONGODB_URI);
-  const database = client.db('battery-analysis');
-
   try {
-    log.debug('Connecting to MongoDB');
-    await client.connect();
-    
+    const systemsCollection = await getCollection('systems');
+    const recordsCollection = await getCollection('records');
+    const adoptionLogCollection = await getCollection('system-adoption-log');
+
     const queryStringParameters = event.queryStringParameters || {};
     const { filter = 'unadopted' } = queryStringParameters;
 
     if (event.httpMethod === 'GET') {
       log.debug('Fetching systems', { filter });
       let systems;
-      
+
       switch (filter) {
         case 'unadopted':
-          systems = await getUnadoptedSystems(database, log);
+          systems = await getUnadoptedSystems(systemsCollection, log);
           break;
         case 'adopted':
-          systems = await getAdoptedSystems(database, log);
+          systems = await getAdoptedSystems(systemsCollection, log);
           break;
         case 'all':
-          systems = await getAllSystems(database, log);
+          systems = await getAllSystems(systemsCollection, log);
           break;
         default:
-          systems = await getUnadoptedSystems(database, log);
+          systems = await getUnadoptedSystems(systemsCollection, log);
       }
 
       timer.end({ filter, systemCount: systems.length });
@@ -81,7 +76,7 @@ exports.handler = async (event, context) => {
 
     if (event.httpMethod === 'POST') {
       const { systemId } = JSON.parse(event.body);
-      
+
       if (!systemId) {
         log.warn('Missing systemId');
         timer.end({ error: 'missing_params' });
@@ -94,8 +89,8 @@ exports.handler = async (event, context) => {
       }
 
       log.info('Adopting system', { systemId });
-      const result = await adoptSystem(database, systemId, log);
-      
+      const result = await adoptSystem(systemsCollection, adoptionLogCollection, systemId, log);
+
       if (result.success) {
         timer.end({ adopted: true });
         log.info('System adopted successfully', { systemId });
@@ -143,29 +138,33 @@ exports.handler = async (event, context) => {
         details: error.message
       })
     };
-  } finally {
-    await client.close();
   }
 };
 
-async function getUnadoptedSystems(database, log) {
+async function getUnadoptedSystems(systemsCollection, log) {
   log.debug('Querying unadopted systems');
-  const systems = await database.collection('systems').aggregate([
+  const systems = await systemsCollection.aggregate([
     { $match: { adopted: false } },
-    { $lookup: {
+    {
+      $lookup: {
         from: 'records',
         localField: '_id',
         foreignField: 'systemId',
         as: 'records'
-      }},
-    { $addFields: { 
+      }
+    },
+    {
+      $addFields: {
         recordCount: { $size: '$records' },
         id: { $toString: '$_id' }
-      }},
-    { $project: {
+      }
+    },
+    {
+      $project: {
         _id: 0,
         records: 0
-    }}
+      }
+    }
   ]).toArray();
 
   return systems.map(system => ({
@@ -176,26 +175,34 @@ async function getUnadoptedSystems(database, log) {
   }));
 }
 
-async function getAdoptedSystems(database, log) {
+async function getAdoptedSystems(systemsCollection, log) {
   log.debug('Querying adopted systems');
-  const systems = await database.collection('systems').aggregate([
-    { $match: { 
+  const systems = await systemsCollection.aggregate([
+    {
+      $match: {
         adopted: true
-      }},
-    { $lookup: {
+      }
+    },
+    {
+      $lookup: {
         from: 'records',
         localField: '_id',
         foreignField: 'systemId',
         as: 'records'
-      }},
-    { $addFields: { 
+      }
+    },
+    {
+      $addFields: {
         recordCount: { $size: '$records' },
         id: { $toString: '$_id' }
-      }},
-    { $project: {
+      }
+    },
+    {
+      $project: {
         _id: 0,
         records: 0
-    }}
+      }
+    }
   ]).toArray();
 
   return systems.map(system => ({
@@ -206,23 +213,29 @@ async function getAdoptedSystems(database, log) {
   }));
 }
 
-async function getAllSystems(database, log) {
+async function getAllSystems(systemsCollection, log) {
   log.debug('Querying all systems');
-  const systems = await database.collection('systems').aggregate([
-    { $lookup: {
+  const systems = await systemsCollection.aggregate([
+    {
+      $lookup: {
         from: 'records',
         localField: '_id',
         foreignField: 'systemId',
         as: 'records'
-      }},
-    { $addFields: { 
+      }
+    },
+    {
+      $addFields: {
         recordCount: { $size: '$records' },
         id: { $toString: '$_id' }
-      }},
-    { $project: {
+      }
+    },
+    {
+      $project: {
         _id: 0,
         records: 0
-    }}
+      }
+    }
   ]).toArray();
 
   return systems.map(system => ({
@@ -233,11 +246,11 @@ async function getAllSystems(database, log) {
   }));
 }
 
-async function adoptSystem(database, systemId, log) {
+async function adoptSystem(systemsCollection, adoptionLogCollection, systemId, log) {
   try {
     // Check if system exists and is unadopted
     log.debug('Checking system for adoption', { systemId });
-    const system = await database.collection('systems').findOne({
+    const system = await systemsCollection.findOne({
       _id: systemId,
       adopted: false
     });
@@ -247,9 +260,9 @@ async function adoptSystem(database, systemId, log) {
     }
 
     // Update system to mark as adopted
-    const result = await database.collection('systems').updateOne(
+    const result = await systemsCollection.updateOne(
       { _id: systemId },
-      { 
+      {
         $set: {
           adopted: true,
           adoptedAt: new Date(),
@@ -263,7 +276,7 @@ async function adoptSystem(database, systemId, log) {
     }
 
     // Log the adoption
-    await database.collection('system-adoption-log').insertOne({
+    await adoptionLogCollection.insertOne({
       systemId,
       adoptedAt: new Date(),
       previousName: system.name,

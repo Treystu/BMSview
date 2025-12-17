@@ -1,4 +1,5 @@
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 // @ts-nocheck
 /* eslint-disable */
@@ -168,7 +169,9 @@ exports.handler = async (event, context) => {
     }
 
     const log = createLoggerFromEvent('optimized-upload', event, context);
-    log.entry({ method: event.httpMethod, path: event.path });
+    log.entry(createStandardEntryMeta(event));
+    // This endpoint is JSON-body based; log a capped request summary to aid debugging.
+    logDebugRequestSummary(log, event, { label: 'Optimized upload request', includeBody: true, bodyMaxStringLength: 20000 });
     const timer = createTimer(log, 'optimized-upload');
 
     try {

@@ -7,14 +7,19 @@
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('get-ai-feedback', event, context);
   const timer = createTimer(log, 'get-ai-feedback-handler');
   const headers = getCorsHeaders(event);
-  
-  log.entry({ method: event.httpMethod, path: event.path });
-  
+
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Get AI feedback request', includeBody: false });
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     log.debug('OPTIONS preflight request');
@@ -22,7 +27,7 @@ exports.handler = async (event, context) => {
     log.exit(200);
     return { statusCode: 200, headers };
   }
-  
+
   try {
     if (event.httpMethod !== 'GET') {
       log.warn('Method not allowed', { method: event.httpMethod });
@@ -34,16 +39,16 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ error: 'Method not allowed' })
       };
     }
-    
+
     const params = event.queryStringParameters || {};
     const status = params.status || 'all';
     const priority = params.priority;
     const category = params.category;
     const limit = parseInt(params.limit || '50');
     const skip = parseInt(params.skip || '0');
-    
+
     log.debug('Query parameters', { status, priority, category, limit, skip });
-    
+
     // Build query filter
     const filter = {};
     if (status !== 'all') {
@@ -55,12 +60,12 @@ exports.handler = async (event, context) => {
     if (category) {
       filter.category = category;
     }
-    
+
     const feedbackCollection = await getCollection('ai_feedback');
-    
+
     // Get total count
     const totalCount = await feedbackCollection.countDocuments(filter);
-    
+
     // Get feedbacks with pagination
     const feedbacks = await feedbackCollection
       .find(filter)
@@ -68,16 +73,16 @@ exports.handler = async (event, context) => {
       .skip(skip)
       .limit(limit)
       .toArray();
-    
+
     log.info('Retrieved AI feedbacks', {
       count: feedbacks.length,
       totalCount,
       filter
     });
-    
+
     timer.end({ success: true });
     log.exit(200, { count: feedbacks.length, totalCount });
-    
+
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },

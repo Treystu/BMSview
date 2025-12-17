@@ -9,6 +9,10 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { retryAsync } = require('./utils/retry.cjs');
 const { searchGitHubIssues } = require('./utils/github-api.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 /**
  * Emoji pattern used throughout for normalization
@@ -337,7 +341,12 @@ exports.handler = async (event, context) => {
   const timer = createTimer(log, 'create-github-issue-handler');
   const headers = getCorsHeaders(event);
 
-  log.entry({ method: event.httpMethod, path: event.path });
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, {
+    label: 'Create GitHub issue request',
+    includeBody: true,
+    bodyMaxStringLength: 20000
+  });
 
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {

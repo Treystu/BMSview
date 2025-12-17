@@ -7,6 +7,10 @@
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getInsightsJob } = require('./utils/insights-jobs.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -47,7 +51,8 @@ exports.handler = async (event, context) => {
   const jobId = extractJobId(event);
 
   const log = createLoggerFromEvent('generate-insights-status', event, context, { jobId });
-  log.entry({ method: event.httpMethod, path: event.path, jobId });
+  log.entry(createStandardEntryMeta(event, { jobId }));
+  logDebugRequestSummary(log, event, { label: 'Generate insights status request', includeBody: true, bodyMaxStringLength: 20000 });
   const timer = createTimer(log, 'status-check');
 
   if (!validateEnvironment(log)) {

@@ -1,4 +1,5 @@
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 function validateEnvironment(log) {
@@ -30,14 +31,14 @@ const fetchWithRetry = async (url, log, retries = 3, initialDelay = 500) => {
 
 exports.handler = async function (event, context) {
   const headers = getCorsHeaders(event);
-  
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
-  
+
   const log = createLoggerFromEvent('weather', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
+  log.entry(createStandardEntryMeta(event));
   const timer = createTimer(log, 'weather');
 
   if (event.httpMethod !== 'POST') {
@@ -52,14 +53,14 @@ exports.handler = async function (event, context) {
       })
     };
   }
-  
+
   if (!validateEnvironment(log)) {
     timer.end({ error: 'missing_api_key' });
     log.exit(500);
-    return { 
-      statusCode: 500, 
+    return {
+      statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'Weather API key is not configured.' }) 
+      body: JSON.stringify({ error: 'Weather API key is not configured.' })
     };
   }
 
@@ -75,10 +76,10 @@ exports.handler = async function (event, context) {
       log.warn('Missing latitude or longitude');
       timer.end({ error: 'missing_coords' });
       log.exit(400);
-      return { 
-        statusCode: 400, 
+      return {
+        statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ error: 'Missing latitude or longitude.' }) 
+        body: JSON.stringify({ error: 'Missing latitude or longitude.' })
       };
     }
 
@@ -93,10 +94,10 @@ exports.handler = async function (event, context) {
 
       timer.end({ type: 'hourly', dataPoints: (mainData.hourly || []).length });
       log.exit(200);
-      return { 
-        statusCode: 200, 
+      return {
+        statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(mainData.hourly || []) 
+        body: JSON.stringify(mainData.hourly || [])
       };
     }
 
@@ -131,14 +132,14 @@ exports.handler = async function (event, context) {
       } else {
         log.warn('Could not fetch historical UVI data');
       }
-      
+
       timer.end({ type: 'historical', hasUvi: result.uvi !== null });
       log.info('Successfully fetched historical weather data');
       log.exit(200);
-      return { 
-        statusCode: 200, 
+      return {
+        statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(result) 
+        body: JSON.stringify(result)
       };
 
     } else {
@@ -159,14 +160,14 @@ exports.handler = async function (event, context) {
         weather_main: current.weather[0]?.main || 'Unknown',
         weather_icon: current.weather[0]?.icon || '',
       };
-      
+
       timer.end({ type: 'current' });
       log.info('Successfully fetched current weather data');
       log.exit(200);
-      return { 
-        statusCode: 200, 
+      return {
+        statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(result) 
+        body: JSON.stringify(result)
       };
     }
 

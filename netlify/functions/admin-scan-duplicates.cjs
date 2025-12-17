@@ -18,6 +18,10 @@ const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 /**
  * @param {import('@netlify/functions').HandlerEvent} event
@@ -25,44 +29,45 @@ const { errorResponse } = require('./utils/errors.cjs');
  */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
-  
+
   const log = createLoggerFromEvent('admin-scan-duplicates', event, context);
   const timer = createTimer(log, 'admin-scan-duplicates');
-  
+
   const sanitizedHeaders = event.headers ? {
     ...event.headers,
     authorization: event.headers.authorization ? '[REDACTED]' : undefined,
     cookie: event.headers.cookie ? '[REDACTED]' : undefined,
     'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
   } : {};
-  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters, headers: sanitizedHeaders, bodyLength: event.body ? event.body.length : 0 });
-  
+  log.entry(createStandardEntryMeta(event, { query: event.queryStringParameters, headers: sanitizedHeaders }));
+  logDebugRequestSummary(log, event, { label: 'Admin scan duplicates request', includeBody: false });
+
   if (event.httpMethod === 'OPTIONS') {
     timer.end({ outcome: 'preflight' });
     log.exit(200, { outcome: 'preflight' });
     return { statusCode: 200, headers };
   }
-  
+
   if (event.httpMethod !== 'GET') {
     timer.end({ outcome: 'method_not_allowed' });
     log.exit(405, { outcome: 'method_not_allowed' });
     return errorResponse(405, 'method_not_allowed', 'Method not allowed', undefined, headers);
   }
-  
+
   try {
     const resultsCol = await getCollection('analysis-results');
-    
+
     // Use MongoDB aggregation for memory-efficient duplicate detection
     // This groups records by contentHash and only returns groups with 2+ records
     log.info('Starting duplicate scan using aggregation pipeline');
-    
+
     const duplicateSets = [];
     const pipeline = [
       // Group by contentHash, collecting all records in each group
       {
         $group: {
           _id: '$contentHash',
-          records: { 
+          records: {
             $push: {
               id: { $toString: '$_id' },
               timestamp: '$timestamp',
@@ -80,36 +85,36 @@ exports.handler = async (event, context) => {
       // Sort by contentHash for consistency
       { $sort: { _id: 1 } }
     ];
-    
+
     const cursor = resultsCol.aggregate(pipeline);
     let totalRecords = 0;
-    
+
     for await (const group of cursor) {
       if (!group._id) continue; // Skip groups without contentHash
-      
+
       // Sort records within each group by timestamp (earliest first)
-      const sortedRecords = group.records.sort((a, b) => 
+      const sortedRecords = group.records.sort((a, b) =>
         new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
-      
+
       // Add contentHash to each record for display
       const formattedSet = sortedRecords.map(record => ({
         ...record,
         systemName: record.systemId,
         contentHash: group._id.substring(0, 16) + '...'
       }));
-      
+
       duplicateSets.push(formattedSet);
       totalRecords += group.count;
     }
-    
+
     const totalDuplicateRecords = duplicateSets.reduce((sum, set) => sum + (set.length - 1), 0);
-    
-    const durationMs = timer.end({ 
+
+    const durationMs = timer.end({
       duplicateSets: duplicateSets.length,
       totalDuplicates: totalDuplicateRecords
     });
-    
+
     log.info('Duplicate scan complete', {
       totalRecords,
       duplicateSets: duplicateSets.length,
@@ -117,9 +122,9 @@ exports.handler = async (event, context) => {
       durationMs,
       event: 'SCAN_COMPLETE'
     });
-    
+
     log.exit(200);
-    
+
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -133,7 +138,7 @@ exports.handler = async (event, context) => {
         }
       })
     };
-    
+
   } catch (error) {
     timer.end({ error: true });
     log.error('Admin duplicate scan failed', {
@@ -141,9 +146,9 @@ exports.handler = async (event, context) => {
       stack: error.stack,
       event: 'SCAN_ERROR'
     });
-    
+
     log.exit(500);
-    
+
     return errorResponse(
       500,
       'scan_failed',

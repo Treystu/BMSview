@@ -10,17 +10,22 @@ const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { getCircuitBreakerStatus } = require('./utils/retry.cjs');
 const { getRegistry } = require('./utils/tool-circuit-breakers.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
-  
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
 
   const log = createLoggerFromEvent('circuit-breaker-status', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Circuit breaker status request', includeBody: false });
   const timer = createTimer(log, 'circuit-breaker-status');
 
   try {
@@ -28,7 +33,7 @@ exports.handler = async (event, context) => {
 
     // Get current status of global circuit breakers (legacy retry.cjs)
     const globalStatus = getCircuitBreakerStatus();
-    
+
     // Get per-tool circuit breaker status
     const toolRegistry = getRegistry();
     const toolSummary = toolRegistry.getSummary();
@@ -43,7 +48,7 @@ exports.handler = async (event, context) => {
           failures: breaker.failures,
           openUntil: breaker.openUntil ? new Date(breaker.openUntil).toISOString() : null,
           isOpen: breaker.isOpen,
-          timeUntilReset: breaker.openUntil 
+          timeUntilReset: breaker.openUntil
             ? Math.max(0, breaker.openUntil - Date.now())
             : 0
         })),
@@ -63,8 +68,8 @@ exports.handler = async (event, context) => {
           totalRequests: breaker.totalRequests,
           totalFailures: breaker.totalFailures,
           failureRate: breaker.failureRate,
-          lastFailureTime: breaker.lastFailureTime 
-            ? new Date(breaker.lastFailureTime).toISOString() 
+          lastFailureTime: breaker.lastFailureTime
+            ? new Date(breaker.lastFailureTime).toISOString()
             : null,
           config: breaker.config
         })),
@@ -82,7 +87,7 @@ exports.handler = async (event, context) => {
       }
     };
 
-    timer.end({ 
+    timer.end({
       totalBreakers: response.overall.totalBreakers,
       anyOpen: response.overall.anyOpen
     });

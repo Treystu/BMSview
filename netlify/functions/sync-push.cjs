@@ -2,13 +2,17 @@
 
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const {
+    createStandardEntryMeta,
+    logDebugRequestSummary
+} = require("./utils/handler-logging.cjs");
 
 function validateEnvironment(log) {
-  if (!process.env.MONGODB_URI) {
-    log.error('Missing MONGODB_URI environment variable');
-    return false;
-  }
-  return true;
+    if (!process.env.MONGODB_URI) {
+        log.error('Missing MONGODB_URI environment variable');
+        return false;
+    }
+    return true;
 }
 const { errorResponse } = require("./utils/errors.cjs");
 
@@ -53,18 +57,22 @@ function sanitizeItem(rawItem, serverTime) {
 exports.handler = async function (event, context) {
     const log = createLoggerFromEvent("sync-push", event, context);
     const timer = createTimer(log, 'sync-push-handler');
-    
-    log.entry({ method: event.httpMethod, path: event.path });
-    
+
+    log.entry(createStandardEntryMeta(event));
+    logDebugRequestSummary(log, event, {
+        label: "Sync push request",
+        includeBody: false
+    });
+
     if (!validateEnvironment(log)) {
-      timer.end({ success: false, error: 'configuration' });
-      log.exit(500);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: 'Server configuration error' })
-      };
+        timer.end({ success: false, error: 'configuration' });
+        log.exit(500);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Server configuration error' })
+        };
     }
-    
+
     const requestStartedAt = Date.now();
 
     if (event.httpMethod !== "POST") {

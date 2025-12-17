@@ -13,7 +13,11 @@
 
 const { createLoggerFromEvent } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
-const { 
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
+const {
   initializeDiagnostics,
   testTool,
   analyzeFailures,
@@ -51,44 +55,45 @@ exports.getDefaultState = getDefaultState;
  */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
-  
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
-  
+
   const log = createLoggerFromEvent('diagnostics-workload', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
-  
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Diagnostics workload request', includeBody: true, bodyMaxStringLength: 20000 });
+
   // Sanitize headers for DEBUG logging
-  const sanitizedHeaders = event.headers ? { 
+  const sanitizedHeaders = event.headers ? {
     ...event.headers,
     authorization: event.headers.authorization ? '[REDACTED]' : undefined,
     cookie: event.headers.cookie ? '[REDACTED]' : undefined,
     'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
   } : {};
-  
-  log.debug('Request received', { 
-    method: event.httpMethod, 
+
+  log.debug('Request received', {
+    method: event.httpMethod,
     path: event.path,
     bodyLength: event.body ? event.body.length : 0,
     headers: sanitizedHeaders
   });
-  
+
   try {
     const body = event.body ? JSON.parse(event.body) : {};
     const { action = 'start', workloadId, step } = body;
-    
+
     log.info('Diagnostics workload request', { action, workloadId, step });
     log.debug('Request body (sanitized)', { action, workloadId, step, bodyLength: event.body ? event.body.length : 0 });
-    
+
     // Start new diagnostic run
     if (action === 'start') {
       log.debug('Starting new diagnostics workload');
       const result = await initializeDiagnostics(log, context);
-      
+
       log.debug('Diagnostics workload initialized', result);
-      
+
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -102,13 +107,13 @@ exports.handler = async (event, context) => {
         })
       };
     }
-    
+
     // Execute next step
     if (action === 'step' && workloadId) {
       log.debug('Executing step', { workloadId });
       const { getInsightsJob, saveCheckpoint } = require('./utils/insights-jobs.cjs');
       const job = await getInsightsJob(workloadId);
-      
+
       if (!job) {
         log.warn('Workload not found for step execution', { workloadId });
         return {
@@ -120,7 +125,7 @@ exports.handler = async (event, context) => {
           })
         };
       }
-      
+
       let stepResult;
       // CRITICAL FIX: Merge with default state to prevent undefined property access
       const defaultState = getDefaultState();
@@ -140,16 +145,16 @@ exports.handler = async (event, context) => {
         progress: typeof rawState.progress === 'number' ? rawState.progress : 0
       };
       const currentStep = jobState.currentStep;
-      
+
       log.info('Executing step', { workloadId, currentStep, stepIndex: jobState.stepIndex, totalSteps: jobState.totalSteps });
-      log.debug('Job state before step execution', { 
+      log.debug('Job state before step execution', {
         workloadId,
-        jobState, 
+        jobState,
         hasCheckpointState: !!job.checkpointState,
         resultCount: jobState.results.length,
         failureCount: jobState.failures.length
       });
-      
+
       switch (currentStep) {
         case 'initialize':
           log.debug('Step: initialize - moving to test_tool');
@@ -164,27 +169,27 @@ exports.handler = async (event, context) => {
           }, log);
           stepResult = { success: true, nextStep: 'test_tool' };
           break;
-          
+
         case 'test_tool':
           log.debug('Step: test_tool');
           stepResult = await testTool(workloadId, jobState, log, context);
           break;
-          
+
         case 'analyze_failures':
           log.debug('Step: analyze_failures');
           stepResult = await analyzeFailures(workloadId, jobState, log, context);
           break;
-          
+
         case 'submit_feedback':
           log.debug('Step: submit_feedback');
           stepResult = await submitFeedbackForFailures(workloadId, jobState, log, context);
           break;
-          
+
         case 'finalize':
           log.debug('Step: finalize');
           stepResult = await finalizeDiagnostics(workloadId, jobState, log, context);
           break;
-          
+
         default:
           log.error('Unknown step', { currentStep });
           return {
@@ -196,9 +201,9 @@ exports.handler = async (event, context) => {
             })
           };
       }
-      
+
       log.debug('Step result', { currentStep, stepResult });
-      
+
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -210,14 +215,14 @@ exports.handler = async (event, context) => {
         })
       };
     }
-    
+
     // Get status
     if (action === 'status' && workloadId) {
       const { getInsightsJob } = require('./utils/insights-jobs.cjs');
       const job = await getInsightsJob(workloadId);
-      
+
       log.debug('Status request', { workloadId, jobFound: !!job });
-      
+
       if (!job) {
         log.warn('Workload not found', { workloadId });
         return {
@@ -229,7 +234,7 @@ exports.handler = async (event, context) => {
           })
         };
       }
-      
+
       // CRITICAL FIX: Merge with default state to prevent undefined property access
       const defaultState = getDefaultState();
       const rawState = job.checkpointState?.state || {};
@@ -247,9 +252,9 @@ exports.handler = async (event, context) => {
         toolIndex: typeof rawState.toolIndex === 'number' ? rawState.toolIndex : 0,
         progress: typeof rawState.progress === 'number' ? rawState.progress : 0
       };
-      
-      log.debug('Job state retrieved with defaults applied', { 
-        workloadId, 
+
+      log.debug('Job state retrieved with defaults applied', {
+        workloadId,
         status: job.status,
         currentStep: jobState.currentStep,
         stepIndex: jobState.stepIndex,
@@ -260,7 +265,7 @@ exports.handler = async (event, context) => {
         failureCount: jobState.failures.length,
         feedbackSubmittedCount: jobState.feedbackSubmitted.length
       });
-      
+
       // Ensure all required fields are present with explicit defaults
       const response = {
         success: true,
@@ -277,7 +282,7 @@ exports.handler = async (event, context) => {
         error: job.error || null,
         warning: jobState.warning || null
       };
-      
+
       // Log summary details when status is completed (for debugging UI issues)
       if (response.status === 'completed' && response.summary) {
         log.info('DIAGNOSTICS COMPLETE - FULL SUMMARY', {
@@ -294,7 +299,7 @@ exports.handler = async (event, context) => {
           feedbackSubmittedCount: response.feedbackSubmitted?.length || 0,
           hasErrors: !!(response.summary.errors?.analysisError || response.summary.errors?.feedbackError || response.summary.errors?.finalizationError)
         });
-        
+
         // Log individual tool results for detailed debugging
         if (response.summary.toolResults && response.summary.toolResults.length > 0) {
           log.info('TOOL RESULTS DETAIL', {
@@ -305,7 +310,7 @@ exports.handler = async (event, context) => {
             }))
           });
         }
-        
+
         // Log recommendations
         if (response.summary.recommendations && response.summary.recommendations.length > 0) {
           log.info('RECOMMENDATIONS', {
@@ -316,8 +321,8 @@ exports.handler = async (event, context) => {
           });
         }
       }
-      
-      log.debug('Sending status response', { 
+
+      log.debug('Sending status response', {
         workloadId: response.workloadId,
         status: response.status,
         currentStep: response.currentStep,
@@ -328,14 +333,14 @@ exports.handler = async (event, context) => {
         hasSummary: !!response.summary,
         hasError: !!response.error
       });
-      
+
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify(response)
       };
     }
-    
+
     return {
       statusCode: 400,
       headers: { ...headers, 'Content-Type': 'application/json' },
@@ -344,13 +349,13 @@ exports.handler = async (event, context) => {
         error: 'Invalid action. Use: start, step, or status'
       })
     };
-    
+
   } catch (error) {
     log.error('Diagnostics workload error', {
       error: error.message,
       stack: error.stack
     });
-    
+
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },

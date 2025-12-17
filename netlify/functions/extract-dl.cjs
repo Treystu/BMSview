@@ -1,5 +1,9 @@
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const {
+    createStandardEntryMeta,
+    logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 const MIN_DL_DIGITS = 6;
 const MAX_DL_DIGITS = 14;
@@ -22,16 +26,17 @@ const respond = (statusCode, body, headers = {}) => ({
     headers: { 'Content-Type': 'application/json', ...headers },
 });
 
-exports.handler = async function(event, context) {
+exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
-    
+
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers };
     }
-    
+
     const log = createLoggerFromEvent('extract-dl', event, context);
-    log.entry({ method: event.httpMethod, path: event.path });
+    log.entry(createStandardEntryMeta(event));
+    logDebugRequestSummary(log, event, { label: 'Extract DL request', includeBody: true, bodyMaxStringLength: 20000 });
     const timer = createTimer(log, 'extract-dl');
 
     if (event.httpMethod !== 'POST') {
@@ -68,8 +73,8 @@ exports.handler = async function(event, context) {
                 if (digitsOnly.length >= MIN_DL_DIGITS && digitsOnly.length <= MAX_DL_DIGITS) {
                     extractedDLs.add(digitsOnly);
                 } else {
-                    log.debug('Discarded DL candidate outside accepted digit range', { 
-                        candidate, 
+                    log.debug('Discarded DL candidate outside accepted digit range', {
+                        candidate,
                         digitsOnlyLength: digitsOnly.length,
                         minDigits: MIN_DL_DIGITS,
                         maxDigits: MAX_DL_DIGITS
@@ -80,15 +85,15 @@ exports.handler = async function(event, context) {
 
         const dlNumbers = Array.from(extractedDLs);
         const success = dlNumbers.length > 0;
-        
+
         timer.end({ dlCount: dlNumbers.length });
         if (success) {
-            log.info('DL extraction completed', { 
+            log.info('DL extraction completed', {
                 dlCount: dlNumbers.length,
                 dlNumbers: dlNumbers.slice(0, 5) // Log first 5 to avoid logging too much
             });
         } else {
-            log.warn('No DL numbers extracted from text', { 
+            log.warn('No DL numbers extracted from text', {
                 dlCount: 0,
                 textPreview: text.slice(0, 200),
                 textLength: text.length
@@ -96,7 +101,7 @@ exports.handler = async function(event, context) {
         }
         log.exit(200);
 
-        return respond(200, { 
+        return respond(200, {
             dlNumbers,
             count: dlNumbers.length,
             success
@@ -104,9 +109,9 @@ exports.handler = async function(event, context) {
 
     } catch (error) {
         timer.end({ error: true });
-        log.error('Critical error in extract-dl function', { 
-            error: error.message, 
-            stack: error.stack 
+        log.error('Critical error in extract-dl function', {
+            error: error.message,
+            stack: error.stack
         });
         log.exit(500);
         return respond(500, { error: 'Internal server error during DL extraction.' }, headers);

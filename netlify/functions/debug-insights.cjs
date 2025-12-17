@@ -1,5 +1,9 @@
 const { createLoggerFromEvent } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 function validateEnvironment(log) {
   // No specific env vars required for this function, but good practice to have the hook.
@@ -8,15 +12,16 @@ function validateEnvironment(log) {
 
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
-  
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
-  
+
   const log = createLoggerFromEvent('debug-insights', event, context);
-  log.entry({ method: event.httpMethod, path: event.path });
-  
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Debug insights request', includeBody: true, bodyMaxStringLength: 20000 });
+
   if (!validateEnvironment(log)) {
     log.error('Environment validation failed');
     log.exit(500);
@@ -39,7 +44,7 @@ exports.handler = async (event, context) => {
       timestamp: new Date().toISOString()
     };
 
-    log.info('Debug request processed', { 
+    log.info('Debug request processed', {
       bodyKeys: debug.bodyKeys,
       structureDepth: Object.keys(debug.bodyStructure).length
     });
@@ -58,7 +63,7 @@ exports.handler = async (event, context) => {
       })
     };
   } catch (error) {
-    log.error('Debug insights failed', { 
+    log.error('Debug insights failed', {
       error: error.message,
       stack: error.stack
     });

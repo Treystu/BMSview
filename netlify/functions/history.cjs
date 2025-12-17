@@ -2,6 +2,7 @@
 const { v4: uuidv4 } = require("uuid");
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 
 function validateEnvironment(log) {
@@ -115,7 +116,7 @@ exports.handler = async function (event, context) {
     }
 
     const log = createLoggerFromEvent('history', event, context);
-    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+    log.entry(createStandardEntryMeta(event));
     const timer = createTimer(log, 'history');
 
     // Define logContext for consistent logging throughout the function

@@ -7,14 +7,19 @@
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const {
+  createStandardEntryMeta,
+  logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('update-feedback-status', event, context);
   const timer = createTimer(log, 'update-feedback-status-handler');
   const headers = getCorsHeaders(event);
-  
-  log.entry({ method: event.httpMethod, path: event.path });
-  
+
+  log.entry(createStandardEntryMeta(event));
+  logDebugRequestSummary(log, event, { label: 'Update feedback status request', includeBody: true, bodyMaxStringLength: 20000 });
+
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     log.debug('OPTIONS preflight request');
@@ -22,7 +27,7 @@ exports.handler = async (event, context) => {
     log.exit(200);
     return { statusCode: 200, headers };
   }
-  
+
   try {
     if (event.httpMethod !== 'POST') {
       log.warn('Method not allowed', { method: event.httpMethod });
@@ -34,11 +39,11 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ error: 'Method not allowed' })
       };
     }
-    
+
     const body = JSON.parse(event.body);
-    const { 
-      feedbackId, 
-      status, 
+    const {
+      feedbackId,
+      status,
       adminNotes,
       // New implementation tracking fields
       actualEffortHours,
@@ -48,7 +53,7 @@ exports.handler = async (event, context) => {
       implementationNotes,
       stabilityScore
     } = body;
-    
+
     if (!feedbackId || !status) {
       timer.end({ success: false, error: 'missing_fields' });
       log.exit(400, { outcome: 'validation_error', fields: ['feedbackId', 'status'] });
@@ -58,7 +63,7 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ error: 'feedbackId and status are required' })
       };
     }
-    
+
     // Validate status
     const validStatuses = ['pending', 'reviewed', 'accepted', 'implemented', 'rejected'];
     if (!validStatuses.includes(status)) {
@@ -70,22 +75,22 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` })
       };
     }
-    
+
     const feedbackCollection = await getCollection('ai_feedback');
-    
+
     // Update feedback
     const updateData = {
       status,
       updatedAt: new Date()
     };
-    
+
     if (adminNotes) {
       updateData.adminNotes = adminNotes;
     }
-    
+
     if (status === 'implemented') {
       updateData.implementationDate = new Date();
-      
+
       // Track implementation metrics with validation
       if (actualEffortHours !== undefined) {
         if (actualEffortHours < 0) {
@@ -112,19 +117,19 @@ exports.handler = async (event, context) => {
       if (stabilityScore !== undefined) {
         updateData.stabilityScore = Math.min(100, Math.max(0, stabilityScore));
       }
-      
+
       // Calculate initial effectiveness score
       const effectivenessScore = calculateBasicEffectivenessScore(updateData);
       if (effectivenessScore !== null) {
         updateData.effectivenessScore = effectivenessScore;
       }
     }
-    
+
     const result = await feedbackCollection.updateOne(
       { id: feedbackId },
       { $set: updateData }
     );
-    
+
     if (result.matchedCount === 0) {
       return {
         statusCode: 404,
@@ -132,16 +137,16 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ error: 'Feedback not found' })
       };
     }
-    
-    log.info('Feedback status updated', { 
-      feedbackId, 
+
+    log.info('Feedback status updated', {
+      feedbackId,
       status,
       hasImplementationMetrics: status === 'implemented' && (actualEffortHours !== undefined || actualBenefitScore !== undefined)
     });
-    
+
     timer.end({ success: true });
     log.exit(200, { feedbackId, status });
-    
+
     return {
       statusCode: 200,
       headers: { ...headers, 'Content-Type': 'application/json' },

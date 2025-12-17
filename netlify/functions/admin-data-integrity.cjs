@@ -13,6 +13,10 @@
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const {
+    createStandardEntryMeta,
+    logDebugRequestSummary
+} = require('./utils/handler-logging.cjs');
 
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
@@ -38,7 +42,8 @@ exports.handler = async function (event, context) {
         cookie: event.headers.cookie ? '[REDACTED]' : undefined,
         'x-api-key': event.headers['x-api-key'] ? '[REDACTED]' : undefined
     } : {};
-    log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters, headers: sanitizedHeaders, bodyLength: event.body ? event.body.length : 0 });
+    log.entry(createStandardEntryMeta(event, { query: event.queryStringParameters, headers: sanitizedHeaders }));
+    logDebugRequestSummary(log, event, { label: 'Admin data integrity request', includeBody: false });
 
     // OPTIMIZATION: Prevent Lambda from waiting for MongoDB connection to close
     // This allows connection reuse across invocations

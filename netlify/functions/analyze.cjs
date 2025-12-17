@@ -33,6 +33,7 @@
 const { errorResponse } = require('./utils/errors.cjs');
 const { parseJsonBody, validateAnalyzeRequest, validateImagePayload } = require('./utils/validation.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
+const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { performAnalysisPipeline } = require('./utils/analysis-pipeline.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry.cjs');
@@ -254,7 +255,7 @@ exports.handler = async (event, context) => {
   // Logger and request-scoped context
   /** @type {any} */
   const log = createLoggerFromEvent('analyze', event, context);
-  log.entry({ method: event.httpMethod, path: event.path, query: event.queryStringParameters });
+  log.entry(createStandardEntryMeta(event));
   /** @type {any} */
   const timer = createTimer(log, 'analyze');
 
