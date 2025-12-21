@@ -16,6 +16,7 @@
  */
 
 const { getCollection } = require('./mongodb.cjs');
+const { analyzeSolarAwareLoads } = require('./solar-aware-load-analysis.cjs');
 
 /**
  * Generate comprehensive analytics for a battery system
@@ -59,6 +60,9 @@ async function generateComprehensiveAnalytics(systemId, analysisData, log) {
 
     // Solar performance
     solarPerformance: null,
+
+    // Solar-aware load analysis (NEW)
+    solarAwareStats: null,
 
     // Battery health
     batteryHealth: null,
@@ -117,6 +121,14 @@ async function generateComprehensiveAnalytics(systemId, analysisData, log) {
 
     // Analyze solar performance with irradiance correlation
     analytics.solarPerformance = await analyzeSolarPerformance(records, system, log);
+
+    // NEW: Perform solar-aware load analysis (separates load from solar)
+    try {
+      analytics.solarAwareStats = await analyzeSolarAwareLoads(systemId, system, records, log);
+    } catch (err) {
+      log.warn('Solar-aware load analysis failed', { error: err.message });
+      analytics.solarAwareStats = { error: 'Analysis failed', details: err.message };
+    }
 
     // Assess battery health (degradation, imbalance, temperature)
     analytics.batteryHealth = await assessBatteryHealth(records, system, analysisData, log);

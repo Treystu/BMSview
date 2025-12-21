@@ -24,6 +24,14 @@
  * Daily charging energy = 1100 W × 8 h = 8800 Wh = 8.8 kWh
  * 
  * NEVER confuse W (power) with Wh (energy) - they are different units!
+ * 
+ * SOLAR-AWARE LOAD ANALYSIS:
+ * ==========================
+ * The context includes `solarAwareStats` which separates "True Load" from "Solar Generation".
+ * - `trueLoad`: The actual power consumed by loads (inferred: Expected Solar - Net Current).
+ * - `solarEfficiency`: The ratio of Actual Solar / Expected Solar.
+ * - `expectedSolar`: Theoretical max generation for the location/time.
+ * Use these pre-calculated metrics instead of raw current for load analysis.
  */
 
 // Lazy-load MongoDB to avoid connection errors when not needed
@@ -90,7 +98,8 @@ const toolDefinitions = [
 • USE "daily_avg" for: Long-term trends > 30 days (e.g., "last month", "battery health trends").
 • USE "raw" ONLY for: Pinpoint diagnosis of specific 1-2 hour events.
 • ISO DATES: Ensure time_range_start < time_range_end.
-• ENERGY FIELDS: Response includes pre-calculated chargingKWh and dischargingKWh per bucket - USE THESE instead of calculating from power.`,
+• ENERGY FIELDS: Response includes pre-calculated chargingKWh and dischargingKWh per bucket.
+• NOTE: chargingKWh is "Net Battery Charge" (Ah × V), NOT total solar generation. It does not account for loads powered directly by solar.`,
     parameters: {
       type: 'object',
       properties: {

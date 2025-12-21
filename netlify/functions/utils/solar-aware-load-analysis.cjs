@@ -31,346 +31,346 @@ async function analyzeSolarAwareLoads(systemId, system, records, log) {
     if (records.length < 48) {
       return {
         insufficient_data: true,
-      message: 'Need at least 48 hours for solar-aware load analysis'
-    };
-  }
-  
-  const voltage = system?.voltage || 48;
-  const maxSolarWatts = system?.maxAmpsSolarCharging 
-    ? system.maxAmpsSolarCharging * voltage 
-    : 0;
-  const latitude = system?.latitude || null;
-  const longitude = system?.longitude || null;
-  
-  if (!latitude || !longitude || maxSolarWatts === 0) {
-    log.warn('Missing location or solar capacity - falling back to basic analysis', {
-      hasLocation: !!(latitude && longitude),
-      hasSolarCapacity: maxSolarWatts > 0
+        message: 'Need at least 48 hours for solar-aware load analysis'
+      };
+    }
+
+    const voltage = system?.voltage || 48;
+    const maxSolarWatts = system?.maxAmpsSolarCharging
+      ? system.maxAmpsSolarCharging * voltage
+      : 0;
+    const latitude = system?.latitude ?? null;
+    const longitude = system?.longitude ?? null;
+
+    if (latitude === null || longitude === null || maxSolarWatts === 0) {
+      log.warn('Missing location or solar capacity - falling back to basic analysis', {
+        hasLocation: (latitude !== null && longitude !== null),
+        hasSolarCapacity: maxSolarWatts > 0
+      });
+      return analyzeFallback(records, voltage, log);
+    }
+
+    log.info('Starting solar-aware load analysis', {
+      systemId,
+      maxSolarWatts,
+      latitude,
+      longitude,
+      recordCount: records.length
     });
-    return analyzeFallback(records, voltage, log);
-  }
-  
-  log.info('Starting solar-aware load analysis', {
-    systemId,
-    maxSolarWatts,
-    latitude,
-    longitude,
-    recordCount: records.length
-  });
-  
-  // Hourly load analysis (24 hours)
-  const hourlyData = Array(24).fill(null).map((_, hour) => ({
-    hour,
-    nightSamples: [],      // Pure load measurements (no solar)
-    nightChargingSamples: [], // Generator/grid charging during night (NEW)
-    daySamples: [],         // Net measurements (solar - load)
-    expectedSolar: [],      // What solar SHOULD generate
-    actualSolar: [],        // What solar ACTUALLY generated (inferred)
-    trueLoad: [],           // Calculated true load
-    validationSamples: []   // SOC/Capacity delta validation (NEW)
-  }));
-  
-  // Process each record
-  for (let i = 0; i < records.length; i++) {
-    const record = records[i];
-    const nextRecord = records[i + 1];
-    
-    const timestamp = new Date(record.timestamp);
-    const hour = timestamp.getHours();
-    const observedCurrent = record.analysis?.current || 0;
-    const observedWatts = record.analysis?.power || (observedCurrent * voltage);
-    const cloudCover = record.weather?.clouds || null;
-    const soc = record.analysis?.stateOfCharge || null;
-    const remainingAh = record.analysis?.remainingCapacity || null;
-    
-    // NEW: Calculate capacity delta and SOC delta for validation
-    let capacityDelta = null;
-    let socDelta = null;
-    let timeDeltaHours = null;
-    let predictedCapacityDelta = null;
-    let deltaAccuracy = null;
-    
-    if (nextRecord) {
-      const nextSoc = nextRecord.analysis?.stateOfCharge || null;
-      const nextRemainingAh = nextRecord.analysis?.remainingCapacity || null;
-      const nextTimestamp = new Date(nextRecord.timestamp);
-      
-      timeDeltaHours = (nextTimestamp - timestamp) / (1000 * 60 * 60);
-      
-      // Only validate if we have good data and reasonable time delta
-      if (soc != null && nextSoc != null && remainingAh != null && nextRemainingAh != null 
+
+    // Hourly load analysis (24 hours)
+    const hourlyData = Array(24).fill(null).map((_, hour) => ({
+      hour,
+      nightSamples: [],      // Pure load measurements (no solar)
+      nightChargingSamples: [], // Generator/grid charging during night (NEW)
+      daySamples: [],         // Net measurements (solar - load)
+      expectedSolar: [],      // What solar SHOULD generate
+      actualSolar: [],        // What solar ACTUALLY generated (inferred)
+      trueLoad: [],           // Calculated true load
+      validationSamples: []   // SOC/Capacity delta validation (NEW)
+    }));
+
+    // Process each record
+    for (let i = 0; i < records.length; i++) {
+      const record = records[i];
+      const nextRecord = records[i + 1];
+
+      const timestamp = new Date(record.timestamp);
+      const hour = timestamp.getUTCHours();
+      const observedCurrent = record.analysis?.current || 0;
+      const observedWatts = record.analysis?.power || (observedCurrent * voltage);
+      const cloudCover = record.weather?.clouds || null;
+      const soc = record.analysis?.stateOfCharge || null;
+      const remainingAh = record.analysis?.remainingCapacity || null;
+
+      // NEW: Calculate capacity delta and SOC delta for validation
+      let capacityDelta = null;
+      let socDelta = null;
+      let timeDeltaHours = null;
+      let predictedCapacityDelta = null;
+      let deltaAccuracy = null;
+
+      if (nextRecord) {
+        const nextSoc = nextRecord.analysis?.stateOfCharge || null;
+        const nextRemainingAh = nextRecord.analysis?.remainingCapacity || null;
+        const nextTimestamp = new Date(nextRecord.timestamp);
+
+        timeDeltaHours = (nextTimestamp - timestamp) / (1000 * 60 * 60);
+
+        // Only validate if we have good data and reasonable time delta
+        if (soc != null && nextSoc != null && remainingAh != null && nextRemainingAh != null
           && timeDeltaHours > 0 && timeDeltaHours < 2) {
-        
-        // Actual changes from BMS
-        capacityDelta = nextRemainingAh - remainingAh; // Positive = charging, negative = discharging
-        socDelta = nextSoc - soc; // Positive = increasing, negative = decreasing
-        
-        // Predicted capacity change based on observed current
-        // Ah change = Current × Hours
-        predictedCapacityDelta = observedCurrent * timeDeltaHours;
-        
-        // Validation: Does predicted match actual?
-        if (Math.abs(capacityDelta) > 0.1) { // Only validate meaningful changes
-          const error = Math.abs(capacityDelta - predictedCapacityDelta);
-          const errorPercent = (error / Math.abs(capacityDelta)) * 100;
-          deltaAccuracy = {
-            actualCapacityDelta: roundTo(capacityDelta, 2),
-            predictedCapacityDelta: roundTo(predictedCapacityDelta, 2),
-            error: roundTo(error, 2),
-            errorPercent: roundTo(errorPercent, 1),
-            socDelta: roundTo(socDelta, 2),
-            timeDeltaHours: roundTo(timeDeltaHours, 2),
-            isAccurate: errorPercent < 20, // Within 20% is acceptable
-            note: errorPercent > 20 
-              ? 'Significant mismatch - possible BMS calibration issue or unmeasured load/generation'
-              : 'Good match between predicted and actual'
-          };
+
+          // Actual changes from BMS
+          capacityDelta = nextRemainingAh - remainingAh; // Positive = charging, negative = discharging
+          socDelta = nextSoc - soc; // Positive = increasing, negative = decreasing
+
+          // Predicted capacity change based on observed current
+          // Ah change = Current × Hours
+          predictedCapacityDelta = observedCurrent * timeDeltaHours;
+
+          // Validation: Does predicted match actual?
+          if (Math.abs(capacityDelta) > 0.1) { // Only validate meaningful changes
+            const error = Math.abs(capacityDelta - predictedCapacityDelta);
+            const errorPercent = (error / Math.abs(capacityDelta)) * 100;
+            deltaAccuracy = {
+              actualCapacityDelta: roundTo(capacityDelta, 2),
+              predictedCapacityDelta: roundTo(predictedCapacityDelta, 2),
+              error: roundTo(error, 2),
+              errorPercent: roundTo(errorPercent, 1),
+              socDelta: roundTo(socDelta, 2),
+              timeDeltaHours: roundTo(timeDeltaHours, 2),
+              isAccurate: errorPercent < 20, // Within 20% is acceptable
+              note: errorPercent > 20
+                ? 'Significant mismatch - possible BMS calibration issue or unmeasured load/generation'
+                : 'Good match between predicted and actual'
+            };
+          }
+        }
+      }
+
+      // Calculate expected solar for this timestamp using centralized solar irradiance module
+      const irradianceData = calculateSolarIrradiance(
+        timestamp,
+        latitude,
+        longitude,
+        cloudCover,
+        system.altitude || 0
+      );
+
+      // Extract solar data - irradiance is already cloud-adjusted
+      const solar = {
+        isSunUp: irradianceData.isSunUp,
+        altitude: irradianceData.solarAltitude,
+        azimuth: irradianceData.solarPosition.azimuth
+      };
+
+      // Scale global irradiance to panel capacity
+      // globalIrradiance is in W/m², we need to estimate panel output
+      // Typical solar panel efficiency is ~18-20%, but maxSolarWatts already accounts for this
+      const expectedSolarWatts = irradianceData.isSunUp && maxSolarWatts > 0
+        ? (irradianceData.globalIrradiance / 1000) * maxSolarWatts // Normalize to 1000 W/m² peak
+        : 0;
+      const expectedSolarAmps = voltage > 0 ? expectedSolarWatts / voltage : 0;
+
+      // CRITICAL LOGIC: Separate solar from load
+      if (solar.isSunUp) {
+        // During daylight: observedCurrent = solarGeneration - load
+        // Therefore: load = solarGeneration - observedCurrent
+
+        // Store day sample (net measurement)
+        hourlyData[hour].daySamples.push({
+          timestamp,
+          observedCurrent,
+          observedWatts,
+          cloudCover
+        });
+
+        hourlyData[hour].expectedSolar.push(expectedSolarAmps);
+
+        // If we're seeing positive current (charging), that means solar > load
+        // If we're seeing negative current (discharging), that means solar < load
+        // In both cases: trueLoad = expectedSolar - observedCurrent
+        const inferredLoad = expectedSolarAmps - observedCurrent;
+
+        if (inferredLoad > 0) {
+          hourlyData[hour].trueLoad.push(inferredLoad);
+          hourlyData[hour].actualSolar.push(inferredLoad + Math.abs(observedCurrent));
+        }
+
+        // Store validation data
+        if (deltaAccuracy) {
+          hourlyData[hour].validationSamples.push(deltaAccuracy);
+        }
+      } else {
+        // During night: NO SOLAR
+
+        // CRITICAL NEW LOGIC: Detect generator/grid charging during night
+        if (observedCurrent > 0.5) {
+          // Positive current at night = GENERATOR/GRID charging!
+          hourlyData[hour].nightChargingSamples.push({
+            timestamp,
+            chargingCurrent: observedCurrent,
+            chargingWatts: observedWatts,
+            source: 'generator_or_grid' // Could be generator, grid, or wind
+          });
+
+          // We can't directly measure load during charging, but we know:
+          // observedCurrent = generatorOutput - load
+          // Without knowing generator output, we use adjacent non-charging hours
+          // This will be calculated in post-processing
+        } else {
+          // Negative current at night = pure load (no solar interference)
+          hourlyData[hour].nightSamples.push({
+            timestamp,
+            observedCurrent: Math.abs(observedCurrent), // Load is always positive
+            observedWatts: Math.abs(observedWatts)
+          });
+
+          // This is our ground truth for load
+          hourlyData[hour].trueLoad.push(Math.abs(observedCurrent));
+        }
+
+        // Store validation data
+        if (deltaAccuracy) {
+          hourlyData[hour].validationSamples.push(deltaAccuracy);
         }
       }
     }
-    
-    // Calculate expected solar for this timestamp using centralized solar irradiance module
-    const irradianceData = calculateSolarIrradiance(
-      timestamp,
-      latitude,
-      longitude,
-      cloudCover,
-      system.altitude || 0
+
+    // Calculate averages and patterns
+    const hourlyProfile = hourlyData.map(h => {
+      const avgNightLoad = h.nightSamples.length > 0
+        ? h.nightSamples.reduce((sum, s) => sum + s.observedCurrent, 0) / h.nightSamples.length
+        : null;
+
+      // NEW: Analyze night charging (generator/grid)
+      const avgNightCharging = h.nightChargingSamples.length > 0
+        ? h.nightChargingSamples.reduce((sum, s) => sum + s.chargingCurrent, 0) / h.nightChargingSamples.length
+        : null;
+
+      const hasGeneratorCharging = h.nightChargingSamples.length > 0;
+
+      // Estimate load during generator charging
+      // Use adjacent non-charging night hours as baseline
+      const estimatedLoadDuringCharging = avgNightLoad ||
+        (h.trueLoad.length > 0 ? h.trueLoad.reduce((sum, l) => sum + l, 0) / h.trueLoad.length : null);
+
+      const avgExpectedSolar = h.expectedSolar.length > 0
+        ? h.expectedSolar.reduce((sum, s) => sum + s, 0) / h.expectedSolar.length
+        : 0;
+
+      const avgActualSolar = h.actualSolar.length > 0
+        ? h.actualSolar.reduce((sum, s) => sum + s, 0) / h.actualSolar.length
+        : null;
+
+      const avgTrueLoad = h.trueLoad.length > 0
+        ? h.trueLoad.reduce((sum, l) => sum + l, 0) / h.trueLoad.length
+        : avgNightLoad; // Fallback to night load if no day data
+
+      const avgDayNetCurrent = h.daySamples.length > 0
+        ? h.daySamples.reduce((sum, s) => sum + s.observedCurrent, 0) / h.daySamples.length
+        : null;
+
+      return {
+        hour: h.hour,
+        trueLoadAmps: roundTo(avgTrueLoad, 2),
+        trueLoadWatts: roundTo(avgTrueLoad * voltage, 0),
+        nightLoadAmps: roundTo(avgNightLoad, 2),
+        nightLoadWatts: avgNightLoad ? roundTo(avgNightLoad * voltage, 0) : null,
+        generatorChargingAmps: roundTo(avgNightCharging, 2),
+        generatorChargingWatts: avgNightCharging ? roundTo(avgNightCharging * voltage, 0) : null,
+        hasGeneratorCharging,
+        generatorChargingSamples: h.nightChargingSamples.length,
+        expectedSolarAmps: roundTo(avgExpectedSolar, 2),
+        expectedSolarWatts: roundTo(avgExpectedSolar * voltage, 0),
+        actualSolarAmps: roundTo(avgActualSolar, 2),
+        actualSolarWatts: avgActualSolar ? roundTo(avgActualSolar * voltage, 0) : null,
+        observedNetAmps: roundTo(avgDayNetCurrent, 2),
+        solarEfficiency: avgExpectedSolar > 0 && avgActualSolar
+          ? roundTo((avgActualSolar / avgExpectedSolar) * 100, 1)
+          : null,
+        nightSamples: h.nightSamples.length,
+        daySamples: h.daySamples.length
+      };
+    });
+
+    // Calculate daily totals and patterns
+    const totalDailyLoadKwh = hourlyProfile.reduce((sum, h) =>
+      sum + ((h.trueLoadWatts || 0) / 1000), 0
     );
-    
-    // Extract solar data - irradiance is already cloud-adjusted
-    const solar = {
-      isSunUp: irradianceData.isSunUp,
-      altitude: irradianceData.solarAltitude,
-      azimuth: irradianceData.solarPosition.azimuth
-    };
-    
-    // Scale global irradiance to panel capacity
-    // globalIrradiance is in W/m², we need to estimate panel output
-    // Typical solar panel efficiency is ~18-20%, but maxSolarWatts already accounts for this
-    const expectedSolarWatts = irradianceData.isSunUp && maxSolarWatts > 0
-      ? (irradianceData.globalIrradiance / 1000) * maxSolarWatts // Normalize to 1000 W/m² peak
-      : 0;
-    const expectedSolarAmps = voltage > 0 ? expectedSolarWatts / voltage : 0;
-    
-    // CRITICAL LOGIC: Separate solar from load
-    if (solar.isSunUp) {
-      // During daylight: observedCurrent = solarGeneration - load
-      // Therefore: load = solarGeneration - observedCurrent
-      
-      // Store day sample (net measurement)
-      hourlyData[hour].daySamples.push({
-        timestamp,
-        observedCurrent,
-        observedWatts,
-        cloudCover
-      });
-      
-      hourlyData[hour].expectedSolar.push(expectedSolarAmps);
-      
-      // If we're seeing positive current (charging), that means solar > load
-      // If we're seeing negative current (discharging), that means solar < load
-      // In both cases: trueLoad = expectedSolar - observedCurrent
-      const inferredLoad = expectedSolarAmps - observedCurrent;
-      
-      if (inferredLoad > 0) {
-        hourlyData[hour].trueLoad.push(inferredLoad);
-        hourlyData[hour].actualSolar.push(inferredLoad + Math.abs(observedCurrent));
-      }
-      
-      // Store validation data
-      if (deltaAccuracy) {
-        hourlyData[hour].validationSamples.push(deltaAccuracy);
-      }
-    } else {
-      // During night: NO SOLAR
-      
-      // CRITICAL NEW LOGIC: Detect generator/grid charging during night
-      if (observedCurrent > 0.5) {
-        // Positive current at night = GENERATOR/GRID charging!
-        hourlyData[hour].nightChargingSamples.push({
-          timestamp,
-          chargingCurrent: observedCurrent,
-          chargingWatts: observedWatts,
-          source: 'generator_or_grid' // Could be generator, grid, or wind
-        });
-        
-        // We can't directly measure load during charging, but we know:
-        // observedCurrent = generatorOutput - load
-        // Without knowing generator output, we use adjacent non-charging hours
-        // This will be calculated in post-processing
-      } else {
-        // Negative current at night = pure load (no solar interference)
-        hourlyData[hour].nightSamples.push({
-          timestamp,
-          observedCurrent: Math.abs(observedCurrent), // Load is always positive
-          observedWatts: Math.abs(observedWatts)
-        });
-        
-        // This is our ground truth for load
-        hourlyData[hour].trueLoad.push(Math.abs(observedCurrent));
-      }
-      
-      // Store validation data
-      if (deltaAccuracy) {
-        hourlyData[hour].validationSamples.push(deltaAccuracy);
-      }
-    }
-  }
-  
-  // Calculate averages and patterns
-  const hourlyProfile = hourlyData.map(h => {
-    const avgNightLoad = h.nightSamples.length > 0
-      ? h.nightSamples.reduce((sum, s) => sum + s.observedCurrent, 0) / h.nightSamples.length
+
+    const totalExpectedSolarKwh = hourlyProfile.reduce((sum, h) =>
+      sum + ((h.expectedSolarWatts || 0) / 1000), 0
+    );
+
+    const totalActualSolarKwh = hourlyProfile
+      .filter(h => h.actualSolarWatts != null)
+      .reduce((sum, h) => sum + (h.actualSolarWatts / 1000), 0);
+
+    // NEW: Calculate generator charging totals
+    const totalGeneratorKwh = hourlyProfile
+      .filter(h => h.generatorChargingWatts != null)
+      .reduce((sum, h) => sum + (h.generatorChargingWatts / 1000), 0);
+
+    const generatorChargingHours = hourlyProfile.filter(h => h.hasGeneratorCharging);
+    const hasGeneratorCharging = generatorChargingHours.length > 0;
+
+    // Analyze generator usage patterns
+    const generatorAnalysis = hasGeneratorCharging
+      ? analyzeGeneratorPatterns(hourlyProfile, hourlyData, voltage)
       : null;
-    
-    // NEW: Analyze night charging (generator/grid)
-    const avgNightCharging = h.nightChargingSamples.length > 0
-      ? h.nightChargingSamples.reduce((sum, s) => sum + s.chargingCurrent, 0) / h.nightChargingSamples.length
-      : null;
-    
-    const hasGeneratorCharging = h.nightChargingSamples.length > 0;
-    
-    // Estimate load during generator charging
-    // Use adjacent non-charging night hours as baseline
-    const estimatedLoadDuringCharging = avgNightLoad || 
-      (h.trueLoad.length > 0 ? h.trueLoad.reduce((sum, l) => sum + l, 0) / h.trueLoad.length : null);
-    
-    const avgExpectedSolar = h.expectedSolar.length > 0
-      ? h.expectedSolar.reduce((sum, s) => sum + s, 0) / h.expectedSolar.length
-      : 0;
-    
-    const avgActualSolar = h.actualSolar.length > 0
-      ? h.actualSolar.reduce((sum, s) => sum + s, 0) / h.actualSolar.length
-      : null;
-    
-    const avgTrueLoad = h.trueLoad.length > 0
-      ? h.trueLoad.reduce((sum, l) => sum + l, 0) / h.trueLoad.length
-      : avgNightLoad; // Fallback to night load if no day data
-    
-    const avgDayNetCurrent = h.daySamples.length > 0
-      ? h.daySamples.reduce((sum, s) => sum + s.observedCurrent, 0) / h.daySamples.length
-      : null;
-    
-    return {
-      hour: h.hour,
-      trueLoadAmps: roundTo(avgTrueLoad, 2),
-      trueLoadWatts: roundTo(avgTrueLoad * voltage, 0),
-      nightLoadAmps: roundTo(avgNightLoad, 2),
-      nightLoadWatts: avgNightLoad ? roundTo(avgNightLoad * voltage, 0) : null,
-      generatorChargingAmps: roundTo(avgNightCharging, 2),
-      generatorChargingWatts: avgNightCharging ? roundTo(avgNightCharging * voltage, 0) : null,
-      hasGeneratorCharging,
-      generatorChargingSamples: h.nightChargingSamples.length,
-      expectedSolarAmps: roundTo(avgExpectedSolar, 2),
-      expectedSolarWatts: roundTo(avgExpectedSolar * voltage, 0),
-      actualSolarAmps: roundTo(avgActualSolar, 2),
-      actualSolarWatts: avgActualSolar ? roundTo(avgActualSolar * voltage, 0) : null,
-      observedNetAmps: roundTo(avgDayNetCurrent, 2),
-      solarEfficiency: avgExpectedSolar > 0 && avgActualSolar
-        ? roundTo((avgActualSolar / avgExpectedSolar) * 100, 1)
-        : null,
-      nightSamples: h.nightSamples.length,
-      daySamples: h.daySamples.length
-    };
-  });
-  
-  // Calculate daily totals and patterns
-  const totalDailyLoadKwh = hourlyProfile.reduce((sum, h) => 
-    sum + ((h.trueLoadWatts || 0) / 1000), 0
-  );
-  
-  const totalExpectedSolarKwh = hourlyProfile.reduce((sum, h) => 
-    sum + ((h.expectedSolarWatts || 0) / 1000), 0
-  );
-  
-  const totalActualSolarKwh = hourlyProfile
-    .filter(h => h.actualSolarWatts != null)
-    .reduce((sum, h) => sum + (h.actualSolarWatts / 1000), 0);
-  
-  // NEW: Calculate generator charging totals
-  const totalGeneratorKwh = hourlyProfile
-    .filter(h => h.generatorChargingWatts != null)
-    .reduce((sum, h) => sum + (h.generatorChargingWatts / 1000), 0);
-  
-  const generatorChargingHours = hourlyProfile.filter(h => h.hasGeneratorCharging);
-  const hasGeneratorCharging = generatorChargingHours.length > 0;
-  
-  // Analyze generator usage patterns
-  const generatorAnalysis = hasGeneratorCharging 
-    ? analyzeGeneratorPatterns(hourlyProfile, hourlyData, voltage)
-    : null;
-  
-  // NEW: Analyze SOC/Capacity delta validation
-  const validationAnalysis = analyzeValidation(hourlyData, system?.capacity, log);
-  
-  // Identify load patterns by time of day
-  const timeOfDayPatterns = analyzeTimeOfDayPatterns(hourlyProfile);
-  
-  // Calculate baseline vs peak loads
-  const baselineLoad = Math.min(...hourlyProfile.map(h => h.trueLoadWatts || Infinity));
-  const peakLoad = Math.max(...hourlyProfile.map(h => h.trueLoadWatts || 0));
-  const peakHour = hourlyProfile.find(h => h.trueLoadWatts === peakLoad)?.hour;
-  
-  log.info('Solar-aware load analysis complete', {
-    systemId,
-    totalDailyLoadKwh: roundTo(totalDailyLoadKwh, 2),
-    totalExpectedSolarKwh: roundTo(totalExpectedSolarKwh, 2),
-    totalActualSolarKwh: roundTo(totalActualSolarKwh, 2),
-    totalGeneratorKwh: roundTo(totalGeneratorKwh, 2),
-    baselineLoadWatts: roundTo(baselineLoad, 0),
-    peakLoadWatts: roundTo(peakLoad, 0),
-    peakHour
-  });
-  
-  return {
-    hourlyProfile,
-    dailySummary: {
-      totalLoadKwh: roundTo(totalDailyLoadKwh, 2),
-      avgLoadWatts: roundTo(totalDailyLoadKwh * 1000 / 24, 0),
+
+    // NEW: Analyze SOC/Capacity delta validation
+    const validationAnalysis = analyzeValidation(hourlyData, system?.capacity, log);
+
+    // Identify load patterns by time of day
+    const timeOfDayPatterns = analyzeTimeOfDayPatterns(hourlyProfile);
+
+    // Calculate baseline vs peak loads
+    const baselineLoad = Math.min(...hourlyProfile.map(h => h.trueLoadWatts || Infinity));
+    const peakLoad = Math.max(...hourlyProfile.map(h => h.trueLoadWatts || 0));
+    const peakHour = hourlyProfile.find(h => h.trueLoadWatts === peakLoad)?.hour;
+
+    log.info('Solar-aware load analysis complete', {
+      systemId,
+      totalDailyLoadKwh: roundTo(totalDailyLoadKwh, 2),
+      totalExpectedSolarKwh: roundTo(totalExpectedSolarKwh, 2),
+      totalActualSolarKwh: roundTo(totalActualSolarKwh, 2),
+      totalGeneratorKwh: roundTo(totalGeneratorKwh, 2),
       baselineLoadWatts: roundTo(baselineLoad, 0),
       peakLoadWatts: roundTo(peakLoad, 0),
-      peakLoadHour: peakHour,
-      expectedSolarKwh: roundTo(totalExpectedSolarKwh, 2),
-      actualSolarKwh: totalActualSolarKwh > 0 ? roundTo(totalActualSolarKwh, 2) : null,
-      solarEfficiency: totalExpectedSolarKwh > 0 && totalActualSolarKwh > 0
-        ? roundTo((totalActualSolarKwh / totalExpectedSolarKwh) * 100, 1)
-        : null,
-      generatorKwh: totalGeneratorKwh > 0 ? roundTo(totalGeneratorKwh, 2) : null,
-      hasGeneratorCharging
-    },
-    timeOfDayPatterns,
-    solarPerformance: {
-      expectedGeneration: roundTo(totalExpectedSolarKwh, 2),
-      actualGeneration: totalActualSolarKwh > 0 ? roundTo(totalActualSolarKwh, 2) : null,
-      efficiency: totalExpectedSolarKwh > 0 && totalActualSolarKwh > 0
-        ? roundTo((totalActualSolarKwh / totalExpectedSolarKwh) * 100, 1)
-        : null,
-      status: getSolarStatus(totalExpectedSolarKwh, totalActualSolarKwh),
-      context: 'Actual solar accounts for cloud cover, panel degradation, shading, and temperature effects'
-    },
-    generatorAnalysis,
-    validationAnalysis,
-    energyBalance: {
-      dailyLoadKwh: roundTo(totalDailyLoadKwh, 2),
-      dailySolarKwh: totalActualSolarKwh > 0 ? roundTo(totalActualSolarKwh, 2) : roundTo(totalExpectedSolarKwh, 2),
-      dailyGeneratorKwh: totalGeneratorKwh > 0 ? roundTo(totalGeneratorKwh, 2) : 0,
-      totalGenerationKwh: roundTo(
-        (totalActualSolarKwh > 0 ? totalActualSolarKwh : totalExpectedSolarKwh) + totalGeneratorKwh, 
-        2
-      ),
-      netDailyKwh: roundTo(
-        (totalActualSolarKwh > 0 ? totalActualSolarKwh : totalExpectedSolarKwh) + totalGeneratorKwh - totalDailyLoadKwh,
-        2
-      ),
-      solarSufficiency: totalDailyLoadKwh > 0
-        ? roundTo(((totalActualSolarKwh > 0 ? totalActualSolarKwh : totalExpectedSolarKwh) / totalDailyLoadKwh) * 100, 1)
-        : 0,
-      totalSufficiency: totalDailyLoadKwh > 0
-        ? roundTo((((totalActualSolarKwh > 0 ? totalActualSolarKwh : totalExpectedSolarKwh) + totalGeneratorKwh) / totalDailyLoadKwh) * 100, 1)
-        : 0
-    }
-  };
+      peakHour
+    });
+
+    return {
+      hourlyProfile,
+      dailySummary: {
+        totalLoadKwh: roundTo(totalDailyLoadKwh, 2),
+        avgLoadWatts: roundTo(totalDailyLoadKwh * 1000 / 24, 0),
+        baselineLoadWatts: roundTo(baselineLoad, 0),
+        peakLoadWatts: roundTo(peakLoad, 0),
+        peakLoadHour: peakHour,
+        expectedSolarKwh: roundTo(totalExpectedSolarKwh, 2),
+        actualSolarKwh: totalActualSolarKwh > 0 ? roundTo(totalActualSolarKwh, 2) : null,
+        solarEfficiency: totalExpectedSolarKwh > 0 && totalActualSolarKwh > 0
+          ? roundTo((totalActualSolarKwh / totalExpectedSolarKwh) * 100, 1)
+          : null,
+        generatorKwh: totalGeneratorKwh > 0 ? roundTo(totalGeneratorKwh, 2) : null,
+        hasGeneratorCharging
+      },
+      timeOfDayPatterns,
+      solarPerformance: {
+        expectedGeneration: roundTo(totalExpectedSolarKwh, 2),
+        actualGeneration: totalActualSolarKwh > 0 ? roundTo(totalActualSolarKwh, 2) : null,
+        efficiency: totalExpectedSolarKwh > 0 && totalActualSolarKwh > 0
+          ? roundTo((totalActualSolarKwh / totalExpectedSolarKwh) * 100, 1)
+          : null,
+        status: getSolarStatus(totalExpectedSolarKwh, totalActualSolarKwh),
+        context: 'Actual solar accounts for cloud cover, panel degradation, shading, and temperature effects'
+      },
+      generatorAnalysis,
+      validationAnalysis,
+      energyBalance: {
+        dailyLoadKwh: roundTo(totalDailyLoadKwh, 2),
+        dailySolarKwh: totalActualSolarKwh > 0 ? roundTo(totalActualSolarKwh, 2) : roundTo(totalExpectedSolarKwh, 2),
+        dailyGeneratorKwh: totalGeneratorKwh > 0 ? roundTo(totalGeneratorKwh, 2) : 0,
+        totalGenerationKwh: roundTo(
+          (totalActualSolarKwh > 0 ? totalActualSolarKwh : totalExpectedSolarKwh) + totalGeneratorKwh,
+          2
+        ),
+        netDailyKwh: roundTo(
+          (totalActualSolarKwh > 0 ? totalActualSolarKwh : totalExpectedSolarKwh) + totalGeneratorKwh - totalDailyLoadKwh,
+          2
+        ),
+        solarSufficiency: totalDailyLoadKwh > 0
+          ? roundTo(((totalActualSolarKwh > 0 ? totalActualSolarKwh : totalExpectedSolarKwh) / totalDailyLoadKwh) * 100, 1)
+          : 0,
+        totalSufficiency: totalDailyLoadKwh > 0
+          ? roundTo((((totalActualSolarKwh > 0 ? totalActualSolarKwh : totalExpectedSolarKwh) + totalGeneratorKwh) / totalDailyLoadKwh) * 100, 1)
+          : 0
+      }
+    };
   } catch (error) {
     log.error('Error in analyzeSolarAwareLoads', { error: error.message, stack: error.stack });
     return {
@@ -389,12 +389,12 @@ function analyzeTimeOfDayPatterns(hourlyProfile) {
   const morning = hourlyProfile.filter(h => h.hour >= 6 && h.hour < 12);   // 6 AM - 12 PM
   const afternoon = hourlyProfile.filter(h => h.hour >= 12 && h.hour < 18); // 12 PM - 6 PM
   const evening = hourlyProfile.filter(h => h.hour >= 18 && h.hour < 22);   // 6 PM - 10 PM
-  
+
   const avgLoad = (period) => {
     const loads = period.map(p => p.trueLoadWatts).filter(w => w != null && w > 0);
     return loads.length > 0 ? loads.reduce((sum, w) => sum + w, 0) / loads.length : 0;
   };
-  
+
   return {
     overnight: {
       hours: '10 PM - 6 AM',
@@ -427,16 +427,16 @@ function determineLoadPattern(overnight, morning, afternoon, evening) {
   const max = Math.max(overnight, morning, afternoon, evening);
   const min = Math.min(overnight, morning, afternoon, evening);
   const variation = ((max - min) / min) * 100;
-  
+
   let peakPeriod = 'overnight';
   if (morning === max) peakPeriod = 'morning';
   else if (afternoon === max) peakPeriod = 'afternoon';
   else if (evening === max) peakPeriod = 'evening';
-  
+
   let pattern = 'flat';
   if (variation > 50) pattern = 'highly variable';
   else if (variation > 25) pattern = 'variable';
-  
+
   return {
     type: pattern,
     variation: roundTo(variation, 1),
@@ -454,9 +454,9 @@ function determineLoadPattern(overnight, morning, afternoon, evening) {
  */
 function getSolarStatus(expected, actual) {
   if (!actual) return 'unknown';
-  
+
   const efficiency = (actual / expected) * 100;
-  
+
   if (efficiency >= 80) return 'excellent';
   if (efficiency >= 65) return 'good';
   if (efficiency >= 50) return 'fair';
@@ -469,15 +469,15 @@ function getSolarStatus(expected, actual) {
  */
 function analyzeGeneratorPatterns(hourlyProfile, hourlyData, voltage) {
   const generatorHours = hourlyProfile.filter(h => h.hasGeneratorCharging);
-  
+
   if (generatorHours.length === 0) {
     return null;
   }
-  
+
   // Find all generator charging sessions across all data
   const sessions = [];
   let currentSession = null;
-  
+
   for (const hourData of hourlyData) {
     for (const sample of hourData.nightChargingSamples) {
       if (!currentSession) {
@@ -489,7 +489,7 @@ function analyzeGeneratorPatterns(hourlyProfile, hourlyData, voltage) {
         };
       } else {
         const timeSinceLastSample = (new Date(sample.timestamp) - new Date(currentSession.end)) / (1000 * 60 * 60);
-        
+
         if (timeSinceLastSample <= 1) {
           // Continue current session
           currentSession.end = sample.timestamp;
@@ -507,39 +507,39 @@ function analyzeGeneratorPatterns(hourlyProfile, hourlyData, voltage) {
       }
     }
   }
-  
+
   if (currentSession) {
     sessions.push(currentSession);
   }
-  
+
   // Analyze sessions
   for (const session of sessions) {
     const durationHours = (new Date(session.end) - new Date(session.start)) / (1000 * 60 * 60);
     const avgCurrent = session.samples.reduce((sum, s) => sum + s.chargingCurrent, 0) / session.samples.length;
     const totalAh = avgCurrent * durationHours;
     const totalKwh = (totalAh * voltage) / 1000;
-    
+
     session.durationHours = roundTo(durationHours, 2);
     session.avgCurrent = roundTo(avgCurrent, 1);
     session.totalAh = roundTo(totalAh, 1);
     session.totalKwh = roundTo(totalKwh, 2);
     session.startHour = new Date(session.start).getHours();
   }
-  
+
   // Calculate totals and patterns
   const totalSessions = sessions.length;
   const totalGeneratorKwh = sessions.reduce((sum, s) => sum + s.totalKwh, 0);
   const avgSessionDuration = sessions.reduce((sum, s) => sum + s.durationHours, 0) / totalSessions;
   const avgSessionKwh = totalGeneratorKwh / totalSessions;
-  
+
   // Find most common charging times
   const hourCounts = Array(24).fill(0);
   for (const session of sessions) {
     hourCounts[session.startHour]++;
   }
-  
+
   const mostCommonHour = hourCounts.indexOf(Math.max(...hourCounts));
-  
+
   return {
     totalSessions,
     totalKwh: roundTo(totalGeneratorKwh, 2),
@@ -565,7 +565,7 @@ function analyzeGeneratorPatterns(hourlyProfile, hourlyData, voltage) {
  */
 function generateGeneratorRecommendations(totalKwh, sessions, avgDuration) {
   const recommendations = [];
-  
+
   if (totalKwh > 5) {
     recommendations.push({
       priority: 'high',
@@ -573,7 +573,7 @@ function generateGeneratorRecommendations(totalKwh, sessions, avgDuration) {
       savings: `Replacing ${roundTo(totalKwh, 1)} kWh/day of generator with solar could save significant fuel costs`
     });
   }
-  
+
   if (sessions > 20) {
     recommendations.push({
       priority: 'medium',
@@ -581,7 +581,7 @@ function generateGeneratorRecommendations(totalKwh, sessions, avgDuration) {
       suggestion: 'Analyze load patterns to identify reduction opportunities or expand renewable generation'
     });
   }
-  
+
   if (avgDuration > 3) {
     recommendations.push({
       priority: 'medium',
@@ -589,7 +589,7 @@ function generateGeneratorRecommendations(totalKwh, sessions, avgDuration) {
       suggestion: 'Consider battery capacity expansion to reduce generator dependency'
     });
   }
-  
+
   return recommendations;
 }
 
@@ -599,47 +599,47 @@ function generateGeneratorRecommendations(totalKwh, sessions, avgDuration) {
  */
 function analyzeValidation(hourlyData, systemCapacity, log) {
   const allValidations = [];
-  
+
   for (const hourData of hourlyData) {
     allValidations.push(...hourData.validationSamples);
   }
-  
+
   if (allValidations.length === 0) {
     return {
       insufficient_data: true,
       message: 'No validation samples available - need SOC and capacity measurements'
     };
   }
-  
+
   // Calculate accuracy statistics
   const accurateSamples = allValidations.filter(v => v.isAccurate);
   const inaccurateSamples = allValidations.filter(v => !v.isAccurate);
-  
+
   const avgError = allValidations.reduce((sum, v) => sum + v.error, 0) / allValidations.length;
   const avgErrorPercent = allValidations.reduce((sum, v) => sum + v.errorPercent, 0) / allValidations.length;
-  
+
   const maxError = Math.max(...allValidations.map(v => v.error));
   const maxErrorSample = allValidations.find(v => v.error === maxError);
-  
+
   // Determine overall accuracy status
   const accuracyRate = (accurateSamples.length / allValidations.length) * 100;
-  
+
   let status = 'excellent';
   if (accuracyRate < 95) status = 'good';
   if (accuracyRate < 85) status = 'fair';
   if (accuracyRate < 70) status = 'poor';
   if (accuracyRate < 50) status = 'critical';
-  
+
   // Identify systematic bias
   const avgPredictedDelta = allValidations.reduce((sum, v) => sum + v.predictedCapacityDelta, 0) / allValidations.length;
   const avgActualDelta = allValidations.reduce((sum, v) => sum + v.actualCapacityDelta, 0) / allValidations.length;
   const systematicBias = avgActualDelta - avgPredictedDelta;
-  
+
   // NEW: Validate SOC calculations against known system capacity
   // SOC% should match remainingAh / systemCapacity
   const socValidations = allValidations.filter(v => v.socDelta != null && v.actualCapacityDelta != null);
   let socAccuracy = null;
-  
+
   if (socValidations.length > 0 && systemCapacity) {
     const socErrors = socValidations.map(v => {
       // Expected SOC change = (capacity delta / system capacity) * 100
@@ -653,18 +653,18 @@ function analyzeValidation(hourlyData, systemCapacity, log) {
         errorPercent: expectedSocDelta !== 0 ? roundTo((socError / Math.abs(expectedSocDelta)) * 100, 1) : 0
       };
     });
-    
+
     const avgSocError = socErrors.reduce((sum, e) => sum + e.error, 0) / socErrors.length;
     const avgSocErrorPercent = socErrors.reduce((sum, e) => sum + e.errorPercent, 0) / socErrors.length;
-    
+
     socAccuracy = {
       samples: socErrors.length,
       avgError: roundTo(avgSocError, 2),
       avgErrorPercent: roundTo(avgSocErrorPercent, 1),
-      status: avgSocErrorPercent < 10 ? 'excellent' 
+      status: avgSocErrorPercent < 10 ? 'excellent'
         : avgSocErrorPercent < 20 ? 'good'
-        : avgSocErrorPercent < 30 ? 'fair'
-        : 'poor',
+          : avgSocErrorPercent < 30 ? 'fair'
+            : 'poor',
       interpretation: avgSocErrorPercent < 10
         ? 'SOC% calculations are accurate - BMS using correct capacity value'
         : avgSocErrorPercent < 30
@@ -672,7 +672,7 @@ function analyzeValidation(hourlyData, systemCapacity, log) {
           : `SOC% significantly inaccurate - BMS capacity setting likely wrong (should be ${systemCapacity}Ah)`
     };
   }
-  
+
   log.info('Validation analysis complete', {
     totalSamples: allValidations.length,
     accuracyRate: roundTo(accuracyRate, 1),
@@ -682,7 +682,7 @@ function analyzeValidation(hourlyData, systemCapacity, log) {
     socAccuracy: socAccuracy?.status || 'unknown',
     knownSystemCapacity: systemCapacity
   });
-  
+
   return {
     totalSamples: allValidations.length,
     accurateSamples: accurateSamples.length,
@@ -709,7 +709,7 @@ function analyzeValidation(hourlyData, systemCapacity, log) {
     socAccuracy,
     systemCapacity: {
       configured: systemCapacity,
-      note: systemCapacity 
+      note: systemCapacity
         ? `System configured with ${systemCapacity}Ah capacity (tested capacity, may be higher than rated 314Ah cells)`
         : 'No system capacity configured - unable to validate SOC calculations'
     },
@@ -722,7 +722,7 @@ function analyzeValidation(hourlyData, systemCapacity, log) {
  */
 function generateValidationRecommendations(status, accuracyRate, bias, inaccurateSamples, socAccuracy) {
   const recommendations = [];
-  
+
   if (status === 'critical' || status === 'poor') {
     recommendations.push({
       priority: 'high',
@@ -735,7 +735,7 @@ function generateValidationRecommendations(status, accuracyRate, bias, inaccurat
       ]
     });
   }
-  
+
   if (socAccuracy && socAccuracy.status === 'poor') {
     recommendations.push({
       priority: 'high',
@@ -748,7 +748,7 @@ function generateValidationRecommendations(status, accuracyRate, bias, inaccurat
       ]
     });
   }
-  
+
   if (Math.abs(bias) > 1) {
     recommendations.push({
       priority: 'medium',
@@ -759,24 +759,24 @@ function generateValidationRecommendations(status, accuracyRate, bias, inaccurat
       investigation: 'Look for unmeasured energy sources/sinks or recalibrate BMS'
     });
   }
-  
+
   if (inaccurateSamples.length > 5) {
     const avgInaccurateError = inaccurateSamples.reduce((sum, s) => sum + s.errorPercent, 0) / inaccurateSamples.length;
-    
+
     recommendations.push({
       priority: 'low',
       issue: `${inaccurateSamples.length} measurements with >20% error (avg ${roundTo(avgInaccurateError, 0)}% error)`,
       note: 'Some error is normal due to sporadic screenshot timing - not a major concern unless persistent'
     });
   }
-  
+
   if (recommendations.length === 0) {
     recommendations.push({
       priority: 'info',
       message: 'Excellent validation accuracy - BMS measurements align well with current flow predictions'
     });
   }
-  
+
   return recommendations;
 }
 
@@ -785,29 +785,29 @@ function generateValidationRecommendations(status, accuracyRate, bias, inaccurat
  */
 function analyzeFallback(records, voltage, log) {
   log.warn('Using fallback analysis - limited accuracy without location/solar data');
-  
+
   const hourlyLoads = Array(24).fill(null).map(() => ({ samples: [], totalAmps: 0 }));
-  
+
   for (const record of records) {
     const hour = new Date(record.timestamp).getHours();
     const current = record.analysis?.current || 0;
-    
+
     // Only count discharge
     if (current < -0.5) {
       hourlyLoads[hour].samples.push(Math.abs(current));
       hourlyLoads[hour].totalAmps += Math.abs(current);
     }
   }
-  
+
   const hourlyProfile = hourlyLoads.map((h, hour) => ({
     hour,
     trueLoadAmps: h.samples.length > 0 ? roundTo(h.totalAmps / h.samples.length, 2) : 0,
     trueLoadWatts: h.samples.length > 0 ? roundTo((h.totalAmps / h.samples.length) * voltage, 0) : 0,
     samples: h.samples.length
   }));
-  
+
   const totalDailyLoadKwh = hourlyProfile.reduce((sum, h) => sum + (h.trueLoadWatts / 1000), 0);
-  
+
   return {
     hourlyProfile,
     dailySummary: {
