@@ -50,11 +50,17 @@ async function analyzeSolarAwareLoads(systemId, system, records, log) {
       return analyzeFallback(records, voltage, log);
     }
 
+    // Calculate timezone offset from longitude (approximate solar time)
+    // User Requirement: "display in the same (local) time"
+    // 15 degrees longitude = 1 hour difference
+    const timezoneOffsetHours = Math.round(longitude / 15);
+
     log.info('Starting solar-aware load analysis', {
       systemId,
       maxSolarWatts,
       latitude,
       longitude,
+      timezoneOffsetHours,
       recordCount: records.length
     });
 
@@ -76,7 +82,14 @@ async function analyzeSolarAwareLoads(systemId, system, records, log) {
       const nextRecord = records[i + 1];
 
       const timestamp = new Date(record.timestamp);
-      const hour = timestamp.getUTCHours();
+
+      // Calculate Local Hour for bucketing (0-23)
+      // UTC Hour + Offset, normalized to 0-23 range
+      const utcHour = timestamp.getUTCHours();
+      let localHour = (utcHour + timezoneOffsetHours) % 24;
+      if (localHour < 0) localHour += 24; // Handle negative result from modulo
+
+      const hour = localHour; // Use local hour for profile bucketing
       const observedCurrent = record.analysis?.current || 0;
       const observedWatts = record.analysis?.power || (observedCurrent * voltage);
       const cloudCover = record.weather?.clouds || null;

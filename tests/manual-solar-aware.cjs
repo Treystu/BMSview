@@ -1,5 +1,5 @@
 
-const { analyzeSolarAwareLoads } = require('./netlify/functions/utils/solar-aware-load-analysis.cjs');
+const { analyzeSolarAwareLoads } = require('../netlify/functions/utils/solar-aware-load-analysis.cjs');
 
 // Mock logger
 const log = {
@@ -9,32 +9,36 @@ const log = {
     debug: () => { }
 };
 
-// Mock system - Using Equator/Prime Meridian for simple 6am-6pm sun
+// Mock system - Using California (-118 Longitude) to test Timezone Logic
 const system = {
     id: 'test-system',
     voltage: 48,
-    maxAmpsSolarCharging: 23, // Tuned to match simulated 20A peak (20 / 0.86 efficiency)
-    latitude: 0,
-    longitude: 0
+    maxAmpsSolarCharging: 30, // Increased to 30A to account for latitude tilt (34 deg N) reducing efficiency
+    latitude: 34,
+    longitude: -118 // California (PST, UTC-8)
 };
 
 // Mock records (simplified)
 const records = [];
-const startDate = new Date('2025-03-21T00:00:00Z'); // Equinox for perfect 12h day// Generate 48 hours of data
+const startDate = new Date('2025-03-21T00:00:00Z');
+
+// Generate 48 hours of data
 for (let i = 0; i < 48; i++) {
     const timestamp = new Date(startDate.getTime() + i * 3600000);
-    const hour = timestamp.getUTCHours();
+    const utcHour = timestamp.getUTCHours();
 
-    // Simulate solar day (6am to 6pm)
-    const isDay = hour >= 6 && hour < 18;
+    // Solar Noon in CA is ~20:00 UTC (12:00 PST)
+    // Sun is up roughly 14:00 UTC to 02:00 UTC (6am to 6pm PST)
+    const localHour = (utcHour - 8 + 24) % 24;
+    const isDay = localHour >= 6 && localHour < 18;
 
     // Simulate load: 5A constant
     const loadAmps = 5;
 
-    // Simulate solar generation: Bell curve peaking at noon
+    // Simulate solar generation: Bell curve peaking at Local Noon (12:00)
     let solarAmps = 0;
     if (isDay) {
-        solarAmps = 20 * Math.sin(Math.PI * (hour - 6) / 12);
+        solarAmps = 20 * Math.sin(Math.PI * (localHour - 6) / 12);
     }
 
     // Observed current = Solar - Load
