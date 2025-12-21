@@ -814,7 +814,70 @@ async function requestBmsData(params, log) {
 
   const historyCollection = await getCollection('history');
 
-  // Build query
+  // OPTIMIZATION: Use MongoDB aggregation for averaged data to reduce transfer size
+  if (granularity === 'hourly_avg' || granularity === 'daily_avg') {
+    log.info('Using MongoDB aggregation for optimized data retrieval', { granularity });
+
+    const groupId = granularity === 'daily_avg'
+      ? {
+        year: { $year: { $toDate: "$timestamp" } },
+        month: { $month: { $toDate: "$timestamp" } },
+        day: { $dayOfMonth: { $toDate: "$timestamp" } }
+      }
+      : {
+        year: { $year: { $toDate: "$timestamp" } },
+        month: { $month: { $toDate: "$timestamp" } },
+        day: { $dayOfMonth: { $toDate: "$timestamp" } },
+        hour: { $hour: { $toDate: "$timestamp" } }
+      };
+
+    const pipeline = [
+      {
+        $match: {
+          systemId,
+          timestamp: { $gte: startDate.toISOString(), $lte: endDate.toISOString() }
+        }
+      },
+      {
+        $group: {
+          _id: groupId,
+          avgVoltage: { $avg: "$analysis.overallVoltage" },
+          avgSoc: { $avg: "$analysis.stateOfCharge" },
+          avgCurrent: { $avg: "$analysis.current" },
+          avgPower: { $avg: "$analysis.power" },
+          avgTemp: { $avg: "$analysis.temperature" },
+          count: { $sum: 1 },
+          timestamp: { $min: "$timestamp" }
+        }
+      },
+      { $sort: { timestamp: 1 } }
+    ];
+
+    const aggregated = await historyCollection.aggregate(pipeline).toArray();
+
+    // Transform to match expected output format
+    const data = aggregated.map(rec => ({
+      timestamp: rec.timestamp,
+      avgVoltage: rec.avgVoltage,
+      avgSoC: rec.avgSoc,
+      avgCurrent: rec.avgCurrent,
+      avgPower: rec.avgPower,
+      avgTemp: rec.avgTemp,
+      dataPoints: rec.count
+    }));
+
+    return {
+      systemId,
+      metric,
+      time_range: { start: time_range_start, end: time_range_end },
+      granularity,
+      dataPoints: data.length,
+      data: data,
+      note: 'Aggregated by MongoDB'
+    };
+  }
+
+  // Fallback to raw fetch for 'raw' granularity or other cases
   const query = {
     systemId,
     timestamp: {
@@ -834,6 +897,7 @@ async function requestBmsData(params, log) {
   const records = await historyCollection
     .find(query, { projection })
     .sort({ timestamp: 1 })
+    .limit(5000) // Safety limit to prevent memory exhaustion
     .toArray();
 
   const queryDuration = Date.now() - queryStartTime;

@@ -119,8 +119,10 @@ function buildIncrementalFilter(sinceIso, sinceDate, fallbackFields) {
         }
     }
 
-    // Include legacy documents with no timestamp so they sync at least once
-    orClauses.push({ updatedAt: { $exists: false } });
+    // OPTIMIZATION: Removed legacy document check ({ updatedAt: { $exists: false } })
+    // This was causing full table scans and re-fetching of old data on every sync.
+    // Legacy documents should be migrated via a separate process if needed.
+    // orClauses.push({ updatedAt: { $exists: false } });
 
     return { $or: orClauses };
 }
@@ -250,7 +252,8 @@ exports.handler = async function (event, context) {
         const filter = buildIncrementalFilter(since, sinceDate, fallbackFields);
 
         const itemsQueryStartedAt = Date.now();
-        const items = await collection.find(filter, { projection: { _id: 0 } }).toArray();
+        // OPTIMIZATION: Added limit(1000) to prevent massive result sets causing timeouts
+        const items = await collection.find(filter, { projection: { _id: 0 } }).limit(1000).toArray();
         const itemsQueryDurationMs = Date.now() - itemsQueryStartedAt;
 
         const deletedCollection = await getCollection("deleted-records");

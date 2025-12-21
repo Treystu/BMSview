@@ -74,13 +74,16 @@ exports.handler = async function (event, context) {
         log.info('Starting system analytics processing.', requestLogContext);
 
         const historyCollection = await getCollection("history");
-        const allHistory = await withRetry(() => historyCollection.find({}).toArray());
 
+        // OPTIMIZED: Query only relevant records instead of fetching entire collection
+        // This fixes the 100% error rate and high latency by pushing filtering to MongoDB
         /** @type {HistoryRecord[]} */
-        const systemHistory = /** @type {HistoryRecord[]} */ (allHistory).filter(record => record.systemId === systemId && record.analysis);
-        log.info(`Found ${systemHistory.length} history records for system.`, requestLogContext);
+        const systemHistory = /** @type {HistoryRecord[]} */ (await withRetry(() => historyCollection.find({
+            systemId: systemId,
+            analysis: { $exists: true }
+        }).toArray()));
 
-        if (systemHistory.length === 0) {
+        log.info(`Found ${systemHistory.length} history records for system.`, requestLogContext); if (systemHistory.length === 0) {
             return respond(200, {
                 hourlyAverages: [],
                 performanceBaseline: { sunnyDayChargingAmpsByHour: [] },
