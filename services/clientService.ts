@@ -86,7 +86,7 @@ function detectCacheMode(): CacheMode {
             if (override === 'force') {
                 return 'enabled';
             }
-        } catch (_err) {
+        } catch {
             // Ignore storage access errors (Safari private mode, etc.)
         }
     }
@@ -216,35 +216,6 @@ export const __internals = {
     resetMetrics: () => resetClientServiceMetrics()
 };
 
-/**
- * IMPORTANT: This key generation is CLIENT-SIDE ONLY for UI deduplication.
- * 
- * **Duplicate Detection Architecture:**
- * - Backend (canonical): unified-deduplication.cjs uses SHA-256 content hashing
- * - Frontend (UI helper): This function creates approximate keys for grouping already-fetched data
- * 
- * **This function does NOT:**
- * - Replace backend duplicate detection
- * - Perform cryptographic hashing
- * - Check server-side duplicates
- * 
- * **Use this for:**
- * - Grouping similar analyses in UI lists
- * - Finding client-side duplicates in already-loaded data
- * 
- * **For actual duplicate detection:**
- * - Frontend: Use checkFileDuplicate() from geminiService.ts (calls backend API)
- * - Backend: Use unified-deduplication.cjs functions directly
- */
-const generateAnalysisKey = (data: AnalysisData): string => {
-    if (!data) return Math.random().toString();
-    const voltage = data.overallVoltage ? (Math.round(data.overallVoltage * 10) / 10).toFixed(1) : 'N/A';
-    const current = data.current ? (Math.round(data.current * 10) / 10).toFixed(1) : 'N/A';
-    const soc = data.stateOfCharge ? Math.round(data.stateOfCharge) : 'N/A';
-    const cellVoltagesKey = data.cellVoltages && data.cellVoltages.length > 0 ? data.cellVoltages.map(v => (Math.round(v * 1000) / 1000).toFixed(3)).join(',') : 'nocells';
-    return `${data.dlNumber || 'none'}|${voltage}|${current}|${soc}|${cellVoltagesKey}`;
-};
-
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({
         level: level.toUpperCase(),
@@ -322,7 +293,7 @@ async function loadLocalCacheModule(): Promise<LocalCacheModule | null> {
 type CacheAugmented<T> = T & { _syncStatus?: string; updatedAt?: string };
 
 function stripCacheMetadata<T>(record: CacheAugmented<T>): T {
-    const { _syncStatus, updatedAt, ...rest } = record as Record<string, unknown>;
+    const { _syncStatus: _unused_sync, updatedAt: _unused_updated, ...rest } = record as Record<string, unknown>;
     return { ...rest } as T;
 }
 
@@ -609,11 +580,19 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
     const limit = 200; // Fetch in chunks of 200
     let page = 1;
     let hasMore = true;
+    const seenIds = new Set<string>();
+    let success = true;
 
     while (hasMore) {
         try {
             log('info', 'Fetching history page for streaming.', { page, limit });
             const response = await getAnalysisHistory(page, limit, { forceRefresh: true });
+
+            // Track IDs for cache reconciliation
+            response.items.forEach(item => {
+                if (item.id) seenIds.add(item.id);
+            });
+
             if (response.items.length === 0) {
                 log('info', 'History stream hit empty page, stopping.', { page });
                 hasMore = false;
@@ -637,8 +616,36 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
         } catch (error) {
             log('error', 'Error while streaming history data. Stopping stream.', { error: error instanceof Error ? error.message : String(error) });
             hasMore = false; // Stop on error
+            success = false;
         }
     }
+
+    // Perform cache reconciliation ONLY if sync was successful
+    if (success && isLocalCacheEnabled()) {
+        const cacheModule = await loadLocalCacheModule();
+        if (cacheModule) {
+            try {
+                const cachedRecords = await cacheModule.historyCache.getAll();
+                // Only delete records that are marked as 'synced' (server records)
+                // Preserve 'pending' records (local changes waiting to sync)
+                const recordsToDelete = cachedRecords.filter(record =>
+                    record._syncStatus === 'synced' && !seenIds.has(record.id)
+                );
+
+                if (recordsToDelete.length > 0) {
+                    log('info', `Reconciling cache: Deleting ${recordsToDelete.length} orphaned records.`);
+                    // Delete in batches to avoid blocking
+                    const deletePromises = recordsToDelete.map(record => cacheModule.historyCache.delete(record.id));
+                    await Promise.all(deletePromises);
+                } else {
+                    log('info', 'Cache reconciliation complete: No orphaned records found.');
+                }
+            } catch (error) {
+                log('warn', 'Failed to reconcile cache deletions.', { error: error instanceof Error ? error.message : String(error) });
+            }
+        }
+    }
+
     log('info', 'Finished streaming all history records.');
     onComplete();
 };
@@ -694,7 +701,6 @@ export const streamInsights = async (
     // CRITICAL: Backend timeout configuration
     // Default is 20s for Pro/Business, but can be configured via NETLIFY_FUNCTION_TIMEOUT_MS
     // Since we can't read env vars directly in the browser, we use the default
-    const BACKEND_FUNCTION_TIMEOUT_S = 20; // 20 seconds (configurable on backend)
 
     // CRITICAL: With Netlify's configurable timeout, each attempt is shorter
     // Allow 15 attempts (15 * 20s default = 300s = 5 minutes total processing time)
@@ -834,7 +840,7 @@ export const streamInsights = async (
                                 status: response.status
                             });
                         }
-                        
+
                         // If not a model_timeout, use default gateway timeout message
                         if (!isModelTimeout) {
                             errorMessage = 'Request timed out. The AI took too long to process your query. Try:\n' +
@@ -1061,7 +1067,7 @@ export const streamInsights = async (
         const actualElapsedSeconds = Math.round(actualElapsedMs / 1000);
         const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
         const remainingSeconds = actualElapsedSeconds % 60;
-        
+
         // Build elapsed time string without trailing spaces
         const elapsedTimeParts: string[] = [];
         if (actualElapsedMinutes > 0) {
@@ -1940,7 +1946,7 @@ export const mergeBmsSystems = async (primarySystemId: string, idsToMerge: strin
 
 export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> => {
     log('info', 'Finding duplicate analysis sets using backend endpoint.');
-    
+
     // Use backend endpoint for consistent duplicate detection (contentHash-based)
     const response = await apiFetch<{
         duplicateSets: Array<Array<{
@@ -1958,11 +1964,11 @@ export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> =
             totalDuplicates: number;
         };
     }>('admin-scan-duplicates');
-    
+
     // Convert backend format to AnalysisRecord format for compatibility
     // Note: Backend returns minimal info for display purposes
     // The UI only needs id, timestamp, systemId, dlNumber for deletion
-    const sets = response.duplicateSets.map(set => 
+    const sets = response.duplicateSets.map(set =>
         set.map(record => ({
             id: record.id,
             timestamp: record.timestamp,
@@ -1975,12 +1981,12 @@ export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> =
             analysis: record.dlNumber ? { dlNumber: record.dlNumber } as Partial<AnalysisData> : null
         } as AnalysisRecord))
     );
-    
-    log('info', 'Duplicate scan complete via backend.', { 
+
+    log('info', 'Duplicate scan complete via backend.', {
         foundSets: sets.length,
         totalDuplicates: response.summary.totalDuplicates
     });
-    
+
     return sets;
 };
 
@@ -2331,7 +2337,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
             let errorData: any;
             try {
                 errorData = JSON.parse(errorText);
-            } catch (parseError) {
+            } catch {
                 log('error', 'Failed to parse error response as JSON.', {
                     text: errorText.substring(0, 500)
                 });
@@ -2357,7 +2363,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
             log('error', 'Diagnostics API fetch failed.', { status: response.status, error, errorData });
 
             // Create a detailed error result instead of empty array
-            const errorResult = {
+            const errorResult: DiagnosticTestResult = {
                 name: 'HTTP Request',
                 status: 'error',
                 error: error,
@@ -2399,7 +2405,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
             log('error', 'Failed to parse diagnostics response as JSON.', { error: errorMessage });
 
             // Create a detailed error result instead of empty array
-            const errorResult = {
+            const errorResult: DiagnosticTestResult = {
                 name: 'Response Parsing',
                 status: 'error',
                 error: `Failed to parse response as JSON: ${errorMessage}`,
@@ -2433,7 +2439,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
                 log('error', 'Diagnostics timed out.', { error: timeoutError });
 
                 // Create a detailed error result instead of empty array
-                const errorResult = {
+                const errorResult: DiagnosticTestResult = {
                     name: 'Request Timeout',
                     status: 'error',
                     error: timeoutError,
@@ -2462,7 +2468,7 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
             log('error', 'Diagnostics encountered an error.', { error: error.message, stack: error.stack });
 
             // Create a detailed error result instead of empty array
-            const errorResult = {
+            const errorResult: DiagnosticTestResult = {
                 name: 'Client Error',
                 status: 'error',
                 error: `${error.message}\n\nError Type: ${error.constructor.name}${error.stack ? '\n\nStack:\n' + error.stack.substring(0, 500) : ''}`,
@@ -2679,23 +2685,23 @@ export const checkHashes = async (hashes: string[]): Promise<{ duplicates: { has
     if (hashes.length === 0) {
         return { duplicates: [], upgrades: [] };
     }
-    
-    log('info', 'Checking file hashes against the backend for duplicates and upgrades.', { 
+
+    log('info', 'Checking file hashes against the backend for duplicates and upgrades.', {
         event: 'STARTING',
         count: hashes.length,
         hashPreview: hashes.slice(0, 3).map(h => h.substring(0, 16) + '...')
     });
-    
+
     const MAX_RETRIES = 3;
     const RETRY_DELAY_MS = 1000;
-    
+
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
             const response = await apiFetch<{ duplicates: { hash: string, data: any }[], upgrades: string[] }>('check-hashes', {
                 method: 'POST',
                 body: JSON.stringify({ hashes }),
             });
-            
+
             log('info', 'checkHashes function completed successfully', {
                 event: 'SUCCESS',
                 duplicatesFound: response.duplicates?.length || 0,
@@ -2703,7 +2709,7 @@ export const checkHashes = async (hashes: string[]): Promise<{ duplicates: { has
                 newFiles: hashes.length - (response.duplicates?.length || 0) - (response.upgrades?.length || 0),
                 attempt
             });
-            
+
             return {
                 duplicates: response.duplicates || [],
                 upgrades: response.upgrades || [],
@@ -2711,24 +2717,24 @@ export const checkHashes = async (hashes: string[]): Promise<{ duplicates: { has
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             const isLastAttempt = attempt === MAX_RETRIES;
-            
-            log(isLastAttempt ? 'error' : 'warn', `Failed to check hashes (attempt ${attempt}/${MAX_RETRIES})`, { 
+
+            log(isLastAttempt ? 'error' : 'warn', `Failed to check hashes (attempt ${attempt}/${MAX_RETRIES})`, {
                 event: isLastAttempt ? 'ERROR_FINAL' : 'ERROR_RETRY',
                 error: errorMessage,
                 attempt,
                 willRetry: !isLastAttempt
             });
-            
+
             // On final attempt, throw error to inform user
             if (isLastAttempt) {
                 throw new Error(`Failed to check for duplicates after ${MAX_RETRIES} attempts: ${errorMessage}`);
             }
-            
+
             // Wait before retry (exponential backoff)
             await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * attempt));
         }
     }
-    
+
     // Should never reach here, but TypeScript requires a return
     throw new Error('Unexpected: checkHashes exceeded retry loop');
 };
