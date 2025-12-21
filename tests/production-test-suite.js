@@ -54,7 +54,7 @@ class ProductionTestSuite {
                 results.summary.failed++;
                 results.success = false;
             } else {
-                results.summary.skipped++;
+                results.summaryped++;
             }
         }
 

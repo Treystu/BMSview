@@ -7,7 +7,7 @@
  * The tests need to be updated to work with the new architecture before re-enabling.
  */
 
-describe.skip('Insights Data Availability', () => {
+describe('Insights Data Availability', () => {
   test('placeholder', () => {
     expect(true).toBe(true);
   });

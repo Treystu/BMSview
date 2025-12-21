@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * SyncManager Integration Tests
  * 
@@ -19,7 +20,35 @@ const {
     syncManager
 } = require('../src/services/syncManager');
 
+// Mock localCache to avoid Dexie/IndexedDB issues in integration test
+jest.mock('@/services/localCache', () => ({
+    localCache: {
+        getMetadata: jest.fn().mockResolvedValue({ recordCount: 0, lastModified: null }),
+        getPendingItems: jest.fn().mockResolvedValue({ systems: [], history: [], analytics: [] }),
+        markAsSynced: jest.fn().mockResolvedValue(undefined),
+        systemsCache: { put: jest.fn(), bulkPut: jest.fn(), delete: jest.fn() },
+        historyCache: { put: jest.fn(), bulkPut: jest.fn(), delete: jest.fn() }
+    },
+    default: {
+        getMetadata: jest.fn().mockResolvedValue({ recordCount: 0, lastModified: null }),
+        getPendingItems: jest.fn().mockResolvedValue({ systems: [], history: [], analytics: [] }),
+        markAsSynced: jest.fn().mockResolvedValue(undefined),
+        systemsCache: { put: jest.fn(), bulkPut: jest.fn(), delete: jest.fn() },
+        historyCache: { put: jest.fn(), bulkPut: jest.fn(), delete: jest.fn() }
+    }
+}), { virtual: true });
+
 describe('SyncManager Integration Tests', () => {
+    // Mock global fetch to prevent relative URL errors and ensure response
+    beforeAll(() => {
+        global.fetch = jest.fn(() => Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ items: [], deletedIds: [] }),
+            text: () => Promise.resolve('OK')
+        }));
+    });
+
     // Mock data helpers
     function createLocalMeta(recordCount, lastModified) {
         return {
@@ -284,10 +313,10 @@ describe('SyncManager Integration Tests', () => {
             // The SyncManager has an internal isSyncing flag (private)
             // We can't directly test it, but we can verify getSyncStatus returns the flag correctly
             const status = manager.getSyncStatus();
-            
+
             // Initially not syncing
             expect(status.isSyncing).toBe(false);
-            
+
             // Note: The actual concurrent sync prevention is tested through integration,
             // as the isSyncing property is private and cannot be directly manipulated
         });

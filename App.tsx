@@ -1,3 +1,4 @@
+import netlifyIdentity from 'netlify-identity-widget';
 import { useCallback, useEffect } from 'react';
 import AnalysisResult from './components/AnalysisResult';
 import Footer from './components/Footer';
@@ -5,7 +6,9 @@ import Header from './components/Header';
 import RegisterBms from './components/RegisterBms';
 import UploadSection from './components/UploadSection';
 // ***MODIFIED***: Import the new *synchronous* service
+import type { SyncEvent } from '@/services/syncManager';
 import syncManager from '@/services/syncManager';
+
 import {
   associateDlToSystem,
   getAnalysisHistory,
@@ -14,16 +17,22 @@ import {
   registerBmsSystem
 } from './services/clientService';
 import { analyzeBmsScreenshot } from './services/geminiService';
-import { checkFilesForDuplicates, partitionCachedFiles, buildRecordFromCachedDuplicate, EMPTY_CATEGORIZATION, type DuplicateCheckResult } from './utils/duplicateChecker';
 import { useAppState } from './state/appState';
 import type { BmsSystem, DisplayableAnalysisResult } from './types';
+import { buildRecordFromCachedDuplicate, checkFilesForDuplicates, EMPTY_CATEGORIZATION, partitionCachedFiles, type DuplicateCheckResult } from './utils/duplicateChecker';
 import { safeGetItems } from './utils/stateHelpers';
 // ***REMOVED***: No longer need job polling
 // import { getIsActualError } from './utils';
-// import { useJobPolling } from './hooks/useJobPolling';
 
-const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
-  console.log(JSON.stringify({ level: level.toUpperCase(), timestamp: new Date().toISOString(), message, context }));
+
+const log = (level: string, message: string, context: object = {}) => {
+  console.log(JSON.stringify({
+    level: level.toUpperCase(),
+    timestamp: new Date().toISOString(),
+    service: 'app-ui',
+    message,
+    context
+  }));
 };
 
 function App() {
@@ -50,19 +59,55 @@ function App() {
         getAnalysisHistory(1, 25)   // Load first page of history
       ]);
       dispatch({ type: 'FETCH_DATA_SUCCESS', payload: { systems, history } });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Unknown error";
-      dispatch({ type: 'SET_ERROR', payload: "Could not load initial application data." });
+      const response = await fetch('/.netlify/functions/verify-session');
+      if (!response.ok) {
+        // Session verification failed
+        netlifyIdentity.logout();
+      }
+    } catch (error) {
+      log('error', 'Failed to fetch initial data', { error });
+      dispatch({ type: 'SET_ERROR', payload: 'Failed to load application data.' });
     }
   }, [dispatch]);
 
   useEffect(() => {
     fetchAppData();
+
+    // Subscribe to SyncManager events
+    const unsubscribe = syncManager.subscribe((event: SyncEvent) => {
+      switch (event.type) {
+        case 'sync-start':
+          dispatch({ type: 'UPDATE_SYNC_STATUS', payload: { isSyncing: true } });
+          break;
+        case 'sync-complete':
+          dispatch({
+            type: 'UPDATE_SYNC_STATUS',
+            payload: { isSyncing: false, lastSyncTime: syncManager.getSyncStatus().lastSyncTime }
+          });
+          break;
+        case 'sync-error':
+          dispatch({ type: 'SYNC_ERROR', payload: event.error });
+          dispatch({ type: 'UPDATE_SYNC_STATUS', payload: { isSyncing: false } }); // Ensure we stop spinning
+          break;
+        case 'drift-warning':
+          log('warn', `Time drift detected: ${event.diff}ms`);
+          // Could dispatch a TOAST or warning state here if UI supported it
+          break;
+        case 'data-changed':
+          log('info', 'Data changed via sync, refreshing app data', { collection: event.collection });
+          // Only refetch if relevant data changed
+          // We could make this more granular, but for now a full refresh ensures consistency
+          fetchAppData();
+          break;
+      }
+    });
+
     // Start periodic sync on mount
     syncManager.startPeriodicSync();
 
     // Cleanup on unmount
     return () => {
+      unsubscribe();
       syncManager.stopPeriodicSync();
     };
   }, [fetchAppData]);
@@ -73,7 +118,7 @@ function App() {
       await linkAnalysisToSystem(recordId, systemId, dlNumber);
       await fetchAppData();
       dispatch({ type: 'UPDATE_RESULTS_AFTER_LINK' });
-    } catch (err) {
+    } catch {
       dispatch({ type: 'SET_ERROR', payload: "Failed to link the record." });
     }
   };
@@ -102,7 +147,7 @@ function App() {
     try {
       // ***PHASE 1: Check ALL files for duplicates upfront (unless forcing reanalysis)***
       let filesToAnalyze: { file: File; needsUpgrade?: boolean }[] = [];
-      
+
       if (!options?.forceReanalysis) {
         try {
           // Layer 1: Client-side cache fast-path (PR #341) - instant for cached duplicates
@@ -134,7 +179,7 @@ function App() {
 
           // Combine cached upgrades with network-checked upgrades
           const combinedNeedsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
-          
+
           // Mark true duplicates as skipped immediately (don't analyze these at all)
           for (const dup of trueDuplicates) {
             dispatch({
@@ -154,23 +199,23 @@ function App() {
 
           // Update files that need upgrade to "Queued (needs upgrade)" status
           for (const item of combinedNeedsUpgrade) {
-            dispatch({ 
-              type: 'UPDATE_ANALYSIS_STATUS', 
-              payload: { fileName: item.file.name, status: 'Queued (upgrading)' } 
+            dispatch({
+              type: 'UPDATE_ANALYSIS_STATUS',
+              payload: { fileName: item.file.name, status: 'Queued (upgrading)' }
             });
           }
 
           // Update new files to "Queued" status
           for (const item of newFiles) {
-            dispatch({ 
-              type: 'UPDATE_ANALYSIS_STATUS', 
-              payload: { fileName: item.file.name, status: 'Queued' } 
+            dispatch({
+              type: 'UPDATE_ANALYSIS_STATUS',
+              payload: { fileName: item.file.name, status: 'Queued' }
             });
           }
 
           filesToAnalyze = [...combinedNeedsUpgrade, ...newFiles];
-          
-          log('info', 'Phase 1 complete: Duplicate check finished.', { 
+
+          log('info', 'Phase 1 complete: Duplicate check finished.', {
             count: filesToAnalyze.length,
             upgrades: combinedNeedsUpgrade.length,
             new: newFiles.length,
@@ -180,32 +225,32 @@ function App() {
           });
         } catch (duplicateCheckError) {
           // If duplicate check fails entirely, fall back to analyzing all files
-          const errorMessage = duplicateCheckError instanceof Error 
-            ? duplicateCheckError.message 
+          const errorMessage = duplicateCheckError instanceof Error
+            ? duplicateCheckError.message
             : 'Unknown error during duplicate check';
-          
-          log('warn', 'Phase 1 failed: Duplicate check error, will analyze all files.', { 
+
+          log('warn', 'Phase 1 failed: Duplicate check error, will analyze all files.', {
             error: errorMessage,
             fileCount: files.length
           });
-          
+
           // Reset all files to "Queued" status (clear any "Checking for duplicates..." errors)
           for (const file of files) {
-            dispatch({ 
-              type: 'UPDATE_ANALYSIS_STATUS', 
-              payload: { fileName: file.name, status: 'Queued' } 
+            dispatch({
+              type: 'UPDATE_ANALYSIS_STATUS',
+              payload: { fileName: file.name, status: 'Queued' }
             });
           }
-          
+
           // Treat all files as new files that need analysis
           filesToAnalyze = files.map(file => ({ file }));
         }
 
         // ***PHASE 2: Analyze only upgrades and new files (true duplicates already handled)***
-        log('info', 'Phase 2: Starting analysis of non-duplicate files.', { 
+        log('info', 'Phase 2: Starting analysis of non-duplicate files.', {
           count: filesToAnalyze.length
         });
-        
+
         for (const item of filesToAnalyze) {
           const file = item.file;
           try {
@@ -258,12 +303,12 @@ function App() {
       } else {
         // When forcing reanalysis, skip duplicate check and analyze all files
         log('info', 'Force reanalysis mode - skipping duplicate check.', { fileCount: files.length });
-        
+
         for (const file of files) {
           try {
             dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
             const analysisData = await analyzeBmsScreenshot(file, true);
-            
+
             log('info', 'Processing synchronous analysis result.', { fileName: file.name });
             dispatch({
               type: 'SYNC_ANALYSIS_COMPLETE',
@@ -305,7 +350,7 @@ function App() {
   const handleRegisterSystem = async (systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>) => {
     dispatch({ type: 'REGISTER_SYSTEM_START' });
     try {
-      const newSystem = await registerBmsSystem(systemData);
+      const newSystem = await registerBmsSystem({ ...systemData, associatedDLs: [] });
       if (registrationContext?.dlNumber) {
         await associateDlToSystem(registrationContext.dlNumber, newSystem.id);
       }

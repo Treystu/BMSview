@@ -1,9 +1,10 @@
 import type { AdminStoriesResponse, AdminStory, AnalysisData, AnalysisRecord, AnalysisStory, BmsSystem, InsightMode, StoryPhoto, WeatherData } from '../types';
 import { InsightMode as InsightModeEnum } from '../types';
 
-interface PaginatedResponse<T> {
+// Import shared type or define compatible shape
+export interface PaginatedResponse<T> {
     items: T[];
-    totalItems: number;
+    total: number;
 }
 
 interface FetchListOptions {
@@ -293,7 +294,7 @@ async function loadLocalCacheModule(): Promise<LocalCacheModule | null> {
 type CacheAugmented<T> = T & { _syncStatus?: string; updatedAt?: string };
 
 function stripCacheMetadata<T>(record: CacheAugmented<T>): T {
-    const { _syncStatus: _unused_sync, updatedAt: _unused_updated, ...rest } = record as Record<string, unknown>;
+    const { _syncStatus, updatedAt, ...rest } = record as Record<string, unknown>;
     return { ...rest } as T;
 }
 
@@ -331,7 +332,7 @@ async function getCachedSystemsPage(page: number, limit: number): Promise<Pagina
 
         return {
             items,
-            totalItems: allSystems.length
+            total: allSystems.length
         };
     } catch (error) {
         recordCacheFailure();
@@ -376,7 +377,7 @@ async function getCachedHistoryPage(page: number, limit: number): Promise<Pagina
 
         return {
             items,
-            totalItems: allHistory.length
+            total: allHistory.length
         };
     } catch (error) {
         recordCacheFailure();
@@ -482,12 +483,12 @@ export const getRegisteredSystems = async (page = 1, limit = 25, options: FetchL
         ? await apiFetch<any>(`systems?page=${page}&limit=${limit}`)
         : await fetchWithCache<any>(`systems?page=${page}&limit=${limit}`, 10_000);
 
-    let result: PaginatedResponse<BmsSystem> = { items: [], totalItems: 0 };
+    let result: PaginatedResponse<BmsSystem> = { items: [], total: 0 };
 
     if (Array.isArray(response)) {
         result = {
             items: [...response],
-            totalItems: response.length
+            total: response.length
         };
     } else if (response && typeof response === 'object') {
         const totalCandidates = [response.total, response.totalItems, response.count];
@@ -496,17 +497,17 @@ export const getRegisteredSystems = async (page = 1, limit = 25, options: FetchL
         if (Array.isArray(response.items)) {
             result = {
                 items: response.items,
-                totalItems: typeof totalItems === 'number' ? totalItems : response.items.length
+                total: typeof totalItems === 'number' ? totalItems : response.items.length
             };
         } else if (totalItems !== undefined) {
             result = {
                 items: Array.isArray(response.items) ? response.items : [],
-                totalItems
+                total: totalItems
             };
         } else if (Object.keys(response).length > 0) {
             result = {
                 items: [response],
-                totalItems: 1
+                total: 1
             };
         }
     }
@@ -544,17 +545,17 @@ export const getAnalysisHistory = async (page = 1, limit = 25, options: FetchLis
         ? await apiFetch<any>(`history?page=${page}&limit=${limit}`)
         : await fetchWithCache<any>(`history?page=${page}&limit=${limit}`, 5_000);
 
-    let result: PaginatedResponse<AnalysisRecord> = { items: [], totalItems: 0 };
+    let result: PaginatedResponse<AnalysisRecord> = { items: [], total: 0 };
 
     if (Array.isArray(response)) {
-        result = { items: response, totalItems: response.length };
+        result = { items: response, total: response.length };
     } else if (response && typeof response === 'object') {
         const items = Array.isArray(response.items) ? response.items : [];
         const totalCandidates = [response.total, response.totalItems, response.count];
         const totalItems = totalCandidates.find(value => typeof value === 'number' && Number.isFinite(value));
         result = {
             items,
-            totalItems: typeof totalItems === 'number' ? totalItems : items.length
+            total: typeof totalItems === 'number' ? totalItems : items.length
         };
     }
 
@@ -601,7 +602,7 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
 
             onData(response.items);
 
-            const totalItems = response.totalItems;
+            const totalItems = response.total;
             if (typeof totalItems === 'number' && Number.isFinite(totalItems)) {
                 if (page * limit >= totalItems) {
                     hasMore = false;

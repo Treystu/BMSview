@@ -1084,7 +1084,7 @@ async function executeReActLoop(params) {
 
     // Calculate time budgets
     const contextBudgetMs = SYNC_CONTEXT_BUDGET_MS;
-    const totalBudgetMs = SYNC_TOTAL_BUDGET_MS;
+    const totalBudgetMs = params.totalBudgetMs || SYNC_TOTAL_BUDGET_MS;
 
     // Check if resuming from checkpoint
     let isResuming = !!(checkpointState && checkpointState.conversationHistory);
@@ -1268,6 +1268,20 @@ async function executeReActLoop(params) {
         }
 
         // Step 3.5: MANDATORY INITIALIZATION SEQUENCE (unless skipped or resuming)
+        // DEBUG LOG
+        if (log && log.info) {
+            // log.info(`executeReActLoop START. systemId=${systemId} skipInit=${skipInitialization}`);
+        }
+        console.log(`DEBUG: executeReActLoop called. skipInitialization=${skipInitialization}`);
+
+        // State
+        let systemProfile = null;
+        let latestAnalytics = null;
+        let autoContextMeta = null;
+
+        // 1. Initialization Step (Gather Context)
+        // If not skipping initialization (Resume flow usually has context already)
+        // and we have a systemId to analyze
         // Force Gemini to retrieve historical data before analysis
         const geminiClient = getGeminiClient();
 
@@ -1285,6 +1299,7 @@ async function executeReActLoop(params) {
                 modelOverride,
                 stream: params.stream // Pass the stream here
             });
+
 
             if (!initResult.success) {
                 // Initialization failed after retries
@@ -1454,6 +1469,7 @@ async function executeReActLoop(params) {
                 safeIterationTimeout,
                 iterationSafetyBuffer: ITERATION_SAFETY_BUFFER_MS
             });
+            process.stdout.write(`DEBUG_TRACE: Turn ${turnCount} - Start. TimeRemaining=${timeRemaining}, SafeTimeout=${safeIterationTimeout}\n`);
 
             // Log the conversation history for debugging
             log.info('Conversation history before Gemini call', {
@@ -1476,12 +1492,19 @@ async function executeReActLoop(params) {
                     await new Promise(resolve => setTimeout(resolve, 10000));
                 }
 
-                const geminiCallPromise = geminiClient.callAPI(null, {
-                    history: conversationHistory,
-                    tools: toolDefinitions,
-                    model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-                    maxOutputTokens: 4096
-                }, log);
+                const geminiCallPromise = (async () => {
+                    try {
+                        return await geminiClient.callAPI(null, {
+                            history: conversationHistory,
+                            tools: toolDefinitions,
+                            model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+                            maxOutputTokens: 4096
+                        }, log);
+                    } catch (e) {
+                        process.stdout.write(`geminiClient.callAPI FAILED: ${e.message}\n`);
+                        throw e;
+                    }
+                })();
 
                 // Race Gemini call against iteration timeout
                 geminiResponse = await Promise.race([
@@ -1878,6 +1901,9 @@ async function executeReActLoop(params) {
                         toolCallsTotal: toolCallCount
                     });
 
+                    // Break the loop since we have a final answer
+                    break;
+
                     // Validate response format
                     const validation = validateResponseFormat(finalAnswer, customPrompt || '');
 
@@ -1988,8 +2014,8 @@ async function executeReActLoop(params) {
                         toolArgsKeys: Object.keys(toolArgs || {})
                     });
 
-                    const toolResult = await executeToolCall(toolName, toolArgs, log);
                     toolCallCount++;
+                    const toolResult = await executeToolCall(toolName, toolArgs, log);
 
                     // Add tool result to conversation
                     if ((/** @type {any} */ (toolResult)).graceful_degradation) {
@@ -2067,6 +2093,8 @@ async function executeReActLoop(params) {
             }
         }
 
+        process.stdout.write(`DEBUG_TRACE: Loop Ended. TurnCount=${turnCount}, MaxTurns=${MAX_TURNS}, FinalAnswer=${!!finalAnswer}\n`);
+
         // Determine if we hit max turns without final answer
         if (!finalAnswer) {
             if (turnCount >= MAX_TURNS) {
@@ -2084,7 +2112,7 @@ async function executeReActLoop(params) {
         const totalDurationMs = Date.now() - startTime;
 
         log.info('ReAct loop completed successfully', {
-            turns: turnCount + 1,
+            turns: turnCount >= MAX_TURNS ? MAX_TURNS : turnCount + 1,
             toolCalls: toolCallCount,
             totalDurationMs,
             answerLength: finalAnswer.length
@@ -2131,7 +2159,7 @@ async function executeReActLoop(params) {
                 model: modelOverride || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
                 contextWindowDays: contextWindowDays,
                 metadata: {
-                    turns: turnCount + 1,
+                    turns: turnCount >= MAX_TURNS ? MAX_TURNS : turnCount + 1,
                     toolCalls: toolCallCount,
                     conversationLength: conversationHistory.length,
                     timedOut: timedOut,
@@ -2155,7 +2183,7 @@ async function executeReActLoop(params) {
         return {
             success: true,
             finalAnswer,
-            turns: turnCount + 1,
+            turns: turnCount >= MAX_TURNS ? MAX_TURNS : turnCount + 1,
             toolCalls: toolCallCount,
             durationMs: totalDurationMs,
             contextSummary,

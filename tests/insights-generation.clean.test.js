@@ -11,7 +11,7 @@ const { handler: generateHandler } = require('../netlify/functions/generate-insi
 
 describe.skip('generate-insights handler', () => {
   test('returns 200 and produces insights for empty measurements', async () => {
-    const event = { body: JSON.stringify({ systemId: 't1', batteryData: { measurements: [] } }) };
+    const event = { body: JSON.stringify({ systemId: 't1', consentGranted: true, batteryData: { measurements: [] } }) };
     const res = await generateHandler(event);
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
@@ -20,14 +20,14 @@ describe.skip('generate-insights handler', () => {
   });
 
   test('returns 500 for explicit null batteryData', async () => {
-    const event = { body: JSON.stringify({ systemId: 't1', batteryData: null }) };
+    const event = { body: JSON.stringify({ systemId: 't1', consentGranted: true, batteryData: null }) };
     const res = await generateHandler(event);
     // Enhanced handler returns 400 for invalid structure
     expect(res.statusCode).toBe(400);
   });
 
   test('analyzes simple healthy dataset', async () => {
-    const data = { systemId: 't2', measurements: [{ capacity: 100 }, { capacity: 95 }] };
+    const data = { systemId: 't2', consentGranted: true, measurements: [{ capacity: 100 }, { capacity: 95 }] };
     const event = { body: JSON.stringify(data) };
     const res = await generateHandler(event);
     expect(res.statusCode).toBe(200);
@@ -40,6 +40,7 @@ describe.skip('generate-insights handler', () => {
     const event = {
       body: JSON.stringify({
         systemId: 't3',
+        consentGranted: true,
         batteryData: {
           measurements: [
             { capacity: 100, energyIn: 1000 },

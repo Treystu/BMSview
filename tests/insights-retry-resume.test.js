@@ -15,7 +15,7 @@ describe('Insights Retry/Resume Functionality', () => {
       // Mock fetch globally
       global.fetch = jest.fn();
       mockFetch = global.fetch;
-      
+
       onChunkMock = jest.fn();
       onCompleteMock = jest.fn();
       onErrorMock = jest.fn();
@@ -79,7 +79,7 @@ describe('Insights Retry/Resume Functionality', () => {
 
     test('should automatically retry when receiving 408 with resumeJobId', async () => {
       const jobId = 'test-job-123';
-      
+
       // First response: 408 timeout with resumeJobId
       const timeoutResponse = {
         ok: false,
@@ -129,7 +129,7 @@ describe('Insights Retry/Resume Functionality', () => {
 
         const attemptRequest = async () => {
           attemptCount++;
-          
+
           const requestBody = { ...payload, mode: 'sync' };
           if (resumeJobId) {
             requestBody.resumeJobId = resumeJobId;
@@ -160,7 +160,7 @@ describe('Insights Retry/Resume Functionality', () => {
               return;
             }
           }
-          
+
           throw new Error('Request failed');
         };
 
@@ -180,18 +180,18 @@ describe('Insights Retry/Resume Functionality', () => {
 
       // Verify retry happened
       expect(mockFetch).toHaveBeenCalledTimes(2);
-      
+
       // First call: no resumeJobId
       expect(mockFetch.mock.calls[0][1].body).toContain('"mode":"sync"');
       expect(mockFetch.mock.calls[0][1].body).not.toContain('resumeJobId');
-      
+
       // Second call: with resumeJobId
       expect(mockFetch.mock.calls[1][1].body).toContain('"mode":"sync"');
       expect(mockFetch.mock.calls[1][1].body).toContain(`"resumeJobId":"${jobId}"`);
-      
+
       // Verify progress message was shown
       expect(onChunkMock).toHaveBeenCalledWith(expect.stringContaining('Continuing analysis (attempt 2/5)'));
-      
+
       // Verify final success
       expect(onChunkMock).toHaveBeenCalledWith('Resumed analysis complete');
       expect(onCompleteMock).toHaveBeenCalled();
@@ -201,7 +201,7 @@ describe('Insights Retry/Resume Functionality', () => {
     test('should fail after max retries exceeded', async () => {
       const jobId = 'test-job-456';
       const MAX_ATTEMPTS = 5;
-      
+
       // Always return 408 timeout
       const timeoutResponse = {
         ok: false,
@@ -227,7 +227,7 @@ describe('Insights Retry/Resume Functionality', () => {
 
         const attemptRequest = async () => {
           attemptCount++;
-          
+
           const requestBody = { ...payload, mode: 'sync' };
           if (resumeJobId) {
             requestBody.resumeJobId = resumeJobId;
@@ -256,7 +256,7 @@ describe('Insights Retry/Resume Functionality', () => {
               return;
             }
           }
-          
+
           throw new Error('Request failed');
         };
 
@@ -276,11 +276,11 @@ describe('Insights Retry/Resume Functionality', () => {
 
       // Verify it tried MAX_ATTEMPTS times
       expect(mockFetch).toHaveBeenCalledTimes(MAX_ATTEMPTS);
-      
+
       // Verify error was called
       expect(onErrorMock).toHaveBeenCalled();
       expect(onErrorMock.mock.calls[0][0].message).toContain('taking longer than expected');
-      
+
       // Verify onComplete was NOT called
       expect(onCompleteMock).not.toHaveBeenCalled();
     });
@@ -319,7 +319,7 @@ describe('Insights Retry/Resume Functionality', () => {
             return;
           }
         }
-        
+
         onError(new Error('Unexpected response'));
       };
 
@@ -332,7 +332,7 @@ describe('Insights Retry/Resume Functionality', () => {
 
       // Should only try once
       expect(mockFetch).toHaveBeenCalledTimes(1);
-      
+
       // Should call onError
       expect(onErrorMock).toHaveBeenCalled();
       expect(onErrorMock.mock.calls[0][0].message).toContain('Insights generation failed');
@@ -387,7 +387,7 @@ describe('Insights Retry/Resume Functionality', () => {
       const actualElapsedSeconds = Math.round(actualElapsedMs / 1000);
       const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
       const remainingSeconds = actualElapsedSeconds % 60;
-      
+
       // Format elapsed time (same logic as clientService.ts - no trailing spaces)
       const elapsedTimeParts = [];
       if (actualElapsedMinutes > 0) {
@@ -399,7 +399,7 @@ describe('Insights Retry/Resume Functionality', () => {
         elapsedTimeParts.push(`${actualElapsedSeconds} seconds`);
       }
       const elapsedTimeStr = elapsedTimeParts.join(' ');
-      
+
       // Verify the formatted string is based on actual time
       expect(elapsedTimeStr).toBe('45 seconds');
       expect(elapsedTimeStr).not.toContain('20 minutes'); // Should NOT be hard-coded theoretical max
@@ -410,7 +410,7 @@ describe('Insights Retry/Resume Functionality', () => {
       const actualElapsedSeconds = Math.round(actualElapsedMs / 1000);
       const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
       const remainingSeconds = actualElapsedSeconds % 60;
-      
+
       const elapsedTimeParts = [];
       if (actualElapsedMinutes > 0) {
         elapsedTimeParts.push(`${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''}`);
@@ -421,7 +421,7 @@ describe('Insights Retry/Resume Functionality', () => {
         elapsedTimeParts.push(`${actualElapsedSeconds} seconds`);
       }
       const elapsedTimeStr = elapsedTimeParts.join(' ');
-      
+
       expect(elapsedTimeStr).toBe('2 minutes 5 seconds');
     });
 
@@ -430,7 +430,7 @@ describe('Insights Retry/Resume Functionality', () => {
       const actualElapsedSeconds = Math.round(actualElapsedMs / 1000);
       const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
       const remainingSeconds = actualElapsedSeconds % 60;
-      
+
       const elapsedTimeParts = [];
       if (actualElapsedMinutes > 0) {
         elapsedTimeParts.push(`${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''}`);
@@ -441,7 +441,7 @@ describe('Insights Retry/Resume Functionality', () => {
         elapsedTimeParts.push(`${actualElapsedSeconds} seconds`);
       }
       const elapsedTimeStr = elapsedTimeParts.join(' ');
-      
+
       expect(elapsedTimeStr).toBe('1 minute 5 seconds');
     });
 
@@ -450,7 +450,7 @@ describe('Insights Retry/Resume Functionality', () => {
       const actualElapsedSeconds = Math.round(actualElapsedMs / 1000);
       const actualElapsedMinutes = Math.floor(actualElapsedSeconds / 60);
       const remainingSeconds = actualElapsedSeconds % 60;
-      
+
       const elapsedTimeParts = [];
       if (actualElapsedMinutes > 0) {
         elapsedTimeParts.push(`${actualElapsedMinutes} minute${actualElapsedMinutes !== 1 ? 's' : ''}`);
@@ -461,7 +461,7 @@ describe('Insights Retry/Resume Functionality', () => {
         elapsedTimeParts.push(`${actualElapsedSeconds} seconds`);
       }
       const elapsedTimeStr = elapsedTimeParts.join(' ');
-      
+
       expect(elapsedTimeStr).toBe('2 minutes');
       expect(elapsedTimeStr).not.toMatch(/\s$/); // No trailing whitespace
     });

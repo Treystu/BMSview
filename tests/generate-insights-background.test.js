@@ -16,7 +16,7 @@ const getInsightsJobMock = jest.fn();
 const processInsightsInBackgroundMock = jest.fn();
 const handler = jest.fn();
 
-describe.skip('generate-insights-background (DEPRECATED)', () => {
+describe('generate-insights-background (DEPRECATED)', () => {
     it('is deprecated and no longer tested', () => {
         expect(true).toBe(true);
     });

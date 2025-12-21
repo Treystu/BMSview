@@ -14,6 +14,7 @@
 
 import Dexie, { Table } from 'dexie';
 import { AnalysisRecord, BmsSystem, WeatherData } from '../../types';
+import { assertUtc, nowUtc } from '../utils/time';
 
 // Sync status enum
 export type SyncStatus = 'pending' | 'synced' | 'conflict';
@@ -50,22 +51,7 @@ export interface CacheMetadata extends CachedRecord {
     lastSyncTime?: string;
 }
 
-// Validation regex for UTC timestamps
-const UTC_TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-
-/**
- * Validates that a timestamp is in ISO 8601 UTC format
- */
-function validateUTCTimestamp(timestamp: string): boolean {
-    return UTC_TIMESTAMP_REGEX.test(timestamp);
-}
-
-/**
- * Gets current server time in ISO 8601 UTC format
- */
-export function getCurrentUTCTimestamp(): string {
-    return new Date().toISOString();
-}
+// Validation regex for UTC timestamps is now imported from ../utils/time
 
 /**
  * BMSview Local Cache Database (Dexie)
@@ -88,6 +74,17 @@ class BMSviewCache extends Dexie {
             weather: 'id, updatedAt, _syncStatus, location',
             metadata: 'id, collection, lastModified'
         });
+
+        // Schema version 2: Compound indexes for performance
+        this.version(2).stores({
+            systems: 'id, updatedAt, _syncStatus, name, chemistry, [updatedAt+_syncStatus]',
+            history: 'id, updatedAt, _syncStatus, timestamp, systemId, dlNumber, [systemId+timestamp], [updatedAt+_syncStatus]',
+            analytics: 'id, updatedAt, _syncStatus, systemId, metric, timestamp, [updatedAt+_syncStatus]',
+            weather: 'id, updatedAt, _syncStatus, location, [updatedAt+_syncStatus]',
+            metadata: 'id, collection, lastModified'
+        }).upgrade(() => {
+            // No data migration needed, just index creation
+        });
     }
 }
 
@@ -100,7 +97,7 @@ const db = new BMSviewCache();
 function log(level: 'info' | 'warn' | 'error' | 'debug', message: string, context?: any) {
     const logEntry = {
         level,
-        timestamp: getCurrentUTCTimestamp(),
+        timestamp: nowUtc(),
         service: 'localCache',
         message,
         context
@@ -174,11 +171,9 @@ export const systemsCache = {
      */
     async put(system: BmsSystem, syncStatus: SyncStatus = 'pending'): Promise<void> {
         try {
-            const updatedAt = getCurrentUTCTimestamp();
+            const updatedAt = nowUtc();
 
-            if (!validateUTCTimestamp(updatedAt)) {
-                throw new Error(`Invalid timestamp format: ${updatedAt}`);
-            }
+            assertUtc(updatedAt, 'updatedAt');
 
             const cachedSystem: CachedSystem = {
                 ...system,
@@ -186,7 +181,9 @@ export const systemsCache = {
                 _syncStatus: syncStatus
             };
 
-            await db.systems.put(cachedSystem);
+            await db.transaction('rw', db.systems, async (_tx) => {
+                await db.systems.put(cachedSystem);
+            });
             log('info', `Cached system: ${system.id}`, { syncStatus });
         } catch (error) {
             log('error', `Failed to cache system ${system.id}`, { error });
@@ -199,7 +196,7 @@ export const systemsCache = {
      */
     async bulkPut(systems: BmsSystem[], syncStatus: SyncStatus = 'synced'): Promise<void> {
         try {
-            const updatedAt = getCurrentUTCTimestamp();
+            const updatedAt = nowUtc();
             const cachedSystems = systems.map(system => ({
                 ...system,
                 updatedAt,
@@ -232,7 +229,7 @@ export const systemsCache = {
      */
     async markAsSynced(id: string, serverTimestamp?: string): Promise<void> {
         try {
-            const timestamp = serverTimestamp ?? getCurrentUTCTimestamp();
+            const timestamp = serverTimestamp ?? nowUtc();
             await db.systems.update(id, { _syncStatus: 'synced', updatedAt: timestamp });
             log('debug', `Marked system as synced: ${id}`);
         } catch (error) {
@@ -291,11 +288,9 @@ export const historyCache = {
      */
     async put(record: AnalysisRecord, syncStatus: SyncStatus = 'pending'): Promise<void> {
         try {
-            const updatedAt = getCurrentUTCTimestamp();
+            const updatedAt = nowUtc();
 
-            if (!validateUTCTimestamp(updatedAt)) {
-                throw new Error(`Invalid timestamp format: ${updatedAt}`);
-            }
+            assertUtc(updatedAt, 'updatedAt');
 
             const cachedRecord: CachedAnalysisRecord = {
                 ...record,
@@ -316,7 +311,7 @@ export const historyCache = {
      */
     async bulkPut(records: AnalysisRecord[], syncStatus: SyncStatus = 'synced'): Promise<void> {
         try {
-            const updatedAt = getCurrentUTCTimestamp();
+            const updatedAt = nowUtc();
             const cachedRecords = records.map(record => ({
                 ...record,
                 updatedAt,
@@ -349,8 +344,8 @@ export const historyCache = {
      */
     async markAsSynced(id: string, serverTimestamp?: string): Promise<void> {
         try {
-            const timestamp = serverTimestamp ?? getCurrentUTCTimestamp();
-            await db.history.update(id, { _syncStatus: 'synced', updatedAt: timestamp });
+            const timestamp = serverTimestamp ?? nowUtc();
+            await (db.history as any).update(id, { _syncStatus: 'synced', updatedAt: timestamp });
             log('debug', `Marked history record as synced: ${id}`);
         } catch (error) {
             log('error', `Failed to mark history ${id} as synced`, { error });
@@ -388,7 +383,7 @@ export const analyticsCache = {
 
     async put(analytics: Omit<CachedAnalytics, 'updatedAt' | '_syncStatus'>, syncStatus: SyncStatus = 'pending'): Promise<void> {
         try {
-            const updatedAt = getCurrentUTCTimestamp();
+            const updatedAt = nowUtc();
             const cached: CachedAnalytics = {
                 ...analytics,
                 updatedAt,
@@ -427,7 +422,7 @@ export const weatherCache = {
 
     async put(location: string, weather: WeatherData, syncStatus: SyncStatus = 'synced'): Promise<void> {
         try {
-            const updatedAt = getCurrentUTCTimestamp();
+            const updatedAt = nowUtc();
             const cached: CachedWeatherData = {
                 ...weather,
                 id: location,
@@ -466,7 +461,7 @@ export const metadataCache = {
     async update(collection: string, data: Partial<CacheMetadata>): Promise<void> {
         try {
             const existing = await db.metadata.get(collection);
-            const updatedAt = getCurrentUTCTimestamp();
+            const updatedAt = nowUtc();
 
             const metadata: CacheMetadata = {
                 id: collection,
@@ -580,7 +575,7 @@ export const localCache = {
      */
     async markAsSynced(collection: 'systems' | 'history' | 'analytics' | 'weather', ids: string[], serverTimestamp?: string): Promise<void> {
         try {
-            const timestamp = serverTimestamp ?? getCurrentUTCTimestamp();
+            const timestamp = serverTimestamp ?? nowUtc();
             const promises = ids.map(id => {
                 switch (collection) {
                     case 'systems':
@@ -608,7 +603,7 @@ export const localCache = {
     },
 
     async getStaleItems(collection: 'systems' | 'history' | 'analytics' | 'weather', thresholdMs = 1000 * 60 * 60): Promise<CachedRecord[]> {
-        const cutoff = Date.now() - thresholdMs;
+        const cutoff = new Date(Date.now() - thresholdMs).toISOString();
         let table: Table<CachedRecord, string>;
 
         switch (collection) {
@@ -626,7 +621,8 @@ export const localCache = {
                 break;
         }
 
-        return table.filter(item => new Date(item.updatedAt).getTime() < cutoff).toArray();
+        // Use indexed queries for performance - much faster than JS filter
+        return await table.where('updatedAt').below(cutoff).toArray();
     },
 
     async purgeStaleItems(collection: 'systems' | 'history' | 'analytics' | 'weather', thresholdMs = 1000 * 60 * 60): Promise<number> {

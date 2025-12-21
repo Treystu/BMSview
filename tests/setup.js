@@ -1,3 +1,4 @@
+// @ts-nocheck
 const fs = require('fs');
 const path = require('path');
 const { TextEncoder, TextDecoder } = require('util');
@@ -5,6 +6,13 @@ const { TextEncoder, TextDecoder } = require('util');
 // Polyfill for TextEncoder/TextDecoder (required for mongodb in jsdom environment)
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
+
+// Polyfill fetch for Node environment tests
+const nodeFetch = require('node-fetch');
+global.fetch = nodeFetch;
+global.Request = nodeFetch.Request;
+global.Response = nodeFetch.Response;
+global.Headers = nodeFetch.Headers;
 
 const envPath = path.resolve(__dirname, '../.env.test');
 if (fs.existsSync(envPath)) {
@@ -58,6 +66,11 @@ if (!process.env.MONGODB_DB_NAME) {
 // Global test hooks
 beforeEach(() => {
   jest.clearAllMocks();
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection Details:', JSON.stringify(reason, null, 2));
+  console.error('Stack:', reason.stack);
 });
 
 afterEach(() => {

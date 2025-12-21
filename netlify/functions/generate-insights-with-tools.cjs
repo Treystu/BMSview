@@ -31,12 +31,7 @@ function validateEnvironment(log) {
   return true;
 }
 
-const {
-  createInsightsJob,
-  getInsightsJob,
-  updateJobStatus,
-  saveCheckpoint // Add saveCheckpoint for emergency saves
-} = require('./utils/insights-jobs.cjs');
+const { createInsightsJob, getJob, updateJobStatus } = require('./utils/insights-jobs.cjs'); // UPDATED: Import updateJobStatus
 const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const {
@@ -54,7 +49,7 @@ const {
 // We use 20s as safe limit to allow for cleanup/response before hard timeout
 const NETLIFY_FUNCTION_TIMEOUT_MS = parseInt(process.env.NETLIFY_FUNCTION_TIMEOUT_MS || '20000'); // 20s safe limit
 const SYNC_MODE_TIMEOUT_MS = NETLIFY_FUNCTION_TIMEOUT_MS; // Align with Netlify limits
-const DEFAULT_MODE = 'sync';
+const DEFAULT_MODE = 'background';
 
 /**
  * Main handler for insights generation
@@ -127,6 +122,15 @@ exports.handler = async (event, context) => {
     let rawBody;
     try {
       rawBody = event.body ? JSON.parse(event.body) : {};
+
+      // Merge query parameters for mode selection
+      if (event.queryStringParameters) {
+        if (event.queryStringParameters.sync === 'true') {
+          rawBody.mode = 'sync';
+        } else if (event.queryStringParameters.mode) {
+          rawBody.mode = event.queryStringParameters.mode;
+        }
+      }
     } catch (parseError) {
       log.warn('Invalid JSON in request body', { error: parseError.message, clientIp });
       return {
@@ -576,9 +580,10 @@ exports.handler = async (event, context) => {
         error: err.message,
         stack: err.stack
       });
-      // Update job status to failed
-      updateJobStatus(job.id, 'failed', err.message, log).catch(() => {
-        // Silent fail on status update
+      // Use wrapper to safely update status without crashing the crash handler
+      updateJobStatusWrapper(job?.id, 'failed', err.message, log).catch(() => {
+        // Last resort catch
+        console.error('CRITICAL: Failed to update job status', err);
       });
     });
 
@@ -633,9 +638,8 @@ function getInsightsErrorStatusCode(error) {
   const message = error.message || '';
 
   if (message.includes('invalid') || message.includes('required')) return 400;
-  if (message.includes('timeout') || message.includes('TIMEOUT')) return 408;
-  if (message.includes('quota') || message.includes('rate limit')) return 429;
-  if (message.includes('ECONNREFUSED') || message.includes('unavailable')) return 503;
+  if (message.includes('ECONNREFUSED')) return 503;
+  if (message.includes('Gemini') || message.includes('API')) return 503;
 
   return 500;
 }
@@ -655,6 +659,9 @@ function getInsightsErrorCode(error) {
   return 'insights_generation_failed';
 }
 
+/**
+ * Helper to handle token limit exceeded
+ */
 async function handleTokenLimitExceeded(job, log) {
   log.warn('Token limit exceeded, attempting to simplify and retry', { jobId: job.id });
   // In a real implementation, you would simplify the context here.
@@ -672,4 +679,20 @@ async function handleTokenLimitExceeded(job, log) {
       }
     })
   };
+}
+
+/**
+ * Helper to update job status wrapper
+ */
+async function updateJobStatusWrapper(jobId, status, message, log) {
+  try {
+    if (jobId) {
+      await updateJobStatus(jobId, status, { message });
+    }
+  } catch (saveError) {
+    log.error('Failed to update job status during error handling', {
+      jobId,
+      error: saveError.message
+    });
+  }
 }

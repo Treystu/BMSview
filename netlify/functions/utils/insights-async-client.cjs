@@ -65,7 +65,7 @@ async function triggerInsightsWorkload(options) {
   }
 
   const log = createLogger('insights-async-client', { jobId });
-  
+
   log.info('Triggering async workload via AsyncWorkloadsClient', {
     jobId,
     hasAnalysisData: !!analysisData,
@@ -73,10 +73,13 @@ async function triggerInsightsWorkload(options) {
     priority,
     hasDelay: !!delayUntil
   });
-  
-  // Create async workloads client
-  const client = new AsyncWorkloadsClient();
-  
+
+  // Create async workloads client with explicit baseUrl
+  const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL || 'http://localhost:8888';
+  const baseUrl = siteUrl.replace(/\/$/, '');
+
+  const client = new AsyncWorkloadsClient({ baseUrl });
+
   // Send event to async workload system
   const result = await client.send('generate-insights', {
     data: {
@@ -92,7 +95,7 @@ async function triggerInsightsWorkload(options) {
     priority,
     delayUntil: delayUntil instanceof Date ? delayUntil.getTime() : delayUntil
   });
-  
+
   if (result.sendStatus !== 'succeeded') {
     log.error('Failed to send async workload event', {
       sendStatus: result.sendStatus,
@@ -100,12 +103,12 @@ async function triggerInsightsWorkload(options) {
     });
     throw new Error(`Failed to trigger async workload: ${result.sendStatus}`);
   }
-  
+
   log.info('Async workload triggered successfully via AsyncWorkloadsClient', {
     eventId: result.eventId,
     jobId
   });
-  
+
   return {
     eventId: result.eventId,
     jobId

@@ -5,7 +5,7 @@
  They are currently skipped for unit testing. Enable for full integration testing.
 */
 
-describe.skip('Insights Generation - Full Integration', () => {
+describe('Insights Generation - Full Integration', () => {
   test('placeholder', () => {
     expect(true).toBe(true);
   });

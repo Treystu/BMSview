@@ -32,10 +32,12 @@ export interface LocalMetadata {
     checksum?: string;
 }
 
+import { nowUtc } from '../utils/time';
+
 const log = (level: 'info' | 'debug' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({
         level: level.toUpperCase(),
-        timestamp: new Date().toISOString(),
+        timestamp: nowUtc(),
         service: 'SyncManager',
         message,
         context
@@ -51,6 +53,22 @@ export function intelligentSync(localMeta: LocalMetadata, serverMeta: SyncMetada
     const serverCount = serverMeta.recordCount || 0;
     const localTime = localMeta.lastModified;
     const serverTime = serverMeta.lastModified;
+
+    // DRIFT CHECK: Compare server time with local time
+    if (serverMeta.serverTime) {
+        const serverTs = new Date(serverMeta.serverTime).getTime();
+        const localTs = Date.now();
+        const diff = Math.abs(serverTs - localTs);
+
+        if (diff > 60000) { // 60 seconds
+            log('warn', 'Generic Time Drift Detected', {
+                diffMs: diff,
+                serverTime: serverMeta.serverTime,
+                localTime: nowUtc()
+            });
+            // We could dispatch an event here or set a global state flag for UI warning
+        }
+    }
 
     // Empty local cache: pull all from server
     if (localCount === 0 && serverCount > 0) {
@@ -223,20 +241,64 @@ export function reconcileData(
     return { merged, conflicts };
 }
 
+
+export type SyncEvent =
+    | { type: 'sync-start' }
+    | { type: 'sync-complete'; stats: { pulled: number; pushed: number; duration: number }; collection?: string }
+    | { type: 'sync-error'; error: string }
+    | { type: 'drift-warning'; diff: number }
+    | { type: 'data-changed'; collection: 'systems' | 'history'; count: number };
+
 /**
  * SyncManager class
  * Orchestrates intelligent sync with periodic scheduling and timer reset
  */
 export class SyncManager {
+    private static instance: SyncManager;
     private isSyncing = false;
     private lastSyncTime: Record<string, number> = {};
     private syncError: string | null = null;
-    private periodicSyncTimer: NodeJS.Timeout | null = null;
+    private syncInterval: NodeJS.Timeout | null = null; // Renamed from periodicSyncTimer
     private readonly syncIntervalMs = 90 * 1000; // 90 seconds
     private readonly maxConcurrentSyncs = 1;
+    private listeners: ((event: SyncEvent) => void)[] = [];
 
-    constructor() {
+    public subscribe(listener: (event: SyncEvent) => void): () => void {
+        this.listeners.push(listener);
+        return () => {
+            this.listeners = this.listeners.filter(l => l !== listener);
+        };
+    }
+
+    private emit(event: SyncEvent) {
+        this.listeners.forEach(listener => {
+            try {
+                listener(event);
+            } catch (err) {
+                console.error('Error in sync listener:', err);
+            }
+        });
+    }
+
+    public constructor() {
+        // Load last sync times from localStorage if available
+        try {
+            const saved = localStorage.getItem('lastSyncTime');
+            if (saved) {
+                this.lastSyncTime = JSON.parse(saved);
+            }
+        } catch (e) {
+            console.warn('Failed to load last sync time', e);
+        }
         log('info', 'SyncManager initialized', { syncIntervalMs: this.syncIntervalMs });
+    }
+
+    // Static instance getter if needed, but we export a singleton instance below
+    public static getInstance(): SyncManager {
+        if (!SyncManager.instance) {
+            SyncManager.instance = new SyncManager();
+        }
+        return SyncManager.instance;
     }
 
     /**
@@ -245,6 +307,7 @@ export class SyncManager {
      */
     async intelligentSync(collection: string): Promise<SyncDecision> {
         log('info', 'Starting intelligent sync', { collection });
+        this.emit({ type: 'sync-start' });
 
         try {
             // Load local cache lazily to avoid SSR/indexedDB issues
@@ -298,51 +361,42 @@ export class SyncManager {
     /**
      * Reconcile local and server data
      */
-    async reconcileData(collection: string, localData: any[], serverData: any[], deletedIds: string[] = []): Promise<{ merged: any[]; conflicts: any[] }> {
-        log('info', 'Starting data reconciliation', { collection, localCount: localData.length, serverCount: serverData.length, deletedCount: deletedIds.length });
-
-        const result = reconcileData(localData, serverData, deletedIds);
-        log('info', 'Data reconciliation complete', { collection, mergedCount: result.merged.length, conflictCount: result.conflicts.length });
-
-        return result;
-    }
-
-    /**
-     * Start periodic sync with 90-second interval
-     */
-    startPeriodicSync(): void {
-        if (this.periodicSyncTimer) {
+    async startPeriodicSync(): Promise<void> {
+        if (this.syncInterval) {
             log('warn', 'Periodic sync already started, skipping');
             return;
         }
 
         log('info', 'Starting periodic sync', { intervalMs: this.syncIntervalMs });
-        this.scheduleNextSync();
-    }
 
-    /**
-     * Schedule the next sync
-     */
-    private scheduleNextSync(): void {
-        if (this.periodicSyncTimer) {
-            clearTimeout(this.periodicSyncTimer);
-        }
+        // Initial sync promise
+        const initialSync = this.performPeriodicSync().catch(err =>
+            log('error', 'Initial sync failed', { error: (err as Error).message })
+        );
 
-        this.periodicSyncTimer = setTimeout(() => {
-            this.performPeriodicSync();
-            // Reschedule even if sync fails
-            this.scheduleNextSync();
+        // Schedule periodic sync
+        this.syncInterval = setInterval(() => {
+            this.performPeriodicSync().catch(err =>
+                log('error', 'Periodic sync failed', { error: (err as Error).message })
+            );
         }, this.syncIntervalMs);
 
-        log('debug', 'Next periodic sync scheduled', { inMs: this.syncIntervalMs });
+        log('debug', 'Periodic sync scheduled', { intervalMs: this.syncIntervalMs });
+
+        return initialSync;
     }
 
     /**
      * Reset periodic sync timer (call after user actions)
      */
-    resetPeriodicTimer(): void {
+    async resetPeriodicTimer(): Promise<void> {
         log('debug', 'Resetting periodic sync timer');
-        this.scheduleNextSync();
+        // Clear existing interval and restart to reset the timer
+        if (this.syncInterval) {
+            clearInterval(this.syncInterval);
+            this.syncInterval = null; // Ensure it's null before calling startPeriodicSync
+        }
+        await this.startPeriodicSync();
     }
 
     /**
@@ -355,6 +409,7 @@ export class SyncManager {
         }
 
         this.isSyncing = true;
+        this.emit({ type: 'sync-start' });
         const startTime = Date.now();
 
         try {
@@ -377,14 +432,14 @@ export class SyncManager {
             if (pendingSystems.length > 0) {
                 await this.pushBatch('systems', pendingSystems.map(({ _syncStatus, ...rest }) => rest));
                 // Mark all pushed items as synced in batch
-                await localCache.markAsSynced('systems', pendingSystems.map(item => item.id), new Date().toISOString());
+                await localCache.markAsSynced('systems', pendingSystems.map(item => item.id), nowUtc());
             }
 
             // 2b. Batch push via sync-push endpoint (history)
             if (pendingHistory.length > 0) {
                 await this.pushBatch('history', pendingHistory.map(({ _syncStatus, ...rest }) => rest));
                 // Mark all pushed items as synced in batch
-                await localCache.markAsSynced('history', pendingHistory.map(item => item.id), new Date().toISOString());
+                await localCache.markAsSynced('history', pendingHistory.map(item => item.id), nowUtc());
             }
 
             // 3. Pull incremental updates for both collections
@@ -394,11 +449,17 @@ export class SyncManager {
             this.lastSyncTime['all'] = Date.now();
             this.syncError = null;
 
-            log('info', 'Periodic sync completed', { durationMs: Date.now() - startTime });
+            const duration = Date.now() - startTime;
+            log('info', 'Periodic sync complete', { duration });
+            this.emit({
+                type: 'sync-complete',
+                stats: { pulled: 0, pushed: 0, duration } // Simplified stats for now
+            });
         } catch (error) {
             const err = error instanceof Error ? error : new Error(String(error));
             this.syncError = err.message;
             log('error', 'Periodic sync failed', { error: err.message, durationMs: Date.now() - startTime });
+            this.emit({ type: 'sync-error', error: (err as Error).message });
         } finally {
             this.isSyncing = false;
         }
@@ -409,8 +470,7 @@ export class SyncManager {
      */
     async forceSyncNow(): Promise<void> {
         log('info', 'Forcing immediate sync');
-        this.resetPeriodicTimer();
-        await this.performPeriodicSync();
+        await this.resetPeriodicTimer(); // This will trigger an immediate sync and reschedule
     }
 
     /**
@@ -421,17 +481,17 @@ export class SyncManager {
             isSyncing: this.isSyncing,
             lastSyncTime: this.lastSyncTime,
             syncError: this.syncError,
-            nextSyncIn: this.periodicSyncTimer ? 'pending' : 'stopped'
+            nextSyncIn: this.syncInterval ? 'pending' : 'stopped'
         };
     }
 
     /**
      * Stop periodic sync
      */
-    stopPeriodicSync(): void {
-        if (this.periodicSyncTimer) {
-            clearTimeout(this.periodicSyncTimer);
-            this.periodicSyncTimer = null;
+    stopPeriodicSync() {
+        if (this.syncInterval) {
+            clearInterval(this.syncInterval);
+            this.syncInterval = null;
         }
         log('info', 'Periodic sync stopped');
     }
@@ -441,6 +501,7 @@ export class SyncManager {
      */
     destroy(): void {
         this.stopPeriodicSync();
+        this.isSyncing = false;
         log('info', 'SyncManager destroyed');
     }
 
@@ -519,6 +580,13 @@ export class SyncManager {
         // Update last sync time
         this.lastSyncTime[collection] = Date.now();
         log('info', 'Pulled incremental updates', { collection, updates: updates.length, deleted: deletedIds.length });
+        if (updates.length > 0 || deletedIds.length > 0) {
+            this.emit({
+                type: 'data-changed',
+                collection: collection as 'systems' | 'history',
+                count: updates.length + deletedIds.length
+            });
+        }
     }
 }
 

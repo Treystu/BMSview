@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Comprehensive integration tests for battery insights generator
  * 
@@ -36,7 +37,7 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
 
     test('handles null measurements', async () => {
       const event = {
-        body: JSON.stringify({ measurements: null })
+        body: JSON.stringify({ consentGranted: true, measurements: null })
       };
       const response = await generateHandler(event, mockContext);
       expect(response.statusCode).toBe(400);
@@ -63,7 +64,7 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
       }));
 
       const event = {
-        body: JSON.stringify({ measurements })
+        body: JSON.stringify({ consentGranted: true, measurements })
       };
 
       const response = await generateHandler(event, mockContext);
@@ -85,7 +86,7 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
       }));
 
       const event = {
-        body: JSON.stringify({ measurements })
+        body: JSON.stringify({ consentGranted: true, measurements })
       };
 
       const response = await generateHandler(event, mockContext);
@@ -106,7 +107,7 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
       }));
 
       const event = {
-        body: JSON.stringify({ measurements })
+        body: JSON.stringify({ consentGranted: true, measurements })
       };
 
       const response = await generateHandler(event, mockContext);
@@ -128,7 +129,7 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
       }));
 
       const event = {
-        body: JSON.stringify({ measurements })
+        body: JSON.stringify({ consentGranted: true, measurements })
       };
 
       const response = await generateHandler(event, mockContext);
@@ -148,7 +149,7 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
       }));
 
       const event = {
-        body: JSON.stringify({ measurements })
+        body: JSON.stringify({ consentGranted: true, measurements })
       };
 
       const response = await generateHandler(event, mockContext);
@@ -170,7 +171,7 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
       }));
 
       const event = {
-        body: JSON.stringify({ measurements })
+        body: JSON.stringify({ consentGranted: true, measurements })
       };
 
       const response = await generateHandler(event, mockContext);
@@ -206,7 +207,7 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
   describe('Error Handling', () => {
     test('handles missing timer gracefully', async () => {
       const event = {
-        body: JSON.stringify({ measurements: [] })
+        body: JSON.stringify({ consentGranted: true, measurements: [] })
       };
       const response = await generateHandler(event, {});
       expect(response.statusCode).toBe(200);
@@ -259,6 +260,7 @@ describe.skip('Battery Insights Generator - Comprehensive Tests', () => {
 
       const event = {
         body: JSON.stringify({
+          consentGranted: true,
           measurements,
           customPrompt: 'What is the current runtime at 5A draw?'
         })

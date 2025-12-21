@@ -424,7 +424,7 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
     // NOTE: These tests are skipped because they test implementation details of logging
     // which are difficult to mock reliably due to Jest module caching.
     // The core consent enforcement tests above verify the main functionality.
-    test.skip('should log consent rejection with proper context', async () => {
+    test('should log consent rejection with proper context', async () => {
       const { createLoggerFromEvent } = require('../netlify/functions/utils/logger.cjs');
       const mockLogger = {
         info: jest.fn(),
@@ -461,7 +461,7 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
       );
     });
 
-    test.skip('should log consent type when consent is invalid type', async () => {
+    test('should log consent type when consent is invalid type', async () => {
       const { createLoggerFromEvent } = require('../netlify/functions/utils/logger.cjs');
       const mockLogger = {
         info: jest.fn(),
@@ -498,7 +498,7 @@ describe('Consent Enforcement in generate-insights-with-tools', () => {
       );
     });
 
-    test.skip('should log successful consent in request info', async () => {
+    test('should log successful consent in request info', async () => {
       const { createLoggerFromEvent } = require('../netlify/functions/utils/logger.cjs');
       const mockLogger = {
         info: jest.fn(),

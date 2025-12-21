@@ -21,6 +21,8 @@ describe.skip('Generate Insights with AnalysisData Format', () => {
   test('should handle single-point AnalysisData from screenshot', async () => {
     const event = {
       body: JSON.stringify({
+        consentGranted: true,
+        mode: 'sync',
         analysisData: {
           dlNumber: 'DL-12345',
           overallVoltage: 52.4,
@@ -54,6 +56,8 @@ describe.skip('Generate Insights with AnalysisData Format', () => {
   test('should extract voltage from overallVoltage field', async () => {
     const event = {
       body: JSON.stringify({
+        consentGranted: true,
+        mode: 'sync',
         analysisData: {
           overallVoltage: 48.5,
           current: 10.0,
@@ -76,6 +80,8 @@ describe.skip('Generate Insights with AnalysisData Format', () => {
   test('should handle AnalysisData with all optional fields', async () => {
     const event = {
       body: JSON.stringify({
+        consentGranted: true,
+        mode: 'sync',
         analysisData: {
           dlNumber: 'DL-99999',
           timestampFromImage: '2025-11-05T15:30:00Z',
@@ -132,6 +138,8 @@ describe.skip('Generate Insights with AnalysisData Format', () => {
   test('should handle AnalysisData with minimal fields', async () => {
     const event = {
       body: JSON.stringify({
+        consentGranted: true,
+        mode: 'sync',
         analysisData: {
           overallVoltage: 50.0,
           current: 0
@@ -151,6 +159,8 @@ describe.skip('Generate Insights with AnalysisData Format', () => {
   test('should handle AnalysisData with only current field', async () => {
     const event = {
       body: JSON.stringify({
+        consentGranted: true,
+        mode: 'sync',
         analysisData: {
           current: 5.5
         },
@@ -169,6 +179,8 @@ describe.skip('Generate Insights with AnalysisData Format', () => {
   test('should handle AnalysisData with temperature data', async () => {
     const event = {
       body: JSON.stringify({
+        consentGranted: true,
+        mode: 'sync',
         analysisData: {
           overallVoltage: 52.0,
           current: -3.0,
@@ -191,6 +203,8 @@ describe.skip('Generate Insights with AnalysisData Format', () => {
   test('should prioritize batteryData over analysisData', async () => {
     const event = {
       body: JSON.stringify({
+        consentGranted: true,
+        mode: 'sync',
         batteryData: {
           measurements: [
             {

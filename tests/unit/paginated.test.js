@@ -1,3 +1,4 @@
+// @ts-nocheck
 const clientService = require('../../services/clientService');
 
 // Mock window and netlifyIdentity
@@ -33,7 +34,7 @@ describe('Paginated API response normalization', () => {
     delete global.window;
   });
 
-  test('getRegisteredSystems normalizes totalItems from total', async () => {
+  test('getRegisteredSystems passes through total', async () => {
     const apiResponse = { items: [{ id: 's1' }], total: 1 };
     mockApiFetch.mockResolvedValueOnce(apiResponse);
 
@@ -42,8 +43,8 @@ describe('Paginated API response normalization', () => {
     const res = await promise;
 
     expect(res).toHaveProperty('items');
-    expect(res).toHaveProperty('totalItems');
-    expect(res.totalItems).toBe(1);
+    expect(res).toHaveProperty('total');
+    expect(res.total).toBe(1);
     expect(mockApiFetch).toHaveBeenCalledWith('systems?page=1&limit=10');
   });
 
@@ -56,7 +57,7 @@ describe('Paginated API response normalization', () => {
     const res = await promise;
 
     expect(res.items).toEqual([]);
-    expect(res.totalItems).toBe(0);
+    expect(res.total).toBe(0);
     expect(mockApiFetch).toHaveBeenCalledWith('systems?page=1&limit=10');
   });
 
@@ -85,17 +86,17 @@ describe('Paginated API response normalization', () => {
       // Test case 1: Empty items array with explicit total
       {
         response: { items: [], total: 5 },
-        expected: { items: [], totalItems: 5 }
+        expected: { items: [], total: 5 }
       },
       // Test case 2: Plain array response
       {
         response: [1, 2, 3],
-        expected: { items: [1, 2, 3], totalItems: 3 }
+        expected: { items: [1, 2, 3], total: 3 }
       },
       // Test case 3: Empty array
       {
         response: [],
-        expected: { items: [], totalItems: 0 }
+        expected: { items: [], total: 0 }
       }
     ];
 

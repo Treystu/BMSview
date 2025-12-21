@@ -106,7 +106,7 @@ describe('Admin Diagnostics Enhanced Tests', () => {
 
       // Simulate test start logging
       mockLog.info('Running diagnostic: Testing Database Connection...', {});
-      
+
       expect(mockLog.info).toHaveBeenCalledWith(
         expect.stringContaining('Running diagnostic'),
         expect.any(Object)
@@ -136,14 +136,14 @@ describe('Admin Diagnostics Enhanced Tests', () => {
       };
 
       const error = new Error('Test error');
-      mockLog.error('Database connection test failed.', { 
-        error: error.message, 
-        stack: error.stack 
+      mockLog.error('Database connection test failed.', {
+        error: error.message,
+        stack: error.stack
       });
 
       expect(mockLog.error).toHaveBeenCalledWith(
         expect.stringContaining('failed'),
-        expect.objectContaining({ 
+        expect.objectContaining({
           error: expect.any(String),
           stack: expect.any(String)
         })

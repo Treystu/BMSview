@@ -1,4 +1,5 @@
-import { renderHook, act, waitFor } from '@testing-library/react';
+// @ts-nocheck
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useFileUpload } from '../hooks/useFileUpload';
 import { checkFilesForDuplicates } from '../utils/duplicateChecker';
 

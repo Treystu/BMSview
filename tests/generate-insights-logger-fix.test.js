@@ -80,7 +80,7 @@ describe('generate-insights logger fix', () => {
     expect(createLoggerFromEvent).toHaveBeenCalledWith('generate-insights-legacy', event, mockContext);
   });
 
-  test.skip('generateInsightsWithTools creates logger instance without error', async () => {
+  test('generateInsightsWithTools creates logger instance without error', async () => {
     // This function was refactored and moved to generate-insights-with-tools.cjs
     // Skipping this test as it's no longer relevant
   });

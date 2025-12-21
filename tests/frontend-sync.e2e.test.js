@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Frontend Sync E2E Tests
  *
@@ -11,8 +12,23 @@
  */
 
 // Mock fetch globally before any imports
-global.fetch = jest.fn().mockImplementation(() => 
-    Promise.resolve({
+global.fetch = jest.fn().mockImplementation((url) => {
+    if (url && url.toString().includes('sync-metadata')) {
+        return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({
+                collection: 'history',
+                recordCount: 5,
+                lastModified: new Date().toISOString(),
+                serverTime: new Date().toISOString()
+            }),
+            text: () => Promise.resolve(''),
+            headers: new Headers({ 'content-type': 'application/json' })
+        });
+    }
+
+    return Promise.resolve({
         ok: true,
         status: 200,
         json: () => Promise.resolve({ items: [], total: 0 }),
@@ -21,7 +37,7 @@ global.fetch = jest.fn().mockImplementation(() =>
             'content-type': 'application/json'
         })
     })
-);
+});
 
 // Mock IndexedDB before any imports
 const mockIndexedDB = {
@@ -49,7 +65,8 @@ const mockLocalStorage = {
 Object.defineProperty(window, 'localStorage', { value: mockLocalStorage });
 
 // Mock localCache before importing syncManager
-jest.mock('../src/services/localCache', () => ({
+// Mock localCache before importing syncManager
+jest.mock('@/services/localCache', () => ({
     systemsCache: {
         getAll: jest.fn().mockResolvedValue([]),
         bulkPut: jest.fn().mockResolvedValue(undefined),
@@ -61,7 +78,12 @@ jest.mock('../src/services/localCache', () => ({
     getPendingItems: jest.fn().mockResolvedValue({ systems: [], history: [], analytics: [] }),
     getLatestTimestamps: jest.fn().mockResolvedValue({ systems: null, history: null }),
     refreshFromServer: jest.fn().mockResolvedValue(undefined),
-}));
+    // specific exports for SyncManager usage if needed 
+    default: {
+        getPendingItems: jest.fn().mockResolvedValue({ systems: [], history: [], analytics: [] }),
+        getMetadata: jest.fn().mockResolvedValue({ recordCount: 0, lastModified: null }),
+    }
+}), { virtual: true });
 
 const { syncManager, intelligentSync } = require('../src/services/syncManager');
 
