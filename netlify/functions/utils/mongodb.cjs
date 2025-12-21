@@ -112,6 +112,7 @@ async function connectToDatabase() {
 
     // Create new connection with OPTIMIZED pooling configuration
     connectionPromise = (async () => {
+        let client = null;
         try {
             // If we're in a test environment or URI is missing, use a mock DB
             if (FORCE_TEST_MOCK || !MONGODB_URI) {
@@ -133,7 +134,7 @@ async function connectToDatabase() {
                 hasUri: !!MONGODB_URI
             });
 
-            const client = new MongoClient(MONGODB_URI, {
+            client = new MongoClient(MONGODB_URI, {
                 // TLS settings - more permissive for compatibility
                 tls: true,
                 tlsAllowInvalidCertificates: false,
@@ -174,8 +175,15 @@ async function connectToDatabase() {
             // Verify connection with ping
             await db.admin().ping();
 
-            // Create indexes
-            await createIndexes(db);
+            // Create indexes (non-blocking error handling with timeout)
+            try {
+                await Promise.race([
+                    createIndexes(db),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Index creation timeout')), 2000))
+                ]);
+            } catch (idxError) {
+                log.warn('Index creation failed or timed out (non-fatal)', { error: idxError.message });
+            }
 
             // Cache the connection
             cachedClient = client;
@@ -229,6 +237,16 @@ async function connectToDatabase() {
                 log.error('Connection timeout - check network/firewall or MongoDB Atlas IP whitelist');
             } else if (error.message && error.message.includes('SSL')) {
                 log.error('SSL/TLS error - check certificate configuration');
+            }
+
+            // CRITICAL FIX: Close the client if it was created to prevent connection leaks
+            if (client) {
+                try {
+                    await client.close(true);
+                    log.info('Closed failed MongoDB client connection');
+                } catch (closeError) {
+                    log.warn('Error closing failed MongoDB client', { error: closeError.message });
+                }
             }
 
             connectionPromise = null;
