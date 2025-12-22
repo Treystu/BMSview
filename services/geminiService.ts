@@ -19,7 +19,7 @@ const fileWithMetadataToBase64 = (file: File): Promise<{ image: string, mimeType
     });
 };
 
-const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
+const log = (level: 'info' | 'warn' | 'error' | 'debug', message: string, context: object = {}) => {
     console.log(JSON.stringify({
         level: level.toUpperCase(),
         timestamp: new Date().toISOString(),
@@ -27,6 +27,27 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
         message,
         context
     }));
+};
+
+let analysisWorker: Worker | null = null;
+const getAnalysisWorker = (): Worker | null => {
+    if (typeof Worker === 'undefined') return null;
+    if (analysisWorker) return analysisWorker;
+
+    log('info', 'Initializing singleton analysis worker');
+    analysisWorker = new Worker(
+        new URL('../src/workers/analysis.worker.ts', import.meta.url),
+        { type: 'module' }
+    );
+
+    analysisWorker.onerror = (e) => {
+        log('error', 'Singleton worker error', { error: e.message });
+        // Optionally terminate and null out so it recreates on next call
+        analysisWorker?.terminate();
+        analysisWorker = null;
+    };
+
+    return analysisWorker;
 };
 
 /**
@@ -44,11 +65,9 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
         // Offload file read + network call to a worker. If worker fails or times out, fall back to direct fetch.
         if (typeof Worker !== 'undefined') {
             try {
-                // Use the dedicated worker file bundled by Vite
-                const worker = new Worker(
-                    new URL('../src/workers/analysis.worker.ts', import.meta.url),
-                    { type: 'module' }
-                );
+                // Singleton worker management
+                const worker = getAnalysisWorker();
+                if (!worker) throw new Error('Failed to initialize analysis worker');
 
                 // Compute an absolute endpoint URL to ensure it works in WorkerGlobalScope
                 const endpoint = new URL(
@@ -58,17 +77,26 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
                     window.location.origin
                 ).toString();
 
+                const workerRef = worker;
                 const workerPromise = new Promise<Response>((resolve, reject) => {
+                    const messageId = Math.random().toString(36).substring(2);
+
                     const timeout = setTimeout(() => {
-                        worker.terminate();
+                        workerRef.removeEventListener('message', handleMessage);
                         reject(new Error('Worker timed out after 60 seconds'));
                     }, 60000);
 
-                    worker.onmessage = (msg) => {
-                        clearTimeout(timeout);
+                    // We need a way to correlate messages if we ever do parallel calls,
+                    // but for now, the UI caller is sequential.
+                    function handleMessage(msg: MessageEvent) {
                         const data = msg.data || {};
+
+                        // If we had multiple concurrent requests, we'd check an ID here.
+                        // For sequential, we just take the first result and cleanup.
+                        clearTimeout(timeout);
+                        workerRef.removeEventListener('message', handleMessage);
+
                         if (data.error) {
-                            worker.terminate();
                             reject(new Error(data.error));
                             return;
                         }
@@ -80,28 +108,23 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
                             json: async () => data.json,
                         } as unknown as Response;
 
-                        worker.terminate();
                         resolve(fakeResp);
-                    };
+                    }
 
-                    worker.onerror = (e) => {
-                        clearTimeout(timeout);
-                        worker.terminate();
-                        reject(new Error(e?.message || 'Worker error'));
-                    };
+                    workerRef.addEventListener('message', handleMessage);
 
                     // Post the file, endpoint, and metadata
-                    // Note: File objects are cloned using the structured clone algorithm (not transferred) when sent to workers in modern browsers. This is still efficient for worker communication.
                     try {
-                        worker.postMessage({ 
-                            file, 
+                        workerRef.postMessage({
+                            file,
                             endpoint,
                             fileName: file.name,
-                            mimeType: file.type
+                            mimeType: file.type,
+                            messageId // Future-proofing for concurrency
                         });
                     } catch (postErr) {
                         clearTimeout(timeout);
-                        worker.terminate();
+                        workerRef.removeEventListener('message', handleMessage);
                         reject(postErr);
                     }
                 });
@@ -208,10 +231,10 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
  * @param file - The file to check
  * @returns Promise with isDuplicate flag, needsUpgrade flag, and optional recordId/timestamp/analysisData of existing record
  */
-export const checkFileDuplicate = async (file: File): Promise<{ 
-    isDuplicate: boolean; 
-    needsUpgrade: boolean; 
-    recordId?: string; 
+export const checkFileDuplicate = async (file: File): Promise<{
+    isDuplicate: boolean;
+    needsUpgrade: boolean;
+    recordId?: string;
     timestamp?: string;
     analysisData?: any;
 }> => {
@@ -223,7 +246,7 @@ export const checkFileDuplicate = async (file: File): Promise<{
         const readStartTime = Date.now();
         const imagePayload = await fileWithMetadataToBase64(file);
         const readDurationMs = Date.now() - readStartTime;
-        
+
         log('debug', 'DUPLICATE_CHECK: File read complete', {
             fileName: file.name,
             readDurationMs,
@@ -233,7 +256,7 @@ export const checkFileDuplicate = async (file: File): Promise<{
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
-            log('warn', 'DUPLICATE_CHECK: Request timed out after 20 seconds', { 
+            log('warn', 'DUPLICATE_CHECK: Request timed out after 20 seconds', {
                 fileName: file.name,
                 event: 'TIMEOUT'
             });
@@ -250,7 +273,7 @@ export const checkFileDuplicate = async (file: File): Promise<{
             endpoint: '/.netlify/functions/analyze?sync=true&check=true',
             event: 'API_CALL_START'
         });
-        
+
         const response = await fetch('/.netlify/functions/analyze?sync=true&check=true', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -259,7 +282,7 @@ export const checkFileDuplicate = async (file: File): Promise<{
         });
 
         clearTimeout(timeoutId);
-        
+
         const fetchDurationMs = Date.now() - fetchStartTime;
         const totalDurationMs = Date.now() - startTime;
 
@@ -267,14 +290,14 @@ export const checkFileDuplicate = async (file: File): Promise<{
             // Differentiate between expected and unexpected failures
             if (response.status === 404 || response.status === 501) {
                 // Endpoint not implemented - expected, fall back gracefully
-                log('info', 'DUPLICATE_CHECK: Endpoint not available, treating as new file', { 
+                log('info', 'DUPLICATE_CHECK: Endpoint not available, treating as new file', {
                     status: response.status,
                     fileName: file.name,
                     event: 'ENDPOINT_NOT_AVAILABLE'
                 });
             } else {
                 // Unexpected error - log as warning
-                log('warn', 'DUPLICATE_CHECK: API error, treating as new file', { 
+                log('warn', 'DUPLICATE_CHECK: API error, treating as new file', {
                     status: response.status,
                     fileName: file.name,
                     totalDurationMs,
@@ -284,17 +307,17 @@ export const checkFileDuplicate = async (file: File): Promise<{
             return { isDuplicate: false, needsUpgrade: false };
         }
 
-        const result: { 
-            isDuplicate?: boolean; 
+        const result: {
+            isDuplicate?: boolean;
             needsUpgrade?: boolean;
-            recordId?: string; 
+            recordId?: string;
             timestamp?: string;
             analysisData?: any;
         } = await response.json();
-        
+
         // Enhanced logging with full result details
-        log('info', 'DUPLICATE_CHECK: Backend response received', { 
-            fileName: file.name, 
+        log('info', 'DUPLICATE_CHECK: Backend response received', {
+            fileName: file.name,
             isDuplicate: !!result.isDuplicate,
             needsUpgrade: !!result.needsUpgrade,
             hasRecordId: !!result.recordId,
@@ -305,7 +328,7 @@ export const checkFileDuplicate = async (file: File): Promise<{
             totalDurationMs,     // Total = read + fetch + overhead (JSON parsing, etc.)
             event: 'API_RESPONSE'
         });
-        
+
         return {
             isDuplicate: result.isDuplicate || false,
             needsUpgrade: result.needsUpgrade || false,
@@ -319,9 +342,9 @@ export const checkFileDuplicate = async (file: File): Promise<{
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         const isTimeout = error instanceof Error && error.name === 'AbortError';
         const totalDurationMs = Date.now() - startTime;
-        
-        log('warn', 'DUPLICATE_CHECK: File check failed, treating as new file', { 
-            ...checkContext, 
+
+        log('warn', 'DUPLICATE_CHECK: File check failed, treating as new file', {
+            ...checkContext,
             error: errorMessage,
             isTimeout,
             totalDurationMs,

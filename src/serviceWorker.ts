@@ -2,9 +2,21 @@
 let registrationAttempted = false;
 
 export function registerServiceWorker() {
-  if (registrationAttempted) return;
+  if ('serviceWorker' in navigator) {
+    const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const isHttps = location.protocol === 'https:';
+    const debugSw = new URLSearchParams(window.location.search).has('debug_sw');
 
-  if ('serviceWorker' in navigator && (location.hostname === 'localhost' || location.protocol === 'https:')) {
+    // Only register if on HTTPS or explicitly debugging on localhost
+    // This avoids "Update on reload" noise and potential reloads during development
+    if (!isHttps && !(isLocalhost && debugSw)) {
+      if (isLocalhost) {
+        console.log('[SW] Service worker registration skipped on localhost. Use ?debug_sw=1 to enable.');
+      }
+      return;
+    }
+
+    if (registrationAttempted) return;
     registrationAttempted = true;
 
     // Check session storage to persist guard across some types of HMR re-evaluations
