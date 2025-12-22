@@ -10,17 +10,17 @@
  */
 
 import { checkFileDuplicate } from 'services/geminiService';
-import { processBatches, BATCH_CONFIG } from './batchProcessor';
-import { calculateFileHashesBatch } from './clientHash';
 import type { AnalysisData, AnalysisRecord } from '../types';
+import { BATCH_CONFIG, processBatches } from './batchProcessor';
+import { calculateFileHashesBatch } from './clientHash';
 
 // Shared exports for cache fast-path (PR #341)
 export const generateLocalId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-export const EMPTY_CATEGORIZATION = {
+export const EMPTY_CATEGORIZATION: CategorizedFiles = {
     trueDuplicates: [],
     needsUpgrade: [],
     newFiles: []
-} as const;
+};
 
 export interface DuplicateCheckResult {
     file: File;
@@ -127,7 +127,7 @@ async function checkSingleFile(
     try {
         const result = await checkFileDuplicate(file);
         const fileDuration = Date.now() - fileStartTime;
-        
+
         // Log per-file timing for debugging
         log('debug', 'File duplicate check complete', {
             fileName: file.name,
@@ -136,11 +136,11 @@ async function checkSingleFile(
             durationMs: fileDuration,
             event: 'FILE_CHECK_COMPLETE'
         });
-        
+
         return { file, ...result };
     } catch (err) {
         const fileDuration = Date.now() - fileStartTime;
-        log('warn', 'Duplicate check failed for file, will analyze anyway.', { 
+        log('warn', 'Duplicate check failed for file, will analyze anyway.', {
             fileName: file.name,
             durationMs: fileDuration,
             error: err instanceof Error ? err.message : String(err),
@@ -173,22 +173,22 @@ async function checkFilesUsingBatchAPI(
     log: (level: string, message: string, context?: any) => void
 ): Promise<DuplicateCheckResult[]> {
     const startTime = Date.now();
-    
+
     log('info', 'Using batch API for duplicate checking with client-side hashing', {
         fileCount: files.length,
         event: 'BATCH_API_START'
     });
-    
+
     try {
         // Calculate hashes client-side using Web Crypto API (PR #339)
         const hashStartTime = Date.now();
         const hashResults = await calculateFileHashesBatch(files);
         const hashDurationMs = Date.now() - hashStartTime;
-        
+
         // Filter out files that failed to hash
         const filesWithHashes = hashResults.filter(r => r.hash !== null);
         const failedHashes = hashResults.filter(r => r.hash === null);
-        
+
         if (failedHashes.length > 0) {
             log('warn', 'Some files failed client-side hashing, will use server-side fallback', {
                 failedCount: failedHashes.length,
@@ -196,7 +196,7 @@ async function checkFilesUsingBatchAPI(
                 event: 'HASH_FAILURES'
             });
         }
-        
+
         if (filesWithHashes.length === 0) {
             throw new Error('All files failed client-side hashing');
         }
@@ -209,23 +209,23 @@ async function checkFilesUsingBatchAPI(
             avgPerFileMs: files.length > 0 ? (hashDurationMs / files.length).toFixed(2) : '0.00',
             event: 'CLIENT_HASH_COMPLETE'
         });
-        
+
         // Prepare hash-only payload (minimal size) (PR #339)
         const hashOnlyPayload = filesWithHashes.map(({ file, hash }) => ({
             hash,
             fileName: file.name
         }));
-        
+
         // Calculate payload size for comparison
         const payloadString = JSON.stringify({ files: hashOnlyPayload });
         const payloadSizeKB = (payloadString.length / 1024).toFixed(2);
-        
+
         log('info', 'Sending hash-only batch request', {
             fileCount: hashOnlyPayload.length,
             payloadSizeKB,
             event: 'HASH_PAYLOAD_READY'
         });
-        
+
         // Call batch API with hash-only payload (PR #339)
         const apiStartTime = Date.now();
         const response = await fetch('/.netlify/functions/check-duplicates-batch', {
@@ -234,7 +234,7 @@ async function checkFilesUsingBatchAPI(
             body: payloadString
         });
         const apiDurationMs = Date.now() - apiStartTime;
-        
+
         if (!response.ok) {
             // Sanitized error message to avoid exposing sensitive server details (PR #339)
             let errorMessage = `Batch API failed with status ${response.status}`;
@@ -251,10 +251,10 @@ async function checkFilesUsingBatchAPI(
             }
             throw new Error(errorMessage);
         }
-        
+
         const result = await response.json();
         const totalDurationMs = Date.now() - startTime;
-        
+
         log('info', 'Batch API check complete', {
             totalFiles: files.length,
             duplicates: result.summary?.duplicates || 0,
@@ -267,13 +267,13 @@ async function checkFilesUsingBatchAPI(
             avgPerFileMs: files.length > 0 ? (totalDurationMs / files.length).toFixed(2) : '0.00',
             event: 'BATCH_API_COMPLETE'
         });
-        
+
         // Map results back to DuplicateCheckResult format
         const results: DuplicateCheckResult[] = result.results
             .map((apiResult: any) => {
                 const fileWithHash = filesWithHashes.find(r => r.file.name === apiResult.fileName);
                 if (!fileWithHash) {
-                    log('warn', 'File not found in original array', { 
+                    log('warn', 'File not found in original array', {
                         fileName: apiResult.fileName,
                         event: 'FILE_MISMATCH'
                     });
@@ -289,7 +289,7 @@ async function checkFilesUsingBatchAPI(
                 };
             })
             .filter((r): r is DuplicateCheckResult => r !== null);
-        
+
         // Server-side fallback for files that failed client-side hashing (PR #339)
         for (const failedResult of failedHashes) {
             try {
@@ -297,7 +297,7 @@ async function checkFilesUsingBatchAPI(
                     fileName: failedResult.file.name,
                     event: 'SERVER_FALLBACK_START'
                 });
-                
+
                 const serverResult = await checkFileDuplicate(failedResult.file);
                 results.push({
                     file: failedResult.file,
@@ -307,7 +307,7 @@ async function checkFilesUsingBatchAPI(
                     timestamp: serverResult.timestamp,
                     analysisData: serverResult.analysisData
                 });
-                
+
                 log('info', 'Server-side duplicate check complete', {
                     fileName: failedResult.file.name,
                     isDuplicate: serverResult.isDuplicate,
@@ -327,9 +327,9 @@ async function checkFilesUsingBatchAPI(
                 });
             }
         }
-        
+
         return results;
-        
+
     } catch (error) {
         const totalDurationMs = Date.now() - startTime;
         log('warn', 'Batch API failed, falling back to individual checks', {
@@ -349,157 +349,111 @@ async function checkFilesUsingBatchAPI(
  * @param log - Logging function
  * @returns Promise with categorized results
  */
+const BATCH_API_LIMIT = 1000;
+
 export async function checkFilesForDuplicates(
     files: File[],
     log: (level: string, message: string, context?: any) => void
 ): Promise<CategorizedFiles> {
     const startTime = Date.now();
-    log('info', 'DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates', { 
+    log('info', 'DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates', {
         fileCount: files.length,
-        willUseBatching: files.length > BATCH_CONFIG.MAX_BATCH_SIZE,
-        batchSize: BATCH_CONFIG.MAX_BATCH_SIZE,
-        fileNames: files.slice(0, 5).map(f => f.name), // Log first 5 file names
+        BATCH_API_LIMIT,
         event: 'PHASE1_START'
     });
-    
-    let checkResults: DuplicateCheckResult[];
-    
-    // Use batch API for efficiency - chunk large file sets into 100-file batches
-    // This avoids the slow individual file check fallback
-    const BATCH_API_LIMIT = 100;
-    
-    if (files.length === 0) {
-        checkResults = [];
-    } else if (files.length === 1) {
-        // Single file - use individual check (batch API overhead not worth it)
-        log('info', 'DUPLICATE_CHECK: Single file check', { 
-            fileCount: files.length,
-            event: 'INDIVIDUAL_SELECTED'
-        });
-        checkResults = await checkFilesIndividually(files, log);
-    } else if (files.length <= BATCH_API_LIMIT) {
-        // Small batch - single batch API call
-        log('info', 'DUPLICATE_CHECK: Using batch API endpoint', { 
-            fileCount: files.length,
-            event: 'BATCH_API_SELECTED'
-        });
-        const batchResults = await checkFilesUsingBatchAPI(files, log);
-        if (batchResults.length > 0) {
-            log('info', 'DUPLICATE_CHECK: Batch API returned results', { 
-                resultCount: batchResults.length,
-                event: 'BATCH_API_SUCCESS'
-            });
-            checkResults = batchResults;
-        } else {
-            // Batch API failed, fall back to individual checks
-            log('warn', 'DUPLICATE_CHECK: Batch API failed, falling back to individual checks', { 
-                fileCount: files.length,
-                event: 'BATCH_API_FALLBACK'
-            });
-            checkResults = await checkFilesIndividually(files, log);
-        }
-    } else {
-        // Large file set - chunk into multiple batch API calls (100 files each)
-        // This is MUCH faster than individual checks (~2s vs ~200s for 300 files)
-        const numChunks = Math.ceil(files.length / BATCH_API_LIMIT);
-        log('info', 'DUPLICATE_CHECK: Large file set - using chunked batch API', { 
-            fileCount: files.length,
-            numChunks,
-            chunkSize: BATCH_API_LIMIT,
-            event: 'CHUNKED_BATCH_SELECTED'
-        });
-        
-        checkResults = [];
-        let successfulBatches = 0;
-        let failedBatches = 0;
-        
-        // Process chunks sequentially to avoid overwhelming the backend
-        for (let i = 0; i < files.length; i += BATCH_API_LIMIT) {
-            const chunk = files.slice(i, i + BATCH_API_LIMIT);
-            const chunkIndex = Math.floor(i / BATCH_API_LIMIT);
-            
-            log('info', 'DUPLICATE_CHECK: Processing chunk', {
-                chunkIndex,
-                chunkSize: chunk.length,
-                totalChunks: numChunks,
-                progress: `${chunkIndex + 1}/${numChunks}`,
-                event: 'CHUNK_START'
-            });
-            
-            const chunkResults = await checkFilesUsingBatchAPI(chunk, log);
-            
-            // Batch API returns empty array [] on failure, non-empty on success
-            // (successful calls always return one result per input file)
-            if (chunkResults.length === chunk.length) {
-                checkResults.push(...chunkResults);
-                successfulBatches++;
-                log('info', 'DUPLICATE_CHECK: Chunk completed successfully', {
-                    chunkIndex,
-                    resultsCount: chunkResults.length,
-                    event: 'CHUNK_SUCCESS'
-                });
-            } else if (chunkResults.length > 0) {
-                // Partial success - some files got results, use what we have
-                checkResults.push(...chunkResults);
-                successfulBatches++;
-                log('warn', 'DUPLICATE_CHECK: Chunk partially completed', {
-                    chunkIndex,
-                    expectedCount: chunk.length,
-                    actualCount: chunkResults.length,
-                    event: 'CHUNK_PARTIAL'
-                });
-                // Handle missing files with individual fallback
-                const processedFileNames = new Set(chunkResults.map(r => r.file.name));
-                const missingFiles = chunk.filter(f => !processedFileNames.has(f.name));
-                if (missingFiles.length > 0) {
-                    log('info', 'DUPLICATE_CHECK: Processing missing files individually', {
-                        missingCount: missingFiles.length,
-                        event: 'MISSING_FILES_FALLBACK'
-                    });
-                    const fallbackResults = await checkFilesIndividually(missingFiles, log);
-                    checkResults.push(...fallbackResults);
-                }
-            } else {
-                // Batch API failed for this chunk, fall back to individual checks
-                failedBatches++;
-                log('warn', 'DUPLICATE_CHECK: Chunk batch API failed, using individual fallback', {
-                    chunkIndex,
-                    chunkSize: chunk.length,
-                    event: 'CHUNK_FALLBACK'
-                });
-                const fallbackResults = await checkFilesIndividually(chunk, log);
-                checkResults.push(...fallbackResults);
-            }
-        }
-        
-        log('info', 'DUPLICATE_CHECK: All chunks processed', {
-            totalFiles: files.length,
-            totalResults: checkResults.length,
-            successfulBatches,
-            failedBatches,
-            event: 'CHUNKED_BATCH_COMPLETE'
-        });
+
+    if (files.length === 0) return { ...EMPTY_CATEGORIZATION };
+
+    // 1. Calculate all hashes upfront (Layer 2)
+    const hashStartTime = Date.now();
+    const hashResults = await calculateFileHashesBatch(files);
+    const hashDurationMs = Date.now() - hashStartTime;
+    log('info', 'DUPLICATE_CHECK: Upfront hashing complete', {
+        fileCount: files.length,
+        durationMs: hashDurationMs,
+        event: 'HASHING_COMPLETE'
+    });
+
+    // 2. Prepare chunks for Batch API (Layer 3)
+    const chunks: { files: File[], hashes: { file: File, hash: string }[] }[] = [];
+    for (let i = 0; i < files.length; i += BATCH_API_LIMIT) {
+        const chunkFiles = files.slice(i, i + BATCH_API_LIMIT);
+        const chunkHashes = hashResults
+            .filter(r => r.hash !== null)
+            .filter(r => chunkFiles.some(f => f.name === r.file.name)) as { file: File, hash: string }[];
+
+        chunks.push({ files: chunkFiles, hashes: chunkHashes });
     }
 
-    // Categorize results into three groups
-    const trueDuplicates = checkResults.filter(r => r.isDuplicate && !r.needsUpgrade);
-    const needsUpgrade = checkResults.filter(r => r.isDuplicate && r.needsUpgrade);
-    const newFiles = checkResults.filter(r => !r.isDuplicate);
+    // 3. Process all chunks in parallel
+    const allResults: DuplicateCheckResult[] = [];
+
+    log('info', 'DUPLICATE_CHECK: Processing chunks in parallel', {
+        numChunks: chunks.length,
+        chunkSize: BATCH_API_LIMIT,
+        event: 'PARALLEL_BATCH_START'
+    });
+
+    const chunkPromises = chunks.map(async (chunk, index) => {
+        if (chunk.hashes.length === 0) {
+            log('warn', 'Chunk has no valid hashes, falling back to individual', { index });
+            return await checkFilesIndividually(chunk.files, log);
+        }
+
+        // Call Batch API specifically for this chunk's hashes
+        // We bypass checkFilesUsingBatchAPI to use our pre-calculated hashes directly
+        try {
+            const payload = JSON.stringify({
+                files: chunk.hashes.map(h => ({ hash: h.hash, fileName: h.file.name }))
+            });
+
+            const response = await fetch('/.netlify/functions/check-duplicates-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: payload
+            });
+
+            if (!response.ok) throw new Error(`Batch API failed: ${response.status}`);
+
+            const data = await response.json();
+
+            // Map results back to original files
+            return data.results.map((r: any) => {
+                const h = chunk.hashes.find(ch => ch.file.name === r.fileName);
+                return {
+                    file: h?.file || chunk.files.find(f => f.name === r.fileName),
+                    isDuplicate: r.isDuplicate,
+                    needsUpgrade: r.needsUpgrade,
+                    recordId: r.recordId,
+                    timestamp: r.timestamp,
+                    analysisData: r.analysisData
+                };
+            });
+        } catch (err) {
+            log('warn', 'Parallel chunk failed, falling back to individual', {
+                index,
+                error: err instanceof Error ? err.message : String(err)
+            });
+            return await checkFilesIndividually(chunk.files, log);
+        }
+    });
+
+    const settledChunks = await Promise.all(chunkPromises);
+    settledChunks.forEach(res => allResults.push(...res));
+
+    // 4. Categorize results
+    const trueDuplicates = allResults.filter(r => r.isDuplicate && !r.needsUpgrade);
+    const needsUpgrade = allResults.filter(r => r.isDuplicate && r.needsUpgrade);
+    const newFiles = allResults.filter(r => !r.isDuplicate);
 
     const totalDurationMs = Date.now() - startTime;
-    const avgPerFile = files.length > 0 ? (totalDurationMs / files.length).toFixed(2) : 'N/A';
-
-    // Enhanced logging with individual file results
-    log('info', 'DUPLICATE_CHECK: Phase 1 complete - categorization finished', {
+    log('info', 'DUPLICATE_CHECK: Phase 1 complete', {
         totalFiles: files.length,
         trueDuplicates: trueDuplicates.length,
-        trueDuplicateNames: trueDuplicates.slice(0, 5).map(r => r.file.name),
         needsUpgrade: needsUpgrade.length,
-        upgradeNames: needsUpgrade.slice(0, 5).map(r => r.file.name),
         newFiles: newFiles.length,
-        newFileNames: newFiles.slice(0, 5).map(r => r.file.name),
-        totalDurationMs,
-        avgPerFileMs: avgPerFile,
+        durationMs: totalDurationMs,
+        avgPerFileMs: (totalDurationMs / files.length).toFixed(2),
         event: 'PHASE1_COMPLETE'
     });
 
@@ -525,7 +479,7 @@ async function checkFilesIndividually(
             estimatedBatches: Math.ceil(files.length / BATCH_CONFIG.MAX_BATCH_SIZE),
             event: 'BATCH_MODE'
         });
-        
+
         const batchResults = await processBatches(
             files,
             BATCH_CONFIG.MAX_BATCH_SIZE,
@@ -535,19 +489,19 @@ async function checkFilesIndividually(
                     batchSize: batch.length,
                     event: 'BATCH_START'
                 });
-                
+
                 // Check all files in batch in parallel using allSettled
                 const settledResults = await Promise.allSettled(
                     batch.map(file => checkSingleFile(file, log))
                 );
-                
+
                 // Extract results
                 return settledResults.map((result, localIndex) => {
                     if (result.status === 'fulfilled') {
                         return result.value;
                     } else {
                         const file = batch[localIndex];
-                        log('error', 'Unexpected rejection in duplicate check', { 
+                        log('error', 'Unexpected rejection in duplicate check', {
                             fileName: file?.name,
                             error: result.reason instanceof Error ? result.reason.message : String(result.reason),
                             event: 'UNEXPECTED_REJECTION'
@@ -570,7 +524,7 @@ async function checkFilesIndividually(
                 }
             }
         );
-        
+
         // Flatten batch results
         return batchResults.flat();
     } else {
@@ -579,7 +533,7 @@ async function checkFilesIndividually(
         const settledResults = await Promise.allSettled(
             files.map(file => checkSingleFile(file, log))
         );
-        
+
         const checkDurationMs = Date.now() - checkStartTime;
         log('debug', 'Parallel check complete', {
             fileCount: files.length,
@@ -593,7 +547,7 @@ async function checkFilesIndividually(
                 return result.value;
             } else {
                 const file = files[index];
-                log('error', 'Unexpected rejection in duplicate check', { 
+                log('error', 'Unexpected rejection in duplicate check', {
                     fileName: file?.name,
                     fileIndex: index,
                     error: result.reason instanceof Error ? result.reason.message : String(result.reason),

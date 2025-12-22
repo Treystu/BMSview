@@ -263,11 +263,11 @@ exports.handler = async (event, context) => {
       return errorResponse(400, 'invalid_request', 'files must be a non-empty array', undefined, headers);
     }
 
-    if (files.length > 100) {
+    if (files.length > 1000) {
       log.warn('Too many files in batch', { fileCount: files.length });
       timer.end({ error: 'too_many_files' });
       log.exit(400);
-      return errorResponse(400, 'invalid_request', 'Maximum 100 files per batch', undefined, headers);
+      return errorResponse(400, 'invalid_request', 'Maximum 1000 files per batch', undefined, headers);
     }
 
     log.info('Processing batch duplicate check', {

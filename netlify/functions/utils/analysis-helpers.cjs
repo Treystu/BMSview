@@ -93,9 +93,10 @@ The following fields are MANDATORY and MUST ALWAYS be extracted. If a field is n
     -   \`cellVoltages\`: ONLY if a numbered list of individual cell voltages exists, populate this array. Otherwise, it MUST be \`[]\`.
 4.  **Cell Voltage Calculations**: If cellVoltages array has values, you MUST calculate highestCellVoltage, lowestCellVoltage, averageCellVoltage, and cellVoltageDifference from it.
 5.  **Timestamp Logic (CRITICAL)**:
-    -   Find a timestamp within the image itself.
-    -   If a full date and time are visible (e.g., "2023-01-01 12:04:00"), extract as "YYYY-MM-DDTHH:MM:SS".
+    -   Find a timestamp (date and time) within the image itself.
+    -   If a full date and time are visible (e.g., "2023-11-20 09:33:18" or "11/20/2023 09:33"), extract as "YYYY-MM-DDTHH:MM:SS".
     -   If only time is visible (e.g., "12:04:00"), extract only the time string "12:04:00". Do NOT add a date.
+    -   **IMPORTANT**: Do not use the current date if no date is visible in the image.
     -   If no timestamp is visible, \`timestampFromImage\` MUST be \`null\`.
 6.  **Final Review**: Your entire output must be ONLY the raw JSON object, without any surrounding text, explanations, or markdown formatting like \`\`\`json. ALL MANDATORY FIELDS MUST HAVE VALUES.`;
 };
@@ -288,12 +289,15 @@ const performPostAnalysis = (analysis, system, log) => {
 const parseTimestamp = (timestampFromImage, fileName, log) => {
     log('debug', 'Parsing timestamp.', { timestampFromImage, fileName });
     try {
-        // 1. Try to use timestamp from image if it's a full ISO-like string
-        if (timestampFromImage && /\d{4}[-/]\d{2}[-/]\d{2}T\d{2}:\d{2}:\d{2}/.test(timestampFromImage)) {
-            const date = new Date(timestampFromImage);
-            if (!isNaN(date.getTime())) {
-                log('debug', 'Using full timestamp from image.', { timestampFromImage });
-                return date;
+        // 1. Try to use timestamp from image if it's a full ISO-like string or has spaces
+        if (timestampFromImage && typeof timestampFromImage === 'string') {
+            const cleanTs = timestampFromImage.trim().replace(' ', 'T');
+            if (/\d{4}[-/]\d{2}[-/]\d{2}T\d{2}:\d{2}/.test(cleanTs)) {
+                const date = new Date(cleanTs);
+                if (!isNaN(date.getTime())) {
+                    log('debug', 'Using full timestamp from image.', { timestampFromImage, parsed: date.toISOString() });
+                    return date;
+                }
             }
         }
 
@@ -306,19 +310,27 @@ const parseTimestamp = (timestampFromImage, fileName, log) => {
                 log('debug', 'Parsed date from filename.', { dateFromFilename: date.toISOString() });
 
                 // 3. If filename gave date, check if image gave a valid *time* to override
-                if (timestampFromImage && /^\d{1,2}:\d{2}(:\d{2})?$/.test(timestampFromImage.trim())) {
-                    log('debug', 'Applying time from image to filename date.', { timeFromImage: timestampFromImage });
-                    const [timeH, timeM, timeS] = timestampFromImage.split(':').map(Number);
-                    date.setUTCHours(timeH || 0, timeM || 0, timeS || 0, 0);
+                if (timestampFromImage && typeof timestampFromImage === 'string') {
+                    const timeMatch = timestampFromImage.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+                    if (timeMatch) {
+                        log('debug', 'Applying time from image to filename date.', { timeFromImage: timestampFromImage });
+                        const [, timeH, timeM, timeS] = timeMatch;
+                        date.setUTCHours(parseInt(timeH) || 0, parseInt(timeM) || 0, parseInt(timeS) || 0, 0);
+                        return date;
+                    }
                 }
                 return date;
             }
         }
     } catch (e) {
-        log('warn', 'Error during timestamp parsing.', { error: e.message });
+        log('warn', 'Error during timestamp parsing.', { error: e.message, timestampFromImage, fileName });
     }
 
-    log('info', 'No valid timestamp found in image or filename, using current time.');
+    log('info', 'No valid timestamp found in image or filename, using current time.', {
+        timestampFromImage,
+        fileName,
+        fallback: new Date().toISOString()
+    });
     return new Date(); // Fallback to current time
 };
 
