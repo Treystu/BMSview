@@ -587,7 +587,8 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
     while (hasMore) {
         try {
             log('info', 'Fetching history page for streaming.', { page, limit });
-            const response = await getAnalysisHistory(page, limit, { forceRefresh: true });
+            // Use cache-first strategy to avoid slamming the API if data is locally available
+            const response = await getAnalysisHistory(page, limit, { forceRefresh: false });
 
             // Track IDs for cache reconciliation
             response.items.forEach(item => {
@@ -1929,7 +1930,7 @@ export const getSystemAnalytics = async (systemId: string): Promise<SystemAnalyt
         throw new Error("A system ID must be provided to fetch analytics.");
     }
     log('info', 'Fetching system analytics.', { systemId });
-    return apiFetch<SystemAnalytics>(`system-analytics?systemId=${systemId}`);
+    return fetchWithCache<SystemAnalytics>(`system-analytics?systemId=${systemId}`, 60_000);
 };
 
 
@@ -2246,7 +2247,7 @@ export interface DataIntegrityResponse {
 
 export const getDataIntegrity = async (): Promise<DataIntegrityResponse> => {
     log('info', 'Fetching data integrity audit from admin endpoint.');
-    return apiFetch<DataIntegrityResponse>('admin-data-integrity');
+    return fetchWithCache<DataIntegrityResponse>('admin-data-integrity', 60_000);
 };
 
 export const getHourlyWeather = async (lat: number, lon: number, date: string): Promise<any[]> => {
