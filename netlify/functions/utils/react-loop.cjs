@@ -1901,8 +1901,6 @@ async function executeReActLoop(params) {
                         toolCallsTotal: toolCallCount
                     });
 
-                    // Break the loop since we have a final answer
-                    break;
 
                     // Validate response format
                     const validation = validateResponseFormat(finalAnswer, customPrompt || '');

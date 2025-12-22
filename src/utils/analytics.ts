@@ -65,7 +65,7 @@ export function calculateSystemAnalytics(history: AnalysisRecord[]): SystemAnaly
                     stat_push(hourlyStats[hour].values[metric].all, value);
                 }
             });
-        } catch (e) {
+        } catch (_e) {
             // ignore invalid records
         }
     });
@@ -112,7 +112,9 @@ export function calculateSystemAnalytics(history: AnalysisRecord[]): SystemAnaly
             try {
                 const hour = new Date(record.timestamp).getUTCHours();
                 sunnyDayChargingStatsByHour[hour].currents.push(record.analysis.current!);
-            } catch (e) { }
+            } catch (_e) {
+                // Silently skip malformed timestamps in analytics
+            }
         }
     });
 

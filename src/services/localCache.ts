@@ -455,7 +455,7 @@ export const weatherCache = {
     /**
      * Bulk put weather data
      */
-    async bulkPut(records: CachedWeatherData[], syncStatus: SyncStatus = 'synced'): Promise<void> {
+    async bulkPut(records: CachedWeatherData[], _syncStatus: SyncStatus = 'synced'): Promise<void> {
         try {
             await db.weather.bulkPut(records);
             log('debug', `Bulk cached ${records.length} weather records`);

@@ -31,7 +31,7 @@ function validateEnvironment(log) {
   return true;
 }
 
-const { createInsightsJob, getJob, updateJobStatus } = require('./utils/insights-jobs.cjs'); // UPDATED: Import updateJobStatus
+const { createInsightsJob, getInsightsJob, updateJobStatus, saveCheckpoint } = require('./utils/insights-jobs.cjs'); // UPDATED: Import necessary functions
 const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const {
