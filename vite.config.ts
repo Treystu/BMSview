@@ -1,6 +1,6 @@
-import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
-import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react';
+import { resolve } from 'path';
+import { defineConfig } from 'vite';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -21,6 +21,16 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         admin: resolve(__dirname, 'admin.html'),
       },
+      output: {
+        manualChunks(id) {
+          if (id.includes('/src/services/') || id.includes('/services/')) {
+            return 'services';
+          }
+          if (id.includes('/src/utils/') || id.includes('/utils/')) {
+            return 'shared-utils';
+          }
+        }
+      }
     },
   },
   server: {

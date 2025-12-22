@@ -38,6 +38,14 @@ BMSview uses **React Context API with Reducers** for state management. The appli
 
 ## State Context 1: AppState (Public App)
 
+> [!IMPORTANT]
+> **Bundle Separation & Security**:
+> The `AppState` and `AdminState` are completely isolated to prevent bundle leakage.
+> - **NEVER** import `App` or `AppState` related services (like `SyncManager` initialized in App) into the Admin app.
+> - **NEVER** rely on shared state between the two apps; they are separate entry points.
+> - Shared logic must live in `src/utils` or `src/services` and be side-effect free.
+> - See `ARCHITECTURE.md` "Build Architecture" for how `manualChunks` enforces this separation.
+
 ### Location
 - **Definition**: `state/appState.tsx`
 - **Provider**: `index.tsx` wraps `<App />` with `<AppStateProvider>`

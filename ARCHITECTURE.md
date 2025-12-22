@@ -63,6 +63,27 @@ BMSview is a Battery Management System screenshot analysis tool built with **loc
         └─ localStorage (disable cache override)
 ```
 
+```
+
+### Build Architecture (Bundle Separation)
+To prevent leakage of main application logic (like `SyncManager` or complex UI state) into the lightweight Admin Dashboard, we enforce strict bundle splitting in `vite.config.ts`.
+
+**Strategy**:
+- **Entry Points**: `main` (`index.html`) and `admin` (`admin.html`) are separate entries.
+- **Manual Chunks**: Shared code in `src/utils` and `src/services` is explicitly split into separate chunks (`shared-utils.js`, `services.js`).
+
+**Why?**
+Without this, Vite/Rollup might bundle shared utilities (like `time.ts`) into the `main.js` bundle. If the Admin app imports that utility, it pulls in the *entire* Main app bundle, triggering its side effects (initialization, routing, API calls).
+
+**Configuration**:
+```typescript
+// vite.config.ts
+manualChunks(id) {
+  if (id.includes('/src/services/')) return 'services';
+  if (id.includes('/src/utils/')) return 'shared-utils';
+}
+```
+
 ### Backend Architecture
 
 ```
