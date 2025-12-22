@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getSystemAnalytics, SystemAnalytics, getHourlySocPredictions, getMergedTimelineData, type MergedDataPoint } from '../services/clientService';
+import { getHourlySocPredictions, getMergedTimelineData, getSystemAnalytics, SystemAnalytics, type MergedDataPoint } from '../services/clientService';
+import { calculateSystemAnalytics } from '../src/utils/analytics';
 import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData } from '../types';
 import AlertAnalysis from './admin/AlertAnalysis';
 import SpinnerIcon from './icons/SpinnerIcon';
@@ -64,14 +65,14 @@ const mapRecordToPoint = (r: AnalysisRecord) => {
         const metric = m as MetricKey;
         const { source, multiplier = 1, anomaly } = METRICS[metric];
         let value;
-        
+
         // Special handling for irradiance from weather data
         if (metric === 'irradiance') {
             value = r.weather?.estimated_irradiance_w_m2 ?? null;
         } else {
             value = source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
         }
-        
+
         if (value != null && typeof value === 'number') {
             const finalValue = value * multiplier;
             point[metric] = finalValue;
@@ -96,11 +97,11 @@ const mapMergedPointToChartPoint = (p: MergedDataPoint) => {
         anomalies: [],
         source: p.source
     };
-    
+
     Object.keys(METRICS).forEach(m => {
         const metric = m as MetricKey;
         const { multiplier = 1, anomaly } = METRICS[metric];
-        
+
         // Special handling for irradiance from merged data
         let value;
         if (metric === 'irradiance') {
@@ -108,11 +109,11 @@ const mapMergedPointToChartPoint = (p: MergedDataPoint) => {
         } else {
             value = p.data[metric];
         }
-        
+
         if (value != null && typeof value === 'number') {
             const finalValue = value * multiplier;
             point[metric] = finalValue;
-            
+
             // Also include min/max if available (from downsampling)
             if (p.data[`${metric}_min`] !== undefined) {
                 point[`${metric}_min`] = p.data[`${metric}_min`]! * multiplier;
@@ -123,7 +124,7 @@ const mapMergedPointToChartPoint = (p: MergedDataPoint) => {
             if (p.data[`${metric}_avg`] !== undefined) {
                 point[`${metric}_avg`] = p.data[`${metric}_avg`]! * multiplier;
             }
-            
+
             if (anomaly) {
                 const anomalyResult = anomaly(value);
                 if (anomalyResult) point.anomalies.push({ ...anomalyResult, key: metric });
@@ -132,7 +133,7 @@ const mapMergedPointToChartPoint = (p: MergedDataPoint) => {
             point[metric] = null;
         }
     });
-    
+
     return point;
 };
 
@@ -158,7 +159,7 @@ const aggregateData = (data: any[], bucketMinutes: number): any[] => {
         Object.keys(METRICS).forEach(m => {
             const metric = m as MetricKey;
             const { source, multiplier = 1, anomaly } = METRICS[metric];
-            
+
             // Get values from bucket, handling both old (analysis/weather) and new (data) formats
             let values = bucket.map(r => {
                 if (r.analysis || r.weather) {
@@ -170,15 +171,15 @@ const aggregateData = (data: any[], bucketMinutes: number): any[] => {
                     return r[metric];
                 }
             }).filter((v): v is number => v != null);
-            
+
             if (values.length > 0) {
                 const avgValue = values.reduce((a, v) => a + v, 0) / values.length;
                 avgPoint[metric] = avgValue; // Already has multiplier applied
-                
+
                 // Calculate min/max for bands
                 avgPoint[`${metric}_min`] = Math.min(...values);
                 avgPoint[`${metric}_max`] = Math.max(...values);
-                
+
                 if (anomaly) {
                     // Reverse multiplier for anomaly check since avgValue already has it applied
                     const anomalyResult = anomaly(avgValue / multiplier);
@@ -482,36 +483,36 @@ const SvgChart: React.FC<{
         const paths = activeMetrics.map(({ key, axis }) => {
             const yScale = axis === 'left' ? yScaleLeft : yScaleRight;
             if (!yScale) return null;
-            
+
             // Group consecutive points by source type to create path segments
             const segments: { d: string; source: string; color: string }[] = [];
             let currentSegment: any[] = [];
             let currentSource = '';
-            
+
             dataToRender.filter((d: any) => d[key] !== null).forEach((d: any, i: number) => {
                 const pointSource = d.source || 'bms';
-                
+
                 if (currentSource !== pointSource && currentSegment.length > 0) {
                     // Source changed, finish current segment
-                    const pathData = currentSegment.map((p, idx) => 
+                    const pathData = currentSegment.map((p, idx) =>
                         `${idx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(p[key]).toFixed(2)}`
                     ).join(' ');
                     segments.push({ d: pathData, source: currentSource, color: METRICS[key].color });
                     currentSegment = [];
                 }
-                
+
                 currentSegment.push(d);
                 currentSource = pointSource;
             });
-            
+
             // Add final segment
             if (currentSegment.length > 0) {
-                const pathData = currentSegment.map((p, idx) => 
+                const pathData = currentSegment.map((p, idx) =>
                     `${idx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(p[key]).toFixed(2)}`
                 ).join(' ');
                 segments.push({ d: pathData, source: currentSource, color: METRICS[key].color });
             }
-            
+
             return { key, segments, color: METRICS[key].color };
         }).filter(Boolean);
 
@@ -550,12 +551,12 @@ const SvgChart: React.FC<{
         const anomalies = dataToRender.flatMap((d: any) => d.anomalies.map((a: any) => {
             const metricConf = metricConfig[a.key as MetricKey];
             if (!metricConf) return null;
-            
+
             // Create unique key: timestamp + type + message
             const uniqueKey = `${d.timestamp}-${a.type}-${a.message}`;
             if (anomalySet.has(uniqueKey)) return null; // Skip duplicates
             anomalySet.add(uniqueKey);
-            
+
             const yScale = metricConf.axis === 'left' ? yScaleLeft : yScaleRight;
             return { ...a, timestamp: d.timestamp, y: yScale(d[a.key]) };
         })).filter(Boolean);
@@ -571,20 +572,20 @@ const SvgChart: React.FC<{
                     // Create area path (from baseline to cloud value)
                     const baselineY = cloudYScale(0);
                     const pathParts: string[] = [];
-                    
+
                     // Start at first point
                     pathParts.push(`M ${xScale(cloudPoints[0].timestamp).toFixed(2)} ${baselineY}`);
                     pathParts.push(`L ${xScale(cloudPoints[0].timestamp).toFixed(2)} ${cloudYScale(cloudPoints[0].clouds).toFixed(2)}`);
-                    
+
                     // Add all cloud points
                     for (let i = 1; i < cloudPoints.length; i++) {
                         pathParts.push(`L ${xScale(cloudPoints[i].timestamp).toFixed(2)} ${cloudYScale(cloudPoints[i].clouds).toFixed(2)}`);
                     }
-                    
+
                     // Close path back to baseline
                     pathParts.push(`L ${xScale(cloudPoints[cloudPoints.length - 1].timestamp).toFixed(2)} ${baselineY}`);
                     pathParts.push('Z');
-                    
+
                     cloudAreaPath = pathParts.join(' ');
                 }
             }
@@ -746,7 +747,7 @@ const SvgChart: React.FC<{
                                     ))}
                                 </g>
                             ))}
-                            
+
                             {/* Cloud Cover Area Chart - subtle background overlay */}
                             {cloudAreaPath && (
                                 <path
@@ -757,16 +758,16 @@ const SvgChart: React.FC<{
                                     pointerEvents="none"
                                 />
                             )}
-                            
+
                             {paths.map((p: any) => p && !hiddenMetrics.has(p.key) && p.segments.map((seg: any, segIdx: number) => {
                                 const isIrradiance = p.key === 'irradiance';
                                 return (
-                                    <path 
+                                    <path
                                         key={`${p.key}-seg-${segIdx}`}
-                                        d={seg.d} 
-                                        fill="none" 
-                                        stroke={seg.color} 
-                                        strokeWidth={isIrradiance ? "2" : "2.5"} 
+                                        d={seg.d}
+                                        fill="none"
+                                        stroke={seg.color}
+                                        strokeWidth={isIrradiance ? "2" : "2.5"}
                                         vectorEffect="non-scaling-stroke"
                                         strokeDasharray={isIrradiance || seg.source === 'estimated' || seg.source === 'cloud' ? '8 4' : undefined}
                                         opacity={seg.source === 'estimated' ? 0.6 : (seg.source === 'cloud' || isIrradiance) ? 0.8 : 1.0}
@@ -811,12 +812,12 @@ const SvgChart: React.FC<{
                             {annotations.length > 0 && annotations.map((annotation, idx) => {
                                 const annotationTime = new Date(annotation.timestamp).getTime();
                                 const annotationX = xScale(annotation.timestamp);
-                                
+
                                 // Only render if within visible domain
                                 if (annotationX < viewBox.x || annotationX > viewBox.x + viewBox.width) {
                                     return null;
                                 }
-                                
+
                                 return (
                                     <g key={`annotation-${idx}`}>
                                         <line
@@ -875,14 +876,13 @@ const SvgChart: React.FC<{
                     })} UTC</p>
                     {tooltip.point.source && (
                         <p className="text-xs mb-2">
-                            <span className={`px-2 py-0.5 rounded ${
-                                tooltip.point.source === 'bms' ? 'bg-green-900/50 text-green-300' :
+                            <span className={`px-2 py-0.5 rounded ${tooltip.point.source === 'bms' ? 'bg-green-900/50 text-green-300' :
                                 tooltip.point.source === 'cloud' ? 'bg-blue-900/50 text-blue-300' :
-                                'bg-purple-900/50 text-purple-300'
-                            }`}>
+                                    'bg-purple-900/50 text-purple-300'
+                                }`}>
                                 {tooltip.point.source === 'bms' ? '📸 BMS Screenshot' :
-                                 tooltip.point.source === 'cloud' ? '☁️ Hourly Weather' :
-                                 '🔮 Interpolated'}
+                                    tooltip.point.source === 'cloud' ? '☁️ Hourly Weather' :
+                                        '🔮 Interpolated'}
                             </span>
                         </p>
                     )}
@@ -1069,11 +1069,11 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
     // Generate path for actual and predicted data
     const actualPoints: { x: number; y: number }[] = [];
     const predictedPath: string[] = [];
-    
+
     predictions.forEach((p: any, i: number) => {
         const x = xScale(i);
         const y = yScale(p.soc);
-        
+
         if (!p.predicted) {
             actualPoints.push({ x, y });
         }
@@ -1257,7 +1257,7 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
             )}
 
             <div className="bg-blue-900/20 border border-blue-700/50 p-3 rounded text-sm text-blue-200">
-                <strong>Note:</strong> Predictions use historical charge/discharge patterns, time-of-day solar availability, and weather data. 
+                <strong>Note:</strong> Predictions use historical charge/discharge patterns, time-of-day solar availability, and weather data.
                 Actual values shown as green dots, predicted values as dashed blue line. Confidence varies based on data coverage.
             </div>
         </div>
@@ -1265,9 +1265,9 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
 };
 
 
-const HistoricalChart: React.FC<HistoricalChartProps> = ({ 
-    systems, 
-    history, 
+const HistoricalChart: React.FC<HistoricalChartProps> = ({
+    systems,
+    history,
     enableAdminFeatures = false,
     showSolarOverlay = false,
     annotations = [],
@@ -1276,7 +1276,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [selectedSystemId, setSelectedSystemId] = useState<string>('');
     const [metricConfig, setMetricConfig] = useState<Partial<Record<MetricKey, { axis: Axis }>>>({ stateOfCharge: { axis: 'left' }, current: { axis: 'right' } });
     const [hiddenMetrics] = useState<Set<MetricKey>>(new Set());
-    
+
     // Initialize with default 30-day range so charts load immediately
     const [startDate, setStartDate] = useState<string>(() =>
         new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
@@ -1284,7 +1284,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [endDate, setEndDate] = useState<string>(() =>
         new Date().toISOString().slice(0, 16)
     );
-    
+
     const [timelineData, setTimelineData] = useState<any | null>(null);
     const [bandEnabled, setBandEnabled] = useState<boolean>(false);
 
@@ -1297,6 +1297,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [manualBucketSize, setManualBucketSize] = useState<string | null>(null);
     const [predictiveData, setPredictiveData] = useState<any | null>(null);
     const [predictiveLoading, setPredictiveLoading] = useState(false);
+    const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false); // New: separate analytics loading
     const [useMergedData, setUseMergedData] = useState<boolean>(false); // New: toggle merged data
 
     const [zoomPercentage, setZoomPercentage] = useState<number>(100);
@@ -1349,7 +1350,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
     const loadPredictiveData = async () => {
         if (!selectedSystemId) return;
-        
+
         setPredictiveLoading(true);
         setError(null);
 
@@ -1444,8 +1445,28 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
         setAnalyticsData(null);
 
         try {
-            const analytics = await getSystemAnalytics(selectedSystemId);
-            setAnalyticsData(analytics);
+            // OPTIMIZATION: Calculate analytics locally if we have history records.
+            // This is MUCH faster than hitting the /system-analytics backend for 2k-4k records.
+            const systemHistory = history.filter(r => r.systemId === selectedSystemId);
+
+            if (systemHistory.length > 50) {
+                // If we have enough local data, calculate analytics instantly
+                setIsAnalyticsLoading(true);
+                try {
+                    const localAnalytics = calculateSystemAnalytics(systemHistory);
+                    setAnalyticsData(localAnalytics);
+                    setIsAnalyticsLoading(false);
+                } catch (err) {
+                    console.error('Local analytics calculation failed:', err);
+                    // Fallback to server if local fails
+                    const analytics = await getSystemAnalytics(selectedSystemId);
+                    setAnalyticsData(analytics);
+                }
+            } else {
+                // Not enough records locally or first time load, use server
+                const analytics = await getSystemAnalytics(selectedSystemId);
+                setAnalyticsData(analytics);
+            }
 
             const system = systems.find(s => s.id === selectedSystemId);
             const ratedCapacity = system?.capacity;
@@ -1530,6 +1551,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             setError(err instanceof Error ? err.message : "Failed to generate chart data.");
         } finally {
             setIsGenerating(false);
+            setIsAnalyticsLoading(false);
         }
     }, [selectedSystemId, history, systems, startDate, endDate, chartDimensions, averagingEnabled, manualBucketSize, useMergedData]);
 
@@ -1545,7 +1567,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
         setViewBox({ x: 0, width: chartDimensions.chartWidth });
     };
 
-    const hasChartData = timelineData || analyticsData?.hourlyAverages?.length > 0;
+    const hasChartData = timelineData || (analyticsData?.hourlyAverages?.length ?? 0) > 0;
 
     return (
         <div>
@@ -1566,8 +1588,15 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                 useMergedData={useMergedData}
                 setUseMergedData={setUseMergedData}
             />
-            <div className="mt-4">
-                {isGenerating && <div className="flex items-center justify-center h-full text-gray-400 min-h-[600px]"><SpinnerIcon className="w-8 h-8 text-secondary" /> <span className="ml-4">Loading Analytics Data...</span></div>}
+            <div className="mt-4 min-h-[600px] relative">
+                {isGenerating && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-50 rounded-lg">
+                        <div className="flex flex-col items-center">
+                            <SpinnerIcon className="w-12 h-12 text-secondary animate-spin" />
+                            <span className="mt-4 text-gray-300 font-medium">Preparing Timeline...</span>
+                        </div>
+                    </div>
+                )}
                 {error && <div className="text-red-400 p-4 bg-red-900/50 rounded-lg text-center">{error}</div>}
                 {!error && (
                     <>
@@ -1577,20 +1606,29 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                             <div className="grid lg:grid-cols-3 gap-8 items-start">
                                 <div className="lg:col-span-2">
                                     {chartView === 'timeline' && timelineData && (
-                                        <SvgChart 
-                                            chartData={timelineData} 
-                                            metricConfig={metricConfig} 
+                                        <SvgChart
+                                            chartData={timelineData}
+                                            metricConfig={metricConfig}
                                             hiddenMetrics={hiddenMetrics}
-                                            viewBox={viewBox} 
-                                            setViewBox={setViewBox} 
-                                            chartDimensions={chartDimensions} 
+                                            viewBox={viewBox}
+                                            setViewBox={setViewBox}
+                                            chartDimensions={chartDimensions}
                                             bandEnabled={bandEnabled}
                                             annotations={annotations}
                                             showSolarOverlay={showSolarOverlay}
                                         />
                                     )}
-                                    {chartView === 'hourly' && analyticsData && (
-                                        <HourlyAverageChart analyticsData={analyticsData} metricKey={hourlyMetric} />
+                                    {chartView === 'hourly' && (
+                                        isAnalyticsLoading ? (
+                                            <div className="flex items-center justify-center h-96 bg-gray-900/50 rounded-lg">
+                                                <SpinnerIcon className="w-8 h-8 text-secondary" />
+                                                <span className="ml-4 text-gray-400">Loading Hourly Averages...</span>
+                                            </div>
+                                        ) : analyticsData ? (
+                                            <HourlyAverageChart analyticsData={analyticsData} metricKey={hourlyMetric} />
+                                        ) : (
+                                            <div className="flex items-center justify-center h-96 text-gray-400">No analytics data available for selected period.</div>
+                                        )
                                     )}
                                     {chartView === 'predictive' && (
                                         <div className="bg-gray-900 p-4 rounded-lg">
@@ -1610,7 +1648,11 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                                     )}
                                 </div>
                                 <div className="lg:col-span-1">
-                                    {analyticsData?.alertAnalysis && analyticsData.alertAnalysis.totalEvents > 0 && (
+                                    {isAnalyticsLoading ? (
+                                        <div className="bg-gray-800 p-4 rounded-lg animate-pulse h-64 flex items-center justify-center">
+                                            <span className="text-gray-500">Analyzing alerts...</span>
+                                        </div>
+                                    ) : analyticsData?.alertAnalysis && analyticsData.alertAnalysis.totalEvents > 0 && (
                                         <AlertAnalysis data={analyticsData.alertAnalysis} />
                                     )}
                                 </div>
