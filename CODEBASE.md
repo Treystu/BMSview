@@ -13,7 +13,7 @@ See ARCHITECTURE.md for detailed system design.
 **Critical**: Never mix module systems!
 
 - Frontend (.ts/.tsx): ES modules (import/export)
-- Backend (.cjs): CommonJS (require()/module.exports)  
+- Backend (.cjs): CommonJS (require()/module.exports)
 - Exception: solar-estimate.ts (TypeScript, bundled)
 
 ## MongoDB Collections
@@ -30,33 +30,39 @@ Connection: Always use `getCollection()` from utils/mongodb.cjs
 ## Path Aliases
 
 Frontend only (configured in vite.config.ts and tsconfig.json):
-- components/*
-- services/*
-- state/*
-- hooks/*
-- utils/*
+
+- components/\*
+- services/\*
+- state/\*
+- hooks/\*
+- utils/\*
 
 Use aliases consistently, avoid relative imports.
 
 ## Best Practices
 
 ### Logging
+
 All code uses structured JSON logging via utils/logger.cjs
 
-### Error Handling  
+### Error Handling
+
 - Use retry wrappers from utils/retry.cjs
 - Implement circuit breakers for external APIs
 - Return structured error responses
 
 ### MongoDB
+
 - Always use getCollection() helper
 - Implement retry logic
 - Pool size: 5 connections
 
 ### Gemini API
+
 - Use process.env.GEMINI_MODEL with fallback
 - Implement timeouts (25s iteration, 58s total)
 - Handle JSON parsing errors
+- Optimized for files like `Screenshot_20251123-132836.png` (~200KB) - minimal resizing needed.
 
 ## Anti-Patterns
 
@@ -67,7 +73,8 @@ All code uses structured JSON logging via utils/logger.cjs
 5. Don't mix module systems
 
 For implementation details, see consolidated documentation:
+
 - ARCHITECTURE.md - System design
-- FEATURES.md - Feature implementations  
+- FEATURES.md - Feature implementations
 - ADMIN_GUIDE.md - Admin panel
 - DEPLOYMENT.md - Deployment procedures

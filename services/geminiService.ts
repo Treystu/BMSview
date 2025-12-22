@@ -61,143 +61,16 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
     const analysisContext = { fileName: file.name, fileSize: file.size, forceReanalysis };
     log('info', 'Starting synchronous analysis.', analysisContext);
 
+    const endpoint = forceReanalysis
+        ? '/.netlify/functions/analyze?sync=true&force=true'
+        : '/.netlify/functions/analyze?sync=true';
+
     try {
-        // Offload file read + network call to a worker. If worker fails or times out, fall back to direct fetch.
-        if (typeof Worker !== 'undefined') {
-            try {
-                // Singleton worker management
-                const worker = getAnalysisWorker();
-                if (!worker) throw new Error('Failed to initialize analysis worker');
-
-                // Compute an absolute endpoint URL to ensure it works in WorkerGlobalScope
-                const endpoint = new URL(
-                    forceReanalysis
-                        ? '/.netlify/functions/analyze?sync=true&force=true'
-                        : '/.netlify/functions/analyze?sync=true',
-                    window.location.origin
-                ).toString();
-
-                const workerRef = worker;
-                const workerPromise = new Promise<Response>((resolve, reject) => {
-                    const messageId = Math.random().toString(36).substring(2);
-
-                    const timeout = setTimeout(() => {
-                        workerRef.removeEventListener('message', handleMessage);
-                        reject(new Error('Worker timed out after 60 seconds'));
-                    }, 60000);
-
-                    // We need a way to correlate messages if we ever do parallel calls,
-                    // but for now, the UI caller is sequential.
-                    function handleMessage(msg: MessageEvent) {
-                        const data = msg.data || {};
-
-                        // If we had multiple concurrent requests, we'd check an ID here.
-                        // For sequential, we just take the first result and cleanup.
-                        clearTimeout(timeout);
-                        workerRef.removeEventListener('message', handleMessage);
-
-                        if (data.error) {
-                            reject(new Error(data.error));
-                            return;
-                        }
-
-                        // Build a fake Response-like object
-                        const fakeResp = {
-                            ok: !!data.ok,
-                            status: data.status || 200,
-                            json: async () => data.json,
-                        } as unknown as Response;
-
-                        resolve(fakeResp);
-                    }
-
-                    workerRef.addEventListener('message', handleMessage);
-
-                    // Post the file, endpoint, and metadata
-                    try {
-                        workerRef.postMessage({
-                            file,
-                            endpoint,
-                            fileName: file.name,
-                            mimeType: file.type,
-                            messageId // Future-proofing for concurrency
-                        });
-                    } catch (postErr) {
-                        clearTimeout(timeout);
-                        workerRef.removeEventListener('message', handleMessage);
-                        reject(postErr);
-                    }
-                });
-
-                const response = await workerPromise;
-                const result: { analysis: AnalysisData } = await response.json();
-                if (!result || !result.analysis) {
-                    log('error', 'API response was successful but missing analysis data (worker).', result);
-                    throw new Error('API response was successful but missing analysis data.');
-                }
-                log('info', 'Synchronous analysis successful (worker).', { fileName: file.name });
-                return result.analysis;
-            } catch (workerErr) {
-                log('warn', 'Worker analysis failed; falling back to direct fetch.', { error: workerErr instanceof Error ? workerErr.message : String(workerErr) });
-                // Fall through to direct fetch
-            }
-        }
-
-        const imagePayload = await fileWithMetadataToBase64(file);
-
-        const controller = new AbortController();
-        // Give it a 60-second timeout.
-        const timeoutId = setTimeout(() => {
-            log('warn', 'Synchronous analysis request timed out on client after 60 seconds.');
-            controller.abort();
-        }, 60000);
-
-        const dataToSend = {
-            image: imagePayload,
-            // We pass sync=true to tell the backend to process immediately
-        };
-
-        const endpoint = forceReanalysis
-            ? '/.netlify/functions/analyze?sync=true&force=true'
-            : '/.netlify/functions/analyze?sync=true';
-
-        log('info', `Submitting analysis request to ${endpoint}`, analysisContext);
-
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dataToSend),
-            signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        log('info', 'Analyze API response received.', { status: response.status });
-        if (!response.ok) {
-            let errorBody;
-            // ***FIX: Declare errorText here to make it available in the outer scope.***
-            let errorText = 'Failed to read error response';
-            try {
-                // Read as text first, then try to parse as JSON
-                errorText = await response.text();
-                try {
-                    errorBody = JSON.parse(errorText);
-                } catch {
-                    errorBody = errorText;
-                }
-            } catch (e) {
-                // If response.text() fails, errorText will retain its default value
-                errorBody = errorText;
-                log('warn', 'Failed to read response body during error handling.', { e: e instanceof Error ? e.message : 'Unknown error' });
-            }
-            // ***FIX: errorText is now correctly scoped and will be included in the message.***
-            const errorMessage = (typeof errorBody === 'object' && errorBody?.error) ? errorBody.error : `Server responded with status ${response.status}: ${errorText}`;
-            throw new Error(errorMessage);
-        }
+        const responseJson = await performAnalysisRequest(file, endpoint, analysisContext);
 
         // In sync mode, the server returns the full AnalysisRecord directly.
         // We extract the 'analysis' part and also check for isDuplicate flag
-        const result: { analysis: AnalysisData; isDuplicate?: boolean; recordId?: string; timestamp?: string } = await response.json();
+        const result: { analysis: AnalysisData; isDuplicate?: boolean; recordId?: string; timestamp?: string } = responseJson;
 
         if (!result.analysis) {
             log('error', 'API response was successful but missing analysis data.', result);
@@ -218,12 +91,12 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
         return analysisWithMeta as AnalysisData;
 
     } catch (error) {
-        const isAbort = error instanceof Error && error.name === 'AbortError';
-        const errorMessage = isAbort ? 'Request was aborted due to timeout.' : (error instanceof Error ? error.message : 'An unknown client-side error occurred.');
-        log('error', 'Synchronous analysis failed.', { ...analysisContext, error: errorMessage, isTimeout: isAbort });
-        throw new Error(errorMessage);
+        log('error', 'Synchronous analysis failed.', { ...analysisContext, error: error instanceof Error ? error.message : String(error) });
+        throw error;
     }
 };
+
+import { calculateFileHash } from '../utils/clientHash';
 
 /**
  * Check if a file is a duplicate without performing full analysis.
@@ -243,88 +116,74 @@ export const checkFileDuplicate = async (file: File): Promise<{
     log('info', 'DUPLICATE_CHECK: Starting individual file check', { ...checkContext, event: 'FILE_CHECK_START' });
 
     try {
-        const readStartTime = Date.now();
-        const imagePayload = await fileWithMetadataToBase64(file);
-        const readDurationMs = Date.now() - readStartTime;
+        // OPTIMIZATION: Use hash-only check to avoid uploading the full image
+        // Calculate hash on client side
+        const hashStartTime = Date.now();
+        const hash = await calculateFileHash(file);
 
-        log('debug', 'DUPLICATE_CHECK: File read complete', {
-            fileName: file.name,
-            readDurationMs,
-            imageSize: imagePayload.image?.length || 0,
-            event: 'FILE_READ_COMPLETE'
-        });
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => {
-            log('warn', 'DUPLICATE_CHECK: Request timed out after 20 seconds', {
+        if (hash) {
+            log('debug', 'DUPLICATE_CHECK: Calculated client-side hash', {
                 fileName: file.name,
-                event: 'TIMEOUT'
+                hashPreview: hash.substring(0, 16) + '...',
+                durationMs: Date.now() - hashStartTime
             });
-            controller.abort();
-        }, 20000); // 20-second timeout for duplicate check (increased from 10s to handle batch checks better)
 
-        const dataToSend = {
-            image: imagePayload
-        };
-
-        const fetchStartTime = Date.now();
-        log('debug', 'DUPLICATE_CHECK: Calling backend API', {
-            fileName: file.name,
-            endpoint: '/.netlify/functions/analyze?sync=true&check=true',
-            event: 'API_CALL_START'
-        });
-
-        const response = await fetch('/.netlify/functions/analyze?sync=true&check=true', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dataToSend),
-            signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        const fetchDurationMs = Date.now() - fetchStartTime;
-        const totalDurationMs = Date.now() - startTime;
-
-        if (!response.ok) {
-            // Differentiate between expected and unexpected failures
-            if (response.status === 404 || response.status === 501) {
-                // Endpoint not implemented - expected, fall back gracefully
-                log('info', 'DUPLICATE_CHECK: Endpoint not available, treating as new file', {
-                    status: response.status,
+            // Use the batch endpoint for single file hash check
+            // This avoids sending the binary data over the network
+            const endpoint = '/.netlify/functions/check-duplicates-batch';
+            const payload = {
+                files: [{
                     fileName: file.name,
-                    event: 'ENDPOINT_NOT_AVAILABLE'
-                });
+                    hash: hash
+                }]
+            };
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.results && data.results.length > 0) {
+                    const result = data.results[0];
+                    log('info', 'DUPLICATE_CHECK: Hash-only check complete', {
+                        fileName: file.name,
+                        isDuplicate: !!result.isDuplicate,
+                        needsUpgrade: !!result.needsUpgrade,
+                        event: 'HASH_CHECK_SUCCESS'
+                    });
+
+                    return {
+                        isDuplicate: result.isDuplicate,
+                        needsUpgrade: result.needsUpgrade,
+                        recordId: result.recordId,
+                        timestamp: result.timestamp,
+                        analysisData: result.analysisData
+                    };
+                }
             } else {
-                // Unexpected error - log as warning
-                log('warn', 'DUPLICATE_CHECK: API error, treating as new file', {
-                    status: response.status,
-                    fileName: file.name,
-                    totalDurationMs,
-                    event: 'API_ERROR'
-                });
+                log('warn', 'DUPLICATE_CHECK: Hash check endpoint failed, falling back to legacy', { status: response.status });
             }
-            return { isDuplicate: false, needsUpgrade: false };
         }
 
-        const result: {
-            isDuplicate?: boolean;
-            needsUpgrade?: boolean;
-            recordId?: string;
-            timestamp?: string;
-            analysisData?: any;
-        } = await response.json();
+        // Fallback or if hash failing: Use worker (without resizing per user feedback) for check
+        // This uploads the file, which is slower but reliable
+        const endpoint = '/.netlify/functions/analyze?sync=true&check=true';
+        const responseJson = await performAnalysisRequest(file, endpoint, checkContext, 25000); // 25s timeout
+
+        const totalDurationMs = Date.now() - startTime;
+        const result = responseJson;
 
         // Enhanced logging with full result details
-        log('info', 'DUPLICATE_CHECK: Backend response received', {
+        log('info', 'DUPLICATE_CHECK: Backend response received (legacy path)', {
             fileName: file.name,
             isDuplicate: !!result.isDuplicate,
             needsUpgrade: !!result.needsUpgrade,
             hasRecordId: !!result.recordId,
             hasTimestamp: !!result.timestamp,
             hasAnalysisData: !!result.analysisData,
-            readDurationMs,      // Time to read file and convert to base64
-            fetchDurationMs,     // Time for HTTP request to backend (includes network latency)
             totalDurationMs,     // Total = read + fetch + overhead (JSON parsing, etc.)
             event: 'API_RESPONSE'
         });
@@ -343,6 +202,15 @@ export const checkFileDuplicate = async (file: File): Promise<{
         const isTimeout = error instanceof Error && error.name === 'AbortError';
         const totalDurationMs = Date.now() - startTime;
 
+        // Special handling for 404/501 (Endpoint not available) - usually propagated as Error
+        if (errorMessage.includes('404') || errorMessage.includes('501')) {
+            log('info', 'DUPLICATE_CHECK: Endpoint not available, treating as new file', {
+                fileName: file.name,
+                event: 'ENDPOINT_NOT_AVAILABLE'
+            });
+            return { isDuplicate: false, needsUpgrade: false };
+        }
+
         log('warn', 'DUPLICATE_CHECK: File check failed, treating as new file', {
             ...checkContext,
             error: errorMessage,
@@ -353,3 +221,116 @@ export const checkFileDuplicate = async (file: File): Promise<{
         return { isDuplicate: false, needsUpgrade: false };
     }
 };
+
+/**
+ * Shared helper to perform analysis requests (analyze or duplicate check)
+ * Tries to use Worker (for resizing efficiency) then falls back to main thread.
+ */
+async function performAnalysisRequest(file: File, relativeEndpoint: string, context: object, timeoutMs: number = 60000): Promise<any> {
+
+    // 1. Try Worker Flow
+    if (typeof Worker !== 'undefined') {
+        try {
+            const worker = getAnalysisWorker();
+            if (!worker) throw new Error('Failed to initialize analysis worker');
+            const activeWorker = worker;
+
+            // Compute absolute endpoint
+            const endpoint = new URL(relativeEndpoint, window.location.origin).toString();
+
+            const messageId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+            const workerPromise = new Promise<any>((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    activeWorker.removeEventListener('message', handleMessage);
+                    reject(new Error(`Worker timed out after ${timeoutMs}ms`));
+                }, timeoutMs);
+
+                function handleMessage(msg: MessageEvent) {
+                    const data = msg.data || {};
+                    // Match by messageId to allow concurrency
+                    if (data.messageId !== messageId) return;
+
+                    clearTimeout(timeout);
+                    activeWorker.removeEventListener('message', handleMessage);
+
+                    if (data.error) {
+                        reject(new Error(data.error));
+                        return;
+                    }
+                    if (!data.ok) {
+                        reject(new Error(`Worker request failed with status ${data.status}`));
+                        return;
+                    }
+
+                    resolve(data.json);
+                }
+
+                activeWorker.addEventListener('message', handleMessage);
+
+                try {
+                    activeWorker.postMessage({
+                        file,
+                        endpoint,
+                        fileName: file.name,
+                        mimeType: file.type,
+                        messageId
+                    });
+                } catch (postErr) {
+                    clearTimeout(timeout);
+                    activeWorker.removeEventListener('message', handleMessage);
+                    reject(postErr);
+                }
+            });
+
+            const result = await workerPromise;
+            return result;
+
+        } catch (workerErr) {
+            log('warn', 'Worker request failed; falling back to direct fetch.', { error: workerErr instanceof Error ? workerErr.message : String(workerErr) });
+            // Fall through to direct fetch
+        }
+    }
+
+    // 2. Fallback: Direct Fetch (Main Thread)
+    const imagePayload = await fileWithMetadataToBase64(file);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+        log('warn', `Request timed out on client after ${timeoutMs}ms.`);
+        controller.abort();
+    }, timeoutMs);
+
+    try {
+        log('info', `Submitting request to ${relativeEndpoint} (Basic Fetch)`, context);
+
+        const response = await fetch(relativeEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: imagePayload }),
+            signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            let errorText = 'Failed to read error response';
+            try {
+                errorText = await response.text();
+            } catch (e) {
+                // ignore
+            }
+            // Try to parse JSON error if possible
+            let errorBody;
+            try { errorBody = JSON.parse(errorText); } catch { }
+
+            const errorMessage = (typeof errorBody === 'object' && errorBody?.error) ? errorBody.error : `Server responded with status ${response.status}: ${errorText}`;
+            throw new Error(errorMessage);
+        }
+
+        return await response.json();
+    } catch (error) {
+        clearTimeout(timeoutId);
+        throw error;
+    }
+}
