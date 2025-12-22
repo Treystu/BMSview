@@ -146,7 +146,7 @@ exports.handler = async function (event, context) {
 
         // --- GET Request Handler ---
         if (event.httpMethod === 'GET') {
-            const { id, systemId, all, page = '1', limit = '25', merged, startDate, endDate, downsample } = event.queryStringParameters || {};
+            const { id, systemId, all, page = '1', limit = '25', merged, startDate, endDate, downsample, updatedSince } = event.queryStringParameters || {};
 
             if (id) {
                 // Fetch single record by ID
@@ -196,10 +196,17 @@ exports.handler = async function (event, context) {
             }
 
             if (all === 'true') {
-                // Fetch ALL history records (used for cache building, potentially large)
-                log.info('Fetching ALL history records', logContext);
-                const allHistory = await historyCollection.find({}, { projection: { _id: 0 } }).sort({ timestamp: -1 }).toArray();
-                timer.end({ all: true, count: allHistory.length });
+                // Fetch ALL or INCREMENTAL history records
+                const query = {};
+                if (updatedSince) {
+                    query.updatedAt = { $gt: updatedSince };
+                    log.info('Fetching INCREMENTAL history records', { ...logContext, updatedSince });
+                } else {
+                    log.info('Fetching ALL history records', logContext);
+                }
+
+                const allHistory = await historyCollection.find(query, { projection: { _id: 0 } }).sort({ timestamp: -1 }).toArray();
+                timer.end({ all: true, incremental: !!updatedSince, count: allHistory.length });
                 log.exit(200);
                 return respond(200, allHistory, headers);
             }

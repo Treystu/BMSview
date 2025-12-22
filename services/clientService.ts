@@ -577,79 +577,74 @@ export const getAnalysisHistory = async (page = 1, limit = 25, options: FetchLis
 };
 
 export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => void, onComplete: () => void): Promise<void> => {
-    log('info', 'Starting to stream all history records.');
-    const limit = 200; // Fetch in chunks of 200
-    let page = 1;
-    let hasMore = true;
-    const seenIds = new Set<string>();
-    let success = true;
+    log('info', 'Starting smart history sync.');
 
-    while (hasMore) {
-        try {
-            log('info', 'Fetching history page for streaming.', { page, limit });
-            // Use cache-first strategy to avoid slamming the API if data is locally available
-            const response = await getAnalysisHistory(page, limit, { forceRefresh: false });
+    try {
+        let maxUpdatedAt = '';
+        let localCount = 0;
 
-            // Track IDs for cache reconciliation
-            response.items.forEach(item => {
-                if (item.id) seenIds.add(item.id);
-            });
+        // 1. Load from Local Cache First (Instant UI)
+        if (isLocalCacheEnabled()) {
+            const cacheModule = await loadLocalCacheModule();
+            if (cacheModule) {
+                try {
+                    const localRecords = await cacheModule.historyCache.getAll();
+                    localCount = localRecords.length;
 
-            if (response.items.length === 0) {
-                log('info', 'History stream hit empty page, stopping.', { page });
-                hasMore = false;
-                continue;
-            }
+                    if (localCount > 0) {
+                        log('info', `Loaded ${localCount} records from local cache.`, { count: localCount });
 
-            onData(response.items);
+                        // Send local data to UI immediately
+                        onData(localRecords);
 
-            const totalItems = response.total;
-            if (typeof totalItems === 'number' && Number.isFinite(totalItems)) {
-                if (page * limit >= totalItems) {
-                    hasMore = false;
-                } else {
-                    page++;
+                        // Find the most recent update timestamp
+                        // Explicitly check for strings to avoid runtime errors
+                        maxUpdatedAt = localRecords.reduce((max, record) => {
+                            if (!record.updatedAt) return max;
+                            return record.updatedAt > max ? record.updatedAt : max;
+                        }, '');
+                    }
+                } catch (err) {
+                    log('warn', 'Failed to load local history cache.', { error: err instanceof Error ? err.message : String(err) });
+                    // Continue to full fetch if cache fails
                 }
-            } else if (response.items.length < limit) {
-                hasMore = false;
-            } else {
-                page++;
-            }
-        } catch (error) {
-            log('error', 'Error while streaming history data. Stopping stream.', { error: error instanceof Error ? error.message : String(error) });
-            hasMore = false; // Stop on error
-            success = false;
-        }
-    }
-
-    // Perform cache reconciliation ONLY if sync was successful
-    if (success && isLocalCacheEnabled()) {
-        const cacheModule = await loadLocalCacheModule();
-        if (cacheModule) {
-            try {
-                const cachedRecords = await cacheModule.historyCache.getAll();
-                // Only delete records that are marked as 'synced' (server records)
-                // Preserve 'pending' records (local changes waiting to sync)
-                const recordsToDelete = cachedRecords.filter(record =>
-                    record._syncStatus === 'synced' && !seenIds.has(record.id)
-                );
-
-                if (recordsToDelete.length > 0) {
-                    log('info', `Reconciling cache: Deleting ${recordsToDelete.length} orphaned records.`);
-                    // Delete in batches to avoid blocking
-                    const deletePromises = recordsToDelete.map(record => cacheModule.historyCache.delete(record.id));
-                    await Promise.all(deletePromises);
-                } else {
-                    log('info', 'Cache reconciliation complete: No orphaned records found.');
-                }
-            } catch (error) {
-                log('warn', 'Failed to reconcile cache deletions.', { error: error instanceof Error ? error.message : String(error) });
             }
         }
-    }
 
-    log('info', 'Finished streaming all history records.');
-    onComplete();
+        // 2. Fetch Updates from Server (Incremental)
+        let endpoint = 'history?all=true';
+        if (maxUpdatedAt) {
+            log('info', 'Performing incremental sync.', { updatedSince: maxUpdatedAt });
+            endpoint += `&updatedSince=${encodeURIComponent(maxUpdatedAt)}`;
+        } else {
+            log('info', 'Performing full sync (no local data).');
+        }
+
+        const serverResponse = await apiFetch<AnalysisRecord[]>(endpoint);
+
+        if (serverResponse && Array.isArray(serverResponse) && serverResponse.length > 0) {
+            log('info', `Received ${serverResponse.length} new/updated records from server.`);
+
+            // 3. Update Cache
+            if (isLocalCacheEnabled()) {
+                const cacheModule = await loadLocalCacheModule();
+                if (cacheModule) {
+                    await cacheModule.historyCache.bulkPut(serverResponse, 'synced');
+                }
+            }
+
+            // 4. Update UI with new data
+            onData(serverResponse);
+        } else {
+            log('info', 'No new records from server.');
+        }
+
+    } catch (error) {
+        log('error', 'Smart history sync failed.', { error: error instanceof Error ? error.message : String(error) });
+    } finally {
+        log('info', 'Finished smart history sync.');
+        onComplete();
+    }
 };
 
 /**
