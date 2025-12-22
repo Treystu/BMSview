@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getHourlySocPredictions, getMergedTimelineData, getSystemAnalytics, SystemAnalytics, type MergedDataPoint } from '../services/clientService';
+import { getHourlySocPredictions, getSystemAnalytics, getUnifiedHistory, syncWeather, SystemAnalytics, type UnifiedTimelinePoint } from '../services/clientService';
 import { calculateSystemAnalytics } from '../src/utils/analytics';
 import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData } from '../types';
 import AlertAnalysis from './admin/AlertAnalysis';
@@ -90,46 +90,40 @@ const mapRecordToPoint = (r: AnalysisRecord) => {
 /**
  * Convert merged data point to chart point format
  */
-const mapMergedPointToChartPoint = (p: MergedDataPoint) => {
+/**
+ * Convert unified point to chart point format
+ */
+const mapUnifiedPointToChartPoint = (p: UnifiedTimelinePoint) => {
+    // If it's already an analysis record, map it normally
+    if (p.type === 'analysis') {
+        return mapRecordToPoint(p.data as AnalysisRecord);
+    }
+
+    // It is a weather point
+    const weather = p.data;
     const point: { [key: string]: any } = {
         timestamp: p.timestamp,
-        recordCount: p.dataPoints || 1,
+        recordCount: 1,
         anomalies: [],
-        source: p.source
+        source: 'weather'
     };
 
     Object.keys(METRICS).forEach(m => {
         const metric = m as MetricKey;
-        const { multiplier = 1, anomaly } = METRICS[metric];
+        const { source, multiplier = 1 } = METRICS[metric];
 
-        // Special handling for irradiance from merged data
         let value;
-        const data = p.data as any;
+        // Weather points only provide weather metrics (and estimated irradiance)
         if (metric === 'irradiance') {
-            value = data.estimated_irradiance_w_m2 ?? null;
+            value = weather.estimated_irradiance_w_m2 ?? null;
+        } else if (source === 'weather') {
+            value = weather[metric as keyof WeatherData];
         } else {
-            value = data[metric];
+            value = null; // Battery metrics are null for weather-only points
         }
 
         if (value != null && typeof value === 'number') {
-            const finalValue = value * multiplier;
-            point[metric] = finalValue;
-
-            // Also include min/max if available (from downsampling)
-            if (data[`${metric}_min`] !== undefined) {
-                point[`${metric}_min`] = (data[`${metric}_min`] as number) * multiplier;
-            }
-            if (data[`${metric}_max`] !== undefined) {
-                point[`${metric}_max`] = (data[`${metric}_max`] as number) * multiplier;
-            }
-            if (data[`${metric}_avg`] !== undefined) {
-                point[`${metric}_avg`] = (data[`${metric}_avg`] as number) * multiplier;
-            }
-
-            if (anomaly) {
-                const anomalyResult = anomaly(value);
-                if (anomalyResult) point.anomalies.push({ ...anomalyResult, key: metric });
-            }
+            point[metric] = value * multiplier;
         } else {
             point[metric] = null;
         }
@@ -218,9 +212,7 @@ const ChartControls: React.FC<{
     setManualBucketSize: (size: string | null) => void;
     bandEnabled: boolean;
     setBandEnabled: (enabled: boolean) => void;
-    useMergedData: boolean;
-    setUseMergedData: (enabled: boolean) => void;
-}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, averagingEnabled, setAveragingEnabled, manualBucketSize, setManualBucketSize, bandEnabled, setBandEnabled, useMergedData, setUseMergedData }) => {
+}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, averagingEnabled, setAveragingEnabled, manualBucketSize, setManualBucketSize, bandEnabled, setBandEnabled }) => {
     const [isMetricConfigOpen, setIsMetricConfigOpen] = useState(false);
     const metricConfigRef = useRef<HTMLDivElement>(null);
 
@@ -363,18 +355,7 @@ const ChartControls: React.FC<{
                             </label>
                         </div>
 
-                        {/* Merged Data Toggle */}
-                        <div className="flex items-center gap-3">
-                            <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer" title="Include continuous hourly weather and solar data (even when BMS data is missing)">
-                                <input
-                                    type="checkbox"
-                                    checked={useMergedData}
-                                    onChange={(e) => setUseMergedData(e.target.checked)}
-                                    className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-secondary focus:ring-secondary"
-                                />
-                                <span>☁️ Continuous Weather / Solar</span>
-                            </label>
-                        </div>
+
 
                         <div className="relative" ref={metricConfigRef}>
                             <button onClick={() => setIsMetricConfigOpen(o => !o)} className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md transition-colors">Configure Metrics</button>
@@ -920,7 +901,7 @@ const HourlyAverageChart: React.FC<{
     const { yScale, yTicks, yDomainMin, xBandwidth } = useMemo(() => {
         let allValues = [0]; // Include 0 in the domain
         hourlyAverages.forEach(d => {
-            const metricData = d.metrics[metricKey];
+            const metricData = (d.metrics as any)[metricKey];
             if (metricData) {
                 if ('avg' in metricData) allValues.push(metricData.avg);
                 if ('avgCharge' in metricData) allValues.push(metricData.avgCharge);
@@ -987,7 +968,7 @@ const HourlyAverageChart: React.FC<{
 
                 {/* Bars */}
                 {hourlyAverages.map(d => {
-                    const metricData = d.metrics[metricKey];
+                    const metricData = (d.metrics as any)[metricKey];
                     if (!metricData) return null;
 
                     return (
@@ -1299,7 +1280,6 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [predictiveData, setPredictiveData] = useState<any | null>(null);
     const [predictiveLoading, setPredictiveLoading] = useState(false);
     const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false); // New: separate analytics loading
-    const [useMergedData, setUseMergedData] = useState<boolean>(true); // Default to true (Continuous Weather)
 
     const [zoomPercentage, setZoomPercentage] = useState<number>(100);
 
@@ -1311,10 +1291,9 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             endDate,
             metricConfig: Object.keys(metricConfig).sort(),
             zoomPercentage,
-            chartView,
-            useMergedData
+            chartView
         });
-    }, [selectedSystemId, startDate, endDate, metricConfig, zoomPercentage, chartView, useMergedData]);
+    }, [selectedSystemId, startDate, endDate, metricConfig, zoomPercentage, chartView]);
 
     const chartDimensions = useMemo(() => ({
         WIDTH: 1200, CHART_HEIGHT: 450, BRUSH_HEIGHT: 80,
@@ -1484,43 +1463,30 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
             let chartDataPoints: any[] = [];
 
-            if (useMergedData) {
-                // Use merged data API (BMS + Cloud)
-                const mergedResponse = await getMergedTimelineData(
-                    selectedSystemId,
-                    queryStartDate,
-                    queryEndDate,
-                    true, // Enable downsampling
-                    2000 // Max points
-                );
+            // 1. Sync Weather Data (Local vs Server check)
+            // Fire and forget - will update cache
+            await syncWeather(selectedSystemId, queryStartDate, queryEndDate);
 
-                // Convert merged data to chart points
-                chartDataPoints = mergedResponse.data.map(mapMergedPointToChartPoint);
-            } else {
-                // Use existing BMS-only data from props
-                const systemHistory = history.filter(r => r.systemId === selectedSystemId).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+            // 2. Get Unified History (Memory join of History + Weather from Cache)
+            const unifiedTimeline = await getUnifiedHistory(selectedSystemId);
 
-                const historyWithSoh = systemHistory.map(r => {
-                    let soh = null;
-                    if (ratedCapacity && ratedCapacity > 0 && r.analysis?.fullCapacity && r.analysis.fullCapacity > 0) {
-                        soh = (r.analysis.fullCapacity / ratedCapacity) * 100;
-                    }
-                    return {
-                        ...r,
-                        analysis: { ...r.analysis, soh } as AnalysisData & { soh: number | null },
-                    };
-                });
+            // Filter by date range (client-side filter on unified stream)
+            const startLimit = new Date(queryStartDate).getTime();
+            const endLimit = new Date(queryEndDate).getTime();
 
-                const filteredHistory = historyWithSoh.filter(r => (!startDate || new Date(r.timestamp) >= new Date(startDate)) && (!endDate || new Date(r.timestamp) <= new Date(endDate)));
+            const filteredData = unifiedTimeline.filter(p => {
+                const t = new Date(p.timestamp).getTime();
+                return t >= startLimit && t <= endLimit;
+            });
 
-                if (filteredHistory.length < 2) {
-                    setTimelineData(null);
-                    setIsGenerating(false);
-                    return;
-                }
-
-                chartDataPoints = filteredHistory.map(mapRecordToPoint);
+            if (filteredData.length === 0) {
+                setTimelineData(null);
+                setIsGenerating(false);
+                return;
             }
+
+            // 3. Process into Chart Points
+            chartDataPoints = filteredData.map(mapUnifiedPointToChartPoint);
 
             if (chartDataPoints.length < 2) {
                 setTimelineData(null);
@@ -1560,7 +1526,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             setIsGenerating(false);
             setIsAnalyticsLoading(false);
         }
-    }, [selectedSystemId, history, systems, startDate, endDate, chartDimensions, averagingEnabled, manualBucketSize, useMergedData]);
+    }, [selectedSystemId, history, systems, startDate, endDate, chartDimensions, averagingEnabled, manualBucketSize]);
 
     // Auto-generate chart when system is selected or date range changes
     useEffect(() => {
@@ -1592,8 +1558,6 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                 setManualBucketSize={setManualBucketSize}
                 bandEnabled={bandEnabled}
                 setBandEnabled={setBandEnabled}
-                useMergedData={useMergedData}
-                setUseMergedData={setUseMergedData}
             />
             <div className="mt-4 min-h-[600px] relative">
                 {isGenerating && (

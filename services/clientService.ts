@@ -2951,3 +2951,79 @@ export const getMergedTimelineData = async (
     return data;
 };
 
+export const syncWeather = async (systemId: string, startDate: string, endDate: string): Promise<void> => {
+    if (!isLocalCacheEnabled()) return;
+
+    log('info', 'Syncing weather data for unified timeline.', { systemId, startDate, endDate });
+
+    try {
+        const cacheModule = await loadLocalCacheModule();
+        if (!cacheModule) return;
+
+        // 1. Fetch from Backend (Weather Only)
+        // We use the history endpoint with weatherOnly=true
+        const endpoint = `history?weatherOnly=true&systemId=${systemId}&startDate=${startDate}&endDate=${endDate}`;
+        const weatherData = await apiFetch<any[]>(endpoint);
+
+        if (Array.isArray(weatherData) && weatherData.length > 0) {
+            log('info', `Received ${weatherData.length} weather records.`, { systemId });
+
+            // 2. Cache Locally
+            // Map backend 'source' format to local cache format if needed, 
+            // but our v3 schema in localCache.ts expects {systemId, timestamp, ...} which the backend now provides.
+            await cacheModule.weatherCache.bulkPut(weatherData, 'synced');
+        } else {
+            log('info', 'No weather data received for range.', { systemId });
+        }
+    } catch (error) {
+        log('error', 'Failed to sync weather data.', { error: error instanceof Error ? error.message : String(error) });
+    }
+};
+
+export interface UnifiedTimelinePoint {
+    type: 'analysis' | 'weather';
+    timestamp: string;
+    data: any;
+}
+
+export const getUnifiedHistory = async (systemId: string): Promise<UnifiedTimelinePoint[]> => {
+    log('info', 'Generating unified timeline.', { systemId });
+
+    // Default to empty arrays if cache disabled
+    let historyRecords: AnalysisRecord[] = [];
+    let weatherRecords: any[] = []; // CachedWeatherData
+
+    if (isLocalCacheEnabled()) {
+        const cacheModule = await loadLocalCacheModule();
+        if (cacheModule) {
+            try {
+                const [history, weather] = await Promise.all([
+                    cacheModule.historyCache.getBySystemId(systemId),
+                    cacheModule.weatherCache.getBySystemId(systemId)
+                ]);
+                historyRecords = history;
+                weatherRecords = weather;
+            } catch (err) {
+                log('warn', 'Failed to load data for unified timeline.', { error: String(err) });
+            }
+        }
+    } else {
+        // Fallback or warning
+        log('warn', 'Local cache disabled, unified timeline may be empty.');
+    }
+
+    // Unite and Sort
+    const unified: UnifiedTimelinePoint[] = [
+        ...historyRecords.map(r => ({ type: 'analysis' as const, timestamp: r.timestamp, data: r })),
+        ...weatherRecords.map(w => ({ type: 'weather' as const, timestamp: w.timestamp, data: w }))
+    ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    log('info', `Unified timeline generated.`, {
+        total: unified.length,
+        history: historyRecords.length,
+        weather: weatherRecords.length
+    });
+
+    return unified;
+};
+

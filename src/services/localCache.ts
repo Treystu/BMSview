@@ -33,7 +33,8 @@ export interface CachedAnalysisRecord extends AnalysisRecord, CachedRecord { }
 
 export interface CachedWeatherData extends WeatherData, CachedRecord {
     id: string;
-    location: string; // lat,lng key
+    systemId: string;
+    timestamp: string; // ISO 8601 UTC
 }
 
 export interface CachedAnalytics extends CachedRecord {
@@ -82,8 +83,18 @@ class BMSviewCache extends Dexie {
             analytics: 'id, updatedAt, _syncStatus, systemId, metric, timestamp, [updatedAt+_syncStatus]',
             weather: 'id, updatedAt, _syncStatus, location, [updatedAt+_syncStatus]',
             metadata: 'id, collection, lastModified'
-        }).upgrade(() => {
-            // No data migration needed, just index creation
+        });
+
+        // Schema version 3: Time-series weather support (Unified Timeline)
+        this.version(3).stores({
+            systems: 'id, updatedAt, _syncStatus, name, chemistry, [updatedAt+_syncStatus]',
+            history: 'id, updatedAt, _syncStatus, timestamp, systemId, dlNumber, [systemId+timestamp], [updatedAt+_syncStatus]',
+            analytics: 'id, updatedAt, _syncStatus, systemId, metric, timestamp, [updatedAt+_syncStatus]',
+            weather: 'id, updatedAt, _syncStatus, systemId, timestamp, [systemId+timestamp], [updatedAt+_syncStatus]',
+            metadata: 'id, collection, lastModified'
+        }).upgrade(async (trans) => {
+            // Clear old weather data as format is incompatible
+            await trans.table('weather').clear();
         });
     }
 }
@@ -410,30 +421,58 @@ export const analyticsCache = {
 /**
  * WEATHER COLLECTION - Cached Weather Data
  */
+/**
+ * WEATHER COLLECTION - Cached Weather Data (Time-series)
+ */
 export const weatherCache = {
-    async get(location: string): Promise<CachedWeatherData | undefined> {
+    /**
+     * Get weather by system ID (time-series)
+     */
+    async getBySystemId(systemId: string): Promise<CachedWeatherData[]> {
         try {
-            return await db.weather.where('location').equals(location).first();
+            return await db.weather.where('systemId').equals(systemId).sortBy('timestamp');
         } catch (error) {
-            log('error', `Failed to get weather for ${location}`, { error });
+            log('error', `Failed to get weather for system ${systemId}`, { error });
             throw error;
         }
     },
 
-    async put(location: string, weather: WeatherData, syncStatus: SyncStatus = 'synced'): Promise<void> {
+    /**
+     * Get weather by system ID and time range
+     */
+    async getBySystemIdAndRange(systemId: string, startDate: string, endDate: string): Promise<CachedWeatherData[]> {
         try {
-            const updatedAt = nowUtc();
-            const cached: CachedWeatherData = {
-                ...weather,
-                id: location,
-                location,
-                updatedAt,
-                _syncStatus: syncStatus
-            };
-            await db.weather.put(cached);
-            log('debug', `Cached weather for ${location}`);
+            return await db.weather
+                .where('[systemId+timestamp]')
+                .between([systemId, startDate], [systemId, endDate], true, true)
+                .toArray();
         } catch (error) {
-            log('error', 'Failed to cache weather', { error });
+            log('error', `Failed to get weather range for system ${systemId}`, { error });
+            throw error;
+        }
+    },
+
+    /**
+     * Bulk put weather data
+     */
+    async bulkPut(records: CachedWeatherData[], syncStatus: SyncStatus = 'synced'): Promise<void> {
+        try {
+            await db.weather.bulkPut(records);
+            log('debug', `Bulk cached ${records.length} weather records`);
+        } catch (error) {
+            log('error', 'Failed to bulk cache weather', { error });
+            throw error;
+        }
+    },
+
+    /**
+     * Clear weather for a system
+     */
+    async clearForSystem(systemId: string): Promise<void> {
+        try {
+            await db.weather.where('systemId').equals(systemId).delete();
+        } catch (error) {
+            log('error', `Failed to clear weather for ${systemId}`, { error });
             throw error;
         }
     }

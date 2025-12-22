@@ -157,6 +157,49 @@ exports.handler = async function (event, context) {
                 return record ? respond(200, record, headers) : respond(404, { error: "Record not found." }, headers);
             }
 
+            // --- Weather-Only Fetch (Standardized Timeline) ---
+            if (event.queryStringParameters.weatherOnly === 'true' && systemId && startDate && endDate) {
+                log.info('Fetching raw weather/solar data', { systemId, startDate, endDate });
+
+                try {
+                    const hourlyWeatherCollection = await getCollection("hourly-weather");
+
+                    // Fetch weather data
+                    const weatherData = await hourlyWeatherCollection.find({
+                        systemId: systemId,
+                        date: { $gte: startDate.split('T')[0], $lte: endDate.split('T')[0] }
+                    }).toArray();
+
+                    // Process and flatten to hourly points
+                    let flatPoints = [];
+
+                    weatherData.forEach(day => {
+                        if (day.hourlyData && Array.isArray(day.hourlyData)) {
+                            day.hourlyData.forEach(hour => {
+                                // Ensure point is within exact requested range
+                                if (hour.timestamp >= startDate && hour.timestamp <= endDate) {
+                                    flatPoints.push({
+                                        ...hour,
+                                        systemId: systemId,
+                                        source: 'weather'
+                                    });
+                                }
+                            });
+                        }
+                    });
+
+                    // Sort by timestamp
+                    flatPoints.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                    timer.end({ weatherOnly: true, count: flatPoints.length });
+                    log.exit(200);
+                    return respond(200, flatPoints, headers);
+                } catch (err) {
+                    log.error('Failed to fetch weather data', { error: err.message, stack: err.stack });
+                    return respond(500, { error: 'Failed to fetch weather data: ' + err.message }, headers);
+                }
+            }
+
             // Merged timeline data (BMS + Cloud)
             if (merged === 'true' && systemId && startDate && endDate) {
                 log.info('Fetching merged timeline data', { systemId, startDate, endDate });
