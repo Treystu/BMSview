@@ -299,6 +299,13 @@ async function createIndexes(db) {
         log.info('Creating indexes...');
         const historyCollection = db.collection('history');
         await historyCollection.createIndex({ systemId: 1, timestamp: -1 });
+
+        const hourlyWeatherCollection = db.collection('hourly-weather');
+        await hourlyWeatherCollection.createIndex({ systemId: 1, date: 1 });
+
+        const hourlySolarCollection = db.collection('hourly-solar-irradiance');
+        await hourlySolarCollection.createIndex({ systemId: 1, date: 1 });
+
         log.info('Indexes created successfully.');
     } catch (error) {
         log.error('Error creating indexes', { error: error.message, stack: error.stack });

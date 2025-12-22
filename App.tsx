@@ -278,10 +278,10 @@ function App() {
 
           } catch (err) {
             // 4. Handle error for this specific file
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-            log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
+            const message = err instanceof Error ? err.message : 'An unknown error occurred.';
+            log('error', 'Analysis request failed for one file.', { error: message, fileName: file.name });
 
-            if (errorMessage.toLowerCase().includes('duplicate')) {
+            if (message.toLowerCase().includes('duplicate')) {
               dispatch({
                 type: 'SYNC_ANALYSIS_COMPLETE',
                 payload: {
@@ -296,7 +296,7 @@ function App() {
                 },
               });
             } else {
-              dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${errorMessage}` } });
+              dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${message}` } });
             }
           }
         }
@@ -324,9 +324,9 @@ function App() {
               }
             });
           } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-            log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
-            dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${errorMessage}` } });
+            const message = err instanceof Error ? err.message : 'An unknown error occurred.';
+            log('error', 'Analysis request failed for one file.', { error: message, fileName: file.name });
+            dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${message}` } });
           }
         }
       }

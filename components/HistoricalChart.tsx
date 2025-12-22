@@ -104,10 +104,11 @@ const mapMergedPointToChartPoint = (p: MergedDataPoint) => {
 
         // Special handling for irradiance from merged data
         let value;
+        const data = p.data as any;
         if (metric === 'irradiance') {
-            value = (p.data as Record<string, any>).estimated_irradiance_w_m2 ?? null;
+            value = data.estimated_irradiance_w_m2 ?? null;
         } else {
-            value = p.data[metric];
+            value = data[metric];
         }
 
         if (value != null && typeof value === 'number') {
@@ -115,14 +116,14 @@ const mapMergedPointToChartPoint = (p: MergedDataPoint) => {
             point[metric] = finalValue;
 
             // Also include min/max if available (from downsampling)
-            if (p.data[`${metric}_min`] !== undefined) {
-                point[`${metric}_min`] = p.data[`${metric}_min`]! * multiplier;
+            if (data[`${metric}_min`] !== undefined) {
+                point[`${metric}_min`] = (data[`${metric}_min`] as number) * multiplier;
             }
-            if (p.data[`${metric}_max`] !== undefined) {
-                point[`${metric}_max`] = p.data[`${metric}_max`]! * multiplier;
+            if (data[`${metric}_max`] !== undefined) {
+                point[`${metric}_max`] = (data[`${metric}_max`] as number) * multiplier;
             }
-            if (p.data[`${metric}_avg`] !== undefined) {
-                point[`${metric}_avg`] = p.data[`${metric}_avg`]! * multiplier;
+            if (data[`${metric}_avg`] !== undefined) {
+                point[`${metric}_avg`] = (data[`${metric}_avg`] as number) * multiplier;
             }
 
             if (anomaly) {
@@ -364,14 +365,14 @@ const ChartControls: React.FC<{
 
                         {/* Merged Data Toggle */}
                         <div className="flex items-center gap-3">
-                            <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer" title="Include hourly cloud cover and solar irradiance data">
+                            <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer" title="Include continuous hourly weather and solar data (even when BMS data is missing)">
                                 <input
                                     type="checkbox"
                                     checked={useMergedData}
                                     onChange={(e) => setUseMergedData(e.target.checked)}
                                     className="form-checkbox h-4 w-4 bg-gray-700 border-gray-600 text-secondary focus:ring-secondary"
                                 />
-                                <span>☁️ Hourly Weather</span>
+                                <span>☁️ Continuous Weather / Solar</span>
                             </label>
                         </div>
 
@@ -1298,7 +1299,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [predictiveData, setPredictiveData] = useState<any | null>(null);
     const [predictiveLoading, setPredictiveLoading] = useState(false);
     const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false); // New: separate analytics loading
-    const [useMergedData, setUseMergedData] = useState<boolean>(false); // New: toggle merged data
+    const [useMergedData, setUseMergedData] = useState<boolean>(true); // Default to true (Continuous Weather)
 
     const [zoomPercentage, setZoomPercentage] = useState<number>(100);
 
@@ -1449,11 +1450,17 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             // This is MUCH faster than hitting the /system-analytics backend for 2k-4k records.
             const systemHistory = history.filter(r => r.systemId === selectedSystemId);
 
-            if (systemHistory.length > 50) {
-                // If we have enough local data, calculate analytics instantly
+            // Filter by timeframe to ensure "Recurring Alert Analysis" is accurate
+            const filteredForAnalytics = systemHistory.filter(r =>
+                (!startDate || new Date(r.timestamp) >= new Date(startDate)) &&
+                (!endDate || new Date(r.timestamp) <= new Date(endDate))
+            );
+
+            if (filteredForAnalytics.length > 5) { // Lowered threshold since we are filtering by timeframe
+                // If we have local data for this timeframe, calculate analytics instantly
                 setIsAnalyticsLoading(true);
                 try {
-                    const localAnalytics = calculateSystemAnalytics(systemHistory);
+                    const localAnalytics = calculateSystemAnalytics(filteredForAnalytics);
                     setAnalyticsData(localAnalytics);
                     setIsAnalyticsLoading(false);
                 } catch (err) {

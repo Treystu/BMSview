@@ -21,7 +21,7 @@ function linearInterpolate(y0, y1, t0, t1, t) {
   try {
     if (t1 === t0) return y0; // Avoid division by zero
     const ratio = (t - t0) / (t1 - t0);
-  return y0 + ratio * (y1 - y0);
+    return y0 + ratio * (y1 - y0);
   } catch (error) {
     console.error('Error in linearInterpolate:', error);
     return y0;
@@ -83,12 +83,12 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
   // Parse start/end to get date range
   const startDateObj = new Date(startDate);
   const endDateObj = new Date(endDate);
-  
+
   // Get all days in range
   const dateQueries = [];
   const currentDate = new Date(startDateObj);
   currentDate.setHours(0, 0, 0, 0);
-  
+
   while (currentDate <= endDateObj) {
     const dateStr = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD
     dateQueries.push(dateStr);
@@ -108,14 +108,14 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
 
   // Extract hourly data points from cloud docs
   const cloudPoints = [];
-  
+
   for (const doc of cloudDocs) {
     if (!doc.hourlyData || !Array.isArray(doc.hourlyData)) continue;
-    
+
     for (const hourData of doc.hourlyData) {
       const hourTimestamp = hourData.timestamp;
       const hourDate = new Date(hourTimestamp);
-      
+
       // Only include if within our time range
       if (hourDate >= startDateObj && hourDate <= endDateObj) {
         cloudPoints.push({
@@ -142,22 +142,28 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
     bmsTimestampMap.set(point.timestamp, point);
   }
 
-  // Add interpolated BMS data between cloud hourly points
-  const mergedPoints = [...bmsPoints];
-
-  // Sort cloud points by timestamp
+  // Sort cloud points by timestamp to enable two-pointer approach
   cloudPoints.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-  // For each cloud point, if no BMS data exists at that exact timestamp, create an estimated point
-  for (let i = 0; i < cloudPoints.length; i++) {
-    const cloudPoint = cloudPoints[i];
+  const mergedPoints = [...bmsPoints];
+
+  // OPTIMIZED: Use Two-Pointer approach to find surrounding BMS points in O(N+M) instead of O(N*M)
+  let bmsPointer = 0;
+
+  for (const cloudPoint of cloudPoints) {
     const cloudTime = new Date(cloudPoint.timestamp).getTime();
 
-    // Check if we already have BMS data at this timestamp
-    if (!bmsTimestampMap.has(cloudPoint.timestamp)) {
-      // Find surrounding BMS points for interpolation
-      const bmsBefore = findClosestBmsBefore(bmsPoints, cloudTime);
-      const bmsAfter = findClosestBmsAfter(bmsPoints, cloudTime);
+    // Check if we already have BMS data at this exact timestamp
+    const existingBmsPoint = bmsTimestampMap.get(cloudPoint.timestamp);
+    if (!existingBmsPoint) {
+      // Find surrounding BMS points for interpolation using the pointer
+      // Move bmsPointer to the first record that is NOT before the cloudTime
+      while (bmsPointer < bmsPoints.length && new Date(bmsPoints[bmsPointer].timestamp).getTime() < cloudTime) {
+        bmsPointer++;
+      }
+
+      const bmsBefore = bmsPointer > 0 ? bmsPoints[bmsPointer - 1] : null;
+      const bmsAfter = bmsPointer < bmsPoints.length ? bmsPoints[bmsPointer] : null;
 
       if (bmsBefore && bmsAfter) {
         // We can interpolate
@@ -173,13 +179,13 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
         };
 
         // Interpolate BMS metrics
-        const bmsMetrics = ['stateOfCharge', 'overallVoltage', 'current', 'power', 'temperature', 
-                            'mosTemperature', 'cellVoltageDifference', 'remainingCapacity', 'fullCapacity'];
-        
+        const bmsMetrics = ['stateOfCharge', 'overallVoltage', 'current', 'power', 'temperature',
+          'mosTemperature', 'cellVoltageDifference', 'remainingCapacity', 'fullCapacity'];
+
         for (const metric of bmsMetrics) {
           const y0 = bmsBefore.data[metric];
           const y1 = bmsAfter.data[metric];
-          
+
           if (y0 !== null && y1 !== null) {
             estimatedData[metric] = linearInterpolate(y0, y1, t0, t1, cloudTime);
           } else {
@@ -202,18 +208,17 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
       }
     } else {
       // BMS data exists at this timestamp, merge cloud weather data into it
-      const bmsPoint = bmsTimestampMap.get(cloudPoint.timestamp);
-      // Prefer cloud hourly data for weather metrics (more precise/recent than BMS snapshot weather)
-      bmsPoint.data.clouds = cloudPoint.data.clouds ?? bmsPoint.data.clouds;
-      bmsPoint.data.temp = cloudPoint.data.temp ?? bmsPoint.data.temp;
-      bmsPoint.data.uvi = cloudPoint.data.uvi ?? bmsPoint.data.uvi;
-      bmsPoint.data.weather_main = cloudPoint.data.weather_main ?? bmsPoint.data.weather_main;
-      bmsPoint.data.estimated_irradiance_w_m2 = cloudPoint.data.estimated_irradiance_w_m2 ?? bmsPoint.data.estimated_irradiance_w_m2;
+      // Prefer cloud hourly data for weather metrics
+      existingBmsPoint.data.clouds = cloudPoint.data.clouds ?? existingBmsPoint.data.clouds;
+      existingBmsPoint.data.temp = cloudPoint.data.temp ?? existingBmsPoint.data.temp;
+      existingBmsPoint.data.uvi = cloudPoint.data.uvi ?? existingBmsPoint.data.uvi;
+      existingBmsPoint.data.weather_main = cloudPoint.data.weather_main ?? existingBmsPoint.data.weather_main;
+      existingBmsPoint.data.estimated_irradiance_w_m2 = cloudPoint.data.estimated_irradiance_w_m2 ?? existingBmsPoint.data.estimated_irradiance_w_m2;
     }
   }
 
   // Sort merged points by timestamp
-  mergedPoints.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  mergedPoints.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
   log.info('Data merge complete', {
     totalPoints: mergedPoints.length,
@@ -261,7 +266,7 @@ function findClosestBmsAfter(bmsPoints, targetTime) {
  */
 function downsampleMergedData(mergedPoints, maxPoints = 2000, log) {
   if (mergedPoints.length <= maxPoints) {
-    log.debug('Data within limit, no downsampling needed', { 
+    log.debug('Data within limit, no downsampling needed', {
       points: mergedPoints.length,
       maxPoints
     });
@@ -278,7 +283,7 @@ function downsampleMergedData(mergedPoints, maxPoints = 2000, log) {
 
   for (let i = 0; i < mergedPoints.length; i += bucketSize) {
     const bucket = mergedPoints.slice(i, Math.min(i + bucketSize, mergedPoints.length));
-    
+
     if (bucket.length === 0) continue;
 
     // Compute min/max/avg for each metric
@@ -292,8 +297,8 @@ function downsampleMergedData(mergedPoints, maxPoints = 2000, log) {
 
     // Metrics to aggregate
     const metrics = ['stateOfCharge', 'overallVoltage', 'current', 'power', 'temperature',
-                     'mosTemperature', 'cellVoltageDifference', 'clouds', 'uvi', 'temp',
-                     'remainingCapacity', 'fullCapacity'];
+      'mosTemperature', 'cellVoltageDifference', 'clouds', 'uvi', 'temp',
+      'remainingCapacity', 'fullCapacity'];
 
     for (const metric of metrics) {
       const values = bucket
