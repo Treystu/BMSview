@@ -271,21 +271,49 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
         log('info', 'Starting to process ZIP file.', zipContext);
         try {
             const zip = await JSZip.loadAsync(zipFile);
-            const imagePromises: Promise<File>[] = [];
-            zip.forEach((_, zipEntry) => {
-                if (!zipEntry.dir && /\.(jpe?g|png|gif|webp)$/i.test(zipEntry.name)) {
-                    const promise = zipEntry.async('blob').then(blob => {
-                        const mimeType = blob.type || getMimeTypeFromFileName(zipEntry.name);
-                        return new File([blob], zipEntry.name, { type: mimeType });
-                    });
-                    imagePromises.push(promise);
-                }
-            });
-            const extractedFiles = await Promise.all(imagePromises);
-            log('info', 'Successfully extracted files from ZIP.', { ...zipContext, extractedCount: extractedFiles.length });
+            const CHUNK_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
+            let currentChunk: Promise<File>[] = [];
+            let currentChunkSize = 0;
+            let totalExtracted = 0;
 
-            // Route through unified duplicate check
-            await checkAndAddFiles(extractedFiles);
+            const entries = Object.values(zip.files);
+
+            for (const zipEntry of entries) {
+                if (zipEntry.dir || !/\.(jpe?g|png|gif|webp)$/i.test(zipEntry.name)) continue;
+
+                const promise = zipEntry.async('blob').then(blob => {
+                    const mimeType = blob.type || getMimeTypeFromFileName(zipEntry.name);
+                    return new File([blob], zipEntry.name, { type: mimeType });
+                });
+
+                currentChunk.push(promise);
+                // Use uncompressed size estimate (or fallback to 500KB average)
+                const entrySize = (zipEntry as any)._data?.uncompressedSize || 500 * 1024;
+                currentChunkSize += entrySize;
+
+                if (currentChunkSize >= CHUNK_SIZE_BYTES) {
+                    const extractedFiles = await Promise.all(currentChunk);
+                    totalExtracted += extractedFiles.length;
+                    log('info', 'ZIP chunk extracted.', { chunkFiles: extractedFiles.length, totalSoFar: totalExtracted });
+                    await checkAndAddFiles(extractedFiles);
+
+                    // Reset chunk
+                    currentChunk = [];
+                    currentChunkSize = 0;
+
+                    // Yield to UI
+                    await new Promise(r => setTimeout(r, 0));
+                }
+            }
+
+            // Flush remaining files
+            if (currentChunk.length > 0) {
+                const extractedFiles = await Promise.all(currentChunk);
+                totalExtracted += extractedFiles.length;
+                await checkAndAddFiles(extractedFiles);
+            }
+
+            log('info', 'Successfully extracted all files from ZIP.', { ...zipContext, extractedCount: totalExtracted });
 
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : String(e);

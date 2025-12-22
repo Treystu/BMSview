@@ -47,13 +47,16 @@ describe('Upload Optimization Tests', () => {
     });
 
     test('should calculate optimal concurrency for medium batches', () => {
-      expect(optimizer.calculateConcurrency(10, 10240)).toBe(3);
+      // New algorithm: batches <=10 use min(fileCount, 5)
+      expect(optimizer.calculateConcurrency(10, 10240)).toBe(5);
+      // Batches >10 start conservative at 3
       expect(optimizer.calculateConcurrency(20, 20480)).toBe(3);
     });
 
     test('should calculate optimal concurrency for large batches', () => {
-      expect(optimizer.calculateConcurrency(50, 51200)).toBe(2);
-      expect(optimizer.calculateConcurrency(100, 102400)).toBe(1);
+      // All batches >10 start at 3 (will scale via rate-limit headers)
+      expect(optimizer.calculateConcurrency(50, 51200)).toBe(3);
+      expect(optimizer.calculateConcurrency(100, 102400)).toBe(3);
     });
 
     test('should limit concurrency to available files', () => {

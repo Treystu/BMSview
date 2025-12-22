@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import AnalysisResult from './components/AnalysisResult';
 import Footer from './components/Footer';
 import Header from './components/Header';
@@ -16,6 +16,7 @@ import {
   registerBmsSystem
 } from './services/clientService';
 import { analyzeBmsScreenshot } from './services/geminiService';
+import UploadOptimizer from './src/utils/uploadOptimizer';
 import { useAppState } from './state/appState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from './types';
 import { buildRecordFromCachedDuplicate, checkFilesForDuplicates, EMPTY_CATEGORIZATION, partitionCachedFiles, type DuplicateCheckResult } from './utils/duplicateChecker';
@@ -49,6 +50,9 @@ function App() {
     isRegisterModalOpen,
     registrationContext
   } = state;
+
+  // Initialize optimizer for parallel analysis
+  const optimizer = useMemo(() => new UploadOptimizer(), []);
 
   const fetchAppData = useCallback(async (isManual = true) => {
     // Only throttle background refreshes from sync events, not manual/initial
@@ -220,52 +224,57 @@ function App() {
           filesToAnalyze = files.map(file => ({ file }));
         }
 
-        log('info', 'Phase 2: Starting analysis of non-duplicate files.', {
+        log('info', 'Phase 2: Starting parallel analysis of non-duplicate files.', {
           count: filesToAnalyze.length
         });
 
-        for (const item of filesToAnalyze) {
+        // Define single-file processor for optimizer
+        const processFile = async (item: { file: File }) => {
           const file = item.file;
-          try {
-            dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
-            const analysisData = await analyzeBmsScreenshot(file, false);
+          dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
 
-            log('info', 'Processing synchronous analysis result.', { fileName: file.name });
+          const analysisData = await analyzeBmsScreenshot(file, false);
+
+          log('info', 'Processing synchronous analysis result.', { fileName: file.name });
+          dispatch({
+            type: 'SYNC_ANALYSIS_COMPLETE',
+            payload: {
+              fileName: file.name,
+              isDuplicate: false,
+              record: {
+                id: analysisData._recordId || `local-${Date.now()}`,
+                timestamp: analysisData._timestamp || new Date().toISOString(),
+                analysis: analysisData,
+                fileName: file.name
+              }
+            }
+          });
+
+          return analysisData; // Contains _meta.headers for optimizer
+        };
+
+        // Run with optimizer for parallel processing with rate-limit awareness
+        const { errors } = await optimizer.processBatch(filesToAnalyze, processFile);
+
+        // Handle any errors that weren't caught per-file
+        for (const { file, error } of errors) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          if (message.toLowerCase().includes('duplicate')) {
             dispatch({
               type: 'SYNC_ANALYSIS_COMPLETE',
               payload: {
-                fileName: file.name,
-                isDuplicate: false,
+                fileName: file,
+                isDuplicate: true,
                 record: {
-                  id: analysisData._recordId || `local-${Date.now()}`,
-                  timestamp: analysisData._timestamp || new Date().toISOString(),
-                  analysis: analysisData,
-                  fileName: file.name
-                }
-              }
-            });
-
-          } catch (err) {
-            const message = err instanceof Error ? err.message : 'An unknown error occurred.';
-            log('error', 'Analysis request failed for one file.', { error: message, fileName: file.name });
-
-            if (message.toLowerCase().includes('duplicate')) {
-              dispatch({
-                type: 'SYNC_ANALYSIS_COMPLETE',
-                payload: {
-                  fileName: file.name,
-                  isDuplicate: true,
-                  record: {
-                    id: `local-duplicate-${Date.now()}`,
-                    timestamp: new Date().toISOString(),
-                    analysis: null,
-                    fileName: file.name,
-                  },
+                  id: `local-duplicate-${Date.now()}`,
+                  timestamp: new Date().toISOString(),
+                  analysis: null,
+                  fileName: file,
                 },
-              });
-            } else {
-              dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: `Failed: ${message}` } });
-            }
+              },
+            });
+          } else {
+            dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file, status: `Failed: ${message}` } });
           }
         }
 

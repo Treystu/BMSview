@@ -328,7 +328,15 @@ async function performAnalysisRequest(file: File, relativeEndpoint: string, cont
             throw new Error(errorMessage);
         }
 
-        return await response.json();
+        const data = await response.json();
+
+        // Attach headers for rate-limit aware processing
+        return {
+            ...data,
+            _meta: {
+                headers: response.headers
+            }
+        };
     } catch (error) {
         clearTimeout(timeoutId);
         throw error;

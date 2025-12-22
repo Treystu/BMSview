@@ -11,6 +11,8 @@ class UploadOptimizer {
     this.baseRetryDelay = 1000; // 1 second
     this.maxFileSize = 50 * 1024 * 1024; // 50MB
     this.chunkSize = 1024 * 1024; // 1MB chunks for large files
+    this.currentConcurrency = 3; // Dynamic, adjusted at runtime
+    this._lastRateLimitUpdate = 0;
 
     // Test-friendly tuning
     try {
@@ -24,17 +26,17 @@ class UploadOptimizer {
   /**
    * Calculate optimal concurrency based on file count and total size
    */
+  /**
+   * Create execution plan based on batch size
+   * - Small batches (<=10): Maximize parallelism
+   * - Large batches: Start conservative, scale up based on headers
+   */
   calculateConcurrency(fileCount, _totalSize) {
-    if (fileCount <= 5) {
-      return Math.min(5, fileCount);
+    if (fileCount <= 10) {
+      return Math.min(fileCount, this.maxConcurrency);
     }
-    if (fileCount <= 20) {
-      return 3;
-    }
-    if (fileCount <= 50) {
-      return 2;
-    }
-    return 1; // For very large batches, process sequentially
+    // Large batch: start at 3, will scale via headers
+    return 3;
   }
 
   /**
@@ -121,13 +123,45 @@ class UploadOptimizer {
   }
 
   /**
-   * Process multiple files with optimized concurrency
+   * Dynamically adjust concurrency from Gemini rate limit headers
+   * Uses AIMD: Additive Increase, Multiplicative Decrease
+   */
+  updateConcurrencyFromHeaders(headers) {
+    if (!headers) return;
+
+    const now = Date.now();
+    // Debounce: don't adjust more than once per 500ms
+    if (now - this._lastRateLimitUpdate < 500) return;
+    this._lastRateLimitUpdate = now;
+
+    const remaining = parseInt(
+      headers.get('x-ratelimit-remaining') ||
+      headers.get('X-RateLimit-Remaining'),
+      10
+    );
+
+    if (isNaN(remaining)) return;
+
+    if (remaining < 10) {
+      // DANGER: Multiplicative decrease
+      this.currentConcurrency = Math.max(1, Math.floor(this.currentConcurrency / 2));
+      console.warn(`[UploadOptimizer] Low rate limit (${remaining}). Concurrency -> ${this.currentConcurrency}`);
+    } else if (remaining > 50 && this.currentConcurrency < this.maxConcurrency) {
+      // SAFE: Additive increase (slow ramp)
+      this.currentConcurrency = Math.min(this.currentConcurrency + 1, this.maxConcurrency);
+      console.log(`[UploadOptimizer] Good capacity (${remaining}). Concurrency -> ${this.currentConcurrency}`);
+    }
+  }
+
+  /**
+   * Process multiple files with rate-limit aware dynamic concurrency
    */
   async processBatch(files, uploadFunction, progressCallback) {
-    const concurrency = this.calculateConcurrency(files.length, this.getTotalSize(files));
+    // Initialize from plan
+    this.currentConcurrency = this.calculateConcurrency(files.length, this.getTotalSize(files));
     const batchSize = this.calculateBatchSize(files.length, this.getAverageSize(files));
 
-    console.log(`Processing ${files.length} files with concurrency ${concurrency}, batch size ${batchSize}`);
+    console.log(`Processing ${files.length} files. Initial concurrency: ${this.currentConcurrency}`);
 
     const results = [];
     const errors = [];
@@ -139,8 +173,27 @@ class UploadOptimizer {
       batches.push(files.slice(i, i + batchSize));
     }
 
-    // Process batches with concurrency control
-    const semaphore = new Semaphore(concurrency);
+    // Dynamic semaphore that reads this.currentConcurrency
+    const optimizer = this;
+    const semaphore = {
+      active: 0,
+      queue: [],
+      async acquire() {
+        if (this.active < optimizer.currentConcurrency) {
+          this.active++;
+          return;
+        }
+        await new Promise(resolve => this.queue.push(resolve));
+        this.active++;
+      },
+      release() {
+        this.active--;
+        if (this.queue.length > 0 && this.active < optimizer.currentConcurrency) {
+          const next = this.queue.shift();
+          next();
+        }
+      }
+    };
 
     const batchPromises = batches.map(async (batch, batchIndex) => {
       await semaphore.acquire();
@@ -154,7 +207,14 @@ class UploadOptimizer {
         batchResults.forEach((result, index) => {
           if (result.status === 'fulfilled') {
             results.push(result.value);
+            // Check headers for rate limit adjustment
+            if (result.value?._meta?.headers) {
+              this.updateConcurrencyFromHeaders(result.value._meta.headers);
+            }
           } else {
+            // On error: multiplicative decrease
+            this.currentConcurrency = Math.max(1, Math.floor(this.currentConcurrency / 2));
+            console.warn(`[UploadOptimizer] Error encountered. Concurrency -> ${this.currentConcurrency}`);
             errors.push({
               file: batch[index].name,
               error: result.reason
@@ -192,13 +252,7 @@ class UploadOptimizer {
     };
   }
 
-  /**
-   * Optimize file order for better performance
-   */
-  optimizeFileOrder(files) {
-    // Sort by size (small files first for quicker feedback)
-    return [...files].sort((a, b) => a.size - b.size);
-  }
+  // Removed: optimizeFileOrder - files processed in original order
 
   /**
    * Get total size of all files

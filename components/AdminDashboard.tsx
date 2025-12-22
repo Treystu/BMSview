@@ -32,6 +32,7 @@ import HistoricalChart from './HistoricalChart';
 import IpManagement from './IpManagement';
 import SpinnerIcon from './icons/SpinnerIcon';
 
+import UploadOptimizer from '../src/utils/uploadOptimizer';
 import { AIFeedbackDashboard } from './AIFeedbackDashboard';
 import CostDashboard from './CostDashboard';
 import { DiagnosticsGuru } from './DiagnosticsGuru';
@@ -283,7 +284,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
             // ***PHASE 2: Analyze only upgrades and new files (true duplicates already handled)***
             const filesToAnalyze = [...needsUpgrade, ...newFiles];
-            log('info', 'Phase 2: Starting analysis of non-duplicate files.', {
+            log('info', 'Phase 2: Starting parallel analysis of non-duplicate files.', {
                 count: filesToAnalyze.length,
                 upgrades: needsUpgrade.length,
                 new: newFiles.length,
@@ -291,73 +292,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 cachedUpgrades: cachedUpgrades.length
             });
 
-            let consecutiveRateLimitErrors = 0; // Track consecutive 429 errors across all files
+            // Create optimizer instance for parallel processing
+            const optimizer = new UploadOptimizer();
 
-            for (const item of filesToAnalyze) {
+            // Define single-file processor for optimizer
+            const processFile = async (item: DuplicateCheckResult) => {
                 const file = item.file;
-                try {
-                    // 1. Mark this specific file as "Processing"
-                    dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: 'Processing' } });
+                dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: 'Processing' } });
 
-                    // 2. Call the synchronous service
-                    const analysisData = await analyzeBmsScreenshot(file);
+                const analysisData = await analyzeBmsScreenshot(file);
 
-                    // 3. Got data! Create record with real backend ID
-                    log('info', 'Processing synchronous analysis result.', { fileName: file.name });
+                log('info', 'Processing synchronous analysis result.', { fileName: file.name });
 
-                    // ***ISSUE 1 FIX: Use real record ID from backend instead of temporary ID***
-                    const tempRecord: AnalysisRecord = {
-                        id: analysisData._recordId || `local-${Date.now()}`,
-                        timestamp: analysisData._timestamp || new Date().toISOString(),
-                        analysis: analysisData,
-                        fileName: file.name
-                    };
+                const tempRecord: AnalysisRecord = {
+                    id: analysisData._recordId || `local-${Date.now()}`,
+                    timestamp: analysisData._timestamp || new Date().toISOString(),
+                    analysis: analysisData,
+                    fileName: file.name
+                };
 
-                    dispatch({
-                        type: 'UPDATE_BULK_JOB_COMPLETED',
-                        payload: { record: tempRecord, fileName: file.name }
-                    });
+                dispatch({
+                    type: 'UPDATE_BULK_JOB_COMPLETED',
+                    payload: { record: tempRecord, fileName: file.name }
+                });
 
-                    // Reset consecutive rate limit counter on success
-                    consecutiveRateLimitErrors = 0;
+                return analysisData; // Contains _meta.headers for optimizer
+            };
 
-                } catch (err) {
-                    // 4. Handle error for this specific file
-                    const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-                    log('error', 'Analysis request failed for one file.', { error: errorMessage, fileName: file.name });
+            // Run with optimizer for parallel processing with rate-limit awareness
+            const { errors } = await optimizer.processBatch(filesToAnalyze, processFile);
 
-                    // ***ISSUE 5 FIX: Add exponential backoff for rate limit errors with max retry limit***
-                    if (errorMessage.includes('429')) {
-                        setShowRateLimitWarning(true);
-                        consecutiveRateLimitErrors++;
-
-                        // Stop processing after too many consecutive 429 errors
-                        if (consecutiveRateLimitErrors >= 5) {
-                            log('error', 'Too many consecutive rate limit errors, stopping batch.', {
-                                filesRemaining: filesToAnalyze.length,
-                                fileName: file.name
-                            });
-                            dispatch({
-                                type: 'SET_ERROR',
-                                payload: 'Rate limit exceeded. Please wait a few minutes before uploading more files.'
-                            });
-                            break; // Stop processing remaining files
-                        }
-
-                        const backoffMs = Math.min(2000 * Math.pow(2, consecutiveRateLimitErrors - 1), 30000); // Max 30 seconds
-                        log('warn', 'Rate limit detected, applying exponential backoff.', {
-                            consecutiveErrors: consecutiveRateLimitErrors,
-                            backoffMs,
-                            fileName: file.name
-                        });
-                        await new Promise(resolve => setTimeout(resolve, backoffMs));
-                    } else {
-                        // Reset counter for non-429 errors
-                        consecutiveRateLimitErrors = 0;
-                    }
-
-                    dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: `Failed: ${errorMessage}` } });
+            // Handle any errors that weren't caught per-file
+            for (const { file, error } of errors) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                if (errorMessage.includes('429')) {
+                    setShowRateLimitWarning(true);
                 }
+                dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file, error: `Failed: ${errorMessage}` } });
             }
         } catch (err) {
             // This outer catch is for logic errors in the loop itself

@@ -92,7 +92,7 @@ export async function calculateImageHashClient(base64String: string): Promise<st
  */
 export async function calculateImageHashesBatch(base64Images: string[]): Promise<(string | null)[]> {
   const startTime = Date.now();
-  
+
   console.log('Calculating client-side hashes for batch', {
     count: base64Images.length,
     event: 'BATCH_HASH_START'
@@ -135,7 +135,7 @@ export async function calculateImageHashesBatch(base64Images: string[]): Promise
 export async function calculateFileHash(file: File): Promise<string | null> {
   try {
     const reader = new FileReader();
-    
+
     return new Promise((resolve, reject) => {
       reader.onload = async () => {
         if (typeof reader.result === 'string') {
@@ -146,7 +146,7 @@ export async function calculateFileHash(file: File): Promise<string | null> {
           reject(new Error('Failed to read file'));
         }
       };
-      
+
       reader.onerror = () => reject(new Error('File read error'));
       reader.readAsDataURL(file);
     });
@@ -172,19 +172,26 @@ export async function calculateFileHashesBatch(
   files: File[]
 ): Promise<Array<{ file: File; hash: string | null }>> {
   const startTime = Date.now();
-  
+
   console.log('Calculating file hashes for batch', {
     count: files.length,
     fileNames: files.slice(0, 5).map(f => f.name),
     event: 'FILE_HASH_START'
   });
 
-  const hashPromises = files.map(async (file) => {
-    const hash = await calculateFileHash(file);
-    return { file, hash };
-  });
+  const CONCURRENCY_LIMIT = 5;
+  const results: Array<{ file: File; hash: string | null }> = [];
 
-  const results = await Promise.all(hashPromises);
+  for (let i = 0; i < files.length; i += CONCURRENCY_LIMIT) {
+    const chunk = files.slice(i, i + CONCURRENCY_LIMIT);
+    const chunkResults = await Promise.all(
+      chunk.map(async (file) => {
+        const hash = await calculateFileHash(file);
+        return { file, hash };
+      })
+    );
+    results.push(...chunkResults);
+  }
 
   const durationMs = Date.now() - startTime;
   const successCount = results.filter(r => r.hash !== null).length;
