@@ -2,8 +2,6 @@ import React, { createContext, Dispatch, useContext, useReducer } from 'react';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult, InsightMode } from '../types';
 import { InsightMode as InsightModeEnum } from '../types';
 
-// ***REMOVED***: JobCreationResponse is no longer needed.
-
 // 1. State Shape
 export type PaginatedResponse<T> = {
   items: T[];
@@ -20,48 +18,41 @@ export interface AppState {
   registrationError: string | null;
   registrationSuccess: string | null;
   isRegisterModalOpen: boolean;
-  // Can be the new paginated response shape or legacy array while we migrate
   registeredSystems: PaginatedResponse<BmsSystem> | BmsSystem[];
   analysisHistory: PaginatedResponse<AnalysisRecord> | AnalysisRecord[];
   registrationContext: {
     dlNumber: string;
   } | null;
-  // Local-first sync status fields
   isSyncing: boolean;
-  lastSyncTime: Record<string, number>; // e.g., { systems: 1699..., history: 1699... }
+  lastSyncTime: Record<string, number>;
   syncError: string | null;
   cacheStats: {
     systemsCount: number;
     historyCount: number;
     cacheSizeBytes: number;
   };
-  // Circuit breaker state for error recovery UI
   circuitBreakers: {
     insights: 'closed' | 'open' | 'half-open';
     analysis: 'closed' | 'open' | 'half-open';
     lastTripped?: { service: string; reason: string; at: number };
   };
-  // Consent tracking for insights/AI features
   consentStatus: {
     insightsConsented: boolean;
     consentedAt?: number;
     consentVersion?: string;
   };
-  // Pending resume jobs for timeout recovery
   pendingResumes: Array<{
     recordId: string;
     resumeJobId: string;
     attempts: number;
     lastAttempt: number;
   }>;
-  // Per-record insights state tracking
   insightsState: Record<string, {
     isLoading: boolean;
     insights?: string;
     error?: string;
     resumeJobId?: string;
   }>;
-  // Selected insight generation mode
   selectedInsightMode: InsightMode;
 }
 
@@ -73,11 +64,9 @@ export const initialState: AppState = {
   registrationError: null,
   registrationSuccess: null,
   isRegisterModalOpen: false,
-  // Start with paginated empty shapes to avoid checks elsewhere
   registeredSystems: { items: [], total: 0 },
   analysisHistory: { items: [], total: 0 },
   registrationContext: null,
-  // Local-first sync status
   isSyncing: false,
   lastSyncTime: {},
   syncError: null,
@@ -86,29 +75,25 @@ export const initialState: AppState = {
     historyCount: 0,
     cacheSizeBytes: 0,
   },
-  // Default to WITH_TOOLS mode (Battery Guru - most comprehensive)
   selectedInsightMode: InsightModeEnum.WITH_TOOLS,
-  // Circuit breaker initial state
   circuitBreakers: {
     insights: 'closed',
     analysis: 'closed',
   },
-  // Consent not granted by default
   consentStatus: {
     insightsConsented: false,
   },
-  // No pending resumes initially
   pendingResumes: [],
-  // Empty insights state initially
   insightsState: {},
 };
 
 // 2. Actions
 export type AppAction =
   | { type: 'PREPARE_ANALYSIS'; payload: DisplayableAnalysisResult[] }
-  // ***MODIFIED***: Simplified actions. No more job IDs.
   | { type: 'UPDATE_ANALYSIS_STATUS'; payload: { fileName: string; status: string } }
+  | { type: 'BATCH_UPDATE_ANALYSIS_STATUS'; payload: Array<{ fileName: string; status: string }> }
   | { type: 'SYNC_ANALYSIS_COMPLETE'; payload: { fileName: string; record: AnalysisRecord; isDuplicate?: boolean } }
+  | { type: 'BATCH_ANALYSIS_COMPLETE'; payload: Array<{ fileName: string; record: AnalysisRecord; isDuplicate?: boolean }> }
   | { type: 'ANALYSIS_COMPLETE' }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'FETCH_DATA_SUCCESS'; payload: { systems: PaginatedResponse<BmsSystem> | BmsSystem[]; history: PaginatedResponse<AnalysisRecord> | AnalysisRecord[] } }
@@ -120,36 +105,27 @@ export type AppAction =
   | { type: 'UPDATE_RESULTS_AFTER_LINK' }
   | { type: 'REPROCESS_START'; payload: { fileName: string } }
   | { type: 'ASSIGN_SYSTEM_TO_ANALYSIS'; payload: { fileName: string; systemId: string } }
-  // Sync status actions
   | { type: 'UPDATE_SYNC_STATUS'; payload: { isSyncing: boolean; lastSyncTime?: Record<string, number> } }
   | { type: 'SET_CACHE_STATS'; payload: { systemsCount: number; historyCount: number; cacheSizeBytes: number } }
   | { type: 'SYNC_ERROR'; payload: string | null }
-  // Insight mode selection
   | { type: 'SET_INSIGHT_MODE'; payload: InsightMode }
-  // Insights lifecycle actions
   | { type: 'INSIGHTS_LOADING'; payload: { recordId: string } }
   | { type: 'INSIGHTS_SUCCESS'; payload: { recordId: string; insights: string } }
   | { type: 'INSIGHTS_ERROR'; payload: { recordId: string; error: string } }
   | { type: 'INSIGHTS_RETRY'; payload: { recordId: string; resumeJobId: string } }
   | { type: 'INSIGHTS_TIMEOUT'; payload: { recordId: string; resumeJobId: string } }
-  // Consent flow actions
   | { type: 'CONSENT_GRANTED'; payload: { consentVersion: string } }
   | { type: 'CONSENT_REVOKED' }
-  // Circuit breaker actions
   | { type: 'UPDATE_CIRCUIT_BREAKER'; payload: { service: 'insights' | 'analysis'; state: 'closed' | 'open' | 'half-open'; reason?: string } }
   | { type: 'RESET_CIRCUIT_BREAKERS' };
-// ***REMOVED***: All job-polling actions are gone.
 
 // 3. Reducer
 export const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
     case 'PREPARE_ANALYSIS':
-      // Filter out any files that are already present in the results by filename to prevent duplicates from re-uploads.
       const existingFileNames = new Set(state.analysisResults.map(r => r.fileName));
       const newResults = action.payload.filter(p => !existingFileNames.has(p.fileName));
       return { ...state, isLoading: true, error: null, analysisResults: [...state.analysisResults, ...newResults] };
-
-    // ***REMOVED***: START_ANALYSIS_JOBS is gone.
 
     case 'UPDATE_ANALYSIS_STATUS':
       return {
@@ -159,23 +135,39 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         ),
       };
 
+    case 'BATCH_UPDATE_ANALYSIS_STATUS': {
+      const updates = action.payload;
+      const updateMap = new Map(updates.map(u => [u.fileName, u.status]));
+      return {
+        ...state,
+        analysisResults: state.analysisResults.map(r => {
+          const status = updateMap.get(r.fileName);
+          return status ? { ...r, error: status } : r;
+        })
+      };
+    }
+
     case 'SYNC_ANALYSIS_COMPLETE': {
       const { fileName, record, isDuplicate } = action.payload;
-      // Update analysisResults
-      const updatedResults = state.analysisResults.map(r =>
-        r.fileName === fileName ? {
-          ...r,
-          data: record.analysis,
-          weather: record.weather,
-          recordId: record.id,
-          isDuplicate: isDuplicate || false,
-          needsReview: record.needsReview,
-          validationWarnings: record.validationWarnings,
-          error: null,
-        } : r
-      );
+      const updateMap = new Map([[fileName, { record, isDuplicate }]]);
 
-      // Safely prepend to analysisHistory whether it's an array or paginated object
+      const updatedResults = state.analysisResults.map(r => {
+        const update = updateMap.get(r.fileName);
+        if (update) {
+          return {
+            ...r,
+            data: update.record.analysis,
+            weather: update.record.weather,
+            recordId: update.record.id,
+            isDuplicate: update.isDuplicate || false,
+            needsReview: update.record.needsReview,
+            validationWarnings: update.record.validationWarnings,
+            error: null,
+          };
+        }
+        return r;
+      });
+
       let newHistory: AppState['analysisHistory'];
       if (Array.isArray(state.analysisHistory)) {
         newHistory = [record, ...state.analysisHistory];
@@ -194,7 +186,45 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     }
 
-    // ***REMOVED***: UPDATE_JOB_STATUS and UPDATE_JOB_COMPLETED are gone.
+    case 'BATCH_ANALYSIS_COMPLETE': {
+      const updates = action.payload;
+      const updateMap = new Map(updates.map(u => [u.fileName, { record: u.record, isDuplicate: u.isDuplicate }]));
+      const newRecords = updates.map(u => u.record);
+
+      const updatedResults = state.analysisResults.map(r => {
+        const update = updateMap.get(r.fileName);
+        if (update) {
+          return {
+            ...r,
+            data: update.record.analysis,
+            weather: update.record.weather,
+            recordId: update.record.id,
+            isDuplicate: update.isDuplicate || false,
+            needsReview: update.record.needsReview,
+            validationWarnings: update.record.validationWarnings,
+            error: null,
+          };
+        }
+        return r;
+      });
+
+      let newHistory: AppState['analysisHistory'];
+      if (Array.isArray(state.analysisHistory)) {
+        newHistory = [...newRecords, ...state.analysisHistory];
+      } else {
+        newHistory = {
+          ...state.analysisHistory,
+          items: [...newRecords, ...(state.analysisHistory.items || [])],
+          total: (state.analysisHistory.total || 0) + newRecords.length,
+        };
+      }
+
+      return {
+        ...state,
+        analysisResults: updatedResults,
+        analysisHistory: newHistory,
+      };
+    }
 
     case 'ANALYSIS_COMPLETE':
       return { ...state, isLoading: false };
@@ -236,7 +266,6 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       return { ...state, isRegistering: false, registrationError: action.payload };
 
     case 'UPDATE_RESULTS_AFTER_LINK':
-      // This just forces a re-render of components listening to results
       return { ...state, analysisResults: [...state.analysisResults] };
 
     case 'REPROCESS_START':
@@ -245,7 +274,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         isLoading: true,
         analysisResults: state.analysisResults.map(r =>
           r.fileName === action.payload.fileName
-            ? { ...r, data: null, error: 'Submitted', isDuplicate: false, saveError: null, recordId: undefined, jobId: undefined, forcedSystemId: undefined, submittedAt: Date.now() }
+            ? { ...r, data: null, error: 'Submitted', isDuplicate: false, saveError: null, recordId: undefined, forcedSystemId: undefined, submittedAt: Date.now() }
             : r
         )
       };
@@ -341,31 +370,30 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       };
 
     case 'INSIGHTS_TIMEOUT': {
-      // Check if this record already has a pending resume to avoid duplicates
       const existingResumeIndex = state.pendingResumes.findIndex(
         r => r.recordId === action.payload.recordId
       );
-      
+
       const newPendingResumes = existingResumeIndex >= 0
         ? state.pendingResumes.map((resume, idx) =>
-            idx === existingResumeIndex
-              ? {
-                  ...resume,
-                  resumeJobId: action.payload.resumeJobId,
-                  attempts: resume.attempts + 1,
-                  lastAttempt: Date.now(),
-                }
-              : resume
-          )
-        : [
-            ...state.pendingResumes,
-            {
-              recordId: action.payload.recordId,
+          idx === existingResumeIndex
+            ? {
+              ...resume,
               resumeJobId: action.payload.resumeJobId,
-              attempts: 1,
+              attempts: resume.attempts + 1,
               lastAttempt: Date.now(),
-            },
-          ];
+            }
+            : resume
+        )
+        : [
+          ...state.pendingResumes,
+          {
+            recordId: action.payload.recordId,
+            resumeJobId: action.payload.resumeJobId,
+            attempts: 1,
+            lastAttempt: Date.now(),
+          },
+        ];
 
       return {
         ...state,
@@ -410,10 +438,10 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           [action.payload.service]: action.payload.state,
           lastTripped: action.payload.reason
             ? {
-                service: action.payload.service,
-                reason: action.payload.reason,
-                at: Date.now(),
-              }
+              service: action.payload.service,
+              reason: action.payload.reason,
+              at: Date.now(),
+            }
             : state.circuitBreakers.lastTripped,
         },
       };
@@ -424,7 +452,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         circuitBreakers: {
           insights: 'closed',
           analysis: 'closed',
-          lastTripped: state.circuitBreakers.lastTripped, // Preserve debugging history
+          lastTripped: state.circuitBreakers.lastTripped,
         },
       };
 
@@ -433,7 +461,6 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
   }
 };
 
-// 4. Context and Provider
 const AppStateContext = createContext<{ state: AppState; dispatch: Dispatch<AppAction> } | undefined>(undefined);
 
 export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -445,7 +472,6 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 };
 
-// 5. Custom Hook
 export const useAppState = () => {
   const context = useContext(AppStateContext);
   if (context === undefined) {
@@ -453,4 +479,3 @@ export const useAppState = () => {
   }
   return context;
 };
-

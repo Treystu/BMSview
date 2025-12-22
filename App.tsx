@@ -1,4 +1,3 @@
-import netlifyIdentity from 'netlify-identity-widget';
 import { useCallback, useEffect } from 'react';
 import AnalysisResult from './components/AnalysisResult';
 import Footer from './components/Footer';
@@ -18,12 +17,11 @@ import {
 } from './services/clientService';
 import { analyzeBmsScreenshot } from './services/geminiService';
 import { useAppState } from './state/appState';
-import type { BmsSystem, DisplayableAnalysisResult } from './types';
+import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from './types';
 import { buildRecordFromCachedDuplicate, checkFilesForDuplicates, EMPTY_CATEGORIZATION, partitionCachedFiles, type DuplicateCheckResult } from './utils/duplicateChecker';
 import { safeGetItems } from './utils/stateHelpers';
 // ***REMOVED***: No longer need job polling
 // import { getIsActualError } from './utils';
-
 
 const log = (level: string, message: string, context: object = {}) => {
   console.log(JSON.stringify({
@@ -34,6 +32,10 @@ const log = (level: string, message: string, context: object = {}) => {
     context
   }));
 };
+
+// Guard to prevent rapid-fire refreshes (e.g. during bulk sync)
+let lastRefreshTime = 0;
+const REFRESH_THROTTLE_MS = 5000;
 
 function App() {
   const { state, dispatch } = useAppState();
@@ -48,22 +50,24 @@ function App() {
     registrationContext
   } = state;
 
-  // ***REMOVED***: All `useJobPolling` and related callbacks are gone.
+  const fetchAppData = useCallback(async (isManual = true) => {
+    // Only throttle background refreshes from sync events, not manual/initial
+    if (!isManual) {
+      const now = Date.now();
+      if (now - lastRefreshTime < REFRESH_THROTTLE_MS) {
+        log('debug', 'Throttling background data refresh.', { lastRefresh: lastRefreshTime });
+        return;
+      }
+      lastRefreshTime = now;
+    }
 
-  const fetchAppData = useCallback(async () => {
-    log('info', 'Fetching initial application data.');
+    log('info', 'Fetching application data.', { isManual });
     try {
-      // Fetching systems and history remains the same
       const [systems, history] = await Promise.all([
         getRegisteredSystems(1, 1000), // Load all systems for linking
         getAnalysisHistory(1, 25)   // Load first page of history
       ]);
       dispatch({ type: 'FETCH_DATA_SUCCESS', payload: { systems, history } });
-      const response = await fetch('/.netlify/functions/verify-session');
-      if (!response.ok) {
-        // Session verification failed
-        netlifyIdentity.logout();
-      }
     } catch (error) {
       log('error', 'Failed to fetch initial data', { error });
       dispatch({ type: 'SET_ERROR', payload: 'Failed to load application data.' });
@@ -71,7 +75,7 @@ function App() {
   }, [dispatch]);
 
   useEffect(() => {
-    fetchAppData();
+    fetchAppData(true); // Initial load is manual (unthrottled)
 
     // Subscribe to SyncManager events
     const unsubscribe = syncManager.subscribe((event: SyncEvent) => {
@@ -91,13 +95,10 @@ function App() {
           break;
         case 'drift-warning':
           log('warn', `Time drift detected: ${event.diff}ms`);
-          // Could dispatch a TOAST or warning state here if UI supported it
           break;
         case 'data-changed':
           log('info', 'Data changed via sync, refreshing app data', { collection: event.collection });
-          // Only refetch if relevant data changed
-          // We could make this more granular, but for now a full refresh ensures consistency
-          fetchAppData();
+          fetchAppData(false); // Background refresh is throttled
           break;
       }
     });
@@ -116,18 +117,13 @@ function App() {
     log('info', 'Linking record to system.', { recordId, systemId });
     try {
       await linkAnalysisToSystem(recordId, systemId, dlNumber);
-      await fetchAppData();
+      await fetchAppData(true);
       dispatch({ type: 'UPDATE_RESULTS_AFTER_LINK' });
     } catch {
       dispatch({ type: 'SET_ERROR', payload: "Failed to link the record." });
     }
   };
 
-  /**
-   * ***MODIFIED***: This is the new, simpler analysis handler with three-category duplicate checking.
-   * Phase 1: Check ALL files for duplicates upfront - categorize into true duplicates, upgrades, and new files
-   * Phase 2: Analyze only upgrades and new files (skip true duplicates entirely)
-   */
   const handleAnalyze = async (files: File[], options?: { forceFileName?: string; forceReanalysis?: boolean }) => {
     log('info', 'Analysis process initiated.', { fileCount: files.length, forceFileName: options?.forceFileName, forceReanalysis: options?.forceReanalysis });
 
@@ -136,7 +132,6 @@ function App() {
       return;
     }
 
-    // Prepare the UI by setting all files to "Checking for duplicates..." state
     const initialResults: DisplayableAnalysisResult[] = files.map(f => ({
       fileName: f.name, data: null, error: 'Checking for duplicates...', file: f, submittedAt: Date.now()
     }));
@@ -145,72 +140,58 @@ function App() {
     setTimeout(() => document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
 
     try {
-      // ***PHASE 1: Check ALL files for duplicates upfront (unless forcing reanalysis)***
       let filesToAnalyze: { file: File; needsUpgrade?: boolean }[] = [];
 
       if (!options?.forceReanalysis) {
         try {
-          // Layer 1: Client-side cache fast-path (PR #341) - instant for cached duplicates
           const { cachedDuplicates, cachedUpgrades, remainingFiles } = partitionCachedFiles(files);
+          const batchUpdates: Array<{ fileName: string; record: AnalysisRecord; isDuplicate: boolean }> = [];
 
-          // Process cached duplicates immediately (no network call needed)
           for (const dup of cachedDuplicates) {
-            dispatch({
-              type: 'SYNC_ANALYSIS_COMPLETE',
-              payload: {
-                fileName: dup.file.name,
-                isDuplicate: true,
-                record: buildRecordFromCachedDuplicate(dup, 'local-duplicate')
-              },
+            batchUpdates.push({
+              fileName: dup.file.name,
+              isDuplicate: true,
+              record: buildRecordFromCachedDuplicate(dup, 'local-duplicate')
             });
           }
 
-          // Prepare cached upgrades as DuplicateCheckResults
           const cachedUpgradeResults: DuplicateCheckResult[] = cachedUpgrades.map(file => ({
             file,
             isDuplicate: true,
             needsUpgrade: true
           }));
 
-          // Layer 2-4: Check remaining files via network (hash-only batch API or fallback)
           const { trueDuplicates, needsUpgrade, newFiles } = remainingFiles.length > 0
             ? await checkFilesForDuplicates(remainingFiles, log)
             : EMPTY_CATEGORIZATION;
 
-          // Combine cached upgrades with network-checked upgrades
           const combinedNeedsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
 
-          // Mark true duplicates as skipped immediately (don't analyze these at all)
           for (const dup of trueDuplicates) {
-            dispatch({
-              type: 'SYNC_ANALYSIS_COMPLETE',
-              payload: {
+            batchUpdates.push({
+              fileName: dup.file.name,
+              isDuplicate: true,
+              record: {
+                id: dup.recordId || `local-duplicate-${Date.now()}`,
+                timestamp: dup.timestamp || new Date().toISOString(),
+                analysis: dup.analysisData || null,
                 fileName: dup.file.name,
-                isDuplicate: true,
-                record: {
-                  id: dup.recordId || `local-duplicate-${Date.now()}`,
-                  timestamp: dup.timestamp || new Date().toISOString(),
-                  analysis: dup.analysisData || null,
-                  fileName: dup.file.name,
-                },
               },
             });
           }
 
-          // Update files that need upgrade to "Queued (needs upgrade)" status
-          for (const item of combinedNeedsUpgrade) {
-            dispatch({
-              type: 'UPDATE_ANALYSIS_STATUS',
-              payload: { fileName: item.file.name, status: 'Queued (upgrading)' }
-            });
+          // Dispatch all duplicates in one go
+          if (batchUpdates.length > 0) {
+            dispatch({ type: 'BATCH_ANALYSIS_COMPLETE', payload: batchUpdates });
           }
 
-          // Update new files to "Queued" status
-          for (const item of newFiles) {
-            dispatch({
-              type: 'UPDATE_ANALYSIS_STATUS',
-              payload: { fileName: item.file.name, status: 'Queued' }
-            });
+          const statusUpdates = [
+            ...combinedNeedsUpgrade.map(item => ({ fileName: item.file.name, status: 'Queued (upgrading)' })),
+            ...newFiles.map(item => ({ fileName: item.file.name, status: 'Queued' }))
+          ];
+
+          if (statusUpdates.length > 0) {
+            dispatch({ type: 'BATCH_UPDATE_ANALYSIS_STATUS', payload: statusUpdates });
           }
 
           filesToAnalyze = [...combinedNeedsUpgrade, ...newFiles];
@@ -224,17 +205,11 @@ function App() {
             cachedUpgrades: cachedUpgrades.length
           });
         } catch (duplicateCheckError) {
-          // If duplicate check fails entirely, fall back to analyzing all files
-          const errorMessage = duplicateCheckError instanceof Error
-            ? duplicateCheckError.message
-            : 'Unknown error during duplicate check';
-
           log('warn', 'Phase 1 failed: Duplicate check error, will analyze all files.', {
-            error: errorMessage,
+            error: duplicateCheckError instanceof Error ? duplicateCheckError.message : String(duplicateCheckError),
             fileCount: files.length
           });
 
-          // Reset all files to "Queued" status (clear any "Checking for duplicates..." errors)
           for (const file of files) {
             dispatch({
               type: 'UPDATE_ANALYSIS_STATUS',
@@ -242,11 +217,9 @@ function App() {
             });
           }
 
-          // Treat all files as new files that need analysis
           filesToAnalyze = files.map(file => ({ file }));
         }
 
-        // ***PHASE 2: Analyze only upgrades and new files (true duplicates already handled)***
         log('info', 'Phase 2: Starting analysis of non-duplicate files.', {
           count: filesToAnalyze.length
         });
@@ -254,13 +227,9 @@ function App() {
         for (const item of filesToAnalyze) {
           const file = item.file;
           try {
-            // 1. Mark this specific file as "Processing"
             dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
-
-            // 2. Call the synchronous service
             const analysisData = await analyzeBmsScreenshot(file, false);
 
-            // 3. Got data! Update the state for this one file.
             log('info', 'Processing synchronous analysis result.', { fileName: file.name });
             dispatch({
               type: 'SYNC_ANALYSIS_COMPLETE',
@@ -277,7 +246,6 @@ function App() {
             });
 
           } catch (err) {
-            // 4. Handle error for this specific file
             const message = err instanceof Error ? err.message : 'An unknown error occurred.';
             log('error', 'Analysis request failed for one file.', { error: message, fileName: file.name });
 
@@ -300,8 +268,8 @@ function App() {
             }
           }
         }
+
       } else {
-        // When forcing reanalysis, skip duplicate check and analyze all files
         log('info', 'Force reanalysis mode - skipping duplicate check.', { fileCount: files.length });
 
         for (const file of files) {
@@ -336,17 +304,14 @@ function App() {
       dispatch({ type: 'SET_ERROR', payload: errorMessage });
     }
 
-    // All files are processed
     dispatch({ type: 'ANALYSIS_COMPLETE' });
   };
 
   const handleReprocess = async (fileToReprocess: File) => {
     log('info', 'Reprocess initiated.', { fileName: fileToReprocess.name });
-    // Reprocessing is now just a normal analysis call with forceReanalysis=true
     await handleAnalyze([fileToReprocess], { forceFileName: fileToReprocess.name, forceReanalysis: true });
   };
 
-  // --- Registration logic remains unchanged ---
   const handleRegisterSystem = async (systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>) => {
     dispatch({ type: 'REGISTER_SYSTEM_START' });
     try {
@@ -355,7 +320,7 @@ function App() {
         await associateDlToSystem(registrationContext.dlNumber, newSystem.id);
       }
       dispatch({ type: 'REGISTER_SYSTEM_SUCCESS', payload: `System "${newSystem.name}" registered!` });
-      await fetchAppData();
+      await fetchAppData(true);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Unknown registration error";
       dispatch({ type: 'REGISTER_SYSTEM_ERROR', payload: errorMessage });
@@ -369,8 +334,6 @@ function App() {
   const handleCloseRegisterModal = () => {
     dispatch({ type: 'CLOSE_REGISTER_MODAL' });
   };
-  // --- End of registration logic ---
-
 
   return (
     <div className="flex flex-col min-h-screen bg-neutral-light">
@@ -414,4 +377,3 @@ function App() {
 }
 
 export default App;
-

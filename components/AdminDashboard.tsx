@@ -258,29 +258,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             needsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
 
             // Mark true duplicates as skipped immediately (don't analyze these at all)
-            for (const dup of trueDuplicates) {
+            if (trueDuplicates.length > 0) {
                 dispatch({
-                    type: 'UPDATE_BULK_JOB_SKIPPED',
-                    payload: {
+                    type: 'BATCH_BULK_JOB_SKIPPED',
+                    payload: trueDuplicates.map(dup => ({
                         fileName: dup.file.name,
                         reason: 'Duplicate content detected (same image)'
-                    }
+                    }))
                 });
             }
 
-            // Update files that need upgrade to "Queued (needs upgrade)" status
-            for (const item of needsUpgrade) {
-                dispatch({
-                    type: 'UPDATE_BULK_UPLOAD_RESULT',
-                    payload: { fileName: item.file.name, error: 'Queued (upgrading)' }
-                });
-            }
+            // Update status for files that need upgrade or are new in batches
+            const statusUpdates = [
+                ...needsUpgrade.map(item => ({ fileName: item.file.name, error: 'Queued (upgrading)' })),
+                ...newFiles.map(item => ({ fileName: item.file.name, error: 'Queued' }))
+            ];
 
-            // Update new files to "Queued" status
-            for (const item of newFiles) {
+            if (statusUpdates.length > 0) {
                 dispatch({
-                    type: 'UPDATE_BULK_UPLOAD_RESULT',
-                    payload: { fileName: item.file.name, error: 'Queued' }
+                    type: 'BATCH_UPDATE_BULK_UPLOAD_RESULT',
+                    payload: statusUpdates
                 });
             }
 

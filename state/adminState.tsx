@@ -155,6 +155,7 @@ export type AdminAction =
   | { type: 'CLEAR_DATA_SUCCESS' }
   | { type: 'SET_BULK_UPLOAD_RESULTS'; payload: DisplayableAnalysisResult[] }
   | { type: 'UPDATE_BULK_UPLOAD_RESULT'; payload: Partial<DisplayableAnalysisResult> & { fileName: string } }
+  | { type: 'BATCH_UPDATE_BULK_UPLOAD_RESULT'; payload: Array<Partial<DisplayableAnalysisResult> & { fileName: string }> }
   | { type: 'SET_THROTTLE_MESSAGE'; payload: string | null }
   | { type: 'SET_SELECTED_SYSTEM_IDS'; payload: string[] }
   | { type: 'SET_PRIMARY_SYSTEM_ID'; payload: string }
@@ -165,8 +166,9 @@ export type AdminAction =
   | { type: 'SET_SYSTEMS_PAGE'; payload: number }
   | { type: 'SET_HISTORY_PAGE'; payload: number }
   | { type: 'UPDATE_BULK_JOB_COMPLETED'; payload: { record: AnalysisRecord, fileName: string } }
-  // ***FIX: Add new action type for skipping files***
+  | { type: 'BATCH_BULK_JOB_COMPLETED'; payload: Array<{ record: AnalysisRecord, fileName: string }> }
   | { type: 'UPDATE_BULK_JOB_SKIPPED'; payload: { fileName: string, reason: string } }
+  | { type: 'BATCH_BULK_JOB_SKIPPED'; payload: Array<{ fileName: string, reason: string }> }
   | { type: 'OPEN_DIAGNOSTICS_MODAL' }
   | { type: 'CLOSE_DIAGNOSTICS_MODAL' }
   | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: DiagnosticsResponse | null }
@@ -246,6 +248,18 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         )
       };
 
+    case 'BATCH_UPDATE_BULK_UPLOAD_RESULT': {
+      const updates = action.payload;
+      const updateMap = new Map(updates.map(u => [u.fileName, u]));
+      return {
+        ...state,
+        bulkUploadResults: state.bulkUploadResults.map(r => {
+          const update = updateMap.get(r.fileName);
+          return update ? { ...r, ...update } : r;
+        })
+      };
+    }
+
     case 'UPDATE_BULK_JOB_COMPLETED':
       const { record, fileName } = action.payload;
       return {
@@ -259,7 +273,24 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         totalHistory: state.totalHistory + 1,
       };
 
-    // ***FIX: Handle the new SKIPPED action***
+    case 'BATCH_BULK_JOB_COMPLETED': {
+      const updates = action.payload;
+      const updateMap = new Map(updates.map(u => [u.fileName, u.record]));
+      const newRecords = updates.map(u => u.record);
+
+      return {
+        ...state,
+        bulkUploadResults: state.bulkUploadResults.map(r => {
+          const record = updateMap.get(r.fileName);
+          return record ? { ...r, data: record.analysis, error: null, recordId: record.id, weather: record.weather } : r;
+        }),
+        // Add new records to history immediately
+        history: [...newRecords, ...state.history],
+        historyCache: [...newRecords, ...state.historyCache],
+        totalHistory: state.totalHistory + newRecords.length,
+      };
+    }
+
     case 'UPDATE_BULK_JOB_SKIPPED':
       return {
         ...state,
@@ -269,6 +300,19 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
             : r
         ),
       };
+
+    case 'BATCH_BULK_JOB_SKIPPED': {
+      const updates = action.payload;
+      const skipMap = new Map(updates.map(u => [u.fileName, u.reason]));
+
+      return {
+        ...state,
+        bulkUploadResults: state.bulkUploadResults.map(r => {
+          const reason = skipMap.get(r.fileName);
+          return reason ? { ...r, isDuplicate: true, error: reason } : r;
+        }),
+      };
+    }
 
     case 'SET_THROTTLE_MESSAGE':
       return { ...state, throttleMessage: action.payload };
