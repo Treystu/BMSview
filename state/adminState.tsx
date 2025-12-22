@@ -1,6 +1,6 @@
 import { DEFAULT_VISIBLE_COLUMNS, HistoryColumnKey } from 'components/admin/columnDefinitions';
 import React, { createContext, Dispatch, useContext, useReducer } from 'react';
-import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult, AnalysisStory } from '../types';
+import type { AnalysisRecord, AnalysisStory, BmsSystem, DisplayableAnalysisResult } from '../types';
 
 export type HistorySortKey = HistoryColumnKey;
 
@@ -185,19 +185,28 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         ...state,
         loading: false,
         systems: action.payload.systems ? action.payload.systems.items : state.systems,
-        totalSystems: action.payload.systems ? action.payload.systems.totalItems : state.totalSystems,
+        totalSystems: action.payload.systems ? (action.payload.systems.totalItems ?? (action.payload.systems as any).total ?? state.totalSystems) : state.totalSystems,
         history: action.payload.history ? action.payload.history.items : state.history,
-        totalHistory: action.payload.history ? action.payload.history.totalItems : state.totalHistory,
+        totalHistory: action.payload.history ? (action.payload.history.totalItems ?? (action.payload.history as any).total ?? state.totalHistory) : state.totalHistory,
         error: null,
       };
     case 'START_HISTORY_CACHE_BUILD':
       return { ...state, isCacheBuilding: true, historyCache: [] };
     case 'APPEND_HISTORY_CACHE':
-      // Append new records, avoiding duplicates by checking IDs
-      const newRecords = action.payload.filter(
-        p => !state.historyCache.some(existing => existing.id === p.id)
-      );
-      return { ...state, historyCache: [...state.historyCache, ...newRecords] };
+      // OPTIMIZATION: Use a Set for O(1) ID lookups to avoid O(N^2) complexity with large datasets (4k+ records)
+      const existingIds = new Set(state.historyCache.map(r => r.id));
+      const newRecords = action.payload.filter(p => !existingIds.has(p.id));
+      if (newRecords.length === 0) return state;
+
+      const updatedCache = [...state.historyCache, ...newRecords];
+      return {
+        ...state,
+        historyCache: updatedCache,
+        // If we are appending new records, we should also increment totalHistory if it represents the full sync count
+        // However, totalHistory is primarily for pagination from the server.
+        // For now, let's just update the cache and keep totalHistory synced with what's actually cached if it's larger.
+        totalHistory: Math.max(state.totalHistory, updatedCache.length)
+      };
     case 'FINISH_HISTORY_CACHE_BUILD':
       return { ...state, isCacheBuilding: false };
 
@@ -290,12 +299,12 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       if (!state.diagnosticResults) {
         return state;
       }
-      
+
       // Simple name-based matching - no need for complex test ID lookup
-      const updatedResults = state.diagnosticResults.results.map(r => 
+      const updatedResults = state.diagnosticResults.results.map(r =>
         r.name === action.payload.result.name ? action.payload.result : r
       );
-      
+
       // Recalculate summary in real-time
       const newSummary = {
         total: updatedResults.length,
@@ -304,7 +313,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         warnings: updatedResults.filter(r => r.status === 'warning').length,
         errors: updatedResults.filter(r => r.status === 'error').length
       };
-      
+
       return {
         ...state,
         diagnosticResults: {
