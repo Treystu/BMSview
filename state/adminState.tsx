@@ -139,7 +139,7 @@ export const initialState: AdminState = {
 // 2. Actions
 export type AdminAction =
   | { type: 'FETCH_PAGE_DATA_START' }
-  | { type: 'FETCH_PAGE_DATA_SUCCESS'; payload: { systems?: { items: BmsSystem[]; totalItems: number }; history?: { items: AnalysisRecord[]; totalItems: number } } }
+  | { type: 'FETCH_PAGE_DATA_SUCCESS'; payload: { systems?: { items: BmsSystem[]; total: number }; history?: { items: AnalysisRecord[]; total: number } } }
   | { type: 'START_HISTORY_CACHE_BUILD' }
   | { type: 'APPEND_HISTORY_CACHE'; payload: AnalysisRecord[] }
   | { type: 'FINISH_HISTORY_CACHE_BUILD' }
@@ -185,9 +185,9 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         ...state,
         loading: false,
         systems: action.payload.systems ? action.payload.systems.items : state.systems,
-        totalSystems: action.payload.systems ? (action.payload.systems.totalItems ?? (action.payload.systems as any).total ?? state.totalSystems) : state.totalSystems,
+        totalSystems: action.payload.systems ? (action.payload.systems.total ?? state.totalSystems) : state.totalSystems,
         history: action.payload.history ? action.payload.history.items : state.history,
-        totalHistory: action.payload.history ? (action.payload.history.totalItems ?? (action.payload.history as any).total ?? state.totalHistory) : state.totalHistory,
+        totalHistory: action.payload.history ? (action.payload.history.total ?? state.totalHistory) : state.totalHistory,
         error: null,
       };
     case 'START_HISTORY_CACHE_BUILD':

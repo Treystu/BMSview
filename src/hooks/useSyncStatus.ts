@@ -76,7 +76,7 @@ export function useSyncStatus(): SyncStatus & { forceSyncNow: () => Promise<void
                 nextSyncIn: status.nextSyncIn,
                 cacheStats: buildCacheStats(metrics)
             });
-        }, 2000);
+        }, 30000);
 
         return () => clearInterval(interval);
     }, []);

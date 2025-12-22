@@ -408,6 +408,25 @@ export class SyncManager {
             return;
         }
 
+        // --- Multi-Tab Sync Lock ---
+        const LOCK_KEY = 'bmsview_sync_lock';
+        const LOCK_DURATION = 10000; // 10 seconds
+        const now = Date.now();
+        const lockValue = localStorage.getItem(LOCK_KEY);
+
+        if (lockValue) {
+            const { timestamp, tabId } = JSON.parse(lockValue);
+            if (now - timestamp < LOCK_DURATION) {
+                // Lock is active and not expired
+                log('debug', 'Sync locked by another tab', { tabId });
+                return;
+            }
+        }
+
+        // Acquire lock
+        const myTabId = Math.random().toString(36).substring(7);
+        localStorage.setItem(LOCK_KEY, JSON.stringify({ timestamp: now, tabId: myTabId }));
+
         this.isSyncing = true;
         this.emit({ type: 'sync-start' });
         const startTime = Date.now();
@@ -462,6 +481,8 @@ export class SyncManager {
             this.emit({ type: 'sync-error', error: (err as Error).message });
         } finally {
             this.isSyncing = false;
+            // Immediate unlock or let it expire? Let's clear it to be responsive.
+            localStorage.removeItem(LOCK_KEY);
         }
     }
 

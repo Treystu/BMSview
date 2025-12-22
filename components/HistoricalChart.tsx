@@ -50,7 +50,7 @@ const METRICS: Record<MetricKey, {
     solarPower: { label: 'Solar', unit: 'W', color: '#fbbf24', source: 'analysis', group: 'Solar' },
 };
 
-const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds', 'irradiance'];
+const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds', 'irradiance', 'soh', 'solarPower'];
 
 
 const METRIC_GROUPS = Object.entries(METRICS).reduce((acc, [key, metric]) => {
@@ -59,18 +59,28 @@ const METRIC_GROUPS = Object.entries(METRICS).reduce((acc, [key, metric]) => {
     return acc;
 }, {} as Record<string, MetricKey[]>);
 
-const mapRecordToPoint = (r: AnalysisRecord) => {
+const mapRecordToPoint = (r: AnalysisRecord, ratedCapacity?: number | null) => {
     const point: { [key: string]: any } = { timestamp: r.timestamp, recordCount: 1, anomalies: [], source: 'bms' };
     Object.keys(METRICS).forEach(m => {
         const metric = m as MetricKey;
         const { source, multiplier = 1, anomaly } = METRICS[metric];
         let value;
 
-        // Special handling for irradiance from weather data
+        // Special handling for metrics with different names or derived values
         if (metric === 'irradiance') {
             value = r.weather?.estimated_irradiance_w_m2 ?? null;
+        } else if (metric === 'solarPower') {
+            value = r.analysis?.power ?? null; // Map solarPower UI metric to BMS power field
+        } else if (metric === 'soh') {
+            // SOH (State of Health) calculation
+            const fullCap = r.analysis?.fullCapacity;
+            if (ratedCapacity && ratedCapacity > 0 && typeof fullCap === 'number' && fullCap > 0) {
+                value = (fullCap / ratedCapacity) * 100;
+            } else {
+                value = null;
+            }
         } else {
-            value = source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
+            value = source === 'analysis' ? (r.analysis as any)?.[metric] : (r.weather as any)?.[metric];
         }
 
         if (value != null && typeof value === 'number') {
@@ -93,10 +103,10 @@ const mapRecordToPoint = (r: AnalysisRecord) => {
 /**
  * Convert unified point to chart point format
  */
-const mapUnifiedPointToChartPoint = (p: UnifiedTimelinePoint) => {
+const mapUnifiedPointToChartPoint = (p: UnifiedTimelinePoint, ratedCapacity?: number | null) => {
     // If it's already an analysis record, map it normally
     if (p.type === 'analysis') {
-        return mapRecordToPoint(p.data as AnalysisRecord);
+        return mapRecordToPoint(p.data as AnalysisRecord, ratedCapacity);
     }
 
     // It is a weather point
@@ -115,9 +125,9 @@ const mapUnifiedPointToChartPoint = (p: UnifiedTimelinePoint) => {
         let value;
         // Weather points only provide weather metrics (and estimated irradiance)
         if (metric === 'irradiance') {
-            value = weather.estimated_irradiance_w_m2 ?? null;
+            value = (weather as any).estimated_irradiance_w_m2 ?? null;
         } else if (source === 'weather') {
-            value = weather[metric as keyof WeatherData];
+            value = (weather as any)[metric];
         } else {
             value = null; // Battery metrics are null for weather-only points
         }
@@ -498,8 +508,7 @@ const SvgChart: React.FC<{
             return { key, segments, color: METRICS[key].color };
         }).filter(Boolean);
 
-        // Calculate min/max bands for each metric using standard deviation
-        // FIX: Use tighter, statistically-based bands instead of raw min/max
+        // Calculate min/max bands for each metric using bucket-local min/max
         const bands = bandEnabled ? activeMetrics.map(({ key, axis }) => {
             const yScale = axis === 'left' ? yScaleLeft : yScaleRight;
             if (!yScale) return null;
@@ -507,22 +516,18 @@ const SvgChart: React.FC<{
             const filteredData = dataToRender.filter((d: any) => d[key] !== null);
             if (filteredData.length === 0) return null;
 
-            // Calculate mean and standard deviation for the entire visible dataset
-            const values = filteredData.map((d: any) => d[key]);
-            const mean = values.reduce((sum: number, v: number) => sum + v, 0) / values.length;
-            const variance = values.reduce((sum: number, v: number) => sum + Math.pow(v - mean, 2), 0) / values.length;
-            const stdDev = Math.sqrt(variance);
-
-            // Create band segments using mean ± stdDev (narrower, more meaningful bands)
+            // Create band segments using localized min/max from the bucket
             const segments = filteredData
                 .map((d: any) => {
-                    const min = mean - stdDev;
-                    const max = mean + stdDev;
+                    // Use bucket-local min/max if available, fallback to point value
+                    const min = d[`${key}_min`] ?? d[key];
+                    const max = d[`${key}_max`] ?? d[key];
                     const x = xScale(d.timestamp);
                     const bandwidth = Math.max(2, (chartWidth / filteredData.length) * 0.8);
 
                     return { x, min, max, yScale, bandwidth, timestamp: d.timestamp };
-                });
+                })
+                .filter((seg: any) => seg.min !== seg.max); // Only show bands where there's variance
 
             if (segments.length === 0) return null;
             return { key, segments, color: METRICS[key].color };
@@ -1486,7 +1491,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             }
 
             // 3. Process into Chart Points
-            chartDataPoints = filteredData.map(mapUnifiedPointToChartPoint);
+            chartDataPoints = filteredData.map(p => mapUnifiedPointToChartPoint(p, ratedCapacity));
 
             if (chartDataPoints.length < 2) {
                 setTimelineData(null);

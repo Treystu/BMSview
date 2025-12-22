@@ -2,8 +2,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     autoAssociateRecords,
-    backfillWeatherData,
     backfillHourlyCloudData,
+    backfillWeatherData,
     cleanupLinks,
     clearAllData, clearHistoryStore,
     countRecordsNeedingWeather,
@@ -15,19 +15,16 @@ import {
     fixPowerSigns,
     getAnalysisHistory,
     getRegisteredSystems,
-    getDiagnosticProgress,
     linkAnalysisToSystem,
     mergeBmsSystems,
-    registerBmsSystem,
-    runDiagnostics,
     runSingleDiagnosticTest,
     streamAllHistory,
     updateBmsSystem
 } from '../services/clientService';
 import { analyzeBmsScreenshot } from '../services/geminiService';
-import { checkFilesForDuplicates, partitionCachedFiles, buildRecordFromCachedDuplicate, type DuplicateCheckResult } from '../utils/duplicateChecker';
 import { useAdminState } from '../state/adminState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
+import { buildRecordFromCachedDuplicate, checkFilesForDuplicates, partitionCachedFiles, type DuplicateCheckResult } from '../utils/duplicateChecker';
 import BulkUpload from './BulkUpload';
 import DiagnosticsModal from './DiagnosticsModal';
 import EditSystemModal from './EditSystemModal';
@@ -35,17 +32,17 @@ import HistoricalChart from './HistoricalChart';
 import IpManagement from './IpManagement';
 import SpinnerIcon from './icons/SpinnerIcon';
 
+import { AIFeedbackDashboard } from './AIFeedbackDashboard';
+import CostDashboard from './CostDashboard';
+import { DiagnosticsGuru } from './DiagnosticsGuru';
 import AdminHeader from './admin/AdminHeader';
 import AdminStoryManager from './admin/AdminStoryManager';
 import DataManagement from './admin/DataManagement';
 import HistoryTable from './admin/HistoryTable';
-import SystemsTable from './admin/SystemsTable';
-import ReconciliationDashboard from './admin/reconciliation/ReconciliationDashboard';
 import MonitoringDashboard from './admin/MonitoringDashboard';
-import CostDashboard from './CostDashboard';
+import SystemsTable from './admin/SystemsTable';
 import { getNestedValue } from './admin/columnDefinitions';
-import { AIFeedbackDashboard } from './AIFeedbackDashboard';
-import { DiagnosticsGuru } from './DiagnosticsGuru';
+import ReconciliationDashboard from './admin/reconciliation/ReconciliationDashboard';
 
 interface NetlifyUser {
     email: string;
@@ -59,7 +56,7 @@ interface AdminDashboardProps {
     onLogout: () => void;
 }
 
-const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
+const log = (level: string, message: string, context: any = {}) => {
     console.log(JSON.stringify({
         level: level.toUpperCase(),
         timestamp: new Date().toISOString(),
@@ -83,16 +80,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     } = state;
 
     const [cleanupProgress] = useState<string | null>(null);
-        const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
-        const [isStoryMode, setIsStoryMode] = useState(false);
-        const [storyTitle, setStoryTitle] = useState('');
-        const [storySummary, setStorySummary] = useState('');
-        const [storyUserContext, setStoryUserContext] = useState('');
-        const [confirmation, setConfirmation] = useState<{
-            isOpen: boolean;
-            message: string;
-            onConfirm: () => void;
-        }>({ isOpen: false, message: '', onConfirm: () => {} });
+    const [showRateLimitWarning, setShowRateLimitWarning] = useState(false);
+    const [isStoryMode, setIsStoryMode] = useState(false);
+    const [storyTitle, setStoryTitle] = useState('');
+    const [storySummary, setStorySummary] = useState('');
+    const [storyUserContext, setStoryUserContext] = useState('');
+    const [confirmation, setConfirmation] = useState<{
+        isOpen: boolean;
+        message: string;
+        onConfirm: () => void;
+    }>({ isOpen: false, message: '', onConfirm: () => { } });
 
     // --- Data Fetching ---
     const fetchData = useCallback(async (page: number, type: 'systems' | 'history' | 'all') => {
@@ -144,12 +141,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     payload: { systems: systemsResponse, history: historyResponse }
                 });
 
-                // Start building the full history cache
-                dispatch({ type: 'START_HISTORY_CACHE_BUILD' });
-                streamAllHistory(
-                    (records) => dispatch({ type: 'APPEND_HISTORY_CACHE', payload: records }),
-                    () => dispatch({ type: 'FINISH_HISTORY_CACHE_BUILD' })
-                );
+                // Start building the full history cache with a slight delay to allow UI to settle
+                setTimeout(() => {
+                    dispatch({ type: 'START_HISTORY_CACHE_BUILD' });
+                    streamAllHistory(
+                        (records) => dispatch({ type: 'APPEND_HISTORY_CACHE', payload: records }),
+                        () => dispatch({ type: 'FINISH_HISTORY_CACHE_BUILD' })
+                    );
+                }, 1500);
 
             } catch (err) {
                 const error = err instanceof Error ? err.message : "Failed to load initial dashboard data.";
@@ -190,7 +189,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         if (isStoryMode) {
             try {
                 dispatch({ type: 'ACTION_START', payload: 'isBulkLoading' });
-                const story = await createAnalysisStory(storyTitle, storySummary, files, storyUserContext || undefined);
+                const story = await createAnalysisStory(storyTitle, storySummary, normalizedFiles, storyUserContext || undefined);
                 log('info', 'Story analysis complete.', { storyId: story.id });
                 // We could update some state here to show the story was created.
                 // For now, we'll just clear the form.
@@ -213,8 +212,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
         // ***ISSUE 4 FIX: Warn if cache is still building***
         if (state.isCacheBuilding) {
-            log('warn', 'Duplicate check may be incomplete - history cache still building.', { 
-                cachedRecordCount: state.historyCache.length 
+            log('warn', 'Duplicate check may be incomplete - history cache still building.', {
+                cachedRecordCount: state.historyCache.length
             });
         }
 
@@ -257,46 +256,46 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
             // Combine cached upgrades with network-checked upgrades
             needsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
-            
+
             // Mark true duplicates as skipped immediately (don't analyze these at all)
             for (const dup of trueDuplicates) {
                 dispatch({
                     type: 'UPDATE_BULK_JOB_SKIPPED',
-                    payload: { 
-                        fileName: dup.file.name, 
-                        reason: 'Duplicate content detected (same image)' 
+                    payload: {
+                        fileName: dup.file.name,
+                        reason: 'Duplicate content detected (same image)'
                     }
                 });
             }
 
             // Update files that need upgrade to "Queued (needs upgrade)" status
             for (const item of needsUpgrade) {
-                dispatch({ 
-                    type: 'UPDATE_BULK_UPLOAD_RESULT', 
-                    payload: { fileName: item.file.name, error: 'Queued (upgrading)' } 
+                dispatch({
+                    type: 'UPDATE_BULK_UPLOAD_RESULT',
+                    payload: { fileName: item.file.name, error: 'Queued (upgrading)' }
                 });
             }
 
             // Update new files to "Queued" status
             for (const item of newFiles) {
-                dispatch({ 
-                    type: 'UPDATE_BULK_UPLOAD_RESULT', 
-                    payload: { fileName: item.file.name, error: 'Queued' } 
+                dispatch({
+                    type: 'UPDATE_BULK_UPLOAD_RESULT',
+                    payload: { fileName: item.file.name, error: 'Queued' }
                 });
             }
 
             // ***PHASE 2: Analyze only upgrades and new files (true duplicates already handled)***
             const filesToAnalyze = [...needsUpgrade, ...newFiles];
-            log('info', 'Phase 2: Starting analysis of non-duplicate files.', { 
+            log('info', 'Phase 2: Starting analysis of non-duplicate files.', {
                 count: filesToAnalyze.length,
                 upgrades: needsUpgrade.length,
                 new: newFiles.length,
                 cachedDuplicates: cachedDuplicates.length,
                 cachedUpgrades: cachedUpgrades.length
             });
-            
+
             let consecutiveRateLimitErrors = 0; // Track consecutive 429 errors across all files
-            
+
             for (const item of filesToAnalyze) {
                 const file = item.file;
                 try {
@@ -321,10 +320,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         type: 'UPDATE_BULK_JOB_COMPLETED',
                         payload: { record: tempRecord, fileName: file.name }
                     });
-                    
+
                     // Reset consecutive rate limit counter on success
                     consecutiveRateLimitErrors = 0;
-                    
+
                 } catch (err) {
                     // 4. Handle error for this specific file
                     const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
@@ -334,25 +333,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     if (errorMessage.includes('429')) {
                         setShowRateLimitWarning(true);
                         consecutiveRateLimitErrors++;
-                        
+
                         // Stop processing after too many consecutive 429 errors
                         if (consecutiveRateLimitErrors >= 5) {
-                            log('error', 'Too many consecutive rate limit errors, stopping batch.', { 
+                            log('error', 'Too many consecutive rate limit errors, stopping batch.', {
                                 filesRemaining: filesToAnalyze.length,
-                                fileName: file.name 
+                                fileName: file.name
                             });
-                            dispatch({ 
-                                type: 'SET_ERROR', 
-                                payload: 'Rate limit exceeded. Please wait a few minutes before uploading more files.' 
+                            dispatch({
+                                type: 'SET_ERROR',
+                                payload: 'Rate limit exceeded. Please wait a few minutes before uploading more files.'
                             });
                             break; // Stop processing remaining files
                         }
-                        
+
                         const backoffMs = Math.min(2000 * Math.pow(2, consecutiveRateLimitErrors - 1), 30000); // Max 30 seconds
-                        log('warn', 'Rate limit detected, applying exponential backoff.', { 
-                            consecutiveErrors: consecutiveRateLimitErrors, 
+                        log('warn', 'Rate limit detected, applying exponential backoff.', {
+                            consecutiveErrors: consecutiveRateLimitErrors,
                             backoffMs,
-                            fileName: file.name 
+                            fileName: file.name
                         });
                         await new Promise(resolve => setTimeout(resolve, backoffMs));
                     } else {
@@ -393,28 +392,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     };
 
     const handleDeleteRecord = async (recordId: string) => {
-            setConfirmation({
-                isOpen: true,
-                message: `Are you sure you want to delete history record ${recordId}?`,
-                onConfirm: async () => {
-                    log('info', 'Deleting history record.', { recordId });
-                    dispatch({ type: 'ACTION_START', payload: 'deletingRecordId' });
-                    try {
-                        await deleteAnalysisRecord(recordId);
-                        dispatch({ type: 'REMOVE_HISTORY_RECORD', payload: recordId });
-                        log('info', 'History record deleted successfully (optimistic UI update).', { recordId });
-                        await fetchData(historyPage, 'history');
-                    } catch (err) {
-                        const error = err instanceof Error ? err.message : "Failed to delete record.";
-                        log('error', 'Failed to delete history record.', { recordId, error });
-                        dispatch({ type: 'SET_ERROR', payload: error });
-                    } finally {
-                        dispatch({ type: 'ACTION_END', payload: 'deletingRecordId' });
-                        setConfirmation({ isOpen: false, message: '', onConfirm: () => {} });
-                    }
+        setConfirmation({
+            isOpen: true,
+            message: `Are you sure you want to delete history record ${recordId}?`,
+            onConfirm: async () => {
+                log('info', 'Deleting history record.', { recordId });
+                dispatch({ type: 'ACTION_START', payload: 'deletingRecordId' });
+                try {
+                    await deleteAnalysisRecord(recordId);
+                    dispatch({ type: 'REMOVE_HISTORY_RECORD', payload: recordId });
+                    log('info', 'History record deleted successfully (optimistic UI update).', { recordId });
+                    await fetchData(historyPage, 'history');
+                } catch (err) {
+                    const error = err instanceof Error ? err.message : "Failed to delete record.";
+                    log('error', 'Failed to delete history record.', { recordId, error });
+                    dispatch({ type: 'SET_ERROR', payload: error });
+                } finally {
+                    dispatch({ type: 'ACTION_END', payload: 'deletingRecordId' });
+                    setConfirmation({ isOpen: false, message: '', onConfirm: () => { } });
                 }
-            });
-        };
+            }
+        });
+    };
 
     const handleLinkRecord = async (record: AnalysisRecord) => {
         const systemId = state.linkSelections[record.id];
@@ -468,37 +467,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         options: { requiresConfirm?: boolean; confirmMessage?: string } = {}
     ) => {
         if (options.requiresConfirm) {
-                    setConfirmation({
-                        isOpen: true,
-                        message: options.confirmMessage || `Are you sure you want to perform the action: ${actionName}?`,
-                        onConfirm: async () => {
-                            setConfirmation({ isOpen: false, message: '', onConfirm: () => {} });
-                            await executeAction();
-                        }
-                    });
-                } else {
+            setConfirmation({
+                isOpen: true,
+                message: options.confirmMessage || `Are you sure you want to perform the action: ${actionName}?`,
+                onConfirm: async () => {
+                    setConfirmation({ isOpen: false, message: '', onConfirm: () => { } });
                     await executeAction();
                 }
-        
-                async function executeAction() {
+            });
+        } else {
+            await executeAction();
+        }
 
-        log('info', `Starting action: ${actionName}.`);
-                dispatch({ type: 'ACTION_START', payload: actionName });
-                try {
-                    const result = await actionFn();
-                    log('info', `${actionName} completed successfully.`, { result });
-                    if (refreshType !== 'none') {
-                        const pageToRefresh = refreshType === 'systems' ? systemsPage : (refreshType === 'history' ? historyPage : 1);
-                        await fetchData(pageToRefresh, refreshType);
-                    }
-                } catch (err) {
-                    const error = err instanceof Error ? err.message : `Failed to execute action: ${actionName}.`;
-                    log('error', `${actionName} failed.`, { error });
-                    dispatch({ type: 'SET_ERROR', payload: error });
-                } finally {
-                    dispatch({ type: 'ACTION_END', payload: actionName });
+        async function executeAction() {
+
+            log('info', `Starting action: ${actionName}.`);
+            dispatch({ type: 'ACTION_START', payload: actionName });
+            try {
+                const result = await actionFn();
+                log('info', `${actionName} completed successfully.`, { result });
+                if (refreshType !== 'none') {
+                    const pageToRefresh = refreshType === 'systems' ? systemsPage : (refreshType === 'history' ? historyPage : 1);
+                    await fetchData(pageToRefresh, refreshType);
                 }
+            } catch (err) {
+                const error = err instanceof Error ? err.message : `Failed to execute action: ${actionName}.`;
+                log('error', `${actionName} failed.`, { error });
+                dispatch({ type: 'SET_ERROR', payload: error });
+            } finally {
+                dispatch({ type: 'ACTION_END', payload: actionName });
             }
+        }
     };
 
     const handleScanForDuplicates = async () => {
@@ -560,11 +559,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     try {
                         const result = await backfillWeatherData();
                         log('info', 'Weather backfill completed.', { result });
-                        
+
                         // Show result message to user
                         const message = result.message || `Processed ${result.processedCount || result.updatedCount} records. ${result.updatedCount} updated, ${result.errorCount || 0} errors.`;
                         alert(message + (result.completed === false ? '\n\nRun again to continue backfilling remaining records.' : ''));
-                        
+
                         await fetchData(historyPage, 'history');
                     } catch (err) {
                         const error = err instanceof Error ? err.message : 'Failed to backfill weather data.';
@@ -591,11 +590,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             try {
                 const result = await backfillHourlyCloudData();
                 log('info', 'Hourly cloud backfill completed.', { result });
-                
+
                 // Show result message to user
                 const message = result.message || `Processed ${result.processedDays} days. ${result.hoursInserted} hours inserted, ${result.errors} errors.`;
                 alert(message + (result.completed === false ? '\n\nRun again to continue backfilling remaining days.' : ''));
-                
+
                 await fetchData(historyPage, 'history');
             } catch (err) {
                 const error = err instanceof Error ? err.message : 'Failed to backfill hourly cloud data.';
@@ -658,7 +657,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         { id: 'retryMechanism', label: 'Retry Mechanism' },
         { id: 'timeout', label: 'Timeout Handling' },
     ];
-    
+
     // Extract all test IDs from the sections
     const ALL_DIAGNOSTIC_TESTS = DIAGNOSTIC_TEST_SECTIONS.map(test => test.id);
 
@@ -672,12 +671,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
     const handleRunDiagnostics = async () => {
         const selectedTests = state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS;
-        
-        log('info', 'Starting real-time parallel diagnostics', { 
+
+        log('info', 'Starting real-time parallel diagnostics', {
             testCount: selectedTests.length,
-            tests: selectedTests 
+            tests: selectedTests
         });
-        
+
         // Create initial stub results to show tests as "running" immediately
         const initialResults = {
             status: 'partial' as const,
@@ -699,44 +698,44 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 partial: 0
             }
         };
-        
+
         // Open modal with initial stub results (all tests showing as "running")
         dispatch({ type: 'OPEN_DIAGNOSTICS_MODAL' });
         dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: initialResults });
         dispatch({ type: 'ACTION_START', payload: 'isRunningDiagnostics' });
-        
+
         const startTime = Date.now();
-        
+
         try {
             // Run ALL tests in parallel, each with its own API call
             // This is the key change: instead of one monolithic call, fire multiple parallel requests
             const testPromises = selectedTests.map(async (testId) => {
                 const testConfig = DIAGNOSTIC_TEST_SECTIONS.find(t => t.id === testId);
                 const displayName = testConfig?.label || testId;
-                
+
                 log('info', `Starting test: ${testId}`, { displayName });
-                
+
                 try {
                     // Each test runs independently using the scope parameter
                     const result = await runSingleDiagnosticTest(testId);
-                    
-                    log('info', `Completed test: ${testId}`, { 
+
+                    log('info', `Completed test: ${testId}`, {
                         displayName,
                         status: result.status,
-                        duration: result.duration 
+                        duration: result.duration
                     });
-                    
+
                     // Immediately update UI with this specific test result
-                    dispatch({ 
-                        type: 'UPDATE_SINGLE_DIAGNOSTIC_RESULT', 
+                    dispatch({
+                        type: 'UPDATE_SINGLE_DIAGNOSTIC_RESULT',
                         payload: { testId, result }
                     });
-                    
+
                     return result;
                 } catch (error) {
                     const errorMessage = error instanceof Error ? error.message : 'Test failed';
                     log('error', `Test failed: ${testId}`, { displayName, error: errorMessage });
-                    
+
                     // Create error result for this test
                     const errorResult = {
                         name: displayName,
@@ -744,20 +743,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         error: errorMessage,
                         duration: 0
                     };
-                    
+
                     // Update UI with error immediately
-                    dispatch({ 
-                        type: 'UPDATE_SINGLE_DIAGNOSTIC_RESULT', 
+                    dispatch({
+                        type: 'UPDATE_SINGLE_DIAGNOSTIC_RESULT',
                         payload: { testId, result: errorResult }
                     });
-                    
+
                     return errorResult;
                 }
             });
-            
+
             // Wait for all tests to complete (they run in parallel)
             const allResults = await Promise.all(testPromises);
-            
+
             // Calculate final summary
             const summary = {
                 total: allResults.length,
@@ -766,12 +765,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 warnings: allResults.filter(r => r.status === 'warning').length,
                 errors: allResults.filter(r => r.status === 'error').length
             };
-            
+
             // Determine overall status
-            const overallStatus = summary.errors > 0 || summary.warnings > 0 || summary.partial > 0 
-                ? 'partial' as const 
+            const overallStatus = summary.errors > 0 || summary.warnings > 0 || summary.partial > 0
+                ? 'partial' as const
                 : 'success' as const;
-            
+
             // Create final results object
             const finalResults = {
                 status: overallStatus,
@@ -780,22 +779,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 results: allResults,
                 summary
             };
-            
+
             // Update with final complete results
             dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: finalResults });
-            
-            log('info', 'All diagnostics completed', { 
+
+            log('info', 'All diagnostics completed', {
                 duration: finalResults.duration,
                 total: summary.total,
                 success: summary.success,
                 errors: summary.errors,
                 warnings: summary.warnings
             });
-            
+
         } catch (err) {
             const error = err instanceof Error ? err.message : 'Failed to run diagnostics.';
             log('error', 'Diagnostics orchestration failed.', { error });
-            
+
             // Create an error response object
             const errorResponse: any = {
                 status: 'error',
@@ -1147,37 +1146,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             )}
 
             <DiagnosticsModal
-                            isOpen={state.isDiagnosticsModalOpen}
-                            onClose={() => dispatch({ type: 'CLOSE_DIAGNOSTICS_MODAL' })}
-                            results={state.diagnosticResults}
-                            isLoading={state.actionStatus.isRunningDiagnostics}
-                            selectedTests={state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS}
-                        />
-            
-                        {confirmation.isOpen && (
-                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                                <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
-                                    <h2 className="text-lg font-bold mb-4">Confirm Action</h2>
-                                    <p>{confirmation.message}</p>
-                                    <div className="mt-6 flex justify-end gap-4">
-                                        <button
-                                            onClick={() => setConfirmation({ isOpen: false, message: '', onConfirm: () => {} })}
-                                            className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            onClick={confirmation.onConfirm}
-                                            className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
-                                        >
-                                            Confirm
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+                isOpen={state.isDiagnosticsModalOpen}
+                onClose={() => dispatch({ type: 'CLOSE_DIAGNOSTICS_MODAL' })}
+                results={state.diagnosticResults}
+                isLoading={state.actionStatus.isRunningDiagnostics}
+                selectedTests={state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS}
+            />
+
+            {confirmation.isOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-gray-800 p-6 rounded-lg shadow-lg">
+                        <h2 className="text-lg font-bold mb-4">Confirm Action</h2>
+                        <p>{confirmation.message}</p>
+                        <div className="mt-6 flex justify-end gap-4">
+                            <button
+                                onClick={() => setConfirmation({ isOpen: false, message: '', onConfirm: () => { } })}
+                                className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmation.onConfirm}
+                                className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+                            >
+                                Confirm
+                            </button>
+                        </div>
                     </div>
-                );
-            };
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default AdminDashboard;
