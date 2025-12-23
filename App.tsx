@@ -313,6 +313,36 @@ function App() {
       dispatch({ type: 'SET_ERROR', payload: errorMessage });
     }
 
+    // Batch weather backfill: Fill weather gaps efficiently after analysis completes
+    // This uses minimal API calls (1 call per day) rather than per-image calls
+    // Get unique systemIds from recently analyzed records
+    const historyItems = Array.isArray(state.analysisHistory)
+      ? state.analysisHistory
+      : state.analysisHistory.items || [];
+    const recentSystemIds = new Set<string>();
+    historyItems.slice(0, files.length).forEach((record: AnalysisRecord) => {
+      if (record.systemId) recentSystemIds.add(record.systemId);
+    });
+
+    for (const systemId of recentSystemIds) {
+      try {
+        log('info', 'Starting batch weather backfill for system.', { systemId });
+        const response = await fetch('/.netlify/functions/weather-backfill-gaps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ systemId })
+        });
+        if (response.ok) {
+          const result = await response.json();
+          log('info', 'Weather backfill complete.', result);
+        }
+      } catch (weatherErr) {
+        log('warn', 'Weather backfill failed (non-blocking).', {
+          error: weatherErr instanceof Error ? weatherErr.message : 'Unknown'
+        });
+      }
+    }
+
     dispatch({ type: 'ANALYSIS_COMPLETE' });
   };
 

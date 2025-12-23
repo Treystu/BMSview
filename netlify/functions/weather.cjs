@@ -2,6 +2,8 @@
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { getCollection } = require('./utils/mongodb.cjs');
+const { getCachedWeatherForHour } = require('./utils/weather-batch-backfill.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.WEATHER_API_KEY) {
@@ -104,6 +106,26 @@ exports.handler = async function (event, context) {
 
     if (timestamp) {
       log.debug('Fetching historical weather data');
+
+      // CACHE-FIRST: Check if we have this data cached
+      // Try to find systemId from the request (if provided)
+      const systemId = parsedBody.systemId;
+      if (systemId) {
+        const cachedWeather = await getCachedWeatherForHour(systemId, timestamp, log);
+        if (cachedWeather) {
+          timer.end({ type: 'historical', cached: true });
+          log.info('Returning cached weather data', { systemId, timestamp });
+          log.exit(200);
+          return {
+            statusCode: 200,
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify(cachedWeather)
+          };
+        }
+      }
+
+      // Cache miss - fetch from API
+      log.debug('Cache miss, fetching from OpenWeather API');
       const unixTimestamp = Math.floor(new Date(timestamp).getTime() / 1000);
       const timemachineUrl = `https://api.openweathermap.org/data/3.0/onecall/timemachine?lat=${lat}&lon=${lon}&dt=${unixTimestamp}&units=metric&appid=${apiKey}`;
       const uviUrl = `https://api.openweathermap.org/data/2.5/uvi/history?lat=${lat}&lon=${lon}&start=${unixTimestamp}&end=${unixTimestamp}&appid=${apiKey}`;

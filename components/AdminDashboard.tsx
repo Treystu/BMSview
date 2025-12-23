@@ -294,6 +294,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
             // Create optimizer instance for parallel processing
             const optimizer = new UploadOptimizer();
+            const newRecords: AnalysisRecord[] = [];
 
             // Define single-file processor for optimizer
             const processFile = async (item: DuplicateCheckResult) => {
@@ -310,6 +311,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     analysis: analysisData,
                     fileName: file.name
                 };
+
+                newRecords.push(tempRecord);
+
+                // CRITICAL FIX: Explicitly save to local cache so UI components (History, Charts)
+                // that rely on the cache-first strategy can see the new record immediately.
+                try {
+                    // We mark as 'synced' because this data just came from the server analysis
+                    await historyCacheService.put(tempRecord, 'synced');
+                    log('info', 'Updated local cache with new analysis record', { id: tempRecord.id });
+                } catch (err) {
+                    log('warn', 'Failed to update local cache with new record', { error: err instanceof Error ? err.message : String(err) });
+                }
 
                 dispatch({
                     type: 'UPDATE_BULK_JOB_COMPLETED',
@@ -329,6 +342,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     setShowRateLimitWarning(true);
                 }
                 dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file, error: `Failed: ${errorMessage}` } });
+            }
+
+            // Batch weather backfill: Fill weather gaps efficiently after bulk analysis
+            // Get unique systemIds from newly processed records and trigger backfill for each
+            const systemIdsToBackfill = new Set<string>();
+            newRecords.forEach((record: AnalysisRecord) => {
+                if (record.systemId) systemIdsToBackfill.add(record.systemId);
+            });
+
+            for (const systemId of systemIdsToBackfill) {
+                try {
+                    log('info', 'Starting batch weather backfill for system.', { systemId });
+                    await fetch('/.netlify/functions/weather-backfill-gaps', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ systemId })
+                    });
+                } catch {
+                    log('warn', 'Weather backfill failed (non-blocking).', { systemId });
+                }
             }
         } catch (err) {
             // This outer catch is for logic errors in the loop itself
