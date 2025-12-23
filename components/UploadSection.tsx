@@ -1,8 +1,8 @@
 
 import React, { useMemo } from 'react';
 import { useFileUpload } from '../hooks/useFileUpload';
-import SpinnerIcon from './icons/SpinnerIcon';
 import { CostEstimateBadge, estimateAnalysisCost } from './CostEstimateBadge';
+import SpinnerIcon from './icons/SpinnerIcon';
 
 interface UploadSectionProps {
   onAnalyze: (files: File[]) => void;
@@ -12,13 +12,13 @@ interface UploadSectionProps {
 }
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
-    console.log(JSON.stringify({
-        level: level.toUpperCase(),
-        timestamp: new Date().toISOString(),
-        component: 'UploadSection',
-        message,
-        context
-    }));
+  console.log(JSON.stringify({
+    level: level.toUpperCase(),
+    timestamp: new Date().toISOString(),
+    component: 'UploadSection',
+    message,
+    context
+  }));
 };
 
 const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, error, hasResults }) => {
@@ -30,7 +30,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
     handleFileChange,
     handleDrop,
     clearFiles,
-  } = useFileUpload({ maxFileSizeMb: 4.5 });
+  } = useFileUpload({ maxFileSizeMb: 4.5, propagateDuplicates: true });
 
   // Calculate estimated cost when files change
   const costEstimate = useMemo(() => estimateAnalysisCost(files.length), [files.length]);
@@ -39,15 +39,15 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
     event.preventDefault();
     event.stopPropagation();
   };
-  
+
   const internalHandleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     log('info', 'User dropped files onto dropzone.', { count: event.dataTransfer.files.length });
     handleDrop(event);
   };
 
   const internalHandleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-      log('info', 'User selected files via file input.', { count: event.target.files?.length || 0 });
-      handleFileChange(event);
+    log('info', 'User selected files via file input.', { count: event.target.files?.length || 0 });
+    handleFileChange(event);
   };
 
   const handleAnalyzeClick = () => {
@@ -63,17 +63,17 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
     <section id="upload-section" className={`${hasResults ? 'py-8' : 'py-20'} bg-neutral-light transition-all duration-500 ease-in-out`}>
       <div className="container mx-auto px-6 text-center">
         {hasResults ? (
-            <h2 className="text-3xl font-bold text-neutral-dark mb-6">Analyze More Screenshots</h2>
+          <h2 className="text-3xl font-bold text-neutral-dark mb-6">Analyze More Screenshots</h2>
         ) : (
-            <>
-                <h2 className="text-3xl font-bold text-neutral-dark mb-4">Upload Your BMS Screenshots</h2>
-                <p className="text-neutral mb-8 max-w-2xl mx-auto">
-                Select one or more images, or a ZIP file containing images. For best results, ensure images are clear and values are readable.
-                </p>
-            </>
+          <>
+            <h2 className="text-3xl font-bold text-neutral-dark mb-4">Upload Your BMS Screenshots</h2>
+            <p className="text-neutral mb-8 max-w-2xl mx-auto">
+              Select one or more images, or a ZIP file containing images. For best results, ensure images are clear and values are readable.
+            </p>
+          </>
         )}
         <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-lg">
-          <div 
+          <div
             onDrop={internalHandleDrop}
             onDragOver={handleDragOver}
             className="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:border-secondary transition-colors"
@@ -89,25 +89,25 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
             <label htmlFor="file-upload" className="cursor-pointer">
               {previews.length > 0 ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-                    {previews.map((src, index) => (
-                         <img key={index} src={src} alt={`Preview ${index + 1}`} className="w-full h-auto object-cover rounded-md" />
-                    ))}
+                  {previews.map((src, index) => (
+                    <img key={index} src={src} alt={`Preview ${index + 1}`} className="w-full h-auto object-cover rounded-md" />
+                  ))}
                 </div>
               ) : (
                 <div className="flex flex-col items-center">
-                    <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-4-4V6a4 4 0 014-4h10a4 4 0 014 4v6a4 4 0 01-4 4H7z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 16v4m0 0l-2-2m2 2l2-2"></path></svg>
-                    <p className="mt-2 text-sm text-gray-600">
-                        <span className="font-semibold text-secondary">Click to upload</span> or drag and drop
-                    </p>
-                    <p className="text-xs text-gray-500">Images or a ZIP file</p>
+                  <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-4-4V6a4 4 0 014-4h10a4 4 0 014 4v6a4 4 0 01-4 4H7z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 16v4m0 0l-2-2m2 2l2-2"></path></svg>
+                  <p className="mt-2 text-sm text-gray-600">
+                    <span className="font-semibold text-secondary">Click to upload</span> or drag and drop
+                  </p>
+                  <p className="text-xs text-gray-500">Images or a ZIP file</p>
                 </div>
               )}
             </label>
           </div>
-          {files.length > 0 && 
+          {files.length > 0 &&
             <div className="mt-4 text-sm text-neutral flex justify-between items-center">
-                <span>{files.length} file(s) selected.</span>
-                <button onClick={clearFiles} className="text-red-500 hover:text-red-700 text-xs font-semibold">CLEAR</button>
+              <span>{files.length} file(s) selected.</span>
+              <button onClick={clearFiles} className="text-red-500 hover:text-red-700 text-xs font-semibold">CLEAR</button>
             </div>
           }
           {isProcessing && <p className="mt-2 text-sm text-secondary">Processing files...</p>}

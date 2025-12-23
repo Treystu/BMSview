@@ -83,7 +83,7 @@ const readAsDataUrl = (file: Blob, readers: FileReader[]) => new Promise<string>
     reader.readAsDataURL(file);
 });
 
-export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUploadOptions = {}) => {
+export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [], propagateDuplicates = false }: FileUploadOptions & { propagateDuplicates?: boolean } = {}) => {
     const [files, setFiles] = useState<File[]>(initialFiles);
     const [skippedFiles, setSkippedFiles] = useState<Map<string, string>>(new Map());
     const [previews, setPreviews] = useState<string[]>([]);
@@ -201,7 +201,17 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
             for (const dup of trueDuplicates) {
                 const baseFile = ensureFileInstance(dup.file);
                 const duplicateDescription = `${baseFile.name} (${baseFile.size} bytes @ ${baseFile.lastModified || 'unknown'})`;
-                duplicateReasons.set(duplicateDescription, 'Already uploaded');
+
+                if (propagateDuplicates) {
+                    // Propagate duplicates as files with metadata for consumers (e.g. AdminDashboard restoration)
+                    (baseFile as any)._isDuplicate = true;
+                    (baseFile as any)._analysisData = dup.analysisData;
+                    (baseFile as any)._recordId = dup.recordId;
+                    (baseFile as any)._timestamp = dup.timestamp;
+                    processedFiles.push(baseFile);
+                } else {
+                    duplicateReasons.set(duplicateDescription, 'Already uploaded');
+                }
             }
 
             // Upgrades: create wrapper objects with metadata
@@ -279,7 +289,16 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
             const entries = Object.values(zip.files);
 
             for (const zipEntry of entries) {
-                if (zipEntry.dir || !/\.(jpe?g|png|gif|webp)$/i.test(zipEntry.name)) continue;
+                const fileName = zipEntry.name;
+                const baseName = fileName.split('/').pop() || fileName;
+
+                // Filter out directories, non-images, and macOS metadata files (__MACOSX folder or ._ files)
+                if (
+                    zipEntry.dir ||
+                    !/\.(jpe?g|png|gif|webp)$/i.test(fileName) ||
+                    fileName.includes('__MACOSX/') ||
+                    baseName.startsWith('._')
+                ) continue;
 
                 const promise = zipEntry.async('blob').then(blob => {
                     const mimeType = blob.type || getMimeTypeFromFileName(zipEntry.name);
@@ -332,7 +351,9 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [] }: FileUp
 
         const validImageFiles: File[] = [];
         const oversizedFiles: string[] = [];
-        const imageFiles = fileArray.filter(f => f.type.startsWith('image/'));
+        const imageFiles = fileArray.filter(f =>
+            f.type.startsWith('image/') && !f.name.startsWith('._')
+        );
 
         for (const f of imageFiles) {
             if (f.size > maxFileSizeBytes) {

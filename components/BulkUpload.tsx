@@ -68,7 +68,7 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
     handleFileChange,
     handleDrop,
     clearFiles,
-  } = useFileUpload({});
+  } = useFileUpload({ propagateDuplicates: true });
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -181,11 +181,13 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
           <span>
             {(() => {
               const upgradeCount = files.reduce((acc, f) => acc + ((f as FileWithMeta)._isUpgrade ? 1 : 0), 0);
-              const newCount = files.length - upgradeCount;
+              const duplicateCount = files.reduce((acc, f) => acc + ((f as FileWithMeta)._isDuplicate ? 1 : 0), 0);
+              const newCount = files.length - upgradeCount - duplicateCount;
               const parts = [];
               if (newCount > 0) parts.push(`${newCount} new file(s)`);
               if (upgradeCount > 0) parts.push(`${upgradeCount} update(s)`);
-              const fileText = parts.join(' and ');
+              if (duplicateCount > 0) parts.push(`${duplicateCount} duplicate(s)`);
+              const fileText = parts.join(', ');
 
               return `${fileText ? `${fileText} selected` : 'No new files selected'}, ${skippedFiles.size} duplicate(s) skipped.`;
             })()}
