@@ -314,6 +314,10 @@ exports.handler = async function (event, context) {
             // --- Auto-Associate Action ---
             if (action === 'auto-associate') {
                 log.info('Starting auto-association task', { action });
+                const startTime = Date.now();
+                const MAX_EXECUTION_TIME = 20000; // 20 seconds timeout protection
+                let timeoutReached = false;
+
                 const systems = await systemsCollection.find({}, { projection: { _id: 0, id: 1, name: 1, associatedDLs: 1 } }).toArray();
                 const dlMap = new Map(); // Map DL number -> array of system IDs
                 systems.forEach(s => {
@@ -325,11 +329,21 @@ exports.handler = async function (event, context) {
                     });
                 });
 
-                const unlinkedCursor = historyCollection.find({ systemId: null, dlNumber: { $exists: true, $nin: [null, ''] } });
+                // Limit query to prevent memory issues and ensure responsive loop
+                const unlinkedCursor = historyCollection.find({ systemId: null, dlNumber: { $exists: true, $nin: [null, ''] } }).limit(2000);
+
                 let associatedCount = 0;
+                let processedCount = 0;
                 const bulkOps = [];
 
                 for await (const record of unlinkedCursor) {
+                    if (Date.now() - startTime > MAX_EXECUTION_TIME) {
+                        timeoutReached = true;
+                        log.warn('Auto-associate task approaching timeout, stopping early.', { associatedCount });
+                        break;
+                    }
+                    processedCount++;
+
                     const potentialSystems = dlMap.get(record.dlNumber);
                     // Only associate if exactly one system matches the DL number
                     if (potentialSystems && potentialSystems.length === 1) {
@@ -352,21 +366,38 @@ exports.handler = async function (event, context) {
                 if (bulkOps.length > 0) {
                     await historyCollection.bulkWrite(bulkOps, { ordered: false });
                 }
-                timer.end({ action, associatedCount });
-                log.info('Auto-association task complete', { action, associatedCount });
+
+                timer.end({ action, associatedCount, processedCount, timeoutReached });
+                log.info('Auto-association task complete', { action, associatedCount, timeoutReached });
                 log.exit(200);
-                return respond(200, { success: true, associatedCount }, headers);
+                return respond(200, {
+                    success: true,
+                    associatedCount,
+                    message: timeoutReached ? `Time limit reached. Associated ${associatedCount} records. Run again to continue.` : `Completed. Associated ${associatedCount} records.`
+                }, headers);
             }
 
             // --- Cleanup Links Action ---
             if (action === 'cleanup-links') {
                 log.info('Starting cleanup-links task', { action });
+                const startTime = Date.now();
+                const MAX_EXECUTION_TIME = 20000; // 20 seconds
+                let timeoutReached = false;
+
                 const allSystemIds = new Set(await systemsCollection.distinct('id'));
-                const linkedCursor = historyCollection.find({ systemId: { $exists: true, $ne: null } });
+                const linkedCursor = historyCollection.find({ systemId: { $exists: true, $ne: null } }).limit(2000);
                 let updatedCount = 0;
+                let processedCount = 0;
                 const bulkOps = [];
 
                 for await (const record of linkedCursor) {
+                    if (Date.now() - startTime > MAX_EXECUTION_TIME) {
+                        timeoutReached = true;
+                        log.warn('Cleanup-links task approaching timeout, stopping early.', { updatedCount });
+                        break;
+                    }
+                    processedCount++;
+
                     if (!allSystemIds.has(record.systemId)) {
                         bulkOps.push({
                             updateOne: {
@@ -385,10 +416,14 @@ exports.handler = async function (event, context) {
                 if (bulkOps.length > 0) {
                     await historyCollection.bulkWrite(bulkOps, { ordered: false });
                 }
-                timer.end({ action, updatedCount });
-                log.info('Cleanup-links task complete', { action, updatedCount });
+                timer.end({ action, updatedCount, timeoutReached });
+                log.info('Cleanup-links task complete', { action, updatedCount, timeoutReached });
                 log.exit(200);
-                return respond(200, { success: true, updatedCount }, headers);
+                return respond(200, {
+                    success: true,
+                    updatedCount,
+                    message: timeoutReached ? `Time limit reached. Cleaned ${updatedCount} records. Run again to continue.` : `Completed. Cleaned ${updatedCount} records.`
+                }, headers);
             }
 
             if (action === 'count-records-needing-weather') {

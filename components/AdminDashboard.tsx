@@ -22,6 +22,7 @@ import {
     updateBmsSystem
 } from '../services/clientService';
 import { analyzeBmsScreenshot } from '../services/geminiService';
+import { historyCache as historyCacheService } from '../src/services/localCache';
 import { useAdminState } from '../state/adminState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
 import { buildRecordFromCachedDuplicate, checkFilesForDuplicates, partitionCachedFiles, type DuplicateCheckResult } from '../utils/duplicateChecker';
@@ -185,6 +186,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     const handleBulkAnalyze = async (files: File[] | FileList | null | undefined) => {
         const normalizedFiles = Array.isArray(files) ? files : Array.from(files || []);
         if (normalizedFiles.length === 0) return;
+        const newRecords: AnalysisRecord[] = []; // Track all processed records (including restored duplicates)
         log('info', 'Starting bulk analysis.', { fileCount: normalizedFiles.length, isStoryMode });
 
         if (isStoryMode) {
@@ -259,14 +261,54 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             needsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
 
             // Mark true duplicates as skipped immediately (don't analyze these at all)
+            // Mark true duplicates as skipped immediately (don't analyze these at all)
+            // UNLESS we can restore them fully to the UI (which satisfies the user's need to see the record)
             if (trueDuplicates.length > 0) {
-                dispatch({
-                    type: 'BATCH_BULK_JOB_SKIPPED',
-                    payload: trueDuplicates.map(dup => ({
-                        fileName: dup.file.name,
-                        reason: 'Duplicate content detected (same image)'
-                    }))
-                });
+                const restoredRecords: AnalysisRecord[] = [];
+                const skippedFiles: { fileName: string; reason: string }[] = [];
+
+                for (const dup of trueDuplicates) {
+                    if (dup.analysisData && dup.recordId) {
+                        // We have enough data to reconstruct the record
+                        const fullRecord: AnalysisRecord = {
+                            id: dup.recordId!,
+                            timestamp: dup.timestamp || new Date().toISOString(),
+                            analysis: dup.analysisData,
+                            fileName: dup.file.name
+                        };
+                        restoredRecords.push(fullRecord);
+                    } else {
+                        skippedFiles.push({ fileName: dup.file.name, reason: 'Duplicate content detected (same image)' });
+                    }
+                }
+
+                if (restoredRecords.length > 0) {
+                    try {
+                        // Restore to cache instantly
+                        await historyCacheService.bulkPut(restoredRecords, 'synced');
+                        log('info', `Restored ${restoredRecords.length} duplicates to cache.`);
+
+                        // Update UI and backfill tracking
+                        restoredRecords.forEach(rec => {
+                            dispatch({
+                                type: 'UPDATE_BULK_JOB_COMPLETED',
+                                payload: { record: rec, fileName: rec.fileName }
+                            });
+                            newRecords.push(rec); // Include in backfill
+                        });
+                    } catch (e) {
+                        log('warn', 'Failed to restore duplicates to cache', { error: e });
+                        // If fail, just mark as skipped
+                        restoredRecords.forEach(rec => skippedFiles.push({ fileName: rec.fileName || 'unknown', reason: 'Duplicate (restore failed)' }));
+                    }
+                }
+
+                if (skippedFiles.length > 0) {
+                    dispatch({
+                        type: 'BATCH_BULK_JOB_SKIPPED',
+                        payload: skippedFiles
+                    });
+                }
             }
 
             // Update status for files that need upgrade or are new in batches
@@ -294,7 +336,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
             // Create optimizer instance for parallel processing
             const optimizer = new UploadOptimizer();
-            const newRecords: AnalysisRecord[] = [];
 
             // Define single-file processor for optimizer
             const processFile = async (item: DuplicateCheckResult) => {
