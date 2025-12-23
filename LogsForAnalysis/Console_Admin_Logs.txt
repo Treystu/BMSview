@@ -1,46 +1,46 @@
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:16.973Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
-services-DAwo1HGs.js:54 {"level":"INFO","timestamp":"2025-12-23T02:41:16.973Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
-admin-C8bqYaPy.js:2 {"level":"WARN","timestamp":"2025-12-23T02:41:17.083Z","component":"AdminApp","message":"Netlify Identity widget not available, retrying...","context":{}}
-admin-C8bqYaPy.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:18.084Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
-admin-C8bqYaPy.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:18.092Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
-AdminDashboard-Dap4oMXy.js:6 {"level":"INFO","timestamp":"2025-12-23T02:41:18.103Z","component":"AdminDashboard","message":"Performing initial data load (page 1).","context":{}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.103Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.103Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
-services-DAwo1HGs.js:56 {"level":"debug","timestamp":"2025-12-23T02:41:18.119Z","service":"localCache","message":"Retrieved 3 systems from cache"}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.119Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":25,"returned":3,"total":3}}
-services-DAwo1HGs.js:56 {"level":"debug","timestamp":"2025-12-23T02:41:18.216Z","service":"localCache","message":"Retrieved 3242 history records from cache"}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.216Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":25,"returned":25,"total":3242}}
-AdminDashboard-Dap4oMXy.js:6 {"level":"INFO","timestamp":"2025-12-23T02:41:18.216Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":3,"historyCount":25}}
-AdminDashboard-Dap4oMXy.js:6 {"level":"INFO","timestamp":"2025-12-23T02:41:18.221Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.221Z","service":"clientService","message":"Fetching data integrity audit from admin endpoint.","context":{}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.221Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"admin-data-integrity","method":"GET"}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.222Z","service":"clientService","message":"Fetching IP management data.","context":{}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.222Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"ip-admin","method":"GET"}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.222Z","service":"clientService","message":"Fetching current user IP.","context":{}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.222Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"get-ip","method":"GET"}}
-AdminDashboard-Dap4oMXy.js:6 {"level":"INFO","timestamp":"2025-12-23T02:41:18.222Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.222Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"default-system"}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.222Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET"}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:18.758Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"get-ip","method":"GET","status":200}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:19.067Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET","status":200}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:19.148Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"ip-admin","method":"GET","status":200}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:19.190Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"admin-data-integrity","method":"GET","status":200}}
-AdminDashboard-Dap4oMXy.js:6 {"level":"INFO","timestamp":"2025-12-23T02:41:19.190Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":4,"matched":3,"orphaned":1,"total_records":4804,"orphaned_records":4}}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:19.717Z","service":"clientService","message":"Starting smart history sync.","context":{}}
-services-DAwo1HGs.js:56 {"level":"debug","timestamp":"2025-12-23T02:41:19.792Z","service":"localCache","message":"Retrieved 3242 history records from cache"}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:19.792Z","service":"clientService","message":"Loaded 3242 records from local cache.","context":{"count":3242}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:19.793Z","service":"clientService","message":"Performing incremental sync.","context":{"updatedSince":"2025-12-22T00:27:02.607Z"}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:19.793Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?all=true&updatedSince=2025-12-22T00%3A27%3A02.607Z","method":"GET"}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:20.599Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?all=true&updatedSince=2025-12-22T00%3A27%3A02.607Z","method":"GET","status":200}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:20.599Z","service":"clientService","message":"No new records from server.","context":{}}
-services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T02:41:20.599Z","service":"clientService","message":"Finished smart history sync.","context":{}}
-AdminDashboard-Dap4oMXy.js:6 {"level":"INFO","timestamp":"2025-12-23T02:41:24.966Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.25668499999999894,"days":4}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:25.500Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:25.500Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":0,"oversizedCount":0,"zipCount":1}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:25.501Z","hook":"useFileUpload","message":"Starting to process ZIP file.","context":{"fileName":"Photos-3-001 (2).zip","size":166273384}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:26.049Z","hook":"useFileUpload","message":"ZIP chunk extracted.","context":{"chunkFiles":397,"totalSoFar":397}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:26.049Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":397,"fileNames":["Screenshot_20251202-145317.png","Screenshot_20251202-145337.png","Screenshot_20251202-145700.png","Screenshot_20251202-145710.png","Screenshot_20251202-145705.png","Screenshot_20251202-145322.png","Screenshot_20251202-145715.png","Screenshot_20251202-145719.png","Screenshot_20251202-145345.png","Screenshot_20251202-145657.png"],"event":"CHECK_START"}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:26.049Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":397,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:26.704Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
+services-DAwo1HGs.js:54 {"level":"INFO","timestamp":"2025-12-23T03:02:26.704Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
+admin-BTvwoVh7.js:2 {"level":"WARN","timestamp":"2025-12-23T03:02:26.812Z","component":"AdminApp","message":"Netlify Identity widget not available, retrying...","context":{}}
+admin-BTvwoVh7.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:27.863Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
+admin-BTvwoVh7.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:27.877Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
+AdminDashboard-CKSiT6Tz.js:6 {"level":"INFO","timestamp":"2025-12-23T03:02:28.393Z","component":"AdminDashboard","message":"Performing initial data load (page 1).","context":{}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.394Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.394Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
+services-DAwo1HGs.js:56 {"level":"debug","timestamp":"2025-12-23T03:02:28.401Z","service":"localCache","message":"Retrieved 3 systems from cache"}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.401Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":25,"returned":3,"total":3}}
+services-DAwo1HGs.js:56 {"level":"debug","timestamp":"2025-12-23T03:02:28.550Z","service":"localCache","message":"Retrieved 3242 history records from cache"}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.550Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":25,"returned":25,"total":3242}}
+AdminDashboard-CKSiT6Tz.js:6 {"level":"INFO","timestamp":"2025-12-23T03:02:28.550Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":3,"historyCount":25}}
+AdminDashboard-CKSiT6Tz.js:6 {"level":"INFO","timestamp":"2025-12-23T03:02:28.558Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.558Z","service":"clientService","message":"Fetching data integrity audit from admin endpoint.","context":{}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.558Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"admin-data-integrity","method":"GET"}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.559Z","service":"clientService","message":"Fetching IP management data.","context":{}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.559Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"ip-admin","method":"GET"}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.559Z","service":"clientService","message":"Fetching current user IP.","context":{}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.559Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"get-ip","method":"GET"}}
+AdminDashboard-CKSiT6Tz.js:6 {"level":"INFO","timestamp":"2025-12-23T03:02:28.559Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.559Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"default-system"}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:28.559Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET"}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:29.292Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"get-ip","method":"GET","status":200}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:30.768Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET","status":200}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:30.865Z","service":"clientService","message":"Starting smart history sync.","context":{}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:30.875Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"admin-data-integrity","method":"GET","status":200}}
+AdminDashboard-CKSiT6Tz.js:6 {"level":"INFO","timestamp":"2025-12-23T03:02:30.875Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":4,"matched":3,"orphaned":1,"total_records":4804,"orphaned_records":4}}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:30.985Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"ip-admin","method":"GET","status":200}}
+services-DAwo1HGs.js:56 {"level":"debug","timestamp":"2025-12-23T03:02:30.990Z","service":"localCache","message":"Retrieved 3242 history records from cache"}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:30.990Z","service":"clientService","message":"Loaded 3242 records from local cache.","context":{"count":3242}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:30.991Z","service":"clientService","message":"Performing incremental sync.","context":{"updatedSince":"2025-12-22T00:27:02.607Z"}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:30.991Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?all=true&updatedSince=2025-12-22T00%3A27%3A02.607Z","method":"GET"}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:33.135Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?all=true&updatedSince=2025-12-22T00%3A27%3A02.607Z","method":"GET","status":200}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:33.135Z","service":"clientService","message":"No new records from server.","context":{}}
+services-DAwo1HGs.js:1 {"level":"INFO","timestamp":"2025-12-23T03:02:33.135Z","service":"clientService","message":"Finished smart history sync.","context":{}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:36.305Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:36.305Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":0,"oversizedCount":0,"zipCount":1}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:36.305Z","hook":"useFileUpload","message":"Starting to process ZIP file.","context":{"fileName":"Photos-3-001 (2).zip","size":166273384}}
+AdminDashboard-CKSiT6Tz.js:6 {"level":"INFO","timestamp":"2025-12-23T03:02:36.669Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.25668499999999894,"days":4}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:36.871Z","hook":"useFileUpload","message":"ZIP chunk extracted.","context":{"chunkFiles":397,"totalSoFar":397}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:36.871Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":397,"fileNames":["Screenshot_20251202-145317.png","Screenshot_20251202-145337.png","Screenshot_20251202-145700.png","Screenshot_20251202-145710.png","Screenshot_20251202-145705.png","Screenshot_20251202-145322.png","Screenshot_20251202-145715.png","Screenshot_20251202-145719.png","Screenshot_20251202-145345.png","Screenshot_20251202-145657.png"],"event":"CHECK_START"}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:36.871Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":397,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
 shared-utils-NC5tvRGA.js:1 Calculating file hashes for batch {count: 397, fileNames: Array(5), event: 'FILE_HASH_START'}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '187e6db2837ee6e8...', imageLength: 367512}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e4fe5af5f8c955c7...', imageLength: 366044}
@@ -54,9 +54,9 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '9036d38876e94f67
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '40ba247c6d233180...', imageLength: 362116}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1bedf560e8791717...', imageLength: 360236}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '8d85a65ba0dcc501...', imageLength: 359384}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e8d8f6fdea76f480...', imageLength: 329868}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '384358d5c8f814bc...', imageLength: 361452}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '054edaad7af8101a...', imageLength: 360332}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e8d8f6fdea76f480...', imageLength: 329868}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'c22511ae37b86434...', imageLength: 330872}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'b0ddd659f61b4460...', imageLength: 364768}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '00a8059f7d068a00...', imageLength: 327776}
@@ -128,8 +128,8 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '52a52998be540722
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'd1514f3b574fd6c5...', imageLength: 356536}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '76cecc3f21a11ee5...', imageLength: 357196}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'ea7205e645867382...', imageLength: 358012}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e410f0bd6d518751...', imageLength: 320756}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'dc24cdc3c8f67002...', imageLength: 356104}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e410f0bd6d518751...', imageLength: 320756}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1e74adb5205fe251...', imageLength: 357764}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f9b9ef9e0365bcd2...', imageLength: 353104}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '48da78f98f7c509f...', imageLength: 359608}
@@ -213,8 +213,8 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '2d6f2aefeef0eece
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a3682c5e88d4e61d...', imageLength: 366172}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '99667e3474e1d3c6...', imageLength: 360664}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'b7b36600e0f750c4...', imageLength: 322576}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1999c0ca97d45d79...', imageLength: 361172}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1207797bd8f78603...', imageLength: 323116}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1999c0ca97d45d79...', imageLength: 361172}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1c0467a8561b7403...', imageLength: 363940}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '11d8987c15c8ea3c...', imageLength: 362148}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1f89796fc35d6d19...', imageLength: 359392}
@@ -239,8 +239,8 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'abc38e562de1c67b
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4bf1e9547e1337a4...', imageLength: 362928}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f4f2566cd87b90f9...', imageLength: 325476}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '9141242b89655796...', imageLength: 361540}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '0f81d59c1d17d253...', imageLength: 362488}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'ec6b41b4e82a44b8...', imageLength: 327000}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '0f81d59c1d17d253...', imageLength: 362488}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '59ca2ffffc2b2964...', imageLength: 361152}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '2c311f938fc659c8...', imageLength: 361232}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '9abf015f8d03f528...', imageLength: 356260}
@@ -249,19 +249,19 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '3fbb2bedf88ab285
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f1bbcb4eb4b6fd04...', imageLength: 362712}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '299277785f8d8c2a...', imageLength: 362272}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '9fd6e8b4f0182e3b...', imageLength: 361052}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '2bbd255b8724e295...', imageLength: 324036}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4ebce92f42b30fcc...', imageLength: 361788}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'dd553984c2571f13...', imageLength: 362412}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '2bbd255b8724e295...', imageLength: 324036}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'c8fd2316594df628...', imageLength: 358776}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'd483f8f7ed135217...', imageLength: 328348}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '21aff072b4f1a1ab...', imageLength: 356484}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'c8fd2316594df628...', imageLength: 358776}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '57e8e054ed848456...', imageLength: 329908}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '21aff072b4f1a1ab...', imageLength: 356484}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '2908e0ea8d38ad73...', imageLength: 359560}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '3a36f3a93fdb305f...', imageLength: 358352}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'ecd2770b662dbdaa...', imageLength: 365180}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '375a4e7d689d5e17...', imageLength: 329136}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '43aa1a5e94f6c37b...', imageLength: 363940}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '26fcc892b7176880...', imageLength: 358476}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '375a4e7d689d5e17...', imageLength: 329136}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '15e7309200782381...', imageLength: 354732}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1ad7aff9d3b6a8ec...', imageLength: 367124}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '07e55009061231da...', imageLength: 361076}
@@ -274,16 +274,16 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7c6f237aecbd2e56
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '11d49d3c6f6a6318...', imageLength: 366848}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'cc8b2d1879b1bc1f...', imageLength: 356720}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '89a117b49019f135...', imageLength: 367384}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e7e910dbec5c6ede...', imageLength: 365812}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '374cd45941afdcb7...', imageLength: 332792}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e7e910dbec5c6ede...', imageLength: 365812}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '65e106bff7e8adde...', imageLength: 366232}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'cf9b2312ce7ef0f9...', imageLength: 367608}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '611cbbbedb3d748a...', imageLength: 366360}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '5340d24b8ec75832...', imageLength: 367220}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '052171847d128b38...', imageLength: 366124}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '6546fd28e5c9bd49...', imageLength: 363500}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '6fe2225250736ca5...', imageLength: 367532}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a84ce4668b893c04...', imageLength: 324880}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '6fe2225250736ca5...', imageLength: 367532}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'd8e2515e57584a63...', imageLength: 367984}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'd5dfe56dd070640b...', imageLength: 367892}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '20178b058aa307f7...', imageLength: 367236}
@@ -292,19 +292,19 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'cef6c5d5b4a8b799
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '78b0ea255ac0c168...', imageLength: 364148}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '79e7820f03357466...', imageLength: 361256}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '805e466fd510f17d...', imageLength: 362952}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '0695878a036ca080...', imageLength: 361952}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a4be8860242e5017...', imageLength: 325676}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '0695878a036ca080...', imageLength: 361952}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a08e9eefe4c96059...', imageLength: 362172}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '79bf46aa014bf119...', imageLength: 362604}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'bd20b598cd2bbd2d...', imageLength: 361700}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '596dbd157c6d607d...', imageLength: 361964}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e4116ec5385a9941...', imageLength: 356892}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1903c09895aa7287...', imageLength: 360696}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '291cb13dad52fc21...', imageLength: 362292}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '9b49a33d7e9ad023...', imageLength: 355532}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e8114291c1592b9a...', imageLength: 359296}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '70aaff1375a47b90...', imageLength: 360360}
+ Client hash generated {hashPreview: 'bd20b598cd2bbd2d...', imageLength: 361700}
+ Client hash generated {hashPreview: '596dbd157c6d607d...', imageLength: 361964}
+ Client hash generated {hashPreview: 'e4116ec5385a9941...', imageLength: 356892}
+ Client hash generated {hashPreview: '1903c09895aa7287...', imageLength: 360696}
+ Client hash generated {hashPreview: '291cb13dad52fc21...', imageLength: 362292}
+ Client hash generated {hashPreview: '9b49a33d7e9ad023...', imageLength: 355532}
+ Client hash generated {hashPreview: 'e8114291c1592b9a...', imageLength: 359296}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '45e2fb1a27aa61e3...', imageLength: 326840}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '70aaff1375a47b90...', imageLength: 360360}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '6d518d9224c9ea44...', imageLength: 357032}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '8947226284f5c61e...', imageLength: 361168}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'bb87ec4c2a6a8616...', imageLength: 320092}
@@ -314,14 +314,14 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '6976d98d0701b111
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7f40d1fb76b8b14f...', imageLength: 359776}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4c1a54cee8b5d1cd...', imageLength: 356656}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '3c6354a7cd59849a...', imageLength: 356124}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a46797a02279ef4b...', imageLength: 335632}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'cef4e085937e1bc3...', imageLength: 355048}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '3be01deb76daefe1...', imageLength: 356196}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a46797a02279ef4b...', imageLength: 335632}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a70012c5b325e02c...', imageLength: 356044}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4e508696863931cb...', imageLength: 335520}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a70012c5b325e02c...', imageLength: 356044}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'bdf07389a1cde37e...', imageLength: 325884}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '887dbf24ad3ef6bf...', imageLength: 360888}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'c16a93f7634548b5...', imageLength: 332396}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '887dbf24ad3ef6bf...', imageLength: 360888}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '0ef003d71f3e7236...', imageLength: 368032}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '94854700a1c63e60...', imageLength: 368068}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'be527bf9fec684a4...', imageLength: 395924}
@@ -334,14 +334,14 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1b6a6fd0a9cf6297
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'c942b41d251bc0ad...', imageLength: 362880}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '695f3a378f96ae85...', imageLength: 365396}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7faf52ebcb481783...', imageLength: 361328}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '5180ef675d50ce73...', imageLength: 360784}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'c98788e19fc52d19...', imageLength: 325296}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '5180ef675d50ce73...', imageLength: 360784}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'bd7b0c61b3ba268e...', imageLength: 360560}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '96e37e45469586a7...', imageLength: 362624}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '14eeac8da8c9afb8...', imageLength: 359236}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f7ff5fa5ba4244b8...', imageLength: 324608}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4fe21252038bdc29...', imageLength: 354764}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'ee82755ed7577207...', imageLength: 361264}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f7ff5fa5ba4244b8...', imageLength: 324608}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'cd15faf614606b47...', imageLength: 361928}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '00de638a591d5287...', imageLength: 358188}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'd90efbe9757587eb...', imageLength: 360784}
@@ -365,20 +365,20 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '03cfb573a6cc4727
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '894c3358569be5d3...', imageLength: 324276}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e6a2706e50f0549b...', imageLength: 324672}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4c52a89f26a09fe6...', imageLength: 356460}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'b611739939ef1376...', imageLength: 321772}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '3e8cf0f0c71acfa6...', imageLength: 354264}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'b611739939ef1376...', imageLength: 321772}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '63adb3f4e816ffa6...', imageLength: 358304}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '80c594cc0cdd8e0e...', imageLength: 360672}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7ee11c84431a5367...', imageLength: 327216}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f971eb7854d6c019...', imageLength: 359112}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7ee11c84431a5367...', imageLength: 327216}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f8b4e8e7c8ff8358...', imageLength: 359324}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4bd2dd406c7f9e9b...', imageLength: 318852}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4c9da4c7e31e7239...', imageLength: 360684}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'ca72036852608fb8...', imageLength: 346084}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'da8525bf2a58d053...', imageLength: 361080}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '5a36aa4fc49b5938...', imageLength: 362584}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '31b3aa77fe321ba3...', imageLength: 352420}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'ca72036852608fb8...', imageLength: 346084}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f43fe1c4ec006c2e...', imageLength: 327616}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '31b3aa77fe321ba3...', imageLength: 352420}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '6363cd50fb0d4181...', imageLength: 356928}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7b6076659b13a688...', imageLength: 358552}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '172b3354074cbd3e...', imageLength: 356372}
@@ -389,14 +389,14 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'bf92ab90e9f452a9
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'd923ee99cc02a32c...', imageLength: 356692}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '3083de98480a22fe...', imageLength: 324324}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4f9d91204a5e3813...', imageLength: 360964}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '5f6878ec49adaa49...', imageLength: 329480}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '26f2a8b0a4a97fcf...', imageLength: 358252}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'de3129faa9a30307...', imageLength: 350128}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '5f6878ec49adaa49...', imageLength: 329480}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e66b96ee642bcd13...', imageLength: 355596}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '35811e66126eb7cc...', imageLength: 355156}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7648479f0cfb920b...', imageLength: 355956}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '96517fd93a4c84aa...', imageLength: 315968}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '93897ec08754e123...', imageLength: 329652}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7648479f0cfb920b...', imageLength: 355956}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '31bd2334bfd06350...', imageLength: 321748}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '705aca334e3cb56e...', imageLength: 333312}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'ed48043478844d1b...', imageLength: 363596}
@@ -433,23 +433,20 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7f0a3829a01f1c72
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'bbff7e033d1250e3...', imageLength: 318404}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '610074a4a6890b8e...', imageLength: 352180}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f564daded1796d99...', imageLength: 319560}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a236f2cd554876bc...', imageLength: 347884}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4d86ef43e3d316d4...', imageLength: 354308}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a236f2cd554876bc...', imageLength: 347884}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'd6289cf0c997ad9b...', imageLength: 354060}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '9e414dc38ddbba6e...', imageLength: 354296}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '50640e24a1b829fa...', imageLength: 349192}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '74bbf38eb51998e3...', imageLength: 353760}
-shared-utils-NC5tvRGA.js:1 File hash batch complete {totalFiles: 397, successfulHashes: 397, failedHashes: 0, durationMs: 671, avgPerFileMs: '1.69', …}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:26.721Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":397,"durationMs":672,"event":"HASHING_COMPLETE"}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:26.725Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
-admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
-admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:35.288Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":397,"trueDuplicates":396,"needsUpgrade":0,"newFiles":1,"durationMs":9239,"avgPerFileMs":"23.27","event":"PHASE1_COMPLETE"}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:35.289Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Skipping duplicate files from queue.","context":{"skippedCount":396,"skippedNames":["Screenshot_20251202-145317.png (275633 bytes @ 1766457685958)","Screenshot_20251202-145337.png (274533 bytes @ 1766457685958)","Screenshot_20251202-145700.png (269029 bytes @ 1766457685958)","Screenshot_20251202-145710.png (273549 bytes @ 1766457685958)","Screenshot_20251202-145705.png (273133 bytes @ 1766457685959)","Screenshot_20251202-145322.png (274114 bytes @ 1766457685959)","Screenshot_20251202-145715.png (273404 bytes @ 1766457685959)","Screenshot_20251202-145719.png (271587 bytes @ 1766457685959)","Screenshot_20251202-145345.png (249544 bytes @ 1766457685934)","Screenshot_20251202-145657.png (246151 bytes @ 1766457685935)"],"event":"DUPLICATE_SKIPPED"}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:35.289Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":397,"duplicates":396,"upgrades":0,"newFiles":1,"event":"CHECK_COMPLETE"}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:35.478Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":201,"fileNames":["Screenshot_20251215-095950.png","Screenshot_20251215-145322.png","Screenshot_20251215-145332.png","Screenshot_20251215-145258.png","Screenshot_20251215-145327.png","Screenshot_20251215-145308.png","Screenshot_20251216-083851.png","Screenshot_20251215-145317.png","Screenshot_20251216-083833.png","Screenshot_20251216-083824.png"],"event":"CHECK_START"}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:35.479Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":201,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
+shared-utils-NC5tvRGA.js:1 File hash batch complete {totalFiles: 397, successfulHashes: 397, failedHashes: 0, durationMs: 752, avgPerFileMs: '1.89', …}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:37.624Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":397,"durationMs":753,"event":"HASHING_COMPLETE"}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:37.628Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:46.135Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":397,"trueDuplicates":396,"needsUpgrade":0,"newFiles":1,"durationMs":9264,"avgPerFileMs":"23.34","event":"PHASE1_COMPLETE"}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:46.136Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":397,"duplicates":396,"upgrades":0,"newFiles":1,"event":"CHECK_COMPLETE"}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:46.140Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":397,"filteredOut":396,"event":"PREVIEW_FILTER"}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:46.462Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":201,"fileNames":["Screenshot_20251215-095950.png","Screenshot_20251215-145322.png","Screenshot_20251215-145332.png","Screenshot_20251215-145258.png","Screenshot_20251215-145327.png","Screenshot_20251215-145308.png","Screenshot_20251216-083851.png","Screenshot_20251215-145317.png","Screenshot_20251216-083833.png","Screenshot_20251216-083824.png"],"event":"CHECK_START"}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:46.462Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":201,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
 shared-utils-NC5tvRGA.js:1 Calculating file hashes for batch {count: 201, fileNames: Array(5), event: 'FILE_HASH_START'}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e71511afb87a56ff...', imageLength: 353376}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a6135bbd9e283eac...', imageLength: 359960}
@@ -473,8 +470,8 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '34174be611f7f036
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7db6b4d1bd44491d...', imageLength: 721448}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '29fa7f4c079e36b6...', imageLength: 317104}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '3a95b95889a8316e...', imageLength: 317876}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'dda157a54614bc06...', imageLength: 858188}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f484598e4b08e0f3...', imageLength: 748160}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'dda157a54614bc06...', imageLength: 858188}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '0fdb8a5a2a7b8666...', imageLength: 716060}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7a660ec9ec58b093...', imageLength: 362684}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4ba9d10e5f9dd1a6...', imageLength: 321492}
@@ -502,15 +499,15 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'b2678d11e9d63bfa
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '980bf0a7a61e4507...', imageLength: 725108}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a242ca974da95105...', imageLength: 733800}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '5ddb2b32aea92fd7...', imageLength: 327128}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '22d52d083e3eee6a...', imageLength: 356544}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '84a886e45bc765e2...', imageLength: 502936}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '9642ec5c9692e90e...', imageLength: 549476}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '67a5104f07b8a004...', imageLength: 800764}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '22d52d083e3eee6a...', imageLength: 356544}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a1b05fb4ad5e0a10...', imageLength: 488580}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '79f774e76a2dcb3d...', imageLength: 522388}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4339a2e8fe0232ce...', imageLength: 681316}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'd5201799b3f4b6a9...', imageLength: 719020}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'ee0ceedf30d9281c...', imageLength: 606288}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'd5201799b3f4b6a9...', imageLength: 719020}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '02e3b53db591faa2...', imageLength: 322396}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'eb2ae27a8c3c8bdd...', imageLength: 321484}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '2d5c8a6a5ff9a59c...', imageLength: 722416}
@@ -533,9 +530,9 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a3f55bb57fd89626
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '5979576fedfc140f...', imageLength: 354516}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1d82c25d373b7290...', imageLength: 349088}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '6067178505ac780e...', imageLength: 357660}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4a58bbbbc5f39f28...', imageLength: 358832}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '5525c46dc687cb46...', imageLength: 317576}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '0c1b3cf0b9fd89f0...', imageLength: 321208}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4a58bbbbc5f39f28...', imageLength: 358832}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '6d51fc9ac0361131...', imageLength: 321000}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'cd1b4005cf6be576...', imageLength: 350676}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a4f89d2e5fc3c0e3...', imageLength: 358872}
@@ -563,13 +560,13 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4c8af26009cff717
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7dc296dbd4a6e8a2...', imageLength: 360144}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'b66b8afe6c73ceb8...', imageLength: 329916}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'ea60f7fccb254ce0...', imageLength: 322716}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '12fd2992a0b9cb9a...', imageLength: 351360}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'dbe2dd4799067716...', imageLength: 323756}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4cd0c45f6a1a1e1c...', imageLength: 315364}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '12fd2992a0b9cb9a...', imageLength: 351360}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'b952fbd84a2692ed...', imageLength: 360132}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'eac08f7a2ea4e669...', imageLength: 364652}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '2601e8ef6b45f63d...', imageLength: 321668}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '079241e6ac5f2668...', imageLength: 360520}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '2601e8ef6b45f63d...', imageLength: 321668}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '78ee6f1cf7001df4...', imageLength: 360608}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '15c71584a837fe42...', imageLength: 359164}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '967e57fde67c5c8f...', imageLength: 321088}
@@ -577,15 +574,15 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'aa2f0e92544eb974
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a19a5938e6a095e0...', imageLength: 358320}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '9351268862790ed6...', imageLength: 360716}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '86324d9ab45ae825...', imageLength: 325236}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'dc7a22749e12c734...', imageLength: 360660}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '15a8eff30f7e7e8c...', imageLength: 359144}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1c9e7e2f8c4dbbad...', imageLength: 352240}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '0780b348135d8c1d...', imageLength: 356944}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f84fbbcc3e4c40a4...', imageLength: 320784}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'c9aad1d6727ec167...', imageLength: 355760}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '767a1426d32ee841...', imageLength: 357616}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'b9e8ed47c783d13a...', imageLength: 357164}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '17bca101cbdd0dcf...', imageLength: 360868}
+ Client hash generated {hashPreview: 'dc7a22749e12c734...', imageLength: 360660}
+ Client hash generated {hashPreview: '15a8eff30f7e7e8c...', imageLength: 359144}
+ Client hash generated {hashPreview: '1c9e7e2f8c4dbbad...', imageLength: 352240}
+ Client hash generated {hashPreview: '0780b348135d8c1d...', imageLength: 356944}
+ Client hash generated {hashPreview: 'f84fbbcc3e4c40a4...', imageLength: 320784}
+ Client hash generated {hashPreview: 'c9aad1d6727ec167...', imageLength: 355760}
+ Client hash generated {hashPreview: '767a1426d32ee841...', imageLength: 357616}
+ Client hash generated {hashPreview: 'b9e8ed47c783d13a...', imageLength: 357164}
+ Client hash generated {hashPreview: '17bca101cbdd0dcf...', imageLength: 360868}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '73c8ccc1e0520e4d...', imageLength: 353232}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '693ad6838ee891e5...', imageLength: 359876}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '774c663caecead8f...', imageLength: 320120}
@@ -612,8 +609,8 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '199e0c00aee9f4cb
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a9aecb10a9180a6f...', imageLength: 360612}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'a1cf24cd51653cdf...', imageLength: 357256}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '270d2f24c22c3871...', imageLength: 361260}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '0746b2e3b270870e...', imageLength: 360488}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '1c30858818cdb99d...', imageLength: 331628}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '0746b2e3b270870e...', imageLength: 360488}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '4d48c762694f4569...', imageLength: 360240}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f0338eb7c61d0a32...', imageLength: 365556}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'd7b1b25df816deeb...', imageLength: 321620}
@@ -621,16 +618,16 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '7cd8beb9a237c85c
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '902b07b8e76283d2...', imageLength: 365292}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '90b28a4230115000...', imageLength: 358444}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'ab72b5e33c7569ab...', imageLength: 364840}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '9322ef0aa260a91b...', imageLength: 327508}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '9add500cd7a0575d...', imageLength: 362444}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '9322ef0aa260a91b...', imageLength: 327508}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '70902b8be70664a8...', imageLength: 327196}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'c103d2735eb59fbd...', imageLength: 366556}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '2c9577aad99e9b1e...', imageLength: 326832}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'c103d2735eb59fbd...', imageLength: 366556}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '58c114777146f602...', imageLength: 365716}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '8f9055827ca6fe8a...', imageLength: 362372}
+shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '00d7176f59dde6bf...', imageLength: 327604}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '13ca69ffd47366e8...', imageLength: 353808}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'f6e3d66b672a10a5...', imageLength: 364212}
-shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '00d7176f59dde6bf...', imageLength: 327604}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '3bda1d59c7521658...', imageLength: 359640}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'c90e2c3bf2563c5b...', imageLength: 357296}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '72fe4142fa08c084...', imageLength: 362416}
@@ -652,10 +649,10 @@ shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'ab139b1e4ebadc6b
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'e8f222731b030a2f...', imageLength: 365904}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: '92a7dbd5116a1bc2...', imageLength: 364820}
 shared-utils-NC5tvRGA.js:1 Client hash generated {hashPreview: 'cf51547b02e8c620...', imageLength: 359564}
-shared-utils-NC5tvRGA.js:1 File hash batch complete {totalFiles: 201, successfulHashes: 201, failedHashes: 0, durationMs: 396, avgPerFileMs: '1.97', …}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:35.875Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":201,"durationMs":396,"event":"HASHING_COMPLETE"}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:35.876Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:40.514Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":201,"trueDuplicates":194,"needsUpgrade":0,"newFiles":7,"durationMs":5035,"avgPerFileMs":"25.05","event":"PHASE1_COMPLETE"}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:40.515Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Skipping duplicate files from queue.","context":{"skippedCount":194,"skippedNames":["Screenshot_20251215-095950.png (265032 bytes @ 1766457695434)","Screenshot_20251215-145322.png (269968 bytes @ 1766457695434)","Screenshot_20251215-145332.png (268463 bytes @ 1766457695434)","Screenshot_20251215-145258.png (266915 bytes @ 1766457695434)","Screenshot_20251215-145327.png (270638 bytes @ 1766457695434)","Screenshot_20251215-145308.png (270466 bytes @ 1766457695435)","Screenshot_20251216-083851.png (234733 bytes @ 1766457695406)","Screenshot_20251215-145317.png (270278 bytes @ 1766457695435)","Screenshot_20251216-083833.png (261161 bytes @ 1766457695426)","Screenshot_20251216-083824.png (236567 bytes @ 1766457695407)"],"event":"DUPLICATE_SKIPPED"}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:40.515Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":201,"duplicates":194,"upgrades":0,"newFiles":7,"event":"CHECK_COMPLETE"}}
-useFileUpload-Cq6bJAxw.js:2 {"level":"INFO","timestamp":"2025-12-23T02:41:40.516Z","hook":"useFileUpload","message":"Successfully extracted all files from ZIP.","context":{"fileName":"Photos-3-001 (2).zip","size":166273384,"extractedCount":598}}
+shared-utils-NC5tvRGA.js:1 File hash batch complete {totalFiles: 201, successfulHashes: 201, failedHashes: 0, durationMs: 402, avgPerFileMs: '2.00', …}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:46.864Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":201,"durationMs":402,"event":"HASHING_COMPLETE"}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:46.865Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:50.335Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":201,"trueDuplicates":194,"needsUpgrade":0,"newFiles":7,"durationMs":3873,"avgPerFileMs":"19.27","event":"PHASE1_COMPLETE"}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:50.336Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":201,"duplicates":194,"upgrades":0,"newFiles":7,"event":"CHECK_COMPLETE"}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:50.336Z","hook":"useFileUpload","message":"Successfully extracted all files from ZIP.","context":{"fileName":"Photos-3-001 (2).zip","size":166273384,"extractedCount":598}}
+useFileUpload-B81rNRjR.js:2 {"level":"INFO","timestamp":"2025-12-23T03:02:50.339Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":598,"filteredOut":590,"event":"PREVIEW_FILTER"}}

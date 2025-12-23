@@ -77,14 +77,15 @@ exports.handler = async (event, context) => {
 
     log.debug('Parsing request body');
     const body = JSON.parse(event.body);
-    const { systemId, enableFeedback = true, contextWindowDays = 90, customPrompt } = body;
+    const { systemId, enableFeedback = true, contextWindowDays = 90, customPrompt, recentHistory } = body;
 
     // Ensure systemId shows up even if we only looked for it in the body (not query)
     log.debug('Parsed request', {
       systemId,
       enableFeedback,
       contextWindowDays,
-      hasCustomPrompt: !!customPrompt
+      hasCustomPrompt: !!customPrompt,
+      hasRecentHistory: Array.isArray(recentHistory) && recentHistory.length > 0
     });
 
     if (!systemId) {
@@ -108,7 +109,8 @@ exports.handler = async (event, context) => {
     log.debug('Building complete context', { systemId, contextWindowDays });
     const contextTimer = createTimer(log, 'context-building');
     const fullContext = await buildCompleteContext(systemId, {
-      contextWindowDays
+      contextWindowDays,
+      recentHistory // Pass client-side override to bridge sync gap
     });
     contextTimer.end({ dataPoints: countDataPoints(fullContext) });
 

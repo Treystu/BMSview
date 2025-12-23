@@ -670,6 +670,37 @@ export function selectEndpointForMode(mode: InsightMode): string {
     }
 }
 
+export const getRecentHistoryForSystem = async (systemId: string, days: number = 30): Promise<AnalysisRecord[]> => {
+    if (!isLocalCacheEnabled()) return [];
+
+    try {
+        const cacheModule = await loadLocalCacheModule();
+        if (!cacheModule) return [];
+
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - days);
+        const cutoffIso = cutoff.toISOString();
+
+        const allRecords = await cacheModule.historyCache.getAll();
+
+        const recentRecords = allRecords.filter(r =>
+            r.systemId === systemId &&
+            r.timestamp >= cutoffIso
+        );
+
+        log('info', 'Retrieved recent history for system from local cache.', {
+            systemId,
+            days,
+            count: recentRecords.length
+        });
+
+        return recentRecords.map(r => stripCacheMetadata(r));
+    } catch (error) {
+        log('warn', 'Failed to retrieve recent history from local cache.', { error: String(error) });
+        return [];
+    }
+};
+
 export const streamInsights = async (
     payload: {
         analysisData: AnalysisData;
@@ -681,6 +712,7 @@ export const streamInsights = async (
         modelOverride?: string; // Optional Gemini model override
         insightMode?: InsightMode; // Selected insight generation mode
         consentGranted?: boolean; // User consent for AI analysis
+        recentHistory?: AnalysisRecord[]; // OPTIONAL: Pass client-side history to bypass sync delay
     },
     onChunk: (chunk: string) => void,
     onComplete: () => void,
@@ -694,6 +726,9 @@ export const streamInsights = async (
     const endpoint = selectEndpointForMode(mode);
 
     let contextSummarySent = false;
+
+    // Check if we are passing client-side history to bridge the sync gap
+    const hasRecentHistory = Array.isArray(payload.recentHistory) && payload.recentHistory.length > 0;
 
     // CRITICAL: Backend timeout configuration
     // Default is 20s for Pro/Business, but can be configured via NETLIFY_FUNCTION_TIMEOUT_MS
@@ -714,7 +749,9 @@ export const streamInsights = async (
         maxIterations: payload.maxIterations,
         modelOverride: payload.modelOverride,
         insightMode: mode, // Mode determines endpoint (see switch above)
-        dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none'
+        dataStructure: payload.analysisData ? Object.keys(payload.analysisData) : 'none',
+        hasRecentHistory: hasRecentHistory, // EXPLICIT LOGGING FOR DATA FLOW VERIFICATION
+        recentHistoryCount: hasRecentHistory ? payload.recentHistory!.length : 0
     });
 
     // Iterative retry loop to avoid stack overflow with many attempts

@@ -222,22 +222,59 @@ async function getRawData(systemId, options) {
       });
     }
 
-    // Deduplicate in case records match multiple OR branches
+    // Deduplicate in case records match multiple OR branches OR came from recentHistory
     const uniqueAnalyses = [];
     const seen = new Set();
-    for (const item of [...allAnalyses, ...normalizedFallback]) {
-      const key = `${item.systemId || item.analysis?.systemId || 'unknown'}|${String(item.timestamp)}`;
+
+    // Merge DB results with passed recent history (client-side override)
+    const recentHistory = (options.recentHistory && Array.isArray(options.recentHistory))
+      ? options.recentHistory
+      : [];
+
+    if (recentHistory.length > 0) {
+      log.info('Merging client-provided recent history', { count: recentHistory.length });
+    }
+
+    // Process recent (client) history FIRST to ensure it takes precedence or is included
+    // We reverse merge order: recent first, then DB (if not seen). 
+    // Actually, usually we want to just union them. 
+    // Timestamps are key.
+
+    const combinedSource = [...recentHistory, ...allAnalyses, ...normalizedFallback];
+
+    // Sort by timestamp to ensure chronological order is respected during seen-check if needed,
+    // but for deduplication we usually just want unique keys.
+    // Let's sort after unique.
+
+    for (const item of combinedSource) {
+      // Create a robust unique key
+      const id = item.id || item._id;
+      const ts = item.timestamp instanceof Date ? item.timestamp.toISOString() : item.timestamp;
+      const sysId = item.systemId || item.analysis?.systemId || 'unknown';
+
+      // Use ID if available for strongest dedup, fallback to composite key
+      const key = id ? String(id) : `${sysId}|${ts}`;
+
       if (!seen.has(key)) {
         seen.add(key);
         uniqueAnalyses.push(item);
       }
     }
 
+    // Re-sort chronologically after merging
+    uniqueAnalyses.sort((a, b) => {
+      const tA = new Date(a.timestamp).getTime();
+      const tB = new Date(b.timestamp).getTime();
+      return tA - tB;
+    });
+
     log.debug('Raw data query completed', {
       systemId,
       timeRange,
-      recordCount: uniqueAnalyses.length,
-      queryPattern: 'top-level OR nested systemId with mixed timestamp types'
+      dbCount: allAnalyses.length,
+      recentHistoryCount: recentHistory.length,
+      finalRecordCount: uniqueAnalyses.length,
+      queryPattern: 'merged DB + recentHistory'
     });
 
     // Extract specific data arrays

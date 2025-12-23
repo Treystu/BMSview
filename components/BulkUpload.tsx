@@ -4,6 +4,7 @@ import { AdminAction } from '../state/adminState';
 import type { DisplayableAnalysisResult } from '../types';
 import { formatError, getIsActualError } from '../utils';
 import type { FileWithMeta } from '../utils/duplicateChecker';
+import { CostEstimateBadge, estimateAnalysisCost } from './CostEstimateBadge';
 
 interface BulkUploadProps {
   onAnalyze: (files: File[]) => void;
@@ -176,36 +177,68 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
         </label>
       </div>
 
-      {(files.length > 0 || skippedFiles.size > 0) &&
-        <div className="mt-4 text-sm text-gray-300 flex justify-between items-center">
-          <span>
-            {(() => {
-              const upgradeCount = files.reduce((acc, f) => acc + ((f as FileWithMeta)._isUpgrade ? 1 : 0), 0);
-              const duplicateCount = files.reduce((acc, f) => acc + ((f as FileWithMeta)._isDuplicate ? 1 : 0), 0);
-              const newCount = files.length - upgradeCount - duplicateCount;
-              const parts = [];
-              if (newCount > 0) parts.push(`${newCount} new file(s)`);
-              if (upgradeCount > 0) parts.push(`${upgradeCount} update(s)`);
-              if (duplicateCount > 0) parts.push(`${duplicateCount} duplicate(s)`);
-              const fileText = parts.join(', ');
+      {(files.length > 0 || skippedFiles.size > 0) && (() => {
+        const upgradeCount = files.reduce((acc, f) => acc + ((f as FileWithMeta)._isUpgrade ? 1 : 0), 0);
+        const duplicateCount = files.reduce((acc, f) => acc + ((f as FileWithMeta)._isDuplicate ? 1 : 0), 0);
+        const activeCount = files.length - duplicateCount;
+        const costEstimate = estimateAnalysisCost(activeCount);
+        const totalFound = files.length + skippedFiles.size;
 
-              return `${fileText ? `${fileText} selected` : 'No new files selected'}, ${skippedFiles.size} duplicate(s) skipped.`;
-            })()}
-          </span>
-          <button onClick={clearFiles} className="text-red-500 hover:text-red-400 text-xs font-semibold">CLEAR SELECTION</button>
-        </div>
-      }
+        return (
+          <div className="mt-6 mb-6">
+            <div className="bg-gray-700/50 p-4 rounded-lg border border-gray-600">
+              <h4 className="text-white font-semibold mb-3 text-sm uppercase tracking-wider">Upload Summary</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                {/* New Files */}
+                <div className="bg-gray-800 p-3 rounded border border-gray-600 flex flex-col justify-between">
+                  <div>
+                    <div className="text-gray-400 mb-1 text-xs uppercase">New & Updates</div>
+                    <div className="text-2xl font-bold text-white">{activeCount}</div>
+                    <div className="text-xs text-secondary mt-1">Requires Analysis</div>
+                  </div>
+                  {activeCount > 0 && <div className="mt-2"><CostEstimateBadge estimate={costEstimate} /></div>}
+                </div>
+
+                {/* Duplicates */}
+                <div className="bg-gray-800 p-3 rounded border border-gray-600 flex flex-col justify-between">
+                  <div>
+                    <div className="text-gray-400 mb-1 text-xs uppercase">Cached / Duplicates</div>
+                    <div className="text-2xl font-bold text-green-400">{duplicateCount + skippedFiles.size}</div>
+                    <div className="text-xs text-green-400 mt-1">Instant Restore ($0.00)</div>
+                  </div>
+                </div>
+
+                {/* Total */}
+                <div className="bg-gray-800 p-3 rounded border border-gray-600 flex flex-col justify-between">
+                  <div>
+                    <div className="text-gray-400 mb-1 text-xs uppercase">Total Files Found</div>
+                    <div className="text-2xl font-bold text-white">{totalFound}</div>
+                    <div className="text-xs text-gray-500 mt-1">From upload batch</div>
+                  </div>
+                  <button onClick={clearFiles} className="text-red-400 hover:text-red-300 text-xs font-semibold mt-2 text-left">CLEAR ALL</button>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleAnalyzeClick}
+              disabled={files.length === 0 || isLoading || isProcessing}
+              className="mt-4 w-full bg-secondary hover:bg-primary text-white font-bold py-3 px-4 rounded-lg shadow-md disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center text-lg"
+            >
+              {isLoading ? 'Queueing Jobs...' : (
+                activeCount > 0
+                  ? `Analyze ${activeCount} New File(s) ${duplicateCount > 0 ? `& Restore ${duplicateCount}` : ''}`
+                  : `Restore ${duplicateCount} Cached Record(s)`
+              )}
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* Legacy simple summary removed in favor of the detailed grid above */}
+
       {isProcessing && <p className="mt-2 text-sm text-secondary">Processing files...</p>}
       {fileError && <p className="mt-4 text-sm text-red-600">{fileError}</p>}
-
-
-      <button
-        onClick={handleAnalyzeClick}
-        disabled={files.length === 0 || isLoading || isProcessing}
-        className="mt-6 w-full bg-secondary hover:bg-primary text-white font-bold py-3 px-4 rounded-lg shadow-md disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center"
-      >
-        {isLoading ? 'Queueing Jobs...' : `Analyze ${files.length} File(s)`}
-      </button>
 
       {showRateLimitWarning && (
         <div className="mt-4 text-center text-yellow-300 font-semibold p-4 bg-yellow-900/50 border border-yellow-600 rounded-md">

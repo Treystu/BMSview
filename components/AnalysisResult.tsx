@@ -1,17 +1,17 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { streamInsights } from '../services/clientService';
+import React, { useEffect, useMemo, useState } from 'react';
 import { hasOpenCircuitBreakers, resetAllCircuitBreakers } from '../services/circuitBreakerService';
+import { getRecentHistoryForSystem, streamInsights } from '../services/clientService';
+import { useAppState } from '../state/appState';
 import type { AnalysisData, BmsSystem, DisplayableAnalysisResult, WeatherData } from '../types';
 import { InsightMode, InsightModeDescriptions } from '../types';
 import { formatError, getIsActualError } from '../utils';
-import { useAppState } from '../state/appState';
+import { CostEstimateBadge, estimateInsightsCost } from './CostEstimateBadge';
 import CloudIcon from './icons/CloudIcon';
 import SpinnerIcon from './icons/SpinnerIcon';
 import SunIcon from './icons/SunIcon';
 import ThermometerIcon from './icons/ThermometerIcon';
 import TypewriterMarkdown from './TypewriterMarkdown';
 import VisualInsightsRenderer from './VisualInsightsRenderer';
-import { CostEstimateBadge, estimateInsightsCost } from './CostEstimateBadge';
 
 // Loading state messages for each insight mode
 const InsightModeLoadingStates: Record<InsightMode, { title: string; description: string }> = {
@@ -69,21 +69,21 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
   // If you wish to persist consent, consider using localStorage with a timestamp and clear documentation.
   const [consentGranted, setConsentGranted] = useState(false); // User consent for AI analysis
   const successTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-  
+
   // Context window configuration
   const [contextWindowDays, setContextWindowDays] = useState(30); // Default 1 month
-  
+
   // Model override configuration
   const [modelOverride, setModelOverride] = useState(''); // Empty = use default
   const [customModel, setCustomModel] = useState(''); // For custom model input
   const [useCustomModel, setUseCustomModel] = useState(false); // Toggle between preset and custom
-  
+
   // Insight mode selection from global state
   const selectedMode = state.selectedInsightMode;
   const setSelectedMode = (mode: InsightMode) => {
     dispatch({ type: 'SET_INSIGHT_MODE', payload: mode });
   };
-  
+
   // Available Gemini models (presets)
   const availableModels = [
     { value: '', label: 'Default (2.5 Flash)' },
@@ -100,7 +100,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
     { value: 'learnlm-1.5-pro-experimental', label: 'LearnLM 1.5 Pro Experimental' },
     { value: 'custom', label: 'Custom Model (enter below)' },
   ];
-  
+
   // Get the effective model to use
   const getEffectiveModel = () => {
     if (useCustomModel || modelOverride === 'custom') {
@@ -108,11 +108,11 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
     }
     return modelOverride;
   };
-  
+
   // Predefined context window options
   const contextWindowOptions = [
-    { days: 1/24, label: '1 Hour' },
-    { days: 1/8, label: '3 Hours' },
+    { days: 1 / 24, label: '1 Hour' },
+    { days: 1 / 8, label: '3 Hours' },
     { days: 0.5, label: '12 Hours' },
     { days: 1, label: '1 Day' },
     { days: 3, label: '3 Days' },
@@ -135,7 +135,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
     () => estimateInsightsCost(contextWindowDays, false),
     [contextWindowDays]
   );
-  
+
   const customQueryCostEstimate = useMemo(
     () => estimateInsightsCost(contextWindowDays, true),
     [contextWindowDays]
@@ -153,6 +153,18 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
     setInsights('');
 
     try {
+
+      // Fetch recent history from local cache to bridge the sync gap
+      let recentHistory: any[] = [];
+      if (systemId) {
+        try {
+          recentHistory = await getRecentHistoryForSystem(systemId, contextWindowDays);
+          log('info', 'Attached recent history from client cache to insights payload', { count: recentHistory.length });
+        } catch (hErr) {
+          log('warn', 'Failed to attach recent history', { error: String(hErr) });
+        }
+      }
+
       await streamInsights(
         {
           analysisData,
@@ -164,7 +176,8 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           // Iteration limits: 20 for custom queries, 10 for standard (matches react-loop.cjs constants)
           maxIterations: prompt ? 20 : 10,
           insightMode: overrideMode || selectedMode, // Use override mode if provided, otherwise use selected mode
-          consentGranted // Pass consent flag
+          consentGranted, // Pass consent flag
+          recentHistory // Pass the locally cached history
         },
         (chunk) => {
           setInsights(prev => prev + chunk);
@@ -178,7 +191,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           setError(err.message);
           setAnalysisStatus('error');
           setIsLoading(false);
-          
+
           // Check if circuit breaker might be open
           try {
             const hasOpen = await hasOpenCircuitBreakers();
@@ -197,7 +210,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       setAnalysisStatus('error');
       setIsLoading(false);
       log('error', 'Deeper insights stream initiation failed.', { error: errorMessage });
-      
+
       // Check if circuit breaker might be open
       hasOpenCircuitBreakers()
         .then(hasOpen => setCircuitBreakerOpen(hasOpen))
@@ -212,12 +225,12 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
       setCircuitBreakerOpen(false);
       setError(null);
       log('info', 'Circuit breaker reset successfully');
-      
+
       // Clear any existing timeout
       if (successTimeoutRef.current) {
         clearTimeout(successTimeoutRef.current);
       }
-      
+
       // Show success message briefly with cleanup
       setInsights('✅ Circuit breaker reset. You can try generating insights again.');
       setAnalysisStatus('idle');
@@ -251,7 +264,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
         </div>
         <h4 className="text-2xl font-bold text-gray-900">Battery Guru Insights</h4>
       </div>
-      
+
       {insights && (
         <div className="mb-6 p-8 bg-white rounded-2xl shadow-xl border border-gray-100 transition-all duration-300 hover:shadow-2xl">
           {analysisStatus === 'complete' && (
@@ -279,7 +292,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
           )}
         </div>
       )}
-      
+
       {isLoading && !insights && (
         <div className="relative overflow-hidden p-8 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-2xl shadow-lg border border-blue-100">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 animate-pulse"></div>
@@ -308,7 +321,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
             Error Generating Insights
           </h5>
           <p className="text-red-700 mt-1 whitespace-pre-wrap">{error}</p>
-          
+
           {/* Mode-specific error suggestions */}
           {!circuitBreakerOpen && (
             <div className="mt-4 p-3 bg-blue-50 border border-blue-300 rounded-lg">
@@ -341,7 +354,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               </ul>
             </div>
           )}
-          
+
           {circuitBreakerOpen && (
             <div className="mt-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
               <p className="text-yellow-800 text-sm mb-2">
@@ -351,11 +364,10 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               <button
                 onClick={handleResetCircuitBreaker}
                 disabled={isResettingCircuitBreaker}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  isResettingCircuitBreaker
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${isResettingCircuitBreaker
                     ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
                     : 'bg-yellow-600 text-white hover:bg-yellow-700'
-                }`}
+                  }`}
               >
                 {isResettingCircuitBreaker ? 'Resetting...' : '🔄 Reset Circuit Breaker'}
               </button>
@@ -365,7 +377,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               </p>
             </div>
           )}
-          
+
           {!circuitBreakerOpen && (
             <div className="mt-3">
               <button
@@ -400,7 +412,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                 </option>
               ))}
             </select>
-            
+
             {/* Mode Description and Features */}
             <div className="mt-3 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
               <p className="text-sm font-medium text-indigo-900 mb-2">
@@ -416,7 +428,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               </ul>
             </div>
           </div>
-          
+
           {/* Context Window Slider */}
           <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
             <label htmlFor="context-window-slider" className="block text-sm font-semibold text-gray-700 mb-3">
@@ -448,21 +460,21 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               <span>Comprehensive</span>
             </div>
           </div>
-          
+
           {/* Model Override Dropdown */}
           <div className="mb-4 p-4 bg-white rounded-lg border border-gray-300">
             <label htmlFor="model-override" className="block text-sm font-semibold text-gray-700 mb-3">
               🤖 AI Model: <span className="text-purple-600">
-                {modelOverride === 'custom' || useCustomModel 
+                {modelOverride === 'custom' || useCustomModel
                   ? customModel.trim() || 'Custom (not set)'
                   : availableModels.find(m => m.value === modelOverride)?.label || 'Default (2.5 Flash)'}
               </span>
             </label>
             <p className="text-xs text-gray-600 mb-3">
               Select a preset model or enter a custom model name. Pro models provide better analysis for complex queries but take longer.
-              <a 
-                href="https://ai.google.dev/gemini-api/docs/pricing" 
-                target="_blank" 
+              <a
+                href="https://ai.google.dev/gemini-api/docs/pricing"
+                target="_blank"
                 rel="noopener noreferrer"
                 className="ml-1 text-blue-600 hover:text-blue-800 underline"
               >
@@ -488,7 +500,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                 </option>
               ))}
             </select>
-            
+
             {/* Custom Model Input - shown when "Custom" is selected or user wants custom */}
             {(modelOverride === 'custom' || useCustomModel) && (
               <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
@@ -509,7 +521,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
               </div>
             )}
           </div>
-          
+
           {/* Consent Checkbox */}
           <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
             <label className="flex items-start gap-3 cursor-pointer">
@@ -535,11 +547,10 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                 type="button"
                 onClick={() => handleGenerateInsights()}
                 disabled={!consentGranted}
-                className={`w-full sm:w-auto font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform flex items-center justify-center gap-2 ${
-                  consentGranted
+                className={`w-full sm:w-auto font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform flex items-center justify-center gap-2 ${consentGranted
                     ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 hover:scale-105 text-white cursor-pointer'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
+                  }`}
               >
                 <span>🔍</span>
                 <span>Generate AI Insights</span>
@@ -568,11 +579,10 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                 type="button"
                 onClick={() => handleGenerateInsights(customPrompt)}
                 disabled={!customPrompt.trim() || !consentGranted}
-                className={`w-full sm:w-auto font-bold py-2 px-4 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2 ${
-                  customPrompt.trim() && consentGranted
+                className={`w-full sm:w-auto font-bold py-2 px-4 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2 ${customPrompt.trim() && consentGranted
                     ? 'bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white'
                     : 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                }`}
+                  }`}
               >
                 <span>💬</span>
                 <span>Submit Custom Query</span>
