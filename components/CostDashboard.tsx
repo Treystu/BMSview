@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import SpinnerIcon from './icons/SpinnerIcon';
 
 interface DailyBreakdown {
@@ -87,6 +87,14 @@ interface UsageStats {
     };
 }
 
+interface BudgetSettings {
+    monthlyTokenBudget: number;
+    monthlyCostBudget: number;
+    alertThreshold: number;
+    updatedAt?: string;
+    updatedBy?: string;
+}
+
 type Period = 'daily' | 'weekly' | 'monthly';
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
@@ -107,6 +115,29 @@ const fetchUsageStats = async (period: Period): Promise<UsageStats> => {
     return await response.json();
 };
 
+const fetchBudgetSettings = async (): Promise<{ settings: BudgetSettings; defaults: BudgetSettings }> => {
+    const response = await fetch('/.netlify/functions/ai-budget-settings');
+    if (!response.ok) {
+        throw new Error(`Failed to fetch budget settings: ${response.status}`);
+    }
+    const data = await response.json();
+    return { settings: data.settings, defaults: data.defaults };
+};
+
+const updateBudgetSettings = async (settings: Partial<BudgetSettings>): Promise<BudgetSettings> => {
+    const response = await fetch('/.netlify/functions/ai-budget-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+    });
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Failed to update settings: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.settings;
+};
+
 // Simple bar chart component using div elements
 const BarChart: React.FC<{
     data: DailyBreakdown[];
@@ -115,14 +146,14 @@ const BarChart: React.FC<{
     if (data.length === 0) {
         return <div className="text-gray-500 text-center py-8">No data available</div>;
     }
-    
+
     return (
         <div className="flex items-end gap-1 h-48 px-2">
             {data.map((day, index) => {
                 const height = maxValue > 0 ? (day.totalCost / maxValue) * 100 : 0;
                 const date = new Date(day.date);
                 const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                
+
                 return (
                     <div key={day.date} className="flex-1 flex flex-col items-center group relative">
                         {/* Tooltip */}
@@ -131,16 +162,16 @@ const BarChart: React.FC<{
                             <div>${day.totalCost.toFixed(4)}</div>
                             <div>{day.operationCount} ops</div>
                         </div>
-                        
+
                         {/* Bar */}
-                        <div 
+                        <div
                             className="w-full bg-blue-500 hover:bg-blue-400 rounded-t transition-all cursor-pointer"
-                            style={{ 
+                            style={{
                                 height: `${Math.max(height, 2)}%`,
                                 minHeight: height > 0 ? '4px' : '0'
                             }}
                         />
-                        
+
                         {/* Label */}
                         {data.length <= 14 && (
                             <span className="text-xs text-gray-500 mt-1 transform -rotate-45 origin-top-left">
@@ -167,7 +198,7 @@ const BudgetGauge: React.FC<{
             default: return 'text-green-500';
         }
     };
-    
+
     const getBarColor = () => {
         switch (status) {
             case 'exceeded': return 'bg-red-500';
@@ -175,19 +206,19 @@ const BudgetGauge: React.FC<{
             default: return 'bg-green-500';
         }
     };
-    
+
     // Format large numbers (tokens)
     const formatNumber = (num: number): string => {
         if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`;
         if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
         return num.toLocaleString();
     };
-    
+
     const unit = isTokenBased ? 'tokens' : '';
     const currentDisplay = isTokenBased ? formatNumber(budget.current) : `$${budget.current.toFixed(4)}`;
     const remainingDisplay = isTokenBased ? formatNumber(budget.remaining) : `$${budget.remaining.toFixed(4)}`;
     const monthlyDisplay = isTokenBased ? formatNumber(budget.monthly) : `$${budget.monthly.toFixed(2)}`;
-    
+
     return (
         <div className="bg-gray-800 rounded-lg p-4">
             <div className="flex justify-between items-center mb-2">
@@ -198,29 +229,29 @@ const BudgetGauge: React.FC<{
                     {status === 'exceeded' ? '⚠️ Exceeded' : status === 'warning' ? '⚠️ Warning' : '✓ Healthy'}
                 </span>
             </div>
-            
+
             <div className="relative h-4 bg-gray-700 rounded-full overflow-hidden mb-2">
-                <div 
+                <div
                     className={`h-full ${getBarColor()} transition-all`}
                     style={{ width: `${Math.min(budget.usagePercent, 100)}%` }}
                 />
                 {/* Alert threshold marker */}
-                <div 
+                <div
                     className="absolute top-0 h-full w-0.5 bg-yellow-300"
                     style={{ left: `${budget.alertThreshold}%` }}
                 />
             </div>
-            
+
             <div className="flex justify-between text-sm text-gray-400">
                 <span>{currentDisplay} {unit} used</span>
                 <span>{remainingDisplay} {unit} remaining</span>
             </div>
-            
+
             <div className="text-center mt-2">
                 <span className="text-2xl font-bold">{budget.usagePercent.toFixed(1)}%</span>
                 <span className="text-gray-500 ml-2">of {monthlyDisplay} {unit}</span>
             </div>
-            
+
             {/* Show input/output breakdown for token budgets */}
             {isTokenBased && budget.inputTokens !== undefined && budget.outputTokens !== undefined && (
                 <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-500 flex justify-between">
@@ -237,7 +268,20 @@ const CostDashboard: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [period, setPeriod] = useState<Period>('weekly');
-    
+
+    // Budget settings state
+    const [showSettings, setShowSettings] = useState(false);
+    const [budgetSettings, setBudgetSettings] = useState<BudgetSettings | null>(null);
+    const [settingsDefaults, setSettingsDefaults] = useState<BudgetSettings | null>(null);
+    const [settingsLoading, setSettingsLoading] = useState(false);
+    const [settingsError, setSettingsError] = useState<string | null>(null);
+    const [settingsSaving, setSettingsSaving] = useState(false);
+
+    // Form state for editing
+    const [editTokenBudget, setEditTokenBudget] = useState('');
+    const [editCostBudget, setEditCostBudget] = useState('');
+    const [editAlertThreshold, setEditAlertThreshold] = useState('');
+
     const loadStats = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -245,9 +289,9 @@ const CostDashboard: React.FC = () => {
             log('info', 'Fetching usage stats', { period });
             const data = await fetchUsageStats(period);
             setStats(data);
-            log('info', 'Usage stats loaded', { 
+            log('info', 'Usage stats loaded', {
                 totalCost: data.summary?.totalCost,
-                days: data.dailyBreakdown?.length 
+                days: data.dailyBreakdown?.length
             });
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to load usage stats';
@@ -257,11 +301,66 @@ const CostDashboard: React.FC = () => {
             setLoading(false);
         }
     }, [period]);
-    
+
     useEffect(() => {
         loadStats();
     }, [loadStats]);
-    
+
+    // Load budget settings when settings panel is opened
+    useEffect(() => {
+        if (showSettings && !budgetSettings) {
+            loadBudgetSettings();
+        }
+    }, [showSettings]);
+
+    const loadBudgetSettings = async () => {
+        setSettingsLoading(true);
+        setSettingsError(null);
+        try {
+            const { settings, defaults } = await fetchBudgetSettings();
+            setBudgetSettings(settings);
+            setSettingsDefaults(defaults);
+            // Initialize form values
+            setEditTokenBudget(String(settings.monthlyTokenBudget));
+            setEditCostBudget(String(settings.monthlyCostBudget));
+            setEditAlertThreshold(String(Math.round(settings.alertThreshold * 100)));
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to load settings';
+            setSettingsError(message);
+        } finally {
+            setSettingsLoading(false);
+        }
+    };
+
+    const handleSaveSettings = async () => {
+        setSettingsSaving(true);
+        setSettingsError(null);
+        try {
+            const newSettings = await updateBudgetSettings({
+                monthlyTokenBudget: parseInt(editTokenBudget, 10),
+                monthlyCostBudget: parseFloat(editCostBudget),
+                alertThreshold: parseFloat(editAlertThreshold) / 100 // Convert percent to decimal
+            });
+            setBudgetSettings(newSettings);
+            log('info', 'Budget settings updated', newSettings);
+            // Reload stats to reflect new thresholds
+            loadStats();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to save settings';
+            setSettingsError(message);
+        } finally {
+            setSettingsSaving(false);
+        }
+    };
+
+    const handleResetToDefaults = () => {
+        if (settingsDefaults) {
+            setEditTokenBudget(String(settingsDefaults.monthlyTokenBudget));
+            setEditCostBudget(String(settingsDefaults.monthlyCostBudget));
+            setEditAlertThreshold(String(Math.round(settingsDefaults.alertThreshold * 100)));
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
@@ -270,13 +369,13 @@ const CostDashboard: React.FC = () => {
             </div>
         );
     }
-    
+
     if (error) {
         return (
             <div className="bg-red-900/20 border border-red-500 rounded-lg p-4">
                 <h3 className="font-bold text-red-400">Error Loading Cost Data</h3>
                 <p className="text-red-300">{error}</p>
-                <button 
+                <button
                     onClick={loadStats}
                     className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white"
                 >
@@ -285,13 +384,13 @@ const CostDashboard: React.FC = () => {
             </div>
         );
     }
-    
+
     if (!stats) {
         return <div className="text-gray-500">No data available</div>;
     }
-    
+
     const maxCost = Math.max(...stats.dailyBreakdown.map(d => d.totalCost), 0.001);
-    
+
     return (
         <div className="space-y-6">
             {/* Header with period selector */}
@@ -302,11 +401,10 @@ const CostDashboard: React.FC = () => {
                         <button
                             key={p}
                             onClick={() => setPeriod(p)}
-                            className={`px-3 py-1 rounded text-sm font-medium transition ${
-                                period === p 
-                                    ? 'bg-blue-600 text-white' 
+                            className={`px-3 py-1 rounded text-sm font-medium transition ${period === p
+                                    ? 'bg-blue-600 text-white'
                                     : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            }`}
+                                }`}
                         >
                             {p.charAt(0).toUpperCase() + p.slice(1)}
                         </button>
@@ -319,38 +417,164 @@ const CostDashboard: React.FC = () => {
                     </button>
                 </div>
             </div>
-            
+
             {/* Budget Status - Token Budget (Primary) and Cost Budget (Secondary) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Token Budget - Primary */}
                 {stats.tokenBudget ? (
-                    <BudgetGauge 
-                        budget={stats.tokenBudget} 
-                        status={stats.budget?.status || 'healthy'} 
+                    <BudgetGauge
+                        budget={stats.tokenBudget}
+                        status={stats.budget?.status || 'healthy'}
                         isTokenBased={true}
                     />
                 ) : stats.budget && (
-                    <BudgetGauge 
-                        budget={stats.budget.budget} 
-                        status={stats.budget.status} 
+                    <BudgetGauge
+                        budget={stats.budget.budget}
+                        status={stats.budget.status}
                         isTokenBased={true}
                     />
                 )}
-                
+
                 {/* Cost Budget - Secondary */}
                 {stats.costBudget && (
-                    <BudgetGauge 
+                    <BudgetGauge
                         budget={{
                             ...stats.costBudget,
                             alertThreshold: 80 // Default threshold for cost
-                        }} 
-                        status={stats.costBudget.usagePercent >= 100 ? 'exceeded' : 
-                                stats.costBudget.usagePercent >= 80 ? 'warning' : 'healthy'} 
+                        }}
+                        status={stats.costBudget.usagePercent >= 100 ? 'exceeded' :
+                            stats.costBudget.usagePercent >= 80 ? 'warning' : 'healthy'}
                         isTokenBased={false}
                     />
                 )}
             </div>
-            
+
+            {/* Budget Settings Panel */}
+            <div className="bg-gray-800 rounded-lg overflow-hidden">
+                <button
+                    onClick={() => setShowSettings(!showSettings)}
+                    className="w-full px-4 py-3 flex justify-between items-center hover:bg-gray-700 transition"
+                >
+                    <span className="font-semibold flex items-center gap-2">
+                        ⚙️ AI Cost Management Settings
+                    </span>
+                    <span className="text-gray-400">{showSettings ? '▲' : '▼'}</span>
+                </button>
+
+                {showSettings && (
+                    <div className="px-4 pb-4 border-t border-gray-700">
+                        {settingsLoading ? (
+                            <div className="flex items-center justify-center py-8">
+                                <SpinnerIcon className="w-6 h-6 text-blue-500" />
+                                <span className="ml-2 text-gray-400">Loading settings...</span>
+                            </div>
+                        ) : settingsError ? (
+                            <div className="py-4">
+                                <div className="text-red-400 mb-2">{settingsError}</div>
+                                <button
+                                    onClick={loadBudgetSettings}
+                                    className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm"
+                                >
+                                    Retry
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="pt-4 space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {/* Token Budget */}
+                                    <div>
+                                        <label className="block text-sm text-gray-400 mb-1">
+                                            Monthly Token Budget
+                                        </label>
+                                        <input
+                                            type="number"
+                                            value={editTokenBudget}
+                                            onChange={(e) => setEditTokenBudget(e.target.value)}
+                                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
+                                            min="100000"
+                                            step="100000"
+                                        />
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Min: 100,000 tokens
+                                        </div>
+                                    </div>
+
+                                    {/* Cost Budget */}
+                                    <div>
+                                        <label className="block text-sm text-gray-400 mb-1">
+                                            Monthly Cost Budget ($)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            value={editCostBudget}
+                                            onChange={(e) => setEditCostBudget(e.target.value)}
+                                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
+                                            min="0.01"
+                                            step="0.01"
+                                        />
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Min: $0.01
+                                        </div>
+                                    </div>
+
+                                    {/* Alert Threshold */}
+                                    <div>
+                                        <label className="block text-sm text-gray-400 mb-1">
+                                            Alert Threshold (%)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            value={editAlertThreshold}
+                                            onChange={(e) => setEditAlertThreshold(e.target.value)}
+                                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded focus:border-blue-500 focus:outline-none"
+                                            min="10"
+                                            max="100"
+                                        />
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Alert when usage exceeds this %
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex justify-between items-center pt-2">
+                                    <button
+                                        onClick={handleResetToDefaults}
+                                        className="px-4 py-2 text-gray-400 hover:text-white transition"
+                                    >
+                                        Reset to Defaults
+                                    </button>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setShowSettings(false)}
+                                            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded transition"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleSaveSettings}
+                                            disabled={settingsSaving}
+                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded transition disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {settingsSaving && <SpinnerIcon className="w-4 h-4" />}
+                                            Save Settings
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Last updated info */}
+                                {budgetSettings?.updatedAt && (
+                                    <div className="text-xs text-gray-500 text-right">
+                                        Last updated: {new Date(budgetSettings.updatedAt).toLocaleString()}
+                                        {budgetSettings.updatedBy && ` by ${budgetSettings.updatedBy}`}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
             {/* Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-gray-800 rounded-lg p-4">
@@ -383,13 +607,13 @@ const CostDashboard: React.FC = () => {
                     )}
                 </div>
             </div>
-            
+
             {/* Daily Cost Chart */}
             <div className="bg-gray-800 rounded-lg p-4">
                 <h3 className="text-lg font-semibold mb-4">Daily AI Costs</h3>
                 <BarChart data={stats.dailyBreakdown} maxValue={maxCost} />
             </div>
-            
+
             {/* Operation Breakdown */}
             <div className="bg-gray-800 rounded-lg p-4">
                 <h3 className="text-lg font-semibold mb-4">Operation Breakdown</h3>
@@ -405,7 +629,7 @@ const CostDashboard: React.FC = () => {
                     ))}
                 </div>
             </div>
-            
+
             {/* Realtime Metrics */}
             {stats.realtime && (
                 <div className="bg-gray-800 rounded-lg p-4">
@@ -424,9 +648,8 @@ const CostDashboard: React.FC = () => {
                             <div className="text-gray-500 text-sm">Error Rate</div>
                         </div>
                         <div>
-                            <div className={`text-2xl font-bold ${
-                                stats.realtime.circuitBreakerStatus === 'CLOSED' ? 'text-green-400' : 'text-red-400'
-                            }`}>
+                            <div className={`text-2xl font-bold ${stats.realtime.circuitBreakerStatus === 'CLOSED' ? 'text-green-400' : 'text-red-400'
+                                }`}>
                                 {stats.realtime.circuitBreakerStatus}
                             </div>
                             <div className="text-gray-500 text-sm">Circuit Breaker</div>
@@ -434,20 +657,19 @@ const CostDashboard: React.FC = () => {
                     </div>
                 </div>
             )}
-            
+
             {/* Recent Alerts */}
             {stats.budget?.recentAlerts && stats.budget.recentAlerts.length > 0 && (
                 <div className="bg-gray-800 rounded-lg p-4">
                     <h3 className="text-lg font-semibold mb-4">Recent Alerts</h3>
                     <div className="space-y-2">
                         {stats.budget.recentAlerts.map(alert => (
-                            <div 
-                                key={alert.id} 
-                                className={`p-3 rounded border-l-4 ${
-                                    alert.severity === 'critical' ? 'bg-red-900/20 border-red-500' :
-                                    alert.severity === 'high' ? 'bg-orange-900/20 border-orange-500' :
-                                    'bg-yellow-900/20 border-yellow-500'
-                                }`}
+                            <div
+                                key={alert.id}
+                                className={`p-3 rounded border-l-4 ${alert.severity === 'critical' ? 'bg-red-900/20 border-red-500' :
+                                        alert.severity === 'high' ? 'bg-orange-900/20 border-orange-500' :
+                                            'bg-yellow-900/20 border-yellow-500'
+                                    }`}
                             >
                                 <div className="flex justify-between">
                                     <span className="font-medium">{alert.type}</span>
@@ -461,7 +683,7 @@ const CostDashboard: React.FC = () => {
                     </div>
                 </div>
             )}
-            
+
             {/* Date Range Info */}
             <div className="text-center text-gray-500 text-sm">
                 Data from {new Date(stats.dateRange.start).toLocaleDateString()} to {new Date(stats.dateRange.end).toLocaleDateString()}

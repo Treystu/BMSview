@@ -49,10 +49,10 @@ async function createBudgetGitHubIssue(usagePercent, currentTokens, monthlyToken
             if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
             return tokens.toString();
         };
-        
+
         const now = new Date();
         const alertType = usagePercent >= 100 ? 'exceeded' : 'warning';
-        
+
         // Create feedback object in the format expected by create-github-issue endpoint
         // ID includes year, month, day, and alert type for uniqueness while allowing duplicate detection
         const feedback = {
@@ -66,7 +66,7 @@ async function createBudgetGitHubIssue(usagePercent, currentTokens, monthlyToken
             suggestion: {
                 title: `AI Token Budget Alert: ${usagePercent.toFixed(1)}% of monthly budget used`,
                 description: `The AI token usage has reached ${usagePercent.toFixed(1)}% of the monthly budget (${formatTokens(currentTokens)} of ${formatTokens(monthlyTokenBudget)} tokens).`,
-                rationale: usagePercent >= 100 
+                rationale: usagePercent >= 100
                     ? 'Monthly token budget has been exceeded. Immediate attention required to prevent service disruption or unexpected costs.'
                     : 'Token usage is approaching the monthly budget limit. Review and optimization recommended.',
                 implementation: usagePercent >= 100
@@ -77,22 +77,22 @@ async function createBudgetGitHubIssue(usagePercent, currentTokens, monthlyToken
                 affectedComponents: ['Cost Dashboard', 'AI Operations']
             }
         };
-        
+
         const response = await fetch(`${baseUrl}/.netlify/functions/create-github-issue`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ feedback })
         });
-        
+
         if (response.ok) {
             const result = await response.json();
             log.info('Budget alert GitHub issue created', { issueNumber: result.number });
             return result;
         } else {
             const errorText = await response.text();
-            log.warn('Failed to create budget alert GitHub issue', { 
-                status: response.status, 
-                error: errorText 
+            log.warn('Failed to create budget alert GitHub issue', {
+                status: response.status,
+                error: errorText
             });
             return null;
         }
@@ -115,27 +115,27 @@ async function checkAndCreateBudgetAlert(usagePercent, currentTokens, monthlyTok
     if (usagePercent < alertThreshold * 100) {
         return null;
     }
-    
+
     const budgetAlertsCollection = await getCollection('budget_alerts');
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    
+
     // Check if we already sent an alert for this month and threshold level
     const alertType = usagePercent >= 100 ? 'exceeded' : 'warning';
     const existingAlert = await budgetAlertsCollection.findOne({
         month: currentMonth,
         alertType: alertType
     });
-    
+
     if (existingAlert) {
-        log.debug('Budget alert already sent for this month/level', { 
-            month: currentMonth, 
+        log.debug('Budget alert already sent for this month/level', {
+            month: currentMonth,
             alertType,
             existingAlertId: existingAlert.id
         });
         return null;
     }
-    
+
     // Create internal alert
     await createAlert({
         severity: usagePercent >= 100 ? 'critical' : 'high',
@@ -148,10 +148,10 @@ async function checkAndCreateBudgetAlert(usagePercent, currentTokens, monthlyTok
             month: currentMonth
         }
     });
-    
+
     // Create GitHub issue
     const githubIssue = await createBudgetGitHubIssue(usagePercent, currentTokens, monthlyTokenBudget, log);
-    
+
     // Record that we've sent this alert
     const alertRecord = {
         id: uuidv4(),
@@ -166,16 +166,16 @@ async function checkAndCreateBudgetAlert(usagePercent, currentTokens, monthlyTok
         } : null,
         createdAt: now.toISOString()
     };
-    
+
     await budgetAlertsCollection.insertOne(alertRecord);
-    
+
     log.info('Budget alert created', {
         alertType,
         usagePercent,
         currentTokens,
         hasGitHubIssue: !!githubIssue
     });
-    
+
     return alertRecord;
 }
 
@@ -187,7 +187,7 @@ async function checkAndCreateBudgetAlert(usagePercent, currentTokens, monthlyTok
  */
 async function getDailyBreakdown(startDate, endDate) {
     const collection = await getCollection('ai_operations');
-    
+
     const pipeline = [
         {
             $match: {
@@ -271,7 +271,7 @@ async function getDailyBreakdown(startDate, endDate) {
                         $size: {
                             $filter: {
                                 input: '$operations',
-                                cond: { 
+                                cond: {
                                     $or: [
                                         { $eq: ['$$this.operation', 'feedback_generation'] },
                                         { $eq: ['$$this.operation', 'feedbackGeneration'] }
@@ -285,7 +285,7 @@ async function getDailyBreakdown(startDate, endDate) {
         },
         { $sort: { date: 1 } }
     ];
-    
+
     return await collection.aggregate(pipeline).toArray();
 }
 
@@ -296,17 +296,44 @@ async function getDailyBreakdown(startDate, endDate) {
 async function getBudgetStatus(log = createLogger('usage-stats-budget')) {
     const operationsCollection = await getCollection('ai_operations');
     const alertsCollection = await getCollection('anomaly_alerts');
-    
-    // Token-based budget (primary) - configurable via environment variable
-    const monthlyTokenBudget = parseInt(process.env.AI_MONTHLY_TOKEN_BUDGET || String(DEFAULT_MONTHLY_TOKEN_BUDGET), 10);
-    // Cost-based budget (secondary) - for reference
-    const monthlyCostBudget = parseFloat(process.env.AI_MONTHLY_COST_BUDGET || String(DEFAULT_MONTHLY_COST_BUDGET));
-    const alertThreshold = parseFloat(process.env.AI_BUDGET_ALERT_THRESHOLD || String(DEFAULT_ALERT_THRESHOLD));
-    
+    const settingsCollection = await getCollection('app_settings');
+
+    // Try to get admin-configured settings from database first
+    let monthlyTokenBudget = DEFAULT_MONTHLY_TOKEN_BUDGET;
+    let monthlyCostBudget = DEFAULT_MONTHLY_COST_BUDGET;
+    let alertThreshold = DEFAULT_ALERT_THRESHOLD;
+
+    try {
+        const dbSettings = await settingsCollection.findOne({ key: 'ai_budget_settings' });
+        if (dbSettings && dbSettings.value) {
+            monthlyTokenBudget = dbSettings.value.monthlyTokenBudget ?? monthlyTokenBudget;
+            monthlyCostBudget = dbSettings.value.monthlyCostBudget ?? monthlyCostBudget;
+            alertThreshold = dbSettings.value.alertThreshold ?? alertThreshold;
+            log.debug('Using admin-configured budget settings', {
+                monthlyTokenBudget,
+                monthlyCostBudget,
+                alertThreshold
+            });
+        }
+    } catch (err) {
+        log.warn('Failed to load budget settings from database, using defaults', { error: err.message });
+    }
+
+    // Environment variables override database settings (for backwards compatibility)
+    if (process.env.AI_MONTHLY_TOKEN_BUDGET) {
+        monthlyTokenBudget = parseInt(process.env.AI_MONTHLY_TOKEN_BUDGET, 10);
+    }
+    if (process.env.AI_MONTHLY_COST_BUDGET) {
+        monthlyCostBudget = parseFloat(process.env.AI_MONTHLY_COST_BUDGET);
+    }
+    if (process.env.AI_BUDGET_ALERT_THRESHOLD) {
+        alertThreshold = parseFloat(process.env.AI_BUDGET_ALERT_THRESHOLD);
+    }
+
     // Calculate current month's usage
     const now = new Date();
     const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
+
     const monthlyUsage = await operationsCollection.aggregate([
         {
             $match: {
@@ -331,7 +358,7 @@ async function getBudgetStatus(log = createLogger('usage-stats-budget')) {
             }
         }
     ]).toArray();
-    
+
     const usage = monthlyUsage[0] || {
         totalCost: 0,
         totalTokens: 0,
@@ -341,18 +368,18 @@ async function getBudgetStatus(log = createLogger('usage-stats-budget')) {
         analysisOps: 0,
         insightsOps: 0
     };
-    
+
     // Primary metric: tokens
     const tokenUsagePercent = (usage.totalTokens / monthlyTokenBudget) * 100;
     // Secondary metric: cost
     const costUsagePercent = (usage.totalCost / monthlyCostBudget) * 100;
-    
+
     // Get recent alerts
     const recentAlerts = await alertsCollection.find({
         type: { $in: ['cost_spike', 'budget_warning'] },
         resolved: { $ne: true }
     }).sort({ timestamp: -1 }).limit(5).toArray();
-    
+
     // Determine status based on TOKEN usage (primary)
     let status = 'healthy';
     if (tokenUsagePercent >= 100) {
@@ -360,14 +387,14 @@ async function getBudgetStatus(log = createLogger('usage-stats-budget')) {
     } else if (tokenUsagePercent >= alertThreshold * 100) {
         status = 'warning';
     }
-    
+
     // Check and create budget alert if threshold exceeded (token-based)
     // This is async but we don't wait for it to complete
     if (status !== 'healthy') {
         checkAndCreateBudgetAlert(tokenUsagePercent, usage.totalTokens, monthlyTokenBudget, alertThreshold, log)
             .catch(err => log.warn('Failed to check/create budget alert', { error: err.message }));
     }
-    
+
     return {
         // Token budget (primary metric)
         tokenBudget: {
@@ -421,49 +448,49 @@ exports.handler = async (event, context) => {
     const log = createLoggerFromEvent('usage-stats', event, context);
     const timer = createTimer(log, 'usage-stats');
     const headers = getCorsHeaders(event);
-    
-    log.entry({ 
+
+    log.entry({
         method: event.httpMethod,
-        path: event.path, 
+        path: event.path,
         query: event.queryStringParameters,
         headers: sanitizeHeaders(event.headers),
         bodyLength: event.body ? event.body.length : 0
     });
-    
+
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {
         timer.end({ outcome: 'preflight' });
         log.exit(200, { outcome: 'preflight' });
         return { statusCode: 200, headers };
     }
-    
+
     if (event.httpMethod !== 'GET') {
         timer.end({ outcome: 'method_not_allowed' });
         log.exit(405, { outcome: 'method_not_allowed' });
         return errorResponse(405, 'method_not_allowed', 'Method not allowed', undefined, headers);
     }
-    
+
     try {
         const query = event.queryStringParameters || {};
         const path = event.path || '';
-        
+
         // Check for budget endpoint
         if (path.endsWith('/budget')) {
             const budgetStatus = await getBudgetStatus(log);
             timer.end({ endpoint: 'budget' });
             log.exit(200);
-            
+
             return {
                 statusCode: 200,
                 headers: { ...headers, 'Content-Type': 'application/json' },
                 body: JSON.stringify(budgetStatus)
             };
         }
-        
+
         // Parse date range
         const period = query.period || 'daily';
         let startDate, endDate;
-        
+
         if (query.startDate && query.endDate) {
             startDate = new Date(query.startDate);
             endDate = new Date(query.endDate);
@@ -482,19 +509,19 @@ exports.handler = async (event, context) => {
                     break;
             }
         }
-        
+
         // Get cost metrics summary
         const costSummary = await getCostMetrics(period, startDate, endDate);
-        
+
         // Get daily breakdown
         const dailyBreakdown = await getDailyBreakdown(startDate, endDate);
-        
+
         // Get realtime metrics
         const realtimeMetrics = await getRealtimeMetrics();
-        
+
         // Get budget status
         const budgetStatus = await getBudgetStatus(log);
-        
+
         const response = {
             period,
             dateRange: {
@@ -515,22 +542,22 @@ exports.handler = async (event, context) => {
                 recentAlerts: budgetStatus.recentAlerts
             }
         };
-        
+
         timer.end({ period, days: dailyBreakdown.length });
         log.exit(200);
-        
+
         return {
             statusCode: 200,
             headers: { ...headers, 'Content-Type': 'application/json' },
             body: JSON.stringify(response)
         };
-        
+
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         log.error('Failed to get usage stats', { error: errorMessage, stack: error?.stack });
         timer.end({ error: true });
         log.exit(500);
-        
+
         return errorResponse(
             500,
             'internal_error',
