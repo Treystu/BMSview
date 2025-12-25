@@ -549,36 +549,19 @@ const HEALTH_SCORE_THRESHOLDS = {
 };
 
 async function computeTimeRange(systemId, options) {
-  const log = createLogger('full-context-builder:time-range');
-  const targetDays = options.contextWindowDays || 30;
+  // Optimization: Skip expensive DB scan for "actual" range.
+  // Just use the target window ending now.
+  const targetDays = options.contextWindowDays || 90;
 
-  try {
-    const { minDate, maxDate } = await getActualDateRange(systemId, log);
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - targetDays);
 
-    if (!minDate || !maxDate) {
-      throw new Error('No historical data available for this system');
-    }
-
-    const clamped = clampToAvailableRange(minDate, maxDate, targetDays);
-
-    if (!clamped) {
-      throw new Error('Unable to clamp time range to available data');
-    }
-
-    return { ...clamped, days: targetDays };
-  } catch (error) {
-    log.warn('Falling back to default time range due to error', { error: error.message });
-
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - targetDays);
-
-    return {
-      start: start.toISOString(),
-      end: end.toISOString(),
-      days: targetDays
-    };
-  }
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+    days: targetDays
+  };
 }
 
 async function getActualDateRange(systemId, log) {
@@ -745,19 +728,24 @@ function calculateDegradationRate(analyses) {
 }
 
 function countDataPoints(obj) {
-  let count = 0;
+  // Efficiently count data points without deep traversal
+  if (!obj) return 0;
 
-  function traverse(item) {
-    if (Array.isArray(item)) {
-      count += item.length;
-      item.forEach(traverse);
-    } else if (item && typeof item === 'object') {
-      Object.values(item).forEach(traverse);
-    }
+  // If it's the full context object
+  if (obj.raw && obj.raw.totalDataPoints) {
+    return obj.raw.totalDataPoints;
   }
 
-  traverse(obj);
-  return count;
+  // If it's a raw data object
+  if (obj.allAnalyses && Array.isArray(obj.allAnalyses)) {
+    return obj.allAnalyses.length;
+  }
+
+  // Fallback for generic objects (simplified)
+  if (Array.isArray(obj)) return obj.length;
+
+  // Last resort: just count keys at top level
+  return Object.keys(obj).length;
 }
 
 module.exports = {

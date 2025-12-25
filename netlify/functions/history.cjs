@@ -315,7 +315,7 @@ exports.handler = async function (event, context) {
             if (action === 'auto-associate') {
                 log.info('Starting auto-association task', { action });
                 const startTime = Date.now();
-                const MAX_EXECUTION_TIME = 20000; // 20 seconds timeout protection
+                const MAX_EXECUTION_TIME = 24000; // Increased to 24 seconds
                 let timeoutReached = false;
 
                 const systems = await systemsCollection.find({}, { projection: { _id: 0, id: 1, name: 1, associatedDLs: 1 } }).toArray();
@@ -329,11 +329,12 @@ exports.handler = async function (event, context) {
                     });
                 });
 
-                // Limit query to prevent memory issues and ensure responsive loop
-                const unlinkedCursor = historyCollection.find({ systemId: null, dlNumber: { $exists: true, $nin: [null, ''] } }).limit(2000);
+                // Limit query to prevent memory issues, increased limit for better coverage
+                const unlinkedCursor = historyCollection.find({ systemId: null, dlNumber: { $exists: true, $nin: [null, ''] } }).limit(5000);
 
                 let associatedCount = 0;
                 let processedCount = 0;
+                let ambiguousCount = 0;
                 const bulkOps = [];
 
                 for await (const record of unlinkedCursor) {
@@ -346,19 +347,23 @@ exports.handler = async function (event, context) {
 
                     const potentialSystems = dlMap.get(record.dlNumber);
                     // Only associate if exactly one system matches the DL number
-                    if (potentialSystems && potentialSystems.length === 1) {
-                        const system = potentialSystems[0];
-                        bulkOps.push({
-                            updateOne: {
-                                filter: { _id: record._id }, // Use _id for bulk ops
-                                update: { $set: { systemId: system.id, systemName: system.name } }
+                    if (potentialSystems) {
+                        if (potentialSystems.length === 1) {
+                            const system = potentialSystems[0];
+                            bulkOps.push({
+                                updateOne: {
+                                    filter: { _id: record._id }, // Use _id for bulk ops
+                                    update: { $set: { systemId: system.id, systemName: system.name } }
+                                }
+                            });
+                            associatedCount++;
+                            if (bulkOps.length >= 500) { // Process in batches
+                                await historyCollection.bulkWrite(bulkOps, { ordered: false });
+                                bulkOps.length = 0; // Clear the array
+                                log.debug('Processed auto-associate batch', { action, count: 500 });
                             }
-                        });
-                        associatedCount++;
-                        if (bulkOps.length >= 500) { // Process in batches
-                            await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                            bulkOps.length = 0; // Clear the array
-                            log.debug('Processed auto-associate batch', { action, count: 500 });
+                        } else {
+                            ambiguousCount++;
                         }
                     }
                 }
@@ -367,62 +372,48 @@ exports.handler = async function (event, context) {
                     await historyCollection.bulkWrite(bulkOps, { ordered: false });
                 }
 
-                timer.end({ action, associatedCount, processedCount, timeoutReached });
-                log.info('Auto-association task complete', { action, associatedCount, timeoutReached });
+                timer.end({ action, associatedCount, processedCount, ambiguousCount, timeoutReached });
+                log.info('Auto-association task complete', { action, associatedCount, ambiguousCount, timeoutReached });
+
+                let message = timeoutReached
+                    ? `Time limit reached. Associated ${associatedCount} records. Run again to continue.`
+                    : `Completed. Associated ${associatedCount} records.`;
+
+                if (ambiguousCount > 0) {
+                    message += ` (${ambiguousCount} skipped due to ambiguous DL linking)`;
+                }
+
                 log.exit(200);
                 return respond(200, {
                     success: true,
                     associatedCount,
-                    message: timeoutReached ? `Time limit reached. Associated ${associatedCount} records. Run again to continue.` : `Completed. Associated ${associatedCount} records.`
+                    message
                 }, headers);
             }
 
             // --- Cleanup Links Action ---
             if (action === 'cleanup-links') {
                 log.info('Starting cleanup-links task', { action });
-                const startTime = Date.now();
-                const MAX_EXECUTION_TIME = 20000; // 20 seconds
-                let timeoutReached = false;
 
-                const allSystemIds = new Set(await systemsCollection.distinct('id'));
-                const linkedCursor = historyCollection.find({ systemId: { $exists: true, $ne: null } }).limit(2000);
-                let updatedCount = 0;
-                let processedCount = 0;
-                const bulkOps = [];
+                // Optimized bulk update logic - NO LOOP
+                const allSystemIds = await systemsCollection.distinct('id');
 
-                for await (const record of linkedCursor) {
-                    if (Date.now() - startTime > MAX_EXECUTION_TIME) {
-                        timeoutReached = true;
-                        log.warn('Cleanup-links task approaching timeout, stopping early.', { updatedCount });
-                        break;
-                    }
-                    processedCount++;
+                // Find and unset systemId for any record pointing to a non-existent system in one go
+                // Using updateMany is atomic and much faster than iterating
+                const result = await historyCollection.updateMany(
+                    { systemId: { $exists: true, $ne: null, $nin: allSystemIds } },
+                    { $set: { systemId: null, systemName: null } }
+                );
 
-                    if (!allSystemIds.has(record.systemId)) {
-                        bulkOps.push({
-                            updateOne: {
-                                filter: { _id: record._id },
-                                update: { $set: { systemId: null, systemName: null } }
-                            }
-                        });
-                        updatedCount++;
-                        if (bulkOps.length >= 500) {
-                            await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                            bulkOps.length = 0;
-                            log.debug('Processed cleanup-links batch', { action, count: 500 });
-                        }
-                    }
-                }
-                if (bulkOps.length > 0) {
-                    await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                }
-                timer.end({ action, updatedCount, timeoutReached });
-                log.info('Cleanup-links task complete', { action, updatedCount, timeoutReached });
+                const updatedCount = result.modifiedCount;
+
+                timer.end({ action, updatedCount, optimized: true });
+                log.info('Cleanup-links task complete (optimized)', { action, updatedCount });
                 log.exit(200);
                 return respond(200, {
                     success: true,
                     updatedCount,
-                    message: timeoutReached ? `Time limit reached. Cleaned ${updatedCount} records. Run again to continue.` : `Completed. Cleaned ${updatedCount} records.`
+                    message: `Completed. Cleaned ${updatedCount} records.`
                 }, headers);
             }
 

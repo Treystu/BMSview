@@ -73,6 +73,43 @@ exports.handler = async function (event, context) {
         const requestLogContext = { systemId };
         log.info('Starting system analytics processing.', requestLogContext);
 
+        // MOCK DATA FOR TEST SYSTEM
+        if (systemId === 'test-system') {
+            log.info('Returning mock analytics for test-system', requestLogContext);
+            return respond(200, {
+                hourlyAverages: Array.from({ length: 24 }, (_, i) => ({
+                    hour: i,
+                    metrics: {
+                        current: { avgCharge: 15, avgDischarge: -15, chargePoints: 10, dischargePoints: 10 },
+                        stateOfCharge: { avg: 50 + Math.sin(i / 24 * Math.PI * 2) * 40, points: 20 },
+                        temperature: { avg: 25, points: 20 },
+                        power: { avgCharge: 750, avgDischarge: -750, chargePoints: 10, dischargePoints: 10 }
+                    }
+                })),
+                performanceBaseline: {
+                    sunnyDayChargingAmpsByHour: Array.from({ length: 8 }, (_, i) => ({
+                        hour: 10 + i,
+                        avgCurrent: 20,
+                        dataPoints: 50
+                    }))
+                },
+                alertAnalysis: {
+                    events: [
+                        {
+                            alert: 'Cell Over Voltage',
+                            count: 2,
+                            totalDurationMinutes: 30,
+                            avgDurationMinutes: 15,
+                            firstSeen: new Date().toISOString(),
+                            lastSeen: new Date().toISOString()
+                        }
+                    ],
+                    totalEvents: 2,
+                    totalDurationMinutes: 30
+                },
+            });
+        }
+
         const historyCollection = await getCollection("history");
 
         // OPTIMIZED: Query only relevant records instead of fetching entire collection

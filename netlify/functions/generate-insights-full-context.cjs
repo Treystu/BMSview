@@ -200,10 +200,13 @@ exports.handler = async (event, context) => {
       promptLines.push('', existingFeedbackSection);
     }
 
+    // Optimize context size for speed - reduce to ~300 representative points if large
+    const optimizedContext = sanitizeAndsampleContext(fullContext, 300);
+
     promptLines.push(
       '',
       'FULL CONTEXT:',
-      JSON.stringify(fullContext, null, 2),
+      JSON.stringify(optimizedContext, null, 2),
       '',
       'Provide:',
       '1. Comprehensive insights based on ALL data',
@@ -216,6 +219,41 @@ exports.handler = async (event, context) => {
       'If you identify any opportunities to improve the BMSview application itself, use the submitAppFeedback function.',
       '⚠️ IMPORTANT: Check the EXISTING FEEDBACK section above before submitting. Do NOT duplicate existing suggestions.'
     );
+
+    // Helper to sample context
+    function sanitizeAndsampleContext(ctx, maxPoints) {
+      if (!ctx || !ctx.raw || ctx.raw.totalDataPoints <= maxPoints) {
+        return ctx;
+      }
+
+      const raw = ctx.raw;
+      const factor = Math.ceil(raw.totalDataPoints / maxPoints);
+
+      // Keep key validation points intact
+      const sample = (arr) => {
+        if (!Array.isArray(arr)) return [];
+        // Keep first, last, and anomalies (if we knew them, but here just uniform)
+        return arr.filter((_, i) => i === 0 || i === arr.length - 1 || i % factor === 0);
+      };
+
+      return {
+        ...ctx,
+        raw: {
+          ...raw,
+          allAnalyses: sample(raw.allAnalyses),
+          allCellData: sample(raw.allCellData),
+          allTemperatureReadings: sample(raw.allTemperatureReadings),
+          allVoltageReadings: sample(raw.allVoltageReadings),
+          allCurrentReadings: sample(raw.allCurrentReadings),
+          // Keep all alarms and state changes as they are critical/sparse
+          allAlarms: raw.allAlarms,
+          allStateChanges: raw.allStateChanges,
+          sampled: true,
+          samplingFactor: factor,
+          originalCount: raw.totalDataPoints
+        }
+      };
+    }
 
     const prompt = customPrompt || promptLines.join('\n');
 
