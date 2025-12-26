@@ -139,7 +139,7 @@ const extractBmsData = async (image, mimeType, log, context, previousFeedback = 
  * @param {Object} context - Execution context
  * @returns {Promise<Object>} Analysis record
  */
-const performAnalysisPipeline = async (image, systems, log, context) => {
+const performAnalysisPipeline = async (image, systems, log, context, systemId = null) => {
     // ... existing code ...
     const logContext = { fileName: image.fileName, stage: 'pipeline-start' };
     log('info', 'Starting analysis pipeline.', logContext);
@@ -343,7 +343,9 @@ const performAnalysisPipeline = async (image, systems, log, context) => {
 
     const allSystems = (systems && systems.items) ? systems.items : await withRetry(() => systemsCollection.find({}).toArray());
     // ... existing code ...
-    const matchingSystem = analysisRaw.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysisRaw.dlNumber)) : null;
+    const matchingSystem = (systemId && allSystems)
+        ? allSystems.find(s => s.id === systemId)
+        : (analysisRaw.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysisRaw.dlNumber)) : null);
 
     const analysis = performPostAnalysis(analysisRaw, matchingSystem, log);
 

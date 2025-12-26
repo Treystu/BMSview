@@ -342,7 +342,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 const file = item.file;
                 dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: 'Processing' } });
 
-                const analysisData = await analyzeBmsScreenshot(file);
+                const analysisData = await analyzeBmsScreenshot(file, undefined, state.primarySystemId);
 
                 log('info', 'Processing synchronous analysis result.', { fileName: file.name });
 

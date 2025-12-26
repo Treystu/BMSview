@@ -57,13 +57,13 @@ const getAnalysisWorker = (): Worker | null => {
  * @param file - The file to analyze
  * @param forceReanalysis - If true, bypasses duplicate detection and forces a new analysis
  */
-export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean = false): Promise<AnalysisData> => {
+export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean = false, systemId?: string): Promise<AnalysisData> => {
     const analysisContext = { fileName: file.name, fileSize: file.size, forceReanalysis };
     log('info', 'Starting synchronous analysis.', analysisContext);
 
     const endpoint = forceReanalysis
-        ? '/.netlify/functions/analyze?sync=true&force=true'
-        : '/.netlify/functions/analyze?sync=true';
+        ? `/.netlify/functions/analyze?sync=true&force=true${systemId ? `&systemId=${systemId}` : ''}`
+        : `/.netlify/functions/analyze?sync=true${systemId ? `&systemId=${systemId}` : ''}`;
 
     try {
         const responseJson = await performAnalysisRequest(file, endpoint, analysisContext);

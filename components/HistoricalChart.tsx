@@ -448,6 +448,28 @@ const SvgChart: React.FC<{
     const zoomRatio = chartWidth / viewBox.width;
     const showDataPoints = zoomRatio > 100; // Show points when very zoomed in
 
+    // Define standard gradients for metrics
+    const defs = (
+        <defs>
+            <linearGradient id="grad-soc" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#34d399" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#34d399" stopOpacity="0.05" />
+            </linearGradient>
+            <linearGradient id="grad-power" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#c084fc" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#c084fc" stopOpacity="0.05" />
+            </linearGradient>
+            <linearGradient id="grad-solar" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#fbbf24" stopOpacity="0.05" />
+            </linearGradient>
+            <filter id="glow-line" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="1.5" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+        </defs>
+    );
+
     const {
         paths, anomalies, bands, cloudAreaPath,
         yScaleLeft, yTicksLeft, yAxisLabelLeft,
@@ -704,17 +726,31 @@ const SvgChart: React.FC<{
     };
 
     return (
-        <div className="relative select-none">
-            <svg ref={svgRef} viewBox={`0 0 ${WIDTH} ${totalHeight}`} className="w-full h-auto bg-gray-900 rounded-md">
+        <div className="relative select-none w-full h-[600px] bg-gray-900 rounded-lg overflow-hidden border border-gray-800 shadow-xl">
+            {/* Show Solar Data Overlay Toggle */}
+            {showSolarOverlay && (
+                <div className="absolute top-4 right-4 z-10 flex items-center space-x-2 bg-gray-800/80 backdrop-blur rounded px-3 py-1 border border-gray-700 pointer-events-none">
+                    <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-sm shadow-yellow-500/50"></div>
+                    <span className="text-xs text-yellow-500 font-medium">Solar Overlay Active</span>
+                </div>
+            )}
+
+            <svg ref={svgRef} viewBox={`0 0 ${WIDTH} ${totalHeight}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
                 <defs>
                     <clipPath id="chart-area"><rect x="0" y="0" width={chartWidth} height={chartHeight} /></clipPath>
-                    {paths.map((p: any) => p && <linearGradient key={`grad-${p.key}`} id={`grad-${p.key}`} x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor={p.color} stopOpacity="0.8" /><stop offset="100%" stopColor={p.color} stopOpacity="0.5" /></linearGradient>)}
+                    {/* Metrics Gradients */}
+                    <linearGradient id="grad-soc" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity="0.4" /><stop offset="100%" stopColor="#34d399" stopOpacity="0.05" /></linearGradient>
+                    <linearGradient id="grad-power" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c084fc" stopOpacity="0.4" /><stop offset="100%" stopColor="#c084fc" stopOpacity="0.05" /></linearGradient>
+                    <linearGradient id="grad-solar" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fbbf24" stopOpacity="0.4" /><stop offset="100%" stopColor="#fbbf24" stopOpacity="0.05" /></linearGradient>
+                    <filter id="glow-line" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.5" result="blur" /><feComposite in="SourceGraphic" in2="blur" operator="over" /></filter>
                 </defs>
 
                 {/* Main Chart Area */}
                 <g transform={`translate(${MARGIN.left}, ${MARGIN.top})`}>
-                    {yTicksLeft.map((tick: any, i: number) => <line key={`gl-l-${i}`} x1="0" y1={tick.y} x2={chartWidth} y2={tick.y} stroke="#4b5563" strokeWidth="0.5" strokeDasharray="3 3" />)}
-                    {xTicks.map((tick: any, i: number) => <line key={`gl-x-${i}`} x1={tick.x} y1="0" x2={tick.x} y2={chartHeight} stroke="#4b5563" strokeWidth="0.5" strokeDasharray="3 3" />)}
+                    {/* Grid Lines (Styled) */}
+                    {yTicksLeft.map((tick: any, i: number) => <line key={`gl-l-${i}`} x1="0" y1={tick.y} x2={chartWidth} y2={tick.y} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" opacity="0.4" />)}
+                    {xTicks.map((tick: any, i: number) => <line key={`gl-x-${i}`} x1={tick.x} y1="0" x2={tick.x} y2={chartHeight} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" opacity="0.3" />)}
+
                     <g clipPath="url(#chart-area)">
                         <g transform={`translate(${-viewBox.x * (chartWidth / viewBox.width)}, 0) scale(${chartWidth / viewBox.width}, 1)`}>
                             {/* Min/Max Bands - lighter and narrower using std dev */}
