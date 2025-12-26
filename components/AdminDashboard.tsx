@@ -292,7 +292,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         restoredRecords.forEach(rec => {
                             dispatch({
                                 type: 'UPDATE_BULK_JOB_COMPLETED',
-                                payload: { record: rec, fileName: rec.fileName }
+                                payload: { record: rec, fileName: rec.fileName || 'unknown' }
                             });
                             newRecords.push(rec); // Include in backfill
                         });
@@ -412,6 +412,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         } finally {
             dispatch({ type: 'ACTION_END', payload: 'isBulkLoading' });
             log('info', 'Bulk analysis run complete.');
+            await fetchData(1, 'history'); // Trigger refresh of history table
         }
     };
 

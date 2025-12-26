@@ -588,7 +588,7 @@ const SvgChart: React.FC<{
         const xTicks = Array.from({ length: 10 }, (_, i) => i * chartWidth / 9).map(px => {
             const time = xScale.invert(px * (viewBox.width / chartWidth) + viewBox.x);
             const date = new Date(time);
-            return { x: px, label: date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC', hour12: false }), dateLabel: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) };
+            return { x: px, label: date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }), dateLabel: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) };
         });
         return { xTicks };
     }, [viewBox.width, viewBox.x, chartWidth, xScale]);
@@ -1264,13 +1264,19 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [metricConfig, setMetricConfig] = useState<Partial<Record<MetricKey, { axis: Axis }>>>({ stateOfCharge: { axis: 'left' }, current: { axis: 'right' } });
     const [hiddenMetrics] = useState<Set<MetricKey>>(new Set());
 
+    // Helper to get local time string for inputs (YYYY-MM-DDTHH:mm)
+    const toLocalISOString = (date: Date) => {
+        const offset = date.getTimezoneOffset() * 60000;
+        const localDate = new Date(date.getTime() - offset);
+        return localDate.toISOString().slice(0, 16);
+    };
+
     // Initialize with default 30-day range so charts load immediately
+    // Use local time for input fields
     const [startDate, setStartDate] = useState<string>(() =>
-        new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
+        toLocalISOString(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
     );
-    const [endDate, setEndDate] = useState<string>(() =>
-        new Date().toISOString().slice(0, 16)
-    );
+    const [endDate, setEndDate] = useState<string>(''); // Empty defaults to "Now"
 
     const [timelineData, setTimelineData] = useState<any | null>(null);
     const [bandEnabled, setBandEnabled] = useState<boolean>(false);
@@ -1424,6 +1430,14 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
     const prepareChartData = useCallback(async () => {
         if (!selectedSystemId) return;
+
+        // Prepare UTC ISO strings for API calls to prevent timezone drift
+        const chartStartDate = startDate || toLocalISOString(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+        const chartEndDate = endDate || toLocalISOString(new Date());
+
+        const apiStartDate = new Date(chartStartDate).toISOString();
+        const apiEndDate = new Date(chartEndDate).toISOString();
+
         setIsGenerating(true);
         setError(null);
         setTimelineData(null);
@@ -1436,8 +1450,8 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
             // Filter by timeframe to ensure "Recurring Alert Analysis" is accurate
             const filteredForAnalytics = systemHistory.filter(r =>
-                (!startDate || new Date(r.timestamp) >= new Date(startDate)) &&
-                (!endDate || new Date(r.timestamp) <= new Date(endDate))
+                (!chartStartDate || new Date(r.timestamp) >= new Date(chartStartDate)) &&
+                (!chartEndDate || new Date(r.timestamp) <= new Date(chartEndDate))
             );
 
             if (filteredForAnalytics.length > 5) { // Lowered threshold since we are filtering by timeframe
@@ -1462,22 +1476,18 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             const system = systems.find(s => s.id === selectedSystemId);
             const ratedCapacity = system?.capacity;
 
-            // Determine date range for query
-            const queryStartDate = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-            const queryEndDate = endDate || new Date().toISOString();
-
             let chartDataPoints: any[] = [];
 
             // 1. Sync Weather Data (Local vs Server check)
             // Fire and forget - will update cache
-            await syncWeather(selectedSystemId, queryStartDate, queryEndDate);
+            await syncWeather(selectedSystemId, apiStartDate, apiEndDate);
 
             // 2. Get Unified History (Memory join of History + Weather from Cache)
             const unifiedTimeline = await getUnifiedHistory(selectedSystemId);
 
             // Filter by date range (client-side filter on unified stream)
-            const startLimit = new Date(queryStartDate).getTime();
-            const endLimit = new Date(queryEndDate).getTime();
+            const startLimit = new Date(chartStartDate).getTime();
+            const endLimit = new Date(chartEndDate).getTime();
 
             const filteredData = unifiedTimeline.filter(p => {
                 const t = new Date(p.timestamp).getTime();
