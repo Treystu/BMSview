@@ -29,13 +29,11 @@ format = "esm"
 # Externalize heavy deps and use esbuild for tree-shaking potential
 [functions."generate-insights-with-tools"]
 node_bundler = "esbuild"
-external_node_modules = ["mongodb", "@google/genai", "@netlify/async-workloads"]
 [functions."generate-insights-with-tools".build_options]
 format = "cjs"
 
 [functions."generate-insights"]
 node_bundler = "esbuild"
-external_node_modules = ["mongodb", "@google/genai", "@netlify/async-workloads"]
 [functions."generate-insights".build_options]
 format = "cjs"
 

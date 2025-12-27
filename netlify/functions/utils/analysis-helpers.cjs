@@ -1,7 +1,16 @@
 /**
  * Provides the prompt and schema for the Gemini API call.
  */
-const { Type } = require("@google/genai");
+// Define Type enum locally to avoid importing the massive @google/genai package
+// These values match the Google Generative AI SchemaType enum
+const Type = {
+    STRING: 'STRING',
+    NUMBER: 'NUMBER',
+    INTEGER: 'INTEGER',
+    BOOLEAN: 'BOOLEAN',
+    ARRAY: 'ARRAY',
+    OBJECT: 'OBJECT'
+};
 const { v4: uuidv4 } = require('uuid');
 
 // This is the JSON schema Gemini will be forced to output.
