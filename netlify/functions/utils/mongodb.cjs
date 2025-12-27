@@ -262,6 +262,8 @@ async function getDb() {
     return db;
 }
 
+const { COLLECTIONS } = require('./collections.cjs');
+
 /**
  * Helper to get a specific collection from the database with retry logic
  * Supports both simple usage: getCollection('name') and with retries: getCollection('name', 2)
@@ -270,6 +272,16 @@ async function getDb() {
  * @returns {Promise<import('mongodb').Collection>}
  */
 async function getCollection(collectionName, retries = 2) {
+    // Validate collection name against allowed list
+    const allowedCollections = Object.values(COLLECTIONS);
+    if (!allowedCollections.includes(collectionName)) {
+        log.warn(`Accessing undefined or deprecated collection: "${collectionName}"`, {
+            stack: new Error().stack
+        });
+        // You might choose to throw here in strict mode:
+        // throw new Error(`Collection "${collectionName}" is not valid.`);
+    }
+
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
             const { db } = await connectToDatabase();

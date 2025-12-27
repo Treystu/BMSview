@@ -1483,6 +1483,10 @@ async function executeReActLoop(params) {
             try {
                 // Check circuit breaker state before making request
                 const circuitState = geminiClient.getCircuitState ? geminiClient.getCircuitState() : null;
+
+                // DEBUG LOG
+                process.stdout.write(`DEBUG: Calling Gemini API. Turn=${turnCount}. method=${typeof geminiClient.callAPI}\n`);
+
                 if (circuitState === 'OPEN') {
                     log.warn('Circuit breaker is OPEN in main loop, waiting for reset', {
                         turn: turnCount,

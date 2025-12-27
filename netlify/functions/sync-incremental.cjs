@@ -31,31 +31,35 @@ const JSON_HEADERS = {
 
 const ISO_UTC_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
+const { COLLECTIONS } = require('./utils/collections.cjs');
+
+// ...
+
 /** @type {Record<string, CollectionConfig>} */
 const COLLECTION_CONFIG = {
     systems: {
-        dbName: "systems",
+        dbName: COLLECTIONS.SYSTEMS,
         fallbackUpdatedAtFields: [
             { name: "createdAt", type: "date" },
             { name: "timestamp", type: "string" }
         ]
     },
     history: {
-        dbName: "history",
+        dbName: COLLECTIONS.HISTORY,
         fallbackUpdatedAtFields: [
             { name: "timestamp", type: "string" },
             { name: "createdAt", type: "date" }
         ]
     },
     "analysis-results": {
-        dbName: "analysis-results",
+        dbName: COLLECTIONS.ANALYSIS_RESULTS,
         fallbackUpdatedAtFields: [
             { name: "timestamp", type: "string" },
             { name: "createdAt", type: "date" }
         ]
     },
     analytics: {
-        dbName: "system-analytics",
+        dbName: COLLECTIONS.SYSTEM_ANALYTICS,
         fallbackUpdatedAtFields: [
             { name: "timestamp", type: "string" },
             { name: "createdAt", type: "date" }
@@ -256,7 +260,7 @@ exports.handler = async function (event, context) {
         const items = await collection.find(filter, { projection: { _id: 0 } }).limit(1000).toArray();
         const itemsQueryDurationMs = Date.now() - itemsQueryStartedAt;
 
-        const deletedCollection = await getCollection("deleted-records");
+        const deletedCollection = await getCollection(COLLECTIONS.DELETED_RECORDS);
         const deletedQueryStartedAt = Date.now();
         const deletedRecords = await deletedCollection.find({ collection: config.dbName }, { projection: { _id: 0 } }).toArray();
         const deletedQueryDurationMs = Date.now() - deletedQueryStartedAt;

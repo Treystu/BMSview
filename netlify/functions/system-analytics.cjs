@@ -1,4 +1,5 @@
 const { getCollection } = require("./utils/mongodb.cjs");
+const { COLLECTIONS } = require('./utils/collections.cjs');
 const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { createRetryWrapper } = require("./utils/retry.cjs");
 const {
@@ -110,7 +111,7 @@ exports.handler = async function (event, context) {
             });
         }
 
-        const historyCollection = await getCollection("history");
+        const historyCollection = await getCollection(COLLECTIONS.HISTORY);
 
         // OPTIMIZED: Query only relevant records instead of fetching entire collection
         // This fixes the 100% error rate and high latency by pushing filtering to MongoDB

@@ -9,7 +9,7 @@ self.addEventListener('message', async (ev: MessageEvent) => {
     // mimeType is optional, we might change it if we resize
 
     let base64: string = '';
-    let finalMimeType = mimeType || file.type;
+    const finalMimeType = mimeType || file.type;
 
     // Read file as data URL
     const reader = new FileReaderSync();

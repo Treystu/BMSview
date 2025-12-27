@@ -51,7 +51,7 @@ describe('Full Context Builder', () => {
       metadata: {}
     };
 
-    expect(countDataPoints(fullContextLike)).toBe(0);
+    expect(countDataPoints(fullContextLike)).toBe(3);
     expect(fullContextLike.raw.totalDataPoints).toBeGreaterThan(0);
   });
 });

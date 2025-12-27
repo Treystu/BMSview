@@ -9,9 +9,29 @@
 
 const { handler: generateHandler } = require('../netlify/functions/generate-insights-with-tools.cjs');
 
-describe.skip('generate-insights handler', () => {
+// Mock `applyRateLimit` to simple allow
+jest.mock('../netlify/functions/utils/rate-limiter.cjs', () => ({
+  applyRateLimit: jest.fn().mockResolvedValue({ remaining: 10, limit: 100 }),
+  RateLimitError: class RateLimitError extends Error { }
+}));
+
+// Mock `executeReActLoop`
+jest.mock('../netlify/functions/utils/react-loop.cjs', () => ({
+  executeReActLoop: jest.fn().mockResolvedValue({
+    success: true,
+    finalAnswer: "Mocked Battery Insights",
+    turns: 1,
+    toolCalls: 0,
+    contextSummary: {}
+  })
+}));
+
+describe('generate-insights handler', () => {
   test('returns 200 and produces insights for empty measurements', async () => {
-    const event = { body: JSON.stringify({ systemId: 't1', consentGranted: true, batteryData: { measurements: [] } }) };
+    const event = {
+      body: JSON.stringify({ systemId: 't1', consentGranted: true, batteryData: { measurements: [] } }),
+      queryStringParameters: { sync: 'true' }
+    };
     const res = await generateHandler(event);
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
@@ -27,8 +47,11 @@ describe.skip('generate-insights handler', () => {
   });
 
   test('analyzes simple healthy dataset', async () => {
-    const data = { systemId: 't2', consentGranted: true, measurements: [{ capacity: 100 }, { capacity: 95 }] };
-    const event = { body: JSON.stringify(data) };
+    const data = { systemId: 't2', consentGranted: true, batteryData: { measurements: [{ capacity: 100 }, { capacity: 95 }] } };
+    const event = {
+      body: JSON.stringify(data),
+      queryStringParameters: { sync: 'true' }
+    };
     const res = await generateHandler(event);
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
@@ -47,7 +70,8 @@ describe.skip('generate-insights handler', () => {
             { capacity: 98, energyOut: 900 }
           ]
         }
-      })
+      }),
+      queryStringParameters: { sync: 'true' }
     };
     const res = await generateHandler(event);
     expect(res.statusCode).toBe(200);

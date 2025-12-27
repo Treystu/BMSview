@@ -14,6 +14,8 @@ function validateEnvironment(log) {
   return true;
 }
 
+const { COLLECTIONS } = require('./utils/collections.cjs');
+
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
 
@@ -39,9 +41,9 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const systemsCollection = await getCollection('systems');
-    const recordsCollection = await getCollection('records');
-    const adoptionLogCollection = await getCollection('system-adoption-log');
+    const systemsCollection = await getCollection(COLLECTIONS.SYSTEMS);
+    const historyCollection = await getCollection(COLLECTIONS.HISTORY);
+    const adoptionLogCollection = await getCollection(COLLECTIONS.SYSTEM_ADOPTION_LOG);
 
     const queryStringParameters = event.queryStringParameters || {};
     const { filter = 'unadopted' } = queryStringParameters;
@@ -147,7 +149,7 @@ async function getUnadoptedSystems(systemsCollection, log) {
     { $match: { adopted: false } },
     {
       $lookup: {
-        from: 'records',
+        from: COLLECTIONS.HISTORY,
         localField: '_id',
         foreignField: 'systemId',
         as: 'records'
@@ -185,7 +187,7 @@ async function getAdoptedSystems(systemsCollection, log) {
     },
     {
       $lookup: {
-        from: 'records',
+        from: COLLECTIONS.HISTORY,
         localField: '_id',
         foreignField: 'systemId',
         as: 'records'
@@ -218,7 +220,7 @@ async function getAllSystems(systemsCollection, log) {
   const systems = await systemsCollection.aggregate([
     {
       $lookup: {
-        from: 'records',
+        from: COLLECTIONS.HISTORY,
         localField: '_id',
         foreignField: 'systemId',
         as: 'records'

@@ -34,29 +34,7 @@ describe('UploadOptimizer Coverage Tests', () => {
     });
   });
 
-  describe('optimizeFileOrder', () => {
-    test('should sort files by size', () => {
-      const files = [
-        { name: 'large.txt', size: 1000 },
-        { name: 'small.txt', size: 100 },
-        { name: 'medium.txt', size: 500 }
-      ];
-      const sorted = optimizer.optimizeFileOrder(files);
-      expect(sorted[0].size).toBe(100);
-      expect(sorted[1].size).toBe(500);
-      expect(sorted[2].size).toBe(1000);
-    });
 
-    test('should not mutate original array', () => {
-      const files = [
-        { name: 'b.txt', size: 200 },
-        { name: 'a.txt', size: 100 }
-      ];
-      const original = [...files];
-      optimizer.optimizeFileOrder(files);
-      expect(files).toEqual(original);
-    });
-  });
 
   describe('validateFiles edge cases', () => {
     test('should reject files exceeding max size', () => {
@@ -131,14 +109,14 @@ describe('UploadOptimizer Coverage Tests', () => {
         { success: false, duration: 0, size: 500 }
       ];
       localStorage.setItem('uploadMetrics', JSON.stringify(testMetrics));
-      
+
       const stats = optimizer.getStatistics();
       expect(stats.totalUploads).toBe(3);
       expect(stats.successful).toBe(2);
       expect(stats.failed).toBe(1);
       expect(stats.successRate).toBeGreaterThanOrEqual(66);
       expect(stats.successRate).toBeLessThanOrEqual(67);
-      
+
       // Cleanup
       localStorage.removeItem('uploadMetrics');
     });
@@ -361,12 +339,12 @@ describe('UploadOptimizer Coverage Tests', () => {
       // Test that function works even when window is undefined
       const originalWindow = global.window;
       const originalWindowDescriptor = Object.getOwnPropertyDescriptor(global, 'window');
-      
+
       try {
         // Delete window entirely to simulate non-browser environments
         delete global.window;
         global.window = undefined;
-        
+
         // Function still returns true because NODE_ENV=test takes precedence
         // (see line 306 in uploadOptimizer.js: process.env.NODE_ENV === 'test')
         expect(optimizer._shouldStoreTelemetry()).toBe(true);

@@ -42,16 +42,19 @@ describe('system-analytics handler', () => {
   });
 
   test('returns empty analytics when no history exists', async () => {
+    const mockChainWrapper = {
+      project: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      toArray: jest.fn().mockResolvedValue([])
+    };
     const mockCollection = {
-      find: jest.fn().mockReturnValue({
-        toArray: jest.fn().mockResolvedValue([])
-      })
+      find: jest.fn().mockReturnValue(mockChainWrapper)
     };
     getCollection.mockResolvedValue(mockCollection);
 
     const event = {
       httpMethod: 'GET',
-      queryStringParameters: { systemId: 'test-system' }
+      queryStringParameters: { systemId: 'real-system' }
     };
 
     const response = await handler(event, mockContext);
@@ -66,7 +69,7 @@ describe('system-analytics handler', () => {
   test('processes history records for analytics', async () => {
     const mockHistory = [
       {
-        systemId: 'test-system',
+        systemId: 'real-system',
         timestamp: new Date('2024-01-01T12:00:00Z').toISOString(),
         analysis: {
           current: 5.0,
@@ -79,16 +82,19 @@ describe('system-analytics handler', () => {
       }
     ];
 
+    const mockChainWrapper = {
+      project: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      toArray: jest.fn().mockResolvedValue(mockHistory)
+    };
     const mockCollection = {
-      find: jest.fn().mockReturnValue({
-        toArray: jest.fn().mockResolvedValue(mockHistory)
-      })
+      find: jest.fn().mockReturnValue(mockChainWrapper)
     };
     getCollection.mockResolvedValue(mockCollection);
 
     const event = {
       httpMethod: 'GET',
-      queryStringParameters: { systemId: 'test-system' }
+      queryStringParameters: { systemId: 'real-system' }
     };
 
     const response = await handler(event, mockContext);
