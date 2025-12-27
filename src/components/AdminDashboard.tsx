@@ -94,16 +94,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     }>({ isOpen: false, message: '', onConfirm: () => { } });
 
     // --- Data Fetching ---
-    const fetchData = useCallback(async (page: number, type: 'systems' | 'history' | 'all') => {
-        log('info', 'Fetching admin page data.', { page, type });
+    const fetchData = useCallback(async (page: number, type: 'systems' | 'history' | 'all', options: { forceRefresh?: boolean } = {}) => {
+        log('info', 'Fetching admin page data.', { page, type, ...options });
         dispatch({ type: 'FETCH_PAGE_DATA_START' });
         try {
             const promises = [];
             if (type === 'all' || type === 'systems') {
-                promises.push(getRegisteredSystems(page, ITEMS_PER_PAGE));
+                promises.push(getRegisteredSystems(page, ITEMS_PER_PAGE, options));
             }
             if (type === 'all' || type === 'history') {
-                promises.push(getAnalysisHistory(page, ITEMS_PER_PAGE));
+                promises.push(getAnalysisHistory(page, ITEMS_PER_PAGE, options));
             }
 
             const responses = await Promise.all(promises);
@@ -412,7 +412,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         } finally {
             dispatch({ type: 'ACTION_END', payload: 'isBulkLoading' });
             log('info', 'Bulk analysis run complete.');
-            await fetchData(1, 'history'); // Trigger refresh of history table
+            await fetchData(1, 'history', { forceRefresh: true }); // Trigger refresh of history table (force fresh to see new records)
         }
     };
 
@@ -424,7 +424,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             await mergeBmsSystems(primarySystemId, selectedSystemIds);
             log('info', 'System merge successful.');
             dispatch({ type: 'MERGE_SYSTEMS_SUCCESS' });
-            await fetchData(1, 'systems'); // Refresh first page of systems
+            await fetchData(1, 'systems', { forceRefresh: true }); // Refresh first page of systems
         } catch (err) {
             const error = err instanceof Error ? err.message : "Failed to merge systems.";
             log('error', 'System merge failed.', { error });
@@ -445,7 +445,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     await deleteAnalysisRecord(recordId);
                     dispatch({ type: 'REMOVE_HISTORY_RECORD', payload: recordId });
                     log('info', 'History record deleted successfully (optimistic UI update).', { recordId });
-                    await fetchData(historyPage, 'history');
+                    await fetchData(historyPage, 'history', { forceRefresh: true });
                 } catch (err) {
                     const error = err instanceof Error ? err.message : "Failed to delete record.";
                     log('error', 'Failed to delete history record.', { recordId, error });
@@ -471,7 +471,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             } else {
                 await linkAnalysisToSystem(record.id, systemId, record.dlNumber);
                 log('info', 'Link successful.');
-                await fetchData(historyPage, 'history'); // Refresh history
+                await fetchData(historyPage, 'history', { forceRefresh: true }); // Refresh history
             }
         } catch (err) {
             const error = err instanceof Error ? err.message : "Failed to link record.";
@@ -490,7 +490,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             await updateBmsSystem(editingSystem.id, updatedData);
             log('info', 'System saved successfully.');
             dispatch({ type: 'SET_EDITING_SYSTEM', payload: null });
-            await fetchData(systemsPage, 'systems'); // Refresh current systems page
+            await fetchData(systemsPage, 'systems', { forceRefresh: true }); // Refresh current systems page
         } catch (err) {
             const error = err instanceof Error ? err.message : "Failed to save system.";
             log('error', 'Failed to save system.', { systemId: editingSystem.id, error });
@@ -531,7 +531,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 log('info', `${actionName} completed successfully.`, { result });
                 if (refreshType !== 'none') {
                     const pageToRefresh = refreshType === 'systems' ? systemsPage : (refreshType === 'history' ? historyPage : 1);
-                    await fetchData(pageToRefresh, refreshType);
+                    // CRITICAL FIX: Force refresh after actions to bypass local cache and see server updates immediately
+                    await fetchData(pageToRefresh, refreshType, { forceRefresh: true });
                 }
             } catch (err) {
                 const error = err instanceof Error ? err.message : `Failed to execute action: ${actionName}.`;
@@ -607,7 +608,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         const message = result.message || `Processed ${result.processedCount || result.updatedCount} records. ${result.updatedCount} updated, ${result.errorCount || 0} errors.`;
                         alert(message + (result.completed === false ? '\n\nRun again to continue backfilling remaining records.' : ''));
 
-                        await fetchData(historyPage, 'history');
+                        await fetchData(historyPage, 'history', { forceRefresh: true });
                     } catch (err) {
                         const error = err instanceof Error ? err.message : 'Failed to backfill weather data.';
                         log('error', 'Failed to backfill weather data.', { error });
@@ -638,7 +639,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 const message = result.message || `Processed ${result.processedDays} days. ${result.hoursInserted} hours inserted, ${result.errors} errors.`;
                 alert(message + (result.completed === false ? '\n\nRun again to continue backfilling remaining days.' : ''));
 
-                await fetchData(historyPage, 'history');
+                await fetchData(historyPage, 'history', { forceRefresh: true });
             } catch (err) {
                 const error = err instanceof Error ? err.message : 'Failed to backfill hourly cloud data.';
                 log('error', 'Failed to backfill hourly cloud data.', { error });
