@@ -302,7 +302,7 @@ exports.handler = async function (event, context) {
                     'analysis.power': { $gt: 0 }    // Power is positive (incorrect)
                 };
                 const updatePipeline = [
-                    { $set: { 'analysis.power': { $multiply: ['$analysis.power', -1] } } }
+                    { $set: { 'analysis.power': { $multiply: ['$analysis.power', -1] }, updatedAt: new Date().toISOString() } }
                 ];
                 const { modifiedCount } = await historyCollection.updateMany(filter, updatePipeline);
                 timer.end({ action, updatedCount: modifiedCount });
@@ -318,19 +318,36 @@ exports.handler = async function (event, context) {
                 const MAX_EXECUTION_TIME = 24000; // Increased to 24 seconds
                 let timeoutReached = false;
 
-                const systems = await systemsCollection.find({}, { projection: { _id: 0, id: 1, name: 1, associatedDLs: 1 } }).toArray();
-                const dlMap = new Map(); // Map DL number -> array of system IDs
+                // Helper for normalization
+                const normalizeId = (id) => id ? id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : null;
+
+                const systems = await systemsCollection.find({}, { projection: { _id: 0, id: 1, name: 1, associatedDLs: 1, associatedHardwareIds: 1 } }).toArray();
+                const hardwareIdMap = new Map(); // Map normalized ID -> array of system objects
+
                 systems.forEach(s => {
-                    (s.associatedDLs || []).forEach(dl => {
-                        if (dl) { // Ensure dl is not null or empty
-                            if (!dlMap.has(dl)) dlMap.set(dl, []);
-                            dlMap.get(dl).push({ id: s.id, name: s.name });
+                    const allIds = new Set([
+                        ...(s.associatedDLs || []),
+                        ...(s.associatedHardwareIds || [])
+                    ]);
+
+                    allIds.forEach(rawId => {
+                        const normId = normalizeId(rawId);
+                        if (normId) {
+                            if (!hardwareIdMap.has(normId)) hardwareIdMap.set(normId, []);
+                            hardwareIdMap.get(normId).push({ id: s.id, name: s.name });
                         }
                     });
                 });
 
                 // Limit query to prevent memory issues, increased limit for better coverage
-                const unlinkedCursor = historyCollection.find({ systemId: null, dlNumber: { $exists: true, $nin: [null, ''] } }).limit(5000);
+                // Look for records that are unlinked (systemId: null) AND have some kind of identifier
+                const unlinkedCursor = historyCollection.find({
+                    systemId: null,
+                    $or: [
+                        { dlNumber: { $exists: true, $nin: [null, ''] } },
+                        { hardwareSystemId: { $exists: true, $nin: [null, ''] } }
+                    ]
+                }).limit(5000);
 
                 let associatedCount = 0;
                 let processedCount = 0;
@@ -345,25 +362,40 @@ exports.handler = async function (event, context) {
                     }
                     processedCount++;
 
-                    const potentialSystems = dlMap.get(record.dlNumber);
-                    // Only associate if exactly one system matches the DL number
-                    if (potentialSystems) {
-                        if (potentialSystems.length === 1) {
-                            const system = potentialSystems[0];
-                            bulkOps.push({
-                                updateOne: {
-                                    filter: { _id: record._id }, // Use _id for bulk ops
-                                    update: { $set: { systemId: system.id, systemName: system.name } }
+                    // Try to extract a valid ID from the record
+                    const recordHardwareId = normalizeId(record.hardwareSystemId) || normalizeId(record.dlNumber);
+
+                    if (recordHardwareId) {
+                        const potentialSystems = hardwareIdMap.get(recordHardwareId);
+
+                        // Only associate if exactly one system matches the Hardware ID
+                        if (potentialSystems) {
+                            if (potentialSystems.length === 1) {
+                                const system = potentialSystems[0];
+                                bulkOps.push({
+                                    updateOne: {
+                                        filter: { _id: record._id }, // Use _id for bulk ops
+                                        update: {
+                                            $set: {
+                                                systemId: system.id,
+                                                systemName: system.name,
+                                                // Ensure standard fields are populated
+                                                hardwareSystemId: recordHardwareId,
+                                                dlNumber: record.dlNumber || recordHardwareId, // Maintain legacy field if missing
+                                                updatedAt: new Date().toISOString()
+                                            }
+                                        }
+                                    }
+                                });
+                                associatedCount++;
+                                if (bulkOps.length >= 500) { // Process in batches
+                                    await historyCollection.bulkWrite(bulkOps, { ordered: false });
+                                    bulkOps.length = 0; // Clear the array
+                                    log.debug('Processed auto-associate batch', { action, count: 500 });
                                 }
-                            });
-                            associatedCount++;
-                            if (bulkOps.length >= 500) { // Process in batches
-                                await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                                bulkOps.length = 0; // Clear the array
-                                log.debug('Processed auto-associate batch', { action, count: 500 });
+                            } else {
+                                ambiguousCount++;
                             }
-                        } else {
-                            ambiguousCount++;
                         }
                     }
                 }
@@ -380,7 +412,7 @@ exports.handler = async function (event, context) {
                     : `Completed. Associated ${associatedCount} records.`;
 
                 if (ambiguousCount > 0) {
-                    message += ` (${ambiguousCount} skipped due to ambiguous DL linking)`;
+                    message += ` (${ambiguousCount} skipped due to ambiguous ID linking)`;
                 }
 
                 log.exit(200);
@@ -402,7 +434,7 @@ exports.handler = async function (event, context) {
                 // Using updateMany is atomic and much faster than iterating
                 const result = await historyCollection.updateMany(
                     { systemId: { $exists: true, $ne: null, $nin: allSystemIds } },
-                    { $set: { systemId: null, systemName: null } }
+                    { $set: { systemId: null, systemName: null, updatedAt: new Date().toISOString() } }
                 );
 
                 const updatedCount = result.modifiedCount;

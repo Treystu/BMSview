@@ -56,7 +56,7 @@ function normalizeHardwareId(raw) {
 /**
  * Extracts possible Hardware System IDs from a text block.
  * @param {string} text - The text to search.
- * @param {object} log - Logger (optional).
+ * @param {console | { info: (msg: string) => void, debug?: (msg: string) => void } | ((msg: string) => void)} [log] - Logger object or function.
  * @returns {string[]} - Array of unique, normalized IDs found.
  */
 function extractHardwareSystemId(text, log = console.log) {
@@ -64,7 +64,9 @@ function extractHardwareSystemId(text, log = console.log) {
 
     const candidates = new Set();
     // Default logger wrapper if a full logger object is passed
+    /** @param {string} msg */
     const logInfo = (msg) => (typeof log === 'function' ? log(msg) : (log.info ? log.info(msg) : console.log(msg)));
+    /** @param {string} msg */
     const logDebug = (msg) => (typeof log === 'object' && log.debug ? log.debug(msg) : null);
 
     for (const regex of hardwareIdRegexes) {

@@ -453,15 +453,15 @@ const SvgChart: React.FC<{
         <defs>
             <linearGradient id="grad-soc" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#34d399" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#34d399" stopOpacity="0.05" />
+                <stop offset="100%" stopColor="#34d399" stopOpacity="0.1" />
             </linearGradient>
             <linearGradient id="grad-power" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#c084fc" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#c084fc" stopOpacity="0.05" />
+                <stop offset="100%" stopColor="#c084fc" stopOpacity="0.1" />
             </linearGradient>
             <linearGradient id="grad-solar" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#fbbf24" stopOpacity="0.05" />
+                <stop offset="100%" stopColor="#fbbf24" stopOpacity="0.1" />
             </linearGradient>
             <filter id="glow-line" x="-20%" y="-20%" width="140%" height="140%">
                 <feGaussianBlur stdDeviation="1.5" result="blur" />
@@ -739,9 +739,9 @@ const SvgChart: React.FC<{
                 <defs>
                     <clipPath id="chart-area"><rect x="0" y="0" width={chartWidth} height={chartHeight} /></clipPath>
                     {/* Metrics Gradients */}
-                    <linearGradient id="grad-soc" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity="0.4" /><stop offset="100%" stopColor="#34d399" stopOpacity="0.05" /></linearGradient>
-                    <linearGradient id="grad-power" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c084fc" stopOpacity="0.4" /><stop offset="100%" stopColor="#c084fc" stopOpacity="0.05" /></linearGradient>
-                    <linearGradient id="grad-solar" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fbbf24" stopOpacity="0.4" /><stop offset="100%" stopColor="#fbbf24" stopOpacity="0.05" /></linearGradient>
+                    <linearGradient id="grad-soc" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity="0.4" /><stop offset="100%" stopColor="#34d399" stopOpacity="0.1" /></linearGradient>
+                    <linearGradient id="grad-power" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c084fc" stopOpacity="0.4" /><stop offset="100%" stopColor="#c084fc" stopOpacity="0.1" /></linearGradient>
+                    <linearGradient id="grad-solar" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fbbf24" stopOpacity="0.4" /><stop offset="100%" stopColor="#fbbf24" stopOpacity="0.1" /></linearGradient>
                     <filter id="glow-line" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.5" result="blur" /><feComposite in="SourceGraphic" in2="blur" operator="over" /></filter>
                 </defs>
 
@@ -764,7 +764,7 @@ const SvgChart: React.FC<{
                                             width={seg.bandwidth}
                                             height={Math.abs(seg.yScale(seg.min) - seg.yScale(seg.max))}
                                             fill={band.color}
-                                            fillOpacity="0.05"
+                                            fillOpacity="0.2"
                                             pointerEvents="none"
                                         />
                                     ))}
@@ -886,7 +886,12 @@ const SvgChart: React.FC<{
             </svg>
 
             {tooltip && (
-                <div className="absolute p-3 bg-gray-900 border border-gray-600 rounded-lg shadow-lg text-sm text-white pointer-events-none" style={{ left: tooltip.x + MARGIN.left, top: tooltip.y, transform: `translate(15px, 15px)` }}>
+                <div className="absolute p-3 bg-gray-900 border border-gray-600 rounded-lg shadow-lg text-sm text-white pointer-events-none z-50"
+                    style={{
+                        left: tooltip.x + MARGIN.left,
+                        top: tooltip.y,
+                        transform: tooltip.x > chartWidth * 0.6 ? 'translate(calc(-100% - 15px), 15px)' : 'translate(15px, 15px)'
+                    }}>
                     <p className="font-bold mb-2">{new Date(tooltip.point.timestamp).toLocaleString('en-US', {
                         year: 'numeric',
                         month: 'short',
