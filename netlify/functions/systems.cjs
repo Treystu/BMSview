@@ -23,6 +23,7 @@ const SystemSchema = z.object({
     latitude: z.number().min(-90).max(90).optional(),
     longitude: z.number().min(-180).max(180).optional(),
     associatedDLs: z.array(z.string()).optional(),
+    associatedHardwareIds: z.array(z.string()).optional(), // Alias for associatedDLs
     notes: z.string().optional(),
     location: z.string().optional()
 });
@@ -161,7 +162,18 @@ exports.handler = async function (event, context) {
             // Validate and create new system
             try {
                 const validatedSystem = SystemSchema.parse(parsedBody);
-                const newSystem = { ...validatedSystem, id: uuidv4(), associatedDLs: validatedSystem.associatedDLs || [] };
+                // Ensure backward compatibility: Sync associatedHardwareIds -> associatedDLs
+                const dls = validatedSystem.associatedHardwareIds || validatedSystem.associatedDLs || [];
+
+                const newSystem = {
+                    ...validatedSystem,
+                    id: uuidv4(),
+                    associatedDLs: dls,
+                    associatedHardwareIds: dls // Persist both or just ensure API returns both? Let's just persist usage.
+                };
+                // Ensure we don't have undefined fields
+                if (!newSystem.associatedHardwareIds) newSystem.associatedHardwareIds = dls;
+
                 log.info('Creating new system', { ...logContext, systemId: newSystem.id, systemName: newSystem.name });
                 await systemsCollection.insertOne(newSystem);
                 // Return new system without the internal _id
@@ -200,6 +212,17 @@ exports.handler = async function (event, context) {
             try {
                 const { id, ...dataToUpdate } = updateData; // Ensure `id` is not in the update payload
                 const validatedUpdate = SystemSchema.partial().parse(dataToUpdate);
+
+                // Handle aliasing for updates
+                if (validatedUpdate.associatedHardwareIds && !validatedUpdate.associatedDLs) {
+                    validatedUpdate.associatedDLs = validatedUpdate.associatedHardwareIds;
+                } else if (validatedUpdate.associatedDLs && !validatedUpdate.associatedHardwareIds) {
+                    validatedUpdate.associatedHardwareIds = validatedUpdate.associatedDLs;
+                }
+                // If both provided, prefer hardwareIds? Or assume they match? Let's sync them.
+                if (validatedUpdate.associatedHardwareIds) {
+                    validatedUpdate.associatedDLs = validatedUpdate.associatedHardwareIds;
+                }
 
                 const result = await systemsCollection.updateOne({ id: systemId }, { $set: validatedUpdate });
 

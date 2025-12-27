@@ -1,43 +1,45 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BMS Validator</title>
-<!-- Import map for development - will be replaced by bundled dependencies in production -->
-<script type="importmap">
-{
-  "imports": {
-    "react": "/node_modules/react/index.js",
-    "react-dom": "/node_modules/react-dom/index.js",
-    "react-dom/": "/node_modules/react-dom/",
-    "buffer": "/node_modules/buffer/index.js",
-    "react/": "/node_modules/react/",
-    "jszip": "/node_modules/jszip/lib/index.js",
-    "vite": "/node_modules/vite/index.js",
-    "@vitejs/plugin-react": "/node_modules/@vitejs/plugin-react/index.js",
-    "path": "/node_modules/path-browserify/index.js"
-  }
-}
-</script>
-<!-- Remove importmap in non-localhost environments to avoid relying on CDN in production -->
-<script>
-  (function(){
-    try {
-      const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-      if (!isDev) {
-        const im = document.querySelector('script[type="importmap"]');
-        if (im) im.remove();
+    <!-- Import map for development - will be replaced by bundled dependencies in production -->
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "/node_modules/react/index.js",
+          "react-dom": "/node_modules/react-dom/index.js",
+          "react-dom/": "/node_modules/react-dom/",
+          "buffer": "/node_modules/buffer/index.js",
+          "react/": "/node_modules/react/",
+          "jszip": "/node_modules/jszip/lib/index.js",
+          "vite": "/node_modules/vite/index.js",
+          "@vitejs/plugin-react": "/node_modules/@vitejs/plugin-react/index.js",
+          "path": "/node_modules/path-browserify/index.js"
+        }
       }
-    } catch (e) {
-      // noop
-    }
-  })();
-</script>
-</head>
+    </script>
+    <!-- Remove importmap in non-localhost environments to avoid relying on CDN in production -->
+    <script>
+      (function () {
+        try {
+          const isDev =
+            location.hostname === "localhost" ||
+            location.hostname === "127.0.0.1";
+          if (!isDev) {
+            const im = document.querySelector('script[type="importmap"]');
+            if (im) im.remove();
+          }
+        } catch (e) {
+          // noop
+        }
+      })();
+    </script>
+  </head>
   <body class="bg-neutral-light">
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
+    <script type="module" src="/src/index.tsx"></script>
   </body>
 </html>

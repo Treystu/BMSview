@@ -36,6 +36,7 @@ const mockExecuteReActLoop = jest.fn().mockResolvedValue({
 });
 
 const mockProcessInsightsInBackground = jest.fn().mockResolvedValue(true);
+const mockTriggerInsightsWorkload = jest.fn().mockResolvedValue({ eventId: 'test-event-id', jobId: 'test-job-id' });
 
 // Mock dependencies
 jest.mock('../netlify/functions/utils/insights-jobs.cjs', () => ({
@@ -48,8 +49,11 @@ jest.mock('../netlify/functions/utils/insights-summary.cjs', () => ({
 }));
 
 jest.mock('../netlify/functions/utils/insights-processor.cjs', () => ({
-  getAIModelWithTools: mockGetAIModelWithTools,
-  processInsightsInBackground: mockProcessInsightsInBackground
+  getAIModelWithTools: mockGetAIModelWithTools
+}));
+
+jest.mock('../netlify/functions/utils/insights-async-client.cjs', () => ({
+  triggerInsightsWorkload: mockTriggerInsightsWorkload
 }));
 
 jest.mock('../netlify/functions/utils/insights-guru-runner.cjs', () => ({
@@ -202,13 +206,12 @@ describe('Generate Insights Mode Selection', () => {
     const body = JSON.parse(result.body);
 
     expect(body.success).toBe(true);
-    expect(mockProcessInsightsInBackground).toHaveBeenCalledWith(
-      'test-job-id',
-      expect.anything(), // analysisData
-      'test-system-id',
-      undefined, // customPrompt
-      expect.anything(), // log
+    expect(body.success).toBe(true);
+    expect(mockTriggerInsightsWorkload).toHaveBeenCalledWith(
       expect.objectContaining({
+        jobId: 'test-job-id',
+        analysisData: expect.anything(),
+        systemId: 'test-system-id',
         fullContextMode: false
       })
     );

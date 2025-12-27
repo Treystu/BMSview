@@ -8,11 +8,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
-      'components': resolve(__dirname, './components'),
-      'services': resolve(__dirname, './services'),
-      'state': resolve(__dirname, './state'),
-      'hooks': resolve(__dirname, './hooks'),
-      'utils': resolve(__dirname, './utils'),
+      'components': resolve(__dirname, './src/components'),
+      'services': resolve(__dirname, './src/services'),
+      'state': resolve(__dirname, './src/state'),
+      'hooks': resolve(__dirname, './src/hooks'),
+      'utils': resolve(__dirname, './src/utils'),
     },
   },
   build: {

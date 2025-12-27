@@ -1,15 +1,24 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta id="csp-meta" http-equiv="Content-Security-Policy" content="default-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://identity.netlify.com https://aistudiocdn.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; frame-src https://identity.netlify.com https://app.netlify.com https://*.netlify.com;">
+    <meta
+      id="csp-meta"
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://identity.netlify.com https://aistudiocdn.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; frame-src https://identity.netlify.com https://app.netlify.com https://*.netlify.com;"
+    />
     <title>BMS Validator - Admin</title>
-    <script type="text/javascript" src="https://identity.netlify.com/v1/netlify-identity-widget.js" async defer></script>
+    <script
+      type="text/javascript"
+      src="https://identity.netlify.com/v1/netlify-identity-widget.js"
+      async
+      defer
+    ></script>
   </head>
   <body class="bg-neutral-dark">
     <div id="root"></div>
-    <script type="module" src="/admin.tsx"></script>
+    <script type="module" src="/src/admin.tsx"></script>
   </body>
 </html>

@@ -21,7 +21,7 @@ module.exports = {
     '^.+\\.(js|jsx|ts|tsx|mjs|cjs)$': ['babel-jest', { rootMode: 'upward' }]
   },
   transformIgnorePatterns: [
-    '/node_modules/(?!(@babel/runtime|mongodb|bson|@google/genai|node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill)/)'
+    '/node_modules/(?!(@babel/runtime|mongodb|bson|@google/genai|node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|@netlify)/)'
   ],
   moduleFileExtensions: ['js', 'jsx', 'ts', 'tsx', 'json', 'node', 'cjs', 'mjs'],
   moduleNameMapper: {

@@ -32,7 +32,8 @@ function validateEnvironment(log) {
 }
 
 const { createInsightsJob, getInsightsJob, updateJobStatus, saveCheckpoint } = require('./utils/insights-jobs.cjs'); // UPDATED: Import necessary functions
-const { processInsightsInBackground } = require('./utils/insights-processor.cjs');
+
+const { triggerInsightsWorkload } = require('./utils/insights-async-client.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const {
   getOrCreateResumableJob,
@@ -560,31 +561,16 @@ exports.handler = async (event, context) => {
       throw new Error(`Failed to create insights job: ${jobError.message}`);
     }
 
-    // Start background processing (don't await)
-    // Pass all parameters including contextWindowDays, maxIterations, modelOverride, and fullContextMode
-    processInsightsInBackground(
-      job.id,
+    // Start background processing (await to ensure event is sent)
+    await triggerInsightsWorkload({
+      jobId: job.id,
       analysisData,
       systemId,
       customPrompt,
-      log,
-      {
-        contextWindowDays,
-        maxIterations,
-        modelOverride,
-        fullContextMode // NEW: Pass fullContextMode to background processor
-      }
-    ).catch(err => {
-      log.error('Background processing error (logged, not thrown)', {
-        jobId: job.id,
-        error: err.message,
-        stack: err.stack
-      });
-      // Use wrapper to safely update status without crashing the crash handler
-      updateJobStatusWrapper(job?.id, 'failed', err.message, log).catch(() => {
-        // Last resort catch
-        console.error('CRITICAL: Failed to update job status', err);
-      });
+      contextWindowDays,
+      maxIterations,
+      modelOverride,
+      fullContextMode // NEW: Pass fullContextMode to async workload
     });
 
     log.info('Background job started', { jobId: job.id });

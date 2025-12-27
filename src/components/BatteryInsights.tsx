@@ -1,549 +1,398 @@
 import React, { useState, useEffect } from 'react';
-
-interface BatteryData {
-  measurements: Array<{
-    timestamp: string;
-    voltage: number;
-    current: number;
-    temperature: number;
-    capacity: number;
-    soc: number; // State of Charge
-    energyIn?: number;
-    energyOut?: number;
-    state: 'charging' | 'discharging' | 'idle';
-  }>;
-  metadata?: {
-    batteryType: string;
-    nominalCapacity: number;
-    manufactureDate?: string;
-  };
-}
-
-interface HealthInsight {
-  status: 'Excellent' | 'Good' | 'Fair' | 'Poor' | 'Critical';
-  score: number;
-  recommendation: string;
-  estimatedLifespan: string;
-  efficiency: number;
-  cycleCount: number;
-  degradationRate: number;
-}
-
-interface PredictiveInsight {
-  failureRisk: 'Low' | 'Medium' | 'High' | 'Critical';
-  nextMaintenance: string;
-  componentRisks: Array<{
-    component: string;
-    risk: 'Low' | 'Medium' | 'High';
-    recommendation: string;
-  }>;
-  performanceForecast: {
-    week: number;
-    capacityPrediction: number;
-    efficiencyPrediction: number;
-  }[];
-}
+import type { AnalysisRecord } from '../types';
+import BatteryHealthTrends from './BatteryHealthTrends';
 
 interface BatteryInsightsProps {
-  batteryData: BatteryData;
-  onRefresh?: () => void;
+    systemId?: string;
+    records: AnalysisRecord[];
+    currentAnalysis?: AnalysisRecord;
 }
 
-const BatteryInsights: React.FC<BatteryInsightsProps> = ({ batteryData, onRefresh }) => {
-  const [insights, setInsights] = useState<HealthInsight | null>(null);
-  const [predictions, setPredictions] = useState<PredictiveInsight | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+interface InsightCategory {
+    title: string;
+    insights: string[];
+    severity: 'info' | 'warning' | 'critical';
+}
 
-  useEffect(() => {
-    if (batteryData) {
-      generateInsights();
-    }
-  }, [batteryData]);
+interface PerformanceMetrics {
+    avgSOC: number;
+    avgVoltage: number;
+    avgCurrent: number;
+    avgPower: number;
+    totalEnergy: number;
+    cyclesSinceStart: number;
+}
 
-  const generateInsights = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      // Generate health insights
-      const healthInsight = getHealthInsights(batteryData);
-      setInsights(healthInsight);
+/**
+ * BatteryInsights - Comprehensive insights visualization dashboard
+ * 
+ * Features:
+ * - AI-generated insights display
+ * - Performance trend visualization
+ * - Predictive analytics
+ * - Comparison views
+ * - Export functionality
+ * - Health status overview
+ * - Energy flow analysis
+ */
+const BatteryInsights: React.FC<BatteryInsightsProps> = ({
+    systemId,
+    records,
+    currentAnalysis
+}) => {
+    const [selectedTimeRange, setSelectedTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
+    const [insightCategories, setInsightCategories] = useState<InsightCategory[]>([]);
+    const [performanceMetrics, setPerformanceMetrics] = useState<PerformanceMetrics | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [showHealthTrends, setShowHealthTrends] = useState(false);
 
-      // Generate predictive insights
-      const predictiveInsight = getPredictiveInsights(batteryData);
-      setPredictions(predictiveInsight);
+    useEffect(() => {
+        if (records && records.length > 0) {
+            generateInsights();
+            calculatePerformanceMetrics();
+        }
+        setLoading(false);
+    }, [records, selectedTimeRange]);
 
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate insights');
-      console.error('Error generating insights:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const filterRecordsByTimeRange = (records: AnalysisRecord[]): AnalysisRecord[] => {
+        if (selectedTimeRange === 'all') return records;
 
-  if (loading) {
-    return (
-      <div className="battery-insights" style={{ padding: '20px', textAlign: 'center' }}>
-        <div>Analyzing battery data...</div>
-      </div>
-    );
-  }
+        const now = new Date();
+        const daysMap = { '7d': 7, '30d': 30, '90d': 90 };
+        const days = daysMap[selectedTimeRange];
+        const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 
-  if (error) {
-    return (
-      <div className="battery-insights" style={{ padding: '20px' }}>
-        <div style={{
-          backgroundColor: '#fef2f2',
-          border: '1px solid #fecaca',
-          color: '#dc2626',
-          padding: '12px',
-          borderRadius: '4px',
-          marginBottom: '16px'
-        }}>
-          Error: {error}
-        </div>
-      </div>
-    );
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Excellent': return '#10b981';
-      case 'Good': return '#3b82f6';
-      case 'Fair': return '#f59e0b';
-      case 'Poor': return '#ef4444';
-      case 'Critical': return '#991b1b';
-      default: return '#6b7280';
-    }
-  };
-
-  const getRiskColor = (risk: string) => {
-    switch (risk) {
-      case 'Low': return '#10b981';
-      case 'Medium': return '#f59e0b';
-      case 'High': return '#ef4444';
-      case 'Critical': return '#991b1b';
-      default: return '#6b7280';
-    }
-  };
-
-  return (
-    <div className="battery-insights" style={{ padding: '20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2 style={{ margin: 0, color: '#1f2937' }}>Battery Insights</h2>
-        <button
-          onClick={onRefresh || generateInsights}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          Refresh Insights
-        </button>
-      </div>
-
-      {/* Health Status Card */}
-      {insights && (
-        <div style={{
-          backgroundColor: 'white',
-          border: '1px solid #e5e7eb',
-          borderRadius: '8px',
-          padding: '20px',
-          marginBottom: '20px',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
-        }}>
-          <h3 style={{ margin: '0 0 16px 0', color: '#1f2937' }}>Health Status</h3>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-            <div>
-              <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>Overall Status</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  borderRadius: '50%',
-                  backgroundColor: getStatusColor(insights.status)
-                }} />
-                <span style={{ 
-                  fontSize: '18px', 
-                  fontWeight: 'bold',
-                  color: getStatusColor(insights.status)
-                }}>
-                  {insights.status}
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>Health Score</div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1f2937' }}>
-                {insights.score}/100
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>Efficiency</div>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937' }}>
-                {(insights.efficiency * 100).toFixed(1)}%
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>Cycle Count</div>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937' }}>
-                {insights.cycleCount.toLocaleString()}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '20px', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '6px' }}>
-            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#1f2937', marginBottom: '8px' }}>
-              Recommendation
-            </div>
-            <div style={{ fontSize: '14px', color: '#4b5563', lineHeight: '1.5' }}>
-              {insights.recommendation}
-            </div>
-          </div>
-
-          <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div>
-              <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>Estimated Lifespan</div>
-              <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#1f2937' }}>
-                {insights.estimatedLifespan}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>Degradation Rate</div>
-              <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#1f2937' }}>
-                {insights.degradationRate.toFixed(3)}%/cycle
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Predictive Insights Card */}
-      {predictions && (
-        <div style={{
-          backgroundColor: 'white',
-          border: '1px solid #e5e7eb',
-          borderRadius: '8px',
-          padding: '20px',
-          marginBottom: '20px',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
-        }}>
-          <h3 style={{ margin: '0 0 16px 0', color: '#1f2937' }}>Predictive Insights</h3>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
-            <div>
-              <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>Failure Risk</div>
-              <div style={{ 
-                fontSize: '18px', 
-                fontWeight: 'bold',
-                color: getRiskColor(predictions.failureRisk)
-              }}>
-                {predictions.failureRisk}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>Next Maintenance</div>
-              <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#1f2937' }}>
-                {predictions.nextMaintenance}
-              </div>
-            </div>
-          </div>
-
-          {/* Component Risks */}
-          {predictions.componentRisks.length > 0 && (
-            <div style={{ marginBottom: '20px' }}>
-              <h4 style={{ margin: '0 0 12px 0', color: '#1f2937', fontSize: '16px' }}>
-                Component Risk Assessment
-              </h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {predictions.componentRisks.map((risk, index) => (
-                  <div key={index} style={{
-                    padding: '12px',
-                    backgroundColor: '#f9fafb',
-                    borderRadius: '4px',
-                    borderLeft: `4px solid ${getRiskColor(risk.risk)}`
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 'bold', color: '#1f2937' }}>{risk.component}</span>
-                      <span style={{
-                        fontSize: '12px',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        backgroundColor: getRiskColor(risk.risk),
-                        color: 'white',
-                        fontWeight: 'bold'
-                      }}>
-                        {risk.risk}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
-                      {risk.recommendation}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Performance Forecast */}
-          {predictions.performanceForecast.length > 0 && (
-            <div>
-              <h4 style={{ margin: '0 0 12px 0', color: '#1f2937', fontSize: '16px' }}>
-                4-Week Performance Forecast
-              </h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px' }}>
-                {predictions.performanceForecast.map((forecast, index) => (
-                  <div key={index} style={{
-                    padding: '12px',
-                    backgroundColor: '#f9fafb',
-                    borderRadius: '4px',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>
-                      Week {forecast.week}
-                    </div>
-                    <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#1f2937' }}>
-                      {forecast.capacityPrediction.toFixed(1)}%
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                      {(forecast.efficiencyPrediction * 100).toFixed(1)}% eff
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Utility functions for generating insights
-function getHealthInsights(batteryData: BatteryData): HealthInsight {
-  const measurements = batteryData.measurements || [];
-  
-  if (measurements.length === 0) {
-    return {
-      status: 'Unknown',
-      score: 0,
-      recommendation: 'No data available for analysis',
-      estimatedLifespan: 'Unknown',
-      efficiency: 0,
-      cycleCount: 0,
-      degradationRate: 0
+        return records.filter(r => new Date(r.timestamp) >= cutoff);
     };
-  }
 
-  const latest = measurements[measurements.length - 1];
-  const earliest = measurements[0];
+    const generateInsights = () => {
+        const filteredRecords = filterRecordsByTimeRange(records);
+        if (filteredRecords.length === 0) return;
 
-  // Calculate capacity trend
-  const capacityTrend = latest.capacity / earliest.capacity;
-  
-  // Count charge cycles
-  const cycles = countChargeCycles(measurements);
-  
-  // Calculate efficiency
-  const efficiency = calculateEfficiency(measurements);
-  
-  // Calculate degradation rate
-  const degradationRate = calculateDegradationRate(measurements);
+        const categories: InsightCategory[] = [];
 
-  // Determine health status
-  let status: HealthInsight['status'];
-  let score: number;
-  let recommendation: string;
+        // Energy Management Insights
+        const energyInsights: string[] = [];
+        const avgSOC = filteredRecords.reduce((sum, r) => sum + (r.analysis?.soc || 0), 0) / filteredRecords.length;
+        
+        if (avgSOC < 40) {
+            energyInsights.push(`Average SOC is low (${avgSOC.toFixed(1)}%). Consider increasing solar capacity or reducing load.`);
+        } else if (avgSOC > 80) {
+            energyInsights.push(`Excellent energy reserves maintained (avg ${avgSOC.toFixed(1)}% SOC).`);
+        }
 
-  if (capacityTrend > 0.95 && efficiency > 0.9) {
-    status = 'Excellent';
-    score = 90 + Math.round(Math.random() * 10);
-    recommendation = 'Battery is in excellent condition. Continue normal operation and regular maintenance.';
-  } else if (capacityTrend > 0.85 && efficiency > 0.8) {
-    status = 'Good';
-    score = 70 + Math.round(Math.random() * 20);
-    recommendation = 'Battery health is good. Monitor performance monthly and maintain optimal charging practices.';
-  } else if (capacityTrend > 0.70 && efficiency > 0.7) {
-    status = 'Fair';
-    score = 50 + Math.round(Math.random() * 20);
-    recommendation = 'Battery showing signs of aging. Consider capacity calibration and more frequent monitoring.';
-  } else if (capacityTrend > 0.50) {
-    status = 'Poor';
-    score = 25 + Math.round(Math.random() * 25);
-    recommendation = 'Battery health is declining. Schedule professional inspection and consider replacement planning.';
-  } else {
-    status = 'Critical';
-    score = Math.round(Math.random() * 25);
-    recommendation = 'Battery health is critical. Immediate replacement recommended to prevent system failure.';
-  }
+        const powers = filteredRecords.map(r => r.analysis?.power || 0);
+        const avgPower = powers.reduce((sum, p) => sum + p, 0) / powers.length;
+        const maxDischarge = Math.abs(Math.min(...powers));
+        const maxCharge = Math.max(...powers);
 
-  // Calculate estimated lifespan
-  const daysSinceFirstMeasurement = Math.floor(
-    (new Date(latest.timestamp).getTime() - new Date(earliest.timestamp).getTime()) / (1000 * 60 * 60 * 24)
-  );
-  
-  const cyclesPerDay = cycles / Math.max(daysSinceFirstMeasurement, 1);
-  const estimatedDaysRemaining = Math.max(0, Math.round(1000 / cyclesPerDay));
-  
-  const estimatedLifespan = estimatedDaysRemaining > 365 
-    ? `${Math.round(estimatedDaysRemaining / 365)} years`
-    : estimatedDaysRemaining > 30
-    ? `${Math.round(estimatedDaysRemaining / 30)} months`
-    : `${estimatedDaysRemaining} days`;
+        energyInsights.push(`Peak discharge: ${maxDischarge.toFixed(0)}W, Peak charge: ${maxCharge.toFixed(0)}W`);
 
-  return {
-    status,
-    score,
-    recommendation,
-    estimatedLifespan,
-    efficiency,
-    cycleCount: cycles,
-    degradationRate
-  };
-}
+        if (avgPower < 0) {
+            energyInsights.push(`System is net discharging (${Math.abs(avgPower).toFixed(0)}W avg). Solar may be insufficient.`);
+        }
 
-function getPredictiveInsights(batteryData: BatteryData): PredictiveInsight {
-  const measurements = batteryData.measurements || [];
-  
-  // Calculate failure risk based on current metrics
-  const healthScore = calculateHealthScore(measurements);
-  
-  let failureRisk: PredictiveInsight['failureRisk'];
-  if (healthScore > 80) failureRisk = 'Low';
-  else if (healthScore > 60) failureRisk = 'Medium';
-  else if (healthScore > 40) failureRisk = 'High';
-  else failureRisk = 'Critical';
+        categories.push({
+            title: 'Energy Management',
+            insights: energyInsights,
+            severity: avgSOC < 30 ? 'critical' : avgSOC < 50 ? 'warning' : 'info'
+        });
 
-  // Calculate next maintenance
-  const nextMaintenance = calculateNextMaintenance(measurements);
+        // Temperature Insights
+        const tempInsights: string[] = [];
+        const temps = filteredRecords.map(r => r.analysis?.temperature || 0).filter(t => t > 0);
+        if (temps.length > 0) {
+            const avgTemp = temps.reduce((sum, t) => sum + t, 0) / temps.length;
+            const maxTemp = Math.max(...temps);
+            const minTemp = Math.min(...temps);
 
-  // Identify component risks
-  const componentRisks = identifyComponentRisks(measurements);
+            tempInsights.push(`Temperature range: ${minTemp.toFixed(1)}°C - ${maxTemp.toFixed(1)}°C (avg ${avgTemp.toFixed(1)}°C)`);
 
-  // Generate performance forecast
-  const performanceForecast = generatePerformanceForecast(measurements);
+            if (avgTemp > 40) {
+                tempInsights.push(`⚠️ Average temperature is high. Consider improving ventilation.`);
+            } else if (avgTemp < 15) {
+                tempInsights.push(`Low temperatures may reduce performance. Consider heating in winter.`);
+            } else {
+                tempInsights.push(`Temperature is within optimal range for battery chemistry.`);
+            }
 
-  return {
-    failureRisk,
-    nextMaintenance,
-    componentRisks,
-    performanceForecast
-  };
-}
+            categories.push({
+                title: 'Temperature Management',
+                insights: tempInsights,
+                severity: avgTemp > 45 ? 'critical' : avgTemp > 35 ? 'warning' : 'info'
+            });
+        }
 
-function countChargeCycles(measurements: any[]): number {
-  let cycles = 0;
-  let wasCharging = false;
-  
-  for (const measurement of measurements) {
-    if (measurement.state === 'charging' && !wasCharging) {
-      cycles++;
+        // Cell Balance Insights
+        const cellInsights: string[] = [];
+        const deltas = filteredRecords
+            .map(r => r.analysis?.cellVoltageDelta)
+            .filter((d): d is number => d !== undefined);
+
+        if (deltas.length > 0) {
+            const avgDelta = deltas.reduce((sum, d) => sum + d, 0) / deltas.length;
+            const maxDelta = Math.max(...deltas);
+
+            cellInsights.push(`Cell imbalance: ${(avgDelta * 1000).toFixed(0)}mV avg, ${(maxDelta * 1000).toFixed(0)}mV max`);
+
+            if (avgDelta > 0.2) {
+                cellInsights.push(`⚠️ High cell imbalance detected. BMS balancing may be needed.`);
+            } else if (avgDelta < 0.05) {
+                cellInsights.push(`✓ Excellent cell balance. BMS is working well.`);
+            }
+
+            categories.push({
+                title: 'Cell Balance',
+                insights: cellInsights,
+                severity: avgDelta > 0.3 ? 'critical' : avgDelta > 0.15 ? 'warning' : 'info'
+            });
+        }
+
+        // Usage Pattern Insights
+        const usageInsights: string[] = [];
+        const chargingRecords = filteredRecords.filter(r => (r.analysis?.power || 0) > 0);
+        const dischargingRecords = filteredRecords.filter(r => (r.analysis?.power || 0) < 0);
+
+        const chargingPercent = (chargingRecords.length / filteredRecords.length) * 100;
+        const dischargingPercent = (dischargingRecords.length / filteredRecords.length) * 100;
+        
+        usageInsights.push(`Charging ${chargingPercent.toFixed(0)}% of the time, discharging ${dischargingPercent.toFixed(0)}%`);
+
+        if (chargingPercent < 40) {
+            usageInsights.push(`Low charging time. Consider adding solar panels or reducing load.`);
+        }
+
+        // Analyze discharge patterns
+        if (dischargingRecords.length > 0) {
+            const avgDischargePower = Math.abs(
+                dischargingRecords.reduce((sum, r) => sum + (r.analysis?.power || 0), 0) / dischargingRecords.length
+            );
+            usageInsights.push(`Average discharge power: ${avgDischargePower.toFixed(0)}W`);
+            
+            if (avgDischargePower > 1000) {
+                usageInsights.push(`High discharge rate detected. Consider load management or battery upgrade.`);
+            }
+        }
+
+        categories.push({
+            title: 'Usage Patterns',
+            insights: usageInsights,
+            severity: chargingPercent < 30 ? 'warning' : 'info'
+        });
+
+        setInsightCategories(categories);
+    };
+
+    const calculatePerformanceMetrics = () => {
+        const filteredRecords = filterRecordsByTimeRange(records);
+        if (filteredRecords.length === 0) return;
+
+        const avgSOC = filteredRecords.reduce((sum, r) => sum + (r.analysis?.soc || 0), 0) / filteredRecords.length;
+        const avgVoltage = filteredRecords.reduce((sum, r) => sum + (r.analysis?.voltage || 0), 0) / filteredRecords.length;
+        const avgCurrent = filteredRecords.reduce((sum, r) => sum + Math.abs(r.analysis?.current || 0), 0) / filteredRecords.length;
+        const avgPower = filteredRecords.reduce((sum, r) => sum + Math.abs(r.analysis?.power || 0), 0) / filteredRecords.length;
+
+        // Calculate total energy (very rough estimate)
+        const totalEnergy = filteredRecords.reduce((sum, r, index) => {
+            if (index === 0) return sum;
+            const prevRecord = filteredRecords[index - 1];
+            const timeDiffHours = (new Date(r.timestamp).getTime() - new Date(prevRecord.timestamp).getTime()) / (1000 * 60 * 60);
+            const avgPowerKW = ((r.analysis?.power || 0) + (prevRecord.analysis?.power || 0)) / 2 / 1000;
+            return sum + (Math.abs(avgPowerKW) * timeDiffHours);
+        }, 0);
+
+        const cyclesSinceStart = Math.max(...filteredRecords.map(r => r.analysis?.cycles || 0)) - 
+                                 Math.min(...filteredRecords.map(r => r.analysis?.cycles || 0));
+
+        setPerformanceMetrics({
+            avgSOC,
+            avgVoltage,
+            avgCurrent,
+            avgPower,
+            totalEnergy,
+            cyclesSinceStart
+        });
+    };
+
+    const handleExport = () => {
+        const exportData = {
+            systemId,
+            timeRange: selectedTimeRange,
+            generatedAt: new Date().toISOString(),
+            insights: insightCategories,
+            metrics: performanceMetrics,
+            recordCount: records.length
+        };
+
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `battery-insights-${systemId || 'all'}-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    if (loading) {
+        return (
+            <div className="bg-neutral-dark rounded-lg p-8 shadow-lg">
+                <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-secondary"></div>
+                    <span className="ml-4 text-lg">Loading insights...</span>
+                </div>
+            </div>
+        );
     }
-    wasCharging = measurement.state === 'charging';
-  }
-  
-  return cycles;
-}
 
-function calculateEfficiency(measurements: any[]): number {
-  let totalEnergyIn = 0;
-  let totalEnergyOut = 0;
-  
-  for (const measurement of measurements) {
-    if (measurement.energyIn) totalEnergyIn += measurement.energyIn;
-    if (measurement.energyOut) totalEnergyOut += measurement.energyOut;
-  }
-  
-  return totalEnergyIn > 0 ? totalEnergyOut / totalEnergyIn : 0.8;
-}
+    if (!records || records.length === 0) {
+        return (
+            <div className="bg-neutral-dark rounded-lg p-8 shadow-lg text-center">
+                <p className="text-gray-400 text-lg">No data available. Upload BMS screenshots to see insights.</p>
+            </div>
+        );
+    }
 
-function calculateDegradationRate(measurements: any[]): number {
-  if (measurements.length < 2) return 0;
-  
-  const first = measurements[0];
-  const last = measurements[measurements.length - 1];
-  const cycles = countChargeCycles(measurements);
-  
-  const degradationPercent = ((first.capacity - last.capacity) / first.capacity) * 100;
-  return cycles > 0 ? degradationPercent / cycles : 0;
-}
+    return (
+        <div className="space-y-6">
+            {/* Header with Controls */}
+            <div className="bg-neutral-dark rounded-lg p-6 shadow-lg">
+                <div className="flex justify-between items-center">
+                    <h2 className="text-3xl font-bold text-secondary">Battery Insights Dashboard</h2>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => setShowHealthTrends(!showHealthTrends)}
+                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        >
+                            {showHealthTrends ? 'Hide' : 'Show'} Health Trends
+                        </button>
+                        <button
+                            onClick={handleExport}
+                            className="px-4 py-2 bg-secondary text-white rounded hover:bg-opacity-90 transition-colors"
+                        >
+                            Export Insights
+                        </button>
+                    </div>
+                </div>
 
-function calculateHealthScore(measurements: any[]): number {
-  if (measurements.length === 0) return 0;
-  
-  const latest = measurements[measurements.length - 1];
-  const earliest = measurements[0];
-  
-  const capacityRetention = (latest.capacity / earliest.capacity) * 100;
-  const efficiency = calculateEfficiency(measurements) * 100;
-  
-  return Math.round((capacityRetention + efficiency) / 2);
-}
+                {/* Time Range Selector */}
+                <div className="flex gap-2 mt-4">
+                    {(['7d', '30d', '90d', 'all'] as const).map(range => (
+                        <button
+                            key={range}
+                            onClick={() => setSelectedTimeRange(range)}
+                            className={`px-4 py-2 rounded transition-colors ${
+                                selectedTimeRange === range
+                                    ? 'bg-secondary text-white'
+                                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                            }`}
+                        >
+                            {range === 'all' ? 'All Time' : range.toUpperCase()}
+                        </button>
+                    ))}
+                </div>
+            </div>
 
-function calculateNextMaintenance(measurements: any[]): string {
-  const healthScore = calculateHealthScore(measurements);
-  
-  if (healthScore > 80) return '6 months';
-  if (healthScore > 60) return '3 months';
-  if (healthScore > 40) return '1 month';
-  return 'Immediate';
-}
+            {/* Performance Metrics */}
+            {performanceMetrics && (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                    <div className="bg-neutral-dark rounded-lg p-4 shadow-lg">
+                        <h3 className="text-xs text-gray-400 mb-1">Avg SOC</h3>
+                        <p className="text-2xl font-bold text-green-400">
+                            {performanceMetrics.avgSOC.toFixed(1)}%
+                        </p>
+                    </div>
+                    <div className="bg-neutral-dark rounded-lg p-4 shadow-lg">
+                        <h3 className="text-xs text-gray-400 mb-1">Avg Voltage</h3>
+                        <p className="text-2xl font-bold text-blue-400">
+                            {performanceMetrics.avgVoltage.toFixed(1)}V
+                        </p>
+                    </div>
+                    <div className="bg-neutral-dark rounded-lg p-4 shadow-lg">
+                        <h3 className="text-xs text-gray-400 mb-1">Avg Current</h3>
+                        <p className="text-2xl font-bold text-yellow-400">
+                            {performanceMetrics.avgCurrent.toFixed(1)}A
+                        </p>
+                    </div>
+                    <div className="bg-neutral-dark rounded-lg p-4 shadow-lg">
+                        <h3 className="text-xs text-gray-400 mb-1">Avg Power</h3>
+                        <p className="text-2xl font-bold text-purple-400">
+                            {performanceMetrics.avgPower.toFixed(0)}W
+                        </p>
+                    </div>
+                    <div className="bg-neutral-dark rounded-lg p-4 shadow-lg">
+                        <h3 className="text-xs text-gray-400 mb-1">Total Energy</h3>
+                        <p className="text-2xl font-bold text-cyan-400">
+                            {performanceMetrics.totalEnergy.toFixed(1)} kWh
+                        </p>
+                    </div>
+                    <div className="bg-neutral-dark rounded-lg p-4 shadow-lg">
+                        <h3 className="text-xs text-gray-400 mb-1">Cycles</h3>
+                        <p className="text-2xl font-bold text-orange-400">
+                            {performanceMetrics.cyclesSinceStart}
+                        </p>
+                    </div>
+                </div>
+            )}
 
-function identifyComponentRisks(measurements: any[]) {
-  const risks = [];
-  const latest = measurements[measurements.length - 1] || {};
-  
-  if (latest.temperature > 45) {
-    risks.push({
-      component: 'Thermal Management',
-      risk: 'High' as const,
-      recommendation: 'Check cooling system and ventilation'
-    });
-  }
-  
-  if (latest.voltage < latest.voltage * 0.9) {
-    risks.push({
-      component: 'Voltage Regulation',
-      risk: 'Medium' as const,
-      recommendation: 'Monitor voltage stability and check connections'
-    });
-  }
-  
-  if (countChargeCycles(measurements) > 500) {
-    risks.push({
-      component: 'Battery Cells',
-      risk: 'Medium' as const,
-      recommendation: 'Consider cell balancing and capacity test'
-    });
-  }
-  
-  return risks;
-}
+            {/* Health Trends (conditional) */}
+            {showHealthTrends && (
+                <BatteryHealthTrends 
+                    systemId={systemId}
+                    records={records}
+                    timeRange={selectedTimeRange}
+                />
+            )}
 
-function generatePerformanceForecast(measurements: any[]) {
-  const forecast = [];
-  const latest = measurements[measurements.length - 1] || { capacity: 100, efficiency: 0.8 };
-  
-  for (let week = 1; week <= 4; week++) {
-    const degradationFactor = 0.995; // 0.5% degradation per week
-    forecast.push({
-      week,
-      capacityPrediction: latest.capacity * Math.pow(degradationFactor, week),
-      efficiencyPrediction: latest.efficiency * Math.pow(degradationFactor, week * 0.5)
-    });
-  }
-  
-  return forecast;
-}
+            {/* Insight Categories */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {insightCategories.map((category, index) => (
+                    <div 
+                        key={index}
+                        className={`bg-neutral-dark rounded-lg p-6 shadow-lg border-l-4 ${
+                            category.severity === 'critical' ? 'border-red-500' :
+                            category.severity === 'warning' ? 'border-yellow-500' :
+                            'border-blue-500'
+                        }`}
+                    >
+                        <h3 className={`text-xl font-semibold mb-4 ${
+                            category.severity === 'critical' ? 'text-red-400' :
+                            category.severity === 'warning' ? 'text-yellow-400' :
+                            'text-blue-400'
+                        }`}>
+                            {category.title}
+                        </h3>
+                        <ul className="space-y-2">
+                            {category.insights.map((insight, idx) => (
+                                <li key={idx} className="text-gray-300 text-sm flex items-start gap-2">
+                                    <span className="text-secondary mt-1">•</span>
+                                    <span>{insight}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ))}
+            </div>
+
+            {/* Summary */}
+            <div className="bg-neutral-dark rounded-lg p-6 shadow-lg">
+                <h3 className="text-xl font-semibold text-secondary mb-3">Summary</h3>
+                <p className="text-gray-300">
+                    Analyzed {filterRecordsByTimeRange(records).length} records over the selected time range.
+                    {insightCategories.some(c => c.severity === 'critical') && (
+                        <span className="text-red-400 font-semibold"> Critical issues detected - immediate attention recommended.</span>
+                    )}
+                    {insightCategories.some(c => c.severity === 'warning') && !insightCategories.some(c => c.severity === 'critical') && (
+                        <span className="text-yellow-400 font-semibold"> Some warnings detected - monitor closely.</span>
+                    )}
+                    {!insightCategories.some(c => c.severity !== 'info') && (
+                        <span className="text-green-400 font-semibold"> System is operating normally.</span>
+                    )}
+                </p>
+            </div>
+        </div>
+    );
+};
 
 export default BatteryInsights;

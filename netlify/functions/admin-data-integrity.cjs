@@ -111,25 +111,28 @@ exports.handler = async function (event, context) {
 
         log.info('Fetched registered systems', { systemCount: allSystems.length });
 
-        // Create a map: DL-# -> System object
-        const dlToSystemMap = new Map();
+        // Create a map: Hardware ID (DL-#) -> System object
+        const hwIdToSystemMap = new Map();
         allSystems.forEach(system => {
-            if (system.associatedDLs && Array.isArray(system.associatedDLs)) {
-                system.associatedDLs.forEach(dlId => {
-                    dlToSystemMap.set(dlId, system);
+            // Check associatedHardwareIds first, fallback to associatedDLs
+            const ids = system.associatedHardwareIds || system.associatedDLs;
+            if (ids && Array.isArray(ids)) {
+                ids.forEach(id => {
+                    hwIdToSystemMap.set(id, system);
                 });
             }
         });
 
         // Step 3: Categorize each DL-# as MATCHED or ORPHAN
         const categorizedData = aggregationResults.map(item => {
-            const dlId = item._id;
-            const system = dlToSystemMap.get(dlId);
+            const hwId = item._id;
+            const system = hwIdToSystemMap.get(hwId);
 
             if (system) {
-                // This DL is associated with a registered system
+                // This ID is associated with a registered system
                 return {
-                    dl_id: dlId,
+                    dl_id: hwId, // Legacy support
+                    hardware_id: hwId,
                     record_count: item.recordCount,
                     status: 'MATCHED',
                     system_id: system.id,
@@ -142,9 +145,10 @@ exports.handler = async function (event, context) {
                     system_capacity: system.capacity
                 };
             } else {
-                // This DL is not associated with any system - it's an orphan
+                // This ID is not associated with any system - it's an orphan
                 return {
-                    dl_id: dlId,
+                    dl_id: hwId, // Legacy support
+                    hardware_id: hwId,
                     record_count: item.recordCount,
                     status: 'ORPHAN',
                     system_id: null,

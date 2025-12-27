@@ -2,11 +2,7 @@
   "compilerOptions": {
     "target": "ESNext",
     "useDefineForClassFields": true,
-    "lib": [
-      "DOM",
-      "DOM.Iterable",
-      "ESNext"
-    ],
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "allowJs": true,
     "checkJs": true,
     "skipLibCheck": true,
@@ -25,35 +21,15 @@
     "inlineSources": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "components/*": [
-        "./components/*"
-      ],
-      "services/*": [
-        "./services/*"
-      ],
-      "state/*": [
-        "./state/*"
-      ],
-      "hooks/*": [
-        "./hooks/*"
-      ],
-      "utils/*": [
-        "./utils/*"
-      ],
-      "@types/*": [
-        "./types/*"
-      ]
+      "@/*": ["./src/*"],
+      "components/*": ["./src/components/*"],
+      "services/*": ["./src/services/*"],
+      "state/*": ["./src/state/*"],
+      "hooks/*": ["./src/hooks/*"],
+      "utils/*": ["./src/utils/*"],
+      "@types/*": ["./src/types/*"]
     }
   },
-  "include": [
-    ".",
-    "netlify/functions/solar-estimate.ts"
-  ],
-  "exclude": [
-    "dist",
-    "node_modules"
-  ]
+  "include": [".", "netlify/functions/solar-estimate.ts"],
+  "exclude": ["dist", "node_modules"]
 }

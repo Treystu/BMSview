@@ -86,7 +86,8 @@ async function exportHistoryCSV(log) {
         'fullCapacity', 'cycleCount', 'temperature', 'mosTemperature',
         'chargeMosOn', 'dischargeMosOn', 'balanceOn',
         'highestCellVoltage', 'lowestCellVoltage', 'averageCellVoltage', 'cellVoltageDifference',
-        'status', 'alerts', 'weather_temp', 'weather_clouds', 'weather_uvi'
+        'status', 'alerts', 'weather_temp', 'weather_clouds', 'weather_uvi',
+        'hardwareId', 'dlNumber'
     ];
 
     const flattenedRecords = records.map(record => ({
@@ -116,7 +117,9 @@ async function exportHistoryCSV(log) {
         alerts: record.analysis?.alerts ? record.analysis.alerts.join('; ') : '',
         weather_temp: record.weather?.temp ?? '',
         weather_clouds: record.weather?.clouds ?? '',
-        weather_uvi: record.weather?.uvi ?? ''
+        weather_uvi: record.weather?.uvi ?? '',
+        hardwareId: record.analysis?.dlNumber || '',
+        dlNumber: record.analysis?.dlNumber || ''
     }));
 
     return arrayToCSV(flattenedRecords, headers);
@@ -136,7 +139,7 @@ async function exportSystemsCSV(log) {
 
     const headers = [
         'id', 'name', 'description', 'location', 'latitude', 'longitude',
-        'capacity', 'voltage', 'associatedDLs', 'createdAt', 'updatedAt'
+        'capacity', 'voltage', 'associatedHardwareIds', 'associatedDLs', 'createdAt', 'updatedAt'
     ];
 
     const flattenedSystems = systems.map(system => ({
@@ -147,7 +150,9 @@ async function exportSystemsCSV(log) {
         latitude: system.latitude ?? '',
         longitude: system.longitude ?? '',
         capacity: system.capacity ?? '',
+        capacity: system.capacity ?? '',
         voltage: system.voltage ?? '',
+        associatedHardwareIds: (system.associatedHardwareIds || system.associatedDLs) ? (system.associatedHardwareIds || system.associatedDLs).join('; ') : '',
         associatedDLs: system.associatedDLs ? system.associatedDLs.join('; ') : '',
         createdAt: system.createdAt || '',
         updatedAt: system.updatedAt || ''
