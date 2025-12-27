@@ -33,6 +33,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onUploadComplete }) => {
   const [optimizer] = useState(() => new UploadOptimizer());
   const [isStoryMode, setIsStoryMode] = useState(false);
   const [sequenceId, setSequenceId] = useState('');
+  const [hardwareSystemId, setHardwareSystemId] = useState('');
 
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files || []);
@@ -131,6 +132,13 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onUploadComplete }) => {
           // Actually, for batch uploads, we should probably use the async flow if possible, 
           // but the current architecture might be simpler with sync for now.
           // Let's use the standard /api/analyze endpoint.
+
+
+          // Add system ID if provided manually
+          if (hardwareSystemId) {
+            // @ts-ignore - dynamic payload
+            payload.hardwareSystemId = hardwareSystemId;
+          }
 
           const response = await fetch('/api/analyze?sync=true', {
             method: 'POST',
@@ -262,6 +270,28 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onUploadComplete }) => {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Manual System ID Input */}
+      <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }}>
+        <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: 'bold', color: '#0369a1' }}>
+          System ID (Optional)
+        </label>
+        <input
+          type="text"
+          value={hardwareSystemId}
+          onChange={(e) => setHardwareSystemId(e.target.value)}
+          placeholder="Enter System ID manually if not detected..."
+          style={{
+            width: '100%',
+            padding: '8px',
+            border: '1px solid #7dd3fc',
+            borderRadius: '4px'
+          }}
+        />
+        <p style={{ fontSize: '12px', color: '#0c4a6e', marginTop: '4px' }}>
+          If provided, this ID will be used for auto-association override.
+        </p>
       </div>
 
       {/* Upload Area */}

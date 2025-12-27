@@ -34,6 +34,7 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
 
   // Calculate estimated cost when files change
   const costEstimate = useMemo(() => estimateAnalysisCost(files.length), [files.length]);
+  const [hardwareSystemId, setHardwareSystemId] = React.useState('');
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -72,6 +73,29 @@ const UploadSection: React.FC<UploadSectionProps> = ({ onAnalyze, isLoading, err
             </p>
           </>
         )}
+
+        {/* Manual System ID Input */}
+        <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#f0f9ff', borderRadius: '8px', border: '1px solid #bae6fd' }} className="max-w-2xl mx-auto mb-6">
+          <label style={{ display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: 'bold', color: '#0369a1' }}>
+            System ID (Optional)
+          </label>
+          <input
+            type="text"
+            value={hardwareSystemId}
+            onChange={(e) => setHardwareSystemId(e.target.value)}
+            placeholder="Enter System ID manually if not detected..."
+            style={{
+              width: '100%',
+              padding: '8px',
+              border: '1px solid #7dd3fc',
+              borderRadius: '4px'
+            }}
+          />
+          <p style={{ fontSize: '12px', color: '#0c4a6e', marginTop: '4px' }}>
+            If provided, this ID will be used for auto-association override.
+          </p>
+        </div>
+
         <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-lg">
           <div
             onDrop={internalHandleDrop}

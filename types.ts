@@ -10,7 +10,8 @@ declare global {
 }
 
 export interface AnalysisData {
-  dlNumber?: string | null;
+  hardwareSystemId?: string | null; // Unified System ID (Physical/Hardware ID)
+  dlNumber?: string | null; // Legacy support
   timestampFromImage?: string | null;
   status?: string | null;
   overallVoltage: number | null;
@@ -81,7 +82,8 @@ export interface BmsSystem {
   capacity: number | null;
   latitude: number | null;
   longitude: number | null;
-  associatedDLs: string[];
+  associatedHardwareIds: string[]; // List of hardware system IDs (formerly associatedDLs)
+  associatedDLs?: string[]; // Legacy support
   maxAmpsSolarCharging?: number | null;
   maxAmpsGeneratorCharging?: number | null;
 }
@@ -93,7 +95,8 @@ export interface AnalysisRecord {
   systemName?: string;
   analysis: AnalysisData | null;
   weather?: WeatherData;
-  dlNumber?: string | null;
+  hardwareSystemId?: string | null; // Unified System ID
+  dlNumber?: string | null; // Legacy support
   fileName?: string;
   needsReview?: boolean;
   validationWarnings?: string[];
@@ -683,7 +686,7 @@ export interface SecurityAuditEvent {
   severity: 'low' | 'medium' | 'high' | 'critical';
 }
 
-export type SecurityEventType = 
+export type SecurityEventType =
   | 'rate_limit_exceeded'
   | 'rate_limit_warning'
   | 'input_sanitized'

@@ -10,7 +10,7 @@ const getResponseSchema = () => ({
     type: Type.OBJECT,
     properties: {
         // MANDATORY FIELDS - These must always be extracted
-        dlNumber: { "type": Type.STRING, "nullable": false, "description": "MANDATORY: The DL Number. If not visible, use 'UNKNOWN'." },
+        hardwareSystemId: { "type": Type.STRING, "nullable": false, "description": "MANDATORY: The System ID (or DL Number). If not visible, use 'UNKNOWN'." },
         stateOfCharge: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: SOC percentage. Extract from 'SOC' field." },
         overallVoltage: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Overall battery voltage." },
         current: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Current in Amps. CRITICAL: Preserve negative sign if discharging." },
@@ -36,7 +36,7 @@ const getResponseSchema = () => ({
         hardwareVersion: { "type": Type.STRING, "nullable": true },
         snCode: { "type": Type.STRING, "nullable": true },
     },
-    required: ["dlNumber", "stateOfCharge", "overallVoltage", "current", "remainingCapacity",
+    required: ["hardwareSystemId", "stateOfCharge", "overallVoltage", "current", "remainingCapacity",
         "chargeMosOn", "dischargeMosOn", "balanceOn", "highestCellVoltage",
         "lowestCellVoltage", "averageCellVoltage", "cellVoltageDifference", "cycleCount", "power"]
 });
@@ -59,7 +59,7 @@ ${basePrompt}`;
 
 **CRITICAL: MANDATORY FIELDS**
 The following fields are MANDATORY and MUST ALWAYS be extracted. If a field is not clearly visible, use these defaults:
-- dlNumber: If not visible, use "UNKNOWN"
+- hardwareSystemId: Look in the **TOP LEFT** corner. Valid labels include 'System ID', 'DL Number', 'DL No', or similar. If not visible, use "UNKNOWN"
 - stateOfCharge: If not visible, use 0
 - overallVoltage: If not visible, use 0
 - current: If not visible, use 0
@@ -76,8 +76,7 @@ The following fields are MANDATORY and MUST ALWAYS be extracted. If a field is n
 
 1.  **JSON Object Output**: Your entire response MUST be a single, valid JSON object.
 2.  **Strict Schema Adherence**: MANDATORY fields must NEVER be null. Optional fields can be null or [] for arrays.
-3.  **Data Extraction Rules**:
-    -   \`dlNumber\`: Find 'DL Number' or similar identifier at the top. NEVER leave this null.
+    -   \`hardwareSystemId\`: Look in the **TOP LEFT** corner of the image. Standardized screenshots always place the ID there. Valid labels: 'System ID', 'DL Number', 'DL No'. NEVER leave this null.
     -   \`stateOfCharge\`: Extract 'SOC' percentage. MANDATORY.
     -   \`overallVoltage\`: Extract 'voltage' or 'Total Voltage'. MANDATORY.
     -   \`current\`: Extract 'current'. **CRITICAL: Preserve the negative sign if it exists.** A negative sign indicates discharge. MANDATORY.
@@ -141,7 +140,8 @@ const mapExtractedToAnalysisData = (extracted, log) => {
     // Ensure all mandatory fields have values (apply defaults if missing)
     const analysis = {
         // Mandatory fields with defaults - use ?? to only default on null/undefined
-        dlNumber: extracted.dlNumber || 'UNKNOWN', // string, so || is fine
+        hardwareSystemId: extracted.hardwareSystemId || 'UNKNOWN',
+        dlNumber: extracted.hardwareSystemId || 'UNKNOWN', // Legacy compat
         stateOfCharge: extracted.stateOfCharge ?? 0,
         overallVoltage: extracted.overallVoltage ?? 0,
         current: extracted.current ?? 0,
@@ -339,7 +339,7 @@ const generateAnalysisKey = (analysis) => {
     if (!analysis) return null;
     try {
         const keyParts = [
-            analysis.dlNumber || 'nodl',
+            analysis.hardwareSystemId || analysis.dlNumber || 'noid',
             (analysis.overallVoltage != null ? analysis.overallVoltage.toFixed(2) : 'nov'),
             (analysis.current != null ? analysis.current.toFixed(2) : 'noc'),
             (analysis.stateOfCharge != null ? analysis.stateOfCharge.toFixed(1) : 'nosoc'),
@@ -428,12 +428,12 @@ const mergeAnalysisData = (oldAnalysis, newAnalysis, log) => {
 const validateExtractionQuality = (extractedData, analysisData, log) => {
     const warnings = [];
     let qualityScore = 100; // Start at 100 and deduct points for issues
-    const criticalFields = ['dlNumber', 'stateOfCharge', 'overallVoltage', 'current', 'remainingCapacity'];
+    const criticalFields = ['hardwareSystemId', 'stateOfCharge', 'overallVoltage', 'current', 'remainingCapacity'];
     const importantFields = ['power', 'cycleCount', 'cellVoltageDifference'];
 
     // Check if critical fields have meaningful values (not defaults)
-    if (analysisData.dlNumber === 'UNKNOWN') {
-        warnings.push('DL Number not detected - defaulted to UNKNOWN');
+    if (analysisData.hardwareSystemId === 'UNKNOWN') {
+        warnings.push('System ID not detected - defaulted to UNKNOWN');
         qualityScore -= 15;
     }
 

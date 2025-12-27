@@ -49,29 +49,30 @@ const {
 } = require('./utils/unified-deduplication.cjs');
 
 /**
- * Normalize a DL number for comparison
- * @param {string | null | undefined} dl
+ * Normalize a Hardware ID for comparison
+ * @param {string | null | undefined} id
  * @returns {string | null}
  */
-function normalizeDl(dl) {
-  if (!dl || typeof dl !== 'string') return null;
-  return dl.trim().toUpperCase();
+function normalizeHardwareId(id) {
+  if (!id || typeof id !== 'string') return null;
+  // Remove non-alphanumeric and uppercase
+  return id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 }
 
 /**
- * Ensure a record is linked to a system using DL number if unlinked.
- * It only links when exactly one system matches the DL.
+ * Ensure a record is linked to a system using Hardware ID if unlinked.
+ * It only links when exactly one system matches the Hardware ID.
  * @param {any} record - Analysis or history record
  * @param {any} log - Logger
  * @returns {Promise<any>} Updated record (or original if unchanged)
  */
-async function ensureDlAssociationForRecord(record, log) {
+async function ensureSystemAssociation(record, log) {
   try {
     if (!record || record.systemId) return record;
 
-    const rawDl = record.dlNumber || record.analysis?.dlNumber || null;
-    const dlNumber = normalizeDl(rawDl);
-    if (!dlNumber || dlNumber === 'UNKNOWN') {
+    const rawId = record.hardwareSystemId || record.analysis?.hardwareSystemId || record.dlNumber || record.analysis?.dlNumber || null;
+    const hardwareId = normalizeHardwareId(rawId);
+    if (!hardwareId || hardwareId === 'UNKNOWN') {
       return record;
     }
 
@@ -79,12 +80,14 @@ async function ensureDlAssociationForRecord(record, log) {
     const systems = await systemsCollection.find({}).toArray();
 
     const matches = systems.filter((s) =>
-      (s.associatedDLs || []).some((dl) => normalizeDl(/** @type {string} */(dl)) === dlNumber)
+      (s.associatedHardwareIds || s.associatedDLs || []).some((id) => normalizeHardwareId(/** @type {string} */(id)) === hardwareId)
     );
 
     if (matches.length !== 1) {
       if (matches.length > 1) {
-        log.warn('DL auto-association skipped due to multiple matches', { dlNumber, matchCount: matches.length });
+        log.warn('Auto-association skipped due to multiple matches', { hardwareId, matchCount: matches.length, matchingSystemIds: matches.map(s => s.id) });
+      } else {
+        log.info('Auto-association: No matching system found', { hardwareId });
       }
       return record;
     }
@@ -95,7 +98,7 @@ async function ensureDlAssociationForRecord(record, log) {
 
     await historyCollection.updateOne(
       { id: record.id },
-      { $set: { systemId: system.id, systemName: system.name, dlNumber: rawDl || dlNumber } }
+      { $set: { systemId: system.id, systemName: system.name, hardwareSystemId: rawId || hardwareId, dlNumber: rawId || hardwareId } }
     );
 
     await resultsCollection.updateOne(
@@ -106,12 +109,13 @@ async function ensureDlAssociationForRecord(record, log) {
     const updated = {
       ...record,
       systemId: system.id,
-      systemName: system.name
+      systemName: system.name,
+      hardwareSystemId: rawId || hardwareId
     };
 
-    log.info('Auto-associated record using DL match', {
+    log.info('Auto-associated record using Hardware ID match', {
       recordId: record.id,
-      dlNumber,
+      hardwareId,
       systemId: system.id,
       systemName: system.name
     });
@@ -119,7 +123,7 @@ async function ensureDlAssociationForRecord(record, log) {
     return updated;
   } catch (error) {
     const err = /** @type {any} */ (error);
-    log.warn('Failed to auto-associate record by DL', { error: err?.message, recordId: record?.id });
+    log.warn('Failed to auto-associate record by Hardware ID', { error: err?.message, recordId: record?.id });
     return record;
   }
 }
@@ -344,7 +348,7 @@ exports.handler = async (event, context) => {
 };
 
 // Exported for testing
-module.exports.ensureDlAssociationForRecord = ensureDlAssociationForRecord;
+module.exports.ensureSystemAssociation = ensureSystemAssociation;
 
 /**
  * Handles synchronous image analysis requests
@@ -530,8 +534,8 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
               recordId: existingAnalysis._id
             });
           } else {
-            // High-quality duplicate - ensure DL-based association before returning
-            const associatedExisting = await ensureDlAssociationForRecord(existingAnalysis, log);
+            // High-quality duplicate - ensure Hardware ID-based association before returning
+            const associatedExisting = await ensureSystemAssociation(existingAnalysis, log);
 
             const responseBody = {
               analysis: associatedExisting.analysis,
@@ -577,8 +581,8 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
 
     let record = await executeAnalysisPipeline(imagePayload, log, context);
 
-    // Ensure DL-based association for new/updated record before persisting responses
-    record = await ensureDlAssociationForRecord(record, log);
+    // Ensure Hardware ID-based association for new/updated record before persisting responses
+    record = await ensureSystemAssociation(record, log);
 
     // Validate analysis result
     if (!record || !record.analysis) {

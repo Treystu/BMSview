@@ -345,7 +345,9 @@ const performAnalysisPipeline = async (image, systems, log, context, systemId = 
     // ... existing code ...
     const matchingSystem = (systemId && allSystems)
         ? allSystems.find(s => s.id === systemId)
-        : (analysisRaw.dlNumber ? allSystems.find(s => s.associatedDLs?.includes(analysisRaw.dlNumber)) : null);
+        : (analysisRaw.hardwareSystemId && analysisRaw.hardwareSystemId !== 'UNKNOWN'
+            ? allSystems.find(s => (s.associatedHardwareIds || s.associatedDLs)?.includes(analysisRaw.hardwareSystemId))
+            : null);
 
     const analysis = performPostAnalysis(analysisRaw, matchingSystem, log);
 
@@ -448,7 +450,9 @@ const performAnalysisPipeline = async (image, systems, log, context, systemId = 
         analysis,
         // ... existing code ...
         weather,
-        dlNumber: analysis.dlNumber,
+        weather,
+        hardwareSystemId: analysis.hardwareSystemId,
+        dlNumber: analysis.hardwareSystemId, // Legacy compat
         // ... existing code ...
         fileName: image.fileName,
         analysisKey,

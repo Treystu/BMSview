@@ -96,6 +96,27 @@ class BMSviewCache extends Dexie {
             // Clear old weather data as format is incompatible
             await trans.table('weather').clear();
         });
+
+        // Schema version 4: Unification of System ID (hardwareSystemId)
+        this.version(4).stores({
+            systems: 'id, updatedAt, _syncStatus, name, chemistry, *associatedHardwareIds, [updatedAt+_syncStatus]',
+            history: 'id, updatedAt, _syncStatus, timestamp, systemId, hardwareSystemId, dlNumber, [systemId+timestamp], [updatedAt+_syncStatus]',
+            analytics: 'id, updatedAt, _syncStatus, systemId, metric, timestamp, [updatedAt+_syncStatus]',
+            weather: 'id, updatedAt, _syncStatus, systemId, timestamp, [systemId+timestamp], [updatedAt+_syncStatus]',
+            metadata: 'id, collection, lastModified'
+        }).upgrade(async (trans) => {
+            // Migration logic: populate hardwareSystemId from dlNumber if missing
+            await trans.table('history').toCollection().modify(record => {
+                if (record.dlNumber && !record.hardwareSystemId) {
+                    record.hardwareSystemId = record.dlNumber;
+                }
+            });
+            await trans.table('systems').toCollection().modify(system => {
+                if (system.associatedDLs && (!system.associatedHardwareIds || system.associatedHardwareIds.length === 0)) {
+                    system.associatedHardwareIds = [...system.associatedDLs];
+                }
+            });
+        });
     }
 }
 

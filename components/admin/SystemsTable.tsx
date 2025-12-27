@@ -1,7 +1,7 @@
 import React from 'react';
+import { AdminAction } from '../../state/adminState';
 import type { BmsSystem } from '../../types';
 import PaginationControls from './PaginationControls';
-import { AdminAction } from '../../state/adminState';
 
 interface SystemsTableProps {
     systems: BmsSystem[];
@@ -25,7 +25,7 @@ const SystemsTable: React.FC<SystemsTableProps> = ({ systems, dispatch, paginati
                             <th className="p-3 text-left">Chemistry</th>
                             <th className="p-3 text-left">Specs</th>
                             <th className="p-3 text-left">Location</th>
-                            <th className="p-3 text-left">Associated DLs</th>
+                            <th className="p-3 text-left">Associated System IDs</th>
                             <th className="p-3 text-left">Actions</th>
                         </tr>
                     </thead>
@@ -36,9 +36,11 @@ const SystemsTable: React.FC<SystemsTableProps> = ({ systems, dispatch, paginati
                                 <td className="p-3">{system.chemistry || 'N/A'}</td>
                                 <td className="p-3">{system.voltage || 'N/A'}V / {system.capacity || 'N/A'}Ah</td>
                                 <td className="p-3 font-mono text-xs">{system.latitude}, {system.longitude}</td>
-                                <td className="p-3 font-mono text-xs break-all">{system.associatedDLs?.join(', ') || 'None'}</td>
+                                <td className="p-3 font-mono text-xs break-all">
+                                    {(system.associatedHardwareIds?.length ? system.associatedHardwareIds : system.associatedDLs)?.join(', ') || 'None'}
+                                </td>
                                 <td className="p-3">
-                                    <button onClick={() => dispatch({type: 'SET_EDITING_SYSTEM', payload: system})} className="text-secondary hover:underline font-semibold text-sm">
+                                    <button onClick={() => dispatch({ type: 'SET_EDITING_SYSTEM', payload: system })} className="text-secondary hover:underline font-semibold text-sm">
                                         Edit
                                     </button>
                                 </td>
@@ -51,7 +53,7 @@ const SystemsTable: React.FC<SystemsTableProps> = ({ systems, dispatch, paginati
                     </tbody>
                 </table>
             </div>
-            <PaginationControls 
+            <PaginationControls
                 currentPage={pagination.currentPage}
                 totalItems={pagination.totalItems}
                 itemsPerPage={pagination.itemsPerPage}

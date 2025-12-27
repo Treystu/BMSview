@@ -365,8 +365,8 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                 onClick={handleResetCircuitBreaker}
                 disabled={isResettingCircuitBreaker}
                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${isResettingCircuitBreaker
-                    ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                    : 'bg-yellow-600 text-white hover:bg-yellow-700'
+                  ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                  : 'bg-yellow-600 text-white hover:bg-yellow-700'
                   }`}
               >
                 {isResettingCircuitBreaker ? 'Resetting...' : '🔄 Reset Circuit Breaker'}
@@ -548,8 +548,8 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                 onClick={() => handleGenerateInsights()}
                 disabled={!consentGranted}
                 className={`w-full sm:w-auto font-bold py-3 px-6 rounded-lg shadow-lg transition-all duration-200 transform flex items-center justify-center gap-2 ${consentGranted
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 hover:scale-105 text-white cursor-pointer'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 hover:scale-105 text-white cursor-pointer'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}
               >
                 <span>🔍</span>
@@ -562,12 +562,12 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
             </p>
           </div>
           <div className="border-t border-gray-300 pt-4 space-y-2">
-            <label htmlFor={`custom-prompt-${analysisData.dlNumber || 'new'}`} className="block text-sm font-medium text-gray-700">
+            <label htmlFor={`custom-prompt-${analysisData.hardwareSystemId || analysisData.dlNumber || 'new'}`} className="block text-sm font-medium text-gray-700">
               Or ask a custom question about your system
               {systemName && <span className="text-xs text-gray-500"> (AI can request relevant data to answer)</span>}
             </label>
             <textarea
-              id={`custom-prompt-${analysisData.dlNumber || 'new'}`}
+              id={`custom-prompt-${analysisData.hardwareSystemId || analysisData.dlNumber || 'new'}`}
               rows={3}
               value={customPrompt}
               onChange={e => setCustomPrompt(e.target.value)}
@@ -580,8 +580,8 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                 onClick={() => handleGenerateInsights(customPrompt)}
                 disabled={!customPrompt.trim() || !consentGranted}
                 className={`w-full sm:w-auto font-bold py-2 px-4 rounded-lg shadow-md transition-all duration-200 flex items-center justify-center gap-2 ${customPrompt.trim() && consentGranted
-                    ? 'bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white'
-                    : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                  ? 'bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 text-white'
+                  : 'bg-gray-400 text-gray-200 cursor-not-allowed'
                   }`}
               >
                 <span>💬</span>
@@ -642,44 +642,45 @@ const WeatherSection: React.FC<{ weather: WeatherData }> = ({ weather }) => (
 );
 
 
+
 const AdoptionSection: React.FC<{
-  dlNumber: string;
+  hardwareSystemId: string;
   systems: BmsSystem[];
   onAdopt: (systemId: string) => void;
   onRegisterNew: () => void;
   disabled?: boolean;
-}> = ({ dlNumber, systems, onAdopt, onRegisterNew, disabled }) => {
+}> = ({ hardwareSystemId, systems, onAdopt, onRegisterNew, disabled }) => {
   const [selectedSystemId, setSelectedSystemId] = React.useState('');
 
   const handleAdoptClick = () => {
     if (selectedSystemId) {
-      log('info', 'Adoption "Adopt" button clicked.', { dlNumber, selectedSystemId });
+      log('info', 'Adoption "Adopt" button clicked.', { hardwareSystemId, selectedSystemId });
       onAdopt(selectedSystemId);
     }
   };
 
   const handleRegisterClick = () => {
-    log('info', 'Adoption "Register New System" button clicked.', { dlNumber });
+    log('info', 'Adoption "Register New System" button clicked.', { hardwareSystemId });
     onRegisterNew();
   };
 
   const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newSystemId = e.target.value;
-    log('info', 'User changed system selection for adoption.', { dlNumber, newSystemId });
+    log('info', 'User changed system selection for adoption.', { hardwareSystemId, newSystemId });
     setSelectedSystemId(newSystemId);
   };
 
   return (
     <div className={`mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}>
-      <p className="font-semibold text-yellow-800">This DL Number is unassigned.</p>
+      <p className="font-semibold text-yellow-800">This System ID is unassigned.</p>
       <p className="text-sm text-yellow-700 mb-2">You can adopt it into one of your registered systems, or register a new one.</p>
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
         <select
           value={selectedSystemId}
           onChange={handleSelectChange}
           disabled={disabled}
-          aria-label={`Select system for DL ${dlNumber}`}
-          title={`Select system for DL ${dlNumber}`}
+          aria-label={`Select system for ID ${hardwareSystemId}`}
+          title={`Select system for ID ${hardwareSystemId}`}
           className="block w-full sm:w-auto px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-secondary focus:border-secondary sm:text-sm disabled:bg-gray-200"
         >
           <option value="">Select a system...</option>
@@ -863,13 +864,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
     );
   }
 
-  const dlNumber = data?.dlNumber;
+  const hardwareSystemId = data?.hardwareSystemId || data?.dlNumber;
   let associatedSystemName: string | null = null;
   let adoptionNeeded = false;
   let associatedSystem: BmsSystem | undefined;
 
-  if (dlNumber) {
-    associatedSystem = registeredSystems.find(system => system.associatedDLs?.includes(dlNumber));
+  if (hardwareSystemId) {
+    associatedSystem = registeredSystems.find(system =>
+      (system.associatedHardwareIds?.includes(hardwareSystemId)) ||
+      (system.associatedDLs?.includes(hardwareSystemId))
+    );
     if (associatedSystem) {
       associatedSystemName = associatedSystem.name;
     } else {
@@ -1002,25 +1006,25 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
 
       {data && (
         <>
-          {dlNumber && (
+          {hardwareSystemId && (
             <div className="mb-4 text-center p-2 bg-gray-100 rounded-md">
-              <span className="text-sm font-medium text-gray-600">DL Number: </span>
-              <span className="font-bold text-neutral-dark tracking-wider">{dlNumber}</span>
+              <span className="text-sm font-medium text-gray-600">System ID: </span>
+              <span className="font-bold text-neutral-dark tracking-wider">{hardwareSystemId}</span>
               {associatedSystemName && (
                 <p className="text-xs text-green-700">✓ Associated with: <span className="font-semibold">{associatedSystemName}</span></p>
               )}
             </div>
           )}
-          {adoptionNeeded && dlNumber && (
+          {adoptionNeeded && hardwareSystemId && (
             <AdoptionSection
-              dlNumber={dlNumber}
+              hardwareSystemId={hardwareSystemId}
               systems={registeredSystems}
               onAdopt={(systemId) => {
                 if (recordId) {
-                  onLinkRecord(recordId, systemId, dlNumber);
+                  onLinkRecord(recordId, systemId, hardwareSystemId);
                 }
               }}
-              onRegisterNew={() => onRegisterNewSystem(dlNumber)}
+              onRegisterNew={() => onRegisterNewSystem(hardwareSystemId)}
               disabled={!recordId}
             />
           )}
