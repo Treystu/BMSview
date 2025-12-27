@@ -3,9 +3,9 @@
  * Ensures all mandatory fields are properly extracted and have default values
  */
 
-const { 
-    mapExtractedToAnalysisData, 
-    getResponseSchema 
+const {
+    mapExtractedToAnalysisData,
+    getResponseSchema
 } = require('../netlify/functions/utils/analysis-helpers.cjs');
 
 describe('Extraction - Mandatory Fields', () => {
@@ -164,9 +164,9 @@ describe('Extraction - Mandatory Fields', () => {
     describe('getResponseSchema', () => {
         it('should include all mandatory fields in schema', () => {
             const schema = getResponseSchema();
-            
+
             const mandatoryFields = [
-                'dlNumber', 'stateOfCharge', 'overallVoltage', 'current',
+                'hardwareSystemId', 'stateOfCharge', 'overallVoltage', 'current',
                 'remainingCapacity', 'chargeMosOn', 'dischargeMosOn', 'balanceOn',
                 'highestCellVoltage', 'lowestCellVoltage', 'averageCellVoltage',
                 'cellVoltageDifference', 'cycleCount', 'power'
@@ -179,9 +179,9 @@ describe('Extraction - Mandatory Fields', () => {
 
         it('should mark mandatory fields as required', () => {
             const schema = getResponseSchema();
-            
+
             const mandatoryFields = [
-                'dlNumber', 'stateOfCharge', 'overallVoltage', 'current',
+                'hardwareSystemId', 'stateOfCharge', 'overallVoltage', 'current',
                 'remainingCapacity', 'chargeMosOn', 'dischargeMosOn', 'balanceOn',
                 'highestCellVoltage', 'lowestCellVoltage', 'averageCellVoltage',
                 'cellVoltageDifference', 'cycleCount', 'power'
@@ -195,8 +195,8 @@ describe('Extraction - Mandatory Fields', () => {
 
         it('should set nullable=false for mandatory fields', () => {
             const schema = getResponseSchema();
-            
-            expect(schema.properties.dlNumber.nullable).toBe(false);
+
+            expect(schema.properties.hardwareSystemId.nullable).toBe(false);
             expect(schema.properties.stateOfCharge.nullable).toBe(false);
             expect(schema.properties.overallVoltage.nullable).toBe(false);
             expect(schema.properties.current.nullable).toBe(false);
@@ -205,7 +205,7 @@ describe('Extraction - Mandatory Fields', () => {
 
         it('should allow nullable for optional fields', () => {
             const schema = getResponseSchema();
-            
+
             expect(schema.properties.timestampFromImage.nullable).toBe(true);
             expect(schema.properties.fullCapacity.nullable).toBe(true);
             expect(schema.properties.mosTemperature.nullable).toBe(true);

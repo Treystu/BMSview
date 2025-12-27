@@ -140,8 +140,8 @@ const mapExtractedToAnalysisData = (extracted, log) => {
     // Ensure all mandatory fields have values (apply defaults if missing)
     const analysis = {
         // Mandatory fields with defaults - use ?? to only default on null/undefined
-        hardwareSystemId: extracted.hardwareSystemId || 'UNKNOWN',
-        dlNumber: extracted.hardwareSystemId || 'UNKNOWN', // Legacy compat
+        hardwareSystemId: extracted.hardwareSystemId || extracted.dlNumber || 'UNKNOWN',
+        dlNumber: extracted.hardwareSystemId || extracted.dlNumber || 'UNKNOWN', // Legacy compat
         stateOfCharge: extracted.stateOfCharge ?? 0,
         overallVoltage: extracted.overallVoltage ?? 0,
         current: extracted.current ?? 0,

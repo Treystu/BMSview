@@ -1,5 +1,5 @@
 // @ts-nocheck
-const { ensureDlAssociationForRecord } = require('../netlify/functions/analyze.cjs');
+const { ensureSystemAssociation } = require('../netlify/functions/analyze.cjs');
 
 jest.mock('../netlify/functions/utils/mongodb.cjs', () => {
     const historyUpdates = [];
@@ -42,7 +42,7 @@ jest.mock('../netlify/functions/utils/mongodb.cjs', () => {
 
 const { __historyUpdates, __resultUpdates } = require('../netlify/functions/utils/mongodb.cjs');
 
-describe('ensureDlAssociationForRecord', () => {
+describe('ensureSystemAssociation', () => {
     const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
 
     beforeEach(() => {
@@ -54,7 +54,7 @@ describe('ensureDlAssociationForRecord', () => {
     it('associates a record when there is exactly one matching system', async () => {
         const record = { id: 'rec-1', dlNumber: 'dl123', systemId: null, analysis: { dlNumber: 'dl123' } };
 
-        const updated = await ensureDlAssociationForRecord(record, log);
+        const updated = await ensureSystemAssociation(record, log);
 
         expect(updated.systemId).toBe('sys-1');
         expect(updated.systemName).toBe('System One');
@@ -71,7 +71,7 @@ describe('ensureDlAssociationForRecord', () => {
         const { __systems } = require('../netlify/functions/utils/mongodb.cjs');
         __systems.push({ id: 'sys-3', name: 'System Three', associatedDLs: ['dl999'] });
 
-        const updated = await ensureDlAssociationForRecord(record, log);
+        const updated = await ensureSystemAssociation(record, log);
 
         expect(updated.systemId).toBeNull();
         expect(__historyUpdates).toHaveLength(0);
@@ -83,7 +83,7 @@ describe('ensureDlAssociationForRecord', () => {
 
     it('skips association when systemId already present', async () => {
         const record = { id: 'rec-3', dlNumber: 'DL123', systemId: 'already', analysis: { dlNumber: 'DL123' } };
-        const updated = await ensureDlAssociationForRecord(record, log);
+        const updated = await ensureSystemAssociation(record, log);
         expect(updated.systemId).toBe('already');
         expect(__historyUpdates).toHaveLength(0);
     });

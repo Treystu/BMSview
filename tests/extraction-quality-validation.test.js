@@ -12,13 +12,13 @@ const createMockLogger = () => {
         mockFn.calls = mockFn.calls || [];
         mockFn.calls.push({ level, message, context });
     });
-    
+
     // Add named methods for direct access if needed
     mockFn.info = jest.fn();
     mockFn.warn = jest.fn();
     mockFn.error = jest.fn();
     mockFn.debug = jest.fn();
-    
+
     return mockFn;
 };
 
@@ -67,9 +67,10 @@ describe('Data Extraction Quality Validation', () => {
     });
 
     describe('Missing Critical Fields', () => {
-        test('should detect UNKNOWN DL number', () => {
+        test('should detect UNKNOWN System ID', () => {
             const extractedData = { dlNumber: 'UNKNOWN' };
             const analysisData = {
+                hardwareSystemId: 'UNKNOWN',
                 dlNumber: 'UNKNOWN',
                 stateOfCharge: 75,
                 overallVoltage: 52.3,
@@ -83,7 +84,7 @@ describe('Data Extraction Quality Validation', () => {
 
             expect(result.qualityScore).toBeLessThan(100); // Deducted for UNKNOWN
             expect(result.qualityScore).toBeGreaterThanOrEqual(75); // Still fairly good
-            expect(result.warnings).toContain('DL Number not detected - defaulted to UNKNOWN');
+            expect(result.warnings).toContain('System ID not detected - defaulted to UNKNOWN');
             expect(result.isComplete).toBe(true); // Still complete
             expect(result.hasCriticalIssues).toBe(false);
         });
@@ -251,6 +252,7 @@ describe('Data Extraction Quality Validation', () => {
         test('should mark as incomplete when score < 70', () => {
             const extractedData = {};
             const analysisData = {
+                hardwareSystemId: 'UNKNOWN',
                 dlNumber: 'UNKNOWN',
                 stateOfCharge: 0,
                 overallVoltage: 52.3,
@@ -273,6 +275,7 @@ describe('Data Extraction Quality Validation', () => {
         test('should mark as critical when score < 50', () => {
             const extractedData = {};
             const analysisData = {
+                hardwareSystemId: 'UNKNOWN',
                 dlNumber: 'UNKNOWN',
                 stateOfCharge: 0,
                 overallVoltage: 0,
@@ -345,6 +348,7 @@ describe('Data Extraction Quality Validation', () => {
         test('should log warnings when issues detected', () => {
             const extractedData = {};
             const analysisData = {
+                hardwareSystemId: 'UNKNOWN',
                 dlNumber: 'UNKNOWN',
                 stateOfCharge: 75,
                 overallVoltage: 52.3,
@@ -361,7 +365,7 @@ describe('Data Extraction Quality Validation', () => {
                 'Data extraction quality warnings detected.',
                 expect.objectContaining({
                     warnings: expect.arrayContaining([
-                        expect.stringContaining('DL Number'),
+                        expect.stringContaining('System ID'),
                         expect.stringContaining('Cycle count')
                     ])
                 })
@@ -373,6 +377,7 @@ describe('Data Extraction Quality Validation', () => {
         test('should never return negative quality score', () => {
             const extractedData = {};
             const analysisData = {
+                hardwareSystemId: 'UNKNOWN',
                 dlNumber: 'UNKNOWN',
                 stateOfCharge: 0,
                 overallVoltage: 0,

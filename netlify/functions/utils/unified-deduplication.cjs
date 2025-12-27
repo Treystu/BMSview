@@ -40,10 +40,10 @@ const formatHashPreview = (hash) => (hash ? `${hash.substring(0, 16)}...` : 'nul
 const stripPadding = (value = '') => value.replace(/=+$/, '');
 
 // Import existing constants for backward compatibility
-const { 
-  DUPLICATE_UPGRADE_THRESHOLD, 
-  MIN_QUALITY_IMPROVEMENT, 
-  CRITICAL_FIELDS 
+const {
+  DUPLICATE_UPGRADE_THRESHOLD,
+  MIN_QUALITY_IMPROVEMENT,
+  CRITICAL_FIELDS
 } = require('./duplicate-constants.cjs');
 
 /**
@@ -203,21 +203,29 @@ function checkNeedsUpgrade(record) {
 
   // CRITICAL: Check for missing critical fields FIRST (highest priority)
   // This must come before validation score check
-  const hasAllCriticalFields = CRITICAL_FIELDS.every(field =>
-    record.analysis &&
-    record.analysis[field] !== null &&
-    record.analysis[field] !== undefined
-  );
+  const hasAllCriticalFields = CRITICAL_FIELDS.every(field => {
+    const value = record.analysis && record.analysis[field];
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string') {
+      const upper = value.toUpperCase();
+      if (upper === 'UNIDENTIFIED' || upper === 'UNKNOWN') return false;
+    }
+    return true;
+  });
 
   if (!hasAllCriticalFields) {
-    const missingFields = CRITICAL_FIELDS.filter(field => 
-      !record.analysis || 
-      record.analysis[field] === null || 
-      record.analysis[field] === undefined
-    );
-    return { 
-      needsUpgrade: true, 
-      reason: `Missing ${missingFields.length} critical fields: ${missingFields.slice(0, 3).join(', ')}` 
+    const missingFields = CRITICAL_FIELDS.filter(field => {
+      const value = record.analysis && record.analysis[field];
+      if (value === null || value === undefined) return true;
+      if (typeof value === 'string') {
+        const upper = value.toUpperCase();
+        if (upper === 'UNIDENTIFIED' || upper === 'UNKNOWN') return true;
+      }
+      return false;
+    });
+    return {
+      needsUpgrade: true,
+      reason: `Missing ${missingFields.length} critical fields: ${missingFields.slice(0, 3).join(', ')}`
     };
   }
 
@@ -232,8 +240,8 @@ function checkNeedsUpgrade(record) {
     Math.abs(record._previousQuality - record._newQuality) < MIN_QUALITY_IMPROVEMENT;
 
   if (hasBeenRetriedWithNoImprovement) {
-    return { 
-      needsUpgrade: false, 
+    return {
+      needsUpgrade: false,
       reason: 'Already retried with no improvement',
       shouldMarkComplete: true // Signal that this should be marked complete
     };
@@ -241,22 +249,22 @@ function checkNeedsUpgrade(record) {
 
   // Check validation score (only if critical fields are present and not already retried)
   const validationScore = record.validationScore ?? 0;
-  
+
   if (validationScore < DUPLICATE_UPGRADE_THRESHOLD && (record.extractionAttempts || 1) < 2) {
-    return { 
-      needsUpgrade: true, 
-      reason: `Low quality score: ${validationScore}% < ${DUPLICATE_UPGRADE_THRESHOLD}%` 
+    return {
+      needsUpgrade: true,
+      reason: `Low quality score: ${validationScore}% < ${DUPLICATE_UPGRADE_THRESHOLD}%`
     };
   }
 
   // Record has acceptable quality (all critical fields + score ≥ 80%)
   // Mark as complete if score is high or if we've exhausted retries
   const shouldMarkComplete = validationScore >= DUPLICATE_UPGRADE_THRESHOLD || (record.extractionAttempts || 1) >= 2;
-  
-  return { 
-    needsUpgrade: false, 
+
+  return {
+    needsUpgrade: false,
     reason: null,
-    shouldMarkComplete 
+    shouldMarkComplete
   };
 }
 
@@ -287,11 +295,11 @@ async function findDuplicateByHash(contentHash, collection, log) {
       fullHashLength: contentHash.length,
       event: 'MONGO_QUERY_START'
     });
-    
+
     const duplicate = await collection.findOne({ contentHash });
-    
+
     const durationMs = Date.now() - startTime;
-    
+
     if (duplicate) {
       log.info('DUPLICATE_LOOKUP: Found matching record in MongoDB', {
         recordId: duplicate._id?.toString?.() || duplicate._id || duplicate.id,
@@ -302,20 +310,20 @@ async function findDuplicateByHash(contentHash, collection, log) {
         durationMs,
         event: 'MONGO_FOUND'
       });
-      
+
       return duplicate;
     }
-    
+
     log.info('DUPLICATE_LOOKUP: No matching record found in MongoDB', {
       contentHashPreview: contentHash.substring(0, 16) + '...',
       durationMs,
       event: 'MONGO_NOT_FOUND'
     });
-    
+
     return null;
   } catch (error) {
     const durationMs = Date.now() - startTime;
-    log.error('DUPLICATE_LOOKUP: MongoDB query failed', { 
+    log.error('DUPLICATE_LOOKUP: MongoDB query failed', {
       error: error.message,
       contentHashPreview: contentHash.substring(0, 16) + '...',
       durationMs,
@@ -372,7 +380,7 @@ async function findDuplicateByHash(contentHash, collection, log) {
 async function detectAnalysisDuplicate(base64Image, collection, log) {
   // Calculate content hash
   const contentHash = calculateImageHash(base64Image);
-  
+
   if (!contentHash) {
     return {
       isDuplicate: false,
@@ -418,21 +426,21 @@ async function detectAnalysisDuplicate(base64Image, collection, log) {
 function calculateTextSimilarity(str1, str2) {
   const s1 = str1.toLowerCase().trim();
   const s2 = str2.toLowerCase().trim();
-  
+
   if (s1 === s2) return 1.0;
   if (s1.length === 0 && s2.length === 0) return 1.0;
-  
+
   const words1 = new Set(s1.split(/\s+/).filter(w => w.length > 0));
   const words2 = new Set(s2.split(/\s+/).filter(w => w.length > 0));
-  
+
   if (words1.size === 0 && words2.size === 0) return 1.0;
   if (words1.size === 0 || words2.size === 0) return 0;
-  
+
   const intersection = new Set([...words1].filter(x => words2.has(x)));
   const union = new Set([...words1, ...words2]);
-  
+
   if (union.size === 0) return 0;
-  
+
   return intersection.size / union.size;
 }
 
@@ -448,16 +456,16 @@ function calculateTextSimilarity(str1, str2) {
  */
 async function detectFeedbackDuplicate(newFeedback, collection, options = {}, log) {
   const similarityThreshold = options.similarityThreshold || 0.7;
-  
+
   try {
     // 1. Exact hash match
     const contentHash = calculateContentHash(newFeedback.suggestion);
-    
+
     const exactMatch = await collection.findOne({
       contentHash,
       status: { $in: ['pending', 'reviewed', 'accepted'] }
     });
-    
+
     if (exactMatch) {
       log.info('Exact feedback duplicate found', { existingId: exactMatch.id });
       return {
@@ -468,7 +476,7 @@ async function detectFeedbackDuplicate(newFeedback, collection, options = {}, lo
         similarItems: []
       };
     }
-    
+
     // 2. Semantic similarity check
     const recentFeedback = await collection
       .find({
@@ -477,14 +485,14 @@ async function detectFeedbackDuplicate(newFeedback, collection, options = {}, lo
       })
       .limit(100)
       .toArray();
-    
+
     const similarItems = [];
-    
+
     for (const existing of recentFeedback) {
       if (existing.status === 'rejected' || existing.status === 'implemented') {
         continue;
       }
-      
+
       const titleSim = calculateTextSimilarity(
         newFeedback.suggestion.title,
         existing.suggestion.title
@@ -497,9 +505,9 @@ async function detectFeedbackDuplicate(newFeedback, collection, options = {}, lo
         newFeedback.suggestion.rationale,
         existing.suggestion.rationale
       );
-      
+
       const overallSim = titleSim * 0.5 + descSim * 0.3 + ratSim * 0.2;
-      
+
       if (overallSim >= similarityThreshold) {
         similarItems.push({
           feedbackId: existing.id,
@@ -512,9 +520,9 @@ async function detectFeedbackDuplicate(newFeedback, collection, options = {}, lo
         });
       }
     }
-    
+
     similarItems.sort((a, b) => b.similarity - a.similarity);
-    
+
     if (similarItems.length > 0 && similarItems[0].similarity >= 0.9) {
       log.info('High similarity feedback duplicate found', {
         existingId: similarItems[0].feedbackId,
@@ -528,7 +536,7 @@ async function detectFeedbackDuplicate(newFeedback, collection, options = {}, lo
         similarItems: similarItems.slice(0, 5)
       };
     }
-    
+
     return {
       isDuplicate: false,
       matchType: 'none',
@@ -551,74 +559,74 @@ module.exports = {
   // ============================================
   // Image Hashing
   // ============================================
-  
+
   /**
    * calculateImageHash: SHA-256 hash from base64 image
    * Canonical method for content hashing across all endpoints
    */
   calculateImageHash,
   formatHashPreview,
-  
+
   /**
    * calculateContentHash: SHA-256 hash from JSON object
    * Used for AI feedback and structured data deduplication
    */
   calculateContentHash,
-  
+
   // ============================================
   // Analysis Duplicate Detection
   // ============================================
-  
+
   /**
    * detectAnalysisDuplicate: High-level duplicate detection (image → hash → lookup → upgrade check)
    * Use when you have base64 image and want comprehensive check
    */
   detectAnalysisDuplicate,
-  
+
   /**
    * findDuplicateByHash: MongoDB lookup by content hash
    * Use when you already have the hash
    */
   findDuplicateByHash,
-  
+
   /**
    * checkNeedsUpgrade: Determine if record needs quality upgrade
    * Core upgrade decision logic used by all endpoints
    */
   checkNeedsUpgrade,
-  
+
   // ============================================
   // Feedback Duplicate Detection
   // ============================================
-  
+
   /**
    * detectFeedbackDuplicate: Semantic duplicate detection for AI feedback
    * Combines exact hash matching with similarity scoring
    */
   detectFeedbackDuplicate,
-  
+
   /**
    * calculateTextSimilarity: Jaccard similarity for text comparison
    * Used by feedback duplicate detection
    */
   calculateTextSimilarity,
-  
+
   // ============================================
   // Constants (re-exported from duplicate-constants.cjs)
   // ============================================
-  
+
   /**
    * DUPLICATE_UPGRADE_THRESHOLD: Validation score threshold (80%)
    * Records below this score are candidates for upgrade
    */
   DUPLICATE_UPGRADE_THRESHOLD,
-  
+
   /**
    * MIN_QUALITY_IMPROVEMENT: Minimum improvement required (5%)
    * Prevents wasteful retries when quality doesn't improve
    */
   MIN_QUALITY_IMPROVEMENT,
-  
+
   /**
    * CRITICAL_FIELDS: Required BMS metrics
    * Missing any of these fields triggers upgrade
