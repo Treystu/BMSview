@@ -315,32 +315,105 @@ exports.handler = async function (event, context) {
             if (action === 'auto-associate') {
                 log.info('Starting auto-association task', { action });
                 const startTime = Date.now();
-                const MAX_EXECUTION_TIME = 24000; // Increased to 24 seconds
+                const MAX_EXECUTION_TIME = 24000;
                 let timeoutReached = false;
 
                 // Helper for normalization
                 const normalizeId = (id) => id ? id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : null;
 
-                const systems = await systemsCollection.find({}, { projection: { _id: 0, id: 1, name: 1, associatedDLs: 1, associatedHardwareIds: 1 } }).toArray();
+                // --- PHASE 1: Learn from existing links (Self-Healing) ---
+                // Find all records that ARE linked but have IDs not yet in the system definition
+                log.info('Phase 1: Learning associations from history...');
+                const linkedIdAggregation = await historyCollection.aggregate([
+                    {
+                        $match: {
+                            systemId: { $ne: null },
+                            $or: [
+                                { dlNumber: { $exists: true, $ne: null } },
+                                { hardwareSystemId: { $exists: true, $ne: null } }
+                            ]
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: "$systemId",
+                            associatedIDs: {
+                                $addToSet: {
+                                    $ifNull: ["$hardwareSystemId", "$dlNumber"]
+                                }
+                            }
+                        }
+                    }
+                ]).toArray();
+
+                let systemsUpdatedCount = 0;
+                const systemUpdateBulkOps = [];
+
+                // Fetch all systems for comparison
+                const systems = await systemsCollection.find({}).toArray();
+                const systemMap = new Map(systems.map(s => [s.id, s]));
+
+                for (const group of linkedIdAggregation) {
+                    const systemId = group._id;
+                    const historyIds = group.associatedIDs.filter(id => id); // Remove nulls
+                    const system = systemMap.get(systemId);
+
+                    if (system && historyIds.length > 0) {
+                        const currentSystemIds = new Set([
+                            ...(system.associatedDLs || []),
+                            ...(system.associatedHardwareIds || [])
+                        ]);
+
+                        const newIds = historyIds.filter(id => !currentSystemIds.has(id));
+
+                        if (newIds.length > 0) {
+                            log.info(`Found new IDs for system ${system.name} from history records`, { systemId, newIds });
+
+                            // Update local object for Phase 2
+                            system.associatedDLs = [...(system.associatedDLs || []), ...newIds];
+
+                            // Push database update
+                            systemUpdateBulkOps.push({
+                                updateOne: {
+                                    filter: { id: systemId },
+                                    update: { $addToSet: { associatedDLs: { $each: newIds } } }
+                                }
+                            });
+                            systemsUpdatedCount++;
+                        }
+                    }
+                }
+
+                if (systemUpdateBulkOps.length > 0) {
+                    log.info(`Updating ${systemUpdateBulkOps.length} systems with learned IDs.`);
+                    await systemsCollection.bulkWrite(systemUpdateBulkOps);
+                }
+
+                // --- PHASE 2: Standard Auto-Association ---
+                log.info('Phase 2: Running auto-association with updated system definitions...');
+
                 const hardwareIdMap = new Map(); // Map normalized ID -> array of system objects
 
+                // Re-process systems (using updated memory objects)
                 systems.forEach(s => {
                     const allIds = new Set([
                         ...(s.associatedDLs || []),
-                        ...(s.associatedHardwareIds || [])
+                        ...(s.associatedHardwareIds || []) // Include alias
                     ]);
 
                     allIds.forEach(rawId => {
                         const normId = normalizeId(rawId);
                         if (normId) {
                             if (!hardwareIdMap.has(normId)) hardwareIdMap.set(normId, []);
-                            hardwareIdMap.get(normId).push({ id: s.id, name: s.name });
+                            // Prevent duplicates in map if dlNumber and hardwareSystemId overlap
+                            const existing = hardwareIdMap.get(normId);
+                            if (!existing.some(ex => ex.id === s.id)) {
+                                existing.push({ id: s.id, name: s.name });
+                            }
                         }
                     });
                 });
 
-                // Limit query to prevent memory issues, increased limit for better coverage
-                // Look for records that are unlinked (systemId: null) AND have some kind of identifier
                 const unlinkedCursor = historyCollection.find({
                     systemId: null,
                     $or: [
@@ -380,9 +453,9 @@ exports.handler = async function (event, context) {
                                                 systemId: system.id,
                                                 systemName: system.name,
                                                 // Ensure standard fields are populated
-                                                hardwareSystemId: recordHardwareId,
-                                                dlNumber: record.dlNumber || recordHardwareId, // Maintain legacy field if missing
+                                                hardwareSystemId: recordHardwareId, // standardize
                                                 updatedAt: new Date().toISOString()
+                                                // Note: we don't overwrite dlNumber if it exists, to preserve original
                                             }
                                         }
                                     }
@@ -404,12 +477,22 @@ exports.handler = async function (event, context) {
                     await historyCollection.bulkWrite(bulkOps, { ordered: false });
                 }
 
-                timer.end({ action, associatedCount, processedCount, ambiguousCount, timeoutReached });
-                log.info('Auto-association task complete', { action, associatedCount, ambiguousCount, timeoutReached });
+                timer.end({ action, associatedCount, processedCount, ambiguousCount, timeoutReached, systemsUpdatedCount });
+                log.info('Auto-association task complete', { action, associatedCount, ambiguousCount, timeoutReached, systemsUpdatedCount });
 
                 let message = timeoutReached
-                    ? `Time limit reached. Associated ${associatedCount} records. Run again to continue.`
-                    : `Completed. Associated ${associatedCount} records.`;
+                    ? `Time limit reached. Associated ${associatedCount} records`
+                    : `Completed. Associated ${associatedCount} records`;
+
+                if (systemsUpdatedCount > 0) {
+                    message += ` (and updated ${systemsUpdatedCount} systems with new IDs)`;
+                }
+
+                if (timeoutReached) {
+                    message += ". Run again to continue.";
+                } else {
+                    message += ".";
+                }
 
                 if (ambiguousCount > 0) {
                     message += ` (${ambiguousCount} skipped due to ambiguous ID linking)`;
@@ -1127,10 +1210,36 @@ exports.handler = async function (event, context) {
                 return respond(404, { error: "Record not found." }, headers);
             }
 
-            // Ensure DL number is associated with the system
-            if (dlNumber && (!system.associatedDLs || !system.associatedDLs.includes(dlNumber))) {
-                log.info('Adding DL number to system during link', { recordId, systemId, dlNumber });
-                await systemsCollection.updateOne({ id: systemId }, { $addToSet: { associatedDLs: dlNumber } });
+            // Ensure Hardware ID/DL number is associated with the system
+            // If dlNumber was not provided in the request, try to get it from the record
+            let idToLink = dlNumber;
+            if (!idToLink) {
+                // We need to fetch the record to get the hardware ID
+                // Note: We might have already fetched it if we did a verify check, but currently we just blindly update.
+                // Let's fetch it now if needed.
+                const record = await historyCollection.findOne({ id: recordId });
+                if (record) {
+                    idToLink = record.hardwareSystemId || record.dlNumber;
+                }
+            }
+
+            if (idToLink) {
+                const alreadyHasIt = (system.associatedDLs || []).includes(idToLink) ||
+                    (system.associatedHardwareIds || []).includes(idToLink);
+
+                if (!alreadyHasIt) {
+                    log.info('Adding Hardware ID to system during link', { recordId, systemId, idToLink });
+                    // Add to both aliases for consistency
+                    await systemsCollection.updateOne(
+                        { id: systemId },
+                        {
+                            $addToSet: {
+                                associatedDLs: idToLink,
+                                associatedHardwareIds: idToLink
+                            }
+                        }
+                    );
+                }
             }
 
             timer.end({ linked: true, recordId, systemId });
