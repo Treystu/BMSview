@@ -1,70 +1,84 @@
 [build]
-  command = "npm ci && npm run build"
-  publish = "dist"
-  functions = "netlify/functions"
+command = "npm ci && npm run build"
+publish = "dist"
+functions = "netlify/functions"
 
 [build.environment]
-  AWS_LAMBDA_JS_RUNTIME = "nodejs20.x"
-  NODE_VERSION = "20"
+AWS_LAMBDA_JS_RUNTIME = "nodejs20.x"
+NODE_VERSION = "20"
 
 [[plugins]]
-  package = "@netlify/plugin-functions-install-core"
+package = "@netlify/plugin-functions-install-core"
 
 [functions."generate-insights-async-trigger"]
-  node_bundler = "esbuild"
-  # Keep the trigger DB-free and lightweight; let esbuild bundle only what is used
-  [functions."generate-insights-async-trigger".build_options]
-    format = "esm"
+node_bundler = "esbuild"
+# Keep the trigger DB-free and lightweight; let esbuild bundle only what is used
+[functions."generate-insights-async-trigger".build_options]
+format = "esm"
 
 # Async Workloads configuration for insights generation
 # Uses Netlify's durable async workload system for extended execution
 [functions."generate-insights-background"]
-  node_bundler = "esbuild"
-  external_node_modules = ["@netlify/async-workloads", "mongodb"]
-  async_workloads = true
-  [functions."generate-insights-background".build_options]
-    format = "esm"
+node_bundler = "esbuild"
+external_node_modules = ["@netlify/async-workloads", "mongodb"]
+async_workloads = true
+[functions."generate-insights-background".build_options]
+format = "esm"
+
+# Fix for size limits on synchronous functions
+# Externalize heavy deps and use esbuild for tree-shaking potential
+[functions."generate-insights-with-tools"]
+node_bundler = "esbuild"
+external_node_modules = ["mongodb", "@google/genai", "@netlify/async-workloads"]
+[functions."generate-insights-with-tools".build_options]
+format = "cjs"
+
+[functions."generate-insights"]
+node_bundler = "esbuild"
+external_node_modules = ["mongodb", "@google/genai", "@netlify/async-workloads"]
+[functions."generate-insights".build_options]
+format = "cjs"
 
 # Admin diagnostics function - needs longer timeout for comprehensive testing
 [functions."admin-diagnostics"]
-  # Note: This is a hint; actual timeout depends on Netlify plan tier
-  # Free: 10s, Pro: 26s, Business+: 26s
-  # Tests run in parallel to stay well under limits
+# Note: This is a hint; actual timeout depends on Netlify plan tier
+# Free: 10s, Pro: 26s, Business+: 26s
+# Tests run in parallel to stay well under limits
 
 # Cache control headers for static assets and HTML
 [[headers]]
-  for = "/*.js"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+for = "/*.js"
+[headers.values]
+Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
-  for = "/*.css"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+for = "/*.css"
+[headers.values]
+Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
-  for = "/sw.js"
-  [headers.values]
-    Cache-Control = "public, max-age=0, must-revalidate"
+for = "/sw.js"
+[headers.values]
+Cache-Control = "public, max-age=0, must-revalidate"
 
 [[headers]]
-  for = "/*.html"
-  [headers.values]
-    Cache-Control = "public, max-age=0, must-revalidate"
+for = "/*.html"
+[headers.values]
+Cache-Control = "public, max-age=0, must-revalidate"
 
 [[headers]]
-  for = "/"
-  [headers.values]
-    Cache-Control = "public, max-age=0, must-revalidate"
+for = "/"
+[headers.values]
+Cache-Control = "public, max-age=0, must-revalidate"
 
 # Content Security Policy headers for all pages
 # worker-src allows blob: URLs for Web Workers (client-side hashing)
 [[headers]]
-  for = "/*"
-  [headers.values]
-    Content-Security-Policy = "default-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://identity.netlify.com https://aistudiocdn.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; frame-src https://identity.netlify.com https://app.netlify.com https://*.netlify.com;"
+for = "/*"
+[headers.values]
+Content-Security-Policy = "default-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://identity.netlify.com https://aistudiocdn.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://identity.netlify.com https://*.netlify.app https://*.netlify.com https://aistudiocdn.com; frame-src https://identity.netlify.com https://app.netlify.com https://*.netlify.com;"
 
 [context.production.environment]
-  LOG_LEVEL = "INFO"
+LOG_LEVEL = "INFO"
 [context.deploy-preview.environment]
-  LOG_LEVEL = "DEBUG"
+LOG_LEVEL = "DEBUG"
