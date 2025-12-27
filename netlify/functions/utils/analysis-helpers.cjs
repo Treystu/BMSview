@@ -59,7 +59,7 @@ ${basePrompt}`;
 
 **CRITICAL: MANDATORY FIELDS**
 The following fields are MANDATORY and MUST ALWAYS be extracted. If a field is not clearly visible, use these defaults:
-- hardwareSystemId: Look in the **TOP LEFT** corner. Valid labels include 'System ID', 'DL Number', 'DL No', or similar. If not visible, use "UNKNOWN"
+- hardwareSystemId: **CRITICAL**: Look in the **TOP LEFT** corner of the image. The ID typically looks like "DL-12345" or "System ID: 12345". Valid labels: 'System ID', 'DL Number', 'DL No'. Pattern is typically 2-4 uppercase letters followed by a hyphen or space and 5-20 digits. If not clearly visible in the top left, use "UNKNOWN".
 - stateOfCharge: If not visible, use 0
 - overallVoltage: If not visible, use 0
 - current: If not visible, use 0
@@ -76,7 +76,7 @@ The following fields are MANDATORY and MUST ALWAYS be extracted. If a field is n
 
 1.  **JSON Object Output**: Your entire response MUST be a single, valid JSON object.
 2.  **Strict Schema Adherence**: MANDATORY fields must NEVER be null. Optional fields can be null or [] for arrays.
-    -   \`hardwareSystemId\`: Look in the **TOP LEFT** corner of the image. Standardized screenshots always place the ID there. Valid labels: 'System ID', 'DL Number', 'DL No'. NEVER leave this null.
+    -   \`hardwareSystemId\`: Look in the **TOP LEFT** corner. This is the SINGLE MOST IMPORTANT field. It usually starts with "DL" or "S/N". Pattern: Uppercase letters, optional dash/space, then digits. Example: "DL-12345678". NEVER leave this null.
     -   \`stateOfCharge\`: Extract 'SOC' percentage. MANDATORY.
     -   \`overallVoltage\`: Extract 'voltage' or 'Total Voltage'. MANDATORY.
     -   \`current\`: Extract 'current'. **CRITICAL: Preserve the negative sign if it exists.** A negative sign indicates discharge. MANDATORY.

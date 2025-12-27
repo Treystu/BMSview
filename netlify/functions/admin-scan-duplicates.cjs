@@ -57,7 +57,7 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const resultsCol = await getCollection('analysis-results');
+    const resultsCol = await getCollection('history');
 
     // Use MongoDB aggregation for memory-efficient duplicate detection
     // This groups records by contentHash and only returns groups with 2+ records

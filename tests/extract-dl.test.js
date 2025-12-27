@@ -1,110 +1,71 @@
 /**
- * Tests for extract-dl function
+ * Tests for extract-hardware-id utility
  */
 
-const { handler } = require('../netlify/functions/extract-dl.cjs');
+const { extractHardwareSystemId } = require('../netlify/functions/extract-hardware-id.cjs');
 
-describe('extract-dl handler', () => {
-  const mockContext = {};
+describe('extractHardwareSystemId (STRICT MODE)', () => {
+  const log = { info: jest.fn(), debug: jest.fn() };
 
-  test('extracts DL numbers from text', async () => {
-    const event = {
-      httpMethod: 'POST',
-      headers: { 'x-nf-client-connection-ip': '127.0.0.1' },
-      body: JSON.stringify({
-        text: 'Battery system DL123456 is operational. Also found DL-234567.'
-      })
-    };
-
-    const response = await handler(event, mockContext);
-
-    expect(response.statusCode).toBe(200);
-    const body = JSON.parse(response.body);
-    expect(body.success).toBe(true);
-    expect(body.dlNumbers).toContain('123456');
-    expect(body.dlNumbers).toContain('234567');
-    expect(body.count).toBe(2);
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
-  test('handles text with no DL numbers', async () => {
-    const event = {
-      httpMethod: 'POST',
-      headers: { 'x-nf-client-connection-ip': '127.0.0.1' },
-      body: JSON.stringify({
-        text: 'No battery identifiers here'
-      })
-    };
+  // 1. Strict DL Format Compliance
+  test('extracts standard DL-prefixed IDs (DL-XXXXX)', () => {
+    const text = 'Battery system DL-12345 is operational. Also found DL123456.';
+    const ids = extractHardwareSystemId(text, log);
 
-    const response = await handler(event, mockContext);
-
-    expect(response.statusCode).toBe(200);
-    const body = JSON.parse(response.body);
-    expect(body.success).toBe(false);
-    expect(body.dlNumbers).toEqual([]);
-    expect(body.count).toBe(0);
+    expect(ids).toContain('DL-12345');
+    expect(ids).toContain('DL123456');
+    expect(ids.length).toBe(2);
   });
 
-  test('returns 405 for non-POST requests', async () => {
-    const event = {
-      httpMethod: 'GET',
-      headers: { 'x-nf-client-connection-ip': '127.0.0.1' }
-    };
-
-    const response = await handler(event, mockContext);
-
-    expect(response.statusCode).toBe(405);
-    const body = JSON.parse(response.body);
-    expect(body.error).toBe('Method Not Allowed');
+  // 2. Labeled IDs
+  test('extracts IDs with "System ID" or "DL Number" labels', () => {
+    const text = 'System ID: 987654. DL Number 555666.';
+    const ids = extractHardwareSystemId(text, log);
+    expect(ids).toContain('987654');
+    expect(ids).toContain('555666');
   });
 
-  test('returns 400 for missing text field', async () => {
-    const event = {
-      httpMethod: 'POST',
-      headers: { 'x-nf-client-connection-ip': '127.0.0.1' },
-      body: JSON.stringify({})
-    };
-
-    const response = await handler(event, mockContext);
-
-    expect(response.statusCode).toBe(400);
-    const body = JSON.parse(response.body);
-    expect(body.error).toContain('Missing or invalid text field');
+  test('extracts S/N labeled IDs', () => {
+    const text = "S/N: ABCDE12345";
+    const ids = extractHardwareSystemId(text, log);
+    expect(ids).toContain('ABCDE12345');
   });
 
-  test('handles various DL formats', async () => {
-    const event = {
-      httpMethod: 'POST',
-      headers: { 'x-nf-client-connection-ip': '127.0.0.1' },
-      body: JSON.stringify({
-        text: 'Found DL 345678, DL:456789, and DL-567890'
-      })
-    };
-
-    const response = await handler(event, mockContext);
-
-    expect(response.statusCode).toBe(200);
-    const body = JSON.parse(response.body);
-    expect(body.success).toBe(true);
-    expect(body.count).toBeGreaterThan(0);
+  // 3. Strict Rejection of False Positives
+  test('ignores plain numbers without context', () => {
+    const text = 'Voltage is 54123 and current is 12345.';
+    const ids = extractHardwareSystemId(text, log);
+    expect(ids).toEqual([]); // Should NOT capture 54123 or 12345
   });
 
-  test('handles OCR noise and spacing while avoiding false matches', async () => {
-    const event = {
-      httpMethod: 'POST',
-      headers: { 'x-nf-client-connection-ip': '127.0.0.1' },
-      body: JSON.stringify({
-        text: 'DL 123 456 appears with spaces, Driver License: 987-654 has a dash, and alt prefix AB-765432 should also be captured.'
-      })
-    };
+  test('ignores short IDs (under 5 chars)', () => {
+    const text = 'DL-123 and System ID: 999';
+    const ids = extractHardwareSystemId(text, log);
+    expect(ids).toEqual([]); // Too short, likely noise
+  });
 
-    const response = await handler(event, mockContext);
+  test('ignores unlabeled generic strings', () => {
+    const text = "Just some text AB-12345 without a label.";
+    const ids = extractHardwareSystemId(text, log);
+    expect(ids).toEqual([]);
+  });
 
-    expect(response.statusCode).toBe(200);
-    const body = JSON.parse(response.body);
-    expect(body.success).toBe(true);
-    expect(body.dlNumbers).toContain('123456');
-    expect(body.dlNumbers).toContain('987654');
-    expect(body.dlNumbers).toContain('765432');
-    expect(body.count).toBe(3);
+  // 4. Edge Cases
+  test('handles messy OCR spacing for labeled IDs', () => {
+    const text = 'System   ID :  12345-ABCDE';
+    const ids = extractHardwareSystemId(text, log);
+    expect(ids).toContain('12345-ABCDE');
+  });
+
+  test('handles complex multi-match', () => {
+    const text = "ID: DL-10101 and S/N 20202. Ignored 30303.";
+    const ids = extractHardwareSystemId(text, log);
+    expect(ids).toContain('DL-10101');
+    expect(ids).toContain('20202');
+    expect(ids).not.toContain('30303');
   });
 });

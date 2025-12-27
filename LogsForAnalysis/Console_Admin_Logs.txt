@@ -1,42 +1,17 @@
- {"level":"INFO","timestamp":"2025-12-26T12:05:40.707Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:40.707Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
- {"level":"WARN","timestamp":"2025-12-26T12:05:40.812Z","component":"AdminApp","message":"Netlify Identity widget not available, retrying...","context":{}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.814Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.825Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.840Z","component":"AdminDashboard","message":"Performing initial data load (page 1).","context":{}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.840Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.840Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
- {"level":"debug","timestamp":"2025-12-26T12:05:41.843Z","service":"localCache","message":"Retrieved 3 systems from cache"}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.843Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":25,"returned":3,"total":3}}
- {"level":"debug","timestamp":"2025-12-26T12:05:41.894Z","service":"localCache","message":"Retrieved 3250 history records from cache"}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.894Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":25,"returned":25,"total":3250}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.894Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":3,"historyCount":25}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.897Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.897Z","service":"clientService","message":"Fetching data integrity audit from admin endpoint.","context":{}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.897Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"admin-data-integrity","method":"GET"}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.897Z","service":"clientService","message":"Fetching IP management data.","context":{}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.897Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"ip-admin","method":"GET"}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.897Z","service":"clientService","message":"Fetching current user IP.","context":{}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.897Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"get-ip","method":"GET"}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.897Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.897Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"default-system"}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:41.897Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET"}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:42.482Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"admin-data-integrity","method":"GET","status":200}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:42.482Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":4,"matched":3,"orphaned":1,"total_records":4824,"orphaned_records":4}}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:42.490Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"ip-admin","method":"GET","status":200}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:42.492Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"get-ip","method":"GET","status":200}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:42.550Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET","status":200}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:43.394Z","service":"clientService","message":"Starting smart history sync.","context":{}}
- {"level":"debug","timestamp":"2025-12-26T12:05:43.446Z","service":"localCache","message":"Retrieved 3250 history records from cache"}
- {"level":"INFO","timestamp":"2025-12-26T12:05:43.446Z","service":"clientService","message":"Loaded 3250 records from local cache.","context":{"count":3250}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:43.446Z","service":"clientService","message":"Performing incremental sync.","context":{"updatedSince":"2025-12-23T03:14:43.951Z"}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:43.446Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?all=true&updatedSince=2025-12-23T03%3A14%3A43.951Z","method":"GET"}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:43.705Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:43.705Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":0,"oversizedCount":0,"zipCount":1}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:43.730Z","hook":"useFileUpload","message":"Starting to process ZIP file.","context":{"fileName":"Photos-3-001 (3).zip","size":134679744}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:44.158Z","hook":"useFileUpload","message":"ZIP chunk extracted.","context":{"chunkFiles":367,"totalSoFar":367}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:44.159Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":367,"fileNames":["Screenshot_20251207-180627.png","Screenshot_20251207-180602.png","Screenshot_20251207-140345.png","Screenshot_20251207-180622.png","Screenshot_20251207-180607.png","Screenshot_20251207-180553.png","Screenshot_20251207-180617.png","Screenshot_20251207-140214.png","Screenshot_20251207-180609.png","Screenshot_20251207-180557.png"],"event":"CHECK_START"}}
- {"level":"INFO","timestamp":"2025-12-26T12:05:44.159Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":367,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ File hash batch complete Object
+ {"level":"INFO","timestamp":"2025-12-27T20:58:04.358Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":113,"durationMs":233,"event":"HASHING_COMPLETE"}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:04.358Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:04.795Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":113,"trueDuplicates":113,"needsUpgrade":0,"newFiles":0,"durationMs":670,"avgPerFileMs":"5.93","event":"PHASE1_COMPLETE"}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:04.795Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":113,"duplicates":113,"upgrades":0,"newFiles":0,"event":"CHECK_COMPLETE"}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:04.796Z","hook":"useFileUpload","message":"Successfully extracted all files from ZIP.","context":{"fileName":"Photos-3-001 (3).zip","size":134679744,"extractedCount":480}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:04.797Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":480,"filteredOut":480,"event":"PREVIEW_FILTER"}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:09.787Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":480,"isStoryMode":false}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:09.788Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":480,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
  Calculating file hashes for batch Object
  Client hash generated Object
  Client hash generated Object
@@ -363,805 +338,669 @@
  Client hash generated Object
  Client hash generated Object
  Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 Client hash generated Object
-shared-utils-UPygJs4L.js:1 File hash batch complete Object
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:44.951Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":367,"durationMs":792,"event":"HASHING_COMPLETE"}}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:44.956Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-services-AQPorFqF.js:1 {"level":"INFO","timestamp":"2025-12-26T12:05:44.967Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?all=true&updatedSince=2025-12-23T03%3A14%3A43.951Z","method":"GET","status":200}}
-services-AQPorFqF.js:1 {"level":"INFO","timestamp":"2025-12-26T12:05:44.967Z","service":"clientService","message":"No new records from server.","context":{}}
-services-AQPorFqF.js:1 {"level":"INFO","timestamp":"2025-12-26T12:05:44.967Z","service":"clientService","message":"Finished smart history sync.","context":{}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:05:47.194Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.15401799999999943,"days":4}}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:54.116Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":367,"trueDuplicates":366,"needsUpgrade":0,"newFiles":1,"durationMs":9957,"avgPerFileMs":"27.13","event":"PHASE1_COMPLETE"}}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:54.116Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":367,"duplicates":366,"upgrades":0,"newFiles":1,"event":"CHECK_COMPLETE"}}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:54.119Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":367,"filteredOut":366,"event":"PREVIEW_FILTER"}}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:54.226Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":113,"fileNames":["Screenshot_20251218-093505.png","Screenshot_20251218-093612.png","Screenshot_20251218-093627.png","Screenshot_20251218-093617.png","Screenshot_20251218-093621.png","Screenshot_20251218-165509.png","Screenshot_20251218-212247.png","Screenshot_20251218-122534.png","Screenshot_20251218-165518.png","Screenshot_20251218-212118.png"],"event":"CHECK_START"}}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:54.226Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":113,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
-shared-utils-UPygJs4L.js:1 Calculating file hashes for batch {count: 113, fileNames: Array(5), event: 'FILE_HASH_START'}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '00d7176f59dde6bf...', imageLength: 327604}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5406a8a05d9269cc...', imageLength: 361200}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a1e66b3e83be5370...', imageLength: 360344}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c476beab4c15b57c...', imageLength: 361028}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9add500cd7a0575d...', imageLength: 362444}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4c8af26009cff717...', imageLength: 333072}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a39f3ab59ad6df6b...', imageLength: 320040}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '617c6e8e51842479...', imageLength: 360868}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '977b7e04deb8e7b5...', imageLength: 332408}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c9aad1d6727ec167...', imageLength: 355760}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '967e57fde67c5c8f...', imageLength: 321088}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cf51547b02e8c620...', imageLength: 359564}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2bbdde6db3017e84...', imageLength: 352956}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2601e8ef6b45f63d...', imageLength: 321668}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '873282ce6a7db0fa...', imageLength: 363084}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '774c663caecead8f...', imageLength: 320120}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a1cf24cd51653cdf...', imageLength: 357256}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ea60f7fccb254ce0...', imageLength: 322716}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b4e5761c97124fa5...', imageLength: 331588}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1c9e7e2f8c4dbbad...', imageLength: 352240}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '8571efda55bd0beb...', imageLength: 327084}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0780b348135d8c1d...', imageLength: 356944}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'fe86a492d6853cc5...', imageLength: 329140}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'fa670a36b7963db3...', imageLength: 351984}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0746b2e3b270870e...', imageLength: 360488}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '90b28a4230115000...', imageLength: 358444}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'eac08f7a2ea4e669...', imageLength: 364652}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b66b8afe6c73ceb8...', imageLength: 329916}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '30e92615591dc23d...', imageLength: 361196}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '72fe4142fa08c084...', imageLength: 362416}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '079241e6ac5f2668...', imageLength: 360520}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '258cabddbd4777d2...', imageLength: 362748}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '86324d9ab45ae825...', imageLength: 325236}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '12fd2992a0b9cb9a...', imageLength: 351360}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c103d2735eb59fbd...', imageLength: 366556}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4cd0c45f6a1a1e1c...', imageLength: 315364}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0a09c681ea10546e...', imageLength: 362912}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd179e015628cad92...', imageLength: 324456}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '270d2f24c22c3871...', imageLength: 361260}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '17bca101cbdd0dcf...', imageLength: 360868}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '767a1426d32ee841...', imageLength: 357616}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1c30858818cdb99d...', imageLength: 331628}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ab139b1e4ebadc6b...', imageLength: 359496}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6b6563b153411853...', imageLength: 362288}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '328c87ddbd14ce74...', imageLength: 360900}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3bda1d59c7521658...', imageLength: 359640}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4a120a68389e78cb...', imageLength: 359456}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '13ca69ffd47366e8...', imageLength: 353808}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a9aecb10a9180a6f...', imageLength: 360612}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '134fe8dfc3ea2a8d...', imageLength: 362028}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7cd8beb9a237c85c...', imageLength: 360864}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '21c689121866154a...', imageLength: 364104}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9322ef0aa260a91b...', imageLength: 327508}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '902b07b8e76283d2...', imageLength: 365292}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e8f222731b030a2f...', imageLength: 365904}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '199e0c00aee9f4cb...', imageLength: 360000}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f0338eb7c61d0a32...', imageLength: 365556}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9f3819e33ff1286e...', imageLength: 330960}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '76c943d74179f35c...', imageLength: 358860}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ab72b5e33c7569ab...', imageLength: 364840}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '58c114777146f602...', imageLength: 365716}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '8f9055827ca6fe8a...', imageLength: 362372}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '84d3e3b799cf3826...', imageLength: 365692}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '33fca14d14cb2ee3...', imageLength: 363644}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f6e3d66b672a10a5...', imageLength: 364212}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '22d52d083e3eee6a...', imageLength: 356544}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5ddb2b32aea92fd7...', imageLength: 327128}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '92a7dbd5116a1bc2...', imageLength: 364820}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2832a6ef70ca88fd...', imageLength: 358076}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'afdde24741781850...', imageLength: 321384}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a3f55bb57fd89626...', imageLength: 362996}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '45eccb32ef189534...', imageLength: 351152}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4a58bbbbc5f39f28...', imageLength: 358832}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '94e4cd870ecdb1af...', imageLength: 362752}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '56807b4896a00662...', imageLength: 357524}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e903ab7a7b356af6...', imageLength: 324028}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9f3a8e59b8048b90...', imageLength: 357036}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a4f89d2e5fc3c0e3...', imageLength: 358872}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'dc0954458034dde0...', imageLength: 354660}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a88f7faf071bb2fb...', imageLength: 352320}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0b5ab76d7a99ba4b...', imageLength: 324528}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6067178505ac780e...', imageLength: 357660}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a3035abbfb411852...', imageLength: 359500}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6b4604bf968833b4...', imageLength: 354084}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9ae7186521df51ed...', imageLength: 357952}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2221292c86e8338d...', imageLength: 321128}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1fc51a778049621e...', imageLength: 358248}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '048273e8d4ed0e0e...', imageLength: 321960}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f02ce07831846d26...', imageLength: 351404}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3c9f8420dd77a95a...', imageLength: 356612}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f3d8c6e5719fba84...', imageLength: 322016}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7ed0082009defbb2...', imageLength: 358788}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '762331530e2cae1c...', imageLength: 361060}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6d553490cc975c23...', imageLength: 361036}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ffb6633b61c5117e...', imageLength: 351888}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bbbf4817f0520630...', imageLength: 348692}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1fbb4a4c4e761f23...', imageLength: 329632}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9a1b082dac6c5ff3...', imageLength: 329324}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'af20183aa18f63d8...', imageLength: 328912}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '80a370bbeda8846f...', imageLength: 359612}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4a5086fcd06768aa...', imageLength: 362260}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3768e54f0db1587a...', imageLength: 362464}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7a8778b4aa7fdbce...', imageLength: 320300}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '20d8b76483a3039e...', imageLength: 360728}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4bacf91500318a30...', imageLength: 359044}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a9ebf2d583feb826...', imageLength: 319088}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6782f581f49053b5...', imageLength: 317796}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3ffb8989d1b78c91...', imageLength: 324636}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1dbbfbdaf236a9b8...', imageLength: 353388}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '83b3027361fa8fc3...', imageLength: 357088}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '14c87860f77ca794...', imageLength: 325452}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bd73b3f5021616cb...', imageLength: 354876}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'de575e1c0eee7634...', imageLength: 359576}
-shared-utils-UPygJs4L.js:1 File hash batch complete {totalFiles: 113, successfulHashes: 113, failedHashes: 0, durationMs: 234, avgPerFileMs: '2.07', …}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:54.460Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":113,"durationMs":234,"event":"HASHING_COMPLETE"}}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:54.460Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:56.395Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":113,"trueDuplicates":87,"needsUpgrade":0,"newFiles":26,"durationMs":2169,"avgPerFileMs":"19.19","event":"PHASE1_COMPLETE"}}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:56.395Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":113,"duplicates":87,"upgrades":0,"newFiles":26,"event":"CHECK_COMPLETE"}}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:56.395Z","hook":"useFileUpload","message":"Successfully extracted all files from ZIP.","context":{"fileName":"Photos-3-001 (3).zip","size":134679744,"extractedCount":480}}
-useFileUpload-BC9Wz2yb.js:2 {"level":"INFO","timestamp":"2025-12-26T12:05:56.397Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":480,"filteredOut":453,"event":"PREVIEW_FILTER"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:06:18.889Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":480,"isStoryMode":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:06:18.890Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":480,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
-shared-utils-UPygJs4L.js:1 Calculating file hashes for batch {count: 480, fileNames: Array(5), event: 'FILE_HASH_START'}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2760b0e412275e50...', imageLength: 362284}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2c311f938fc659c8...', imageLength: 361232}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f4f2566cd87b90f9...', imageLength: 325476}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9141242b89655796...', imageLength: 361540}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '630caf7e4b985905...', imageLength: 361540}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ec6b41b4e82a44b8...', imageLength: 327000}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'abc38e562de1c67b...', imageLength: 361396}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '65438ce1242c4434...', imageLength: 325776}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4bf1e9547e1337a4...', imageLength: 362928}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9abf015f8d03f528...', imageLength: 356260}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '59ca2ffffc2b2964...', imageLength: 361152}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f1bbcb4eb4b6fd04...', imageLength: 362712}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3fbb2bedf88ab285...', imageLength: 362568}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '299277785f8d8c2a...', imageLength: 362272}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0364630eaabfeb3f...', imageLength: 321752}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '32087e8eaf057fe8...', imageLength: 361936}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '21aff072b4f1a1ab...', imageLength: 356484}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '8ae4b77b7ab10618...', imageLength: 321312}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f7c49971fa8475a5...', imageLength: 334508}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'dd553984c2571f13...', imageLength: 362412}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9fd6e8b4f0182e3b...', imageLength: 361052}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a3682c5e88d4e61d...', imageLength: 366172}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2d6f2aefeef0eece...', imageLength: 359672}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3a6d4b4182624368...', imageLength: 322932}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c37ac2217163932e...', imageLength: 322280}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5a960a139ab49bf3...', imageLength: 318568}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5e06f3d6ca863380...', imageLength: 352724}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b242f247f24c47f1...', imageLength: 359724}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0f81d59c1d17d253...', imageLength: 362488}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '22a69294546022c1...', imageLength: 358424}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1207797bd8f78603...', imageLength: 323116}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2bbd255b8724e295...', imageLength: 324036}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '490dc55628cb3ae1...', imageLength: 359816}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '99667e3474e1d3c6...', imageLength: 360664}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '17efd2746c853773...', imageLength: 322272}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '8de7226209d5fc34...', imageLength: 332088}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4ebce92f42b30fcc...', imageLength: 361788}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b7b36600e0f750c4...', imageLength: 322576}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '28d2a09319849627...', imageLength: 360476}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '30af50bb0ff85914...', imageLength: 332928}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd644f8caf5ca020b...', imageLength: 359576}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2ede89ae01cbe201...', imageLength: 359800}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '471424cfd4fc8190...', imageLength: 360780}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'aa96b874be51b788...', imageLength: 359992}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1232e4152bda6efe...', imageLength: 360816}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1eb5df71997c6c8a...', imageLength: 362272}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4256cf1e13138a1a...', imageLength: 357208}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e0baf9c45adadb5e...', imageLength: 360236}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1cb7908887ba0631...', imageLength: 321332}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'fe743d597604ada9...', imageLength: 326872}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'abc4bb13a4a07d95...', imageLength: 362044}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '8d9104069d493b74...', imageLength: 362328}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e07baba6199e2c4f...', imageLength: 358520}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1c0467a8561b7403...', imageLength: 363940}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a5a78fd7a23d6dc6...', imageLength: 367680}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '11d8987c15c8ea3c...', imageLength: 362148}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9f4925c190c952f2...', imageLength: 323168}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c78755d97ec1ec32...', imageLength: 353232}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1f89796fc35d6d19...', imageLength: 359392}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c84d29bdcb62da36...', imageLength: 360332}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1999c0ca97d45d79...', imageLength: 361172}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '38924f540e8b9b3a...', imageLength: 320112}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a56b6bbccffc09fe...', imageLength: 317948}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '57e8e054ed848456...', imageLength: 329908}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c8fd2316594df628...', imageLength: 358776}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7c6f237aecbd2e56...', imageLength: 362728}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9bdde9a2ee45445a...', imageLength: 364464}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ecd2770b662dbdaa...', imageLength: 365180}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2908e0ea8d38ad73...', imageLength: 359560}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd483f8f7ed135217...', imageLength: 328348}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '374cd45941afdcb7...', imageLength: 332792}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '375a4e7d689d5e17...', imageLength: 329136}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '26fcc892b7176880...', imageLength: 358476}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '07e55009061231da...', imageLength: 361076}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '43aa1a5e94f6c37b...', imageLength: 363940}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3a36f3a93fdb305f...', imageLength: 358352}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1ad7aff9d3b6a8ec...', imageLength: 367124}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bcd1ed1400b2d214...', imageLength: 332516}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd5dfe56dd070640b...', imageLength: 367892}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '20178b058aa307f7...', imageLength: 367236}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5340d24b8ec75832...', imageLength: 367220}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '052171847d128b38...', imageLength: 366124}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '89a117b49019f135...', imageLength: 367384}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3a3034c9fcd4f12f...', imageLength: 365740}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cf9b2312ce7ef0f9...', imageLength: 367608}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f3d5e2d9c519b02f...', imageLength: 366872}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a84ce4668b893c04...', imageLength: 324880}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6fe2225250736ca5...', imageLength: 367532}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3eceaea9fdc4fc79...', imageLength: 363580}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e7e910dbec5c6ede...', imageLength: 365812}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '611cbbbedb3d748a...', imageLength: 366360}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0695878a036ca080...', imageLength: 361952}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd8e2515e57584a63...', imageLength: 367984}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '70aaff1375a47b90...', imageLength: 360360}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a4be8860242e5017...', imageLength: 325676}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6546fd28e5c9bd49...', imageLength: 363500}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '11d49d3c6f6a6318...', imageLength: 366848}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '65e106bff7e8adde...', imageLength: 366232}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '596dbd157c6d607d...', imageLength: 361964}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '805e466fd510f17d...', imageLength: 362952}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0a8da7e6409298b0...', imageLength: 325544}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '79bf46aa014bf119...', imageLength: 362604}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bd20b598cd2bbd2d...', imageLength: 361700}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a08e9eefe4c96059...', imageLength: 362172}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1903c09895aa7287...', imageLength: 360696}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e8114291c1592b9a...', imageLength: 359296}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '45e2fb1a27aa61e3...', imageLength: 326840}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '15e7309200782381...', imageLength: 354732}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '78b0ea255ac0c168...', imageLength: 364148}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9b49a33d7e9ad023...', imageLength: 355532}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bb87ec4c2a6a8616...', imageLength: 320092}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cef6c5d5b4a8b799...', imageLength: 362460}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cc8b2d1879b1bc1f...', imageLength: 356720}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6976d98d0701b111...', imageLength: 350804}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '291cb13dad52fc21...', imageLength: 362292}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '8947226284f5c61e...', imageLength: 361168}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6d518d9224c9ea44...', imageLength: 357032}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'aefa08400e7deb6e...', imageLength: 325620}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4c1a54cee8b5d1cd...', imageLength: 356656}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '79e7820f03357466...', imageLength: 361256}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e4116ec5385a9941...', imageLength: 356892}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0c2c11c326ddf2ad...', imageLength: 360500}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3be01deb76daefe1...', imageLength: 356196}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7f40d1fb76b8b14f...', imageLength: 359776}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cef4e085937e1bc3...', imageLength: 355048}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3c6354a7cd59849a...', imageLength: 356124}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '46a4bddc65e54de7...', imageLength: 366444}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4e508696863931cb...', imageLength: 335520}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'be527bf9fec684a4...', imageLength: 395924}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a70012c5b325e02c...', imageLength: 356044}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '84304dc6bc5cf1c4...', imageLength: 362108}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c16a93f7634548b5...', imageLength: 332396}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0ef003d71f3e7236...', imageLength: 368032}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '94854700a1c63e60...', imageLength: 368068}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a46797a02279ef4b...', imageLength: 335632}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f7ff5fa5ba4244b8...', imageLength: 324608}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '695f3a378f96ae85...', imageLength: 365396}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '887dbf24ad3ef6bf...', imageLength: 360888}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '401bf4660b9d23cc...', imageLength: 356424}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bdf07389a1cde37e...', imageLength: 325884}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '96e37e45469586a7...', imageLength: 362624}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4fe21252038bdc29...', imageLength: 354764}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '14eeac8da8c9afb8...', imageLength: 359236}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '00de638a591d5287...', imageLength: 358188}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cd15faf614606b47...', imageLength: 361928}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c942b41d251bc0ad...', imageLength: 362880}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c98788e19fc52d19...', imageLength: 325296}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7faf52ebcb481783...', imageLength: 361328}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cfecdcdb0079846d...', imageLength: 361396}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1b6a6fd0a9cf6297...', imageLength: 359704}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ee82755ed7577207...', imageLength: 361264}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3c341d807c91dd98...', imageLength: 362384}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4f9667c58fb38fb5...', imageLength: 359648}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd90efbe9757587eb...', imageLength: 360784}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4dc83776f4d671ce...', imageLength: 360364}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bd7b0c61b3ba268e...', imageLength: 360560}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '618e09b64f08d413...', imageLength: 360256}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '086c9858bdedda18...', imageLength: 359300}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '510e9b7093f7bb81...', imageLength: 324652}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b611739939ef1376...', imageLength: 321772}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2d5c3a6ad26f3b4f...', imageLength: 358760}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5180ef675d50ce73...', imageLength: 360784}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '589667778b24d635...', imageLength: 355480}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '27d343788bdd5d73...', imageLength: 359736}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cb5797cafaafe1a4...', imageLength: 362228}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '894c3358569be5d3...', imageLength: 324276}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c5e26a3a9098cfdd...', imageLength: 355276}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '80c594cc0cdd8e0e...', imageLength: 360672}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '63adb3f4e816ffa6...', imageLength: 358304}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e6d5c020061d31cd...', imageLength: 356032}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '781b77b34e583e1e...', imageLength: 322660}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '78471023cb53760e...', imageLength: 361508}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e6a2706e50f0549b...', imageLength: 324672}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'da8525bf2a58d053...', imageLength: 361080}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4bf525c8d5bc74f3...', imageLength: 355052}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3e8cf0f0c71acfa6...', imageLength: 354264}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4c52a89f26a09fe6...', imageLength: 356460}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '8cf0d9152ca0301b...', imageLength: 358824}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f971eb7854d6c019...', imageLength: 359112}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4c9da4c7e31e7239...', imageLength: 360684}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '467b1aa2af8ae9f4...', imageLength: 323932}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4bd2dd406c7f9e9b...', imageLength: 318852}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7ee11c84431a5367...', imageLength: 327216}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '03cfb573a6cc4727...', imageLength: 361408}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f8b4e8e7c8ff8358...', imageLength: 359324}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5a36aa4fc49b5938...', imageLength: 362584}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f43fe1c4ec006c2e...', imageLength: 327616}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '31b3aa77fe321ba3...', imageLength: 352420}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e7ad55ce73fbbad6...', imageLength: 327952}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f417573ab62731eb...', imageLength: 358064}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '31bd2334bfd06350...', imageLength: 321748}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7b6076659b13a688...', imageLength: 358552}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '172b3354074cbd3e...', imageLength: 356372}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e66b96ee642bcd13...', imageLength: 355596}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '38f66d58470f3711...', imageLength: 355468}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c907e63cf9042c32...', imageLength: 356112}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6363cd50fb0d4181...', imageLength: 356928}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '114d661b386e8690...', imageLength: 356800}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '35811e66126eb7cc...', imageLength: 355156}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '26f2a8b0a4a97fcf...', imageLength: 358252}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '96517fd93a4c84aa...', imageLength: 315968}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3f5d1b3c54262532...', imageLength: 357168}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ca72036852608fb8...', imageLength: 346084}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5f6878ec49adaa49...', imageLength: 329480}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '93897ec08754e123...', imageLength: 329652}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '32bdec3485a3fa75...', imageLength: 358480}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3083de98480a22fe...', imageLength: 324324}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e140516f0518a0d9...', imageLength: 354840}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'eafd0a5d2c2ec41f...', imageLength: 348428}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ac99a2ebbb404424...', imageLength: 350168}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4f9d91204a5e3813...', imageLength: 360964}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ed921299e524d1d0...', imageLength: 361048}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'de3129faa9a30307...', imageLength: 350128}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4d4077c33648deff...', imageLength: 360944}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ed48043478844d1b...', imageLength: 363596}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f0a6b1f6465fdc97...', imageLength: 348924}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd923ee99cc02a32c...', imageLength: 356692}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bf92ab90e9f452a9...', imageLength: 349992}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '340323ae42e967e5...', imageLength: 350188}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7648479f0cfb920b...', imageLength: 355956}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '705aca334e3cb56e...', imageLength: 333312}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7f0a3829a01f1c72...', imageLength: 319168}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '423059492410b0ee...', imageLength: 317444}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6cc576420a046d23...', imageLength: 358620}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cb6753ac156e79ba...', imageLength: 359840}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f564daded1796d99...', imageLength: 319560}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '699dd28c3c821666...', imageLength: 360224}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4d86ef43e3d316d4...', imageLength: 354308}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '13864152e10c400f...', imageLength: 354620}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9f7547e840df9672...', imageLength: 350428}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3954489ef884274c...', imageLength: 318404}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'dc7df8e8177809dd...', imageLength: 319084}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b64ef1bc6d61c21a...', imageLength: 360468}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0590a2ee515508b7...', imageLength: 353444}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4e81f277e280b91a...', imageLength: 351016}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a236f2cd554876bc...', imageLength: 347884}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e85d5d31af20d84d...', imageLength: 352896}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '11fada2be82168d7...', imageLength: 319508}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bbff7e033d1250e3...', imageLength: 318404}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e71511afb87a56ff...', imageLength: 353376}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a339dd744e27cdb7...', imageLength: 319396}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '50640e24a1b829fa...', imageLength: 349192}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd6289cf0c997ad9b...', imageLength: 354060}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '07cca2a946cbb2a1...', imageLength: 354016}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '610074a4a6890b8e...', imageLength: 352180}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '74bbf38eb51998e3...', imageLength: 353760}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '25239289e2919745...', imageLength: 348008}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9e414dc38ddbba6e...', imageLength: 354296}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f305513807b7d8d6...', imageLength: 360624}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a9381d4a4369d3dc...', imageLength: 355888}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a85f254ccd202d1a...', imageLength: 325616}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e94eacc9bc55805b...', imageLength: 318464}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e85e19d67c71cb66...', imageLength: 360304}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e3cb1fda0126e553...', imageLength: 360852}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3d39134a4313596d...', imageLength: 360372}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a6135bbd9e283eac...', imageLength: 359960}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '58b08b275f8bf39f...', imageLength: 357952}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c828342618e374f9...', imageLength: 348216}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7a660ec9ec58b093...', imageLength: 362684}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '553d6833386e914f...', imageLength: 345060}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7a9c07c29748a208...', imageLength: 315424}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e8fe9c27dcf3349e...', imageLength: 361468}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '55600adf3f3a288f...', imageLength: 347384}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '34174be611f7f036...', imageLength: 349104}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b3e157a51fd96a8e...', imageLength: 358164}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9f07b0dcf6f4a7de...', imageLength: 312980}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '29fa7f4c079e36b6...', imageLength: 317104}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '798b42325e584317...', imageLength: 343972}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4540eb3b623a531b...', imageLength: 349220}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a1d7720311dacb8a...', imageLength: 319940}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e0d5061830759818...', imageLength: 347000}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6360cc8cb047ffc6...', imageLength: 378164}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3a95b95889a8316e...', imageLength: 317876}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '09559ec41319970d...', imageLength: 670236}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'dda157a54614bc06...', imageLength: 858188}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4ba9d10e5f9dd1a6...', imageLength: 321492}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '704bdb0d106d0d43...', imageLength: 754260}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7db6b4d1bd44491d...', imageLength: 721448}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f725ea1c3d7c235c...', imageLength: 720696}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'db609bf357058c7c...', imageLength: 715812}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1602140a2cf36dfa...', imageLength: 522456}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '980bf0a7a61e4507...', imageLength: 725108}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bac4e58a664da904...', imageLength: 624828}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f484598e4b08e0f3...', imageLength: 748160}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c34240342b37b981...', imageLength: 730604}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a19b90869f2e6191...', imageLength: 664676}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '649b4cb99409f646...', imageLength: 653332}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7392bcff7a762c3b...', imageLength: 704968}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0fdb8a5a2a7b8666...', imageLength: 716060}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b2fd2f93b3b96b63...', imageLength: 717188}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd5201799b3f4b6a9...', imageLength: 719020}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd6637d655209f1f8...', imageLength: 738992}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '692d152106d654c2...', imageLength: 713344}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1634fdcbc0359ba2...', imageLength: 722900}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f898395c04266288...', imageLength: 984024}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '84a886e45bc765e2...', imageLength: 502936}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c758ceca0c549574...', imageLength: 725348}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '190a3b03fe7329de...', imageLength: 555656}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '629aa5afdf5d1430...', imageLength: 639044}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2d5c8a6a5ff9a59c...', imageLength: 722416}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a1b05fb4ad5e0a10...', imageLength: 488580}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '79f774e76a2dcb3d...', imageLength: 522388}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ee0ceedf30d9281c...', imageLength: 606288}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a242ca974da95105...', imageLength: 733800}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b2678d11e9d63bfa...', imageLength: 534348}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4097d0e5a531b2e4...', imageLength: 318332}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9642ec5c9692e90e...', imageLength: 549476}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4339a2e8fe0232ce...', imageLength: 681316}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e6e3bdd95a0f91d4...', imageLength: 716304}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '67a5104f07b8a004...', imageLength: 800764}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c70dc407add7f933...', imageLength: 322388}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '11e8d0797085de3f...', imageLength: 353304}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '02e3b53db591faa2...', imageLength: 322396}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c69eab28e6a342ed...', imageLength: 319400}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'eb2ae27a8c3c8bdd...', imageLength: 321484}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bfa63ddcd39d445b...', imageLength: 281880}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ee72cf027b8f1aa1...', imageLength: 351052}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '15b18a805b30f367...', imageLength: 318224}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6d51fc9ac0361131...', imageLength: 321000}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '08d3f3e5ad72cb64...', imageLength: 349276}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '522a1a10eeff4515...', imageLength: 323336}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '62e74f14e0ffdf10...', imageLength: 320556}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1d82c25d373b7290...', imageLength: 349088}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cee0f76db567a201...', imageLength: 319644}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b53f305dec2513c0...', imageLength: 353040}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5525c46dc687cb46...', imageLength: 317576}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '66fbf435053de4bc...', imageLength: 353768}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5979576fedfc140f...', imageLength: 354516}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cd1b4005cf6be576...', imageLength: 350676}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4516da567ae6dd92...', imageLength: 355184}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5c63fd646772948d...', imageLength: 353304}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '78ee6f1cf7001df4...', imageLength: 360608}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f84fbbcc3e4c40a4...', imageLength: 320784}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'fd19d8e25f631efb...', imageLength: 352188}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b952fbd84a2692ed...', imageLength: 360132}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '73c8ccc1e0520e4d...', imageLength: 353232}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'de2d658b1f13dcea...', imageLength: 356904}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'dbe2dd4799067716...', imageLength: 323756}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9351268862790ed6...', imageLength: 360716}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '15c71584a837fe42...', imageLength: 359164}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd7b1b25df816deeb...', imageLength: 321620}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '232897ff0168bb14...', imageLength: 358148}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0c1b3cf0b9fd89f0...', imageLength: 321208}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7dc296dbd4a6e8a2...', imageLength: 360144}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'db6e8fc388a69652...', imageLength: 354624}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cad5043dce63deb3...', imageLength: 355664}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '49249cf87a2bbde8...', imageLength: 355156}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '70902b8be70664a8...', imageLength: 327196}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '15a8eff30f7e7e8c...', imageLength: 359144}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4ea6bd2f9b3556d4...', imageLength: 353876}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b9e8ed47c783d13a...', imageLength: 357164}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c90e2c3bf2563c5b...', imageLength: 357296}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '693ad6838ee891e5...', imageLength: 359876}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'dc7a22749e12c734...', imageLength: 360660}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1dd28134e66c18c3...', imageLength: 357188}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a19a5938e6a095e0...', imageLength: 358320}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3670fbffb4a8caba...', imageLength: 360220}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e838dc6055599ac1...', imageLength: 354540}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'aa2f0e92544eb974...', imageLength: 360368}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '25de8f68bf14d9c1...', imageLength: 360332}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '301ed7ca333e4005...', imageLength: 360380}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4d48c762694f4569...', imageLength: 360240}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2c9577aad99e9b1e...', imageLength: 326832}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '438b3f20ca1f0bd7...', imageLength: 360164}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ef5296e389e05509...', imageLength: 360552}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0008d503ad2ee464...', imageLength: 356300}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '00d7176f59dde6bf...', imageLength: 327604}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '8e36ed152fc4cab3...', imageLength: 360868}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5406a8a05d9269cc...', imageLength: 361200}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a1e66b3e83be5370...', imageLength: 360344}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c476beab4c15b57c...', imageLength: 361028}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4c8af26009cff717...', imageLength: 333072}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9add500cd7a0575d...', imageLength: 362444}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a39f3ab59ad6df6b...', imageLength: 320040}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '617c6e8e51842479...', imageLength: 360868}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '977b7e04deb8e7b5...', imageLength: 332408}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '967e57fde67c5c8f...', imageLength: 321088}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c9aad1d6727ec167...', imageLength: 355760}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'cf51547b02e8c620...', imageLength: 359564}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2bbdde6db3017e84...', imageLength: 352956}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2601e8ef6b45f63d...', imageLength: 321668}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '873282ce6a7db0fa...', imageLength: 363084}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '774c663caecead8f...', imageLength: 320120}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a1cf24cd51653cdf...', imageLength: 357256}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1c9e7e2f8c4dbbad...', imageLength: 352240}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ea60f7fccb254ce0...', imageLength: 322716}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b4e5761c97124fa5...', imageLength: 331588}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '8571efda55bd0beb...', imageLength: 327084}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0780b348135d8c1d...', imageLength: 356944}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'fa670a36b7963db3...', imageLength: 351984}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'fe86a492d6853cc5...', imageLength: 329140}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0746b2e3b270870e...', imageLength: 360488}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '90b28a4230115000...', imageLength: 358444}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'eac08f7a2ea4e669...', imageLength: 364652}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '30e92615591dc23d...', imageLength: 361196}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'b66b8afe6c73ceb8...', imageLength: 329916}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '72fe4142fa08c084...', imageLength: 362416}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '079241e6ac5f2668...', imageLength: 360520}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '258cabddbd4777d2...', imageLength: 362748}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '12fd2992a0b9cb9a...', imageLength: 351360}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '86324d9ab45ae825...', imageLength: 325236}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'c103d2735eb59fbd...', imageLength: 366556}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0a09c681ea10546e...', imageLength: 362912}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4cd0c45f6a1a1e1c...', imageLength: 315364}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '270d2f24c22c3871...', imageLength: 361260}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'd179e015628cad92...', imageLength: 324456}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '17bca101cbdd0dcf...', imageLength: 360868}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1c30858818cdb99d...', imageLength: 331628}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '767a1426d32ee841...', imageLength: 357616}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ab139b1e4ebadc6b...', imageLength: 359496}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6b6563b153411853...', imageLength: 362288}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '328c87ddbd14ce74...', imageLength: 360900}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3bda1d59c7521658...', imageLength: 359640}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4a120a68389e78cb...', imageLength: 359456}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '13ca69ffd47366e8...', imageLength: 353808}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a9aecb10a9180a6f...', imageLength: 360612}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '134fe8dfc3ea2a8d...', imageLength: 362028}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7cd8beb9a237c85c...', imageLength: 360864}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '21c689121866154a...', imageLength: 364104}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '902b07b8e76283d2...', imageLength: 365292}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9322ef0aa260a91b...', imageLength: 327508}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e8f222731b030a2f...', imageLength: 365904}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '199e0c00aee9f4cb...', imageLength: 360000}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f0338eb7c61d0a32...', imageLength: 365556}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '76c943d74179f35c...', imageLength: 358860}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9f3819e33ff1286e...', imageLength: 330960}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ab72b5e33c7569ab...', imageLength: 364840}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '58c114777146f602...', imageLength: 365716}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '8f9055827ca6fe8a...', imageLength: 362372}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '84d3e3b799cf3826...', imageLength: 365692}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '33fca14d14cb2ee3...', imageLength: 363644}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f6e3d66b672a10a5...', imageLength: 364212}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '22d52d083e3eee6a...', imageLength: 356544}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '92a7dbd5116a1bc2...', imageLength: 364820}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2832a6ef70ca88fd...', imageLength: 358076}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '5ddb2b32aea92fd7...', imageLength: 327128}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'afdde24741781850...', imageLength: 321384}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a3f55bb57fd89626...', imageLength: 362996}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4a58bbbbc5f39f28...', imageLength: 358832}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '94e4cd870ecdb1af...', imageLength: 362752}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '56807b4896a00662...', imageLength: 357524}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'e903ab7a7b356af6...', imageLength: 324028}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9f3a8e59b8048b90...', imageLength: 357036}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a4f89d2e5fc3c0e3...', imageLength: 358872}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'dc0954458034dde0...', imageLength: 354660}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a88f7faf071bb2fb...', imageLength: 352320}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '0b5ab76d7a99ba4b...', imageLength: 324528}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6067178505ac780e...', imageLength: 357660}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a3035abbfb411852...', imageLength: 359500}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6b4604bf968833b4...', imageLength: 354084}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9ae7186521df51ed...', imageLength: 357952}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bbbf4817f0520630...', imageLength: 348692}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1fc51a778049621e...', imageLength: 358248}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'a9ebf2d583feb826...', imageLength: 319088}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '45eccb32ef189534...', imageLength: 351152}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '2221292c86e8338d...', imageLength: 321128}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '048273e8d4ed0e0e...', imageLength: 321960}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f3d8c6e5719fba84...', imageLength: 322016}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'f02ce07831846d26...', imageLength: 351404}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3c9f8420dd77a95a...', imageLength: 356612}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7ed0082009defbb2...', imageLength: 358788}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '762331530e2cae1c...', imageLength: 361060}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1fbb4a4c4e761f23...', imageLength: 329632}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6d553490cc975c23...', imageLength: 361036}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'ffb6633b61c5117e...', imageLength: 351888}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '9a1b082dac6c5ff3...', imageLength: 329324}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'af20183aa18f63d8...', imageLength: 328912}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '80a370bbeda8846f...', imageLength: 359612}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4a5086fcd06768aa...', imageLength: 362260}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3768e54f0db1587a...', imageLength: 362464}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '20d8b76483a3039e...', imageLength: 360728}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '7a8778b4aa7fdbce...', imageLength: 320300}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '4bacf91500318a30...', imageLength: 359044}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '6782f581f49053b5...', imageLength: 317796}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '3ffb8989d1b78c91...', imageLength: 324636}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '1dbbfbdaf236a9b8...', imageLength: 353388}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '14c87860f77ca794...', imageLength: 325452}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: '83b3027361fa8fc3...', imageLength: 357088}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'bd73b3f5021616cb...', imageLength: 354876}
-shared-utils-UPygJs4L.js:1 Client hash generated {hashPreview: 'de575e1c0eee7634...', imageLength: 359576}
-shared-utils-UPygJs4L.js:1 File hash batch complete {totalFiles: 480, successfulHashes: 480, failedHashes: 0, durationMs: 1089, avgPerFileMs: '2.27', …}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:06:19.985Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":480,"durationMs":1089,"event":"HASHING_COMPLETE"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:06:19.992Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:06:27.865Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":480,"trueDuplicates":453,"needsUpgrade":0,"newFiles":27,"durationMs":8975,"avgPerFileMs":"18.70","event":"PHASE1_COMPLETE"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:06:27.866Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":27,"upgrades":0,"new":27,"cachedDuplicates":0,"cachedUpgrades":0}}
-shared-utils-UPygJs4L.js:1 Processing 27 files. Initial concurrency: 3
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.867Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-214053.png","fileSize":270650,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.867Z","service":"geminiService","message":"Initializing singleton analysis worker","context":{}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.867Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-083659.png","fileSize":263364,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.868Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-083655.png","fileSize":240845,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.868Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-084500.png","fileSize":241470,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.868Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-084505.png","fileSize":263551,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.868Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-084509.png","fileSize":267458,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.868Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-084547.png","fileSize":241512,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.868Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-163836.png","fileSize":269089,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.868Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-121041.png","fileSize":270794,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.868Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-163846.png","fileSize":270776,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.868Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-084529.png","fileSize":263915,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.868Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-121014.png","fileSize":247223,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-121030.png","fileSize":246991,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-121017.png","fileSize":269707,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-163831.png","fileSize":246684,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-163841.png","fileSize":271694,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-121020.png","fileSize":271847,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-121025.png","fileSize":270545,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-121035.png","fileSize":269282,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-084525.png","fileSize":240223,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-084614.png","fileSize":238345,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-214040.png","fileSize":243475,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251223-084515.png","fileSize":265040,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-121005.png","fileSize":267816,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.869Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-121002.png","fileSize":244088,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.870Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-214044.png","fileSize":266156,"forceReanalysis":false}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:27.870Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251225-214048.png","fileSize":269681,"forceReanalysis":false}}
-Service Worker was updated because "Update on reload" was checked in the DevTools Application panel.
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:06:55.811Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-214053.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:06:55.811Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-214053.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:06:55.816Z","service":"localCache","message":"Cached analysis record: 69435752-0435-4f0e-917e-8c98c9e8d5af","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:06:55.817Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"69435752-0435-4f0e-917e-8c98c9e8d5af"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:05.672Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-121002.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:05.672Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-121002.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:05.675Z","service":"localCache","message":"Cached analysis record: d16f45ce-db73-44c5-9ff8-f68bd177187d","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:05.675Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d16f45ce-db73-44c5-9ff8-f68bd177187d"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:06.397Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-163831.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:06.397Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-163831.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:06.398Z","service":"localCache","message":"Cached analysis record: ab6c56d8-7a46-49aa-ae2a-ef7f9df8ae71","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:06.398Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"ab6c56d8-7a46-49aa-ae2a-ef7f9df8ae71"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:06.842Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-083655.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:06.842Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-083655.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:06.843Z","service":"localCache","message":"Cached analysis record: 621375db-6e38-4aad-8dd2-4a44587ab1d6","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:06.843Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"621375db-6e38-4aad-8dd2-4a44587ab1d6"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:06.904Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-084500.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:06.904Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-084500.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:06.907Z","service":"localCache","message":"Cached analysis record: b91f72f4-d540-4be4-9070-88ba9829e853","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:06.907Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"b91f72f4-d540-4be4-9070-88ba9829e853"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:07.369Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-084547.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:07.369Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-084547.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:07.370Z","service":"localCache","message":"Cached analysis record: ad63d116-e82a-4583-b70f-8f7bd03a84b1","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:07.370Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"ad63d116-e82a-4583-b70f-8f7bd03a84b1"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:07.454Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-214040.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:07.454Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-214040.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:07.456Z","service":"localCache","message":"Cached analysis record: bd3cd35c-46b3-4a49-96c1-fd9589c1228b","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:07.456Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"bd3cd35c-46b3-4a49-96c1-fd9589c1228b"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:07.748Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-084614.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:07.748Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-084614.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:07.749Z","service":"localCache","message":"Cached analysis record: dafed047-b3ff-4dca-a943-dccb103bf130","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:07.749Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"dafed047-b3ff-4dca-a943-dccb103bf130"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:08.883Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-163841.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:08.883Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-163841.png"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:08.885Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-084509.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:08.885Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-084509.png"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:08.886Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-084525.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:08.886Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-084525.png"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:08.886Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-121030.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:08.886Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-121030.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:08.888Z","service":"localCache","message":"Cached analysis record: 702c21cc-a204-4b7f-a37f-e71afc3478a1","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:08.888Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"702c21cc-a204-4b7f-a37f-e71afc3478a1"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:08.915Z","service":"localCache","message":"Cached analysis record: 372e87ae-80d9-4f82-9c21-da294fd261fe","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:08.915Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"372e87ae-80d9-4f82-9c21-da294fd261fe"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:08.929Z","service":"localCache","message":"Cached analysis record: c53c651a-7a10-4eed-9685-34ecb71426af","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:08.929Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"c53c651a-7a10-4eed-9685-34ecb71426af"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:08.936Z","service":"localCache","message":"Cached analysis record: 1b9a8125-2053-4c04-8dc4-475328a68b9a","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:08.937Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"1b9a8125-2053-4c04-8dc4-475328a68b9a"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:09.101Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-214048.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.101Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-214048.png"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:09.102Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-121005.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.102Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-121005.png"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:09.102Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-121020.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.102Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-121020.png"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:09.102Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-121025.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.102Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-121025.png"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:09.102Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-121017.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.102Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-121017.png"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:09.102Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-121014.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.102Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-121014.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:09.103Z","service":"localCache","message":"Cached analysis record: 076e7831-fc5d-42d4-9183-ac19982ac4aa","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.103Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"076e7831-fc5d-42d4-9183-ac19982ac4aa"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:09.118Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-084505.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.118Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-084505.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:09.119Z","service":"localCache","message":"Cached analysis record: 1a502382-0d02-40ed-9811-f7a80f4235b9","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.119Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"1a502382-0d02-40ed-9811-f7a80f4235b9"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:09.133Z","service":"localCache","message":"Cached analysis record: 9fa561ae-2ffe-465a-b023-542984743ab6","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.133Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"9fa561ae-2ffe-465a-b023-542984743ab6"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:09.148Z","service":"localCache","message":"Cached analysis record: a3f646a8-7f10-4bce-9c78-6116851436af","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.148Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"a3f646a8-7f10-4bce-9c78-6116851436af"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:09.162Z","service":"localCache","message":"Cached analysis record: 0926b05a-69e8-4b85-a815-0efe3c87eb9f","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.162Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0926b05a-69e8-4b85-a815-0efe3c87eb9f"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:09.169Z","service":"localCache","message":"Cached analysis record: 348be342-8015-410c-a726-c160035d39ae","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.169Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"348be342-8015-410c-a726-c160035d39ae"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:09.179Z","service":"localCache","message":"Cached analysis record: 500aa7bf-800b-4d3a-a20e-be46d4301f5f","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.179Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"500aa7bf-800b-4d3a-a20e-be46d4301f5f"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:09.565Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-121041.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.565Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-121041.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:09.570Z","service":"localCache","message":"Cached analysis record: c77814b7-baae-4ffd-910f-58dd9dc62cda","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.570Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"c77814b7-baae-4ffd-910f-58dd9dc62cda"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:09.606Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-083659.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.607Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-083659.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:09.608Z","service":"localCache","message":"Cached analysis record: c27e807c-4d3c-44d6-89d7-0dca84a2b799","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.608Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"c27e807c-4d3c-44d6-89d7-0dca84a2b799"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:09.828Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-121035.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.828Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-121035.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:09.829Z","service":"localCache","message":"Cached analysis record: 80b117ee-b8c9-405c-9be1-db6b5b497bdf","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:09.829Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"80b117ee-b8c9-405c-9be1-db6b5b497bdf"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:10.527Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-084529.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:10.527Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-084529.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:10.529Z","service":"localCache","message":"Cached analysis record: d0306ce3-41c5-4ef9-a4fd-b8b6273b3de2","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:10.529Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d0306ce3-41c5-4ef9-a4fd-b8b6273b3de2"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:10.568Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251225-214044.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:10.568Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251225-214044.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:10.569Z","service":"localCache","message":"Cached analysis record: 01438a99-d5fe-4dc3-929c-bac12a29c559","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:10.569Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"01438a99-d5fe-4dc3-929c-bac12a29c559"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:11.143Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-163846.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:11.143Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-163846.png"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:11.144Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-163836.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:11.144Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-163836.png"}}
-services-AQPorFqF.js:54 {"level":"INFO","timestamp":"2025-12-26T12:07:11.144Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251223-084515.png","isDuplicate":false}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:11.144Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251223-084515.png"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:11.144Z","service":"localCache","message":"Cached analysis record: 3863cdf0-044d-493e-b7a9-5932a0b7c762","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:11.144Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"3863cdf0-044d-493e-b7a9-5932a0b7c762"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:11.162Z","service":"localCache","message":"Cached analysis record: bb4532eb-8ffb-40d2-90d1-0425feb47448","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:11.162Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"bb4532eb-8ffb-40d2-90d1-0425feb47448"}}
-services-AQPorFqF.js:56 {"level":"info","timestamp":"2025-12-26T12:07:11.169Z","service":"localCache","message":"Cached analysis record: 91411fc5-b6de-4dc9-8060-fa90123f5ea8","context":{"syncStatus":"synced"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:11.169Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"91411fc5-b6de-4dc9-8060-fa90123f5ea8"}}
-AdminDashboard-DfBCR-BN.js:6 {"level":"INFO","timestamp":"2025-12-26T12:07:11.169Z","component":"AdminDashboard","message":"Bulk analysis run complete.","context":{}}
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ File hash batch complete Object
+ {"level":"INFO","timestamp":"2025-12-27T20:58:10.819Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":480,"durationMs":1031,"event":"HASHING_COMPLETE"}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:10.826Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:12.136Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":480,"trueDuplicates":480,"needsUpgrade":0,"newFiles":0,"durationMs":2348,"avgPerFileMs":"4.89","event":"PHASE1_COMPLETE"}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:12.137Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":0,"upgrades":0,"new":0,"cachedDuplicates":0,"cachedUpgrades":0}}
+ Processing 0 files. Initial concurrency: 0
+ {"level":"INFO","timestamp":"2025-12-27T20:58:12.138Z","component":"AdminDashboard","message":"Bulk analysis run complete.","context":{}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:12.138Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history"}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:12.138Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
+ {"level":"debug","timestamp":"2025-12-27T20:58:12.228Z","service":"localCache","message":"Retrieved 3277 history records from cache"}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:12.228Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":25,"returned":25,"total":3277}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:16.258Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":480,"isStoryMode":false}}
+ {"level":"INFO","timestamp":"2025-12-27T20:58:16.259Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":480,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
+ Calculating file hashes for batch Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 Client hash generated Object
+shared-utils-D4BsnC8e.js:1 File hash batch complete Object
+AdminDashboard-VIFzTEsm.js:6 {"level":"INFO","timestamp":"2025-12-27T20:58:17.410Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":480,"durationMs":1150,"event":"HASHING_COMPLETE"}}
+AdminDashboard-VIFzTEsm.js:6 {"level":"INFO","timestamp":"2025-12-27T20:58:17.415Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+AdminDashboard-VIFzTEsm.js:6 {"level":"INFO","timestamp":"2025-12-27T20:58:18.482Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":480,"trueDuplicates":480,"needsUpgrade":0,"newFiles":0,"durationMs":2223,"avgPerFileMs":"4.63","event":"PHASE1_COMPLETE"}}
+AdminDashboard-VIFzTEsm.js:6 {"level":"INFO","timestamp":"2025-12-27T20:58:18.483Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":0,"upgrades":0,"new":0,"cachedDuplicates":0,"cachedUpgrades":0}}
+shared-utils-D4BsnC8e.js:1 Processing 0 files. Initial concurrency: 0
+AdminDashboard-VIFzTEsm.js:6 {"level":"INFO","timestamp":"2025-12-27T20:58:18.483Z","component":"AdminDashboard","message":"Bulk analysis run complete.","context":{}}
+AdminDashboard-VIFzTEsm.js:6 {"level":"INFO","timestamp":"2025-12-27T20:58:18.483Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history"}}
+services-DJOE3I3J.js:1 {"level":"INFO","timestamp":"2025-12-27T20:58:18.483Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
+services-DJOE3I3J.js:56 {"level":"debug","timestamp":"2025-12-27T20:58:18.566Z","service":"localCache","message":"Retrieved 3277 history records from cache"}
+services-DJOE3I3J.js:1 {"level":"INFO","timestamp":"2025-12-27T20:58:18.567Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":25,"returned":25,"total":3277}}
+services-DJOE3I3J.js:1 {"level":"INFO","timestamp":"2025-12-27T20:58:31.829Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2025-11-27T20:57:00.000Z","endDate":"2025-12-27T20:58:00.000Z"}}
+services-DJOE3I3J.js:1 {"level":"INFO","timestamp":"2025-12-27T20:58:31.830Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-11-27T20:57:00.000Z&endDate=2025-12-27T20:58:00.000Z","method":"GET"}}
+services-DJOE3I3J.js:1 {"level":"INFO","timestamp":"2025-12-27T20:58:32.186Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-11-27T20:57:00.000Z&endDate=2025-12-27T20:58:00.000Z","method":"GET","status":200}}
+services-DJOE3I3J.js:1 {"level":"INFO","timestamp":"2025-12-27T20:58:32.187Z","service":"clientService","message":"No weather data received for range.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+services-DJOE3I3J.js:1 {"level":"INFO","timestamp":"2025-12-27T20:58:32.187Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+services-DJOE3I3J.js:1 {"level":"INFO","timestamp":"2025-12-27T20:58:32.246Z","service":"clientService","message":"Unified timeline generated.","context":{"total":3063,"history":3063,"weather":0}}

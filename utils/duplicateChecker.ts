@@ -74,6 +74,16 @@ export function partitionCachedFiles(
         const meta = file as FileWithMeta;
         // Treat as cached duplicate only when we also have full analysis data available
         if (meta?._isDuplicate && meta?._analysisData) {
+
+            // RETROACTIVE FIX: If the cached record is missing a System ID, force an upgrade.
+            // This ensures we re-run the improved extraction logic on "Skipped" files.
+            const data = meta._analysisData as any;
+            const hasSystemId = !!(data.systemId || data.hardwareSystemId);
+            if (!hasSystemId) {
+                cachedUpgrades.push(file);
+                continue;
+            }
+
             // Prefer metadata attached to analysis data; legacy file-level fields remain only for backward compatibility
             // with pre-cache uploads that attached identifiers directly on the File object.
             const recordId = (meta._analysisData?._recordId ?? meta._recordId) || undefined;

@@ -12,7 +12,7 @@
  */
 
 // Constants for Hardware ID validation
-const MIN_ID_DIGITS = 6;
+const MIN_ID_DIGITS = 5;
 const MAX_ID_DIGITS = 14;
 
 // Pattern for the ID part itself (alphanumeric, widely permissive initially to capture various formats)
@@ -20,16 +20,15 @@ const digitPattern = "[A-Z0-9\\-]+";
 
 // Regexes to locate the ID labeled as "DL", "Driver License", etc.
 const hardwareIdRegexes = [
-    // Standard DL-prefixed variants
-    // Matches "DL", "DL No", "DL Number", "DL#" followed by ID
-    new RegExp(`\\bDL(?:[\\s:.-]+(?:No\\.?|Number)|[#\\s:-])+[\\s:-]*([A-Z]{0,4}${digitPattern})`, 'gi'),
-    new RegExp(`\\bD\\/L\\b[\\s:-]*([A-Z]{0,4}${digitPattern})`, 'gi'),
-    new RegExp(`\\bdrivers?\\s+licen[cs]e\\b[\\s:-]*([A-Z]{0,4}${digitPattern})`, 'gi'),
-    // "System ID" explicit label
-    new RegExp(`\\bSystem\\s*ID\\b[\\s:-]*([A-Z0-9\\-]+)`, 'gi'),
-    // "ID" label if followed clearly by a pattern (use caution with this one in future)
-    // Short code format (e.g. AB-123456)
-    new RegExp(`\\b[A-Z]{2,3}-(${digitPattern})\\b`, 'gi')
+    // STRICT: DL-prefixed ID (e.g. DL-1234567, DL1234567)
+    // Must be "DL" followed by optional separator and AT LEAST 5 digits/chars
+    new RegExp(`\\b(DL[-\\s]?[A-Z0-9]{5,})`, 'gi'),
+
+    // STRICT: "System ID" or "DL Number" label + ID
+    new RegExp(`\\b(?:System\\s*ID|DL\\s*(?:No\\.?|Number)|Driver\\s*License)[\\s:-]+([A-Z0-9-]{5,})`, 'gi'),
+
+    // STRICT: S/N label (common alternative)
+    new RegExp(`\\bS\\/N[\\s:-]+([A-Z0-9-]{5,})`, 'gi')
 ];
 
 /**
@@ -77,14 +76,31 @@ function extractHardwareSystemId(text, log = console.log) {
             const normalized = normalizeHardwareId(rawId);
             if (normalized) {
                 candidates.add(normalized);
-                logInfo(`Found Hardware ID candidate: ${normalized} (raw: ${rawId})`);
+                logDebug(`Found Hardware ID candidate: ${normalized} (raw: ${rawId})`);
             } else {
                 logDebug(`Discarded invalid ID candidate: ${rawId}`);
             }
         }
     }
 
-    return Array.from(candidates);
+    const uniqueCandidates = Array.from(candidates);
+
+    // Deduplication: Filter out IDs that are substrings of other IDs
+    // (e.g., if we have "DL-123456", drop "123456")
+    const filtered = uniqueCandidates.filter(shortId => {
+        const betterMatch = uniqueCandidates.find(longId =>
+            longId !== shortId &&
+            longId.endsWith(shortId) &&
+            longId.length > shortId.length
+        );
+        return !betterMatch;
+    });
+
+    if (filtered.length !== uniqueCandidates.length) {
+        logInfo(`Deduplicated IDs: ${uniqueCandidates.length} -> ${filtered.length}`);
+    }
+
+    return filtered;
 }
 
 module.exports = {

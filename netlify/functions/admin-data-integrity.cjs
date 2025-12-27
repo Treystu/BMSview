@@ -79,14 +79,14 @@ exports.handler = async function (event, context) {
         // This pipeline groups all analysis records by their DL-# and counts them
         const aggregationPipeline = [
             {
-                // Only include records that have a dlNumber
-                $match: {
-                    "analysis.dlNumber": { $exists: true, $nin: [null, ""] }
-                }
-            },
-            {
                 $group: {
-                    _id: "$analysis.dlNumber",
+                    // Use root dlNumber, fallback to analysis.dlNumber, then "UNIDENTIFIED"
+                    _id: {
+                        $ifNull: [
+                            "$dlNumber",
+                            { $ifNull: ["$analysis.dlNumber", "UNIDENTIFIED"] }
+                        ]
+                    },
                     recordCount: { $sum: 1 },
                     lastSeen: { $max: "$timestamp" },
                     firstSeen: { $min: "$timestamp" },
