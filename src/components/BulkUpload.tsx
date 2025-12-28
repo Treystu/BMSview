@@ -37,7 +37,7 @@ const renderStatus = (result: DisplayableAnalysisResult) => {
   if (result.saveError) {
     return <span title={result.saveError} className="font-semibold text-yellow-400 cursor-help">Save Error</span>;
   }
-  if (getIsActualError(result)) {
+  if (getIsActualError(result.error)) {
     return <span title={formatError(result.error || 'Failed')} className="font-semibold text-red-400 cursor-help">Failed</span>;
   }
 
@@ -115,7 +115,7 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
       skippedCount++;
     } else if (r.data && !r.error) {
       successCount++;
-    } else if (getIsActualError(r)) {
+    } else if (getIsActualError(r.error)) {
       failedCount++;
     } else {
       pendingCount++;

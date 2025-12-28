@@ -390,6 +390,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     log('warn', 'Failed to update local cache with new record', { error: err instanceof Error ? err.message : String(err) });
                 }
 
+                log('info', 'Dispatching UPDATE_BULK_JOB_COMPLETED', {
+                    fileName: file.name,
+                    recordId: tempRecord.id,
+                    hasAnalysis: !!tempRecord.analysis,
+                    analysisKeys: tempRecord.analysis ? Object.keys(tempRecord.analysis).length : 0
+                });
+
                 dispatch({
                     type: 'UPDATE_BULK_JOB_COMPLETED',
                     payload: { record: tempRecord, fileName: file.name }
