@@ -51,6 +51,7 @@ export type FileWithMeta = File & {
     _isUpgrade?: boolean;
     _recordId?: string;
     _timestamp?: string;
+    _isChecked?: boolean; // Flag to indicate this file has already passed a duplicate check
 };
 
 /**
@@ -64,15 +65,18 @@ export function partitionCachedFiles(
 ): {
     cachedDuplicates: CachedDuplicateResult[];
     cachedUpgrades: File[];
+    alreadyCheckedNewFiles: File[];
     remainingFiles: File[];
 } {
     const cachedDuplicates: CachedDuplicateResult[] = [];
     const cachedUpgrades: File[] = [];
+    const alreadyCheckedNewFiles: File[] = [];
     const remainingFiles: File[] = [];
 
     for (const file of files) {
         const meta = file as FileWithMeta;
-        // Treat as cached duplicate only when we also have full analysis data available
+
+        // CASE A: Cached/Known Duplicate
         if (meta?._isDuplicate && meta?._analysisData) {
 
             // RETROACTIVE FIX: If the cached record is missing a System ID, force an upgrade.
@@ -97,15 +101,24 @@ export function partitionCachedFiles(
             continue;
         }
 
+        // CASE B: Explicitly Marked Upgrade
         if (meta?._isUpgrade) {
             cachedUpgrades.push(file);
             continue;
         }
 
+        // CASE C: Already Checked New File (e.g. from useFileUpload)
+        // If it's tagged as checked but isn't a duplicate or upgrade, it must be new.
+        if (meta?._isChecked) {
+            alreadyCheckedNewFiles.push(file);
+            continue;
+        }
+
+        // CASE D: Completely Unknown / Unchecked
         remainingFiles.push(file);
     }
 
-    return { cachedDuplicates, cachedUpgrades, remainingFiles };
+    return { cachedDuplicates, cachedUpgrades, alreadyCheckedNewFiles, remainingFiles };
 }
 
 /**

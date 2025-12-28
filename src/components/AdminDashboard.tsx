@@ -228,7 +228,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
         try {
             // Layer 1: Client-side cache fast-path (PR #341) - instant for cached duplicates
-            const { cachedDuplicates, cachedUpgrades, remainingFiles } = partitionCachedFiles(normalizedFiles);
+            // Layer 1.5: 'New File' metadata pre-check (unification fix)
+            const { cachedDuplicates, cachedUpgrades, alreadyCheckedNewFiles, remainingFiles } = partitionCachedFiles(normalizedFiles);
 
             // Process cached duplicates immediately (no network call needed)
             for (const dup of cachedDuplicates) {
@@ -246,6 +247,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 needsUpgrade: true
             }));
 
+            // Prepare already-checked new files
+            const alreadyCheckedResults: DuplicateCheckResult[] = alreadyCheckedNewFiles.map(file => ({
+                file,
+                isDuplicate: false,
+                needsUpgrade: false
+            }));
+
             // PHASE 1: Check remaining files for duplicates upfront - categorize into three groups
             let trueDuplicates: DuplicateCheckResult[] = [];
             let needsUpgrade: DuplicateCheckResult[] = [];
@@ -260,6 +268,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
             // Combine cached upgrades with network-checked upgrades
             needsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
+
+            // Combine pre-checked new files with verified new files
+            newFiles = [...alreadyCheckedResults, ...newFiles];
 
             // Mark true duplicates as skipped immediately (don't analyze these at all)
             // Mark true duplicates as skipped immediately (don't analyze these at all)
@@ -279,18 +290,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         };
                         restoredRecords.push(fullRecord);
                     } else if (state.historyCache.some(h => h.id === dup.recordId)) {
-                        // RECORD ALREADY EXISTS IN APP STATE - NO ACTION NEEDED
-                        skippedFiles.push({ fileName: dup.file.name, reason: 'Skipped (Already in history)' });
+                        // RECORD EXISTS IN LOCAL CACHE - RESTORE IT!
+                        // Previously we skipped these, but users prefer to see the "Success" state with data.
+                        const cachedRecord = state.historyCache.find(h => h.id === dup.recordId);
+                        if (cachedRecord) {
+                            restoredRecords.push(cachedRecord);
+                            log('info', 'Duplicate found in local cache - restoring.', { fileName: dup.file.name, id: dup.recordId });
+                        } else {
+                            // Should not happen given .some check, but safe fallback
+                            skippedFiles.push({ fileName: dup.file.name, reason: 'Duplicate (Cache lookup failed)' });
+                        }
                     } else {
+                        // Not in cache, no data provided. Must skip.
+                        // Future improvement: Fetch individual record by ID here?
                         skippedFiles.push({ fileName: dup.file.name, reason: 'Duplicate content detected (same image)' });
                     }
                 }
 
                 if (restoredRecords.length > 0) {
                     try {
-                        // Restore to cache instantly
+                        // Restore to cache instantly (likely already there, but ensures freshness/synced status)
                         await historyCacheService.bulkPut(restoredRecords, 'synced');
-                        log('info', `Restored ${restoredRecords.length} duplicates to cache.`);
+                        log('info', `Restored ${restoredRecords.length} duplicates from network check (via cache/data).`);
 
                         // Update UI and backfill tracking
                         restoredRecords.forEach(rec => {
@@ -301,7 +322,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             newRecords.push(rec); // Include in backfill
                         });
                     } catch (e) {
-                        log('warn', 'Failed to restore duplicates to cache', { error: e });
+                        log('warn', 'Failed to restore duplicates', { error: e });
                         // If fail, just mark as skipped
                         restoredRecords.forEach(rec => skippedFiles.push({ fileName: rec.fileName || 'unknown', reason: 'Duplicate (restore failed)' }));
                     }

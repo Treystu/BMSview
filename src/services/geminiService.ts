@@ -29,27 +29,8 @@ const log = (level: 'info' | 'warn' | 'error' | 'debug', message: string, contex
     }));
 };
 
-let analysisWorker: Worker | null = null;
-const getAnalysisWorker = (): Worker | null => {
-    if (typeof Worker === 'undefined') return null;
-    if (analysisWorker) return analysisWorker;
-
-    log('info', 'Initializing singleton analysis worker');
-    analysisWorker = new Worker(
-        new URL('../workers/analysis.worker.ts', import.meta.url),
-        { type: 'module' }
-    );
-
-    analysisWorker.onerror = (e) => {
-        log('error', 'Singleton worker error', { error: e.message });
-        // Optionally terminate and null out so it recreates on next call
-        analysisWorker?.terminate();
-        analysisWorker = null;
-    };
-
-    return analysisWorker;
-};
-
+// Worker removed to improve stability
+// const getAnalysisWorker = ... 
 /**
  * ***NEW SYNCHRONOUS FUNCTION***
  * Analyzes a single BMS screenshot and returns the data directly.
@@ -228,71 +209,10 @@ export const checkFileDuplicate = async (file: File): Promise<{
  */
 async function performAnalysisRequest(file: File, relativeEndpoint: string, context: object, timeoutMs: number = 60000): Promise<any> {
 
-    // 1. Try Worker Flow
-    if (typeof Worker !== 'undefined') {
-        try {
-            const worker = getAnalysisWorker();
-            if (!worker) throw new Error('Failed to initialize analysis worker');
-            const activeWorker = worker;
 
-            // Compute absolute endpoint
-            const endpoint = new URL(relativeEndpoint, window.location.origin).toString();
+    // 1. Direct Fetch (Main Thread) - Worker path removed for stability
 
-            const messageId = Math.random().toString(36).substring(2) + Date.now().toString(36);
 
-            const workerPromise = new Promise<any>((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    activeWorker.removeEventListener('message', handleMessage);
-                    reject(new Error(`Worker timed out after ${timeoutMs}ms`));
-                }, timeoutMs);
-
-                function handleMessage(msg: MessageEvent) {
-                    const data = msg.data || {};
-                    // Match by messageId to allow concurrency
-                    if (data.messageId !== messageId) return;
-
-                    clearTimeout(timeout);
-                    activeWorker.removeEventListener('message', handleMessage);
-
-                    if (data.error) {
-                        reject(new Error(data.error));
-                        return;
-                    }
-                    if (!data.ok) {
-                        reject(new Error(`Worker request failed with status ${data.status}`));
-                        return;
-                    }
-
-                    resolve(data.json);
-                }
-
-                activeWorker.addEventListener('message', handleMessage);
-
-                try {
-                    activeWorker.postMessage({
-                        file,
-                        endpoint,
-                        fileName: file.name,
-                        mimeType: file.type,
-                        messageId
-                    });
-                } catch (postErr) {
-                    clearTimeout(timeout);
-                    activeWorker.removeEventListener('message', handleMessage);
-                    reject(postErr);
-                }
-            });
-
-            const result = await workerPromise;
-            return result;
-
-        } catch (workerErr) {
-            log('warn', 'Worker request failed; falling back to direct fetch.', { error: workerErr instanceof Error ? workerErr.message : String(workerErr) });
-            // Fall through to direct fetch
-        }
-    }
-
-    // 2. Fallback: Direct Fetch (Main Thread)
     const imagePayload = await fileWithMetadataToBase64(file);
 
     const controller = new AbortController();

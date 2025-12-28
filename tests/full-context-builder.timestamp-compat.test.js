@@ -4,34 +4,43 @@ const { buildCompleteContext } = require('../netlify/functions/utils/full-contex
 jest.mock('../netlify/functions/utils/mongodb.cjs', () => {
     return {
         getCollection: jest.fn(async () => {
-            // Minimal in-memory collection mock
+            // Dynamic dates relative to now to ensure they fall within the 30-day window
+            const now = new Date();
+            const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+
             const docs = [
                 // top-level systemId + ISO timestamp
                 {
+                    _id: '1',
                     systemId: 'sys1',
-                    timestamp: '2025-12-10T00:00:00.000Z',
+                    timestamp: oneDayAgo.toISOString(),
                     analysis: { overallVoltage: 52.1 }
                 },
                 // top-level systemId + Date timestamp
                 {
+                    _id: '2',
                     systemId: 'sys1',
-                    timestamp: new Date('2025-12-11T00:00:00.000Z'),
+                    timestamp: twoDaysAgo,
                     analysis: { overallVoltage: 52.2 }
                 },
                 // nested analysis.systemId + ISO timestamp
                 {
+                    _id: '3',
                     analysis: { systemId: 'sys1', overallVoltage: 52.3 },
-                    timestamp: '2025-12-12T00:00:00.000Z'
+                    timestamp: oneDayAgo.toISOString()
                 },
                 // nested analysis.systemId + Date timestamp
                 {
+                    _id: '4',
                     analysis: { systemId: 'sys1', overallVoltage: 52.4 },
-                    timestamp: new Date('2025-12-13T00:00:00.000Z')
+                    timestamp: twoDaysAgo
                 },
                 // other system, should not match
                 {
+                    _id: '5',
                     systemId: 'sys2',
-                    timestamp: '2025-12-12T00:00:00.000Z',
+                    timestamp: oneDayAgo.toISOString(),
                     analysis: { overallVoltage: 48.0 }
                 }
             ];
@@ -42,39 +51,40 @@ jest.mock('../netlify/functions/utils/mongodb.cjs', () => {
              * @param {string|Date} end
              */
             function inRange(ts, start, end) {
-                if (ts instanceof Date) {
-                    if (!(start instanceof Date) || !(end instanceof Date)) return false;
-                    return ts >= start && ts <= end;
-                }
-                if (typeof ts === 'string') {
-                    if (typeof start !== 'string' || typeof end !== 'string') return false;
-                    return ts >= start && ts <= end;
-                }
-                return false;
+                const t = new Date(ts).getTime();
+                const s = new Date(start).getTime();
+                const e = new Date(end).getTime();
+                return t >= s && t <= e;
             }
 
             return {
                 find: jest.fn((query) => {
                     const orFilters = query?.$or || [];
-                    const matched = docs.filter((d) => {
-                        return orFilters.some((/** @type {any} */ f) => {
-                            const sysOk =
-                                (f.systemId && d.systemId === f.systemId) ||
-                                (f['analysis.systemId'] && d.analysis && d.analysis.systemId === f['analysis.systemId']);
-                            if (!sysOk) return false;
+                    const timestampFilter = query.timestamp;
 
-                            const tsFilter = f.timestamp;
-                            if (!tsFilter || !tsFilter.$gte || !tsFilter.$lte) return false;
-                            return inRange(d.timestamp, tsFilter.$gte, tsFilter.$lte);
+                    const matched = docs.filter((d) => {
+                        // Check if document matches the $or condition
+                        const matchesOr = orFilters.length === 0 || orFilters.some((/** @type {any} */ f) => {
+                            return (f.systemId && d.systemId === f.systemId) ||
+                                (f['analysis.systemId'] && d.analysis && d.analysis.systemId === f['analysis.systemId']);
                         });
+
+                        if (!matchesOr) return false;
+
+                        // Check if document matches the timestamp condition
+                        if (timestampFilter && timestampFilter.$gte && timestampFilter.$lte) {
+                            return inRange(d.timestamp, timestampFilter.$gte, timestampFilter.$lte);
+                        }
+
+                        return true;
                     });
 
-                    return {
-                        sort: jest.fn(() => ({
-                            toArray: jest.fn(async () => matched)
-                        })),
+                    const chain = {
+                        sort: jest.fn(() => chain),
+                        limit: jest.fn(() => chain),
                         toArray: jest.fn(async () => matched)
                     };
+                    return chain;
                 }),
                 aggregate: jest.fn(() => {
                     // Force agg to return nulls so builder uses the manual-scan fallback
@@ -88,9 +98,15 @@ jest.mock('../netlify/functions/utils/mongodb.cjs', () => {
 });
 
 jest.mock('../netlify/functions/utils/logger.cjs', () => {
-    const noop = () => { };
     return {
-        createLogger: () => ({ info: noop, warn: noop, error: noop, debug: noop })
+        createLogger: () => ({
+            info: console.log,
+            warn: console.warn,
+            error: console.error,
+            debug: console.log,
+            entry: console.log,
+            exit: console.log
+        })
     };
 });
 
