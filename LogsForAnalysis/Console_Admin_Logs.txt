@@ -1,70 +1,66 @@
- {"level":"INFO","timestamp":"2025-12-27T23:55:21.680Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
- {"level":"INFO","timestamp":"2025-12-27T23:55:21.680Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
- [SW] Service worker already registered in this session.
- {"level":"INFO","timestamp":"2025-12-27T23:55:21.694Z","service":"app-ui","message":"Fetching application data.","context":{"isManual":true}}
- {"level":"INFO","timestamp":"2025-12-27T23:55:21.694Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":1000,"strategy":"cache-first"}}
- {"level":"INFO","timestamp":"2025-12-27T23:55:21.694Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
- {"level":"INFO","timestamp":"2025-12-27T23:55:21.694Z","service":"SyncManager","message":"Starting periodic sync","context":{"intervalMs":90000}}
- {"level":"INFO","timestamp":"2025-12-27T23:55:21.694Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
- {"level":"DEBUG","timestamp":"2025-12-27T23:55:21.694Z","service":"SyncManager","message":"Periodic sync scheduled","context":{"intervalMs":90000}}
- {"level":"debug","timestamp":"2025-12-27T23:55:21.703Z","service":"localCache","message":"Retrieved 3 systems from cache"}
- {"level":"INFO","timestamp":"2025-12-27T23:55:21.703Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":1000,"returned":3,"total":3}}
- {"level":"debug","timestamp":"2025-12-27T23:55:21.704Z","service":"localCache","message":"Found 0 pending systems"}
- {"level":"debug","timestamp":"2025-12-27T23:55:21.704Z","service":"localCache","message":"Found 0 pending history records"}
- {"level":"info","timestamp":"2025-12-27T23:55:21.704Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
- {"level":"debug","timestamp":"2025-12-27T23:55:21.778Z","service":"localCache","message":"Retrieved 3279 history records from cache"}
- {"level":"INFO","timestamp":"2025-12-27T23:55:21.778Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":25,"returned":25,"total":3279}}
- {"level":"INFO","timestamp":"2025-12-27T23:55:22.606Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":1,"deleted":0}}
- {"level":"INFO","timestamp":"2025-12-27T23:55:22.606Z","service":"app-ui","message":"Data changed via sync, refreshing app data","context":{"collection":"systems"}}
- {"level":"INFO","timestamp":"2025-12-27T23:55:22.606Z","service":"app-ui","message":"Fetching application data.","context":{"isManual":false}}
- {"level":"INFO","timestamp":"2025-12-27T23:55:22.606Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":1000,"strategy":"cache-first"}}
- {"level":"INFO","timestamp":"2025-12-27T23:55:22.606Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
-services-D5R6rZdB.js:56 {"level":"debug","timestamp":"2025-12-27T23:55:22.607Z","service":"localCache","message":"Retrieved 3 systems from cache"}
-services-D5R6rZdB.js:1 {"level":"INFO","timestamp":"2025-12-27T23:55:22.607Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":1000,"returned":3,"total":3}}
-services-D5R6rZdB.js:56 {"level":"debug","timestamp":"2025-12-27T23:55:22.741Z","service":"localCache","message":"Retrieved 3279 history records from cache"}
-services-D5R6rZdB.js:1 {"level":"INFO","timestamp":"2025-12-27T23:55:22.742Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":25,"returned":25,"total":3279}}
-services-D5R6rZdB.js:54 {"level":"INFO","timestamp":"2025-12-27T23:55:23.840Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":1000,"deleted":0}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:23.840Z","service":"app-ui","message":"Data changed via sync, refreshing app data","context":{"collection":"history"}}
-main-D-e2x_xv.js:36 {"level":"DEBUG","timestamp":"2025-12-27T23:55:23.840Z","service":"app-ui","message":"Throttling background data refresh.","context":{"lastRefresh":1766879722606}}
-services-D5R6rZdB.js:54 {"level":"INFO","timestamp":"2025-12-27T23:55:23.841Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":2147}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:31.374Z","component":"UploadSection","message":"User dropped files onto dropzone.","context":{"count":1}}
-useFileUpload-oitS396Y.js:2 {"level":"INFO","timestamp":"2025-12-27T23:55:31.374Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
-useFileUpload-oitS396Y.js:2 {"level":"INFO","timestamp":"2025-12-27T23:55:31.394Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":1,"oversizedCount":0,"zipCount":0}}
-useFileUpload-oitS396Y.js:2 {"level":"INFO","timestamp":"2025-12-27T23:55:31.395Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":1,"fileNames":["Screenshot_20251227-131128.png"],"event":"CHECK_START"}}
-useFileUpload-oitS396Y.js:2 {"level":"INFO","timestamp":"2025-12-27T23:55:31.395Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
-shared-utils-CFCiNhXD.js:1 Calculating file hashes for batch Object
-shared-utils-CFCiNhXD.js:1 Client hash generated Object
-shared-utils-CFCiNhXD.js:1 File hash batch complete Object
-useFileUpload-oitS396Y.js:2 {"level":"INFO","timestamp":"2025-12-27T23:55:31.404Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":9,"event":"HASHING_COMPLETE"}}
-useFileUpload-oitS396Y.js:2 {"level":"INFO","timestamp":"2025-12-27T23:55:31.404Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-useFileUpload-oitS396Y.js:2 {"level":"INFO","timestamp":"2025-12-27T23:55:33.409Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":2014,"avgPerFileMs":"2014.00","event":"PHASE1_COMPLETE"}}
-useFileUpload-oitS396Y.js:2 {"level":"INFO","timestamp":"2025-12-27T23:55:33.409Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":1,"duplicates":0,"upgrades":0,"newFiles":1,"event":"CHECK_COMPLETE"}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:35.333Z","component":"UploadSection","message":"Analyze button clicked.","context":{"fileCount":1}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:35.333Z","service":"app-ui","message":"Analysis process initiated.","context":{"fileCount":1}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:35.333Z","service":"app-ui","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
-shared-utils-CFCiNhXD.js:1 Calculating file hashes for batch Object
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:35.345Z","component":"AnalysisResult","message":"AnalysisResult component rendered/updated.","context":{"fileName":"Screenshot_20251227-131128.png","error":"Checking for duplicates...","hasData":false}}
-shared-utils-CFCiNhXD.js:1 Client hash generated Object
-shared-utils-CFCiNhXD.js:1 File hash batch complete Object
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:35.352Z","service":"app-ui","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":19,"event":"HASHING_COMPLETE"}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:35.352Z","service":"app-ui","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:35.727Z","service":"app-ui","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":394,"avgPerFileMs":"394.00","event":"PHASE1_COMPLETE"}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:35.728Z","service":"app-ui","message":"Phase 1 complete: Duplicate check finished.","context":{"count":1,"upgrades":0,"new":1,"duplicates":0,"cachedDuplicates":0,"cachedUpgrades":0}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:35.728Z","service":"app-ui","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":1}}
-shared-utils-CFCiNhXD.js:1 Processing 1 files. Initial concurrency: 1
-services-D5R6rZdB.js:54 {"level":"INFO","timestamp":"2025-12-27T23:55:35.728Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251227-131128.png","fileSize":266997,"forceReanalysis":false}}
-services-D5R6rZdB.js:54 {"level":"INFO","timestamp":"2025-12-27T23:55:35.728Z","service":"geminiService","message":"Initializing singleton analysis worker","context":{}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:35.729Z","component":"AnalysisResult","message":"AnalysisResult component rendered/updated.","context":{"fileName":"Screenshot_20251227-131128.png","error":"Processing","hasData":false}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:54.492Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:17:54.492Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
+admin-BYJO_7XI.js:2 {"level":"WARN","timestamp":"2025-12-28T01:17:54.750Z","component":"AdminApp","message":"Netlify Identity widget not available, retrying...","context":{}}
+admin-BYJO_7XI.js:2 {"level":"INFO","timestamp":"2025-12-28T01:17:55.756Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
+admin-BYJO_7XI.js:2 {"level":"INFO","timestamp":"2025-12-28T01:17:55.769Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:56.331Z","component":"AdminDashboard","message":"Performing initial data load (page 1).","context":{}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.331Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.331Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:56.338Z","service":"localCache","message":"Retrieved 3 systems from cache"}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.338Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":25,"returned":3,"total":3}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:56.561Z","service":"localCache","message":"Retrieved 3281 history records from cache"}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.561Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":25,"returned":25,"total":3281}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:56.561Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":3,"historyCount":25}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:56.570Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.570Z","service":"clientService","message":"Fetching data integrity audit from admin endpoint.","context":{}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.570Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"admin-data-integrity","method":"GET"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"Fetching IP management data.","context":{}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"ip-admin","method":"GET"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"Fetching current user IP.","context":{}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"get-ip","method":"GET"}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"default-system"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:57.592Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"get-ip","method":"GET","status":200}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:58.752Z","service":"clientService","message":"Starting smart history sync.","context":{}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:58.941Z","service":"localCache","message":"Retrieved 3281 history records from cache"}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:58.941Z","service":"clientService","message":"Loaded 3281 records from local cache.","context":{"count":3281}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:58.943Z","service":"clientService","message":"Performing incremental sync.","context":{"updatedSince":"2025-12-28T00:16:53.156Z"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:58.943Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?all=true&updatedSince=2025-12-28T00%3A16%3A53.156Z","method":"GET"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:59.160Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"admin-data-integrity","method":"GET","status":200}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:59.161Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":7,"matched":3,"orphaned":4,"total_records":4885,"orphaned_records":7}}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:59.161Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET","status":200}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:59.167Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"ip-admin","method":"GET","status":200}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:59.772Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.17445129999999934,"days":7}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:18:01.331Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?all=true&updatedSince=2025-12-28T00%3A16%3A53.156Z","method":"GET","status":200}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:18:01.331Z","service":"clientService","message":"No new records from server.","context":{}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:18:01.331Z","service":"clientService","message":"Finished smart history sync.","context":{}}
 Service Worker was updated because "Update on reload" was checked in the DevTools Application panel.
-services-D5R6rZdB.js:54 {"level":"INFO","timestamp":"2025-12-27T23:55:53.733Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251227-131128.png","isDuplicate":false}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:53.733Z","service":"app-ui","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251227-131128.png"}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:53.734Z","service":"app-ui","message":"Starting batch weather backfill for system.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:55:53.765Z","component":"AnalysisResult","message":"AnalysisResult component rendered/updated.","context":{"fileName":"Screenshot_20251227-131128.png","error":null,"hasData":true,"isDuplicate":false,"recordId":"937ef7af-cc3b-4e88-a6a1-881269586782"}}
-main-D-e2x_xv.js:36 {"level":"INFO","timestamp":"2025-12-27T23:56:00.485Z","service":"app-ui","message":"Weather backfill complete.","context":{"success":true,"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","datesBackfilled":10,"apiCalls":10,"hoursStored":10,"errors":0}}
-services-D5R6rZdB.js:54 {"level":"INFO","timestamp":"2025-12-27T23:56:51.808Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
-services-D5R6rZdB.js:56 {"level":"debug","timestamp":"2025-12-27T23:56:51.818Z","service":"localCache","message":"Found 0 pending systems"}
-services-D5R6rZdB.js:56 {"level":"debug","timestamp":"2025-12-27T23:56:51.818Z","service":"localCache","message":"Found 0 pending history records"}
-services-D5R6rZdB.js:56 {"level":"info","timestamp":"2025-12-27T23:56:51.819Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
-services-D5R6rZdB.js:54 {"level":"INFO","timestamp":"2025-12-27T23:56:52.982Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":0,"deleted":0}}
-services-D5R6rZdB.js:54 {"level":"INFO","timestamp":"2025-12-27T23:56:53.532Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":0,"deleted":0}}
-services-D5R6rZdB.js:54 {"level":"INFO","timestamp":"2025-12-27T23:56:53.532Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":1724}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.620Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.626Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":1,"oversizedCount":0,"zipCount":0}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.626Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":1,"fileNames":["Screenshot_20251227-131128.png"],"event":"CHECK_START"}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.626Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
+shared-utils-BCu2M1qU.js:1 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
+shared-utils-BCu2M1qU.js:1 Client hash generated {hashPreview: '3debcb313fdd471b...', imageLength: 355996}
+shared-utils-BCu2M1qU.js:1 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 11, avgPerFileMs: '11.00', …}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.637Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":11,"event":"HASHING_COMPLETE"}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.637Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:38.590Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":1,"needsUpgrade":0,"newFiles":0,"durationMs":964,"avgPerFileMs":"964.00","event":"PHASE1_COMPLETE"}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:38.591Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":1,"duplicates":1,"upgrades":0,"newFiles":0,"event":"CHECK_COMPLETE"}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:38.593Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":1,"filteredOut":1,"event":"PREVIEW_FILTER"}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:42.928Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":1,"isStoryMode":false}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:42.929Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
+shared-utils-BCu2M1qU.js:1 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
+shared-utils-BCu2M1qU.js:1 Client hash generated {hashPreview: '3debcb313fdd471b...', imageLength: 355996}
+shared-utils-BCu2M1qU.js:1 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 30, avgPerFileMs: '30.00', …}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:42.959Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":30,"event":"HASHING_COMPLETE"}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:42.959Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:43.508Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":1,"needsUpgrade":0,"newFiles":0,"durationMs":579,"avgPerFileMs":"579.00","event":"PHASE1_COMPLETE"}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:43.508Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":0,"upgrades":0,"new":0,"cachedDuplicates":0,"cachedUpgrades":0}}
+shared-utils-BCu2M1qU.js:1 Processing 0 files. Initial concurrency: 0
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:43.509Z","component":"AdminDashboard","message":"Bulk analysis run complete.","context":{}}
+AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:43.509Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:21:43.509Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:21:43.511Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?page=1&limit=25","method":"GET"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:21:46.205Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?page=1&limit=25","method":"GET","status":200}}
+services-CGqrxgzV.js:56 {"level":"info","timestamp":"2025-12-28T01:21:46.223Z","service":"localCache","message":"Bulk cached 25 history records","context":{"syncStatus":"synced"}}

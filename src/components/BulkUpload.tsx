@@ -84,6 +84,23 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
     }
   };
 
+  // Auto-trigger analysis if all files are cached duplicates
+  // This fulfills the requirement for "automatic background restoration"
+  React.useEffect(() => {
+    if (files.length > 0 && !isLoading && !isProcessing && results.length === 0) {
+      const duplicateCount = files.reduce((acc, f) => acc + ((f as FileWithMeta)._isDuplicate ? 1 : 0), 0);
+      const activeCount = files.length - duplicateCount;
+
+      if (activeCount === 0 && duplicateCount > 0) {
+        // Auto-run if we only have duplicates (restoration job)
+        const timer = setTimeout(() => {
+          onAnalyze(files);
+        }, 300);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [files, isLoading, isProcessing, results.length, onAnalyze]);
+
   const totalFiles = results.length;
   let successCount = 0;
   let skippedCount = 0;

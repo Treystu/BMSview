@@ -396,6 +396,7 @@ exports.handler = async function (event, context) {
                     systemsLoaded: systems.length,
                     mapEntries: 0,
                     unlinkedFound: 0,
+                    unmatchableCount: 0,
                     sampleFailures: []
                 };
 
@@ -421,13 +422,39 @@ exports.handler = async function (event, context) {
                     });
                 });
 
+                // Get stats on unmatchable records first
+                const stats = await historyCollection.aggregate([
+                    { $match: { systemId: null } },
+                    {
+                        $group: {
+                            _id: null,
+                            totalUnlinked: { $sum: 1 },
+                            unmatchable: {
+                                $sum: {
+                                    $cond: [
+                                        {
+                                            $and: [
+                                                { $in: [{ $type: "$dlNumber" }, ["missing", "null"]] },
+                                                { $in: [{ $type: "$hardwareSystemId" }, ["missing", "null"]] }
+                                            ]
+                                        }, 1, 0
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                ]).toArray();
+
+                debugInfo.unmatchableCount = stats[0]?.unmatchable || 0;
+                const totalUnlinked = stats[0]?.totalUnlinked || 0;
+
                 const unlinkedCursor = historyCollection.find({
                     systemId: null,
                     $or: [
                         { dlNumber: { $exists: true, $nin: [null, ''] } },
                         { hardwareSystemId: { $exists: true, $nin: [null, ''] } }
                     ]
-                }); // Removed limit(5000) to ensure ENTIRE dataset is processed
+                }); // Removed limit to ensure processing all POTENTIALLY matchable records
 
                 let associatedCount = 0;
                 let processedCount = 0;
@@ -511,26 +538,23 @@ exports.handler = async function (event, context) {
 
                 let message = timeoutReached
                     ? `Time limit reached. Processed ${processedCount}, Associated ${associatedCount}`
-                    : `Completed. Processed ${processedCount}, Associated ${associatedCount} records`;
+                    : `Completed. Processed ${processedCount} matchable records, Associated ${associatedCount}.`;
 
                 if (systemsUpdatedCount > 0) {
-                    message += ` (and updated ${systemsUpdatedCount} systems with new IDs)`;
+                    message += ` (Updated ${systemsUpdatedCount} systems)`;
+                }
+
+                // Add transparency about unmatchable records
+                if (debugInfo.unmatchableCount > 0) {
+                    message += ` Note: ${debugInfo.unmatchableCount} other records are unlinked but missing Hardware IDs.`;
                 }
 
                 if (timeoutReached) {
-                    message += ". Run again to continue.";
-                } else {
-                    message += ".";
+                    message += " Run again to continue.";
                 }
 
                 if (ambiguousCount > 0) {
-                    message += ` (${ambiguousCount} skipped due to ambiguous ID linking)`;
-                }
-
-                // Add explicit failure count to message if there are unlinked records left
-                const failedCount = processedCount - associatedCount;
-                if (failedCount > 0) {
-                    message += ` (${failedCount} could not be matched)`;
+                    message += ` (${ambiguousCount} skipped - ambiguous)`;
                 }
 
                 log.exit(200);

@@ -37,6 +37,7 @@ import UploadOptimizer from '../utils/uploadOptimizer';
 import { AIFeedbackDashboard } from './AIFeedbackDashboard';
 import CostDashboard from './CostDashboard';
 import { DiagnosticsGuru } from './DiagnosticsGuru';
+import { SolarIntegrationDashboard } from './SolarIntegrationDashboard';
 import AdminHeader from './admin/AdminHeader';
 import AdminStoryManager from './admin/AdminStoryManager';
 import DataManagement from './admin/DataManagement';
@@ -277,6 +278,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             fileName: dup.file.name
                         };
                         restoredRecords.push(fullRecord);
+                    } else if (state.historyCache.some(h => h.id === dup.recordId)) {
+                        // RECORD ALREADY EXISTS IN APP STATE - NO ACTION NEEDED
+                        skippedFiles.push({ fileName: dup.file.name, reason: 'Skipped (Already in history)' });
                     } else {
                         skippedFiles.push({ fileName: dup.file.name, reason: 'Duplicate content detected (same image)' });
                     }
@@ -1018,6 +1022,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                 itemsPerPage: ITEMS_PER_PAGE,
                             }}
                         />
+                        <section id="solar-integration-section">
+                            <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">
+                                Solar Energy Integration
+                            </h2>
+                            <SolarIntegrationDashboard
+                                bmsRecords={state.historyCache} // Pass full history for best analysis
+                                systemConfig={(() => {
+                                    const s = systems.find(sys => sys.id === primarySystemId) ||
+                                        (systems.length > 0 ? systems[0] : undefined);
+                                    if (!s) return undefined;
+                                    return {
+                                        systemId: s.id,
+                                        nominalVoltage: s.voltage || 12,
+                                        fullCapacityAh: s.capacity || 100,
+                                        location: (s.latitude && s.longitude) ? { latitude: s.latitude, longitude: s.longitude } : undefined
+                                    };
+                                })()}
+                            />
+                        </section>
+
                         <section id="data-reconciliation-section">
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">
                                 Data Reconciliation & System Management
