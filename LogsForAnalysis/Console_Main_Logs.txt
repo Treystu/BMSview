@@ -1,0 +1,192 @@
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:54.495Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:17:54.495Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
+main-8IMI_BuP.js:36 [SW] Service worker already registered in this session.
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:17:54.510Z","service":"app-ui","message":"Fetching application data.","context":{"isManual":true}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:54.510Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":1000,"strategy":"cache-first"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:54.510Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:17:54.510Z","service":"SyncManager","message":"Starting periodic sync","context":{"intervalMs":90000}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:17:54.511Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
+services-CGqrxgzV.js:54 {"level":"DEBUG","timestamp":"2025-12-28T01:17:54.511Z","service":"SyncManager","message":"Periodic sync scheduled","context":{"intervalMs":90000}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:54.527Z","service":"localCache","message":"Retrieved 3 systems from cache"}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:54.527Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":1000,"returned":3,"total":3}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:54.528Z","service":"localCache","message":"Found 0 pending systems"}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:54.528Z","service":"localCache","message":"Found 0 pending history records"}
+services-CGqrxgzV.js:56 {"level":"info","timestamp":"2025-12-28T01:17:54.528Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:54.596Z","service":"localCache","message":"Retrieved 3281 history records from cache"}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:54.596Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":25,"returned":25,"total":3281}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:17:55.071Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":1,"deleted":0}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:17:55.071Z","service":"app-ui","message":"Data changed via sync, refreshing app data","context":{"collection":"systems"}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:17:55.071Z","service":"app-ui","message":"Fetching application data.","context":{"isManual":false}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:55.071Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":1000,"strategy":"cache-first"}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:55.071Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:55.072Z","service":"localCache","message":"Retrieved 3 systems from cache"}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:55.072Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":1000,"returned":3,"total":3}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:55.139Z","service":"localCache","message":"Retrieved 3281 history records from cache"}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:55.139Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":25,"returned":25,"total":3281}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:17:56.111Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":1000,"deleted":0}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:17:56.112Z","service":"app-ui","message":"Data changed via sync, refreshing app data","context":{"collection":"history"}}
+main-8IMI_BuP.js:36 {"level":"DEBUG","timestamp":"2025-12-28T01:17:56.112Z","service":"app-ui","message":"Throttling background data refresh.","context":{"lastRefresh":1766884675071}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:17:56.112Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":1601}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:19:24.754Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:19:24.759Z","service":"localCache","message":"Found 0 pending systems"}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:19:24.759Z","service":"localCache","message":"Found 0 pending history records"}
+services-CGqrxgzV.js:56 {"level":"info","timestamp":"2025-12-28T01:19:24.759Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:19:26.412Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:19:26.901Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:19:26.901Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":2147}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:27.606Z","component":"UploadSection","message":"User dropped files onto dropzone.","context":{"count":1}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:20:27.607Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:20:27.623Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":1,"oversizedCount":0,"zipCount":0}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:20:27.624Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":1,"fileNames":["Screenshot_20251227-131118.png"],"event":"CHECK_START"}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:20:27.624Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
+shared-utils-BCu2M1qU.js:1 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
+shared-utils-BCu2M1qU.js:1 Client hash generated {hashPreview: '036f5fd057276640...', imageLength: 358948}
+shared-utils-BCu2M1qU.js:1 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 6, avgPerFileMs: '6.00', …}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:20:27.631Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":7,"event":"HASHING_COMPLETE"}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:20:27.631Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:20:30.412Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":2788,"avgPerFileMs":"2788.00","event":"PHASE1_COMPLETE"}}
+useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:20:30.413Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":1,"duplicates":0,"upgrades":0,"newFiles":1,"event":"CHECK_COMPLETE"}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:32.529Z","component":"UploadSection","message":"Analyze button clicked.","context":{"fileCount":1}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:32.529Z","service":"app-ui","message":"Analysis process initiated.","context":{"fileCount":1}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:32.530Z","service":"app-ui","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
+shared-utils-BCu2M1qU.js:1 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:32.551Z","component":"AnalysisResult","message":"AnalysisResult component rendered/updated.","context":{"fileName":"Screenshot_20251227-131118.png","error":"Checking for duplicates...","hasData":false}}
+shared-utils-BCu2M1qU.js:1 Client hash generated {hashPreview: '036f5fd057276640...', imageLength: 358948}
+shared-utils-BCu2M1qU.js:1 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 26, avgPerFileMs: '26.00', …}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:32.556Z","service":"app-ui","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":26,"event":"HASHING_COMPLETE"}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:32.556Z","service":"app-ui","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:33.193Z","service":"app-ui","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":663,"avgPerFileMs":"663.00","event":"PHASE1_COMPLETE"}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:33.194Z","service":"app-ui","message":"Phase 1 complete: Duplicate check finished.","context":{"count":1,"upgrades":0,"new":1,"duplicates":0,"cachedDuplicates":0,"cachedUpgrades":0}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:33.194Z","service":"app-ui","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":1}}
+shared-utils-BCu2M1qU.js:1 Processing 1 files. Initial concurrency: 1
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:20:33.195Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251227-131118.png","fileSize":269210,"forceReanalysis":false}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:20:33.196Z","service":"geminiService","message":"Initializing singleton analysis worker","context":{}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:33.197Z","component":"AnalysisResult","message":"AnalysisResult component rendered/updated.","context":{"fileName":"Screenshot_20251227-131118.png","error":"Processing","hasData":false}}
+Service Worker was updated because "Update on reload" was checked in the DevTools Application panel.
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:20:51.444Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251227-131118.png","isDuplicate":false}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:51.444Z","service":"app-ui","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251227-131118.png"}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:51.445Z","service":"app-ui","message":"Starting batch weather backfill for system.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:51.463Z","component":"AnalysisResult","message":"AnalysisResult component rendered/updated.","context":{"fileName":"Screenshot_20251227-131118.png","error":null,"hasData":true,"isDuplicate":false,"recordId":"4673e1bb-85bf-43a0-84ff-5323d3acc714"}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:20:54.511Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:20:54.517Z","service":"localCache","message":"Found 0 pending systems"}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:20:54.518Z","service":"localCache","message":"Found 0 pending history records"}
+services-CGqrxgzV.js:56 {"level":"info","timestamp":"2025-12-28T01:20:54.519Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:20:55.493Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:20:56.044Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:20:56.044Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":1533}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:20:57.815Z","service":"app-ui","message":"Weather backfill complete.","context":{"success":true,"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","datesBackfilled":8,"apiCalls":8,"hoursStored":8,"errors":0}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:21:25.932Z","service":"localCache","message":"Retrieved 3281 history records from cache"}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:21:25.933Z","service":"clientService","message":"Retrieved recent history for system from local cache.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","days":30,"count":747}}
+main-8IMI_BuP.js:36 {"level":"INFO","timestamp":"2025-12-28T01:21:25.933Z","component":"AnalysisResult","message":"Attached recent history from client cache to insights payload","context":{"count":747}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:21:25.934Z","service":"clientService","message":"Streaming insights from server.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","hasCustomPrompt":false,"useEnhancedMode":true,"contextWindowDays":30,"maxIterations":10,"insightMode":"full-context","dataStructure":["hardwareSystemId","dlNumber","stateOfCharge","overallVoltage","current","remainingCapacity","chargeMosOn","dischargeMosOn","balanceOn","highestCellVoltage","lowestCellVoltage","averageCellVoltage","cellVoltageDifference","cycleCount","power","timestampFromImage","fullCapacity","cellVoltages","temperatures","mosTemperature","serialNumber","softwareVersion","hardwareVersion","snCode","temperature","numTempSensors","alerts","summary","status","_extractionQuality","_validationScore","_extractionAttempts","_isDuplicate","_recordId","_timestamp"],"hasRecentHistory":true,"recentHistoryCount":747}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:21:25.934Z","service":"clientService","message":"Starting initial insights generation","context":{"attemptCount":1}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:21:56.752Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:21:56.753Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":1,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:21:56.753Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":2}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:22:24.749Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:22:24.758Z","service":"localCache","message":"Found 0 pending systems"}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:22:24.759Z","service":"localCache","message":"Found 0 pending history records"}
+services-CGqrxgzV.js:56 {"level":"info","timestamp":"2025-12-28T01:22:24.759Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:22:25.769Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:22:26.272Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:22:26.272Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":1523}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:22:27.749Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:22:27.750Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":2,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:22:27.750Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":3}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:22:58.748Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:22:58.749Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":3,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:22:58.749Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":4}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:23:29.749Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:23:29.749Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":4,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:23:29.749Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":5}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:23:54.750Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:23:54.755Z","service":"localCache","message":"Found 0 pending systems"}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:23:54.755Z","service":"localCache","message":"Found 0 pending history records"}
+services-CGqrxgzV.js:56 {"level":"info","timestamp":"2025-12-28T01:23:54.756Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:23:55.724Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:23:56.317Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:23:56.317Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":1567}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:24:00.749Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:24:00.749Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":5,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:24:00.750Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":6}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:24:31.749Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:24:31.749Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":6,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:24:31.749Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":7}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:25:02.746Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:25:02.747Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":7,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:25:02.747Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":8}}
+(index):1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+(index):1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+(index):1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:25:24.745Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:25:24.746Z","service":"localCache","message":"Found 0 pending systems"}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:25:24.746Z","service":"localCache","message":"Found 0 pending history records"}
+services-CGqrxgzV.js:56 {"level":"info","timestamp":"2025-12-28T01:25:24.746Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:25:25.692Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:25:26.181Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:25:26.182Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":1437}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:25:32.747Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:25:32.747Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":8,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:25:32.747Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":9}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:26:03.745Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:26:03.746Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":9,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:26:03.746Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":10}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:26:33.747Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:26:33.748Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":10,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:26:33.748Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":11}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:26:54.506Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:26:54.509Z","service":"localCache","message":"Found 0 pending systems"}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:26:54.509Z","service":"localCache","message":"Found 0 pending history records"}
+services-CGqrxgzV.js:56 {"level":"info","timestamp":"2025-12-28T01:26:54.509Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:26:55.447Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:26:55.952Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:26:55.952Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":1446}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:27:03.748Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:27:03.749Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":11,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:27:03.749Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":12}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:27:33.750Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:27:33.750Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":12,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:27:33.750Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":13}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:28:04.744Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:28:04.745Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":13,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:28:04.745Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":14}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:28:24.745Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:28:24.748Z","service":"localCache","message":"Found 0 pending systems"}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:28:24.749Z","service":"localCache","message":"Found 0 pending history records"}
+services-CGqrxgzV.js:56 {"level":"info","timestamp":"2025-12-28T01:28:24.749Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:28:27.125Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:28:27.644Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:28:27.645Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":2900}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:28:35.743Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:28:35.744Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":14,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:28:35.744Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":15}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:29:06.745Z","service":"clientService","message":"Insights request timed out after 30000ms.","context":{}}
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:29:06.746Z","service":"clientService","message":"Client-side timeout occurred, treating as retry signal","context":{"attemptCount":15,"maxAttempts":60,"timeoutMs":30000}}
+services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:29:06.747Z","service":"clientService","message":"Resuming insights generation silently","context":{"attemptCount":16}}
+services-CGqrxgzV.js:1  POST https://bmsview.netlify.app/.netlify/functions/generate-insights-full-context 504 (Gateway Timeout)
+Ci @ services-CGqrxgzV.js:1
+await in Ci
+he @ main-8IMI_BuP.js:36
+await in he
+onClick @ main-8IMI_BuP.js:36
+ja @ index-QCs3K0NF.js:5
+Ha @ index-QCs3K0NF.js:5
+Wa @ index-QCs3K0NF.js:5
+Ho @ index-QCs3K0NF.js:5
+Wo @ index-QCs3K0NF.js:5
+(anonymous) @ index-QCs3K0NF.js:5
+Iu @ index-QCs3K0NF.js:8
+Xu @ index-QCs3K0NF.js:5
+Ii @ index-QCs3K0NF.js:5
+si @ index-QCs3K0NF.js:5
+uf @ index-QCs3K0NF.js:5
+services-CGqrxgzV.js:1 {"level":"WARN","timestamp":"2025-12-28T01:29:41.323Z","service":"clientService","message":"Failed to parse 504 response as JSON","context":{"error":"Unexpected token '<', \"<HTML>\n<HE\"... is not valid JSON","status":504}}
+services-CGqrxgzV.js:1 {"level":"ERROR","timestamp":"2025-12-28T01:29:41.324Z","service":"clientService","message":"Insights request failed","context":{"status":504,"statusText":"","errorMessage":"Request timed out. The AI took too long to process your query. Try:\n• Asking a simpler question\n• Requesting a smaller time range\n• Breaking complex queries into multiple questions","errorCode":"gateway_timeout"}}
+services-CGqrxgzV.js:1 {"level":"ERROR","timestamp":"2025-12-28T01:29:41.324Z","service":"clientService","message":"Insights generation failed after retries","context":{"error":"Request timed out. The AI took too long to process your query. Try:\n• Asking a simpler question\n• Requesting a smaller time range\n• Breaking complex queries into multiple questions","attemptCount":16}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:29:56.744Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:29:56.747Z","service":"localCache","message":"Found 0 pending systems"}
+services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:29:56.748Z","service":"localCache","message":"Found 0 pending history records"}
+services-CGqrxgzV.js:56 {"level":"info","timestamp":"2025-12-28T01:29:56.748Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:29:57.702Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:29:58.202Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":0,"deleted":0}}
+services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:29:58.203Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":1459}}

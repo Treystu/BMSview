@@ -135,6 +135,7 @@ async function getExistingFeedback(systemId, options = {}) {
 async function getRawData(systemId, options) {
   const log = createLogger('full-context-builder:raw-data');
   const timeRange = await computeTimeRange(systemId, options);
+  const SAFETY_LIMIT = 2500; // Hard limit to prevent lambda timeouts
 
   try {
     const analysisCollection = await getCollection('analysis-results');
@@ -147,113 +148,87 @@ async function getRawData(systemId, options) {
       systemId,
       range: timeRange,
       startIso,
-      endIso,
-      startDateValid: !Number.isNaN(startDate.getTime()),
-      endDateValid: !Number.isNaN(endDate.getTime())
+      endIso
     });
 
-    // Guard against invalid ISO strings (prevents silent empty queries)
-    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-      log.warn('Computed time range produced invalid Date objects; falling back to loose query', {
-        systemId,
-        startIso,
-        endIso
-      });
-    }
+    // Strategy 1: Attempt optimized query for strictly compliant data (most common case)
+    // We fetch strictly by ISO string first as it covers new clean data
+    // OPTIMIZATION: Sort by timestamp DESC (-1) to prioritize NEWEST data if we hit the limit.
+    let allAnalyses = await analysisCollection.find({
+      $or: [{ systemId }, { 'analysis.systemId': systemId }],
+      timestamp: { $gte: startIso, $lte: endIso }
+    })
+      .sort({ timestamp: -1 })
+      .limit(SAFETY_LIMIT)
+      .toArray();
 
-    // Query both top-level systemId (new schema) and nested analysis.systemId (legacy)
-    // This ensures compatibility during migration period
-    const allAnalyses = await analysisCollection.find({
-      $or: [
-        // String timestamps (ISO)
-        { systemId, timestamp: { $gte: startIso, $lte: endIso } },
-        { 'analysis.systemId': systemId, timestamp: { $gte: startIso, $lte: endIso } },
-        // Date objects (legacy/variant schemas)
-        { systemId, timestamp: { $gte: startDate, $lte: endDate } },
-        { 'analysis.systemId': systemId, timestamp: { $gte: startDate, $lte: endDate } }
-      ]
-    }).sort({ timestamp: 1 }).toArray();
+    // Ensure we have the "inception" point (oldest record) for degradation calcs
+    // if it wasn't captured in the recent batch.
+    if (allAnalyses.length >= SAFETY_LIMIT) {
+      const oldestRecord = await analysisCollection.find({
+        $or: [{ systemId }, { 'analysis.systemId': systemId }],
+        timestamp: { $gte: startIso, $lte: endIso }
+      })
+        .sort({ timestamp: 1 })
+        .limit(1)
+        .toArray();
 
-    log.debug('Mixed-type bounded query results', {
-      systemId,
-      matched: allAnalyses.length
-    });
-
-    // Fallback: some legacy records store timestamps as Dates while others are strings.
-    // If the mixed-type query above returns too few records, run a normalization pass
-    // without timestamp typing constraints and filter manually.
-    let normalizedFallback = [];
-    if (allAnalyses.length < 4) {
-      const looseMatches = await analysisCollection.find({
-        $or: [
-          { systemId },
-          { 'analysis.systemId': systemId }
-        ]
-      }).sort({ timestamp: 1 }).toArray();
-
-      const rangeStartMs = startDate.getTime();
-      const rangeEndMs = endDate.getTime();
-
-      let invalidTimestampCount = 0;
-      normalizedFallback = looseMatches.filter((item) => {
-        const ts = item.timestamp instanceof Date ? item.timestamp.getTime() : new Date(item.timestamp).getTime();
-        if (Number.isNaN(ts)) {
-          invalidTimestampCount++;
-          return false;
-        }
-        return ts >= rangeStartMs && ts <= rangeEndMs;
-      });
-
-      if (invalidTimestampCount > 0) {
-        log.warn('Some records had unparseable timestamps during fallback filter', {
-          systemId,
-          invalidTimestampCount,
-          examples: looseMatches
-            .filter((item) => !(item.timestamp instanceof Date) && Number.isNaN(new Date(item.timestamp).getTime()))
-            .slice(0, 3)
-            .map((item) => String(item.timestamp))
-        });
+      if (oldestRecord.length > 0) {
+        log.debug('Fetched oldest record separately for context continuity');
+        // Add to array - deduplication logic later will handle placement/uniqueness
+        allAnalyses.push(oldestRecord[0]);
       }
-
-      log.debug('Applied mixed timestamp fallback filter', {
-        systemId,
-        looseMatchCount: looseMatches.length,
-        fallbackCount: normalizedFallback.length
-      });
     }
 
-    // Deduplicate in case records match multiple OR branches OR came from recentHistory
+    // Strategy 2: If we didn't find enough data, checks for legacy Date objects
+    // Only pay this penalty if strictly necessary
+    if (allAnalyses.length < 5) {
+      log.debug('Few string-timestamp records found, attempting legacy Date query');
+      let legacyAnalyses = await analysisCollection.find({
+        $or: [{ systemId }, { 'analysis.systemId': systemId }],
+        timestamp: { $gte: startDate, $lte: endDate }
+      })
+        .sort({ timestamp: -1 })
+        .limit(SAFETY_LIMIT)
+        .toArray();
+
+      if (legacyAnalyses.length > 0) {
+        // If we switched to legacy, also try to get oldest legacy
+        if (legacyAnalyses.length >= SAFETY_LIMIT) {
+          const oldestLegacy = await analysisCollection.find({
+            $or: [{ systemId }, { 'analysis.systemId': systemId }],
+            timestamp: { $gte: startDate, $lte: endDate }
+          }).sort({ timestamp: 1 }).limit(1).toArray();
+
+          if (oldestLegacy.length > 0) {
+            legacyAnalyses.push(oldestLegacy[0]);
+          }
+        }
+        allAnalyses = legacyAnalyses;
+      }
+    }
+
+    // Deduplicate and Merge with client history
     const uniqueAnalyses = [];
     const seen = new Set();
-
-    // Merge DB results with passed recent history (client-side override)
     const recentHistory = (options.recentHistory && Array.isArray(options.recentHistory))
       ? options.recentHistory
       : [];
 
-    if (recentHistory.length > 0) {
-      log.info('Merging client-provided recent history', { count: recentHistory.length });
-    }
+    // Prioritize client history (most recent) then DB history
+    const combinedSource = [...recentHistory, ...allAnalyses];
 
-    // Process recent (client) history FIRST to ensure it takes precedence or is included
-    // We reverse merge order: recent first, then DB (if not seen). 
-    // Actually, usually we want to just union them. 
-    // Timestamps are key.
-
-    const combinedSource = [...recentHistory, ...allAnalyses, ...normalizedFallback];
-
-    // Sort by timestamp to ensure chronological order is respected during seen-check if needed,
-    // but for deduplication we usually just want unique keys.
-    // Let's sort after unique.
+    // Sort combined source by timestamp descending to prioritize processing newest first during dedup?
+    // Actually we want to keep chronological for the final result.
+    // We'll trust the ID/Key for uniqueness.
 
     for (const item of combinedSource) {
       // Create a robust unique key
       const id = item.id || item._id;
-      const ts = item.timestamp instanceof Date ? item.timestamp.toISOString() : item.timestamp;
+      // Normalizing timestamp for key generation to handle overlapping string/date representation
+      const tsRaw = item.timestamp instanceof Date ? item.timestamp.toISOString() : item.timestamp;
       const sysId = item.systemId || item.analysis?.systemId || 'unknown';
-
-      // Use ID if available for strongest dedup, fallback to composite key
-      const key = id ? String(id) : `${sysId}|${ts}`;
+      const key = id ? String(id) : `${sysId}|${tsRaw}`;
 
       if (!seen.has(key)) {
         seen.add(key);
@@ -261,20 +236,33 @@ async function getRawData(systemId, options) {
       }
     }
 
-    // Re-sort chronologically after merging
+    // Sort chronologically
     uniqueAnalyses.sort((a, b) => {
       const tA = new Date(a.timestamp).getTime();
       const tB = new Date(b.timestamp).getTime();
       return tA - tB;
     });
 
+    // Enforce safety limit on final array
+    if (uniqueAnalyses.length > SAFETY_LIMIT) {
+      log.warn('Data point count exceeded safety limit, downsampling', {
+        total: uniqueAnalyses.length,
+        limit: SAFETY_LIMIT
+      });
+
+      // Simple downsampling to preserve range while respecting limit
+      const factor = Math.ceil(uniqueAnalyses.length / SAFETY_LIMIT);
+      const sampled = uniqueAnalyses.filter((_, i) => i === 0 || i === uniqueAnalyses.length - 1 || i % factor === 0);
+
+      // Replace with sampled version
+      uniqueAnalyses.length = 0;
+      uniqueAnalyses.push(...sampled);
+    }
+
     log.debug('Raw data query completed', {
       systemId,
-      timeRange,
-      dbCount: allAnalyses.length,
-      recentHistoryCount: recentHistory.length,
       finalRecordCount: uniqueAnalyses.length,
-      queryPattern: 'merged DB + recentHistory'
+      limitApplied: SAFETY_LIMIT
     });
 
     // Extract specific data arrays

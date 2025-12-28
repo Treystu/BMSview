@@ -75,12 +75,18 @@ exports.handler = async function (event, context) {
             }
 
             log.debug('Fetching paginated systems', { page, limit });
+            const isAll = limit === 'all';
             const pageNum = parseInt(page, 10);
-            const limitNum = parseInt(limit, 10);
-            const skip = (pageNum - 1) * limitNum;
+            const limitNum = isAll ? 0 : parseInt(limit, 10);
+            const skip = isAll ? 0 : (pageNum - 1) * limitNum;
+
+            let query = systemsCollection.find({}, { projection: { _id: 0 } }).sort({ name: 1 }).skip(skip);
+            if (!isAll) {
+                query = query.limit(limitNum);
+            }
 
             const [systems, totalItems] = await Promise.all([
-                systemsCollection.find({}, { projection: { _id: 0 } }).sort({ name: 1 }).skip(skip).limit(limitNum).toArray(),
+                query.toArray(),
                 systemsCollection.countDocuments({})
             ]);
 

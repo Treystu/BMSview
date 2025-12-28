@@ -256,12 +256,18 @@ exports.handler = async function (event, context) {
 
             // Fetch paginated history (default)
             log.debug('Fetching paginated history', { ...logContext, page, limit });
+            const isAll = limit === 'all';
             const pageNum = parseInt(page, 10);
-            const limitNum = parseInt(limit, 10);
-            const skip = (pageNum - 1) * limitNum;
+            const limitNum = isAll ? 0 : parseInt(limit, 10);
+            const skip = isAll ? 0 : (pageNum - 1) * limitNum;
+
+            let query = historyCollection.find({}, { projection: { _id: 0 } }).sort({ timestamp: -1 }).skip(skip);
+            if (!isAll) {
+                query = query.limit(limitNum);
+            }
 
             const [history, totalItems] = await Promise.all([
-                historyCollection.find({}, { projection: { _id: 0 } }).sort({ timestamp: -1 }).skip(skip).limit(limitNum).toArray(),
+                query.toArray(),
                 historyCollection.countDocuments({})
             ]);
 
@@ -314,6 +320,7 @@ exports.handler = async function (event, context) {
             // --- Auto-Associate Action ---
             if (action === 'auto-associate') {
                 log.info('Starting auto-association task', { action });
+                const { skip = 0 } = parsedBody;
                 const startTime = Date.now();
                 const MAX_EXECUTION_TIME = 24000;
                 let timeoutReached = false;
@@ -454,7 +461,7 @@ exports.handler = async function (event, context) {
                         { dlNumber: { $exists: true, $nin: [null, ''] } },
                         { hardwareSystemId: { $exists: true, $nin: [null, ''] } }
                     ]
-                }); // Removed limit to ensure processing all POTENTIALLY matchable records
+                }).skip(skip); // Apply skip to move past unmatchable records from previous batches
 
                 let associatedCount = 0;
                 let processedCount = 0;
@@ -561,6 +568,7 @@ exports.handler = async function (event, context) {
                 return respond(200, {
                     success: true,
                     associatedCount,
+                    processedCount,
                     message,
                     debugInfo
                 }, headers);

@@ -298,7 +298,7 @@ function stripCacheMetadata<T>(record: CacheAugmented<T>): T {
     return { ...rest } as T;
 }
 
-async function getCachedSystemsPage(page: number, limit: number): Promise<PaginatedResponse<BmsSystem> | null> {
+async function getCachedSystemsPage(page: number, limit: number | 'all'): Promise<PaginatedResponse<BmsSystem> | null> {
     if (!isLocalCacheEnabled()) {
         recordCacheDisabledSkip();
         return null;
@@ -317,8 +317,9 @@ async function getCachedSystemsPage(page: number, limit: number): Promise<Pagina
 
         recordCacheHit('systems');
 
-        const start = Math.max(0, (page - 1) * limit);
-        const end = start + limit;
+        const isAll = limit === 'all';
+        const start = isAll ? 0 : Math.max(0, (page - 1) * limit);
+        const end = isAll ? allSystems.length : start + limit;
         const items = allSystems
             .slice(start, end)
             .map((system: typeof allSystems[number]) => stripCacheMetadata<BmsSystem>(system));
@@ -343,7 +344,7 @@ async function getCachedSystemsPage(page: number, limit: number): Promise<Pagina
     }
 }
 
-async function getCachedHistoryPage(page: number, limit: number): Promise<PaginatedResponse<AnalysisRecord> | null> {
+async function getCachedHistoryPage(page: number, limit: number | 'all'): Promise<PaginatedResponse<AnalysisRecord> | null> {
     if (!isLocalCacheEnabled()) {
         recordCacheDisabledSkip();
         return null;
@@ -362,8 +363,9 @@ async function getCachedHistoryPage(page: number, limit: number): Promise<Pagina
 
         recordCacheHit('history');
 
-        const start = Math.max(0, (page - 1) * limit);
-        const end = start + limit;
+        const isAll = limit === 'all';
+        const start = isAll ? 0 : Math.max(0, (page - 1) * limit);
+        const end = isAll ? allHistory.length : start + limit;
         const items = allHistory
             .slice(start, end)
             .map((record: typeof allHistory[number]) => stripCacheMetadata<AnalysisRecord>(record));
@@ -467,7 +469,7 @@ export function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T>
     return _apiFetchImpl<T>(endpoint, options);
 }
 
-export const getRegisteredSystems = async (page = 1, limit = 25, options: FetchListOptions = {}): Promise<PaginatedResponse<BmsSystem>> => {
+export const getRegisteredSystems = async (page = 1, limit: number | 'all' = 'all', options: FetchListOptions = {}): Promise<PaginatedResponse<BmsSystem>> => {
     const { forceRefresh = false, strategy = FetchStrategy.CACHE_FIRST } = options;
     const isForceRefresh = forceRefresh || strategy === FetchStrategy.FORCE_FRESH;
     log('info', 'Fetching paginated registered BMS systems.', { page, limit, strategy });
@@ -535,7 +537,7 @@ export const getRegisteredSystems = async (page = 1, limit = 25, options: FetchL
     return result;
 };
 
-export const getAnalysisHistory = async (page = 1, limit = 25, options: FetchListOptions = {}): Promise<PaginatedResponse<AnalysisRecord>> => {
+export const getAnalysisHistory = async (page = 1, limit: number | 'all' = 'all', options: FetchListOptions = {}): Promise<PaginatedResponse<AnalysisRecord>> => {
     const { forceRefresh = false, strategy = FetchStrategy.CACHE_FIRST } = options;
     const isForceRefresh = forceRefresh || strategy === FetchStrategy.FORCE_FRESH;
     log('info', 'Fetching paginated analysis history.', { page, limit, strategy });

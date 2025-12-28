@@ -77,7 +77,7 @@ export interface WeatherData {
 export interface BmsSystem {
   id: string;
   name: string;
-  chemistry: string;
+  chemistry?: string;
   voltage: number | null;
   capacity: number | null;
   latitude: number | null;
