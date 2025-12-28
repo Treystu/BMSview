@@ -336,6 +336,26 @@ exports.handler = async function (event, context) {
                 // Helper for normalization
                 const normalizeId = (id) => id ? id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : null;
 
+                // Fetch all systems first (needed for cleanup and association)
+                const systems = await systemsCollection.find({}).toArray();
+                const systemMap = new Map(systems.map(s => [s.id, s]));
+                const allSystemIds = Array.from(systemMap.keys());
+
+                // --- PHASE 0: Cleanup Orphans (Holistic Repair) ---
+                // Identify records with a systemId that no longer exists in the systems collection
+                // and set them to null so they can be re-evaluated for association.
+                let orphansCleaned = 0;
+                if (allSystemIds.length > 0) {
+                    const orphanResult = await historyCollection.updateMany(
+                        { systemId: { $exists: true, $ne: null, $nin: allSystemIds } },
+                        { $set: { systemId: null, systemName: null, updatedAt: new Date().toISOString() } }
+                    );
+                    orphansCleaned = orphanResult.modifiedCount;
+                    if (orphansCleaned > 0) {
+                        log.info(`Cleaned up ${orphansCleaned} orphaned records (invalid systemId -> null).`);
+                    }
+                }
+
                 // --- PHASE 1: Learn from existing links (Self-Healing) ---
                 // Find all records that ARE linked but have IDs not yet in the system definition
                 log.info('Phase 1: Learning associations from history...');
@@ -364,9 +384,9 @@ exports.handler = async function (event, context) {
                 let systemsUpdatedCount = 0;
                 const systemUpdateBulkOps = [];
 
-                // Fetch all systems for comparison
-                const systems = await systemsCollection.find({}).toArray();
-                const systemMap = new Map(systems.map(s => [s.id, s]));
+                // Fetch all systems for comparison (Already fetched in Phase 0)
+                // const systems = await systemsCollection.find({}).toArray();
+                // const systemMap = new Map(systems.map(s => [s.id, s]));
 
                 for (const group of linkedIdAggregation) {
                     const systemId = group._id;
@@ -407,6 +427,7 @@ exports.handler = async function (event, context) {
                 // --- PHASE 2: Standard Auto-Association ---
                 log.info('Phase 2: Running auto-association with updated system definitions...');
                 let debugInfo = {
+                    orphansCleaned,
                     phase1Updates: systemUpdateBulkOps.length,
                     systemsLoaded: systems.length,
                     mapEntries: 0,
@@ -438,6 +459,7 @@ exports.handler = async function (event, context) {
                 });
 
                 // Get stats on unmatchable records first
+                // Updated logic: Include records where fields are empty string '' as unmatchable
                 const stats = await historyCollection.aggregate([
                     { $match: { systemId: null } },
                     {
@@ -449,8 +471,20 @@ exports.handler = async function (event, context) {
                                     $cond: [
                                         {
                                             $and: [
-                                                { $in: [{ $type: "$dlNumber" }, ["missing", "null"]] },
-                                                { $in: [{ $type: "$hardwareSystemId" }, ["missing", "null"]] }
+                                                // Check if dlNumber is missing, null, OR empty string
+                                                {
+                                                    $or: [
+                                                        { $in: [{ $type: "$dlNumber" }, ["missing", "null"]] },
+                                                        { $eq: ["$dlNumber", ""] }
+                                                    ]
+                                                },
+                                                // Check if hardwareSystemId is missing, null, OR empty string
+                                                {
+                                                    $or: [
+                                                        { $in: [{ $type: "$hardwareSystemId" }, ["missing", "null"]] },
+                                                        { $eq: ["$hardwareSystemId", ""] }
+                                                    ]
+                                                }
                                             ]
                                         }, 1, 0
                                     ]
@@ -548,8 +582,8 @@ exports.handler = async function (event, context) {
                     await historyCollection.bulkWrite(bulkOps, { ordered: false });
                 }
 
-                timer.end({ action, associatedCount, processedCount, ambiguousCount, timeoutReached, systemsUpdatedCount });
-                log.info('Auto-association task complete', { action, associatedCount, ambiguousCount, timeoutReached, systemsUpdatedCount });
+                timer.end({ action, associatedCount, processedCount, ambiguousCount, timeoutReached, systemsUpdatedCount, orphansCleaned });
+                log.info('Auto-association task complete', { action, associatedCount, ambiguousCount, timeoutReached, systemsUpdatedCount, orphansCleaned });
 
                 let message = timeoutReached
                     ? `Time limit reached. Processed ${processedCount}, Associated ${associatedCount}`
@@ -559,9 +593,13 @@ exports.handler = async function (event, context) {
                     message += ` (Updated ${systemsUpdatedCount} systems)`;
                 }
 
+                if (orphansCleaned > 0) {
+                    message += ` (Cleaned ${orphansCleaned} orphans)`;
+                }
+
                 // Add transparency about unmatchable records
                 if (debugInfo.unmatchableCount > 0) {
-                    message += ` Note: ${debugInfo.unmatchableCount} other records are unlinked but missing Hardware IDs.`;
+                    message += ` Note: ${debugInfo.unmatchableCount} other records are unlinked but missing Hardware IDs so they cannot be auto-associated.`;
                 }
 
                 if (timeoutReached) {
