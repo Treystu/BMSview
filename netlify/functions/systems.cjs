@@ -283,16 +283,15 @@ exports.handler = async function (event, context) {
             const result = await systemsCollection.deleteOne({ id: systemId });
 
             if (result.deletedCount === 0) {
-                log.warn('System not found for deletion', { systemId });
-                timer.end({ found: false });
-                log.exit(404);
-                return respond(404, { error: 'System not found.' }, headers);
+                log.info('System not found for deletion, treating as success', { systemId });
+                timer.end({ found: false, deleted: false });
+            } else {
+                timer.end({ deleted: true });
+                log.info('System deleted successfully', { systemId });
             }
 
-            timer.end({ deleted: true });
-            log.info('System deleted successfully', { systemId });
             log.exit(200);
-            return respond(200, { success: true, message: 'System deleted successfully.' }, headers);
+            return respond(200, { success: true, message: 'System deleted successfully.', deleted: result.deletedCount > 0 }, headers);
         }
 
         log.warn('Method not allowed', { method: event.httpMethod });

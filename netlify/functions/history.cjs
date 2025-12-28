@@ -1392,14 +1392,12 @@ exports.handler = async function (event, context) {
                 if (deletedCount > 0) {
                     timer.end({ deleted: true, recordId: id });
                     log.info('Single record deleted successfully', { recordId: id });
-                    log.exit(200);
-                    return respond(200, { success: true }, headers);
                 } else {
-                    timer.end({ error: 'not_found' });
-                    log.warn('Record not found for deletion', { recordId: id });
-                    log.exit(404);
-                    return respond(404, { error: 'Record not found.' }, headers);
+                    timer.end({ deleted: false, reason: 'not_found', recordId: id });
+                    log.info('Record not found for deletion, treating as success', { recordId: id });
                 }
+                log.exit(200);
+                return respond(200, { success: true, deleted: deletedCount > 0 }, headers);
             }
             log.warn('Missing parameters for DELETE request');
             timer.end({ error: 'missing_params' });
