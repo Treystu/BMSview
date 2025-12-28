@@ -798,14 +798,27 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
     log('info', 'AnalysisResult component rendered/updated.', statusContext);
   }, [fileName, data, error, isDuplicate, recordId]);
 
-  const isActualError = getIsActualError(result);
-  const isPending = !result.data && !isActualError;
+  // *** FORTIFIED STATE LOGIC ***
+  // We prioritize valid DATA over any error message.
+  // If we have data, we assume success unless there's a specific "Save Error" (handled separately).
+  // This prevents transient states (like "Processing" or "Matching") from masquerading as unknown errors.
+  const hasData = !!result.data;
+
+  // FIX: Was passing `result` object (always true), now passing `result.error` string.
+  const isActualError = !hasData && getIsActualError(result.error);
+
+  // Pending = No Data AND No Error (e.g. Loading, Processing, Queued)
+  const isPending = !hasData && !isActualError;
 
   // Determine the actual status for display
   const getDisplayStatus = () => {
-    if (data) return { key: 'completed', text: 'Completed', color: 'green' };
+    if (hasData) return { key: 'completed', text: 'Completed', color: 'green' };
+
+    // Only check errors if we don't have data
     const lowerError = error?.toLowerCase() || '';
+
     if (isActualError) return { key: 'error', text: formatError(error!), color: 'red' };
+
     if (isPending) {
       if (lowerError.includes('extracting')) return { key: 'processing', text: 'Extracting Data', color: 'blue' };
       if (lowerError.includes('matching')) return { key: 'processing', text: 'Matching System', color: 'blue' };
@@ -813,8 +826,10 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
       if (lowerError.includes('saving')) return { key: 'processing', text: 'Saving Result', color: 'blue' };
       if (lowerError.includes('queued')) return { key: 'queued', text: 'Queued for Analysis', color: 'yellow' };
       if (lowerError.includes('submitted')) return { key: 'submitted', text: 'Submitted', color: 'gray' };
-      return { key: 'processing', text: error!, color: 'blue' };
+      // Fallback for pending processing messages
+      return { key: 'processing', text: error || 'Processing...', color: 'blue' };
     }
+
     return { key: 'unknown', text: 'Unknown Status', color: 'gray' };
   };
 

@@ -391,6 +391,13 @@ exports.handler = async function (event, context) {
 
                 // --- PHASE 2: Standard Auto-Association ---
                 log.info('Phase 2: Running auto-association with updated system definitions...');
+                let debugInfo = {
+                    phase1Updates: systemUpdateBulkOps.length,
+                    systemsLoaded: systems.length,
+                    mapEntries: 0,
+                    unlinkedFound: 0,
+                    sampleFailures: []
+                };
 
                 const hardwareIdMap = new Map(); // Map normalized ID -> array of system objects
 
@@ -468,10 +475,32 @@ exports.handler = async function (event, context) {
                                 }
                             } else {
                                 ambiguousCount++;
+                                if (debugInfo.sampleFailures.length < 5) {
+                                    debugInfo.sampleFailures.push({
+                                        reason: 'ambiguous',
+                                        id: recordHardwareId,
+                                        matches: potentialSystems.map(s => s.name)
+                                    });
+                                }
+                            }
+                        } else {
+                            // No match found
+                            if (debugInfo.sampleFailures.length < 5) {
+                                debugInfo.sampleFailures.push({
+                                    reason: 'no_match',
+                                    recordId: record.id,
+                                    rawSystemId: record.hardwareSystemId,
+                                    rawDl: record.dlNumber,
+                                    normalized: recordHardwareId
+                                });
                             }
                         }
                     }
                 }
+
+                debugInfo.unlinkedFound = processedCount;
+                debugInfo.associated = associatedCount;
+                debugInfo.mapEntries = hardwareIdMap.size;
 
                 if (bulkOps.length > 0) {
                     await historyCollection.bulkWrite(bulkOps, { ordered: false });
@@ -502,7 +531,8 @@ exports.handler = async function (event, context) {
                 return respond(200, {
                     success: true,
                     associatedCount,
-                    message
+                    message,
+                    debugInfo
                 }, headers);
             }
 
