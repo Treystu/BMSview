@@ -1036,6 +1036,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                 totalItems: totalSystems,
                                 itemsPerPage: ITEMS_PER_PAGE,
                             }}
+                            onMergeRequested={async (systemIds: string[], primaryId: string) => {
+                                dispatch({ type: 'SET_SELECTED_SYSTEM_IDS', payload: systemIds });
+                                dispatch({ type: 'SET_PRIMARY_SYSTEM_ID', payload: primaryId });
+                                await handleMergeSystems();
+                            }}
                         />
                         <HistoryTable
                             history={sortedHistoryForTable}
@@ -1072,19 +1077,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
                         <section id="data-reconciliation-section">
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">
-                                Data Reconciliation & System Management
+                                Orphaned ID Management
                             </h2>
                             <ReconciliationDashboard
-                                systems={systems}
                                 onSystemCreated={async () => {
                                     // Refresh systems list after creating a new system
                                     await fetchData(1, 'systems');
-                                }}
-                                onMergeRequested={async (systemIds: string[], primaryId: string) => {
-                                    // Use existing merge handler
-                                    dispatch({ type: 'SET_SELECTED_SYSTEM_IDS', payload: systemIds });
-                                    dispatch({ type: 'SET_PRIMARY_SYSTEM_ID', payload: primaryId });
-                                    await handleMergeSystems();
                                 }}
                             />
                         </section>

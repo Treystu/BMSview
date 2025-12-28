@@ -10,9 +10,7 @@ import {
 import type { BmsSystem } from '../../../types';
 
 interface ReconciliationDashboardProps {
-    systems: BmsSystem[];
     onSystemCreated: () => void; // Callback to refresh systems list
-    onMergeRequested: (systemIds: string[], primaryId: string) => void;
 }
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
@@ -26,18 +24,15 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
 };
 
 const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
-    systems,
-    onSystemCreated,
-    onMergeRequested
+    onSystemCreated
 }) => {
     const [integrityData, setIntegrityData] = useState<DataIntegrityResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [adoptingDL, setAdoptingDL] = useState<DataIntegrityItem | null>(null);
-    const [selectedSystemIds, setSelectedSystemIds] = useState<string[]>([]);
-    const [primarySystemId, setPrimarySystemId] = useState<string>('');
     const [isSavingNewSystem, setIsSavingNewSystem] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+
     // Fetch data integrity report
     const fetchIntegrityData = async () => {
         log('info', 'Fetching data integrity report...');
@@ -88,26 +83,6 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
         }
     };
 
-    const handleToggleSystemSelection = (systemId: string) => {
-        setSelectedSystemIds(prev => {
-            const isSelected = prev.includes(systemId);
-            if (isSelected) {
-                return prev.filter(id => id !== systemId);
-            } else {
-                return [...prev, systemId];
-            }
-        });
-    };
-
-    const handleMergeSystems = () => {
-        if (selectedSystemIds.length < 2 || !primarySystemId) return;
-        log('info', 'User initiated merge systems.', { selectedSystemIds, primarySystemId });
-        onMergeRequested(selectedSystemIds, primarySystemId);
-        // Clear selections
-        setSelectedSystemIds([]);
-        setPrimarySystemId('');
-    };
-
     if (loading) {
         return (
             <div className="flex items-center justify-center py-12">
@@ -141,7 +116,6 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
     }
 
     const orphanedData = integrityData.data.filter(item => item.status === 'ORPHAN');
-    const matchedData = integrityData.data.filter(item => item.status === 'MATCHED');
 
     return (
         <div className="space-y-6">
@@ -166,7 +140,7 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
             </div>
 
             {/* Orphaned Data Sources Section */}
-            {orphanedData.length > 0 && (
+            {orphanedData.length > 0 ? (
                 <div className="bg-yellow-900/20 border border-yellow-500/50 rounded-lg p-6">
                     <div className="flex items-center justify-between mb-4">
                         <div>
@@ -239,128 +213,12 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
                         </table>
                     </div>
                 </div>
-            )
-            }
-
-            {/* Matched Systems & Duplicates Section */}
-            <div className="bg-gray-800 rounded-lg p-6">
-                <div className="flex items-center justify-between mb-4">
-                    <div>
-                        <h3 className="text-xl font-semibold text-green-300">✅ System Status & Management</h3>
-                        <p className="text-sm text-gray-400 mt-1">
-                            Review all matched systems, merge duplicates, or edit system details.
-                        </p>
-                    </div>
+            ) : (
+                <div className="bg-green-900/20 border border-green-500/50 rounded-lg p-6 text-center text-green-200">
+                    <p className="text-lg font-semibold">✅ No Orphaned Data Found</p>
+                    <p className="text-sm mt-1 text-green-300">All data records are correctly assigned to systems.</p>
                 </div>
-
-                <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                        <thead className="bg-gray-700 border-b border-gray-600">
-                            <tr>
-                                <th className="p-3 w-10">
-                                    <span className="text-gray-500 text-xs">Merge</span>
-                                </th>
-                                <th className="p-3 text-left font-semibold text-gray-300">System Name</th>
-                                <th className="p-3 text-left font-semibold text-gray-300">Linked Hardware IDs</th>
-                                <th className="p-3 text-left font-semibold text-gray-300">Total Records</th>
-                                <th className="p-3 text-left font-semibold text-gray-300">Chemistry</th>
-                                <th className="p-3 text-left font-semibold text-gray-300">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-700">
-                            {systems.map(system => {
-                                // Find all matched data for this system
-                                const systemDLs = matchedData.filter(item => item.system_id === system.id);
-                                const totalRecords = systemDLs.reduce((sum, item) => sum + item.record_count, 0);
-                                const isSelected = selectedSystemIds.includes(system.id);
-
-                                return (
-                                    <tr key={system.id} className={`hover:bg-gray-900 ${isSelected ? 'bg-blue-900/30' : ''}`}>
-                                        <td className="p-3 text-center">
-                                            <input
-                                                type="checkbox"
-                                                checked={isSelected}
-                                                onChange={() => handleToggleSystemSelection(system.id)}
-                                                className="form-checkbox h-4 w-4 bg-gray-800 border-gray-600 text-secondary focus:ring-secondary"
-                                            />
-                                        </td>
-                                        <td className="p-3 font-semibold">{system.name}</td>
-                                        <td className="p-3">
-                                            <div className="flex flex-wrap gap-1">
-                                                {system.associatedDLs && system.associatedDLs.length > 0 ? (
-                                                    system.associatedDLs.map(dl => (
-                                                        <span key={dl} className="bg-gray-700 px-2 py-1 rounded text-xs font-mono">
-                                                            {dl}
-                                                        </span>
-                                                    ))
-                                                ) : (
-                                                    <span className="text-gray-600 text-xs">None</span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="p-3">{totalRecords.toLocaleString()}</td>
-                                        <td className="p-3 text-xs">{system.chemistry || 'N/A'}</td>
-                                        <td className="p-3">
-                                            <button
-                                                onClick={() => {
-                                                    // For now, just log - EditSystemModal integration would go here
-                                                    log('info', 'Edit system clicked', { systemId: system.id });
-                                                }}
-                                                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-1 px-3 rounded-md transition-colors text-xs"
-                                            >
-                                                ✏️ Edit
-                                            </button>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Merge Systems Controls */}
-                {selectedSystemIds.length >= 2 && (
-                    <div className="mt-6 bg-gray-900 p-4 rounded-md border border-gray-700">
-                        <div className="flex flex-wrap items-center gap-4">
-                            <div className="flex items-center gap-2">
-                                <label htmlFor="primary-system-merge" className="font-semibold text-gray-300">
-                                    Primary System:
-                                </label>
-                                <select
-                                    id="primary-system-merge"
-                                    value={primarySystemId}
-                                    onChange={(e) => setPrimarySystemId(e.target.value)}
-                                    className="bg-gray-700 border border-gray-600 rounded-md p-2 text-white focus:ring-secondary focus:border-secondary"
-                                >
-                                    <option value="">-- Select System to Keep --</option>
-                                    {systems
-                                        .filter(s => selectedSystemIds.includes(s.id))
-                                        .map(s => (
-                                            <option key={s.id} value={s.id}>{s.name}</option>
-                                        ))
-                                    }
-                                </select>
-                            </div>
-                            <button
-                                onClick={handleMergeSystems}
-                                disabled={!primarySystemId}
-                                className="bg-secondary hover:bg-primary text-white font-bold py-2 px-4 rounded-md disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
-                            >
-                                🔀 Merge {selectedSystemIds.length} Systems
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setSelectedSystemIds([]);
-                                    setPrimarySystemId('');
-                                }}
-                                className="bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-md transition-colors"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </div>
+            )}
 
             {/* Adopt System Modal */}
             {

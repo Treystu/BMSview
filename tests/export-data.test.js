@@ -3,6 +3,7 @@
  */
 
 const { handler } = require('../netlify/functions/export-data.cjs');
+const zlib = require('zlib');
 
 // Mock MongoDB
 jest.mock('../netlify/functions/utils/mongodb.cjs');
@@ -99,8 +100,11 @@ describe('export-data handler', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['Content-Type']).toContain('text/csv');
-    expect(response.body).toContain('id,timestamp');
-    expect(response.body).toContain('DL123456');
+    expect(response.headers['Content-Encoding']).toBe('gzip');
+
+    const decodedBody = zlib.gunzipSync(Buffer.from(response.body, 'base64')).toString('utf-8');
+    expect(decodedBody).toContain('id,timestamp');
+    expect(decodedBody).toContain('DL123456');
   });
 
   test('exports systems as CSV', async () => {
@@ -129,7 +133,10 @@ describe('export-data handler', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['Content-Type']).toContain('text/csv');
-    expect(response.body).toContain('Test System');
+    expect(response.headers['Content-Encoding']).toBe('gzip');
+
+    const decodedBody = zlib.gunzipSync(Buffer.from(response.body, 'base64')).toString('utf-8');
+    expect(decodedBody).toContain('Test System');
   });
 
   test('exports full backup as JSON', async () => {
@@ -149,8 +156,12 @@ describe('export-data handler', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['Content-Type']).toContain('application/json');
-    // Body is a JSON string, parse it
-    const body = JSON.parse(response.body);
+    expect(response.headers['Content-Encoding']).toBe('gzip');
+
+    // Body is a compressed base64 string, decompress it
+    const decodedBody = zlib.gunzipSync(Buffer.from(response.body, 'base64')).toString('utf-8');
+    const body = JSON.parse(decodedBody);
+
     expect(body.exportDate).toBeDefined();
     expect(body.collections).toBeDefined();
     expect(body.collections.systems).toBeDefined();

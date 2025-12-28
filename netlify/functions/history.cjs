@@ -1367,9 +1367,20 @@ exports.handler = async function (event, context) {
             const { id, unlinked } = event.queryStringParameters || {};
 
             if (unlinked === 'true') {
-                // Delete all records not linked to any system
+                // Delete all records not linked to any system (Holistic cleanup)
                 log.warn('Deleting ALL unlinked history records', { unlinked: true });
-                const { deletedCount } = await historyCollection.deleteMany({ systemId: null });
+
+                // 1. Get all valid system IDs
+                const allSystemIds = await systemsCollection.distinct('id');
+
+                // 2. Delete where systemId is null OR not in the valid list
+                const { deletedCount } = await historyCollection.deleteMany({
+                    $or: [
+                        { systemId: null },
+                        { systemId: { $nin: allSystemIds } }
+                    ]
+                });
+
                 timer.end({ deleted: true, deletedCount });
                 log.info('Deletion of unlinked records complete', { deletedCount });
                 log.exit(200);

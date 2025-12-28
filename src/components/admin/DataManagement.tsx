@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { AdminAction, AdminState } from '../../state/adminState';
+import StorageAnalytics from './StorageAnalytics';
 
 interface DataManagementProps {
     state: AdminState;
@@ -87,6 +88,9 @@ const DataManagement: React.FC<DataManagementProps> = ({
                     💡 <strong>Tip:</strong> The Full Backup (JSON) format can be re-imported into MongoDB to restore your complete dataset.
                 </p>
             </div>
+
+            {/* Storage Analytics Section */}
+            <StorageAnalytics />
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div className="bg-gray-800 p-4 rounded-lg shadow-inner lg:col-span-2">

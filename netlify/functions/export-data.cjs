@@ -12,6 +12,7 @@
  */
 
 const { getCollection } = require('./utils/mongodb.cjs');
+const zlib = require('zlib');
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const {
     createStandardEntryMeta,
@@ -118,8 +119,7 @@ async function exportHistoryCSV(log) {
         weather_temp: record.weather?.temp ?? '',
         weather_clouds: record.weather?.clouds ?? '',
         weather_uvi: record.weather?.uvi ?? '',
-        hardwareId: record.analysis?.dlNumber || '',
-        dlNumber: record.analysis?.dlNumber || ''
+        hardwareId: record.analysis?.dlNumber || ''
     }));
 
     return arrayToCSV(flattenedRecords, headers);
@@ -149,7 +149,6 @@ async function exportSystemsCSV(log) {
         location: system.location || '',
         latitude: system.latitude ?? '',
         longitude: system.longitude ?? '',
-        capacity: system.capacity ?? '',
         capacity: system.capacity ?? '',
         voltage: system.voltage ?? '',
         associatedHardwareIds: (system.associatedHardwareIds || system.associatedDLs) ? (system.associatedHardwareIds || system.associatedDLs).join('; ') : '',
@@ -275,18 +274,23 @@ exports.handler = async (event, context) => {
             };
         }
 
-        log.info('Export completed', { type, format, size: data.length });
+        // Compress data to bypass 6MB Lambda payload limit
+        const compressed = zlib.gzipSync(data);
+
+        log.info('Export completed', { type, format, originalSize: data.length, compressedSize: compressed.length });
         timer.end({ success: true });
-        log.exit(200, { type, format, size: data.length });
+        log.exit(200, { type, format, size: data.length, compressedSize: compressed.length });
 
         return {
             statusCode: 200,
             headers: {
                 ...headers,
                 'Content-Type': contentType,
-                'Content-Disposition': `attachment; filename="${filename}"`
+                'Content-Disposition': `attachment; filename="${filename}"`,
+                'Content-Encoding': 'gzip'
             },
-            body: data
+            body: compressed.toString('base64'),
+            isBase64Encoded: true
         };
 
     } catch (error) {
