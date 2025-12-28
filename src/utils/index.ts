@@ -12,6 +12,18 @@ export const formatError = (error: unknown): string => {
 export const getIsActualError = (error: unknown): boolean => {
     if (!error) return false;
     if (error instanceof Error && error.name === 'AbortError') return false;
+
+    // Treat known status messages as non-errors to prevent "Analysis Failed" UI during processing
+    if (typeof error === 'string') {
+        const lower = error.toLowerCase();
+        if (lower === 'processing' ||
+            lower.includes('checking for duplicates') ||
+            lower.includes('detecting duplicates') ||
+            lower.includes('queued')) {
+            return false;
+        }
+    }
+
     return true;
 };
 

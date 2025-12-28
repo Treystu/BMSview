@@ -427,7 +427,7 @@ exports.handler = async function (event, context) {
                         { dlNumber: { $exists: true, $nin: [null, ''] } },
                         { hardwareSystemId: { $exists: true, $nin: [null, ''] } }
                     ]
-                }).limit(5000);
+                }); // Removed limit(5000) to ensure ENTIRE dataset is processed
 
                 let associatedCount = 0;
                 let processedCount = 0;
@@ -475,7 +475,7 @@ exports.handler = async function (event, context) {
                                 }
                             } else {
                                 ambiguousCount++;
-                                if (debugInfo.sampleFailures.length < 5) {
+                                if (debugInfo.sampleFailures.length < 50) { // Increased limit from 5 to 50
                                     debugInfo.sampleFailures.push({
                                         reason: 'ambiguous',
                                         id: recordHardwareId,
@@ -485,7 +485,7 @@ exports.handler = async function (event, context) {
                             }
                         } else {
                             // No match found
-                            if (debugInfo.sampleFailures.length < 5) {
+                            if (debugInfo.sampleFailures.length < 50) { // Increased limit from 5 to 50
                                 debugInfo.sampleFailures.push({
                                     reason: 'no_match',
                                     recordId: record.id,
@@ -510,8 +510,8 @@ exports.handler = async function (event, context) {
                 log.info('Auto-association task complete', { action, associatedCount, ambiguousCount, timeoutReached, systemsUpdatedCount });
 
                 let message = timeoutReached
-                    ? `Time limit reached. Associated ${associatedCount} records`
-                    : `Completed. Associated ${associatedCount} records`;
+                    ? `Time limit reached. Processed ${processedCount}, Associated ${associatedCount}`
+                    : `Completed. Processed ${processedCount}, Associated ${associatedCount} records`;
 
                 if (systemsUpdatedCount > 0) {
                     message += ` (and updated ${systemsUpdatedCount} systems with new IDs)`;
@@ -525,6 +525,12 @@ exports.handler = async function (event, context) {
 
                 if (ambiguousCount > 0) {
                     message += ` (${ambiguousCount} skipped due to ambiguous ID linking)`;
+                }
+
+                // Add explicit failure count to message if there are unlinked records left
+                const failedCount = processedCount - associatedCount;
+                if (failedCount > 0) {
+                    message += ` (${failedCount} could not be matched)`;
                 }
 
                 log.exit(200);

@@ -659,7 +659,45 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
     const handleAutoAssociate = () => handleGenericAction(
         'isAutoAssociating',
-        autoAssociateRecords,
+        async () => {
+            let skip = 0;
+            let totalAssociated = 0;
+            let totalProcessed = 0;
+            let loops = 0;
+            const MAX_LOOPS = 50; // Safety brake
+
+            // Initial call
+            let result = await autoAssociateRecords(skip);
+            totalAssociated += result.associatedCount;
+            totalProcessed += result.processedCount;
+
+            // Intelligent Retry Loop
+            while (result.timeoutReached && loops < MAX_LOOPS) {
+                loops++;
+
+                // INTELLIGENT SKIP LOGIC:
+                // If we associated records, they are removed from the 'unlinked' pool (systemId is no longer null),
+                // so the "next" records shift down to fill the gap. We should start at 0 again to catch them.
+                // If we found NO matches but timed out, we need to skip the ones we just checked to assume progress.
+                if (result.associatedCount > 0) {
+                    skip = 0;
+                } else {
+                    skip += result.processedCount;
+                }
+
+                log('info', `Auto-associate timed out. looping...`, { loop: loops, skip, totalAssociated });
+
+                // Recursive call
+                result = await autoAssociateRecords(skip);
+                totalAssociated += result.associatedCount;
+                totalProcessed += result.processedCount;
+            }
+
+            return {
+                ...result,
+                message: `Completed. Processed ${totalProcessed} records across ${loops + 1} batches. Associated ${totalAssociated} records.`
+            };
+        },
         'Auto-association process started.',
         'history'
     );

@@ -516,7 +516,13 @@ export const getRegisteredSystems = async (page = 1, limit = 25, options: FetchL
         const cacheModule = await loadLocalCacheModule();
         if (cacheModule) {
             try {
-                await cacheModule.systemsCache.bulkPut(result.items, 'synced');
+                // Fix lint error: property 'chemistry' is missing in type 'BmsSystem' but required in 'BmsSystem[]'
+                // Ensure strict type compatibility by mapping optional fields
+                const strictItems = result.items.map(s => ({
+                    ...s,
+                    chemistry: s.chemistry || ''
+                }));
+                await cacheModule.systemsCache.bulkPut(strictItems, 'synced');
             } catch (error) {
                 recordCacheFailure();
                 log('warn', 'Failed to update systems cache.', {
@@ -1793,6 +1799,7 @@ export const registerBmsSystem = async (
                     const newSystem: BmsSystem = {
                         id: `temp-${Date.now()}`,
                         ...systemData,
+                        chemistry: systemData.chemistry || '', // Strict type fix: undefined not assignable to string
                         associatedDLs: systemData.associatedDLs || []
                     };
                     await localCache.systemsCache.put(newSystem, 'pending');
@@ -2151,12 +2158,23 @@ export const cleanupLinks = async (): Promise<{ success: boolean; updatedCount: 
     });
 };
 
-export const autoAssociateRecords = async (): Promise<{ associatedCount: number }> => {
-    log('info', 'Sending request to auto-associate unlinked records.');
-    return apiFetch<{ associatedCount: number }>('history', {
+export const autoAssociateRecords = async (skip: number = 0): Promise<{
+    associatedCount: number;
+    processedCount: number;
+    timeoutReached: boolean;
+    message: string;
+}> => {
+    log('info', 'Sending request to auto-associate unlinked records.', { skip });
+    return apiFetch<{
+        associatedCount: number;
+        processedCount: number;
+        timeoutReached: boolean;
+        message: string;
+    }>('history', {
         method: 'POST',
         body: JSON.stringify({
             action: 'auto-associate',
+            skip
         }),
     });
 };
