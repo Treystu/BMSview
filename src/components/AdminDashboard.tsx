@@ -69,7 +69,7 @@ const log = (level: string, message: string, context: any = {}) => {
     }));
 };
 
-const ITEMS_PER_PAGE = 5000;
+const ITEMS_PER_PAGE = 100;
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     const { state, dispatch } = useAdminState();
@@ -136,7 +136,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             try {
                 const [systemsResponse, historyResponse] = await Promise.all([
                     getRegisteredSystems(1, 'all'),
-                    getAnalysisHistory(1, 'all')
+                    getAnalysisHistory(1, ITEMS_PER_PAGE)
                 ]);
                 log('info', 'Successfully fetched initial page data.', { systemCount: systemsResponse.items.length, historyCount: historyResponse.items.length });
                 dispatch({

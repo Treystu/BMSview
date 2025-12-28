@@ -248,8 +248,15 @@ exports.handler = async function (event, context) {
                     log.info('Fetching ALL history records', logContext);
                 }
 
-                const allHistory = await historyCollection.find(query, { projection: { _id: 0 } }).sort({ timestamp: -1 }).toArray();
+                // LIMIT to 500 and sort by updatedAt ASC to allow incremental processing
+                // without hitting Netlify response limits (6MB) or timeouts.
+                const allHistory = await historyCollection.find(query, { projection: { _id: 0 } })
+                    .sort({ updatedAt: 1 })
+                    .limit(500)
+                    .toArray();
+
                 timer.end({ all: true, incremental: !!updatedSince, count: allHistory.length });
+                log.info(`Sync returning ${allHistory.length} records`, { ...logContext, incremental: !!updatedSince });
                 log.exit(200);
                 return respond(200, allHistory, headers);
             }
@@ -258,13 +265,14 @@ exports.handler = async function (event, context) {
             log.debug('Fetching paginated history', { ...logContext, page, limit });
             const isAll = limit === 'all';
             const pageNum = parseInt(page, 10);
-            const limitNum = isAll ? 0 : parseInt(limit, 10);
+            // SAFETY: Cap 'all' to 1000 to prevent 502/timeouts
+            const limitNum = isAll ? 1000 : parseInt(limit, 10);
             const skip = isAll ? 0 : (pageNum - 1) * limitNum;
 
-            let query = historyCollection.find({}, { projection: { _id: 0 } }).sort({ timestamp: -1 }).skip(skip);
-            if (!isAll) {
-                query = query.limit(limitNum);
-            }
+            let query = historyCollection.find({}, { projection: { _id: 0 } })
+                .sort({ timestamp: -1 })
+                .skip(skip)
+                .limit(limitNum);
 
             const [history, totalItems] = await Promise.all([
                 query.toArray(),

@@ -469,7 +469,7 @@ export function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T>
     return _apiFetchImpl<T>(endpoint, options);
 }
 
-export const getRegisteredSystems = async (page = 1, limit: number | 'all' = 'all', options: FetchListOptions = {}): Promise<PaginatedResponse<BmsSystem>> => {
+export const getRegisteredSystems = async (page = 1, limit: number | 'all' = 100, options: FetchListOptions = {}): Promise<PaginatedResponse<BmsSystem>> => {
     const { forceRefresh = false, strategy = FetchStrategy.CACHE_FIRST } = options;
     const isForceRefresh = forceRefresh || strategy === FetchStrategy.FORCE_FRESH;
     log('info', 'Fetching paginated registered BMS systems.', { page, limit, strategy });
@@ -537,7 +537,7 @@ export const getRegisteredSystems = async (page = 1, limit: number | 'all' = 'al
     return result;
 };
 
-export const getAnalysisHistory = async (page = 1, limit: number | 'all' = 'all', options: FetchListOptions = {}): Promise<PaginatedResponse<AnalysisRecord>> => {
+export const getAnalysisHistory = async (page = 1, limit: number | 'all' = 100, options: FetchListOptions = {}): Promise<PaginatedResponse<AnalysisRecord>> => {
     const { forceRefresh = false, strategy = FetchStrategy.CACHE_FIRST } = options;
     const isForceRefresh = forceRefresh || strategy === FetchStrategy.FORCE_FRESH;
     log('info', 'Fetching paginated analysis history.', { page, limit, strategy });
@@ -620,32 +620,50 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
         }
 
         // 2. Fetch Updates from Server (Incremental)
-        let endpoint = 'history?all=true';
-        if (maxUpdatedAt) {
-            log('info', 'Performing incremental sync.', { updatedSince: maxUpdatedAt });
-            endpoint += `&updatedSince=${encodeURIComponent(maxUpdatedAt)}`;
-        } else {
-            log('info', 'Performing full sync (no local data).');
-        }
+        let hasMore = true;
+        let totalReceived = 0;
+        let loopCount = 0;
+        const MAX_SYNC_LOOPS = 10; // Safety break for a single sync run
 
-        const serverResponse = await apiFetch<AnalysisRecord[]>(endpoint);
-
-        if (serverResponse && Array.isArray(serverResponse) && serverResponse.length > 0) {
-            log('info', `Received ${serverResponse.length} new/updated records from server.`);
-
-            // 3. Update Cache
-            if (isLocalCacheEnabled()) {
-                const cacheModule = await loadLocalCacheModule();
-                if (cacheModule) {
-                    await cacheModule.historyCache.bulkPut(serverResponse, 'synced');
-                }
+        while (hasMore && loopCount < MAX_SYNC_LOOPS) {
+            loopCount++;
+            let endpoint = 'history?all=true';
+            if (maxUpdatedAt) {
+                endpoint += `&updatedSince=${encodeURIComponent(maxUpdatedAt)}`;
             }
 
-            // 4. Update UI with new data
-            onData(serverResponse);
-        } else {
-            log('info', 'No new records from server.');
+            log('info', `Syncing batch ${loopCount}...`, { updatedSince: maxUpdatedAt });
+            const serverResponse = await apiFetch<AnalysisRecord[]>(endpoint);
+
+            if (serverResponse && Array.isArray(serverResponse) && serverResponse.length > 0) {
+                log('info', `Received ${serverResponse.length} records in batch ${loopCount}.`);
+                totalReceived += serverResponse.length;
+
+                // Update maxUpdatedAt to the latest received record's timestamp
+                maxUpdatedAt = serverResponse.reduce((max, record) => {
+                    if (!record.updatedAt) return max;
+                    return record.updatedAt > max ? record.updatedAt : max;
+                }, maxUpdatedAt);
+
+                // 3. Update Cache
+                if (isLocalCacheEnabled()) {
+                    const cacheModule = await loadLocalCacheModule();
+                    if (cacheModule) {
+                        await cacheModule.historyCache.bulkPut(serverResponse, 'synced');
+                    }
+                }
+
+                // 4. Update UI with new data
+                onData(serverResponse);
+
+                // If we got exactly 500, there's likely more data
+                hasMore = serverResponse.length === 500;
+            } else {
+                log('info', 'No more new records from server.');
+                hasMore = false;
+            }
         }
+        log('info', `Incremental sync finished. Total received: ${totalReceived} records across ${loopCount} batches.`);
 
     } catch (error) {
         log('error', 'Smart history sync failed.', { error: error instanceof Error ? error.message : String(error) });
@@ -3027,9 +3045,14 @@ export const syncWeather = async (systemId: string, startDate: string, endDate: 
             log('info', `Received ${weatherData.length} weather records.`, { systemId });
 
             // 2. Cache Locally
-            // Map backend 'source' format to local cache format if needed, 
-            // but our v3 schema in localCache.ts expects {systemId, timestamp, ...} which the backend now provides.
-            await cacheModule.weatherCache.bulkPut(weatherData, 'synced');
+            // Ensure each record has a unique ID for Dexie key path
+            const cachedWeather = weatherData.map(w => ({
+                ...w,
+                id: w.id || `${w.systemId}_${w.timestamp}_${w.source}`,
+                updatedAt: w.updatedAt || new Date().toISOString(),
+                _syncStatus: 'synced'
+            }));
+            await cacheModule.weatherCache.bulkPut(cachedWeather, 'synced');
         } else {
             log('info', 'No weather data received for range.', { systemId });
         }
