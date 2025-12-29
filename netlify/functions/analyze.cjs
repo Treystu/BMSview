@@ -475,17 +475,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
         return errorResponse(500, 'check_failed', 'Duplicate check failed', { error: checkError.message }, headers);
       }
     }
-    const result = await executeAnalysisPipeline(
-      {
-        image: imagePayload.image,
-        mimeType: imagePayload.mimeType || 'image/jpeg',
-        fileName: imagePayload.fileName || 'upload.jpg',
-        force: forceReanalysis
-      },
-      log,
-      context,
-      systemId
-    );
+
     if (idemKey && !forceReanalysis) {
       try {
         const idemResponse = await checkIdempotency(idemKey, log);
@@ -579,7 +569,10 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
       imageSize: imagePayload.image?.length || 0
     });
 
-    let record = await executeAnalysisPipeline(imagePayload, log, context);
+    let record = await executeAnalysisPipeline({
+      ...imagePayload,
+      force: forceReanalysis
+    }, log, context, systemId);
 
     // Ensure Hardware ID-based association for new/updated record before persisting responses
     record = await ensureSystemAssociation(record, log);

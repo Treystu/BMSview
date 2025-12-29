@@ -7,7 +7,7 @@ import type { FileWithMeta } from '../utils/duplicateChecker';
 import { CostEstimateBadge, estimateAnalysisCost } from './CostEstimateBadge';
 
 interface BulkUploadProps {
-  onAnalyze: (files: File[]) => void;
+  onAnalyze: (files: File[], options?: { forceReanalysis?: boolean }) => void;
   results: DisplayableAnalysisResult[];
   isLoading: boolean;
   showRateLimitWarning: boolean;
@@ -70,6 +70,7 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
     handleDrop,
     clearFiles,
   } = useFileUpload({ propagateDuplicates: true });
+  const [forceMode, setForceMode] = React.useState(false);
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -78,7 +79,7 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
 
   const handleAnalyzeClick = () => {
     if (files.length > 0) {
-      onAnalyze(files);
+      onAnalyze(files, { forceReanalysis: forceMode });
       // Don't clear files immediately - let them stay visible during analysis
       // Files will be cleared when user uploads new files or manually clicks clear
     }
@@ -131,17 +132,32 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
       <h3 className="font-semibold text-lg text-white mb-2">Supercharged Ingestion Portal</h3>
       <p className="text-sm text-gray-400 mb-4">Optimized for bulk uploads. Drop hundreds of screenshots or ZIP files at once.</p>
 
-      <div className="flex items-center mb-4">
-        <input
-          type="checkbox"
-          id="story-mode"
-          checked={isStoryMode}
-          onChange={(e) => setIsStoryMode(e.target.checked)}
-          className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-        />
-        <label htmlFor="story-mode" className="ml-2 text-sm font-medium">
-          Story Mode
-        </label>
+      <div className="flex items-center mb-4 space-x-6">
+        <div className="flex items-center">
+          <input
+            type="checkbox"
+            id="story-mode"
+            checked={isStoryMode}
+            onChange={(e) => setIsStoryMode(e.target.checked)}
+            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+          />
+          <label htmlFor="story-mode" className="ml-2 text-sm font-medium">
+            Story Mode
+          </label>
+        </div>
+
+        <div className="flex items-center" title="Override duplicate checks and force re-analysis of all files">
+          <input
+            type="checkbox"
+            id="force-restore-mode"
+            checked={forceMode}
+            onChange={(e) => setForceMode(e.target.checked)}
+            className="w-4 h-4 text-red-500 rounded focus:ring-2 focus:ring-red-500 bg-gray-700 border-gray-600"
+          />
+          <label htmlFor="force-restore-mode" className="ml-2 text-sm font-medium text-red-200 cursor-pointer">
+            Smart Restore / Force Override
+          </label>
+        </div>
       </div>
 
       {isStoryMode && (

@@ -185,11 +185,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
      * ***MODIFIED***: This is the new, simpler bulk analysis handler.
      * It processes files one by one and gets results immediately.
      */
-    const handleBulkAnalyze = async (files: File[] | FileList | null | undefined) => {
+    const handleBulkAnalyze = async (files: File[] | FileList | null | undefined, options: { forceReanalysis?: boolean } = {}) => {
         const normalizedFiles = Array.isArray(files) ? files : Array.from(files || []);
         if (normalizedFiles.length === 0) return;
+        const { forceReanalysis = false } = options;
+
         const newRecords: AnalysisRecord[] = []; // Track all processed records (including restored duplicates)
-        log('info', 'Starting bulk analysis.', { fileCount: normalizedFiles.length, isStoryMode });
+        log('info', 'Starting bulk analysis.', { fileCount: normalizedFiles.length, isStoryMode, forceReanalysis });
 
         if (isStoryMode) {
             try {
@@ -223,60 +225,75 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         }
 
         const initialResults: DisplayableAnalysisResult[] = normalizedFiles.map(f => ({
-            fileName: f.name, data: null, error: 'Checking for duplicates...', file: f, submittedAt: Date.now()
+            fileName: f.name, data: null, error: forceReanalysis ? 'Queued (Force Override)' : 'Checking for duplicates...', file: f, submittedAt: Date.now()
         }));
         dispatch({ type: 'SET_BULK_UPLOAD_RESULTS', payload: initialResults });
 
         try {
-            // Layer 1: Client-side cache fast-path (PR #341) - instant for cached duplicates
-            // Layer 1.5: 'New File' metadata pre-check (unification fix)
-            const { cachedDuplicates, cachedUpgrades, alreadyCheckedNewFiles, remainingFiles } = partitionCachedFiles(normalizedFiles);
-
-            // Process cached duplicates immediately (no network call needed)
-            for (const dup of cachedDuplicates) {
-                const record = buildRecordFromCachedDuplicate(dup, 'cached');
-                dispatch({
-                    type: 'UPDATE_BULK_JOB_COMPLETED',
-                    payload: { record, fileName: dup.file.name }
-                });
-            }
-
-            // Prepare cached upgrades as DuplicateCheckResults
-            const cachedUpgradeResults: DuplicateCheckResult[] = cachedUpgrades.map(file => ({
-                file,
-                isDuplicate: true,
-                needsUpgrade: true
-            }));
-
-            // Prepare already-checked new files
-            const alreadyCheckedResults: DuplicateCheckResult[] = alreadyCheckedNewFiles.map(file => ({
-                file,
-                isDuplicate: false,
-                needsUpgrade: false
-            }));
-
-            // PHASE 1: Check remaining files for duplicates upfront - categorize into three groups
             let trueDuplicates: DuplicateCheckResult[] = [];
             let needsUpgrade: DuplicateCheckResult[] = [];
             let newFiles: DuplicateCheckResult[] = [];
+            let cachedDuplicates: any[] = []; // Using any to avoid complex type reconstruction here
+            let cachedUpgrades: File[] = [];
 
-            if (remainingFiles.length > 0) {
-                const result = await checkFilesForDuplicates(remainingFiles, log);
-                trueDuplicates = result.trueDuplicates;
-                needsUpgrade = result.needsUpgrade;
-                newFiles = result.newFiles;
+            if (forceReanalysis) {
+                log('info', 'Force Re-analysis enabled: Bypassing duplicate checks and treating all files as new.');
+                // Map all files to "newFiles" to ensure they are processed
+                newFiles = normalizedFiles.map(f => ({
+                    file: f,
+                    isDuplicate: false,
+                    needsUpgrade: false
+                }));
+            } else {
+                // Layer 1: Client-side cache fast-path (PR #341) - instant for cached duplicates
+                // Layer 1.5: 'New File' metadata pre-check (unification fix)
+                const partitionResult = partitionCachedFiles(normalizedFiles);
+                cachedDuplicates = partitionResult.cachedDuplicates;
+                cachedUpgrades = partitionResult.cachedUpgrades;
+                const alreadyCheckedNewFiles = partitionResult.alreadyCheckedNewFiles;
+                const remainingFiles = partitionResult.remainingFiles;
+
+                // Process cached duplicates immediately (no network call needed)
+                for (const dup of cachedDuplicates) {
+                    const record = buildRecordFromCachedDuplicate(dup, 'cached');
+                    dispatch({
+                        type: 'UPDATE_BULK_JOB_COMPLETED',
+                        payload: { record, fileName: dup.file.name }
+                    });
+                }
+
+                // Prepare cached upgrades as DuplicateCheckResults
+                const cachedUpgradeResults: DuplicateCheckResult[] = cachedUpgrades.map(file => ({
+                    file,
+                    isDuplicate: true,
+                    needsUpgrade: true
+                }));
+
+                // Prepare already-checked new files
+                const alreadyCheckedResults: DuplicateCheckResult[] = alreadyCheckedNewFiles.map(file => ({
+                    file,
+                    isDuplicate: false,
+                    needsUpgrade: false
+                }));
+
+                // PHASE 1: Check remaining files for duplicates upfront - categorize into three groups
+                if (remainingFiles.length > 0) {
+                    const result = await checkFilesForDuplicates(remainingFiles, log);
+                    trueDuplicates = result.trueDuplicates;
+                    needsUpgrade = result.needsUpgrade;
+                    newFiles = result.newFiles;
+                }
+
+                // Combine cached upgrades with network-checked upgrades
+                needsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
+
+                // Combine pre-checked new files with verified new files
+                newFiles = [...alreadyCheckedResults, ...newFiles];
             }
 
-            // Combine cached upgrades with network-checked upgrades
-            needsUpgrade = [...cachedUpgradeResults, ...needsUpgrade];
-
-            // Combine pre-checked new files with verified new files
-            newFiles = [...alreadyCheckedResults, ...newFiles];
-
-            // Mark true duplicates as skipped immediately (don't analyze these at all)
             // Mark true duplicates as skipped immediately (don't analyze these at all)
             // UNLESS we can restore them fully to the UI (which satisfies the user's need to see the record)
-            if (trueDuplicates.length > 0) {
+            if (trueDuplicates.length > 0 && !forceReanalysis) {
                 const restoredRecords: AnalysisRecord[] = [];
                 const skippedFiles: { fileName: string; reason: string }[] = [];
 
@@ -357,7 +374,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 upgrades: needsUpgrade.length,
                 new: newFiles.length,
                 cachedDuplicates: cachedDuplicates.length,
-                cachedUpgrades: cachedUpgrades.length
+                cachedUpgrades: cachedUpgrades.length,
+                forceReanalysis
             });
 
             // Create optimizer instance for parallel processing
@@ -368,7 +386,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 const file = item.file;
                 dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: 'Processing' } });
 
-                const analysisData = await analyzeBmsScreenshot(file, undefined, state.primarySystemId);
+                const analysisData = await analyzeBmsScreenshot(file, forceReanalysis, state.primarySystemId);
 
                 log('info', 'Processing synchronous analysis result.', { fileName: file.name });
 
