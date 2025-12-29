@@ -72,9 +72,10 @@ const VALID_HASH_REGEX = /^[a-f0-9]{64}$/i;
  * Batch check for existing analyses by content hash
  * @param {string[]} contentHashes - Array of content hashes to check
  * @param {import('./utils/jsdoc-types.cjs').LogLike} log - Logger instance
+ * @param {boolean} [includeData=false] - Whether to include full record data (PR #339)
  * @returns {Promise<Map<string, any>>} Map of contentHash -> existing record
  */
-async function batchCheckExistingAnalyses(contentHashes, log) {
+async function batchCheckExistingAnalyses(contentHashes, log, includeData = false) {
   const startTime = Date.now();
 
   try {
@@ -84,9 +85,26 @@ async function batchCheckExistingAnalyses(contentHashes, log) {
 
     // Use $in query to fetch all matching records in one go
     const queryStartTime = Date.now();
-    const existingRecords = await resultsCol.find({
-      contentHash: { $in: contentHashes }
-    }).toArray();
+
+    // Optimization: Use projection if full data is not requested (PR #339)
+    // We still need metadata for checkIfNeedsUpgrade to work correctly
+    const projection = includeData ? {} : {
+      _id: 1,
+      contentHash: 1,
+      timestamp: 1,
+      validationScore: 1,
+      extractionAttempts: 1,
+      isComplete: 1,
+      analysis: 1, // We fetch the analysis object but it's much smaller than rawOutput or images if stored
+      _wasUpgraded: 1,
+      _previousQuality: 1,
+      _newQuality: 1
+    };
+
+    const existingRecords = await resultsCol.find(
+      { contentHash: { $in: contentHashes } },
+      { projection }
+    ).toArray();
     const queryDurationMs = Date.now() - queryStartTime;
 
     const totalDurationMs = Date.now() - startTime;
@@ -254,7 +272,7 @@ exports.handler = async (event, context) => {
       return errorResponse(400, 'invalid_request', parsed?.error || 'Invalid JSON', undefined, headers);
     }
 
-    const { files } = /** @type {{ files: BatchDuplicateFile[] }} */ (parsed.value);
+    const { files, includeData } = /** @type {{ files: BatchDuplicateFile[], includeData?: boolean }} */ (parsed.value);
 
     if (!Array.isArray(files) || files.length === 0) {
       log.warn('Invalid files array', { filesType: typeof files, filesLength: files?.length });
@@ -435,7 +453,7 @@ exports.handler = async (event, context) => {
     // Batch check MongoDB
     let existingRecordsMap = new Map();
     if (validHashes.length > 0) {
-      existingRecordsMap = await batchCheckExistingAnalyses(validHashes, log);
+      existingRecordsMap = await batchCheckExistingAnalyses(validHashes, log, includeData);
     }
 
     // Build results array
@@ -463,9 +481,10 @@ exports.handler = async (event, context) => {
 
       const upgradeCheck = checkIfNeedsUpgrade(existing);
 
-      // Note: analysisData intentionally excluded to prevent PII leakage
+      // Note: analysisData intentionally excluded by default to prevent PII leakage
       // Clients should use the recordId to fetch full analysis via authenticated endpoint
-      return {
+      // or set includeData: true if they have permission (e.g. restoration)
+      const result = {
         fileName,
         isDuplicate: true,
         needsUpgrade: upgradeCheck.needsUpgrade,
@@ -473,8 +492,11 @@ exports.handler = async (event, context) => {
         timestamp: existing.timestamp,
         validationScore: existing.validationScore,
         extractionAttempts: existing.extractionAttempts || 1,
-        upgradeReason: upgradeCheck.reason
+        upgradeReason: upgradeCheck.reason,
+        ...(includeData ? { analysisData: existing } : {})
       };
+
+      return result;
     });
 
     const duplicateCount = results.filter(r => r.isDuplicate && !r.needsUpgrade).length;

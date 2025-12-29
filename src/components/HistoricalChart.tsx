@@ -607,13 +607,27 @@ const SvgChart: React.FC<{
     const activeMetrics = useMemo(() => Object.entries(metricConfig).map(([key, config]) => ({ key: key as MetricKey, axis: config!.axis })), [metricConfig]);
 
     const { xTicks } = useMemo(() => {
-        const xTicks = Array.from({ length: 10 }, (_, i) => i * chartWidth / 9).map(px => {
+        const visibleTimeSpan = (xMax - xMin) * (viewBox.width / chartWidth);
+        const numTicks = 10;
+
+        const xTicks = Array.from({ length: numTicks }, (_, i) => i * chartWidth / (numTicks - 1)).map(px => {
             const time = xScale.invert(px * (viewBox.width / chartWidth) + viewBox.x);
             const date = new Date(time);
-            return { x: px, label: date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }), dateLabel: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) };
+
+            const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+            if (visibleTimeSpan < 2000) { // < 2 seconds span, show millis
+                label = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.' + date.getMilliseconds().toString().padStart(3, '0');
+            } else if (visibleTimeSpan < 60 * 1000 * 2) { // < 2 minutes span, show seconds
+                label = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            } else { // Standard HH:MM
+                label = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+            }
+
+            return { x: px, label, dateLabel };
         });
         return { xTicks };
-    }, [viewBox.width, viewBox.x, chartWidth, xScale]);
+    }, [viewBox.width, viewBox.x, chartWidth, xScale, xMax, xMin]);
 
     const getSvgCoords = (e: MouseEvent) => {
         if (!svgRef.current) return { x: 0, y: 0 };
@@ -749,7 +763,7 @@ const SvgChart: React.FC<{
                 <g transform={`translate(${MARGIN.left}, ${MARGIN.top})`}>
                     {/* Grid Lines (Styled) */}
                     {yTicksLeft.map((tick: any, i: number) => <line key={`gl-l-${i}`} x1="0" y1={tick.y} x2={chartWidth} y2={tick.y} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" opacity="0.4" />)}
-                    {xTicks.map((tick: any, i: number) => <line key={`gl-x-${i}`} x1={tick.x} y1="0" x2={tick.x} y2={chartHeight} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" opacity="0.3" />)}
+                    {xTicks.map((tick: any, i: number) => <line key={`gl-x-${i}`} x1={tick.x} y1="0" x2={tick.x} y2={chartHeight} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" opacity="0.4" />)}
 
                     <g clipPath="url(#chart-area)">
                         <g transform={`translate(${-viewBox.x * (chartWidth / viewBox.width)}, 0) scale(${chartWidth / viewBox.width}, 1)`}>
@@ -899,6 +913,7 @@ const SvgChart: React.FC<{
                         hour: 'numeric',
                         minute: '2-digit',
                         second: '2-digit',
+                        fractionalSecondDigits: 3,
                         hour12: false,
                         timeZone: 'UTC'
                     })} UTC</p>

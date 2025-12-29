@@ -187,12 +187,15 @@ const BATCH_API_LIMIT = 1000;
 
 export async function checkFilesForDuplicates(
     files: File[],
-    log: (level: string, message: string, context?: any) => void
+    log: (level: string, message: string, context?: any) => void,
+    options: { includeData?: boolean } = {}
 ): Promise<CategorizedFiles> {
+    const { includeData = false } = options;
     const startTime = Date.now();
     log('info', 'DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates', {
         fileCount: files.length,
         BATCH_API_LIMIT,
+        includeData,
         event: 'PHASE1_START'
     });
 
@@ -238,7 +241,8 @@ export async function checkFilesForDuplicates(
         // We bypass checkFilesUsingBatchAPI to use our pre-calculated hashes directly
         try {
             const payload = JSON.stringify({
-                files: chunk.hashes.map(h => ({ hash: h.hash, fileName: h.file.name }))
+                files: chunk.hashes.map(h => ({ hash: h.hash, fileName: h.file.name })),
+                includeData
             });
 
             const response = await fetch('/.netlify/functions/check-duplicates-batch', {

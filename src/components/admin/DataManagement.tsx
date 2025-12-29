@@ -193,7 +193,7 @@ const DataManagement: React.FC<DataManagementProps> = ({
                             <button
                                 onClick={onNormalizeIds}
                                 disabled={actionStatus.isNormalizingIds}
-                                className="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-teal-900 disabled:cursor-not-allowed transition-colors"
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-blue-900 disabled:cursor-not-allowed transition-colors"
                             >
                                 {actionStatus.isNormalizingIds ? 'Normalizing...' : 'Normalize/Unify IDs'}
                             </button>

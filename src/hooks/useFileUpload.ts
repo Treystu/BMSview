@@ -194,7 +194,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [], propagat
         });
 
         try {
-            const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(filesToCheck, log);
+            const { trueDuplicates, needsUpgrade, newFiles } = await checkFilesForDuplicates(filesToCheck, log, { includeData: propagateDuplicates });
 
             const duplicateReasons = new Map<string, string>();
             const processedFiles: File[] = [];

@@ -17,7 +17,7 @@ const { z } = require("zod");
 // System validation schema
 const SystemSchema = z.object({
     name: z.string().min(1, "System name is required"),
-    chemistry: z.union([z.enum(["LiFePO4", "LiPo", "LiIon", "LeadAcid", "NiMH", "Other"]), z.literal(''), z.null(), z.undefined()]).optional(),
+    chemistry: z.union([z.enum(["LiFePO4", "LiPo", "LiIon", "LeadAcid", "NiMH", "Other", "NMC", "LTO", "AGM", "Gel"]), z.literal(''), z.null(), z.undefined()]).optional(),
     voltage: z.union([z.number().positive("Voltage must be positive"), z.null(), z.undefined()]).optional(),
     capacity: z.union([z.number().positive("Capacity must be positive"), z.null(), z.undefined()]).optional(),
     latitude: z.union([z.number().min(-90).max(90), z.null(), z.undefined()]).optional(),
