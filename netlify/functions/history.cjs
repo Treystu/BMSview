@@ -365,7 +365,9 @@ exports.handler = async function (event, context) {
                             systemId: { $ne: null },
                             $or: [
                                 { dlNumber: { $exists: true, $ne: null } },
-                                { hardwareSystemId: { $exists: true, $ne: null } }
+                                { hardwareSystemId: { $exists: true, $ne: null } },
+                                { 'analysis.dlNumber': { $exists: true, $ne: null } },
+                                { 'analysis.hardwareSystemId': { $exists: true, $ne: null } }
                             ]
                         }
                     },
@@ -374,7 +376,7 @@ exports.handler = async function (event, context) {
                             _id: "$systemId",
                             associatedIDs: {
                                 $addToSet: {
-                                    $ifNull: ["$hardwareSystemId", "$dlNumber"]
+                                    $ifNull: ["$hardwareSystemId", "$dlNumber", "$analysis.hardwareSystemId", "$analysis.dlNumber"]
                                 }
                             }
                         }
@@ -460,6 +462,8 @@ exports.handler = async function (event, context) {
 
                 // Get stats on unmatchable records first
                 // Updated logic: Include records where fields are empty string '' as unmatchable
+                // Get stats on unmatchable records first
+                // Updated logic: Include records where fields are empty string '' as unmatchable
                 const stats = await historyCollection.aggregate([
                     { $match: { systemId: null } },
                     {
@@ -471,20 +475,14 @@ exports.handler = async function (event, context) {
                                     $cond: [
                                         {
                                             $and: [
-                                                // Check if dlNumber is missing, null, OR empty string
-                                                {
-                                                    $or: [
-                                                        { $in: [{ $type: "$dlNumber" }, ["missing", "null"]] },
-                                                        { $eq: ["$dlNumber", ""] }
-                                                    ]
-                                                },
-                                                // Check if hardwareSystemId is missing, null, OR empty string
-                                                {
-                                                    $or: [
-                                                        { $in: [{ $type: "$hardwareSystemId" }, ["missing", "null"]] },
-                                                        { $eq: ["$hardwareSystemId", ""] }
-                                                    ]
-                                                }
+                                                // Check if root dlNumber is missing/empty
+                                                { $or: [{ $in: [{ $type: "$dlNumber" }, ["missing", "null"]] }, { $eq: ["$dlNumber", ""] }] },
+                                                // Check if root hardwareSystemId is missing/empty
+                                                { $or: [{ $in: [{ $type: "$hardwareSystemId" }, ["missing", "null"]] }, { $eq: ["$hardwareSystemId", ""] }] },
+                                                // Check if analysis.dlNumber is missing/empty
+                                                { $or: [{ $in: [{ $type: "$analysis.dlNumber" }, ["missing", "null"]] }, { $eq: ["$analysis.dlNumber", ""] }] },
+                                                // Check if analysis.hardwareSystemId is missing/empty
+                                                { $or: [{ $in: [{ $type: "$analysis.hardwareSystemId" }, ["missing", "null"]] }, { $eq: ["$analysis.hardwareSystemId", ""] }] }
                                             ]
                                         }, 1, 0
                                     ]
@@ -501,7 +499,10 @@ exports.handler = async function (event, context) {
                     systemId: null,
                     $or: [
                         { dlNumber: { $exists: true, $nin: [null, ''] } },
-                        { hardwareSystemId: { $exists: true, $nin: [null, ''] } }
+                        { hardwareSystemId: { $exists: true, $nin: [null, ''] } },
+                        // Checks for nested IDs inside analysis object
+                        { 'analysis.dlNumber': { $exists: true, $nin: [null, ''] } },
+                        { 'analysis.hardwareSystemId': { $exists: true, $nin: [null, ''] } }
                     ]
                 }).skip(skip); // Apply skip to move past unmatchable records from previous batches
 
@@ -518,8 +519,11 @@ exports.handler = async function (event, context) {
                     }
                     processedCount++;
 
-                    // Try to extract a valid ID from the record
-                    const recordHardwareId = normalizeId(record.hardwareSystemId) || normalizeId(record.dlNumber);
+                    // Try to extract a valid ID from the record (checking root AND nested fields)
+                    const recordHardwareId = normalizeId(record.hardwareSystemId) ||
+                        normalizeId(record.dlNumber) ||
+                        normalizeId(record.analysis?.hardwareSystemId) ||
+                        normalizeId(record.analysis?.dlNumber);
 
                     if (recordHardwareId) {
                         const potentialSystems = hardwareIdMap.get(recordHardwareId);
@@ -535,8 +539,8 @@ exports.handler = async function (event, context) {
                                             $set: {
                                                 systemId: system.id,
                                                 systemName: system.name,
-                                                // Ensure standard fields are populated
-                                                hardwareSystemId: recordHardwareId, // standardize
+                                                // Ensure standard fields are populated (lifting nested ID to root)
+                                                hardwareSystemId: recordHardwareId,
                                                 updatedAt: new Date().toISOString()
                                                 // Note: we don't overwrite dlNumber if it exists, to preserve original
                                             }
