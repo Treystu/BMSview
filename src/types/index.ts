@@ -1,101 +1,102 @@
 // Global type definitions for BMSview
 
 export interface BatteryMeasurement {
-    timestamp: string;
-    voltage: number | null;
-    current: number | null;
-    temperature: number | null;
-    stateOfCharge: number | null;
-    capacity: number | null;
+  timestamp: string;
+  voltage: number | null;
+  current: number | null;
+  temperature: number | null;
+  stateOfCharge: number | null;
+  capacity: number | null;
 }
 
 export interface BatteryAnalysisRequest {
-    systemId?: string;
-    measurements: BatteryMeasurement[];
-    metadata?: {
-        source: string;
-        timestamp: string;
-        [key: string]: any;
-    };
+  systemId?: string;
+  measurements: BatteryMeasurement[];
+  metadata?: {
+    source: string;
+    timestamp: string;
+    [key: string]: any;
+  };
 }
 
 export interface BatteryPerformanceMetrics {
-    trend: 'Improving' | 'Stable' | 'Declining' | 'Unknown';
-    capacityRetention: number;
-    degradationRate: number;
+  trend: 'Improving' | 'Stable' | 'Declining' | 'Unknown';
+  capacityRetention: number;
+  degradationRate: number;
 }
 
 export interface BatteryEfficiencyMetrics {
-    chargeEfficiency: number;
-    dischargeEfficiency: number;
-    cyclesAnalyzed: number;
+  chargeEfficiency: number;
+  dischargeEfficiency: number;
+  cyclesAnalyzed: number;
 }
 
 export interface BatteryInsights {
-    healthStatus: string;
-    performance: BatteryPerformanceMetrics;
-    recommendations: string[];
-    estimatedLifespan: string;
-    efficiency: BatteryEfficiencyMetrics;
-    rawText: string;
+  healthStatus: string;
+  performance: BatteryPerformanceMetrics;
+  recommendations: string[];
+  estimatedLifespan: string;
+  efficiency: BatteryEfficiencyMetrics;
+  rawText: string;
 }
 
 export interface AnalysisResponse {
-    success: boolean;
-    insights: BatteryInsights;
-    tokenUsage: {
-        prompt: number;
-        generated: number;
-        total: number;
-    };
-    timestamp: string;
+  success: boolean;
+  insights: BatteryInsights;
+  tokenUsage: {
+    prompt: number;
+    generated: number;
+    total: number;
+  };
+  timestamp: string;
 }
 
 // Service response types
 export interface ServiceResponse<T> {
-    success: boolean;
-    data?: T;
-    error?: string;
-    timestamp: string;
+  success: boolean;
+  data?: T;
+  error?: string;
+  timestamp: string;
 }
 
 // State management types
 export interface BatteryState {
-    measurements: BatteryMeasurement[];
-    lastUpdate: string;
-    isAnalyzing: boolean;
-    insights: BatteryInsights | null;
-    error: string | null;
+  measurements: BatteryMeasurement[];
+  lastUpdate: string;
+  isAnalyzing: boolean;
+  insights: BatteryInsights | null;
+  error: string | null;
 }
 
 // Component prop types
 export interface ChartProps {
-    data: BatteryMeasurement[];
-    type: 'voltage' | 'current' | 'temperature' | 'stateOfCharge';
-    height?: number;
-    width?: number;
+  data: BatteryMeasurement[];
+  type: 'voltage' | 'current' | 'temperature' | 'stateOfCharge';
+  height?: number;
+  width?: number;
 }
 
 export interface AnalysisResultProps {
-    insights: BatteryInsights;
-    onReanalyze?: () => void;
+  insights: BatteryInsights;
+  onReanalyze?: () => void;
 }
 
 // Utility types
 export type TimeRange = '1h' | '24h' | '7d' | '30d' | 'all';
 
 export interface DataFilter {
-    timeRange: TimeRange;
-    metrics: Array<'voltage' | 'current' | 'temperature' | 'stateOfCharge'>;
-    threshold?: number;
+  timeRange: TimeRange;
+  metrics: Array<'voltage' | 'current' | 'temperature' | 'stateOfCharge'>;
+  threshold?: number;
 }
 
 // API types
-export interface APIResponse<T> {
-    statusCode: number;
-    body: string; // JSON string of ServiceResponse<T>
+export interface APIResponse {
+  statusCode: number;
+  body: string; // JSON string of ServiceResponse<T>
 }// Fix: Add global type definitions for Vite environment variables
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface ImportMetaEnv {
     // VITE_CLIENT_API_KEY was removed to prevent it from being bundled on the client.
   }
@@ -200,6 +201,7 @@ export interface AnalysisRecord {
   extractionAttempts?: number;
   wasUpgraded?: boolean;
   story?: AnalysisStory;
+  updatedAt?: string;
 }
 
 export interface StoryPhoto {

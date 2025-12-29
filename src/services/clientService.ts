@@ -682,8 +682,9 @@ export function selectEndpointForMode(mode: InsightMode): string {
         case InsightModeEnum.STANDARD:
             return '/.netlify/functions/generate-insights';
         case InsightModeEnum.FULL_CONTEXT:
-            // Full Context Mode with AI Feedback capability - uses dedicated endpoint
-            return '/.netlify/functions/generate-insights-full-context';
+            // Full Context Mode now uses the Async Trigger to avoid 504 Timeouts
+            // This allows for 14+ minutes of processing time in the background
+            return '/.netlify/functions/generate-insights-async-trigger';
         case InsightModeEnum.VISUAL_GURU:
             // Visual Guru uses the same endpoint but with different prompt behavior
             return '/.netlify/functions/generate-insights-with-tools';

@@ -17,15 +17,17 @@ const { z } = require("zod");
 // System validation schema
 const SystemSchema = z.object({
     name: z.string().min(1, "System name is required"),
-    chemistry: z.enum(["LiFePO4", "LiPo", "LiIon", "LeadAcid", "NiMH", "Other"]).optional(),
-    voltage: z.number().positive("Voltage must be positive").optional(),
-    capacity: z.number().positive("Capacity must be positive").optional(),
-    latitude: z.number().min(-90).max(90).optional(),
-    longitude: z.number().min(-180).max(180).optional(),
+    chemistry: z.union([z.enum(["LiFePO4", "LiPo", "LiIon", "LeadAcid", "NiMH", "Other"]), z.literal(''), z.null(), z.undefined()]).optional(),
+    voltage: z.union([z.number().positive("Voltage must be positive"), z.null(), z.undefined()]).optional(),
+    capacity: z.union([z.number().positive("Capacity must be positive"), z.null(), z.undefined()]).optional(),
+    latitude: z.union([z.number().min(-90).max(90), z.null(), z.undefined()]).optional(),
+    longitude: z.union([z.number().min(-180).max(180), z.null(), z.undefined()]).optional(),
     associatedDLs: z.array(z.string()).optional(),
     associatedHardwareIds: z.array(z.string()).optional(), // Alias for associatedDLs
-    notes: z.string().optional(),
-    location: z.string().optional()
+    notes: z.union([z.string(), z.null(), z.undefined()]).optional(),
+    location: z.union([z.string(), z.null(), z.undefined()]).optional(),
+    maxAmpsSolarCharging: z.union([z.number().nonnegative("Solar Max Amps must be non-negative"), z.null(), z.undefined()]).optional(),
+    maxAmpsGeneratorCharging: z.union([z.number().nonnegative("Generator Max Amps must be non-negative"), z.null(), z.undefined()]).optional()
 });
 
 const respond = (statusCode, body, headers = {}) => ({

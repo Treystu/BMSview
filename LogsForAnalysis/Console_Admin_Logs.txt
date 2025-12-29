@@ -1,66 +1,159 @@
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:54.492Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
-services-CGqrxgzV.js:54 {"level":"INFO","timestamp":"2025-12-28T01:17:54.492Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
-admin-BYJO_7XI.js:2 {"level":"WARN","timestamp":"2025-12-28T01:17:54.750Z","component":"AdminApp","message":"Netlify Identity widget not available, retrying...","context":{}}
-admin-BYJO_7XI.js:2 {"level":"INFO","timestamp":"2025-12-28T01:17:55.756Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
-admin-BYJO_7XI.js:2 {"level":"INFO","timestamp":"2025-12-28T01:17:55.769Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:56.331Z","component":"AdminDashboard","message":"Performing initial data load (page 1).","context":{}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.331Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.331Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
-services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:56.338Z","service":"localCache","message":"Retrieved 3 systems from cache"}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.338Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":25,"returned":3,"total":3}}
-services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:56.561Z","service":"localCache","message":"Retrieved 3281 history records from cache"}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.561Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":25,"returned":25,"total":3281}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:56.561Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":3,"historyCount":25}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:56.570Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.570Z","service":"clientService","message":"Fetching data integrity audit from admin endpoint.","context":{}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.570Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"admin-data-integrity","method":"GET"}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"Fetching IP management data.","context":{}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"ip-admin","method":"GET"}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"Fetching current user IP.","context":{}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"get-ip","method":"GET"}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"default-system"}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:56.571Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET"}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:57.592Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"get-ip","method":"GET","status":200}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:58.752Z","service":"clientService","message":"Starting smart history sync.","context":{}}
-services-CGqrxgzV.js:56 {"level":"debug","timestamp":"2025-12-28T01:17:58.941Z","service":"localCache","message":"Retrieved 3281 history records from cache"}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:58.941Z","service":"clientService","message":"Loaded 3281 records from local cache.","context":{"count":3281}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:58.943Z","service":"clientService","message":"Performing incremental sync.","context":{"updatedSince":"2025-12-28T00:16:53.156Z"}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:58.943Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?all=true&updatedSince=2025-12-28T00%3A16%3A53.156Z","method":"GET"}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:59.160Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"admin-data-integrity","method":"GET","status":200}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:59.161Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":7,"matched":3,"orphaned":4,"total_records":4885,"orphaned_records":7}}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:59.161Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET","status":200}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:17:59.167Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"ip-admin","method":"GET","status":200}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:17:59.772Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.17445129999999934,"days":7}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:18:01.331Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?all=true&updatedSince=2025-12-28T00%3A16%3A53.156Z","method":"GET","status":200}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:18:01.331Z","service":"clientService","message":"No new records from server.","context":{}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:18:01.331Z","service":"clientService","message":"Finished smart history sync.","context":{}}
-Service Worker was updated because "Update on reload" was checked in the DevTools Application panel.
-useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.620Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
-useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.626Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":1,"oversizedCount":0,"zipCount":0}}
-useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.626Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":1,"fileNames":["Screenshot_20251227-131128.png"],"event":"CHECK_START"}}
-useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.626Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
-shared-utils-BCu2M1qU.js:1 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
-shared-utils-BCu2M1qU.js:1 Client hash generated {hashPreview: '3debcb313fdd471b...', imageLength: 355996}
-shared-utils-BCu2M1qU.js:1 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 11, avgPerFileMs: '11.00', …}
-useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.637Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":11,"event":"HASHING_COMPLETE"}}
-useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:37.637Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:38.590Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":1,"needsUpgrade":0,"newFiles":0,"durationMs":964,"avgPerFileMs":"964.00","event":"PHASE1_COMPLETE"}}
-useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:38.591Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":1,"duplicates":1,"upgrades":0,"newFiles":0,"event":"CHECK_COMPLETE"}}
-useFileUpload-D5Jkczz5.js:2 {"level":"INFO","timestamp":"2025-12-28T01:21:38.593Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":1,"filteredOut":1,"event":"PREVIEW_FILTER"}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:42.928Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":1,"isStoryMode":false}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:42.929Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"event":"PHASE1_START"}}
-shared-utils-BCu2M1qU.js:1 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
-shared-utils-BCu2M1qU.js:1 Client hash generated {hashPreview: '3debcb313fdd471b...', imageLength: 355996}
-shared-utils-BCu2M1qU.js:1 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 30, avgPerFileMs: '30.00', …}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:42.959Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":30,"event":"HASHING_COMPLETE"}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:42.959Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:43.508Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":1,"needsUpgrade":0,"newFiles":0,"durationMs":579,"avgPerFileMs":"579.00","event":"PHASE1_COMPLETE"}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:43.508Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":0,"upgrades":0,"new":0,"cachedDuplicates":0,"cachedUpgrades":0}}
-shared-utils-BCu2M1qU.js:1 Processing 0 files. Initial concurrency: 0
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:43.509Z","component":"AdminDashboard","message":"Bulk analysis run complete.","context":{}}
-AdminDashboard-CKZ0S8v6.js:6 {"level":"INFO","timestamp":"2025-12-28T01:21:43.509Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:21:43.509Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":25,"strategy":"cache-first"}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:21:43.511Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?page=1&limit=25","method":"GET"}}
-services-CGqrxgzV.js:1 {"level":"INFO","timestamp":"2025-12-28T01:21:46.205Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?page=1&limit=25","method":"GET","status":200}}
-services-CGqrxgzV.js:56 {"level":"info","timestamp":"2025-12-28T01:21:46.223Z","service":"localCache","message":"Bulk cached 25 history records","context":{"syncStatus":"synced"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.661Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
+services-BpuWUInH.js:54 {"level":"INFO","timestamp":"2025-12-28T23:17:36.662Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
+admin-BMFPgTO3.js:2 {"level":"INFO","timestamp":"2025-12-28T23:17:36.773Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
+admin-BMFPgTO3.js:2 {"level":"INFO","timestamp":"2025-12-28T23:17:36.781Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
+AdminDashboard-BMke_Xms.js:6 {"level":"INFO","timestamp":"2025-12-28T23:17:36.794Z","component":"AdminDashboard","message":"Performing initial data load (page 1).","context":{}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.794Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":"all","strategy":"cache-first"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.794Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":100,"strategy":"cache-first"}}
+services-BpuWUInH.js:56 {"level":"debug","timestamp":"2025-12-28T23:17:36.807Z","service":"localCache","message":"Retrieved 3 systems from cache"}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.807Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":"all","returned":3,"total":3}}
+services-BpuWUInH.js:56 {"level":"debug","timestamp":"2025-12-28T23:17:36.931Z","service":"localCache","message":"Retrieved 3323 history records from cache"}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.931Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":100,"returned":100,"total":3323}}
+AdminDashboard-BMke_Xms.js:6 {"level":"INFO","timestamp":"2025-12-28T23:17:36.931Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":3,"historyCount":100}}
+AdminDashboard-BMke_Xms.js:6 {"level":"INFO","timestamp":"2025-12-28T23:17:36.951Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.951Z","service":"clientService","message":"Fetching data integrity audit from admin endpoint.","context":{}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.952Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"admin-data-integrity","method":"GET"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.952Z","service":"clientService","message":"Fetching IP management data.","context":{}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.952Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"ip-admin","method":"GET"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.952Z","service":"clientService","message":"Fetching current user IP.","context":{}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.952Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"get-ip","method":"GET"}}
+AdminDashboard-BMke_Xms.js:6 {"level":"INFO","timestamp":"2025-12-28T23:17:36.953Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.953Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"default-system"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:36.953Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:37.344Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"get-ip","method":"GET","status":200}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:37.836Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET","status":200}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:37.894Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"ip-admin","method":"GET","status":200}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:37.915Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"admin-data-integrity","method":"GET","status":200}}
+AdminDashboard-BMke_Xms.js:6 {"level":"INFO","timestamp":"2025-12-28T23:17:37.915Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":4,"matched":3,"orphaned":1,"total_records":4928,"orphaned_records":1}}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:38.433Z","service":"clientService","message":"Starting smart history sync.","context":{}}
+services-BpuWUInH.js:56 {"level":"debug","timestamp":"2025-12-28T23:17:38.510Z","service":"localCache","message":"Retrieved 3323 history records from cache"}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:38.510Z","service":"clientService","message":"Loaded 3323 records from local cache.","context":{"count":3323}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:38.512Z","service":"clientService","message":"Syncing batch 1...","context":{"updatedSince":"2025-12-28T23:15:12.055Z"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:38.512Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?all=true&updatedSince=2025-12-28T23%3A15%3A12.055Z","method":"GET"}}
+AdminDashboard-BMke_Xms.js:6 {"level":"INFO","timestamp":"2025-12-28T23:17:38.758Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.18356959999999944,"days":6}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:39.233Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?all=true&updatedSince=2025-12-28T23%3A15%3A12.055Z","method":"GET","status":200}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:39.233Z","service":"clientService","message":"No more new records from server.","context":{}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:39.233Z","service":"clientService","message":"Incremental sync finished. Total received: 0 records across 1 batches.","context":{}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:39.233Z","service":"clientService","message":"Finished smart history sync.","context":{}}
+AdminDashboard-BMke_Xms.js:6 {"level":"INFO","timestamp":"2025-12-28T23:17:54.666Z","component":"AdminDashboard","message":"Saving system edits.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:54.666Z","service":"clientService","message":"Updating BMS system.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","systemName":"Robby Main"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:17:54.666Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"systems?systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","method":"PUT"}}
+services-BpuWUInH.js:1  PUT https://bmsview.netlify.app/.netlify/functions/systems?systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd 400 (Bad Request)
+ii @ services-BpuWUInH.js:1
+await in ii
+ne @ services-BpuWUInH.js:1
+li @ services-BpuWUInH.js:54
+we @ AdminDashboard-BMke_Xms.js:6
+H @ AdminDashboard-BMke_Xms.js:1
+ja @ index-dmMJo0hd.js:5
+Ha @ index-dmMJo0hd.js:5
+Wa @ index-dmMJo0hd.js:5
+Ho @ index-dmMJo0hd.js:5
+Wo @ index-dmMJo0hd.js:5
+(anonymous) @ index-dmMJo0hd.js:5
+Iu @ index-dmMJo0hd.js:8
+Xu @ index-dmMJo0hd.js:5
+Ii @ index-dmMJo0hd.js:5
+si @ index-dmMJo0hd.js:5
+uf @ index-dmMJo0hd.js:5
+services-BpuWUInH.js:1 {"level":"ERROR","timestamp":"2025-12-28T23:17:56.765Z","service":"clientService","message":"API fetch failed.","context":{"endpoint":"systems?systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","method":"PUT","status":400,"error":"Validation failed"}}
+services-BpuWUInH.js:1 {"level":"ERROR","timestamp":"2025-12-28T23:17:56.766Z","service":"clientService","message":"API fetch encountered a network or parsing error.","context":{"endpoint":"systems?systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","method":"PUT","error":"Validation failed"}}
+AdminDashboard-BMke_Xms.js:6 {"level":"ERROR","timestamp":"2025-12-28T23:17:56.766Z","component":"AdminDashboard","message":"Failed to save system.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","error":"Validation failed"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:19:00.539Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114","startDate":"2025-11-28T23:17:00.000Z","endDate":"2025-12-28T23:19:00.000Z"}}
+services-BpuWUInH.js:1 {"level":"INFO","timestamp":"2025-12-28T23:19:00.539Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-11-28T23:17:00.000Z&endDate=2025-12-28T23:19:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:01.596Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-11-28T23:17:00.000Z&endDate=2025-12-28T23:19:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:01.596Z","service":"clientService","message":"No weather data received for range.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:01.596Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:01.608Z","service":"clientService","message":"Unified timeline generated.","context":{"total":179,"history":179,"weather":0}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:02.842Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:02.842Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:03.430Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114","startDate":"2025-08-28T23:17:00.000Z","endDate":"2025-12-28T23:19:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:03.430Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-08-28T23:17:00.000Z&endDate=2025-12-28T23:19:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:03.732Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-08-28T23:17:00.000Z&endDate=2025-12-28T23:19:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:03.732Z","service":"clientService","message":"No weather data received for range.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:03.732Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:03.738Z","service":"clientService","message":"Unified timeline generated.","context":{"total":179,"history":179,"weather":0}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:04.314Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:04.314Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114","startDate":"2025-12-21T23:19:00.000Z","endDate":"2025-12-28T23:19:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:04.314Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-12-21T23:19:00.000Z&endDate=2025-12-28T23:19:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:04.598Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-12-21T23:19:00.000Z&endDate=2025-12-28T23:19:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:04.598Z","service":"clientService","message":"No weather data received for range.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:04.598Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:04.630Z","service":"clientService","message":"Unified timeline generated.","context":{"total":179,"history":179,"weather":0}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:09.709Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:09.710Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114","startDate":"2025-12-21T23:19:00.000Z","endDate":"2025-12-28T23:19:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:09.710Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-12-21T23:19:00.000Z&endDate=2025-12-28T23:19:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:09.880Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114","startDate":"2025-04-28T23:17:00.000Z","endDate":"2025-12-28T23:19:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:09.880Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-04-28T23:17:00.000Z&endDate=2025-12-28T23:19:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:09.999Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-12-21T23:19:00.000Z&endDate=2025-12-28T23:19:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:09.999Z","service":"clientService","message":"No weather data received for range.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:09.999Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:10.004Z","service":"clientService","message":"Unified timeline generated.","context":{"total":179,"history":179,"weather":0}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:10.219Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-04-28T23:17:00.000Z&endDate=2025-12-28T23:19:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:10.219Z","service":"clientService","message":"No weather data received for range.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:10.219Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:19:10.223Z","service":"clientService","message":"Unified timeline generated.","context":{"total":179,"history":179,"weather":0}}
+ {"level":"INFO","timestamp":"2025-12-28T23:20:05.401Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2025-04-28T23:17:00.000Z","endDate":"2025-12-28T23:20:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:20:05.402Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-04-28T23:17:00.000Z&endDate=2025-12-28T23:20:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:20:06.271Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-04-28T23:17:00.000Z&endDate=2025-12-28T23:20:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:20:06.271Z","service":"clientService","message":"Received 28 weather records.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"debug","timestamp":"2025-12-28T23:20:06.283Z","service":"localCache","message":"Bulk cached 28 weather records"}
+ {"level":"INFO","timestamp":"2025-12-28T23:20:06.283Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:20:06.339Z","service":"clientService","message":"Unified timeline generated.","context":{"total":3162,"history":3134,"weather":28}}
+admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+ {"level":"INFO","timestamp":"2025-12-28T23:21:10.333Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2025-01-28T23:17:00.000Z","endDate":"2025-12-28T23:21:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:10.333Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-01-28T23:17:00.000Z&endDate=2025-12-28T23:21:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:10.398Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:10.398Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:11.230Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-01-28T23:17:00.000Z&endDate=2025-12-28T23:21:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:11.230Z","service":"clientService","message":"Received 28 weather records.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"debug","timestamp":"2025-12-28T23:21:11.242Z","service":"localCache","message":"Bulk cached 28 weather records"}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:11.242Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:11.295Z","service":"clientService","message":"Unified timeline generated.","context":{"total":3162,"history":3134,"weather":28}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:12.301Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2025-12-02T23:17:00.000Z","endDate":"2025-12-28T23:21:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:12.302Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-02T23:17:00.000Z&endDate=2025-12-28T23:21:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:12.688Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2025-12-25T23:17:00.000Z","endDate":"2025-12-28T23:21:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:12.689Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-25T23:17:00.000Z&endDate=2025-12-28T23:21:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:12.702Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-02T23:17:00.000Z&endDate=2025-12-28T23:21:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:12.702Z","service":"clientService","message":"Received 23 weather records.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"debug","timestamp":"2025-12-28T23:21:12.705Z","service":"localCache","message":"Bulk cached 23 weather records"}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:12.705Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:12.750Z","service":"clientService","message":"Unified timeline generated.","context":{"total":3162,"history":3134,"weather":28}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:13.224Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-25T23:17:00.000Z&endDate=2025-12-28T23:21:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:13.224Z","service":"clientService","message":"Received 1 weather records.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"debug","timestamp":"2025-12-28T23:21:13.234Z","service":"localCache","message":"Bulk cached 1 weather records"}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:13.235Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:13.300Z","service":"clientService","message":"Unified timeline generated.","context":{"total":3162,"history":3134,"weather":28}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:13.425Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:13.425Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2025-12-28T23:17:00.000Z","endDate":"2025-12-28T23:21:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:13.425Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-28T23:17:00.000Z&endDate=2025-12-28T23:21:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:13.717Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-28T23:17:00.000Z&endDate=2025-12-28T23:21:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:13.717Z","service":"clientService","message":"No weather data received for range.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:13.717Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:13.782Z","service":"clientService","message":"Unified timeline generated.","context":{"total":3162,"history":3134,"weather":28}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:25.116Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2025-12-25T23:17:00.000Z","endDate":"2025-12-29T23:01:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:25.116Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-25T23:17:00.000Z&endDate=2025-12-29T23:01:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:25.538Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-25T23:17:00.000Z&endDate=2025-12-29T23:01:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:25.538Z","service":"clientService","message":"Received 1 weather records.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"debug","timestamp":"2025-12-28T23:21:25.541Z","service":"localCache","message":"Bulk cached 1 weather records"}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:25.541Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:25.593Z","service":"clientService","message":"Unified timeline generated.","context":{"total":3162,"history":3134,"weather":28}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:25.943Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2025-12-25T23:17:00.000Z","endDate":"2025-12-29T23:17:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:25.943Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-25T23:17:00.000Z&endDate=2025-12-29T23:17:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:26.456Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-25T23:17:00.000Z&endDate=2025-12-29T23:17:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:26.456Z","service":"clientService","message":"Received 1 weather records.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"debug","timestamp":"2025-12-28T23:21:26.458Z","service":"localCache","message":"Bulk cached 1 weather records"}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:26.458Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:26.506Z","service":"clientService","message":"Unified timeline generated.","context":{"total":3162,"history":3134,"weather":28}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:45.374Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:45.374Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:46.149Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:46.149Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114","startDate":"2025-12-25T23:17:00.000Z","endDate":"2025-12-29T23:17:00.000Z"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:46.149Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-12-25T23:17:00.000Z&endDate=2025-12-29T23:17:00.000Z","method":"GET"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:46.422Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=053d2d57-4635-4cc2-9cb4-9ceeb9a27114&startDate=2025-12-25T23:17:00.000Z&endDate=2025-12-29T23:17:00.000Z","method":"GET","status":200}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:46.422Z","service":"clientService","message":"No weather data received for range.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:46.422Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"053d2d57-4635-4cc2-9cb4-9ceeb9a27114"}}
+ {"level":"INFO","timestamp":"2025-12-28T23:21:46.430Z","service":"clientService","message":"Unified timeline generated.","context":{"total":179,"history":179,"weather":0}}

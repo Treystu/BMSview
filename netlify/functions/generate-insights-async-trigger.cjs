@@ -136,13 +136,17 @@ exports.handler = async (event) => {
     } = body;
 
     // Validate required fields
-    if (!analysisData || !systemId) {
+    // For Full Context mode, analysisData is optional (we analyze history)
+    // For other modes, analysisData is required
+    const requiresAnalysisData = !fullContextMode;
+
+    if ((requiresAnalysisData && !analysisData) || !systemId) {
       return {
         statusCode: 400,
         headers,
         body: JSON.stringify({
           error: 'MISSING_REQUIRED_FIELDS',
-          message: 'analysisData and systemId are required'
+          message: requiresAnalysisData ? 'analysisData and systemId are required' : 'systemId is required'
         })
       };
     }

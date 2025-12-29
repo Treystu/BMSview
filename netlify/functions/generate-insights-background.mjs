@@ -140,7 +140,8 @@ const handler = asyncWorkloadFn(async (event) => {
         log.info('Job data loaded', {
           jobId,
           hasData: !!jobData,
-          hasSystemId: !!systemIdFromJob
+          hasSystemId: !!systemIdFromJob,
+          hasFullContextMode: !!fullContextModeFromJob
         });
       });
     }
@@ -166,7 +167,7 @@ const handler = asyncWorkloadFn(async (event) => {
     // STEP 4: Process insights with full async capability
     let insights;
     await step.run('process-insights', async () => {
-      log.info('Step 4: Processing insights with unlimited timeout', { jobId });
+      log.info('Step 4: Processing insights with unlimited timeout', { jobId, fullContextMode: fullContextModeFromJob });
 
       try {
         const result = await processInsightsInBackground(

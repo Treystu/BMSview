@@ -330,7 +330,7 @@ exports.handler = async function (event, context) {
                 log.info('Starting auto-association task', { action });
                 const { skip = 0 } = parsedBody;
                 const startTime = Date.now();
-                const MAX_EXECUTION_TIME = 24000;
+                const MAX_EXECUTION_TIME = 15000;
                 let timeoutReached = false;
 
                 // Helper for normalization
@@ -589,6 +589,13 @@ exports.handler = async function (event, context) {
                     ? `Time limit reached. Processed ${processedCount}, Associated ${associatedCount}`
                     : `Completed. Processed ${processedCount} matchable records, Associated ${associatedCount}.`;
 
+                if (ambiguousCount > 0) {
+                    message += ` (Ambiguous: ${ambiguousCount})`;
+                }
+                if (debugInfo.unmatchableCount > 0) {
+                    message += ` (Unmatchable: ${debugInfo.unmatchableCount})`;
+                }
+
                 if (systemsUpdatedCount > 0) {
                     message += ` (Updated ${systemsUpdatedCount} systems)`;
                 }
@@ -596,18 +603,8 @@ exports.handler = async function (event, context) {
                 if (orphansCleaned > 0) {
                     message += ` (Cleaned ${orphansCleaned} orphans)`;
                 }
-
-                // Add transparency about unmatchable records
-                if (debugInfo.unmatchableCount > 0) {
-                    message += ` Note: ${debugInfo.unmatchableCount} other records are unlinked but missing Hardware IDs so they cannot be auto-associated.`;
-                }
-
                 if (timeoutReached) {
                     message += " Run again to continue.";
-                }
-
-                if (ambiguousCount > 0) {
-                    message += ` (${ambiguousCount} skipped - ambiguous)`;
                 }
 
                 log.exit(200);
