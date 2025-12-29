@@ -17,6 +17,7 @@ interface DataManagementProps {
     onAutoAssociate: () => void;
     cleanupProgress: string | null;
     onFixPowerSigns: () => void;
+    onNormalizeIds: () => void;
 }
 
 const DataManagement: React.FC<DataManagementProps> = ({
@@ -32,7 +33,8 @@ const DataManagement: React.FC<DataManagementProps> = ({
     onHourlyCloudBackfill,
     onCleanupLinks,
     onAutoAssociate,
-    onFixPowerSigns
+    onFixPowerSigns,
+    onNormalizeIds
 }) => {
     const {
         systems, error, selectedSystemIds, primarySystemId,
@@ -187,6 +189,13 @@ const DataManagement: React.FC<DataManagementProps> = ({
                                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-blue-900 disabled:cursor-not-allowed transition-colors"
                             >
                                 {actionStatus.isAutoAssociating ? 'Associating...' : 'Auto-associate Unlinked Hardware IDs'}
+                            </button>
+                            <button
+                                onClick={onNormalizeIds}
+                                disabled={actionStatus.isNormalizingIds}
+                                className="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-md disabled:bg-teal-900 disabled:cursor-not-allowed transition-colors"
+                            >
+                                {actionStatus.isNormalizingIds ? 'Normalizing...' : 'Normalize/Unify IDs'}
                             </button>
                             <button
                                 onClick={onFixPowerSigns}

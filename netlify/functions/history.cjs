@@ -647,6 +647,90 @@ exports.handler = async function (event, context) {
                 }, headers);
             }
 
+            // --- Normalize IDs Action (Unify fields app-wide) ---
+            if (action === 'normalize-ids') {
+                log.info('Starting normalize-ids task', { action });
+                const startTime = Date.now();
+                const MAX_EXECUTION_TIME = 20000;
+                let updatedCount = 0;
+                let scannedCount = 0;
+
+                // Find records that might need normalization (either missing root ID or have analysis ID)
+                // We process in batches to handle timeouts gracefully
+                const parsedLimit = parseInt(parsedBody.limit) || 1000;
+
+                // Helper to normalize an ID string
+                const norm = (id) => (!id || id === 'UNKNOWN') ? null : String(id).trim();
+
+                const cursor = historyCollection.find({
+                    $or: [
+                        { hardwareSystemId: null },
+                        { hardwareSystemId: "" },
+                        { hardwareSystemId: "UNKNOWN" },
+                        { dlNumber: { $ne: null } }, // Check if dlNumber exists but hardwareSystemId might differ
+                        { 'analysis.hardwareSystemId': { $exists: true } },
+                        { 'analysis.dlNumber': { $exists: true } }
+                    ]
+                }).limit(parsedLimit);
+
+                const bulkOps = [];
+
+                for await (const record of cursor) {
+                    if (Date.now() - startTime > MAX_EXECUTION_TIME) break;
+                    scannedCount++;
+
+                    // Priority Step 1: Get the Best ID available (preferring root hardwareSystemId if valid)
+                    const rootHwId = norm(record.hardwareSystemId);
+                    const rootDl = norm(record.dlNumber);
+                    const nestedHwId = norm(record.analysis?.hardwareSystemId);
+                    const nestedDl = norm(record.analysis?.dlNumber);
+
+                    // Determine the "True" ID
+                    // Logic: Use existing root ID if valid, otherwise lift from nested.
+                    // If root fields mismatch, prefer hardwareSystemId, or unify them if one is missing.
+                    const bestId = rootHwId || rootDl || nestedHwId || nestedDl;
+
+                    if (bestId) {
+                        // Check if update is actually needed (completeness check)
+                        const needsUpdate = (
+                            record.hardwareSystemId !== bestId ||
+                            record.dlNumber !== bestId // Ensure legacy field matches
+                        );
+
+                        if (needsUpdate) {
+                            bulkOps.push({
+                                updateOne: {
+                                    filter: { _id: record._id },
+                                    update: {
+                                        $set: {
+                                            hardwareSystemId: bestId,
+                                            dlNumber: bestId, // Legacy compat: Force sync
+                                            updatedAt: new Date().toISOString()
+                                        }
+                                    }
+                                }
+                            });
+                            updatedCount++;
+                        }
+                    }
+                }
+
+                if (bulkOps.length > 0) {
+                    await historyCollection.bulkWrite(bulkOps);
+                }
+
+                const message = `Scanned ${scannedCount} records, unified IDs for ${updatedCount} records.`;
+                timer.end({ action, updatedCount, scannedCount, message });
+                log.info('Normalize-ids task complete', { action, updatedCount, scannedCount });
+
+                return respond(200, {
+                    success: true,
+                    updatedCount,
+                    scannedCount,
+                    message
+                }, headers);
+            }
+
             if (action === 'count-records-needing-weather') {
                 log.info('Counting records needing weather backfill', { action });
                 const count = await historyCollection.countDocuments({ systemId: { $ne: null }, $or: [{ weather: null }, { 'weather.clouds': { $exists: false } }] });

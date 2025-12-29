@@ -107,8 +107,9 @@ declare global {
 }
 
 export interface AnalysisData {
-  hardwareSystemId?: string | null; // Unified System ID (Physical/Hardware ID)
-  dlNumber?: string | null; // Legacy support
+  hardwareSystemId?: string | null; // Unified System ID (Physical/Hardware ID). Source of Truth.
+  /** @deprecated Use hardwareSystemId instead */
+  dlNumber?: string | null; // Legacy support - do not use for new logic
   timestampFromImage?: string | null;
   status?: string | null;
   overallVoltage: number | null;
@@ -192,7 +193,8 @@ export interface AnalysisRecord {
   systemName?: string;
   analysis: AnalysisData | null;
   weather?: WeatherData;
-  hardwareSystemId?: string | null; // Unified System ID
+  hardwareSystemId?: string | null; // Unified System ID. Source of Truth.
+  /** @deprecated Use hardwareSystemId instead */
   dlNumber?: string | null; // Legacy support
   fileName?: string;
   needsReview?: boolean;

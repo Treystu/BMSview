@@ -245,7 +245,7 @@ if (typeof window !== 'undefined') {
                 } else {
                     window.localStorage?.removeItem('bmsview:disableCache');
                 }
-            } catch (_err) {
+            } catch {
                 // Fall back to global override if localStorage not accessible
             }
 
@@ -294,6 +294,7 @@ async function loadLocalCacheModule(): Promise<LocalCacheModule | null> {
 type CacheAugmented<T> = T & { _syncStatus?: string; updatedAt?: string };
 
 function stripCacheMetadata<T>(record: CacheAugmented<T>): T {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { _syncStatus, updatedAt, ...rest } = record as Record<string, unknown>;
     return { ...rest } as T;
 }
@@ -2176,6 +2177,14 @@ export const cleanupLinks = async (): Promise<{ success: boolean; updatedCount: 
         body: JSON.stringify({
             action: 'cleanup-links',
         }),
+    });
+};
+
+export const normalizeIds = async (limit: number = 1000): Promise<{ updatedCount: number; scannedCount: number; message: string }> => {
+    log('info', 'Sending request to normalize IDs.', { limit });
+    return apiFetch<{ updatedCount: number; scannedCount: number; message: string }>('history', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'normalize-ids', limit }),
     });
 };
 

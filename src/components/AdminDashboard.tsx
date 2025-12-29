@@ -17,6 +17,7 @@ import {
     getRegisteredSystems,
     linkAnalysisToSystem,
     mergeBmsSystems,
+    normalizeIds,
     runSingleDiagnosticTest,
     streamAllHistory,
     updateBmsSystem
@@ -741,6 +742,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         'history'
     );
 
+    const handleNormalizeIds = async () => {
+        await handleGenericAction(
+            'isNormalizingIds',
+            () => normalizeIds(),
+            'IDs normalized successfully.',
+            'history'
+        );
+    };
+
     // All available diagnostic tests (matching backend implementation)
     // Dynamically define all available diagnostic tests by extracting from the UI sections
     // This ensures that any new tests added to the UI are automatically included in "Select All"
@@ -1116,8 +1126,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             onCleanupLinks={handleCleanupLinks}
                             onAutoAssociate={handleAutoAssociate}
                             onFixPowerSigns={handleFixPowerSigns}
-                            cleanupProgress={cleanupProgress} // This prop was missing, adding it back
+                            cleanupProgress={cleanupProgress}
+                            onNormalizeIds={handleNormalizeIds}
                         />
+
                         <section id="cost-dashboard-section">
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">💰 AI Cost Management</h2>
                             <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
