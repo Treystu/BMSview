@@ -596,6 +596,7 @@ const SvgChart: React.FC<{
             const date = new Date(time);
 
             const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            let label: string;
 
             let label;
             if (visibleTimeSpan < 2000) { // < 2 seconds span, show millis

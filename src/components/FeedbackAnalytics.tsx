@@ -239,9 +239,9 @@ export const FeedbackAnalytics: React.FC = () => {
         <div className="bg-gray-700/50 border border-gray-600 rounded-lg p-4">
           <div className="text-sm text-gray-400 mb-1">Avg. Time to Implement</div>
           <div className="text-3xl font-bold text-purple-400">
-            {analytics.timeToImplementation?.averageDays !== null 
-              ? `${analytics.timeToImplementation.averageDays}d` 
-              : analytics.averageTimeToImplementation !== null 
+            {analytics.timeToImplementation?.averageDays !== null && analytics.timeToImplementation?.averageDays !== undefined
+              ? `${analytics.timeToImplementation.averageDays}d`
+              : analytics.averageTimeToImplementation !== null
                 ? `${analytics.averageTimeToImplementation}d`
                 : 'N/A'}
           </div>
@@ -508,14 +508,14 @@ export const FeedbackAnalytics: React.FC = () => {
           <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-4">
             <div className="text-sm text-yellow-400 mb-1">Avg. Effectiveness</div>
             <div className="text-3xl font-bold text-yellow-300">
-              {eff?.averageScore !== null ? `${eff.averageScore}/100` : 'N/A'}
+              {eff?.averageScore !== null && eff?.averageScore !== undefined ? `${eff.averageScore}/100` : 'N/A'}
             </div>
           </div>
 
           <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-4">
             <div className="text-sm text-blue-400 mb-1">User Satisfaction</div>
             <div className="text-3xl font-bold text-blue-300">
-              {sat?.averageScore !== null ? `${sat.averageScore}/5` : 'N/A'}
+              {sat?.averageScore !== null && sat?.averageScore !== undefined ? `${sat.averageScore}/5` : 'N/A'}
             </div>
           </div>
 

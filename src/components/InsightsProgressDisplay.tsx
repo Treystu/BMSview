@@ -119,9 +119,9 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
               ▶
             </span>
             {showThinking ? 'Hide' : 'Show'} AI Thinking Process
-            <span className="text-gray-500">({status.progress.length} steps)</span>
+            <span className="text-gray-500">({status.progress?.length || 0} steps)</span>
           </button>
-          
+
           {showThinking && (
             <div className="mt-3">
               {/* Initial Summary */}
@@ -130,7 +130,7 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
               )}
 
               {/* Progress Events */}
-              <ProgressEventsDisplay progress={status.progress} isLive={!isComplete} />
+              <ProgressEventsDisplay progress={status.progress || []} isLive={!isComplete} />
 
               {/* Partial Insights */}
               {status?.partialInsights && !status?.finalInsights && (

@@ -11,7 +11,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 export interface InsightsProgress {
   timestamp: string;
-  type: 'tool_call' | 'tool_response' | 'ai_response' | 'iteration' | 'status' | 'error';
+  type: 'tool_call' | 'tool_response' | 'ai_response' | 'iteration' | 'status' | 'error' | 'context_built' | 'prompt_sent' | 'response_received';
   data: any;
 }
 
