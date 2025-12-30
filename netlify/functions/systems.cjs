@@ -45,6 +45,7 @@ exports.handler = async function (event, context) {
 
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {
+        log.debug('Preflight request received', { method: event.httpMethod, path: event.path });
         return { statusCode: 200, headers };
     }
 
@@ -57,8 +58,11 @@ exports.handler = async function (event, context) {
     const logContext = {
         clientIp,
         httpMethod: event.httpMethod,
-        path: event.path
+        path: event.path,
+        queryStringParameters: event.queryStringParameters || {}
     };
+
+    log.debug('Systems function invoked', logContext);
 
     if (!validateEnvironment(log)) {
         timer.end({ error: 'env_validation_failed' });
@@ -67,14 +71,19 @@ exports.handler = async function (event, context) {
     }
 
     try {
+        log.debug('Connecting to MongoDB collections');
         const systemsCollection = await getCollection("systems");
         const historyCollection = await getCollection("history");
+        log.debug('MongoDB collections connected', { systemsCollection: 'systems', historyCollection: 'history' });
 
         if (event.httpMethod === 'GET') {
             const { systemId, page = '1', limit = '25' } = event.queryStringParameters || {};
+            log.debug('GET request - parsing query parameters', { systemId, page, limit });
+
             if (systemId) {
                 log.debug('Fetching single system by ID', { systemId });
                 const system = await systemsCollection.findOne({ id: systemId }, { projection: { _id: 0 } });
+                log.debug('Single system lookup complete', { systemId, found: !!system });
                 timer.end({ found: !!system });
                 log.exit(system ? 200 : 404);
                 return system ? respond(200, system, headers) : respond(404, { error: "System not found." }, headers);
@@ -86,15 +95,18 @@ exports.handler = async function (event, context) {
             const limitNum = isAll ? 0 : parseInt(limit, 10);
             const skip = isAll ? 0 : (pageNum - 1) * limitNum;
 
+            log.debug('Building MongoDB query', { isAll, pageNum, limitNum, skip });
             let query = systemsCollection.find({}, { projection: { _id: 0 } }).sort({ name: 1 }).skip(skip);
             if (!isAll) {
                 query = query.limit(limitNum);
             }
 
+            log.debug('Executing database queries in parallel');
             const [systems, totalItems] = await Promise.all([
                 query.toArray(),
                 systemsCollection.countDocuments({})
             ]);
+            log.debug('Database queries complete', { returned: systems.length, total: totalItems });
 
             timer.end({ page: pageNum, returned: systems.length, total: totalItems });
             log.info(`Returning page ${pageNum} of systems`, { ...logContext, returned: systems.length, total: totalItems });
@@ -103,20 +115,17 @@ exports.handler = async function (event, context) {
         }
 
         if (event.httpMethod === 'POST') {
+            log.debug('POST request received', logContext);
             const parsedBody = JSON.parse(event.body);
-            // Do not log body contents (may contain user notes/PII). Safe signal only.
-            log.debug('Parsed POST body', { ...logContext, bodyLength: event.body ? event.body.length : 0 });
+            log.debug('Parsing POST body', { ...logContext, bodyLength: event.body ? event.body.length : 0 });
 
             const { action, ...otherProps } = parsedBody;
-            if (action !== 'merge') {
-                log.info('System creation request', { ...logContext, fieldsProvided: Object.keys(otherProps) });
-            }
-
-            const postLogContext = { ...logContext, action };
+            const postLogContext = { ...logContext, action, fieldsProvided: Object.keys(otherProps) };
 
             if (action === 'merge') {
+                log.debug('POST action: merge', postLogContext);
                 const { primarySystemId, idsToMerge } = parsedBody;
-                log.warn('Starting system merge operation', { ...postLogContext, primarySystemId, idsToMerge });
+                log.info('Starting system merge operation', { ...postLogContext, primarySystemId, idsToMergeCount: idsToMerge?.length });
 
                 const systemsToMerge = await systemsCollection.find({ id: { $in: idsToMerge } }).toArray();
                 const primarySystem = systemsToMerge.find(s => s.id === primarySystemId);
@@ -153,10 +162,12 @@ exports.handler = async function (event, context) {
                 };
 
                 log.debug(`Re-assigning history records from ${idsToDelete.length} systems to primary system`, postLogContext);
+                log.debug('Executing history collection updateMany operation');
                 const { modifiedCount } = await historyCollection.updateMany(
                     { systemId: { $in: idsToDelete } },
                     { $set: { systemId: primarySystem.id, systemName: primarySystem.name } }
                 );
+                log.debug('History collection update complete', { modifiedCount });
                 log.info(`Updated ${modifiedCount} history records during merge`, { ...postLogContext, modifiedCount });
 
                 await systemsCollection.updateOne(
@@ -191,10 +202,13 @@ exports.handler = async function (event, context) {
                 // Ensure we don't have undefined fields
                 if (!newSystem.associatedHardwareIds) newSystem.associatedHardwareIds = dls;
 
-                log.info('Creating new system', { ...logContext, systemId: newSystem.id, systemName: newSystem.name });
+                log.debug('Preparing new system record for insertion', { systemId: newSystem.id, systemName: newSystem.name });
+                log.debug('Executing systems collection insertOne operation');
                 await systemsCollection.insertOne(newSystem);
+                log.debug('Systems collection insert complete', { systemId: newSystem.id });
                 // Return new system without the internal _id
                 const { _id, ...systemToReturn } = newSystem;
+                log.info('New system created successfully', { ...logContext, systemId: newSystem.id, systemName: newSystem.name });
                 timer.end({ created: true, systemId: newSystem.id });
                 log.exit(201);
                 return respond(201, systemToReturn, headers);

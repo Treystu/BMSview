@@ -80,7 +80,10 @@ async function ensureSystemAssociation(record, log) {
     const systems = await systemsCollection.find({}).toArray();
 
     const matches = systems.filter((s) =>
+    (
+      s.id === hardwareId ||
       (s.associatedHardwareIds || s.associatedDLs || []).some((id) => normalizeHardwareId(/** @type {string} */(id)) === hardwareId)
+    )
     );
 
     if (matches.length !== 1) {

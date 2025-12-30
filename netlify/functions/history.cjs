@@ -462,6 +462,7 @@ exports.handler = async function (event, context) {
                 // Re-process systems (using updated memory objects)
                 systems.forEach(s => {
                     const allIds = new Set([
+                        s.id, // Explicitly include the System ID itself as a match target
                         ...(s.associatedDLs || []),
                         ...(s.associatedHardwareIds || []) // Include alias
                     ]);
@@ -1420,9 +1421,15 @@ exports.handler = async function (event, context) {
                 return respond(404, { error: "Target system not found." }, headers);
             }
 
+            const updateFields = { systemId, systemName: system.name };
+            if (dlNumber) {
+                updateFields.dlNumber = dlNumber;
+                updateFields.hardwareSystemId = dlNumber; // Keep synced for consistency
+            }
+
             const updateResult = await historyCollection.updateOne(
                 { id: recordId },
-                { $set: { systemId, systemName: system.name } }
+                { $set: updateFields }
             );
             if (updateResult.matchedCount === 0) {
                 timer.end({ error: 'record_not_found' });
