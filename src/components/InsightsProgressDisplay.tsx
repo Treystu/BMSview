@@ -332,7 +332,7 @@ function ProgressEventItem({ event, isLatest }: { event: InsightsProgress; isLat
     switch (event.type) {
       case 'context_built':
         return `🧠 Context built for AI (${Math.round((event.data.promptLength || 0) / 1000)}KB prompt)`;
-      case 'tool_call':
+      case 'tool_call': {
         const params = event.data.parameters || {};
         const paramSummary = Object.entries(params)
           .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
@@ -347,7 +347,8 @@ function ProgressEventItem({ event, isLatest }: { event: InsightsProgress; isLat
             )}
           </div>
         );
-      case 'tool_response':
+      }
+      case 'tool_response': {
         const success = event.data.success !== false;
         return (
           <div>
@@ -362,6 +363,7 @@ function ProgressEventItem({ event, isLatest }: { event: InsightsProgress; isLat
             )}
           </div>
         );
+      }
       case 'prompt_sent':
         return `📤 Sending prompt to AI (${event.data.messageCount} messages, ${Math.round((event.data.promptLength || 0) / 1000)}KB)`;
       case 'response_received':

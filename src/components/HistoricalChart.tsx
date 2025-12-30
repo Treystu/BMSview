@@ -598,7 +598,6 @@ const SvgChart: React.FC<{
             const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             let label: string;
 
-            let label;
             if (visibleTimeSpan < 2000) { // < 2 seconds span, show millis
                 label = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.' + date.getMilliseconds().toString().padStart(3, '0');
             } else if (visibleTimeSpan < 60 * 1000 * 2) { // < 2 minutes span, show seconds
@@ -943,7 +942,7 @@ const HourlyAverageChart: React.FC<{
     const chartHeight = HEIGHT - MARGIN.top - MARGIN.bottom;
 
     const { yScale, yTicks, yDomainMin, xBandwidth } = useMemo(() => {
-        let allValues = [0]; // Include 0 in the domain
+        const allValues = [0]; // Include 0 in the domain
         hourlyAverages.forEach(d => {
             const metricData = (d.metrics as any)[metricKey];
             if (metricData) {

@@ -43,7 +43,7 @@ interface EffectivenessScore {
   stabilityScore?: number;
 }
 
-interface FeedbackAnalytics {
+interface FeedbackAnalyticsData {
   totalFeedback: number;
   byStatus: Record<string, number>;
   byPriority: Record<string, number>;
@@ -101,7 +101,7 @@ interface FeedbackAnalytics {
 }
 
 export const FeedbackAnalytics: React.FC = () => {
-  const [analytics, setAnalytics] = useState<FeedbackAnalytics | null>(null);
+  const [analytics, setAnalytics] = useState<FeedbackAnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'implementation' | 'roi' | 'effectiveness' | 'trends'>('overview');

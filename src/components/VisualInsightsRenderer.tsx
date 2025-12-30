@@ -341,9 +341,7 @@ export const VisualInsightsRenderer: React.FC<VisualInsightsRendererProps> = ({
   // Split content by chart placeholders
   const contentParts = useMemo(() => {
     const parts: Array<{ type: 'text' | 'chart'; content: string; chartIndex?: number }> = [];
-    let currentContent = cleanContent;
-    let chartIdx = 0;
-    
+
     const placeholderRegex = /\[CHART_PLACEHOLDER_(\d+)\]/g;
     let lastIndex = 0;
     let match;

@@ -195,7 +195,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       };
     case 'START_HISTORY_CACHE_BUILD':
       return { ...state, isCacheBuilding: true, historyCache: [] };
-    case 'APPEND_HISTORY_CACHE':
+    case 'APPEND_HISTORY_CACHE': {
       // OPTIMIZATION: Use a Set for O(1) ID lookups to avoid O(N^2) complexity with large datasets (4k+ records)
       const existingIds = new Set(state.historyCache.map(r => r.id));
       const newRecords = action.payload.filter(p => !existingIds.has(p.id));
@@ -210,6 +210,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         // For now, let's just update the cache and keep totalHistory synced with what's actually cached if it's larger.
         totalHistory: Math.max(state.totalHistory, updatedCache.length)
       };
+    }
     case 'FINISH_HISTORY_CACHE_BUILD':
       return { ...state, isCacheBuilding: false };
 
@@ -261,7 +262,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       };
     }
 
-    case 'UPDATE_BULK_JOB_COMPLETED':
+    case 'UPDATE_BULK_JOB_COMPLETED': {
       const { record, fileName } = action.payload;
       return {
         ...state,
@@ -273,6 +274,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         historyCache: [record, ...state.historyCache],
         totalHistory: state.totalHistory + 1,
       };
+    }
 
     case 'BATCH_BULK_JOB_COMPLETED': {
       const updates = action.payload;
@@ -339,7 +341,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       return { ...state, isDiagnosticsModalOpen: false, diagnosticResults: null };
     case 'SET_DIAGNOSTIC_RESULTS':
       return { ...state, diagnosticResults: action.payload };
-    case 'UPDATE_SINGLE_DIAGNOSTIC_RESULT':
+    case 'UPDATE_SINGLE_DIAGNOSTIC_RESULT': {
       // Real-time update: replace the specific test result as it completes
       if (!state.diagnosticResults) {
         return state;
@@ -371,7 +373,8 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
           )
         }
       };
-    case 'REMOVE_HISTORY_RECORD':
+    }
+    case 'REMOVE_HISTORY_RECORD': {
       // Remove the record from the current page and the cache immediately to allow optimistic UI updates
       const idToRemove = action.payload;
       return {
@@ -380,6 +383,7 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
         historyCache: state.historyCache.filter(r => r.id !== idToRemove),
         totalHistory: Math.max(0, state.totalHistory - (state.history.some(r => r.id === idToRemove) ? 1 : 0)),
       };
+    }
     case 'SET_SELECTED_DIAGNOSTIC_TESTS':
       return { ...state, selectedDiagnosticTests: action.payload };
     case 'SET_STORIES':
