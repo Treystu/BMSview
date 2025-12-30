@@ -30,6 +30,6 @@
       "@types/*": ["./src/types/*"]
     }
   },
-  "include": [".", "netlify/functions/solar-estimate.ts"],
-  "exclude": ["dist", "node_modules"]
+  "include": ["src", "netlify/functions/solar-estimate.ts"],
+  "exclude": ["dist", "node_modules", "coverage", "tests", "**/*.test.ts", "**/*.test.tsx", "**/*.cjs", "**/*.js"]
 }

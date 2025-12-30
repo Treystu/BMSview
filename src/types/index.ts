@@ -113,12 +113,20 @@ export interface AnalysisData {
   timestampFromImage?: string | null;
   status?: string | null;
   overallVoltage: number | null;
+  /** @deprecated Use overallVoltage instead */
+  voltage?: number | null; // Legacy alias
   power?: number | null;
   current: number | null;
   stateOfCharge: number | null;
+  /** @deprecated Use stateOfCharge instead */
+  soc?: number | null; // Legacy alias
   remainingCapacity?: number | null;
   fullCapacity?: number | null;
+  /** @deprecated Use remainingCapacity or fullCapacity instead */
+  capacity?: number | null; // Legacy alias
   cycleCount?: number | null;
+  /** @deprecated Use cycleCount instead */
+  cycles?: number | null; // Legacy alias
   temperature: number | null; // Main battery temperature (e.g., T1)
 
   // New fields for richer data extraction
@@ -142,6 +150,8 @@ export interface AnalysisData {
   highestCellVoltage?: number | null;
   lowestCellVoltage?: number | null;
   cellVoltageDifference?: number | null;
+  /** @deprecated Use cellVoltageDifference instead */
+  cellVoltageDelta?: number | null; // Legacy alias
   averageCellVoltage?: number | null;
   alerts: string[];
   summary: string;

@@ -94,6 +94,7 @@ const RegisterBms: React.FC<RegisterBmsProps> = ({ onRegister, isRegistering, er
             capacity: capacity ? parseFloat(capacity) : null,
             latitude: latitude ? parseFloat(latitude) : null,
             longitude: longitude ? parseFloat(longitude) : null,
+            associatedHardwareIds: [], // Start with empty array for new systems
             maxAmpsSolarCharging: maxAmpsSolarCharging ? parseFloat(maxAmpsSolarCharging) : null,
             maxAmpsGeneratorCharging: maxAmpsGeneratorCharging ? parseFloat(maxAmpsGeneratorCharging) : null,
         };
