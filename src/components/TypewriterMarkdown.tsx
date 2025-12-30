@@ -107,7 +107,7 @@ export const TypewriterMarkdown: React.FC<TypewriterMarkdownProps> = ({
       {!isComplete && (
         <span className="inline-block w-2 h-5 bg-blue-600 ml-1 animate-pulse" style={{ animation: 'blink 1s infinite' }} />
       )}
-      <style jsx>{`
+      <style>{`
         @keyframes blink {
           0%, 50% { opacity: 1; }
           51%, 100% { opacity: 0; }

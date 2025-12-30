@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import type { AnalysisStory, AnalysisRecord } from '../types';
+import type { AnalysisStory, AnalysisRecord, AnalysisData } from '../types';
 import { getStories, getStory, deleteStory, type StoriesResponse } from '../services/clientService';
 
 interface StoryViewerProps {
@@ -9,7 +9,7 @@ interface StoryViewerProps {
 
 // Timeline card for individual analysis records
 const TimelineCard: React.FC<{ record: AnalysisRecord; index: number }> = ({ record, index }) => {
-  const data = record.data || {};
+  const data = record.analysis || {} as Partial<AnalysisData>;
   
   return (
     <div className="relative pl-8 pb-6 border-l-2 border-secondary last:border-l-0">
@@ -190,7 +190,7 @@ const StoryDetail: React.FC<{ story: AnalysisStory; onBack: () => void; onDelete
           {story.timeline && story.timeline.length > 0 ? (
             <div className="space-y-2">
               {story.timeline.map((record, index) => (
-                <TimelineCard key={record._id || index} record={record} index={index} />
+                <TimelineCard key={record.id || index} record={record} index={index} />
               ))}
             </div>
           ) : (
