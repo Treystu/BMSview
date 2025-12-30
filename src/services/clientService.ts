@@ -624,7 +624,7 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
         let hasMore = true;
         let totalReceived = 0;
         let loopCount = 0;
-        const MAX_SYNC_LOOPS = 10; // Safety break for a single sync run
+        const MAX_SYNC_LOOPS = 100; // Increased to handle large datasets (100 × 500 = 50,000 records max)
 
         while (hasMore && loopCount < MAX_SYNC_LOOPS) {
             loopCount++;
@@ -633,11 +633,11 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
                 endpoint += `&updatedSince=${encodeURIComponent(maxUpdatedAt)}`;
             }
 
-            log('info', `Syncing batch ${loopCount}...`, { updatedSince: maxUpdatedAt });
+            log('info', `Syncing batch ${loopCount}/${MAX_SYNC_LOOPS}...`, { updatedSince: maxUpdatedAt, totalSoFar: totalReceived });
             const serverResponse = await apiFetch<AnalysisRecord[]>(endpoint);
 
             if (serverResponse && Array.isArray(serverResponse) && serverResponse.length > 0) {
-                log('info', `Received ${serverResponse.length} records in batch ${loopCount}.`);
+                log('info', `Received ${serverResponse.length} records in batch ${loopCount}.`, { totalSoFar: totalReceived + serverResponse.length });
                 totalReceived += serverResponse.length;
 
                 // Update maxUpdatedAt to the latest received record's timestamp
@@ -646,7 +646,7 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
                     return record.updatedAt > max ? record.updatedAt : max;
                 }, maxUpdatedAt);
 
-                // 3. Update Cache
+                // 3. Update Cache (UNIFY local and server data)
                 if (isLocalCacheEnabled()) {
                     const cacheModule = await loadLocalCacheModule();
                     if (cacheModule) {
@@ -664,7 +664,21 @@ export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => vo
                 hasMore = false;
             }
         }
-        log('info', `Incremental sync finished. Total received: ${totalReceived} records across ${loopCount} batches.`);
+
+        // CRITICAL: Warn if we hit the safety limit without completing
+        if (loopCount >= MAX_SYNC_LOOPS && hasMore) {
+            log('warn', `Sync stopped at safety limit of ${MAX_SYNC_LOOPS} loops. There may be more records on server.`, {
+                totalReceived,
+                lastUpdatedAt: maxUpdatedAt,
+                suggestion: 'Some logs may not appear in charts. Consider increasing MAX_SYNC_LOOPS or running sync again.'
+            });
+        }
+
+        log('info', `Incremental sync finished. Total received: ${totalReceived} records across ${loopCount} batches.`, {
+            localCount,
+            serverCount: totalReceived,
+            totalUnified: localCount + totalReceived
+        });
 
     } catch (error) {
         log('error', 'Smart history sync failed.', { error: error instanceof Error ? error.message : String(error) });
