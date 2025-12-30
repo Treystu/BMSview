@@ -9,7 +9,7 @@ import type { SyncEvent } from '@/services/syncManager';
 import syncManager from '@/services/syncManager';
 
 import {
-  associateDlToSystem,
+  associateHardwareIdToSystem,
   getAnalysisHistory,
   getRegisteredSystems,
   linkAnalysisToSystem,
@@ -117,10 +117,10 @@ function App() {
     };
   }, [fetchAppData]);
 
-  const handleLinkRecordToSystem = async (recordId: string, systemId: string, dlNumber?: string | null) => {
+  const handleLinkRecordToSystem = async (recordId: string, systemId: string, hardwareSystemId?: string | null) => {
     log('info', 'Linking record to system.', { recordId, systemId });
     try {
-      await linkAnalysisToSystem(recordId, systemId, dlNumber);
+      await linkAnalysisToSystem(recordId, systemId, hardwareSystemId);
       await fetchAppData(true);
       dispatch({ type: 'UPDATE_RESULTS_AFTER_LINK' });
     } catch {
@@ -354,9 +354,9 @@ function App() {
   const handleRegisterSystem = async (systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>) => {
     dispatch({ type: 'REGISTER_SYSTEM_START' });
     try {
-      const newSystem = await registerBmsSystem({ ...systemData, associatedDLs: [] });
-      if (registrationContext?.dlNumber) {
-        await associateDlToSystem(registrationContext.dlNumber, newSystem.id);
+      const newSystem = await registerBmsSystem({ ...systemData, associatedHardwareIds: [] });
+      if (registrationContext?.hardwareSystemId) {
+        await associateHardwareIdToSystem(registrationContext.hardwareSystemId, newSystem.id);
       }
       dispatch({ type: 'REGISTER_SYSTEM_SUCCESS', payload: `System "${newSystem.name}" registered!` });
       await fetchAppData(true);
@@ -366,8 +366,8 @@ function App() {
     }
   };
 
-  const handleInitiateRegistration = (dlNumber: string) => {
-    dispatch({ type: 'OPEN_REGISTER_MODAL', payload: { dlNumber } });
+  const handleInitiateRegistration = (hardwareSystemId: string) => {
+    dispatch({ type: 'OPEN_REGISTER_MODAL', payload: { hardwareSystemId } });
   };
 
   const handleCloseRegisterModal = () => {

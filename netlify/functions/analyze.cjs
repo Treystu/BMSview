@@ -113,7 +113,8 @@ async function ensureSystemAssociation(record, log) {
       ...record,
       systemId: system.id,
       systemName: system.name,
-      hardwareSystemId: rawId || hardwareId
+      hardwareSystemId: rawId || hardwareId,
+      dlNumber: rawId || hardwareId // Strict mirroring per DATA_MODEL.md
     };
 
     log.info('Auto-associated record using Hardware ID match', {

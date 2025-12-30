@@ -79,7 +79,7 @@ const SystemsTable: React.FC<SystemsTableProps> = ({ systems, dispatch, paginati
                                         {system.latitude && system.longitude ? `${system.latitude}, ${system.longitude}` : 'N/A'}
                                     </td>
                                     <td className="p-3 font-mono text-xs break-all max-w-[200px]">
-                                        {(system.associatedHardwareIds?.length ? system.associatedHardwareIds : system.associatedDLs)?.join(', ') || 'None'}
+                                        {(system.associatedHardwareIds || system.associatedDLs || []).join(', ') || 'None'}
                                     </td>
                                     <td className="p-3">
                                         <button onClick={() => dispatch({ type: 'SET_EDITING_SYSTEM', payload: system })} className="text-secondary hover:underline font-semibold text-sm">

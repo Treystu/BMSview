@@ -181,6 +181,7 @@ export interface BmsSystem {
   latitude: number | null;
   longitude: number | null;
   associatedHardwareIds: string[]; // List of hardware system IDs (formerly associatedDLs)
+  /** @deprecated Use associatedHardwareIds instead */
   associatedDLs?: string[]; // Legacy support
   maxAmpsSolarCharging?: number | null;
   maxAmpsGeneratorCharging?: number | null;

@@ -21,7 +21,7 @@ export interface AppState {
   registeredSystems: PaginatedResponse<BmsSystem> | BmsSystem[];
   analysisHistory: PaginatedResponse<AnalysisRecord> | AnalysisRecord[];
   registrationContext: {
-    dlNumber: string;
+    hardwareSystemId: string;
   } | null;
   isSyncing: boolean;
   lastSyncTime: Record<string, number>;
@@ -97,7 +97,7 @@ export type AppAction =
   | { type: 'ANALYSIS_COMPLETE' }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'FETCH_DATA_SUCCESS'; payload: { systems: PaginatedResponse<BmsSystem> | BmsSystem[]; history: PaginatedResponse<AnalysisRecord> | AnalysisRecord[] } }
-  | { type: 'OPEN_REGISTER_MODAL'; payload: { dlNumber: string } }
+  | { type: 'OPEN_REGISTER_MODAL'; payload: { hardwareSystemId: string } }
   | { type: 'CLOSE_REGISTER_MODAL' }
   | { type: 'REGISTER_SYSTEM_START' }
   | { type: 'REGISTER_SYSTEM_SUCCESS'; payload: string }
@@ -122,10 +122,11 @@ export type AppAction =
 // 3. Reducer
 export const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
-    case 'PREPARE_ANALYSIS':
+    case 'PREPARE_ANALYSIS': {
       const existingFileNames = new Set(state.analysisResults.map(r => r.fileName));
       const newResults = action.payload.filter(p => !existingFileNames.has(p.fileName));
       return { ...state, isLoading: true, error: null, analysisResults: [...state.analysisResults, ...newResults] };
+    }
 
     case 'UPDATE_ANALYSIS_STATUS':
       return {

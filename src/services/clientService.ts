@@ -1803,10 +1803,10 @@ export const registerBmsSystem = async (
         'create',
         async () => {
             log('info', 'Registering new BMS system.', { name: systemData.name });
-            // Ensure associatedDLs is always an array (default to empty if not provided)
+            // Ensure associatedHardwareIds is always an array (default to empty if not provided)
             const dataToSend = {
                 ...systemData,
-                associatedDLs: systemData.associatedDLs || []
+                associatedHardwareIds: systemData.associatedHardwareIds || []
             };
             return apiFetch<BmsSystem>('systems', {
                 method: 'POST',
@@ -1822,7 +1822,7 @@ export const registerBmsSystem = async (
                         id: `temp-${Date.now()}`,
                         ...systemData,
                         chemistry: systemData.chemistry || '', // Strict type fix: undefined not assignable to string
-                        associatedDLs: systemData.associatedDLs || []
+                        associatedHardwareIds: systemData.associatedHardwareIds || []
                     };
                     await localCache.systemsCache.put(newSystem, 'pending');
                 }
@@ -1842,25 +1842,25 @@ export const getSystemById = async (systemId: string): Promise<BmsSystem> => {
     return apiFetch<BmsSystem>(`systems?systemId=${systemId}`);
 };
 
-export const associateDlToSystem = async (dlNumber: string, systemId: string): Promise<void> => {
-    log('info', 'Associating DL number to system.', { dlNumber, systemId });
+export const associateHardwareIdToSystem = async (hardwareId: string, systemId: string): Promise<void> => {
+    log('info', 'Associating hardware ID to system.', { hardwareId, systemId });
     const systemToUpdate = await getSystemById(systemId);
 
     if (!systemToUpdate) {
         throw new Error("System to associate not found.");
     }
 
-    if (!systemToUpdate.associatedDLs) {
-        systemToUpdate.associatedDLs = [];
+    if (!systemToUpdate.associatedHardwareIds) {
+        systemToUpdate.associatedHardwareIds = [];
     }
 
-    if (!systemToUpdate.associatedDLs.includes(dlNumber)) {
-        log('info', 'DL number not found in system, adding it.', { dlNumber, systemId });
-        systemToUpdate.associatedDLs.push(dlNumber);
+    if (!systemToUpdate.associatedHardwareIds.includes(hardwareId)) {
+        log('info', 'Hardware ID not found in system, adding it.', { hardwareId, systemId });
+        systemToUpdate.associatedHardwareIds.push(hardwareId);
         const { id, ...dataToUpdate } = systemToUpdate;
         await updateBmsSystem(id, dataToUpdate);
     } else {
-        log('info', 'DL number already associated with system, no update needed.', { dlNumber, systemId });
+        log('info', 'Hardware ID already associated with system, no update needed.', { hardwareId, systemId });
     }
 };
 
@@ -1884,12 +1884,12 @@ export const saveAnalysisResult = async (
     return dualWriteWithTimerReset(
         'create',
         async () => {
-            log('info', 'Saving analysis result to history.', { fileName, systemId, dlNumber: analysisData.dlNumber });
+            log('info', 'Saving analysis result to history.', { fileName, systemId, hardwareSystemId: analysisData.hardwareSystemId });
             const recordToSave = {
                 systemId,
                 analysis: analysisData,
                 weather: weatherData,
-                dlNumber: analysisData.dlNumber,
+                hardwareSystemId: analysisData.hardwareSystemId,
                 fileName: fileName,
             };
 
@@ -1909,7 +1909,7 @@ export const saveAnalysisResult = async (
                         systemId,
                         analysis: analysisData,
                         weather: weatherData,
-                        dlNumber: analysisData.dlNumber,
+                        hardwareSystemId: analysisData.hardwareSystemId,
                         fileName: fileName,
                         timestamp: new Date().toISOString()
                     };
@@ -2079,14 +2079,14 @@ export const deleteAnalysisRecord = async (recordId: string): Promise<void> => {
     });
 };
 
-export const linkAnalysisToSystem = async (recordId: string, systemId: string, dlNumber?: string | null): Promise<void> => {
+export const linkAnalysisToSystem = async (recordId: string, systemId: string, hardwareSystemId?: string | null): Promise<void> => {
     return dualWriteWithTimerReset(
         'link',
         async () => {
-            log('info', 'Linking analysis record to system.', { recordId, systemId, dlNumber });
+            log('info', 'Linking analysis record to system.', { recordId, systemId, hardwareSystemId });
             await apiFetch('history', {
                 method: 'PUT',
-                body: JSON.stringify({ recordId, systemId, dlNumber }),
+                body: JSON.stringify({ recordId, systemId, hardwareSystemId }),
             });
         },
         undefined, // Link operation doesn't need local cache update, just server sync

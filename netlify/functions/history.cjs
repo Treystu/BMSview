@@ -543,58 +543,89 @@ exports.handler = async function (event, context) {
                     processedCount++;
 
                     // Try to extract a valid ID from the record (checking root AND nested fields)
-                    const recordHardwareId = normalizeId(record.hardwareSystemId) ||
-                        normalizeId(record.dlNumber) ||
-                        normalizeId(record.analysis?.hardwareSystemId) ||
-                        normalizeId(record.analysis?.dlNumber);
+                    // Try to extract a valid ID from the record (checking root AND nested fields)
+                    // CRITICAL FIX: Check ALL potential valid IDs, don't just take the first one.
+                    // This allows later fields (like dlNumber) to find a match even if earlier fields (like hardwareSystemId) are present but unmatchable.
+                    const candidates = new Set([
+                        normalizeId(record.hardwareSystemId),
+                        normalizeId(record.dlNumber),
+                        normalizeId(record.analysis?.hardwareSystemId),
+                        normalizeId(record.analysis?.dlNumber)
+                    ].filter(id => id && id !== 'UNKNOWN' && id !== 'NULL'));
 
-                    if (recordHardwareId) {
-                        const potentialSystems = hardwareIdMap.get(recordHardwareId);
+                    let matchedSystem = null;
+                    let matchFound = false;
+                    let matchingId = null;
 
-                        // Only associate if exactly one system matches the Hardware ID
-                        if (potentialSystems) {
-                            if (potentialSystems.length === 1) {
-                                const system = potentialSystems[0];
-                                bulkOps.push({
-                                    updateOne: {
-                                        filter: { _id: record._id }, // Use _id for bulk ops
-                                        update: {
-                                            $set: {
-                                                systemId: system.id,
-                                                systemName: system.name,
-                                                // Ensure standard fields are populated (lifting nested ID to root)
-                                                hardwareSystemId: recordHardwareId,
-                                                updatedAt: new Date().toISOString()
-                                                // Note: we don't overwrite dlNumber if it exists, to preserve original
-                                            }
-                                        }
+                    // Check all candidates for a system match
+                    for (const candidateId of candidates) {
+                        const potentialSystems = hardwareIdMap.get(candidateId);
+                        if (potentialSystems && potentialSystems.length === 1) {
+                            const sys = potentialSystems[0];
+                            if (!matchedSystem) {
+                                matchedSystem = sys;
+                                matchingId = candidateId;
+                                matchFound = true;
+                            } else if (matchedSystem.id !== sys.id) {
+                                // Ambiguity: Different fields on this record point to DIFFERENT systems
+                                matchedSystem = null;
+                                matchFound = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (matchFound && matchedSystem) {
+                        bulkOps.push({
+                            updateOne: {
+                                filter: { _id: record._id }, // Use _id for bulk ops
+                                update: {
+                                    $set: {
+                                        systemId: matchedSystem.id,
+                                        systemName: matchedSystem.name,
+                                        // Ensure standard fields are populated (lifting nested ID to root)
+                                        // Use the ID that actually matched
+                                        hardwareSystemId: record.hardwareSystemId || matchingId,
+                                        dlNumber: record.dlNumber || matchingId,
+                                        updatedAt: new Date().toISOString()
                                     }
-                                });
-                                associatedCount++;
-                                if (bulkOps.length >= 500) { // Process in batches
-                                    await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                                    bulkOps.length = 0; // Clear the array
-                                    log.debug('Processed auto-associate batch', { action, count: 500 });
-                                }
-                            } else {
-                                ambiguousCount++;
-                                if (debugInfo.sampleFailures.length < 50) { // Increased limit from 5 to 50
-                                    debugInfo.sampleFailures.push({
-                                        reason: 'ambiguous',
-                                        id: recordHardwareId,
-                                        matches: potentialSystems.map(s => s.name)
-                                    });
                                 }
                             }
+                        });
+                        associatedCount++;
+                        if (bulkOps.length >= 500) { // Process in batches
+                            await historyCollection.bulkWrite(bulkOps, { ordered: false });
+                            bulkOps.length = 0; // Clear the array
+                            log.debug('Processed auto-associate batch', { action, count: 500 });
+                        }
+                    } else if (candidates.size > 0 && !matchedSystem) {
+                        // If we had candidates but no match (or ambiguous), log failure
+                        const candidateArray = Array.from(candidates);
+                        // Check if it was ambiguous (multiple systems found) or just no match
+                        let isAmbiguous = false;
+                        // re-scan to check for multiple system matches strictly for logging
+                        const systemsFound = new Set();
+                        for (const cid of candidates) {
+                            const ps = hardwareIdMap.get(cid);
+                            if (ps) ps.forEach(s => systemsFound.add(s.id));
+                        }
+
+                        if (systemsFound.size > 1) {
+                            ambiguousCount++;
+                            if (debugInfo.sampleFailures.length < 50) {
+                                debugInfo.sampleFailures.push({
+                                    reason: 'ambiguous_multi_field',
+                                    candidates: candidateArray,
+                                    systems: Array.from(systemsFound)
+                                });
+                            }
                         } else {
-                            // No match found
-                            if (debugInfo.sampleFailures.length < 50) { // Increased limit from 5 to 50
+                            // No match found for any candidate
+                            if (debugInfo.sampleFailures.length < 50) {
                                 debugInfo.sampleFailures.push({
                                     reason: 'no_match',
-                                    recordId: record.id,
-                                    rawSystemId: record.hardwareSystemId,
-                                    rawDl: record.dlNumber,
-                                    normalized: recordHardwareId
+                                    candidates: candidateArray,
+                                    recordId: record.id
                                 });
                             }
                         }

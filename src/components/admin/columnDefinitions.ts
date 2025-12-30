@@ -41,16 +41,19 @@ export const ALL_HISTORY_COLUMNS: Record<string, ColumnDefinition> = {
     },
     'systemName': { label: 'System Name', group: 'General', sortable: true, format: (val) => val || 'Unlinked' },
     'fileName': { label: 'File Name', group: 'General', sortable: true, format: (val) => val ? val.split(/[/\\]/).pop() : 'N/A' },
-    'analysis.dlNumber': {
+    'hardwareSystemId': {
         label: 'Hardware ID',
         group: 'General',
         sortable: true,
         format: (val, record) => {
             // Robust fallback for Hardware ID
-            if (val) return val;
+            // Unified access per DATA_MODEL.md: Check root hardwareSystemId first
             if (record?.hardwareSystemId) return record.hardwareSystemId;
+            if (val) return val; // If accessed via key path, though unlikely if key is just 'hardwareSystemId' and it's on root
             if (record?.dlNumber) return record.dlNumber;
+            // Legacy/Nested fallbacks
             if (record?.analysis?.hardwareSystemId) return record.analysis.hardwareSystemId;
+            if (record?.analysis?.dlNumber) return record.analysis.dlNumber;
             return 'N/A';
         }
     },
@@ -105,7 +108,7 @@ export type HistoryColumnKey = keyof typeof ALL_HISTORY_COLUMNS;
 export const DEFAULT_VISIBLE_COLUMNS: HistoryColumnKey[] = [
     'timestamp',
     'systemName',
-    'analysis.dlNumber',
+    'hardwareSystemId',
     'analysis.overallVoltage',
     'analysis.current',
     'analysis.stateOfCharge',

@@ -524,7 +524,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 // Creating new systems from link action is not currently supported
                 throw new Error("Please create the system first, then link the record.");
             } else {
-                await linkAnalysisToSystem(record.id, systemId, record.dlNumber);
+                await linkAnalysisToSystem(record.id, systemId, record.hardwareSystemId);
                 log('info', 'Link successful.');
                 await fetchData(historyPage, 'history', { forceRefresh: true }); // Refresh history
             }

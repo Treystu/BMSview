@@ -166,7 +166,7 @@ const aggregateData = (data: any[], bucketMinutes: number): any[] => {
             const { source, multiplier = 1, anomaly } = METRICS[metric];
 
             // Get values from bucket, handling both old (analysis/weather) and new (data) formats
-            let values = bucket.map(r => {
+            const values = bucket.map(r => {
                 if (r.analysis || r.weather) {
                     // Old format (AnalysisRecord) - need to apply multiplier
                     const rawValue = source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
@@ -449,26 +449,7 @@ const SvgChart: React.FC<{
     const showDataPoints = zoomRatio > 100; // Show points when very zoomed in
 
     // Define standard gradients for metrics
-    const defs = (
-        <defs>
-            <linearGradient id="grad-soc" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#34d399" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#34d399" stopOpacity="0.1" />
-            </linearGradient>
-            <linearGradient id="grad-power" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#c084fc" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#c084fc" stopOpacity="0.1" />
-            </linearGradient>
-            <linearGradient id="grad-solar" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#fbbf24" stopOpacity="0.1" />
-            </linearGradient>
-            <filter id="glow-line" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="1.5" result="blur" />
-                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
-        </defs>
-    );
+
 
     const {
         paths, anomalies, bands, cloudAreaPath,
@@ -503,7 +484,7 @@ const SvgChart: React.FC<{
             let currentSegment: any[] = [];
             let currentSource = '';
 
-            dataToRender.filter((d: any) => d[key] !== null).forEach((d: any, i: number) => {
+            dataToRender.filter((d: any) => d[key] !== null).forEach((d: any, _: number) => {
                 const pointSource = d.source || 'bms';
 
                 if (currentSource !== pointSource && currentSegment.length > 0) {
@@ -616,6 +597,7 @@ const SvgChart: React.FC<{
 
             const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
+            let label;
             if (visibleTimeSpan < 2000) { // < 2 seconds span, show millis
                 label = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.' + date.getMilliseconds().toString().padStart(3, '0');
             } else if (visibleTimeSpan < 60 * 1000 * 2) { // < 2 minutes span, show seconds

@@ -1,10 +1,10 @@
+import { formatError, getIsActualError } from '@/utils';
 import React, { useEffect, useMemo, useState } from 'react';
 import { hasOpenCircuitBreakers, resetAllCircuitBreakers } from '../services/circuitBreakerService';
 import { getRecentHistoryForSystem, streamInsights } from '../services/clientService';
 import { useAppState } from '../state/appState';
 import type { AnalysisData, BmsSystem, DisplayableAnalysisResult, WeatherData } from '../types';
 import { InsightMode, InsightModeDescriptions } from '../types';
-import { formatError, getIsActualError } from '../utils';
 import { CostEstimateBadge, estimateInsightsCost } from './CostEstimateBadge';
 import CloudIcon from './icons/CloudIcon';
 import SpinnerIcon from './icons/SpinnerIcon';
@@ -33,7 +33,7 @@ const InsightModeLoadingStates: Record<InsightMode, { title: string; description
   },
   [InsightMode.ASYNC_WORKLOAD]: {
     title: '⚡ Async Workload Queued...',
-    description: 'Your analysis has been queued in Netlify\'s durable async system. This workload can run unlimited time with automatic retries. Check status via polling.'
+    description: 'Your analysis has been queued in Netlify&apos;s durable async system. This workload can run unlimited time with automatic retries. Check status via polling.'
   }
 };
 
@@ -43,16 +43,16 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
     timestamp: new Date().toISOString(),
     component: 'AnalysisResult',
     message,
-    context
+    ...context // Merge the provided context
   }));
 };
 
 interface AnalysisResultProps {
   result: DisplayableAnalysisResult;
   registeredSystems: BmsSystem[];
-  onLinkRecord: (recordId: string, systemId: string, dlNumber?: string | null) => void;
+  onLinkRecord: (recordId: string, systemId: string, hardwareSystemId?: string | null) => void;
   onReprocess: (file: File) => void;
-  onRegisterNewSystem: (dlNumber: string) => void;
+  onRegisterNewSystem: (hardwareSystemId: string) => void;
 }
 
 const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: string, systemName?: string }> = ({ analysisData, systemId, systemName }) => {
@@ -516,7 +516,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                   className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 text-sm font-mono"
                 />
                 <p className="text-xs text-purple-700 mt-2">
-                  Enter any Gemini model name. Make sure it's available in your API key's permissions.
+                  Enter any Gemini model name. Make sure it&apos;s available in your API key&apos;s permissions.
                 </p>
               </div>
             )}
@@ -998,7 +998,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
               <p className="text-red-700 mb-3">{formatError(error ?? 'Unknown error')}</p>
               {error?.includes('backend_error') && (
                 <div className="bg-red-100 p-3 rounded-md text-sm text-red-700 mb-3">
-                  <strong>Backend Issue:</strong> We're experiencing connection problems. Please try again in a few minutes.
+                  <strong>Backend Issue:</strong> We&apos;re experiencing connection problems. Please try again in a few minutes.
                 </div>
               )}
               {error?.includes('timeout') && (

@@ -22,7 +22,6 @@ interface AdminSystemsManagerProps {
  */
 const AdminSystemsManager: React.FC<AdminSystemsManagerProps> = ({
     editingSystem,
-    dispatch,
     onClose,
     onSave,
     onDelete
@@ -36,7 +35,6 @@ const AdminSystemsManager: React.FC<AdminSystemsManagerProps> = ({
         latitude: undefined,
         longitude: undefined,
         associatedHardwareIds: [],
-        associatedDLs: [], // Legacy support
     });
     const [hwIdInput, setHwIdInput] = useState('');
     const [isSaving, setIsSaving] = useState(false);
@@ -57,7 +55,6 @@ const AdminSystemsManager: React.FC<AdminSystemsManagerProps> = ({
                 latitude: editingSystem.latitude,
                 longitude: editingSystem.longitude,
                 associatedHardwareIds: editingSystem.associatedHardwareIds || editingSystem.associatedDLs || [],
-                associatedDLs: editingSystem.associatedDLs || [],
             });
         } else {
             // Reset for new system creation
@@ -69,7 +66,6 @@ const AdminSystemsManager: React.FC<AdminSystemsManagerProps> = ({
                 latitude: undefined,
                 longitude: undefined,
                 associatedHardwareIds: [],
-                associatedDLs: [],
             });
         }
         setError(null);
@@ -124,7 +120,6 @@ const AdminSystemsManager: React.FC<AdminSystemsManagerProps> = ({
                 latitude: formData.latitude ?? null,
                 longitude: formData.longitude ?? null,
                 associatedHardwareIds: formData.associatedHardwareIds || [],
-                associatedDLs: formData.associatedHardwareIds || [], // Sync legacy
             };
 
             await onSave(systemToSave);
@@ -160,14 +155,14 @@ const AdminSystemsManager: React.FC<AdminSystemsManagerProps> = ({
                 return;
             }
             const updatedIds = [...(formData.associatedHardwareIds || []), hwIdInput.trim()];
-            setFormData({ ...formData, associatedHardwareIds: updatedIds, associatedDLs: updatedIds });
+            setFormData({ ...formData, associatedHardwareIds: updatedIds });
             setHwIdInput('');
         }
     };
 
     const handleRemoveHwId = (idToRemove: string) => {
         const updatedIds = (formData.associatedHardwareIds || []).filter(id => id !== idToRemove);
-        setFormData({ ...formData, associatedHardwareIds: updatedIds, associatedDLs: updatedIds });
+        setFormData({ ...formData, associatedHardwareIds: updatedIds });
     };
 
     return (

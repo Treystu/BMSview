@@ -94,7 +94,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ history, systems, state, di
                                         const displayValue = colDef.format ? colDef.format(value, record) : (value ?? 'N/A');
 
                                         return (
-                                            <td key={colKey} className={`p-3 whitespace-nowrap ${colKey.includes('Number') || colKey.includes('dlNumber') ? 'font-mono text-xs' : ''}`}>
+                                            <td key={colKey} className={`p-3 whitespace-nowrap ${colKey.includes('Number') || colKey.includes('dlNumber') || colKey === 'hardwareSystemId' ? 'font-mono text-xs' : ''}`}>
                                                 {displayValue}
                                             </td>
                                         );
@@ -114,7 +114,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ history, systems, state, di
                                                         {systems.map(system => (
                                                             <option key={system.id} value={system.id}>{system.name}</option>
                                                         ))}
-                                                        {(record.dlNumber || record.hardwareSystemId || record.analysis?.dlNumber || record.analysis?.hardwareSystemId) && (
+                                                        {(record.hardwareSystemId || record.dlNumber || record.analysis?.hardwareSystemId || record.analysis?.dlNumber) && (
                                                             <option value="--create-new--" className="font-bold text-secondary">
                                                                 + Create New System...
                                                             </option>

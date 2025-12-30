@@ -10,7 +10,7 @@ interface AnalysisHistoryProps {
     onDeleteRecord: (recordId: string) => void;
     onToggleExpand: (recordId: string) => void;
     expandedId: string | null;
-    onRegisterNewSystem: (dlNumber: string) => void;
+    onRegisterNewSystem: (hardwareSystemId: string) => void;
 }
 
 const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({
@@ -25,15 +25,15 @@ const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({
     const [linkSelections, setLinkSelections] = React.useState<{ [recordId: string]: string }>({});
     const [linkingStates, setLinkingStates] = React.useState<{ [recordId: string]: boolean }>({});
 
-    const handleLinkRecord = async (recordId: string, dlNumber: string | null | undefined) => {
+    const handleLinkRecord = async (recordId: string, hardwareSystemId: string | null | undefined) => {
         const systemId = linkSelections[recordId];
         if (!systemId) return;
 
         setLinkingStates(prev => ({ ...prev, [recordId]: true }));
         try {
             if (systemId === '--create-new--') {
-                if (dlNumber) {
-                    onRegisterNewSystem(dlNumber);
+                if (hardwareSystemId) {
+                    onRegisterNewSystem(hardwareSystemId);
                 }
             } else {
                 await onLinkSystem(recordId, systemId);
@@ -49,7 +49,7 @@ const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({
                 <div className="text-center mb-12">
                     <h2 className="text-3xl font-bold text-neutral-dark">Analysis History ({history.length})</h2>
                     <p className="text-neutral mt-2 max-w-2xl mx-auto">
-                        Review your past analysis results to track your systems' health over time.
+                        Review your past analysis results to track your systems&apos; health over time.
                     </p>
                 </div>
 

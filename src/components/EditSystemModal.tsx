@@ -133,7 +133,6 @@ const EditSystemModal: React.FC<EditSystemModalProps> = ({
             latitude: latitude ? parseFloat(latitude) : null,
             longitude: longitude ? parseFloat(longitude) : null,
             associatedHardwareIds: idsArray,
-            associatedDLs: idsArray, // Legacy support
             maxAmpsSolarCharging: maxAmpsSolarCharging ? parseFloat(maxAmpsSolarCharging) : null,
             maxAmpsGeneratorCharging: maxAmpsGeneratorCharging ? parseFloat(maxAmpsGeneratorCharging) : null,
         });
