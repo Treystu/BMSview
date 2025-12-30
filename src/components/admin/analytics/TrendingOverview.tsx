@@ -205,7 +205,7 @@ const TrendingOverview: React.FC<TrendingOverviewProps> = ({
                     <div>
                         <span className="text-gray-400">Location:</span>
                         <span className="ml-2 text-white font-medium">
-                            {selectedSystem?.latitude && selectedSystem?.longitude
+                            {selectedSystem?.latitude != null && selectedSystem?.longitude != null
                                 ? `${selectedSystem.latitude.toFixed(4)}, ${selectedSystem.longitude.toFixed(4)}`
                                 : 'N/A'
                             }
