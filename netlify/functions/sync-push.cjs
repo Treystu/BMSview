@@ -70,8 +70,8 @@ function sanitizeItem(rawItem, serverTime) {
 }
 
 /**
- * @param {any} event
- * @param {any} context
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
  */
 exports.handler = async function (event, context) {
     const log = createLoggerFromEvent("sync-push", event, context);

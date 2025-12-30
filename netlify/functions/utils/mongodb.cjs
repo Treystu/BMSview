@@ -263,6 +263,64 @@ async function getDb() {
 }
 
 const { COLLECTIONS } = require('./collections.cjs');
+const { startTimer } = require("./logger.cjs");
+
+/**
+ * Wraps a MongoDB collection to log query execution metrics
+ * @param {import('mongodb').Collection} collection
+ * @param {string} name
+ * @returns {import('mongodb').Collection}
+ */
+function wrapCollection(collection, name) {
+    return new Proxy(collection, {
+        get(target, prop, receiver) {
+            const original = Reflect.get(target, prop, receiver);
+            if (typeof original !== 'function') return original;
+
+            // Operations to measure execution time
+            const measuredOps = [
+                'insertOne', 'insertMany',
+                'updateOne', 'updateMany',
+                'deleteOne', 'deleteMany',
+                'findOne', 'countDocuments',
+                'estimatedDocumentCount', 'bulkWrite'
+            ];
+
+            if (measuredOps.includes(prop)) {
+                return async function (...args) {
+                    const start = Date.now();
+                    // Extract query details for debug logging (safely)
+                    const queryDetails = args[0] ? (typeof args[0] === 'object' ? args[0] : { arg: args[0] }) : {};
+                    log.debug(`DB Operation: ${name}.${prop}`, { args: queryDetails });
+
+                    try {
+                        const result = await original.apply(this, args);
+                        const duration = Date.now() - start;
+                        log.metric('db_query_duration_ms', duration, {
+                            collection: name,
+                            operation: prop,
+                            success: true
+                        });
+                        return result;
+                    } catch (error) {
+                        const duration = Date.now() - start;
+                        log.metric('db_query_duration_ms', duration, {
+                            collection: name,
+                            operation: prop,
+                            success: false,
+                            error: error.message
+                        });
+                        throw error;
+                    }
+                }
+            }
+
+            return original;
+        }
+    });
+}
+
+
 
 /**
  * Helper to get a specific collection from the database with retry logic
@@ -285,7 +343,9 @@ async function getCollection(collectionName, retries = 2) {
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
             const { db } = await connectToDatabase();
-            return db.collection(collectionName);
+            log.debug(`Accessing collection: ${collectionName}`);
+            const collection = db.collection(collectionName);
+            return wrapCollection(collection, collectionName);
         } catch (error) {
             log.error('Failed to get collection', { collectionName, attempt, retries, error: error.message });
 

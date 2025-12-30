@@ -32,6 +32,10 @@ const fetchWithRetry = async (url, log, retries = 3, initialDelay = 500) => {
   }
 };
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
+ */
 exports.handler = async function (event, context) {
   const headers = getCorsHeaders(event);
 
@@ -130,10 +134,18 @@ exports.handler = async function (event, context) {
       const timemachineUrl = `https://api.openweathermap.org/data/3.0/onecall/timemachine?lat=${lat}&lon=${lon}&dt=${unixTimestamp}&units=metric&appid=${apiKey}`;
       const uviUrl = `https://api.openweathermap.org/data/2.5/uvi/history?lat=${lat}&lon=${lon}&start=${unixTimestamp}&end=${unixTimestamp}&appid=${apiKey}`;
 
+      log.apiCall('OpenWeather', 'timemachine', { lat, lon, timestamp: unixTimestamp });
+      log.apiCall('OpenWeather', 'uvi', { lat, lon, timestamp: unixTimestamp });
+
       const [mainResponse, uviResponse] = await Promise.all([
         fetchWithRetry(timemachineUrl, log),
         fetchWithRetry(uviUrl, log)
       ]);
+
+      log.debug('API Responses Received', {
+        mainStatus: mainResponse.status,
+        uviStatus: uviResponse.status
+      });
 
       const mainData = await mainResponse.json();
       const uviData = await uviResponse.json();

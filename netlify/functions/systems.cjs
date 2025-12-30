@@ -36,6 +36,10 @@ const respond = (statusCode, body, headers = {}) => ({
     headers: { 'Content-Type': 'application/json', ...headers },
 });
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
+ */
 exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
 
@@ -102,7 +106,12 @@ exports.handler = async function (event, context) {
             const parsedBody = JSON.parse(event.body);
             // Do not log body contents (may contain user notes/PII). Safe signal only.
             log.debug('Parsed POST body', { ...logContext, bodyLength: event.body ? event.body.length : 0 });
-            const { action } = parsedBody;
+
+            const { action, ...otherProps } = parsedBody;
+            if (action !== 'merge') {
+                log.info('System creation request', { ...logContext, fieldsProvided: Object.keys(otherProps) });
+            }
+
             const postLogContext = { ...logContext, action };
 
             if (action === 'merge') {
@@ -214,6 +223,9 @@ exports.handler = async function (event, context) {
 
             log.info('Updating system', putLogContext);
             const updateData = JSON.parse(event.body);
+            const { id, ...dataToUpdate } = updateData;
+            log.info('System update request', { ...logContext, fieldsToUpdate: Object.keys(dataToUpdate) });
+
             log.debug('Parsed PUT body', { ...putLogContext, bodyPreview: JSON.stringify(updateData).substring(0, 100) });
 
             // Validate update data

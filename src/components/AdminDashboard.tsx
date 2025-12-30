@@ -95,6 +95,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         onConfirm: () => void;
     }>({ isOpen: false, message: '', onConfirm: () => { } });
 
+    // Cache of ALL systems for dropdowns (independent of pagination)
+    const [allSystems, setAllSystems] = useState<BmsSystem[]>([]);
+
     // --- Data Fetching ---
     const fetchData = useCallback(async (page: number, type: 'systems' | 'history' | 'all', options: { forceRefresh?: boolean } = {}) => {
         log('info', 'Fetching admin page data.', { page, type, ...options });
@@ -144,6 +147,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     type: 'FETCH_PAGE_DATA_SUCCESS',
                     payload: { systems: systemsResponse, history: historyResponse }
                 });
+                setAllSystems(systemsResponse.items); // Store full list for dropdowns
 
                 // Start building the full history cache with a slight delay to allow UI to settle
                 setTimeout(() => {
@@ -1131,7 +1135,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                             <IpManagement />
                         </section>
                         <DataManagement
-                            state={state}
+                            state={{ ...state, systems: allSystems.length > 0 ? allSystems : state.systems }} // Overlay allSystems for dropdowns
                             dispatch={dispatch}
                             onMergeSystems={handleMergeSystems}
                             onScanForDuplicates={handleScanForDuplicates}

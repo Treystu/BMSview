@@ -16,6 +16,10 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { backfillWeatherGaps } = require('./utils/weather-batch-backfill.cjs');
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
+ */
 exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
 
@@ -84,6 +88,12 @@ exports.handler = async function (event, context) {
         }
 
         // Perform the backfill
+        log.info('Initiating batch backfill process', {
+            systemId,
+            lat: system.latitude,
+            lon: system.longitude
+        });
+
         const result = await backfillWeatherGaps(
             systemId,
             system.latitude,
@@ -112,12 +122,13 @@ exports.handler = async function (event, context) {
 
     } catch (error) {
         timer.end({ error: true });
-        log.error('Weather backfill failed', { error: error.message, stack: error.stack });
+        const err = error instanceof Error ? error : new Error(String(error));
+        log.error('Weather backfill failed', { error: err.message, stack: err.stack });
         log.exit(500);
         return {
             statusCode: 500,
             headers: { ...headers, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ error: 'Weather backfill failed: ' + error.message })
+            body: JSON.stringify({ error: 'Weather backfill failed: ' + err.message })
         };
     }
 };

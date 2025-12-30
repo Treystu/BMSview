@@ -335,6 +335,8 @@ async function createGitHubIssueAPI(issueData, log) {
 
 /**
  * Main handler
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
  */
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('create-github-issue', event, context);

@@ -176,8 +176,8 @@ async function calculateChecksum(payload) {
 }
 
 /**
- * @param {any} event
- * @param {any} context
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
  */
 exports.handler = async function (event, context) {
     const log = createLoggerFromEvent("sync-metadata", event, context);

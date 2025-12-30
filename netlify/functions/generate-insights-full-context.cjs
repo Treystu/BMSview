@@ -11,6 +11,8 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 
 /**
  * Main handler for full context insights
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
  */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
@@ -84,6 +86,9 @@ exports.handler = async (event, context) => {
       systemId,
       dataPointsAnalyzed: result.metadata.dataPointsAnalyzed,
       contextSizeBytes: result.metadata.contextSize,
+      optimizedContextSize: result.metadata.optimizedContextSize,
+      samplingFactor: result.metadata.samplingFactor,
+      isSampled: result.metadata.isSampled,
       feedbackSubmitted: result.feedbackSubmitted.length,
       durationMs
     });

@@ -25,6 +25,7 @@ const SETTINGS_KEY = 'ai_budget_settings';
 
 /**
  * Get current budget settings from database or defaults
+ * @param {import('./utils/logger.cjs').LogFunction} log
  */
 async function getBudgetSettings(log) {
     try {
@@ -45,21 +46,31 @@ async function getBudgetSettings(log) {
         log.debug('No budget settings in database, using defaults');
         return { ...DEFAULTS };
     } catch (error) {
-        log.error('Failed to get budget settings', { error: error.message });
+        log.error('Failed to get budget settings', { error: error instanceof Error ? error.message : String(error) });
         return { ...DEFAULTS };
     }
 }
 
 /**
+ * @typedef {Object} BudgetSettings
+ * @property {string|number} monthlyTokenBudget
+ * @property {string|number} monthlyCostBudget
+ * @property {string|number} alertThreshold
+ * @property {string} [updatedBy]
+ */
+
+/**
  * Update budget settings in database
+ * @param {BudgetSettings} newSettings
+ * @param {import('./utils/logger.cjs').LogFunction} log
  */
 async function updateBudgetSettings(newSettings, log) {
     const collection = await getCollection('app_settings');
 
     // Validate inputs
-    const monthlyTokenBudget = parseInt(newSettings.monthlyTokenBudget, 10);
-    const monthlyCostBudget = parseFloat(newSettings.monthlyCostBudget);
-    const alertThreshold = parseFloat(newSettings.alertThreshold);
+    const monthlyTokenBudget = parseInt(String(newSettings.monthlyTokenBudget), 10);
+    const monthlyCostBudget = parseFloat(String(newSettings.monthlyCostBudget));
+    const alertThreshold = parseFloat(String(newSettings.alertThreshold));
 
     if (isNaN(monthlyTokenBudget) || monthlyTokenBudget < 100000) {
         throw new Error('monthlyTokenBudget must be at least 100,000 tokens');
@@ -85,6 +96,11 @@ async function updateBudgetSettings(newSettings, log) {
         { upsert: true }
     );
 
+    log.audit('admin_action', {
+        action: 'update_budget_settings',
+        ...value
+    });
+
     log.info('Budget settings updated', {
         monthlyTokenBudget,
         monthlyCostBudget,
@@ -96,6 +112,8 @@ async function updateBudgetSettings(newSettings, log) {
 
 /**
  * Main handler
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
  */
 exports.handler = async (event, context) => {
     const log = createLoggerFromEvent('ai-budget-settings', event, context);

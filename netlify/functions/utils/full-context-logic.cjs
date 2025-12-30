@@ -207,7 +207,18 @@ async function generateFullContextInsights({
 
     // Extract text from the REST API response structure
     const responseText = response?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    log.debug('Gemini response received', { responseLength: responseText.length });
+
+    // Log token usage if available
+    if (response?.usageMetadata) {
+        log.metric('gemini_prompt_tokens', response.usageMetadata.promptTokenCount || 0);
+        log.metric('gemini_candidates_tokens', response.usageMetadata.candidatesTokenCount || 0);
+        log.metric('gemini_total_tokens', response.usageMetadata.totalTokenCount || 0);
+    }
+
+    log.debug('Gemini response received', {
+        responseLength: responseText.length,
+        tokenUsage: response?.usageMetadata
+    });
 
     // Process function calls (feedback submissions) from the response
     const feedbackSubmissions = [];
@@ -254,6 +265,9 @@ async function generateFullContextInsights({
             feedbackSubmitted: feedbackSubmissions.length,
             feedbackSubmissions,
             contextSize: JSON.stringify(fullContext).length,
+            optimizedContextSize: JSON.stringify(optimizedContext).length,
+            samplingFactor: optimizedContext.raw?.samplingFactor || 1,
+            isSampled: optimizedContext.raw?.sampled || false,
             mode: 'full-context'
         },
         systemId,

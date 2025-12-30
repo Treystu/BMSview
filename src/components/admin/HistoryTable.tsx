@@ -1,9 +1,9 @@
 import React from 'react';
-import type { BmsSystem, AnalysisRecord } from '../../types';
-import PaginationControls from './PaginationControls';
-import ColumnSelector from './ColumnSelector';
-import { AdminState, AdminAction, HistorySortKey } from '../../state/adminState';
+import { AdminAction, AdminState, HistorySortKey } from '../../state/adminState';
+import type { AnalysisRecord, BmsSystem } from '../../types';
 import { ALL_HISTORY_COLUMNS, getNestedValue, HistoryColumnKey } from './columnDefinitions';
+import ColumnSelector from './ColumnSelector';
+import PaginationControls from './PaginationControls';
 
 interface HistoryTableProps {
     history: AnalysisRecord[];
@@ -28,7 +28,7 @@ const SortableHeader: React.FC<{
     className?: string;
 }> = ({ label, sortKey, currentSortKey, currentSortDirection, onSort, className = '' }) => {
     const isCurrent = currentSortKey === sortKey;
-    
+
     return (
         <th className={`p-3 text-left cursor-pointer select-none whitespace-nowrap ${className}`} onClick={() => onSort(sortKey)}>
             {label}
@@ -53,7 +53,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ history, systems, state, di
         <section>
             <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
                 <h2 className="text-2xl font-semibold text-secondary border-b-2 border-gray-600 pb-2 sm:border-none">Analysis History</h2>
-                <ColumnSelector 
+                <ColumnSelector
                     visibleColumns={visibleHistoryColumns}
                     onVisibleColumnsChange={handleVisibleColumnsChange}
                 />
@@ -67,7 +67,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ history, systems, state, di
                                 if (!colDef) return null;
                                 const label = colDef.unit ? `${colDef.label} (${colDef.unit})` : colDef.label;
                                 return colDef.sortable ? (
-                                    <SortableHeader 
+                                    <SortableHeader
                                         key={colKey}
                                         label={label}
                                         sortKey={colKey}
@@ -89,7 +89,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ history, systems, state, di
                                     {visibleHistoryColumns.map(colKey => {
                                         const colDef = ALL_HISTORY_COLUMNS[colKey];
                                         if (!colDef) return <td key={colKey} className="p-3"></td>;
-                                        
+
                                         const value = getNestedValue(record, colKey);
                                         const displayValue = colDef.format ? colDef.format(value, record) : (value ?? 'N/A');
 
@@ -102,11 +102,11 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ history, systems, state, di
 
                                     <td className="p-3 whitespace-nowrap">
                                         <div className="flex items-center space-x-2">
-                                             {!record.systemId && (
+                                            {!record.systemId && (
                                                 <div className="flex items-center space-x-1">
                                                     <select
                                                         value={linkSelections[record.id] || ''}
-                                                        onChange={(e) => dispatch({ type: 'SET_LINK_SELECTION', payload: { recordId: record.id, systemId: e.target.value }})}
+                                                        onChange={(e) => dispatch({ type: 'SET_LINK_SELECTION', payload: { recordId: record.id, systemId: e.target.value } })}
                                                         className="bg-gray-700 border border-gray-600 rounded-md p-1 text-xs text-white focus:ring-secondary focus:border-secondary"
                                                         aria-label={`Link analysis from ${new Date(record.timestamp).toLocaleString()} to a system`}
                                                     >
@@ -114,7 +114,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ history, systems, state, di
                                                         {systems.map(system => (
                                                             <option key={system.id} value={system.id}>{system.name}</option>
                                                         ))}
-                                                        {record.dlNumber && (
+                                                        {(record.dlNumber || record.hardwareSystemId || record.analysis?.dlNumber || record.analysis?.hardwareSystemId) && (
                                                             <option value="--create-new--" className="font-bold text-secondary">
                                                                 + Create New System...
                                                             </option>
@@ -160,7 +160,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ history, systems, state, di
                     </tbody>
                 </table>
             </div>
-             <PaginationControls 
+            <PaginationControls
                 currentPage={pagination.currentPage}
                 totalItems={pagination.totalItems}
                 itemsPerPage={pagination.itemsPerPage}

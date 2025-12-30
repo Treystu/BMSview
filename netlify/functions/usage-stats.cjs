@@ -21,9 +21,10 @@ const { getCostMetrics, getRealtimeMetrics, createAlert } = require('./utils/met
 const { v4: uuidv4 } = require('uuid');
 
 const sanitizeHeaders = (headers = {}) => {
+    /** @type {Object.<string, string>} */
     const redacted = { ...headers };
-    if (redacted.authorization) redacted.authorization = '[REDACTED]';
-    if (redacted.cookie) redacted.cookie = '[REDACTED]';
+    if (redacted['authorization']) redacted['authorization'] = '[REDACTED]';
+    if (redacted['cookie']) redacted['cookie'] = '[REDACTED]';
     if (redacted['x-api-key']) redacted['x-api-key'] = '[REDACTED]';
     return redacted;
 };
@@ -39,11 +40,13 @@ const DEFAULT_ALERT_THRESHOLD = 0.8; // 80%
  * @param {number} usagePercent - Current usage percentage
  * @param {number} currentTokens - Current token usage
  * @param {number} monthlyTokenBudget - Monthly token budget limit
+ * @param {import('./utils/logger.cjs').LogFunction} log
  * @returns {Promise<Object|null>} GitHub issue response or null
  */
 async function createBudgetGitHubIssue(usagePercent, currentTokens, monthlyTokenBudget, log) {
     try {
         const baseUrl = process.env.URL || 'http://localhost:8888';
+        /** @param {number} tokens */
         const formatTokens = (tokens) => {
             if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(2)}M`;
             if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
@@ -97,7 +100,8 @@ async function createBudgetGitHubIssue(usagePercent, currentTokens, monthlyToken
             return null;
         }
     } catch (error) {
-        log.error('Error creating budget alert GitHub issue', { error: error.message });
+        const err = /** @type {Error} */ (error);
+        log.error('Error creating budget alert GitHub issue', { error: err.message });
         return null;
     }
 }
@@ -108,6 +112,7 @@ async function createBudgetGitHubIssue(usagePercent, currentTokens, monthlyToken
  * @param {number} currentTokens - Current token usage
  * @param {number} monthlyTokenBudget - Monthly token budget
  * @param {number} alertThreshold - Alert threshold (e.g., 0.8 for 80%)
+ * @param {import('./utils/logger.cjs').LogFunction} log
  * @returns {Promise<Object|null>} Alert created or null
  */
 async function checkAndCreateBudgetAlert(usagePercent, currentTokens, monthlyTokenBudget, alertThreshold, log) {
@@ -161,8 +166,8 @@ async function checkAndCreateBudgetAlert(usagePercent, currentTokens, monthlyTok
         currentTokens,
         monthlyTokenBudget,
         githubIssue: githubIssue ? {
-            number: githubIssue.number,
-            url: githubIssue.html_url
+            number: /** @type {any} */ (githubIssue).number,
+            url: /** @type {any} */ (githubIssue).html_url
         } : null,
         createdAt: now.toISOString()
     };
@@ -183,7 +188,7 @@ async function checkAndCreateBudgetAlert(usagePercent, currentTokens, monthlyTok
  * Get daily breakdown of AI costs
  * @param {Date} startDate - Start of date range
  * @param {Date} endDate - End of date range
- * @returns {Promise<Array>} Daily cost breakdown
+ * @returns {Promise<Object[]>} Daily cost breakdown
  */
 async function getDailyBreakdown(startDate, endDate) {
     const collection = await getCollection('ai_operations');
@@ -293,6 +298,22 @@ async function getDailyBreakdown(startDate, endDate) {
  * Get budget status and alerts (token-based primary, cost secondary)
  * @returns {Promise<Object>} Budget status
  */
+/**
+ * @typedef {Object} BudgetStatus
+ * @property {Object} tokenBudget - Token budget details
+ * @property {Object} costBudget - Cost budget details
+ * @property {Object} operationBreakdown
+ * @property {string} status
+ * @property {Array<any>} recentAlerts
+ * @property {Object} period
+ * @property {Object} budget - Legacy
+ */
+
+/**
+ * Get current budget status and usage metrics
+ * @param {import('./utils/logger.cjs').LogFunction} [log]
+ * @returns {Promise<BudgetStatus>} Budget status object
+ */
 async function getBudgetStatus(log = createLogger('usage-stats-budget')) {
     const operationsCollection = await getCollection('ai_operations');
     const alertsCollection = await getCollection('anomaly_alerts');
@@ -316,7 +337,8 @@ async function getBudgetStatus(log = createLogger('usage-stats-budget')) {
             });
         }
     } catch (err) {
-        log.warn('Failed to load budget settings from database, using defaults', { error: err.message });
+        const error = /** @type {Error} */ (err);
+        log.warn('Failed to load budget settings from database, using defaults', { error: error.message });
     }
 
     // Environment variables override database settings (for backwards compatibility)
@@ -374,6 +396,15 @@ async function getBudgetStatus(log = createLogger('usage-stats-budget')) {
     // Secondary metric: cost
     const costUsagePercent = (usage.totalCost / monthlyCostBudget) * 100;
 
+    log.debug('Budget usage calculated', {
+        monthlyTokenBudget,
+        totalTokens: usage.totalTokens,
+        tokenUsagePercent,
+        monthlyCostBudget,
+        totalCost: usage.totalCost,
+        costUsagePercent
+    });
+
     // Get recent alerts
     const recentAlerts = await alertsCollection.find({
         type: { $in: ['cost_spike', 'budget_warning'] },
@@ -392,7 +423,10 @@ async function getBudgetStatus(log = createLogger('usage-stats-budget')) {
     // This is async but we don't wait for it to complete
     if (status !== 'healthy') {
         checkAndCreateBudgetAlert(tokenUsagePercent, usage.totalTokens, monthlyTokenBudget, alertThreshold, log)
-            .catch(err => log.warn('Failed to check/create budget alert', { error: err.message }));
+            .catch(err => {
+                const error = /** @type {Error} */ (err);
+                log.warn('Failed to check/create budget alert', { error: error.message });
+            });
     }
 
     return {
@@ -443,6 +477,8 @@ async function getBudgetStatus(log = createLogger('usage-stats-budget')) {
 
 /**
  * Main handler for usage stats endpoint
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
  */
 exports.handler = async (event, context) => {
     const log = createLoggerFromEvent('usage-stats', event, context);
@@ -553,8 +589,9 @@ exports.handler = async (event, context) => {
         };
 
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        log.error('Failed to get usage stats', { error: errorMessage, stack: error?.stack });
+        const err = /** @type {Error} */ (error instanceof Error ? error : new Error(String(error)));
+        const errorMessage = err.message;
+        log.error('Failed to get usage stats', { error: errorMessage, stack: err.stack });
         timer.end({ error: true });
         log.exit(500);
 

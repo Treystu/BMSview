@@ -184,8 +184,8 @@ function normalizeRecordTimestamps(records, fallbackFields, serverTime, log, col
 }
 
 /**
- * @param {any} event
- * @param {any} context
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
  */
 exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);

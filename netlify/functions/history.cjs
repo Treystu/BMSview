@@ -107,6 +107,10 @@ async function ensureAdminAuthorized(event, context, headers, log) {
 }
 
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
+ */
 exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
 
@@ -146,7 +150,22 @@ exports.handler = async function (event, context) {
 
         // --- GET Request Handler ---
         if (event.httpMethod === 'GET') {
-            const { id, systemId, all, page = '1', limit = '25', merged, startDate, endDate, downsample, updatedSince } = event.queryStringParameters || {};
+            const queryParams = event.queryStringParameters || {};
+            const { id, systemId, all, page = '1', limit = '25', merged, startDate, endDate, downsample, updatedSince } = queryParams;
+
+            log.info('History query parameters', {
+                ...logContext,
+                id,
+                systemId,
+                all,
+                page,
+                limit,
+                merged,
+                startDate,
+                endDate,
+                downsample,
+                updatedSince: updatedSince || null
+            });
 
             if (id) {
                 // Fetch single record by ID
@@ -362,12 +381,12 @@ exports.handler = async function (event, context) {
                 const linkedIdAggregation = await historyCollection.aggregate([
                     {
                         $match: {
-                            systemId: { $ne: null },
+                            systemId: { $exists: true, $nin: [null, ''] },
                             $or: [
-                                { dlNumber: { $exists: true, $ne: null } },
-                                { hardwareSystemId: { $exists: true, $ne: null } },
-                                { 'analysis.dlNumber': { $exists: true, $ne: null } },
-                                { 'analysis.hardwareSystemId': { $exists: true, $ne: null } }
+                                { dlNumber: { $exists: true, $nin: [null, ''] } },
+                                { hardwareSystemId: { $exists: true, $nin: [null, ''] } },
+                                { 'analysis.dlNumber': { $exists: true, $nin: [null, ''] } },
+                                { 'analysis.hardwareSystemId': { $exists: true, $nin: [null, ''] } }
                             ]
                         }
                     },
@@ -496,13 +515,16 @@ exports.handler = async function (event, context) {
                 const totalUnlinked = stats[0]?.totalUnlinked || 0;
 
                 const unlinkedCursor = historyCollection.find({
-                    systemId: null,
-                    $or: [
-                        { dlNumber: { $exists: true, $nin: [null, ''] } },
-                        { hardwareSystemId: { $exists: true, $nin: [null, ''] } },
-                        // Checks for nested IDs inside analysis object
-                        { 'analysis.dlNumber': { $exists: true, $nin: [null, ''] } },
-                        { 'analysis.hardwareSystemId': { $exists: true, $nin: [null, ''] } }
+                    $or: [{ systemId: null }, { systemId: '' }],
+                    $and: [
+                        {
+                            $or: [
+                                { dlNumber: { $exists: true, $nin: [null, ''] } },
+                                { hardwareSystemId: { $exists: true, $nin: [null, ''] } },
+                                { 'analysis.dlNumber': { $exists: true, $nin: [null, ''] } },
+                                { 'analysis.hardwareSystemId': { $exists: true, $nin: [null, ''] } }
+                            ]
+                        }
                     ]
                 }).skip(skip); // Apply skip to move past unmatchable records from previous batches
 
@@ -874,7 +896,7 @@ exports.handler = async function (event, context) {
                 }).toArray();
 
                 if (systemsWithLocation.length === 0) {
-                    log('warn', 'No systems with location data found.', postLogContext);
+                    log.warn('No systems with location data found.', postLogContext);
                     return respond(200, {
                         success: true,
                         message: 'No systems with location data.',
@@ -915,13 +937,13 @@ exports.handler = async function (event, context) {
                     ]).toArray();
 
                     if (dateRange.length === 0 || !dateRange[0].minDate) {
-                        log('info', 'No analysis records with timestamps for system, skipping.', systemLogContext);
+                        log.info('No analysis records with timestamps for system, skipping.', systemLogContext);
                         continue;
                     }
 
                     const minDate = new Date(dateRange[0].minDate);
                     const maxDate = new Date(dateRange[0].maxDate);
-                    log('info', 'Date range for system.', {
+                    log.info('Date range for system.', {
                         ...systemLogContext,
                         minDate: minDate.toISOString(),
                         maxDate: maxDate.toISOString()
@@ -1122,7 +1144,7 @@ exports.handler = async function (event, context) {
                 }).toArray();
 
                 if (systemsWithLocation.length === 0) {
-                    log('warn', 'No systems with location data found.', postLogContext);
+                    log.warn('No systems with location data found.', postLogContext);
                     return respond(200, {
                         success: true,
                         message: 'No systems with location data.',
@@ -1162,15 +1184,14 @@ exports.handler = async function (event, context) {
                             }
                         }
                     ]).toArray();
-
                     if (dateRange.length === 0 || !dateRange[0].minDate) {
-                        log('info', 'No analysis records with timestamps for system, skipping.', systemLogContext);
+                        log.info('No analysis records with timestamps for system, skipping.', systemLogContext);
                         continue;
                     }
 
                     const minDate = new Date(dateRange[0].minDate);
                     const maxDate = new Date(dateRange[0].maxDate);
-                    log('info', 'Date range for system.', {
+                    log.info('Date range for system.', {
                         ...systemLogContext,
                         minDate: minDate.toISOString(),
                         maxDate: maxDate.toISOString()

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Data Merge Utilities for Historical Analysis
  * 
@@ -7,6 +8,15 @@
  */
 
 const { getCollection } = require('./mongodb.cjs');
+
+/**
+ * @typedef {Object} BmsPoint
+ * @property {string} timestamp
+ * @property {string} source
+ * @property {Object.<string, any>} data
+ * @property {string} [recordId]
+ * @property {string} [fileName]
+ */
 
 /**
  * Linear interpolation between two values
@@ -34,8 +44,8 @@ function linearInterpolate(y0, y1, t0, t1, t) {
  * @param {string} systemId - System ID to query
  * @param {string} startDate - Start date ISO string
  * @param {string} endDate - End date ISO string
- * @param {Object} log - Logger instance
- * @returns {Promise<Array>} Merged and sorted array of data points
+ * @param {import('./logger.cjs').LogFunction} log - Logger instance
+ * @returns {Promise<Array<BmsPoint>>} Merged and sorted array of data points
  */
 async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
   log.info('Starting data merge', { systemId, startDate, endDate });
@@ -58,6 +68,7 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
   log.info('Fetched BMS records', { count: bmsRecords.length });
 
   // Convert BMS records to data points with 'bms' source flag
+  /** @type {BmsPoint[]} */
   const bmsPoints = bmsRecords.map(record => ({
     timestamp: record.timestamp,
     source: 'bms',
@@ -107,6 +118,7 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
   log.info('Fetched cloud hourly docs', { count: cloudDocs.length });
 
   // Extract hourly data points from cloud docs
+  /** @type {BmsPoint[]} */
   const cloudPoints = [];
 
   for (const doc of cloudDocs) {
@@ -143,7 +155,7 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
   }
 
   // Sort cloud points by timestamp to enable two-pointer approach
-  cloudPoints.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  cloudPoints.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
   const mergedPoints = [...bmsPoints];
 
@@ -170,12 +182,13 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
         const t0 = new Date(bmsBefore.timestamp).getTime();
         const t1 = new Date(bmsAfter.timestamp).getTime();
 
+        /** @type {Object.<string, any>} */
         const estimatedData = {
-          clouds: cloudPoint.data.clouds,
-          temp: cloudPoint.data.temp,
-          uvi: cloudPoint.data.uvi,
-          weather_main: cloudPoint.data.weather_main,
-          estimated_irradiance_w_m2: cloudPoint.data.estimated_irradiance_w_m2
+          clouds: cloudPoint.data['clouds'],
+          temp: cloudPoint.data['temp'],
+          uvi: cloudPoint.data['uvi'],
+          weather_main: cloudPoint.data['weather_main'],
+          estimated_irradiance_w_m2: cloudPoint.data['estimated_irradiance_w_m2']
         };
 
         // Interpolate BMS metrics
@@ -209,13 +222,22 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
     } else {
       // BMS data exists at this timestamp, merge cloud weather data into it
       // Prefer cloud hourly data for weather metrics
-      existingBmsPoint.data.clouds = cloudPoint.data.clouds ?? existingBmsPoint.data.clouds;
-      existingBmsPoint.data.temp = cloudPoint.data.temp ?? existingBmsPoint.data.temp;
-      existingBmsPoint.data.uvi = cloudPoint.data.uvi ?? existingBmsPoint.data.uvi;
-      existingBmsPoint.data.weather_main = cloudPoint.data.weather_main ?? existingBmsPoint.data.weather_main;
-      existingBmsPoint.data.estimated_irradiance_w_m2 = cloudPoint.data.estimated_irradiance_w_m2 ?? existingBmsPoint.data.estimated_irradiance_w_m2;
+      existingBmsPoint.data['clouds'] = cloudPoint.data['clouds'] ?? existingBmsPoint.data['clouds'];
+      existingBmsPoint.data['temp'] = cloudPoint.data['temp'] ?? existingBmsPoint.data['temp'];
+      existingBmsPoint.data['uvi'] = cloudPoint.data['uvi'] ?? existingBmsPoint.data['uvi'];
+      existingBmsPoint.data['weather_main'] = cloudPoint.data['weather_main'] ?? existingBmsPoint.data['weather_main'];
+      existingBmsPoint.data['estimated_irradiance_w_m2'] = cloudPoint.data['estimated_irradiance_w_m2'] ?? existingBmsPoint.data['estimated_irradiance_w_m2'];
+
+      // Log occurence of direct merge (conflict resolution strategy: prefer cloud weather)
+      // log.debug('Merged cloud data into existing BMS point', { timestamp: cloudPoint.timestamp });
     }
   }
+
+  log.info('Merge strategy used: Two-Pointer Interpolation', {
+    bmsPoints: bmsPoints.length,
+    cloudPoints: cloudPoints.length,
+    strategy: 'interpolation_optimized'
+  });
 
   // Sort merged points by timestamp
   mergedPoints.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -232,6 +254,8 @@ async function mergeBmsAndCloudData(systemId, startDate, endDate, log) {
 
 /**
  * Find closest BMS point before given timestamp
+ * @param {BmsPoint[]} bmsPoints
+ * @param {number} targetTime
  */
 function findClosestBmsBefore(bmsPoints, targetTime) {
   for (let i = bmsPoints.length - 1; i >= 0; i--) {
@@ -245,6 +269,8 @@ function findClosestBmsBefore(bmsPoints, targetTime) {
 
 /**
  * Find closest BMS point after given timestamp
+ * @param {BmsPoint[]} bmsPoints
+ * @param {number} targetTime
  */
 function findClosestBmsAfter(bmsPoints, targetTime) {
   for (let i = 0; i < bmsPoints.length; i++) {
@@ -259,10 +285,10 @@ function findClosestBmsAfter(bmsPoints, targetTime) {
 /**
  * Downsample merged data when point count exceeds threshold
  * 
- * @param {Array} mergedPoints - Merged data points
+ * @param {Array<BmsPoint>} mergedPoints - Merged data points
  * @param {number} maxPoints - Maximum points to return (default: 2000)
- * @param {Object} log - Logger instance
- * @returns {Array} Downsampled data points with min/max/avg
+ * @param {import('./logger.cjs').LogFunction} log - Logger instance
+ * @returns {Array<BmsPoint>} Downsampled data points with min/max/avg
  */
 function downsampleMergedData(mergedPoints, maxPoints = 2000, log) {
   if (mergedPoints.length <= maxPoints) {
@@ -279,6 +305,7 @@ function downsampleMergedData(mergedPoints, maxPoints = 2000, log) {
   });
 
   const bucketSize = Math.ceil(mergedPoints.length / maxPoints);
+  /** @type {BmsPoint[]} */
   const downsampled = [];
 
   for (let i = 0; i < mergedPoints.length; i += bucketSize) {
@@ -292,6 +319,7 @@ function downsampleMergedData(mergedPoints, maxPoints = 2000, log) {
       timestampLast: bucket[bucket.length - 1].timestamp, // Last timestamp
       source: bucket[0].source, // Use first point's source (most are BMS ideally)
       dataPoints: bucket.length,
+      /** @type {Object.<string, any>} */
       data: {}
     };
 
@@ -315,6 +343,7 @@ function downsampleMergedData(mergedPoints, maxPoints = 2000, log) {
       }
     }
 
+    // @ts-ignore - mismatch in typedef but structurally sound for this purpose
     downsampled.push(aggregated);
   }
 

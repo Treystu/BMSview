@@ -238,8 +238,8 @@ function extractRecordId(record) {
 }
 
 /**
- * @param {import('@netlify/functions').HandlerEvent} event
- * @param {import('@netlify/functions').HandlerContext} context
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
  */
 exports.handler = async (event, context) => {
   // Get CORS headers (strict mode in production, permissive in development)
@@ -506,6 +506,10 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
       try {
         const existingAnalysis = await checkExistingAnalysis(contentHash || '', log);
 
+        if (!existingAnalysis) {
+          log.info('Duplicate check: No existing analysis found.', { contentHash: contentHash.substring(0, 16) + '...' });
+        }
+
         if (existingAnalysis) {
           // Check if checkExistingAnalysis flagged this as needing upgrade
           // (returns { _isUpgrade: true, _existingRecord: existing } when critical fields are missing)
@@ -600,6 +604,16 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
       timestamp: record.timestamp,
       wasUpgraded: isUpgrade // Indicate if this was a quality upgrade
     };
+
+    if (record.analysis) {
+      log.info('AI Analysis Complete', {
+        recordId: record.id,
+        confidenceScore: record.analysis.confidenceScore,
+        modelUsed: record.analysis.modelUsed || 'unknown',
+        batteryType: record.analysis.batteryType,
+        tokenUsage: record.analysis.tokenUsage
+      });
+    }
 
     // Store idempotent response (best effort)
     try {

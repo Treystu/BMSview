@@ -41,7 +41,19 @@ export const ALL_HISTORY_COLUMNS: Record<string, ColumnDefinition> = {
     },
     'systemName': { label: 'System Name', group: 'General', sortable: true, format: (val) => val || 'Unlinked' },
     'fileName': { label: 'File Name', group: 'General', sortable: true, format: (val) => val ? val.split(/[/\\]/).pop() : 'N/A' },
-    'analysis.dlNumber': { label: 'Hardware ID', group: 'General', sortable: true },
+    'analysis.dlNumber': {
+        label: 'Hardware ID',
+        group: 'General',
+        sortable: true,
+        format: (val, record) => {
+            // Robust fallback for Hardware ID
+            if (val) return val;
+            if (record?.hardwareSystemId) return record.hardwareSystemId;
+            if (record?.dlNumber) return record.dlNumber;
+            if (record?.analysis?.hardwareSystemId) return record.analysis.hardwareSystemId;
+            return 'N/A';
+        }
+    },
 
     // Core Vitals
     'analysis.overallVoltage': { label: 'Voltage', unit: 'V', group: 'Core Vitals', sortable: true, format: (val) => val?.toFixed(1) ?? 'N/A' },

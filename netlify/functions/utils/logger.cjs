@@ -66,19 +66,19 @@ function extractCorrelationIdFromHeaders(headers) {
   if (!headers || typeof headers !== 'object') {
     return null;
   }
-  
+
   // Common correlation ID header names to check
   const correlationHeaderNames = [
     'x-request-id',
-    'x-correlation-id', 
+    'x-correlation-id',
     'x-trace-id',
     'request-id',
     'correlation-id'
   ];
-  
+
   // Convert correlation header names to a Set for O(1) lookup
   const correlationHeaderSet = new Set(correlationHeaderNames);
-  
+
   // Iterate through headers once (more efficient)
   for (const [key, value] of Object.entries(headers)) {
     const lowerKey = key.toLowerCase();
@@ -86,27 +86,43 @@ function extractCorrelationIdFromHeaders(headers) {
       return value.trim();
     }
   }
-  
+
   return null;
 }
 
 class Logger {
+  /**
+   * @param {string} functionName
+   * @param {Object.<string, any>} [context]
+   */
   constructor(functionName, context = {}) {
+    /** @type {string} */
     this.functionName = functionName;
+    /** @type {Object.<string, any>} */
     this.context = context;
     // Priority: explicit requestId > awsRequestId > headers correlation > generated
-    this.requestId = context.requestId || 
-                     context.awsRequestId || 
-                     extractCorrelationIdFromHeaders(context.headers) ||
-                     generateCorrelationId();
+    /** @type {string} */
+    this.requestId = context.requestId ||
+      context.awsRequestId ||
+      extractCorrelationIdFromHeaders(context.headers) ||
+      generateCorrelationId();
+    /** @type {string|null} */
     this.jobId = context.jobId || null;
+    /** @type {number} */
     this.startTime = Date.now();
   }
 
+  /**
+   * @param {string} level
+   * @param {string} message
+   * @param {object} [data]
+   * @returns {string} JSON string
+   */
   _formatMessage(level, message, data = {}) {
     const timestamp = new Date().toISOString();
     const elapsed = Date.now() - this.startTime;
 
+    /** @type {Object.<string, any>} */
     const logEntry = {
       timestamp,
       level,
@@ -116,15 +132,17 @@ class Logger {
       message,
       ...data
     };
-    
+
     // Include jobId if present (for background/async operations)
     if (this.jobId) {
       logEntry.jobId = this.jobId;
     }
-    
+
     // Include context but filter out headers to avoid log bloat
     if (this.context && Object.keys(this.context).length > 0) {
-      const { headers, ...contextWithoutHeaders } = this.context;
+      /** @type {Object.<string, any>} */
+      const ctx = this.context;
+      const { headers, ...contextWithoutHeaders } = ctx;
       if (Object.keys(contextWithoutHeaders).length > 0) {
         logEntry.context = contextWithoutHeaders;
       }
@@ -133,6 +151,10 @@ class Logger {
     return JSON.stringify(logEntry);
   }
 
+  /**
+  * @param {string} message
+  * @param {object} [data]
+  */
   debug(message, data) {
     // Always log debug when LOG_LEVEL is DEBUG or not set (default to INFO, but allow DEBUG)
     // Also check for truthy LOG_LEVEL values that indicate debug should be enabled
@@ -144,43 +166,82 @@ class Logger {
     }
   }
 
+  /**
+   * @param {string} message
+   * @param {object} [data]
+   */
   info(message, data) {
     console.log(this._formatMessage('INFO', message, data));
   }
 
+  /**
+   * @param {string} message
+   * @param {object} [data]
+   */
   warn(message, data) {
     console.warn(this._formatMessage('WARN', message, data));
   }
 
+  /**
+   * @param {string} message
+   * @param {object} [data]
+   */
   error(message, data) {
     console.error(this._formatMessage('ERROR', message, data));
   }
 
+  /**
+   * @param {string} message
+   * @param {object} [data]
+   */
   critical(message, data) {
     console.error(this._formatMessage('CRITICAL', message, data));
   }
 
   // Log function entry
+  /**
+   * @param {object} [data]
+   */
   entry(data = {}) {
     this.info('Function invoked', data);
   }
 
   // Log function exit
+  /**
+   * @param {number} statusCode
+   * @param {object} [data]
+   */
   exit(statusCode, data = {}) {
+    // @ts-ignore
     this.info('Function completed', { statusCode, ...data });
   }
 
   // Log database operations
+  /**
+   * @param {string} operation
+   * @param {string} collection
+   * @param {object} [data]
+   */
   dbOperation(operation, collection, data = {}) {
     this.debug(`DB ${operation}`, { collection, ...data });
   }
 
   // Log API calls
+  /**
+   * @param {string} service
+   * @param {string} endpoint
+   * @param {object} [data]
+   */
   apiCall(service, endpoint, data = {}) {
     this.debug(`API call to ${service}`, { endpoint, ...data });
   }
 
   // Log performance metrics
+  /**
+   * @param {string} name
+   * @param {number} value
+   * @param {string} [unit]
+   */
   metric(name, value, unit = 'ms') {
     this.info('Performance metric', { metric: name, value, unit });
   }
@@ -204,34 +265,35 @@ class Logger {
 
     // Remove sensitive data from audit logs
     const sanitizedData = this._sanitizeAuditData(auditData);
-    
+
     // Always log audit events as INFO level, regardless of LOG_LEVEL
     console.log(this._formatMessage('AUDIT', `Security event: ${eventType}`, sanitizedData));
   }
 
   /**
    * Remove sensitive data from audit log entries
-   * @param {Object} data - Data to sanitize
-   * @returns {Object} Sanitized data
+   * @param {Object.<string, any>} data - Data to sanitize
+   * @returns {Object.<string, any>} Sanitized data
    */
   _sanitizeAuditData(data) {
     const sensitiveFields = ['password', 'token', 'apiKey', 'secret', 'authorization', 'cookie'];
     const sanitized = { ...data };
-    
+
     for (const field of sensitiveFields) {
       if (sanitized[field]) {
         sanitized[field] = '[REDACTED]';
       }
     }
-    
+
     // Truncate large data fields for audit logs
-    if (sanitized.analysisData && typeof sanitized.analysisData === 'object') {
-      sanitized.analysisData = '[OBJECT]';
+    if (sanitized['analysisData'] && typeof sanitized['analysisData'] === 'object') {
+      sanitized['analysisData'] = '[OBJECT]';
     }
-    if (sanitized.customPrompt && typeof sanitized.customPrompt === 'string') {
-      sanitized.customPrompt = sanitized.customPrompt.substring(0, 100) + (sanitized.customPrompt.length > 100 ? '...' : '');
+    if (sanitized['customPrompt'] && typeof sanitized['customPrompt'] === 'string') {
+      // @ts-ignore
+      sanitized['customPrompt'] = sanitized['customPrompt'].substring(0, 100) + (sanitized['customPrompt'].length > 100 ? '...' : '');
     }
-    
+
     return sanitized;
   }
 
@@ -241,10 +303,10 @@ class Logger {
    * @param {Object} data - Rate limit details
    */
   rateLimit(action, data = {}) {
-    const eventType = action === 'blocked' ? 
-      SECURITY_EVENT_TYPES.RATE_LIMIT_EXCEEDED : 
+    const eventType = action === 'blocked' ?
+      SECURITY_EVENT_TYPES.RATE_LIMIT_EXCEEDED :
       SECURITY_EVENT_TYPES.RATE_LIMIT_WARNING;
-    
+
     this.audit(eventType, {
       action,
       remaining: data.remaining,
@@ -274,10 +336,10 @@ class Logger {
    * @param {Object} data - Consent context
    */
   consent(granted, data = {}) {
-    const eventType = granted ? 
-      SECURITY_EVENT_TYPES.CONSENT_GRANTED : 
+    const eventType = granted ?
+      SECURITY_EVENT_TYPES.CONSENT_GRANTED :
       SECURITY_EVENT_TYPES.CONSENT_DENIED;
-    
+
     this.audit(eventType, data);
   }
 
@@ -306,6 +368,11 @@ class Logger {
  * @property {function(string, string, object=): void} dbOperation
  * @property {function(string, string, object=): void} apiCall
  * @property {function(string, number, string=): void} metric
+ * @property {function(string, object=): void} audit
+ * @property {function(string, object=): void} rateLimit
+ * @property {function(string, string, object=): void} sanitization
+ * @property {function(boolean, object=): void} consent
+ * @property {function(string, object=): void} dataAccess
  */
 
 /**
@@ -325,7 +392,9 @@ function createLogger(functionName, context = {}) {
   // This supports the old API: log('info', 'message', data)
   /** @type {LogFunction} */
   const logFunction = function (level, message, data) {
+    // @ts-ignore
     if (typeof logger[level] === 'function') {
+      // @ts-ignore
       logger[level](message, data);
     } else {
       logger.info(message, { level, ...data });
@@ -356,7 +425,7 @@ function createLogger(functionName, context = {}) {
  * Create a timer for performance tracking
  * @param {Function|Object} log - Logger instance or function
  * @param {string} operationName - Name of the operation being timed
- * @returns {Object} Timer object with end() method
+ * @returns {{ end: (metadata?: object) => number }} Timer object with end() method
  */
 function createTimer(log, operationName) {
   const startTime = Date.now();
@@ -403,25 +472,26 @@ function createTimer(log, operationName) {
 function createLoggerFromEvent(functionName, event, context = {}, options = {}) {
   const headers = event?.headers || {};
   const clientIp = headers['x-nf-client-connection-ip'] || 'unknown';
-  
+
   // Build enhanced context with headers for correlation ID extraction
+  /** @type {Object.<string, any>} */
   const enhancedContext = {
     ...context,
     headers,
     clientIp,
-    httpMethod: event?.httpMethod,
-    path: event?.path,
+    httpMethod: /** @type {any} */ (event)?.httpMethod,
+    path: /** @type {any} */ (event)?.path,
     ...(options.jobId && { jobId: options.jobId })
   };
-  
+
   return createLogger(functionName, enhancedContext);
 }
 
-module.exports = { 
-  createLogger, 
+module.exports = {
+  createLogger,
   createLoggerFromEvent,
-  createTimer, 
-  Logger, 
+  createTimer,
+  Logger,
   SECURITY_EVENT_TYPES,
   generateCorrelationId,
   extractCorrelationIdFromHeaders

@@ -30,4 +30,27 @@
  * @typedef {{ dbName: string, fallbackUpdatedAtFields?: FallbackField[] }} CollectionConfig
  */
 
+/**
+ * @typedef {Object} NetlifyEvent
+ * @property {string} body
+ * @property {Object.<string, string>} headers
+ * @property {string} httpMethod
+ * @property {boolean} isBase64Encoded
+ * @property {string} path
+ * @property {Object.<string, string>} queryStringParameters
+ * @property {Object.<string, string>} [multiValueQueryStringParameters]
+ */
+
+/**
+ * @typedef {Object} NetlifyContext
+ * @property {string} awsRequestId
+ * @property {string} functionName
+ * @property {string} functionVersion
+ * @property {string} invokedFunctionArn
+ * @property {string} memoryLimitInMB
+ * @property {Object} clientContext
+ * @property {Object} identity
+ * @property {Object} [clientContext.user]
+ */
+
 module.exports = {};

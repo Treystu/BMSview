@@ -14,6 +14,10 @@ const formatBytes = (bytes, decimals = 2) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
+/**
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
+ */
 exports.handler = async (event, context) => {
     const log = createLoggerFromEvent('db-analytics', event, context);
     const timer = createTimer(log, 'db-analytics');
@@ -53,6 +57,7 @@ exports.handler = async (event, context) => {
             // db.stats() is a database level command, accessed via the db object
             const db = historyCol.dbName ? historyCol.client.db(historyCol.dbName) : historyCol.s.db; // Safe access to db instance
 
+            log.dbOperation('stats', 'db');
             const dbStats = await db.stats();
             output.stats.db = {
                 dbName: dbStats.db,
@@ -70,6 +75,7 @@ exports.handler = async (event, context) => {
 
             for (const name of cols) {
                 const col = await getCollection(name);
+                log.dbOperation('stats', name);
                 const stats = await col.stats();
                 output.stats.collections[name] = {
                     count: stats.count,
@@ -107,6 +113,9 @@ exports.handler = async (event, context) => {
                 { $sort: { totalSize: -1 } }
             ];
 
+
+
+            log.dbOperation('aggregate', collectionName, { pipelineStepCount: pipeline.length });
             const rawFieldStats = await targetCol.aggregate(pipeline).toArray();
 
             // Format for output
@@ -149,6 +158,7 @@ exports.handler = async (event, context) => {
                 { $sort: { totalSize: -1 } }
             ];
 
+            log.dbOperation('aggregate', 'history', { pipelineStepCount: pipeline.length, analysisType: 'deep' });
             const deepStats = await targetCol.aggregate(pipeline).toArray();
             output.deepAnalysis = deepStats.map(f => ({
                 field: f._id,

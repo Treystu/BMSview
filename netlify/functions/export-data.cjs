@@ -194,8 +194,8 @@ async function exportFullBackup(log) {
  * Main handler
  */
 /**
- * @param {any} event
- * @param {any} context
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
+ * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
  */
 exports.handler = async (event, context) => {
     const log = createLoggerFromEvent('export-data', event, context);
@@ -277,6 +277,8 @@ exports.handler = async (event, context) => {
         // Compress data to bypass 6MB Lambda payload limit
         const compressed = zlib.gzipSync(data);
 
+        log.metric('export_original_size_bytes', data.length);
+        log.metric('export_compressed_size_bytes', compressed.length);
         log.info('Export completed', { type, format, originalSize: data.length, compressedSize: compressed.length });
         timer.end({ success: true });
         log.exit(200, { type, format, size: data.length, compressedSize: compressed.length });

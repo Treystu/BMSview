@@ -27,12 +27,12 @@ const TOTAL_TIMEOUT_MS = 14 * 60 * 1000; // 14 minutes for background mode
  * @param {Object} analysisData - Battery analysis data
  * @param {string} systemId - Optional system ID
  * @param {string} customPrompt - Optional custom user prompt
- * @param {Object} log - Logger instance
- * @param {Object} options - Optional parameters
- * @param {number} options.contextWindowDays - Days of historical context
- * @param {number} options.maxIterations - Max ReAct iterations
- * @param {string} options.modelOverride - Gemini model override
- * @param {boolean} options.fullContextMode - Whether to use Full Context mode
+ * @param {import('./logger.cjs').LogFunction} log - Logger instance
+ * @param {Object} [options] - Optional parameters
+ * @param {number} [options.contextWindowDays] - Days of historical context
+ * @param {number} [options.maxIterations] - Max ReAct iterations
+ * @param {string} [options.modelOverride] - Gemini model override
+ * @param {boolean} [options.fullContextMode] - Whether to use Full Context mode
  * @returns {Promise<Object>} Processing result
  */
 async function processInsightsInBackground(jobId, analysisData, systemId, customPrompt, log, options = {}) {
@@ -47,14 +47,14 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
   // Checkpoint tracking for granular debugging
   const checkpoints = {
     entry: Date.now(),
-    statusUpdate: null,
-    reactLoopStart: null,
-    reactLoopEnd: null,
-    jobComplete: null
+    statusUpdate: 0,
+    reactLoopStart: 0,
+    reactLoopEnd: 0,
+    jobComplete: 0
   };
 
   try {
-    const { contextWindowDays, maxIterations, modelOverride, fullContextMode } = options;
+    const { contextWindowDays = 90, maxIterations = 10, modelOverride = '', fullContextMode = false } = options;
 
     log.info('Background processing started', {
       jobId,
@@ -90,12 +90,13 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
     if (fullContextMode) {
       // FULL CONTEXT MODE
       log.info('Running Full Context analysis in background', { jobId });
+      /** @type {any} */
       const fcResult = await generateFullContextInsights({
         systemId,
         enableFeedback: true,
         contextWindowDays,
         customPrompt,
-        // recentHistory is not needed here as we are in background and should read from DB
+        recentHistory: [] // explicit empty array
       }, log, {}); // Context empty
 
       // Map to standardized result structure
@@ -203,6 +204,10 @@ async function processInsightsInBackground(jobId, analysisData, systemId, custom
         completion: checkpoints.jobComplete - completeStart
       }
     });
+
+    log.metric('insight_processing_duration_ms', checkpoints.jobComplete - checkpoints.entry);
+    log.metric('insight_turns_count', result.turns || 0);
+    log.metric('insight_tool_calls_count', result.toolCalls || 0);
 
     return { success: true, insights };
 
