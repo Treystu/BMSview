@@ -767,9 +767,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     const handleNormalizeIds = async () => {
         await handleGenericAction(
             'isNormalizingIds',
-            () => normalizeIds(),
+            async () => {
+                let totalUpdated = 0;
+                let totalScanned = 0;
+                let loops = 0;
+                const MAX_LOOPS = 100; // Safety brake for very large datasets
+
+                // Initial call
+                let result = await normalizeIds(1000);
+                totalUpdated += result.updatedCount;
+                totalScanned += result.scannedCount;
+
+                // Continue processing if there might be more records to process
+                // The backend processes up to 1000 records or 20 seconds per batch
+                // If it scanned 1000 records, there might be more to process
+                while (result.scannedCount >= 1000 && loops < MAX_LOOPS) {
+                    loops++;
+                    log('info', `Normalize-ids continuing...`, { loop: loops, totalUpdated, totalScanned });
+
+                    // Continue with next batch
+                    result = await normalizeIds(1000);
+                    totalUpdated += result.updatedCount;
+                    totalScanned += result.scannedCount;
+                }
+
+                return {
+                    ...result,
+                    message: `Completed. Scanned ${totalScanned} records across ${loops + 1} batches. Updated ${totalUpdated} records.`
+                };
+            },
             'IDs normalized successfully.',
-            'history'
+            'all' // Refresh both systems and history since IDs might affect both
         );
     };
 
