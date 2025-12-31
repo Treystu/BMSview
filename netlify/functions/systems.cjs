@@ -136,8 +136,11 @@ exports.handler = async function (event, context) {
                 }
 
                 const idsToDelete = idsToMerge.filter(id => id !== primarySystemId);
-                const allDlsToMerge = systemsToMerge.flatMap(s => s.associatedDLs || []);
-                primarySystem.associatedDLs = [...new Set([...(primarySystem.associatedDLs || []), ...allDlsToMerge])];
+                // UNIFIED: Merge all hardware IDs from both fields (associatedHardwareIds is source of truth)
+                const allHardwareIdsToMerge = systemsToMerge.flatMap(s => s.associatedHardwareIds || s.associatedDLs || []);
+                const mergedHardwareIds = [...new Set([...(primarySystem.associatedHardwareIds || primarySystem.associatedDLs || []), ...allHardwareIdsToMerge])];
+                primarySystem.associatedHardwareIds = mergedHardwareIds;
+                primarySystem.associatedDLs = mergedHardwareIds; // Keep in sync for backward compat
 
                 // Check for conflicting chemistry/voltage and record metadata
                 const conflicts = [];
@@ -172,7 +175,7 @@ exports.handler = async function (event, context) {
 
                 await systemsCollection.updateOne(
                     { id: primarySystem.id },
-                    { $set: { associatedDLs: primarySystem.associatedDLs, mergeMetadata } }
+                    { $set: { associatedHardwareIds: primarySystem.associatedHardwareIds, associatedDLs: primarySystem.associatedDLs, mergeMetadata } }
                 );
                 log.info('Updated primary system in store', { ...postLogContext, systemId: primarySystem.id });
 

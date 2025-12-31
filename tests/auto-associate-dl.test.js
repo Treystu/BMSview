@@ -5,8 +5,8 @@ jest.mock('../netlify/functions/utils/mongodb.cjs', () => {
     const historyUpdates = [];
     const resultUpdates = [];
     const systems = [
-        { id: 'sys-1', name: 'System One', associatedDLs: ['DL123'] },
-        { id: 'sys-2', name: 'System Two', associatedDLs: ['DL999'] }
+        { id: 'sys-1', name: 'System One', associatedHardwareIds: ['DL123'], associatedDLs: ['DL123'] },
+        { id: 'sys-2', name: 'System Two', associatedHardwareIds: ['DL999'], associatedDLs: ['DL999'] }
     ];
 
     return {
@@ -52,7 +52,8 @@ describe('ensureSystemAssociation', () => {
     });
 
     it('associates a record when there is exactly one matching system', async () => {
-        const record = { id: 'rec-1', dlNumber: 'dl123', systemId: null, analysis: { dlNumber: 'dl123' } };
+        // UNIFIED: Use hardwareSystemId as primary, dlNumber for legacy compat
+        const record = { id: 'rec-1', hardwareSystemId: 'dl123', dlNumber: 'dl123', systemId: null, analysis: { hardwareSystemId: 'dl123', dlNumber: 'dl123' } };
 
         const updated = await ensureSystemAssociation(record, log);
 
@@ -65,11 +66,11 @@ describe('ensureSystemAssociation', () => {
     });
 
     it('does not associate when multiple systems match', async () => {
-        const record = { id: 'rec-2', dlNumber: 'DL999', systemId: null, analysis: { dlNumber: 'DL999' } };
+        const record = { id: 'rec-2', hardwareSystemId: 'DL999', dlNumber: 'DL999', systemId: null, analysis: { hardwareSystemId: 'DL999', dlNumber: 'DL999' } };
 
-        // Add another system sharing the same DL to make it ambiguous
+        // Add another system sharing the same hardware ID to make it ambiguous
         const { __systems } = require('../netlify/functions/utils/mongodb.cjs');
-        __systems.push({ id: 'sys-3', name: 'System Three', associatedDLs: ['dl999'] });
+        __systems.push({ id: 'sys-3', name: 'System Three', associatedHardwareIds: ['dl999'], associatedDLs: ['dl999'] });
 
         const updated = await ensureSystemAssociation(record, log);
 
@@ -82,7 +83,7 @@ describe('ensureSystemAssociation', () => {
     });
 
     it('skips association when systemId already present', async () => {
-        const record = { id: 'rec-3', dlNumber: 'DL123', systemId: 'already', analysis: { dlNumber: 'DL123' } };
+        const record = { id: 'rec-3', hardwareSystemId: 'DL123', dlNumber: 'DL123', systemId: 'already', analysis: { hardwareSystemId: 'DL123', dlNumber: 'DL123' } };
         const updated = await ensureSystemAssociation(record, log);
         expect(updated.systemId).toBe('already');
         expect(__historyUpdates).toHaveLength(0);

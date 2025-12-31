@@ -75,16 +75,16 @@ exports.handler = async function (event, context) {
 
         log.info('Starting data integrity audit');
 
-        // Step 1: Aggregate all records by dlNumber (deviceId)
-        // This pipeline groups all analysis records by their DL-# and counts them
+        // Step 1: Aggregate all records by hardwareSystemId (unified hardware identifier)
+        // This pipeline groups all analysis records by their hardware ID and counts them
         const aggregationPipeline = [
             {
                 $group: {
-                    // Use root dlNumber, fallback to analysis.dlNumber, then "UNIDENTIFIED"
+                    // UNIFIED: Use hardwareSystemId first, fallback to dlNumber for legacy records
                     _id: {
                         $ifNull: [
-                            "$dlNumber",
-                            { $ifNull: ["$analysis.dlNumber", "UNIDENTIFIED"] }
+                            "$hardwareSystemId",
+                            { $ifNull: ["$dlNumber", { $ifNull: ["$analysis.hardwareSystemId", { $ifNull: ["$analysis.dlNumber", "UNIDENTIFIED"] }] }] }
                         ]
                     },
                     recordCount: { $sum: 1 },
