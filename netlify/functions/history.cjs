@@ -425,14 +425,20 @@ exports.handler = async function (event, context) {
                         if (newIds.length > 0) {
                             log.info(`Found new IDs for system ${system.name} from history records`, { systemId, newIds });
 
-                            // Update local object for Phase 2
-                            system.associatedDLs = [...(system.associatedDLs || []), ...newIds];
+                            // Update local object for Phase 2 (UNIFIED: update both fields)
+                            system.associatedHardwareIds = [...(system.associatedHardwareIds || []), ...newIds];
+                            system.associatedDLs = [...(system.associatedDLs || []), ...newIds]; // Legacy compat
 
-                            // Push database update
+                            // Push database update (UNIFIED: update both fields)
                             systemUpdateBulkOps.push({
                                 updateOne: {
                                     filter: { id: systemId },
-                                    update: { $addToSet: { associatedDLs: { $each: newIds } } }
+                                    update: {
+                                        $addToSet: {
+                                            associatedHardwareIds: { $each: newIds },
+                                            associatedDLs: { $each: newIds } // Legacy compat
+                                        }
+                                    }
                                 }
                             });
                             systemsUpdatedCount++;
