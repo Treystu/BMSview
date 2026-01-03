@@ -230,8 +230,10 @@ class GeminiClient {
       throw new Error('GEMINI_API_KEY not configured');
     }
 
-    // Use Gemini 2.5 Flash (latest stable model)
-    const model = options.model || 'gemini-2.5-flash';
+    // Use Gemini 1.5 Flash 8B - most cost-effective model for structured data extraction
+    // Pricing: $0.0375/M input, $0.15/M output (vs $0.10/$0.40 for 2.5-flash)
+    // 62.5% cheaper while still capable of accurate BMS screenshot extraction
+    const model = options.model || 'gemini-1.5-flash-8b';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     // Build request body with support for conversation history and tools

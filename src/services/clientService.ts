@@ -2194,11 +2194,43 @@ export const cleanupLinks = async (): Promise<{ success: boolean; updatedCount: 
     });
 };
 
-export const normalizeIds = async (limit: number = 1000): Promise<{ updatedCount: number; scannedCount: number; message: string }> => {
+export const normalizeIds = async (limit: number = 1000): Promise<{
+    updatedCount: number;
+    scannedCount: number;
+    hasMore: boolean;
+    totalRecords: number;
+    message: string;
+}> => {
     log('info', 'Sending request to normalize IDs.', { limit });
-    return apiFetch<{ updatedCount: number; scannedCount: number; message: string }>('history', {
+    return apiFetch<{
+        updatedCount: number;
+        scannedCount: number;
+        hasMore: boolean;
+        totalRecords: number;
+        message: string;
+    }>('history', {
         method: 'POST',
         body: JSON.stringify({ action: 'normalize-ids', limit }),
+    });
+};
+
+export const deduplicateRecords = async (): Promise<{
+    deletedCount: number;
+    totalBefore: number;
+    totalAfter: number;
+    hasMore: boolean;
+    message: string;
+}> => {
+    log('info', 'Sending request to deduplicate records.');
+    return apiFetch<{
+        deletedCount: number;
+        totalBefore: number;
+        totalAfter: number;
+        hasMore: boolean;
+        message: string;
+    }>('history', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'deduplicate-records' }),
     });
 };
 

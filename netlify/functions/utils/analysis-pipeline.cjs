@@ -66,8 +66,10 @@ const extractBmsData = async (image, mimeType, log, context, previousFeedback = 
     // ... existing code ...
     const geminiClient = getGeminiClient();
     const extractionPrompt = getImageExtractionPrompt(previousFeedback);
-    // Use Gemini 2.5 Flash (latest stable model)
-    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    // Use Gemini 1.5 Flash 8B - most cost-effective model for structured data extraction
+    // Pricing: $0.0375/M input, $0.15/M output (62.5% cheaper than 2.5-flash)
+    // Override with GEMINI_MODEL env var if higher quality needed
+    const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash-8b';
 
     const prompt = {
         // ... existing code ...

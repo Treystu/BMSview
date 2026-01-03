@@ -715,63 +715,103 @@ exports.handler = async function (event, context) {
                 let updatedCount = 0;
                 let scannedCount = 0;
 
-                // Find records that might need normalization (either missing root ID or have analysis ID)
-                // We process in batches to handle timeouts gracefully
                 const parsedLimit = parseInt(parsedBody.limit) || 1000;
+
+                // CRITICAL FIX: First, get total records in collection to prevent phantom scanning
+                const totalHistoryRecords = await historyCollection.countDocuments({});
+                log.info('Total records in history collection', { totalHistoryRecords });
 
                 // Helper to normalize an ID string
                 const norm = (id) => (!id || id === 'UNKNOWN') ? null : String(id).trim();
 
-                const cursor = historyCollection.find({
-                    $or: [
-                        { hardwareSystemId: null },
-                        { hardwareSystemId: "" },
-                        { hardwareSystemId: "UNKNOWN" },
-                        { dlNumber: { $ne: null } }, // Check if dlNumber exists but hardwareSystemId might differ
-                        { 'analysis.hardwareSystemId': { $exists: true } },
-                        { 'analysis.dlNumber': { $exists: true } }
-                    ]
-                }).limit(parsedLimit);
+                // CRITICAL FIX: Use MongoDB aggregation to find ONLY records that ACTUALLY need updates
+                // This prevents the infinite loop where records match the query but don't get updated
+                const pipeline = [
+                    // Stage 1: Find records with potential ID issues
+                    {
+                        $match: {
+                            $or: [
+                                // One field is missing/empty/UNKNOWN while the other has a value
+                                { hardwareSystemId: { $in: [null, "", "UNKNOWN"] }, dlNumber: { $nin: [null, "", "UNKNOWN"] } },
+                                { dlNumber: { $in: [null, "", "UNKNOWN"] }, hardwareSystemId: { $nin: [null, "", "UNKNOWN"] } },
+                                // Both fields have different valid values (need unification)
+                                {
+                                    hardwareSystemId: { $nin: [null, "", "UNKNOWN"] },
+                                    dlNumber: { $nin: [null, "", "UNKNOWN"] },
+                                    $expr: { $ne: ["$hardwareSystemId", "$dlNumber"] }
+                                }
+                            ]
+                        }
+                    },
+                    // Stage 2: Compute the best ID to use
+                    {
+                        $addFields: {
+                            _bestId: {
+                                $switch: {
+                                    branches: [
+                                        // Priority 1: Valid hardwareSystemId
+                                        { case: { $and: [{ $ne: ["$hardwareSystemId", null] }, { $ne: ["$hardwareSystemId", ""] }, { $ne: ["$hardwareSystemId", "UNKNOWN"] }] }, then: "$hardwareSystemId" },
+                                        // Priority 2: Valid dlNumber
+                                        { case: { $and: [{ $ne: ["$dlNumber", null] }, { $ne: ["$dlNumber", ""] }, { $ne: ["$dlNumber", "UNKNOWN"] }] }, then: "$dlNumber" },
+                                        // Priority 3: Nested hardwareSystemId
+                                        { case: { $and: [{ $ne: ["$analysis.hardwareSystemId", null] }, { $ne: ["$analysis.hardwareSystemId", ""] }, { $ne: ["$analysis.hardwareSystemId", "UNKNOWN"] }] }, then: "$analysis.hardwareSystemId" },
+                                        // Priority 4: Nested dlNumber
+                                        { case: { $and: [{ $ne: ["$analysis.dlNumber", null] }, { $ne: ["$analysis.dlNumber", ""] }, { $ne: ["$analysis.dlNumber", "UNKNOWN"] }] }, then: "$analysis.dlNumber" }
+                                    ],
+                                    default: null
+                                }
+                            }
+                        }
+                    },
+                    // Stage 3: Only include records where bestId exists AND at least one field needs updating
+                    {
+                        $match: {
+                            _bestId: { $ne: null },
+                            $expr: {
+                                $or: [
+                                    { $ne: ["$hardwareSystemId", "$_bestId"] },
+                                    { $ne: ["$dlNumber", "$_bestId"] }
+                                ]
+                            }
+                        }
+                    },
+                    { $limit: parsedLimit },
+                    { $project: { _id: 1, hardwareSystemId: 1, dlNumber: 1, _bestId: 1 } }
+                ];
+
+                const recordsToUpdate = await historyCollection.aggregate(pipeline).toArray();
+                scannedCount = recordsToUpdate.length;
+
+                log.info('Found records needing normalization', { count: scannedCount, limit: parsedLimit });
 
                 const bulkOps = [];
+                const now = new Date().toISOString();
 
-                for await (const record of cursor) {
-                    if (Date.now() - startTime > MAX_EXECUTION_TIME) break;
-                    scannedCount++;
+                for (const record of recordsToUpdate) {
+                    if (Date.now() - startTime > MAX_EXECUTION_TIME) {
+                        log.warn('Approaching timeout during normalize-ids', { processed: bulkOps.length });
+                        break;
+                    }
 
-                    // Priority Step 1: Get the Best ID available (preferring root hardwareSystemId if valid)
-                    const rootHwId = norm(record.hardwareSystemId);
-                    const rootDl = norm(record.dlNumber);
-                    const nestedHwId = norm(record.analysis?.hardwareSystemId);
-                    const nestedDl = norm(record.analysis?.dlNumber);
+                    const bestId = record._bestId;
+                    const currentHwId = norm(record.hardwareSystemId);
+                    const currentDlId = norm(record.dlNumber);
 
-                    // Determine the "True" ID
-                    // Logic: Use existing root ID if valid, otherwise lift from nested.
-                    // If root fields mismatch, prefer hardwareSystemId, or unify them if one is missing.
-                    const bestId = rootHwId || rootDl || nestedHwId || nestedDl;
+                    const needsHwUpdate = currentHwId !== bestId;
+                    const needsDlUpdate = currentDlId !== bestId;
 
-                    if (bestId) {
-                        // Check if update is actually needed (completeness check)
-                        const needsUpdate = (
-                            record.hardwareSystemId !== bestId ||
-                            record.dlNumber !== bestId // Ensure legacy field matches
-                        );
+                    if (needsHwUpdate || needsDlUpdate) {
+                        const updateFields = { updatedAt: now };
+                        if (needsHwUpdate) updateFields.hardwareSystemId = bestId;
+                        if (needsDlUpdate) updateFields.dlNumber = bestId;
 
-                        if (needsUpdate) {
-                            bulkOps.push({
-                                updateOne: {
-                                    filter: { _id: record._id },
-                                    update: {
-                                        $set: {
-                                            hardwareSystemId: bestId,
-                                            dlNumber: bestId, // Legacy compat: Force sync
-                                            updatedAt: new Date().toISOString()
-                                        }
-                                    }
-                                }
-                            });
-                            updatedCount++;
-                        }
+                        bulkOps.push({
+                            updateOne: {
+                                filter: { _id: record._id },
+                                update: { $set: updateFields }
+                            }
+                        });
+                        updatedCount++;
                     }
                 }
 
@@ -779,14 +819,125 @@ exports.handler = async function (event, context) {
                     await historyCollection.bulkWrite(bulkOps);
                 }
 
-                const message = `Scanned ${scannedCount} records, unified IDs for ${updatedCount} records.`;
-                timer.end({ action, updatedCount, scannedCount, message });
-                log.info('Normalize-ids task complete', { action, updatedCount, scannedCount });
+                // CRITICAL: Return hasMore=false when no records found to stop frontend loop immediately
+                const hasMore = scannedCount > 0 && scannedCount === parsedLimit;
+                const message = scannedCount === 0
+                    ? `No records need ID normalization. All ${totalHistoryRecords} records are already unified.`
+                    : `Scanned ${scannedCount} records, unified IDs for ${updatedCount} records.`;
+
+                timer.end({ action, updatedCount, scannedCount, hasMore, totalHistoryRecords, message });
+                log.info('Normalize-ids task complete', { action, updatedCount, scannedCount, hasMore, totalHistoryRecords });
 
                 return respond(200, {
                     success: true,
                     updatedCount,
                     scannedCount,
+                    hasMore,  // Frontend MUST stop looping when this is false
+                    totalRecords: totalHistoryRecords,
+                    message
+                }, headers);
+            }
+
+            // --- Deduplicate Records Action ---
+            // Removes duplicate records based on (hardwareSystemId + timestamp) combination
+            // Keeps the record with the highest validation score
+            if (action === 'deduplicate-records') {
+                log.info('Starting deduplicate-records task', { action });
+                const startTime = Date.now();
+                const MAX_EXECUTION_TIME = 25000;
+
+                // Get actual record count before deduplication
+                const totalBefore = await historyCollection.countDocuments({});
+                log.info('Total records before deduplication', { totalBefore });
+
+                // Find duplicate groups - records with same hardwareSystemId AND same timestamp
+                const duplicateGroups = await historyCollection.aggregate([
+                    {
+                        $match: {
+                            // Only check records with valid hardware IDs
+                            hardwareSystemId: { $nin: [null, "", "UNKNOWN"] }
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: {
+                                hwId: "$hardwareSystemId",
+                                ts: "$timestamp"
+                            },
+                            count: { $sum: 1 },
+                            records: {
+                                $push: {
+                                    _id: "$_id",
+                                    id: "$id",
+                                    validationScore: { $ifNull: ["$validationScore", 0] },
+                                    createdAt: "$createdAt",
+                                    updatedAt: "$updatedAt"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        $match: { count: { $gt: 1 } } // Only groups with duplicates
+                    },
+                    { $limit: 1000 } // Process in batches
+                ]).toArray();
+
+                log.info('Found duplicate groups', { count: duplicateGroups.length });
+
+                let totalDeleted = 0;
+                const bulkOps = [];
+
+                for (const group of duplicateGroups) {
+                    if (Date.now() - startTime > MAX_EXECUTION_TIME) {
+                        log.warn('Approaching timeout during deduplication', { deleted: totalDeleted });
+                        break;
+                    }
+
+                    // Sort records by validation score (descending), then by updatedAt (descending)
+                    const records = group.records.sort((a, b) => {
+                        const scoreDiff = (b.validationScore || 0) - (a.validationScore || 0);
+                        if (scoreDiff !== 0) return scoreDiff;
+                        // If scores are equal, keep the most recently updated
+                        return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+                    });
+
+                    // Keep the first (best) record, delete the rest
+                    const recordsToDelete = records.slice(1);
+                    for (const record of recordsToDelete) {
+                        bulkOps.push({
+                            deleteOne: { filter: { _id: record._id } }
+                        });
+                        totalDeleted++;
+                    }
+
+                    // Process in batches of 500
+                    if (bulkOps.length >= 500) {
+                        await historyCollection.bulkWrite(bulkOps, { ordered: false });
+                        log.info('Processed deduplication batch', { deleted: bulkOps.length });
+                        bulkOps.length = 0;
+                    }
+                }
+
+                if (bulkOps.length > 0) {
+                    await historyCollection.bulkWrite(bulkOps, { ordered: false });
+                }
+
+                const totalAfter = await historyCollection.countDocuments({});
+                const hasMore = duplicateGroups.length === 1000;
+
+                const message = totalDeleted === 0
+                    ? `No duplicates found. Total records: ${totalBefore}`
+                    : `Removed ${totalDeleted} duplicate records. Records: ${totalBefore} → ${totalAfter}`;
+
+                timer.end({ action, totalDeleted, totalBefore, totalAfter, hasMore });
+                log.info('Deduplicate-records task complete', { totalDeleted, totalBefore, totalAfter, hasMore });
+
+                return respond(200, {
+                    success: true,
+                    deletedCount: totalDeleted,
+                    totalBefore,
+                    totalAfter,
+                    hasMore,
                     message
                 }, headers);
             }

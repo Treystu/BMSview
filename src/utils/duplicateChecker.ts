@@ -78,15 +78,10 @@ export function partitionCachedFiles(
 
         // CASE A: Cached/Known Duplicate
         if (meta?._isDuplicate && meta?._analysisData) {
-
-            // RETROACTIVE FIX: If the cached record is missing a System ID, force an upgrade.
-            // This ensures we re-run the improved extraction logic on "Skipped" files.
-            const data = meta._analysisData as any;
-            const hasSystemId = !!(data.systemId || data.hardwareSystemId);
-            if (!hasSystemId) {
-                cachedUpgrades.push(file);
-                continue;
-            }
+            // NOTE: We no longer force upgrades for missing systemId.
+            // The systemId should be populated via auto-associate, not by re-running AI analysis.
+            // Re-analyzing won't help if the BMS screenshot doesn't show a Hardware ID.
+            // This prevents wasteful API calls for records that simply lack visible identifiers.
 
             // Prefer metadata attached to analysis data; legacy file-level fields remain only for backward compatibility
             // with pre-cache uploads that attached identifiers directly on the File object.

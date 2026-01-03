@@ -771,19 +771,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 let totalUpdated = 0;
                 let totalScanned = 0;
                 let loops = 0;
-                const MAX_LOOPS = 100; // Safety brake for very large datasets
+                const MAX_LOOPS = 50; // Safety brake - reduced since backend now reports hasMore accurately
 
                 // Initial call
                 let result = await normalizeIds(1000);
                 totalUpdated += result.updatedCount;
                 totalScanned += result.scannedCount;
 
-                // Continue processing if there might be more records to process
-                // The backend processes up to 1000 records or 20 seconds per batch
-                // If it scanned 1000 records, there might be more to process
-                while (result.scannedCount >= 1000 && loops < MAX_LOOPS) {
+                // CRITICAL FIX: Use the hasMore flag from backend to decide whether to continue
+                // The backend now uses MongoDB aggregation to find ONLY records that actually need updating
+                // If hasMore is false, there are no more records to process - stop immediately
+                while (result.hasMore && loops < MAX_LOOPS) {
                     loops++;
-                    log('info', `Normalize-ids continuing...`, { loop: loops, totalUpdated, totalScanned });
+                    log('info', `Normalize-ids continuing...`, {
+                        loop: loops,
+                        totalUpdated,
+                        totalScanned,
+                        totalRecords: result.totalRecords
+                    });
 
                     // Continue with next batch
                     result = await normalizeIds(1000);
@@ -791,9 +796,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     totalScanned += result.scannedCount;
                 }
 
+                const totalRecords = result.totalRecords || totalScanned;
                 return {
                     ...result,
-                    message: `Completed. Scanned ${totalScanned} records across ${loops + 1} batches. Updated ${totalUpdated} records.`
+                    message: `Completed. Scanned ${totalScanned} records across ${loops + 1} batches. Updated ${totalUpdated} of ${totalRecords} total records.`
                 };
             },
             'IDs normalized successfully.',
