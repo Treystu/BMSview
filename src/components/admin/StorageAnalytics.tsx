@@ -190,7 +190,7 @@ const StorageAnalytics: React.FC = () => {
                     {/* Deep Analysis */}
                     {result.deepAnalysis && (
                         <div className="mt-4">
-                            <h4 className="text-xs font-bold uppercase text-purple-400 mb-2">Deep 'Analysis' Object Breakdown</h4>
+                            <h4 className="text-xs font-bold uppercase text-purple-400 mb-2">Deep Analysis Object Breakdown</h4>
                             <div className="max-h-60 overflow-y-auto border border-gray-700 rounded bg-black/20">
                                 <table className="w-full text-xs text-left">
                                     <thead className="bg-gray-700 text-gray-300 sticky top-0">

@@ -450,7 +450,6 @@ const performAnalysisPipeline = async (image, systems, log, context, systemId = 
         analysis,
         // ... existing code ...
         weather,
-        weather,
         hardwareSystemId: analysis.hardwareSystemId,
         dlNumber: analysis.hardwareSystemId, // Legacy compat
         // ... existing code ...

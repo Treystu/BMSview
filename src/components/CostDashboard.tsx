@@ -149,7 +149,7 @@ const BarChart: React.FC<{
 
     return (
         <div className="flex items-end gap-1 h-48 px-2">
-            {data.map((day, index) => {
+            {data.map((day, _index) => {
                 const height = maxValue > 0 ? (day.totalCost / maxValue) * 100 : 0;
                 const date = new Date(day.date);
                 const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });

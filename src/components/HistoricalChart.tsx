@@ -829,7 +829,6 @@ const SvgChart: React.FC<{
 
                             {/* Alert Annotations (Admin Feature) */}
                             {annotations.length > 0 && annotations.map((annotation, idx) => {
-                                const annotationTime = new Date(annotation.timestamp).getTime();
                                 const annotationX = xScale(annotation.timestamp);
 
                                 // Only render if within visible domain
@@ -1293,7 +1292,7 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
 const HistoricalChart: React.FC<HistoricalChartProps> = ({
     systems,
     history,
-    enableAdminFeatures = false,
+    enableAdminFeatures: _enableAdminFeatures = false,
     showSolarOverlay = false,
     annotations = [],
     onZoomDomainChange
@@ -1331,18 +1330,6 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false); // New: separate analytics loading
 
     const [zoomPercentage, setZoomPercentage] = useState<number>(100);
-
-    // Generate chartKey for deterministic rendering - forces re-render when parameters change
-    const chartKey = useMemo(() => {
-        return JSON.stringify({
-            systemId: selectedSystemId,
-            startDate,
-            endDate,
-            metricConfig: Object.keys(metricConfig).sort(),
-            zoomPercentage,
-            chartView
-        });
-    }, [selectedSystemId, startDate, endDate, metricConfig, zoomPercentage, chartView]);
 
     const chartDimensions = useMemo(() => ({
         WIDTH: 1200, CHART_HEIGHT: 450, BRUSH_HEIGHT: 80,
@@ -1417,7 +1404,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     // FIX: Notify parent component of visible time domain when viewBox or timelineData changes
     useEffect(() => {
         if (timelineData && onZoomDomainChange) {
-            const { xScale, xMin, xMax } = timelineData;
+            const { xScale } = timelineData;
             const visibleStartTime = xScale.invert(viewBox.x);
             const visibleEndTime = xScale.invert(viewBox.x + viewBox.width);
             onZoomDomainChange(visibleStartTime, visibleEndTime);

@@ -237,12 +237,12 @@ async function performAnalysisRequest(file: File, relativeEndpoint: string, cont
             let errorText = 'Failed to read error response';
             try {
                 errorText = await response.text();
-            } catch (e) {
+            } catch {
                 // ignore
             }
             // Try to parse JSON error if possible
             let errorBody;
-            try { errorBody = JSON.parse(errorText); } catch { }
+            try { errorBody = JSON.parse(errorText); } catch { /* ignore parse errors */ }
 
             const errorMessage = (typeof errorBody === 'object' && errorBody?.error) ? errorBody.error : `Server responded with status ${response.status}: ${errorText}`;
             throw new Error(errorMessage);

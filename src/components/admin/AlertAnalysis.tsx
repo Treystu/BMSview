@@ -61,7 +61,7 @@ const AlertAnalysis: React.FC<AlertAnalysisProps> = ({ data }) => {
                     );
                 })}
                  {data.events.length === 0 && (
-                    <p className="text-center text-gray-500 text-sm p-4">No alerts found in this system's history.</p>
+                    <p className="text-center text-gray-500 text-sm p-4">No alerts found in this system history.</p>
                 )}
             </div>
         </div>

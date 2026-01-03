@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Dynamic Upload Optimization Utility
  * Optimizes upload performance based on file count, size, and network conditions

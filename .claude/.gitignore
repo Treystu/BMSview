@@ -1,0 +1,4 @@
+# Transient logs (regenerated each iteration)
+*.log
+
+# Keep state file (ooda-state.md) - it's tracked

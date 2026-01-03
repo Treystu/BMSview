@@ -38,7 +38,7 @@ interface TrendDataPoint {
  * - Health alerts and thresholds
  */
 const BatteryHealthTrends: React.FC<BatteryHealthTrendsProps> = ({
-    systemId,
+    systemId: _systemId,
     records,
     timeRange = '30d'
 }) => {
@@ -135,7 +135,7 @@ const BatteryHealthTrends: React.FC<BatteryHealthTrendsProps> = ({
             });
 
             // Generate trend data points
-            const trends: TrendDataPoint[] = sortedRecords.map((record, index) => {
+            const trends: TrendDataPoint[] = sortedRecords.map((record, _index) => {
                 const recordCapacity = record.analysis?.capacity || initialCapacity;
                 const recordCapacityFade = ((initialCapacity - recordCapacity) / initialCapacity) * 100;
                 const recordSOH = Math.max(0, Math.min(100, 100 - recordCapacityFade));

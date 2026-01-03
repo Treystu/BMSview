@@ -211,7 +211,6 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
       </div>
 
       {(files.length > 0 || skippedFiles.size > 0) && (() => {
-        const upgradeCount = files.reduce((acc, f) => acc + ((f as FileWithMeta)._isUpgrade ? 1 : 0), 0);
         const duplicateCount = files.reduce((acc, f) => acc + ((f as FileWithMeta)._isDuplicate ? 1 : 0), 0);
         const activeCount = files.length - duplicateCount;
         const costEstimate = estimateAnalysisCost(activeCount);

@@ -38,7 +38,7 @@ interface PerformanceMetrics {
 const BatteryInsights: React.FC<BatteryInsightsProps> = ({
     systemId,
     records,
-    currentAnalysis
+    currentAnalysis: _currentAnalysis
 }) => {
     const [selectedTimeRange, setSelectedTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
     const [insightCategories, setInsightCategories] = useState<InsightCategory[]>([]);

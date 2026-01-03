@@ -34,4 +34,4 @@ root.render(
 // Register a simple service worker for caching the app shell on supported hosts.
 try {
   registerServiceWorker();
-} catch (_) { }
+} catch { /* ignore registration errors */ }

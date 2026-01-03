@@ -146,7 +146,7 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
                         <div>
                             <h3 className="text-xl font-semibold text-yellow-300">⚠️ Orphaned Hardware IDs</h3>
                             <p className="text-sm text-yellow-100 mt-1">
-                                These Hardware IDs have records but no associated system profile. Click "Adopt" to create a system for them.
+                                These Hardware IDs have records but no associated system profile. Click Adopt to create a system for them.
                             </p>
                         </div>
                         <button
@@ -187,7 +187,7 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
                                             {item.previously_linked_system_name ? (
                                                 <div className="text-gray-400">
                                                     {item.previously_linked_system_name}
-                                                    <p className="text-gray-300 text-sm italic">Select "Adopt" to create a new system from this Orphaned ID.</p>
+                                                    <p className="text-gray-300 text-sm italic">Select Adopt to create a new system from this Orphaned ID.</p>
                                                 </div>
                                             ) : (
                                                 <span className="text-gray-600">Never linked</span>

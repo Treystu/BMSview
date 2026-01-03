@@ -280,7 +280,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
               <li>Tests 11 available tools with valid and edge-case parameters</li>
               <li>Records success/failure, response times, and error details</li>
               <li>Categorizes failures (network, database, parameters, etc.)</li>
-              <li>Auto-submits feedback to AI Feedback dashboard with <code className="bg-blue-100 px-1">guruSource: 'diagnostics-guru'</code></li>
+              <li>Auto-submits feedback to AI Feedback dashboard with <code className="bg-blue-100 px-1">guruSource: diagnostics-guru</code></li>
               <li>Provides comprehensive pass/fail summary</li>
             </ul>
           </div>
@@ -504,7 +504,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
                 })}
               </ul>
               <p className="text-xs text-yellow-700 mt-3">
-                View submitted feedback in the AI Feedback dashboard filtered by "diagnostics-guru"
+                View submitted feedback in the AI Feedback dashboard filtered by diagnostics-guru
               </p>
             </div>
           )}

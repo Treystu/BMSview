@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { MonitoringDashboardData, AnomalyAlert, CostMetrics } from '../types';
+import type { MonitoringDashboardData } from '../types';
 
 interface MonitoringDashboardProps {
   className?: string;

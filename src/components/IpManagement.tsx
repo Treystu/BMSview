@@ -45,7 +45,6 @@ const IpManagement: React.FC = () => {
         getCurrentIp().then(data => setCurrentUserIp(data.ip)).catch(err => {
             console.warn("Could not fetch current user IP:", err);
         });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Only run once on mount
 
     const handleAction = async (action: 'add' | 'remove' | 'block' | 'unblock', range: string) => {

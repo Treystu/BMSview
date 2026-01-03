@@ -294,7 +294,7 @@ function generateRecommendations(measurements, maxTemp, performance) {
  * @param {Object} [metadata] Optional metadata for single-point analysis
  * @returns {string} Generated prompt
  */
-function buildPrompt(systemId, batteryData, customPrompt, metadata) {
+function buildPrompt(systemId, batteryData, customPrompt, _metadata) {
   // Parse batteryData to detect if it's single-point or time-series
   let isSinglePoint = false;
   let measurementCount = 0;
@@ -302,7 +302,7 @@ function buildPrompt(systemId, batteryData, customPrompt, metadata) {
     const parsed = JSON.parse(batteryData);
     measurementCount = parsed.measurements ? parsed.measurements.length : 0;
     isSinglePoint = measurementCount === 1;
-  } catch (e) {
+  } catch {
     // If we can't parse, assume it's a string representation
   }
 
@@ -380,7 +380,7 @@ Degradation Rate: ${perf.degradationRate}% per day`;
  * @param {BatteryAnalysisLogger} log Logger instance
  * @returns {Object} Parsed insights
  */
-function parseInsights(text, batteryData, log = console) {
+function parseInsights(text, batteryData, _log = console) {
   const measurements = batteryData?.measurements || [];
   const maxTemp = Math.max(...measurements.map(m => m.temperature ?? 0));
 

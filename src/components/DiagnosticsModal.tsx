@@ -54,90 +54,6 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
 
   if (!isOpen) return null;
 
-  // Map test IDs to display names - matches backend diagnosticTests object keys
-  const testDisplayNames: Record<string, string> = {
-    database: 'Database Connection',
-    gemini: 'Gemini API',
-    analyze: 'Analyze Endpoint',
-    insightsWithTools: 'Insights with Tools',
-    asyncAnalysis: 'Asynchronous Insights (Background)',
-    history: 'History Endpoint',
-    systems: 'Systems Endpoint',
-    dataExport: 'Data Export',
-    idempotency: 'Idempotency',
-    weather: 'Weather Endpoint',
-    backfillWeather: 'Backfill Weather Function',
-    backfillHourlyCloud: 'Backfill Hourly Cloud Function',
-    solarEstimate: 'Solar Estimate Endpoint',
-    predictiveMaintenance: 'Predictive Maintenance',
-    systemAnalytics: 'System Analytics',
-    contentHashing: 'Content Hashing',
-    errorHandling: 'Error Handling',
-    logging: 'Logging System',
-    retryMechanism: 'Retry Mechanism',
-    timeout: 'Timeout Handling'
-  };
-
-  // Get display names for selected tests only
-  const runningTests = selectedTests.map(testId => ({
-    id: testId,
-    displayName: testDisplayNames[testId] || `Unknown Test (${testId})`
-  }));
-
-  // Calculate dynamic time estimate based on number of tests
-  // Average: 1-2 seconds per test
-  const estimatedMinSeconds = Math.max(5, Math.ceil(runningTests.length * 1));
-  const estimatedMaxSeconds = Math.max(10, Math.ceil(runningTests.length * 2));
-
-  // Component to show live test status
-  const LiveTestStatus: React.FC<{ name: string; result?: DiagnosticTestResult }> = ({ name, result }) => {
-    const status = result?.status || 'pending';
-    const duration = result?.duration;
-    
-    return (
-      <div className="flex items-center justify-between bg-gray-800/50 rounded px-3 py-2 text-sm">
-        <div className="flex items-center flex-1">
-          {!result ? (
-            <>
-              <SpinnerIcon className="w-4 h-4 text-blue-400 mr-2" />
-              <span className="text-gray-400">{name}</span>
-              <span className="ml-2 text-xs text-blue-400">running...</span>
-            </>
-          ) : (
-            <>
-              <span className={`mr-2 ${getStatusColor(status)}`}>
-                {getStatusIcon(status)}
-              </span>
-              <span className={status === 'success' ? 'text-green-400' : status === 'error' ? 'text-red-400' : status === 'warning' ? 'text-yellow-400' : 'text-gray-300'}>
-                {name}
-              </span>
-              {duration !== undefined && (
-                <span className="ml-2 text-xs text-gray-500">
-                  {duration}ms
-                </span>
-              )}
-              {result.steps && result.steps.length > 0 && (
-                <span className="ml-2 text-xs text-gray-500">
-                  • {result.steps.length} steps
-                </span>
-              )}
-              {result.tests && result.tests.length > 0 && (
-                <span className="ml-2 text-xs text-gray-500">
-                  • {result.tests.length} tests
-                </span>
-              )}
-              {result.stages && result.stages.length > 0 && (
-                <span className="ml-2 text-xs text-gray-500">
-                  • {result.stages.length} stages
-                </span>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   const toggleSection = (sectionKey: string) => {
     const newExpanded = new Set(expandedSections);
     if (newExpanded.has(sectionKey)) {
@@ -535,7 +451,7 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
           </>
             ) : (
               <div className="text-center text-gray-400 py-8">
-                No diagnostic results available. Click "Run Tests" to start diagnostics.
+                No diagnostic results available. Click Run Tests to start diagnostics.
               </div>
             )}
           </>

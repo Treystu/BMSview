@@ -59,14 +59,14 @@ const Contact: React.FC = () => {
         <div className="max-w-xl mx-auto text-center">
             <h2 className="text-3xl font-bold text-neutral-dark mb-4">Contact Us</h2>
             <p className="text-neutral mb-8">
-                Have questions or feedback? We'd love to hear from you.
+                Have questions or feedback? We would love to hear from you.
             </p>
         </div>
         <div className="max-w-xl mx-auto bg-white p-8 rounded-xl shadow-lg">
           {submitted ? (
             <div className="text-center p-8">
               <h3 className="text-2xl font-bold text-secondary mb-2">Thank You!</h3>
-              <p className="text-neutral">Your message has been sent. We'll get back to you shortly.</p>
+              <p className="text-neutral">Your message has been sent. We will get back to you shortly.</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit}>

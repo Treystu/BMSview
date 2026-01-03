@@ -199,7 +199,7 @@ export const SolarEstimatePanel: React.FC<SolarEstimatePanelProps> = ({
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <p className="text-xs text-gray-500 mt-1">
-            Enter a 5-digit US zip code or GPS coordinates as "latitude,longitude"
+            Enter a 5-digit US zip code or GPS coordinates as latitude,longitude
           </p>
         </div>
 

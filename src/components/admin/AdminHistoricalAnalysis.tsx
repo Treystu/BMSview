@@ -20,7 +20,7 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
     isLoading,
     isCacheBuilding
 }) => {
-    const [selectedSystemId, setSelectedSystemId] = useState<string>('');
+    const [selectedSystemId] = useState<string>('');
     const [visibleTimeRange, setVisibleTimeRange] = useState<{ start: number; end: number } | null>(null);
     const [analysisResult, setAnalysisResult] = useState<any>(null);
     const [predictionResult, setPredictionResult] = useState<any>(null);
@@ -32,9 +32,7 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
         analyticsData,
         isLoading: analyticsLoading,
         error: analyticsError,
-        filteredHistory,
-        visibleAlerts,
-        refreshAnalytics
+        visibleAlerts
     } = useAnalyticsData({
         selectedSystemId,
         history,

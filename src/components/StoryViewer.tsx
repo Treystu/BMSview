@@ -172,7 +172,7 @@ const StoryDetail: React.FC<{ story: AnalysisStory; onBack: () => void; onDelete
         {story.userContext && (
           <div className="bg-gray-700/50 rounded-lg p-4 border-l-4 border-secondary">
             <h4 className="text-sm font-medium text-secondary mb-1">User Context</h4>
-            <p className="text-gray-300 italic">"{story.userContext}"</p>
+            <p className="text-gray-300 italic">{story.userContext}</p>
           </div>
         )}
       </div>
@@ -357,7 +357,7 @@ const StoryViewer: React.FC<StoryViewerProps> = ({ selectedStoryId, onBack }) =>
           </svg>
           <p className="text-gray-400">No stories yet</p>
           <p className="text-sm text-gray-500 mt-2">
-            Create a story by enabling "Story Mode" in the Bulk Upload section
+            Create a story by enabling Story Mode in the Bulk Upload section
           </p>
         </div>
       ) : (

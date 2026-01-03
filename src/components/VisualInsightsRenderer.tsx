@@ -321,7 +321,7 @@ const SimpleChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
 /**
  * Chart renderer component that dispatches to appropriate chart type
  */
-const ChartRenderer: React.FC<{ config: ChartConfig; index: number }> = ({ config, index }) => {
+const ChartRenderer: React.FC<{ config: ChartConfig; index: number }> = ({ config, index: _index }) => {
   if (config.chartType === 'gauge') {
     return <GaugeChart config={config} />;
   }
@@ -394,23 +394,23 @@ export const VisualInsightsRenderer: React.FC<VisualInsightsRendererProps> = ({
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  h1: ({ node, ...props }) => <h1 className="text-2xl font-bold text-gray-900 mb-4 mt-6 break-words" {...props} />,
-                  h2: ({ node, ...props }) => <h2 className="text-xl font-bold text-gray-900 mb-3 mt-5 break-words" {...props} />,
-                  h3: ({ node, ...props }) => <h3 className="text-lg font-semibold text-gray-800 mb-2 mt-4 break-words" {...props} />,
-                  h4: ({ node, ...props }) => <h4 className="text-base font-semibold text-gray-800 mb-2 mt-3 break-words" {...props} />,
-                  p: ({ node, ...props }) => <p className="text-gray-700 mb-3 leading-relaxed break-words" {...props} />,
-                  ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-3 space-y-1.5" {...props} />,
-                  ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-3 space-y-1.5" {...props} />,
-                  li: ({ node, ...props }) => <li className="text-gray-700 ml-2 leading-relaxed break-words" {...props} />,
-                  strong: ({ node, ...props }) => <strong className="font-bold text-gray-900" {...props} />,
-                  em: ({ node, ...props }) => <em className="italic text-gray-700" {...props} />,
-                  code: ({ node, inline, ...props }: any) => 
+                  h1: ({ node: _node, ...props }) => <h1 className="text-2xl font-bold text-gray-900 mb-4 mt-6 break-words" {...props} />,
+                  h2: ({ node: _node, ...props }) => <h2 className="text-xl font-bold text-gray-900 mb-3 mt-5 break-words" {...props} />,
+                  h3: ({ node: _node, ...props }) => <h3 className="text-lg font-semibold text-gray-800 mb-2 mt-4 break-words" {...props} />,
+                  h4: ({ node: _node, ...props }) => <h4 className="text-base font-semibold text-gray-800 mb-2 mt-3 break-words" {...props} />,
+                  p: ({ node: _node, ...props }) => <p className="text-gray-700 mb-3 leading-relaxed break-words" {...props} />,
+                  ul: ({ node: _node, ...props }) => <ul className="list-disc list-inside mb-3 space-y-1.5" {...props} />,
+                  ol: ({ node: _node, ...props }) => <ol className="list-decimal list-inside mb-3 space-y-1.5" {...props} />,
+                  li: ({ node: _node, ...props }) => <li className="text-gray-700 ml-2 leading-relaxed break-words" {...props} />,
+                  strong: ({ node: _node, ...props }) => <strong className="font-bold text-gray-900" {...props} />,
+                  em: ({ node: _node, ...props }) => <em className="italic text-gray-700" {...props} />,
+                  code: ({ node: _node, inline, ...props }: any) =>
                     inline ? (
                       <code className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-sm break-words" {...props} />
                     ) : (
                       <code className="block bg-gray-900 text-green-400 p-3 rounded-lg text-sm overflow-x-auto mb-3" {...props} />
                     ),
-                  blockquote: ({ node, ...props }) => (
+                  blockquote: ({ node: _node, ...props }) => (
                     <blockquote className="border-l-4 border-blue-500 pl-4 py-2 mb-3 italic text-gray-600 bg-blue-50 rounded-r break-words" {...props} />
                   ),
                 }}

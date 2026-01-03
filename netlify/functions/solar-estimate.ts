@@ -33,16 +33,19 @@ export const handler: Handler = async (
     bodyLength: event.body ? event.body.length : 0,
   });
 
+  // Common headers for all responses
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+  };
+
   if (event.httpMethod === "OPTIONS") {
     timer.end({ outcome: "preflight" });
     log.exit(200, { outcome: "preflight" });
     return {
       statusCode: 200,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-      },
+      headers: corsHeaders,
       body: "",
     };
   }
@@ -54,6 +57,7 @@ export const handler: Handler = async (
     log.exit(405, { outcome: "method_not_allowed" });
     return {
       statusCode: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({ error: "Method not allowed" }),
     };
   }
@@ -69,6 +73,7 @@ export const handler: Handler = async (
       log.exit(400, { outcome: "validation_error", field: "location" });
       return {
         statusCode: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({ error: "Location is required (zip code or lat,lon)" }),
       };
     }
@@ -79,6 +84,7 @@ export const handler: Handler = async (
       log.exit(400, { outcome: "validation_error", field: "panelWatts" });
       return {
         statusCode: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({ error: "Valid panel wattage is required" }),
       };
     }
@@ -89,6 +95,7 @@ export const handler: Handler = async (
       log.exit(400, { outcome: "validation_error", field: "dates" });
       return {
         statusCode: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({ error: "Start date and end date are required (YYYY-MM-DD format)" }),
       };
     }
@@ -101,6 +108,7 @@ export const handler: Handler = async (
       log.exit(400, { outcome: "validation_error", field: "date_format" });
       return {
         statusCode: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({ error: "Invalid date format. Use YYYY-MM-DD" }),
       };
     }
@@ -147,6 +155,7 @@ export const handler: Handler = async (
       log.exit(response.status, { outcome: "error" });
       return {
         statusCode: response.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({ error: errorMessage }),
       };
     }
@@ -166,6 +175,7 @@ export const handler: Handler = async (
     return {
       statusCode: 200,
       headers: {
+        ...corsHeaders,
         "Content-Type": "application/json",
         "Cache-Control": "public, max-age=3600", // Cache for 1 hour
       },
@@ -174,16 +184,17 @@ export const handler: Handler = async (
 
   } catch (error) {
     const err = error as Error;
-    log.error("Unexpected error in solar estimate", { 
+    log.error("Unexpected error in solar estimate", {
       error: err?.message || "Unknown error",
       stack: err?.stack,
       durationMs: timer.end({ outcome: "exception" })
     });
     log.exit(500, { outcome: "exception" });
-    
+
     return {
       statusCode: 500,
-      body: JSON.stringify({ 
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({
         error: "Internal server error while fetching solar estimate",
         details: err?.message || "Unknown error"
       }),

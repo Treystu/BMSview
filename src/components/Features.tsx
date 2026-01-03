@@ -21,7 +21,7 @@ const Features: React.FC = () => {
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold text-neutral-dark">Why Choose BMS Validator?</h2>
           <p className="text-neutral mt-2 max-w-2xl mx-auto">
-            Our AI-powered tool provides unparalleled insight into your battery's health, helping you prevent issues before they arise.
+            Our AI-powered tool provides unparalleled insight into your battery health, helping you prevent issues before they arise.
           </p>
         </div>
         <div className="grid md:grid-cols-3 gap-8">

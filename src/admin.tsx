@@ -151,10 +151,10 @@ const AdminApp: React.FC = () => {
           </button>
           
           <div className="text-sm text-gray-400 space-y-2">
-            <p>If the login window doesn't appear:</p>
+            <p>If the login window does not appear:</p>
             <ul className="list-disc list-inside text-left">
               <li>Check your popup blocker settings</li>
-              <li>Try clicking the "Open Login" button above</li>
+              <li>Try clicking the Open Login button above</li>
               <li>Ensure JavaScript is enabled</li>
               <li>Clear your browser cache and reload</li>
             </ul>
