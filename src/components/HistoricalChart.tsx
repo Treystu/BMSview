@@ -1298,7 +1298,13 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     onZoomDomainChange
 }) => {
     const [selectedSystemId, setSelectedSystemId] = useState<string>('');
-    const [metricConfig, setMetricConfig] = useState<Partial<Record<MetricKey, { axis: Axis }>>>({ stateOfCharge: { axis: 'left' }, current: { axis: 'right' } });
+    // Default to showing core battery metrics - users can enable/disable via config panel
+    const [metricConfig, setMetricConfig] = useState<Partial<Record<MetricKey, { axis: Axis }>>>({
+        stateOfCharge: { axis: 'left' },
+        overallVoltage: { axis: 'left' },
+        current: { axis: 'right' },
+        power: { axis: 'right' }
+    });
     const [hiddenMetrics] = useState<Set<MetricKey>>(new Set());
 
     // Helper to get local time string for inputs (YYYY-MM-DDTHH:mm)

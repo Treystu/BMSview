@@ -1,335 +1,79 @@
- {"level":"INFO","timestamp":"2026-01-03T22:28:43.735Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:43.735Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.411Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.416Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.443Z","component":"AdminDashboard","message":"Performing initial data load (page 1).","context":{}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.444Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":"all","strategy":"cache-first"}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.444Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":100,"strategy":"cache-first"}}
- {"level":"debug","timestamp":"2026-01-03T22:28:44.448Z","service":"localCache","message":"Retrieved 4 systems from cache"}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.448Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":"all","returned":4,"total":4}}
- {"level":"debug","timestamp":"2026-01-03T22:28:44.567Z","service":"localCache","message":"Retrieved 3590 history records from cache"}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.567Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":100,"returned":100,"total":3590}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.567Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":4,"historyCount":100}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.576Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.576Z","service":"clientService","message":"Fetching data integrity audit from admin endpoint.","context":{}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.576Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"admin-data-integrity","method":"GET"}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.576Z","service":"clientService","message":"Fetching IP management data.","context":{}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.576Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"ip-admin","method":"GET"}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.576Z","service":"clientService","message":"Fetching current user IP.","context":{}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.576Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"get-ip","method":"GET"}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.576Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.576Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"default-system"}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:44.576Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET"}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:45.838Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"get-ip","method":"GET","status":200}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:46.410Z","service":"clientService","message":"Starting smart history sync.","context":{}}
- {"level":"debug","timestamp":"2026-01-03T22:28:46.602Z","service":"localCache","message":"Retrieved 3590 history records from cache"}
- {"level":"INFO","timestamp":"2026-01-03T22:28:46.603Z","service":"clientService","message":"Loaded 3590 records from local cache.","context":{"count":3590}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:46.603Z","service":"clientService","message":"Syncing batch 1/100...","context":{"updatedSince":"2026-01-03T11:41:56.846Z","totalSoFar":0}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:46.603Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?all=true&updatedSince=2026-01-03T11%3A41%3A56.846Z","method":"GET"}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:47.697Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET","status":200}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:47.881Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"ip-admin","method":"GET","status":200}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:48.129Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"admin-data-integrity","method":"GET","status":200}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:48.129Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":9,"matched":5,"orphaned":4,"total_records":7336,"orphaned_records":38}}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:48.417Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.07221270000000006,"days":5}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:48.879Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?all=true&updatedSince=2026-01-03T11%3A41%3A56.846Z","method":"GET","status":200}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:48.879Z","service":"clientService","message":"No more new records from server.","context":{}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:48.879Z","service":"clientService","message":"Incremental sync finished. Total received: 0 records across 1 batches.","context":{"localCount":3590,"serverCount":0,"totalUnified":3590}}
- {"level":"INFO","timestamp":"2026-01-03T22:28:48.879Z","service":"clientService","message":"Finished smart history sync.","context":{}}
-admin.html:1 Uncaught (in promise) 
-admin.html:1 Uncaught (in promise) 
-admin.html:1 Uncaught (in promise) 
-admin.html:1 Uncaught (in promise) 
-admin.html:1 Uncaught (in promise) 
- {"level":"INFO","timestamp":"2026-01-03T22:31:00.830Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:00.830Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":0,"oversizedCount":0,"zipCount":1}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:00.835Z","hook":"useFileUpload","message":"Starting to process ZIP file.","context":{"fileName":"Photos-3-001 (5).zip","size":2795229}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:00.869Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":10,"fileNames":["Screenshot_20251228-154030.png","Screenshot_20251228-154035.png","Screenshot_20251228-124630.png","Screenshot_20251228-124619.png","Screenshot_20251228-124605.png","Screenshot_20251228-154041.png","Screenshot_20251228-124624.png","Screenshot_20251228-154022.png","Screenshot_20251228-154026.png","Screenshot_20251228-124614.png"],"event":"CHECK_START"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:00.870Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":10,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
- Calculating file hashes for batch Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- File hash batch complete Object
- {"level":"INFO","timestamp":"2026-01-03T22:31:00.900Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":10,"durationMs":30,"event":"HASHING_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:00.900Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:03.787Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":10,"trueDuplicates":0,"needsUpgrade":0,"newFiles":10,"durationMs":2917,"avgPerFileMs":"291.70","event":"PHASE1_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:03.787Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":10,"duplicates":0,"upgrades":0,"newFiles":10,"event":"CHECK_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:03.788Z","hook":"useFileUpload","message":"Successfully extracted all files from ZIP.","context":{"fileName":"Photos-3-001 (5).zip","size":2795229,"extractedCount":10}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.005Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":10,"isStoryMode":false,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.005Z","component":"AdminDashboard","message":"Force Re-analysis enabled: Bypassing duplicate checks and treating all files as new.","context":{}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.005Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":10,"upgrades":0,"new":10,"cachedDuplicates":0,"cachedUpgrades":0,"forceReanalysis":true}}
- Processing 10 files. Initial concurrency: 5
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.031Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251228-154030.png","fileSize":270131,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.031Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251228-154035.png","fileSize":269624,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.031Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251228-124630.png","fileSize":276082,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.031Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251228-124619.png","fileSize":273287,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.031Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251228-124605.png","fileSize":411009,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.031Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251228-154041.png","fileSize":270718,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.031Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251228-124624.png","fileSize":274945,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.031Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251228-154022.png","fileSize":244110,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.031Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251228-154026.png","fileSize":267012,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.032Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20251228-124614.png","fileSize":250003,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.055Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true&force=true (Basic Fetch)","context":{"fileName":"Screenshot_20251228-154030.png","fileSize":270131,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.057Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true&force=true (Basic Fetch)","context":{"fileName":"Screenshot_20251228-154035.png","fileSize":269624,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.058Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true&force=true (Basic Fetch)","context":{"fileName":"Screenshot_20251228-124630.png","fileSize":276082,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.060Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true&force=true (Basic Fetch)","context":{"fileName":"Screenshot_20251228-124619.png","fileSize":273287,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.062Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true&force=true (Basic Fetch)","context":{"fileName":"Screenshot_20251228-124605.png","fileSize":411009,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.064Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true&force=true (Basic Fetch)","context":{"fileName":"Screenshot_20251228-154041.png","fileSize":270718,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.066Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true&force=true (Basic Fetch)","context":{"fileName":"Screenshot_20251228-124624.png","fileSize":274945,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.067Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true&force=true (Basic Fetch)","context":{"fileName":"Screenshot_20251228-154022.png","fileSize":244110,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.068Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true&force=true (Basic Fetch)","context":{"fileName":"Screenshot_20251228-154026.png","fileSize":267012,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:15.070Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true&force=true (Basic Fetch)","context":{"fileName":"Screenshot_20251228-124614.png","fileSize":250003,"forceReanalysis":true}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:31.596Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251228-154041.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:31.596Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251228-154041.png"}}
- {"level":"info","timestamp":"2026-01-03T22:31:31.603Z","service":"localCache","message":"Cached analysis record: 05a09318-aa67-459b-9e7b-15a798a48b0c","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:31.603Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"05a09318-aa67-459b-9e7b-15a798a48b0c"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:31.603Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20251228-154041.png","recordId":"05a09318-aa67-459b-9e7b-15a798a48b0c","hasAnalysis":true,"analysisKeys":35}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.355Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251228-124605.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.355Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251228-124605.png"}}
- {"level":"info","timestamp":"2026-01-03T22:31:32.357Z","service":"localCache","message":"Cached analysis record: 5d41c5e3-c165-45dc-91ba-af1cee625f16","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.357Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"5d41c5e3-c165-45dc-91ba-af1cee625f16"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.357Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20251228-124605.png","recordId":"5d41c5e3-c165-45dc-91ba-af1cee625f16","hasAnalysis":true,"analysisKeys":35}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.393Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251228-124614.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.393Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251228-124614.png"}}
- {"level":"info","timestamp":"2026-01-03T22:31:32.396Z","service":"localCache","message":"Cached analysis record: 04c38467-e25f-4e7a-9403-21a991f9e5bc","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.396Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"04c38467-e25f-4e7a-9403-21a991f9e5bc"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.396Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20251228-124614.png","recordId":"04c38467-e25f-4e7a-9403-21a991f9e5bc","hasAnalysis":true,"analysisKeys":35}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.479Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251228-124630.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.479Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251228-124630.png"}}
- {"level":"info","timestamp":"2026-01-03T22:31:32.480Z","service":"localCache","message":"Cached analysis record: 4e14c081-8145-4428-891c-301b3d391c89","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.480Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"4e14c081-8145-4428-891c-301b3d391c89"}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.480Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20251228-124630.png","recordId":"4e14c081-8145-4428-891c-301b3d391c89","hasAnalysis":true,"analysisKeys":35}}
- {"level":"INFO","timestamp":"2026-01-03T22:31:32.694Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251228-154030.png","isDuplicate":false}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.694Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251228-154030.png"}}
-services-oz4FKQVZ.js:54 {"level":"INFO","timestamp":"2026-01-03T22:31:32.694Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251228-124624.png","isDuplicate":false}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.694Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251228-124624.png"}}
-services-oz4FKQVZ.js:56 {"level":"info","timestamp":"2026-01-03T22:31:32.695Z","service":"localCache","message":"Cached analysis record: e8988348-04a3-4af4-a978-cfd3d994c5d6","context":{"syncStatus":"synced"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.695Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"e8988348-04a3-4af4-a978-cfd3d994c5d6"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.695Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20251228-154030.png","recordId":"e8988348-04a3-4af4-a978-cfd3d994c5d6","hasAnalysis":true,"analysisKeys":35}}
-services-oz4FKQVZ.js:56 {"level":"info","timestamp":"2026-01-03T22:31:32.719Z","service":"localCache","message":"Cached analysis record: 07bbc0f3-c18f-4f08-971f-487e74f9055a","context":{"syncStatus":"synced"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.719Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"07bbc0f3-c18f-4f08-971f-487e74f9055a"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.719Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20251228-124624.png","recordId":"07bbc0f3-c18f-4f08-971f-487e74f9055a","hasAnalysis":true,"analysisKeys":35}}
-services-oz4FKQVZ.js:54 {"level":"INFO","timestamp":"2026-01-03T22:31:32.721Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251228-154035.png","isDuplicate":false}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.721Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251228-154035.png"}}
-services-oz4FKQVZ.js:54 {"level":"INFO","timestamp":"2026-01-03T22:31:32.733Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251228-154026.png","isDuplicate":false}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.733Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251228-154026.png"}}
-services-oz4FKQVZ.js:56 {"level":"info","timestamp":"2026-01-03T22:31:32.749Z","service":"localCache","message":"Cached analysis record: 9eb053f3-0c7a-46a1-a879-31e90de81025","context":{"syncStatus":"synced"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.749Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"9eb053f3-0c7a-46a1-a879-31e90de81025"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.749Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20251228-154035.png","recordId":"9eb053f3-0c7a-46a1-a879-31e90de81025","hasAnalysis":true,"analysisKeys":35}}
-services-oz4FKQVZ.js:56 {"level":"info","timestamp":"2026-01-03T22:31:32.772Z","service":"localCache","message":"Cached analysis record: 32ac37d1-eb3b-49fa-b5b6-2ff293019321","context":{"syncStatus":"synced"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.772Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"32ac37d1-eb3b-49fa-b5b6-2ff293019321"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:32.772Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20251228-154026.png","recordId":"32ac37d1-eb3b-49fa-b5b6-2ff293019321","hasAnalysis":true,"analysisKeys":35}}
-services-oz4FKQVZ.js:54 {"level":"INFO","timestamp":"2026-01-03T22:31:33.203Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251228-124619.png","isDuplicate":false}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:33.203Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251228-124619.png"}}
-services-oz4FKQVZ.js:54 {"level":"INFO","timestamp":"2026-01-03T22:31:33.204Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20251228-154022.png","isDuplicate":false}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:33.204Z","component":"AdminDashboard","message":"Processing synchronous analysis result.","context":{"fileName":"Screenshot_20251228-154022.png"}}
-services-oz4FKQVZ.js:56 {"level":"info","timestamp":"2026-01-03T22:31:33.204Z","service":"localCache","message":"Cached analysis record: f3b61454-0a88-42c7-9bdc-d3fec95ef313","context":{"syncStatus":"synced"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:33.204Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"f3b61454-0a88-42c7-9bdc-d3fec95ef313"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:33.204Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20251228-124619.png","recordId":"f3b61454-0a88-42c7-9bdc-d3fec95ef313","hasAnalysis":true,"analysisKeys":35}}
-services-oz4FKQVZ.js:56 {"level":"info","timestamp":"2026-01-03T22:31:33.230Z","service":"localCache","message":"Cached analysis record: e13580eb-71b1-45c2-891f-8c6c079e2509","context":{"syncStatus":"synced"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:33.230Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"e13580eb-71b1-45c2-891f-8c6c079e2509"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:33.230Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20251228-154022.png","recordId":"e13580eb-71b1-45c2-891f-8c6c079e2509","hasAnalysis":true,"analysisKeys":35}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:33.231Z","component":"AdminDashboard","message":"Bulk analysis run complete.","context":{}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:31:33.231Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:31:33.231Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":100,"strategy":"cache-first"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:31:33.231Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?page=1&limit=100","method":"GET"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:31:34.409Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?page=1&limit=100","method":"GET","status":200}}
-services-oz4FKQVZ.js:56 {"level":"info","timestamp":"2026-01-03T22:31:34.427Z","service":"localCache","message":"Bulk cached 100 history records","context":{"syncStatus":"synced"}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:24.423Z","component":"AdminDashboard","message":"Starting action: isNormalizingIds.","context":{}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:24.423Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:24.423Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:27.913Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:27.913Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":1,"totalUpdated":0,"totalScanned":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:27.913Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:27.913Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:28.669Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:28.669Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":2,"totalUpdated":0,"totalScanned":2000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:28.669Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:28.669Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:29.301Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:29.301Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":3,"totalUpdated":0,"totalScanned":3000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:29.301Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:29.301Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:29.840Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:29.840Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":4,"totalUpdated":0,"totalScanned":4000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:29.841Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:29.841Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:30.409Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:30.409Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":5,"totalUpdated":0,"totalScanned":5000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:30.409Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:30.409Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:30.976Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:30.976Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":6,"totalUpdated":0,"totalScanned":6000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:30.976Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:30.976Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:31.638Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:31.638Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":7,"totalUpdated":0,"totalScanned":7000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:31.638Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:31.638Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:32.253Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:32.253Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":8,"totalUpdated":0,"totalScanned":8000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:32.253Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:32.253Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:32.867Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:32.867Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":9,"totalUpdated":0,"totalScanned":9000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:32.867Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:32.867Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:33.397Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:33.397Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":10,"totalUpdated":0,"totalScanned":10000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:33.397Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:33.397Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:33.992Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:33.992Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":11,"totalUpdated":0,"totalScanned":11000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:33.992Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:33.992Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:34.524Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:34.524Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":12,"totalUpdated":0,"totalScanned":12000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:34.524Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:34.524Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:34.986Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:34.986Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":13,"totalUpdated":0,"totalScanned":13000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:34.986Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:34.986Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:35.504Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:35.504Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":14,"totalUpdated":0,"totalScanned":14000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:35.504Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:35.504Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:36.048Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:36.048Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":15,"totalUpdated":0,"totalScanned":15000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:36.048Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:36.048Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:36.758Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:36.758Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":16,"totalUpdated":0,"totalScanned":16000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:36.758Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:36.758Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:37.277Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:37.277Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":17,"totalUpdated":0,"totalScanned":17000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:37.277Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:37.277Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:37.883Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:37.883Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":18,"totalUpdated":0,"totalScanned":18000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:37.883Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:37.883Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:38.406Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:38.406Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":19,"totalUpdated":0,"totalScanned":19000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:38.406Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:38.406Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:38.921Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:38.921Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":20,"totalUpdated":0,"totalScanned":20000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:38.921Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:38.921Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:39.449Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:39.449Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":21,"totalUpdated":0,"totalScanned":21000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:39.449Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:39.449Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:39.978Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:39.978Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":22,"totalUpdated":0,"totalScanned":22000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:39.978Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:39.978Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:40.493Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:40.493Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":23,"totalUpdated":0,"totalScanned":23000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:40.493Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:40.493Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:41.061Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:41.061Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":24,"totalUpdated":0,"totalScanned":24000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:41.061Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:41.061Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:41.570Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:41.570Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":25,"totalUpdated":0,"totalScanned":25000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:41.570Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:41.570Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:42.197Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:42.197Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":26,"totalUpdated":0,"totalScanned":26000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:42.197Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:42.197Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:42.805Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:42.806Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":27,"totalUpdated":0,"totalScanned":27000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:42.806Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:42.806Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:43.260Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:43.260Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":28,"totalUpdated":0,"totalScanned":28000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:43.260Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:43.260Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:43.926Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:43.926Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":29,"totalUpdated":0,"totalScanned":29000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:43.926Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:43.926Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:44.451Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:44.451Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":30,"totalUpdated":0,"totalScanned":30000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:44.451Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:44.451Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:44.881Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:44.881Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":31,"totalUpdated":0,"totalScanned":31000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:44.881Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:44.881Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:45.359Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:45.360Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":32,"totalUpdated":0,"totalScanned":32000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:45.360Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:45.360Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:45.953Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:45.953Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":33,"totalUpdated":0,"totalScanned":33000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:45.953Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:45.953Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:46.418Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:46.418Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":34,"totalUpdated":0,"totalScanned":34000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:46.418Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:46.419Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:46.958Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:46.958Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":35,"totalUpdated":0,"totalScanned":35000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:46.958Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:46.958Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:47.406Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:47.406Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":36,"totalUpdated":0,"totalScanned":36000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:47.406Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:47.406Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:47.859Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:47.859Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":37,"totalUpdated":0,"totalScanned":37000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:47.859Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:47.859Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:48.431Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:48.431Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":38,"totalUpdated":0,"totalScanned":38000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:48.431Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:48.431Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:49.045Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:49.045Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":39,"totalUpdated":0,"totalScanned":39000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:49.045Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:49.045Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:49.526Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:49.526Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":40,"totalUpdated":0,"totalScanned":40000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:49.526Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:49.526Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:50.098Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:50.098Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":41,"totalUpdated":0,"totalScanned":41000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:50.098Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:50.098Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:50.582Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:50.582Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":42,"totalUpdated":0,"totalScanned":42000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:50.582Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:50.582Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:51.095Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:51.095Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":43,"totalUpdated":0,"totalScanned":43000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:51.095Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:51.095Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:51.606Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:51.606Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":44,"totalUpdated":0,"totalScanned":44000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:51.606Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:51.606Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:52.118Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
-AdminDashboard-BHQ7OI3D.js:6 {"level":"INFO","timestamp":"2026-01-03T22:38:52.118Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":45,"totalUpdated":0,"totalScanned":45000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:52.118Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
-services-oz4FKQVZ.js:1 {"level":"INFO","timestamp":"2026-01-03T22:38:52.118Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
- {"level":"INFO","timestamp":"2026-01-03T22:38:52.635Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
- {"level":"INFO","timestamp":"2026-01-03T22:38:52.635Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":46,"totalUpdated":0,"totalScanned":46000}}
- {"level":"INFO","timestamp":"2026-01-03T22:38:52.635Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
- {"level":"INFO","timestamp":"2026-01-03T22:38:52.635Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
- {"level":"INFO","timestamp":"2026-01-03T22:38:53.250Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
- {"level":"INFO","timestamp":"2026-01-03T22:38:53.250Z","component":"AdminDashboard","message":"Normalize-ids continuing...","context":{"loop":47,"totalUpdated":0,"totalScanned":47000}}
- {"level":"INFO","timestamp":"2026-01-03T22:38:53.250Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
- {"level":"INFO","timestamp":"2026-01-03T22:38:53.250Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:09.795Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
+services-CUSma9ak.js:54 {"level":"INFO","timestamp":"2026-01-04T05:03:09.795Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
+admin-CBD8bM-5.js:2 {"level":"WARN","timestamp":"2026-01-04T05:03:09.899Z","component":"AdminApp","message":"Netlify Identity widget not available, retrying...","context":{}}
+admin-CBD8bM-5.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:10.901Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
+admin-CBD8bM-5.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:10.910Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:10.917Z","component":"AdminDashboard","message":"Performing initial data load (page 1).","context":{}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.918Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":"all","strategy":"cache-first"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.918Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":100,"strategy":"cache-first"}}
+services-CUSma9ak.js:56 {"level":"debug","timestamp":"2026-01-04T05:03:10.925Z","service":"localCache","message":"Retrieved 4 systems from cache"}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.925Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":"all","returned":4,"total":4}}
+services-CUSma9ak.js:56 {"level":"debug","timestamp":"2026-01-04T05:03:10.990Z","service":"localCache","message":"Retrieved 3600 history records from cache"}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.990Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":100,"returned":100,"total":3600}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:10.991Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":4,"historyCount":100}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:10.994Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.994Z","service":"clientService","message":"Fetching data integrity audit from admin endpoint.","context":{}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.994Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"admin-data-integrity","method":"GET"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.994Z","service":"clientService","message":"Fetching IP management data.","context":{}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.994Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"ip-admin","method":"GET"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.994Z","service":"clientService","message":"Fetching current user IP.","context":{}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.994Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"get-ip","method":"GET"}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:10.994Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.994Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"default-system"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:10.994Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:11.204Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"get-ip","method":"GET","status":200}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:12.499Z","service":"clientService","message":"Starting smart history sync.","context":{}}
+services-CUSma9ak.js:56 {"level":"debug","timestamp":"2026-01-04T05:03:12.730Z","service":"localCache","message":"Retrieved 3600 history records from cache"}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:12.731Z","service":"clientService","message":"Loaded 3600 records from local cache.","context":{"count":3600}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:12.731Z","service":"clientService","message":"Syncing batch 1/100...","context":{"updatedSince":"2026-01-03T22:53:42.515Z","totalSoFar":0}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:12.731Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?all=true&updatedSince=2026-01-03T22%3A53%3A42.515Z","method":"GET"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:13.184Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"ip-admin","method":"GET","status":200}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:13.268Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET","status":200}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:13.445Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"admin-data-integrity","method":"GET","status":200}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:13.445Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":9,"matched":5,"orphaned":4,"total_records":7356,"orphaned_records":38}}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:14.153Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.04882599999999999,"days":5}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:14.961Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?all=true&updatedSince=2026-01-03T22%3A53%3A42.515Z","method":"GET","status":200}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:14.961Z","service":"clientService","message":"No more new records from server.","context":{}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:14.961Z","service":"clientService","message":"Incremental sync finished. Total received: 0 records across 1 batches.","context":{"localCount":3600,"serverCount":0,"totalUnified":3600}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:14.962Z","service":"clientService","message":"Finished smart history sync.","context":{}}
+useFileUpload-DIuon6QI.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:24.498Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
+useFileUpload-DIuon6QI.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:24.498Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":0,"oversizedCount":0,"zipCount":1}}
+useFileUpload-DIuon6QI.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:24.499Z","hook":"useFileUpload","message":"Starting to process ZIP file.","context":{"fileName":"Photos-3-001 (5).zip","size":2795229}}
+useFileUpload-DIuon6QI.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:24.541Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":10,"fileNames":["Screenshot_20251228-154030.png","Screenshot_20251228-154035.png","Screenshot_20251228-124630.png","Screenshot_20251228-124619.png","Screenshot_20251228-124605.png","Screenshot_20251228-154041.png","Screenshot_20251228-124624.png","Screenshot_20251228-154022.png","Screenshot_20251228-154026.png","Screenshot_20251228-124614.png"],"event":"CHECK_START"}}
+useFileUpload-DIuon6QI.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:24.541Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":10,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
+shared-utils-hvtO33jW.js:1 Calculating file hashes for batch {count: 10, fileNames: Array(5), event: 'FILE_HASH_START'}
+shared-utils-hvtO33jW.js:1 Client hash generated {hashPreview: 'fd3a5409b56428c8...', imageLength: 360176}
+shared-utils-hvtO33jW.js:1 Client hash generated {hashPreview: 'ba3e6cf3d3f66057...', imageLength: 359500}
+shared-utils-hvtO33jW.js:1 Client hash generated {hashPreview: '2d0481ee79c0280e...', imageLength: 368112}
+shared-utils-hvtO33jW.js:1 Client hash generated {hashPreview: 'eaa366a72b3b4f35...', imageLength: 364384}
+shared-utils-hvtO33jW.js:1 Client hash generated {hashPreview: '362b9316625dd8cc...', imageLength: 548012}
+shared-utils-hvtO33jW.js:1 Client hash generated {hashPreview: 'f30f49b449afaf20...', imageLength: 360960}
+shared-utils-hvtO33jW.js:1 Client hash generated {hashPreview: 'f6215e772b8e5544...', imageLength: 325480}
+shared-utils-hvtO33jW.js:1 Client hash generated {hashPreview: 'b89fa48b3407c3a2...', imageLength: 366596}
+shared-utils-hvtO33jW.js:1 Client hash generated {hashPreview: 'a653b0e3d40c148c...', imageLength: 333340}
+shared-utils-hvtO33jW.js:1 Client hash generated {hashPreview: '70983d1a6b618a2e...', imageLength: 356016}
+shared-utils-hvtO33jW.js:1 File hash batch complete {totalFiles: 10, successfulHashes: 10, failedHashes: 0, durationMs: 36, avgPerFileMs: '3.60', …}
+useFileUpload-DIuon6QI.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:24.577Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":10,"durationMs":36,"event":"HASHING_COMPLETE"}}
+useFileUpload-DIuon6QI.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:24.577Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+useFileUpload-DIuon6QI.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:26.895Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":10,"trueDuplicates":10,"needsUpgrade":0,"newFiles":0,"durationMs":2354,"avgPerFileMs":"235.40","event":"PHASE1_COMPLETE"}}
+useFileUpload-DIuon6QI.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:26.895Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":10,"duplicates":10,"upgrades":0,"newFiles":0,"event":"CHECK_COMPLETE"}}
+useFileUpload-DIuon6QI.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:26.896Z","hook":"useFileUpload","message":"Successfully extracted all files from ZIP.","context":{"fileName":"Photos-3-001 (5).zip","size":2795229,"extractedCount":10}}
+useFileUpload-DIuon6QI.js:2 {"level":"INFO","timestamp":"2026-01-04T05:03:26.897Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":10,"filteredOut":10,"event":"PREVIEW_FILTER"}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:27.200Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":10,"isStoryMode":false,"forceReanalysis":false}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:27.200Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":0,"upgrades":0,"new":0,"cachedDuplicates":10,"cachedUpgrades":0,"forceReanalysis":false}}
+shared-utils-hvtO33jW.js:1 Processing 0 files. Initial concurrency: 0
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:27.201Z","component":"AdminDashboard","message":"Bulk analysis run complete.","context":{}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:27.202Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:27.202Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":100,"strategy":"cache-first"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:27.202Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?page=1&limit=100","method":"GET"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:27.887Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?page=1&limit=100","method":"GET","status":200}}
+services-CUSma9ak.js:56 {"level":"info","timestamp":"2026-01-04T05:03:27.907Z","service":"localCache","message":"Bulk cached 100 history records","context":{"syncStatus":"synced"}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:35.032Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":10,"isStoryMode":false,"forceReanalysis":false}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:35.033Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":0,"upgrades":0,"new":0,"cachedDuplicates":10,"cachedUpgrades":0,"forceReanalysis":false}}
+shared-utils-hvtO33jW.js:1 Processing 0 files. Initial concurrency: 0
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:35.078Z","component":"AdminDashboard","message":"Bulk analysis run complete.","context":{}}
+AdminDashboard-bs4vKr8n.js:6 {"level":"INFO","timestamp":"2026-01-04T05:03:35.078Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:35.078Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":100,"strategy":"cache-first"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:35.078Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?page=1&limit=100","method":"GET"}}
+services-CUSma9ak.js:1 {"level":"INFO","timestamp":"2026-01-04T05:03:35.652Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?page=1&limit=100","method":"GET","status":200}}
+services-CUSma9ak.js:56 {"level":"info","timestamp":"2026-01-04T05:03:35.684Z","service":"localCache","message":"Bulk cached 100 history records","context":{"syncStatus":"synced"}}

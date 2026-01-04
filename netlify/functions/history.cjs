@@ -4,6 +4,7 @@ const { getCollection } = require("./utils/mongodb.cjs");
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
 
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
@@ -721,8 +722,12 @@ exports.handler = async function (event, context) {
                 const totalHistoryRecords = await historyCollection.countDocuments({});
                 log.info('Total records in history collection', { totalHistoryRecords });
 
-                // Helper to normalize an ID string
-                const norm = (id) => (!id || id === 'UNKNOWN') ? null : String(id).trim();
+                // UNIFIED: Use the same normalization as extraction (removes dashes, spaces, uppercase)
+                // This ensures "DL-123", "DL 123", "dl123" all become "DL123"
+                const norm = (id) => {
+                    const normalized = normalizeHardwareId(id);
+                    return normalized === 'UNKNOWN' ? null : normalized;
+                };
 
                 // CRITICAL FIX: Use MongoDB aggregation to find ONLY records that ACTUALLY need updates
                 // This prevents the infinite loop where records match the query but don't get updated
@@ -850,7 +855,9 @@ exports.handler = async function (event, context) {
                 const totalBefore = await historyCollection.countDocuments({});
                 log.info('Total records before deduplication', { totalBefore });
 
-                // Find duplicate groups - records with same hardwareSystemId AND same timestamp
+                // Find duplicate groups - records with same NORMALIZED hardwareSystemId AND same timestamp
+                // UNIFIED: Normalize IDs so "DL-123" and "DL123" are treated as the same
+                // The normalization ADDS a dash after letter prefix if missing (e.g., "DL123" -> "DL-123")
                 const duplicateGroups = await historyCollection.aggregate([
                     {
                         $match: {
@@ -859,9 +866,27 @@ exports.handler = async function (event, context) {
                         }
                     },
                     {
+                        // UNIFIED: Normalize the hardware ID before grouping
+                        // Step 1: Uppercase and replace spaces/underscores with dashes
+                        // Step 2: Use regex to ensure dash after letter prefix (handled in application code)
+                        // For MongoDB, we'll normalize by stripping separators for GROUPING only
+                        // The actual IDs are not modified - this is just for finding duplicates
+                        $addFields: {
+                            _normalizedHwId: {
+                                $toUpper: {
+                                    $replaceAll: {
+                                        input: { $replaceAll: { input: { $replaceAll: { input: "$hardwareSystemId", find: "-", replacement: "" } }, find: " ", replacement: "" } },
+                                        find: "_",
+                                        replacement: ""
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
                         $group: {
                             _id: {
-                                hwId: "$hardwareSystemId",
+                                hwId: "$_normalizedHwId",  // Use normalized ID for GROUPING (finds DL-123 and DL123 as same)
                                 ts: "$timestamp"
                             },
                             count: { $sum: 1 },

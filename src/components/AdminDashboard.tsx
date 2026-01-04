@@ -26,7 +26,7 @@ import { analyzeBmsScreenshot } from '../services/geminiService';
 import { historyCache as historyCacheService } from '../services/localCache';
 import { useAdminState } from '../state/adminState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
-import { buildRecordFromCachedDuplicate, checkFilesForDuplicates, partitionCachedFiles, type DuplicateCheckResult } from '../utils/duplicateChecker';
+import { checkFilesForDuplicates, partitionCachedFiles, type DuplicateCheckResult } from '../utils/duplicateChecker';
 import BulkUpload from './BulkUpload';
 import DiagnosticsModal from './DiagnosticsModal';
 import EditSystemModal from './EditSystemModal';
@@ -257,13 +257,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 const alreadyCheckedNewFiles = partitionResult.alreadyCheckedNewFiles;
                 const remainingFiles = partitionResult.remainingFiles;
 
-                // Process cached duplicates immediately (no network call needed)
-                for (const dup of cachedDuplicates) {
-                    const record = buildRecordFromCachedDuplicate(dup, 'cached');
+                // Skip cached duplicates silently - no action needed, just mark as skipped
+                if (cachedDuplicates.length > 0) {
+                    const skippedCached = cachedDuplicates.map(dup => ({
+                        fileName: dup.file.name,
+                        reason: 'Duplicate (Already Cached)'
+                    }));
                     dispatch({
-                        type: 'UPDATE_BULK_JOB_COMPLETED',
-                        payload: { record, fileName: dup.file.name }
+                        type: 'BATCH_BULK_JOB_SKIPPED',
+                        payload: skippedCached
                     });
+                    log('info', `Skipped ${cachedDuplicates.length} cached duplicates.`);
                 }
 
                 // Prepare cached upgrades as DuplicateCheckResults
@@ -295,67 +299,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 newFiles = [...alreadyCheckedResults, ...newFiles];
             }
 
-            // Mark true duplicates as skipped immediately (don't analyze these at all)
-            // UNLESS we can restore them fully to the UI (which satisfies the user's need to see the record)
+            // Skip all true duplicates immediately - no analysis or restore action needed
             if (trueDuplicates.length > 0 && !forceReanalysis) {
-                const restoredRecords: AnalysisRecord[] = [];
-                const skippedFiles: { fileName: string; reason: string }[] = [];
-
-                for (const dup of trueDuplicates) {
-                    if (dup.analysisData && dup.recordId) {
-                        // We have enough data to reconstruct the record
-                        const fullRecord: AnalysisRecord = {
-                            id: dup.recordId!,
-                            timestamp: dup.timestamp || new Date().toISOString(),
-                            analysis: dup.analysisData,
-                            fileName: dup.file.name
-                        };
-                        restoredRecords.push(fullRecord);
-                    } else if (state.historyCache.some(h => h.id === dup.recordId)) {
-                        // RECORD EXISTS IN LOCAL CACHE - RESTORE IT!
-                        // Previously we skipped these, but users prefer to see the "Success" state with data.
-                        const cachedRecord = state.historyCache.find(h => h.id === dup.recordId);
-                        if (cachedRecord) {
-                            restoredRecords.push(cachedRecord);
-                            log('info', 'Duplicate found in local cache - restoring.', { fileName: dup.file.name, id: dup.recordId });
-                        } else {
-                            // Should not happen given .some check, but safe fallback
-                            skippedFiles.push({ fileName: dup.file.name, reason: 'Duplicate (Cache lookup failed)' });
-                        }
-                    } else {
-                        // Not in cache, no data provided. Must skip.
-                        // Future improvement: Fetch individual record by ID here?
-                        skippedFiles.push({ fileName: dup.file.name, reason: 'Duplicate content detected (same image)' });
-                    }
-                }
-
-                if (restoredRecords.length > 0) {
-                    try {
-                        // Restore to cache instantly (likely already there, but ensures freshness/synced status)
-                        await historyCacheService.bulkPut(restoredRecords, 'synced');
-                        log('info', `Restored ${restoredRecords.length} duplicates from network check (via cache/data).`);
-
-                        // Update UI and backfill tracking
-                        restoredRecords.forEach(rec => {
-                            dispatch({
-                                type: 'UPDATE_BULK_JOB_COMPLETED',
-                                payload: { record: rec, fileName: rec.fileName || 'unknown' }
-                            });
-                            newRecords.push(rec); // Include in backfill
-                        });
-                    } catch (e) {
-                        log('warn', 'Failed to restore duplicates', { error: e });
-                        // If fail, just mark as skipped
-                        restoredRecords.forEach(rec => skippedFiles.push({ fileName: rec.fileName || 'unknown', reason: 'Duplicate (restore failed)' }));
-                    }
-                }
-
-                if (skippedFiles.length > 0) {
-                    dispatch({
-                        type: 'BATCH_BULK_JOB_SKIPPED',
-                        payload: skippedFiles
-                    });
-                }
+                const skippedFiles = trueDuplicates.map(dup => ({
+                    fileName: dup.file.name,
+                    reason: 'Duplicate (Already in Database)'
+                }));
+                dispatch({
+                    type: 'BATCH_BULK_JOB_SKIPPED',
+                    payload: skippedFiles
+                });
+                log('info', `Skipped ${trueDuplicates.length} duplicates from network check.`);
             }
 
             // Update status for files that need upgrade or are new in batches

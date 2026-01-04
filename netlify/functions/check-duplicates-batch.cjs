@@ -80,7 +80,10 @@ async function batchCheckExistingAnalyses(contentHashes, log, includeData = fals
 
   try {
     const collectionStartTime = Date.now();
-    const resultsCol = await getCollection('analysis-results');
+    // CRITICAL FIX: Use 'history' collection, NOT 'analysis-results'
+    // Records are saved to 'history', so duplicate detection must check there
+    // The 'analysis-results' collection was not being populated, causing missed duplicates
+    const resultsCol = await getCollection('history');
     const collectionDurationMs = Date.now() - collectionStartTime;
 
     // Use $in query to fetch all matching records in one go

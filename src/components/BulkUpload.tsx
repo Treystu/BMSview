@@ -85,22 +85,8 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
     }
   };
 
-  // Auto-trigger analysis if all files are cached duplicates
-  // This fulfills the requirement for "automatic background restoration"
-  React.useEffect(() => {
-    if (files.length > 0 && !isLoading && !isProcessing && results.length === 0) {
-      const duplicateCount = files.reduce((acc, f) => acc + ((f as FileWithMeta)._isDuplicate ? 1 : 0), 0);
-      const activeCount = files.length - duplicateCount;
-
-      if (activeCount === 0 && duplicateCount > 0) {
-        // Auto-run if we only have duplicates (restoration job)
-        const timer = setTimeout(() => {
-          onAnalyze(files);
-        }, 300);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [files, isLoading, isProcessing, results.length, onAnalyze]);
+  // NOTE: Auto-trigger for duplicates removed - duplicates are now silently skipped
+  // No analysis or "restore" action needed for cached duplicates
 
   const totalFiles = results.length;
   let successCount = 0;
@@ -149,13 +135,13 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
         <div className="flex items-center" title="Override duplicate checks and force re-analysis of all files">
           <input
             type="checkbox"
-            id="force-restore-mode"
+            id="force-override-mode"
             checked={forceMode}
             onChange={(e) => setForceMode(e.target.checked)}
             className="w-4 h-4 text-red-500 rounded focus:ring-2 focus:ring-red-500 bg-gray-700 border-gray-600"
           />
-          <label htmlFor="force-restore-mode" className="ml-2 text-sm font-medium text-red-200 cursor-pointer">
-            Smart Restore / Force Override
+          <label htmlFor="force-override-mode" className="ml-2 text-sm font-medium text-red-200 cursor-pointer">
+            Force Re-Analysis
           </label>
         </div>
       </div>
@@ -231,12 +217,12 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
                   {activeCount > 0 && <div className="mt-2"><CostEstimateBadge estimate={costEstimate} /></div>}
                 </div>
 
-                {/* Duplicates */}
+                {/* Duplicates - Silently Skipped */}
                 <div className="bg-gray-800 p-3 rounded border border-gray-600 flex flex-col justify-between">
                   <div>
-                    <div className="text-gray-400 mb-1 text-xs uppercase">Cached / Duplicates</div>
-                    <div className="text-2xl font-bold text-green-400">{duplicateCount + skippedFiles.size}</div>
-                    <div className="text-xs text-green-400 mt-1">Instant Restore ($0.00)</div>
+                    <div className="text-gray-400 mb-1 text-xs uppercase">Already Cached</div>
+                    <div className="text-2xl font-bold text-yellow-400">{duplicateCount + skippedFiles.size}</div>
+                    <div className="text-xs text-yellow-400 mt-1">Skipped (No action needed)</div>
                   </div>
                 </div>
 
@@ -254,13 +240,13 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
 
             <button
               onClick={handleAnalyzeClick}
-              disabled={files.length === 0 || isLoading || isProcessing}
+              disabled={activeCount === 0 || isLoading || isProcessing}
               className="mt-4 w-full bg-secondary hover:bg-primary text-white font-bold py-3 px-4 rounded-lg shadow-md disabled:bg-gray-600 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center text-lg"
             >
               {isLoading ? 'Queueing Jobs...' : (
                 activeCount > 0
-                  ? `Analyze ${activeCount} New File(s) ${duplicateCount > 0 ? `& Restore ${duplicateCount}` : ''}`
-                  : `Restore ${duplicateCount} Cached Record(s)`
+                  ? `Analyze ${activeCount} New File(s)`
+                  : 'No New Files to Analyze'
               )}
             </button>
           </div>

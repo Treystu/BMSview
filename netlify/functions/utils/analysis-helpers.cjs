@@ -13,6 +13,49 @@ const Type = {
 };
 const { v4: uuidv4 } = require('uuid');
 
+/**
+ * UNIFIED Hardware ID Normalization Function
+ * Ensures consistent formatting of hardware IDs across the entire application.
+ *
+ * The correct format is "DL-12345" (letters, dash, numbers).
+ * The AI sometimes incorrectly omits the dash. This function RESTORES it.
+ *
+ * Examples:
+ *   "DL-12345"   -> "DL-12345"  (already correct, preserved)
+ *   "DL12345"    -> "DL-12345"  (dash restored)
+ *   "dl-12345"   -> "DL-12345"  (uppercase)
+ *   "dl 12345"   -> "DL-12345"  (space replaced with dash)
+ *   "  DL_12345" -> "DL-12345"  (underscore replaced with dash)
+ *   null/""      -> "UNKNOWN"
+ *
+ * @param {string|null|undefined} id - The raw hardware ID from extraction
+ * @returns {string} Normalized hardware ID (uppercase, proper dash placement)
+ */
+const normalizeHardwareId = (id) => {
+    if (!id || typeof id !== 'string') return 'UNKNOWN';
+
+    // Trim whitespace and convert to uppercase
+    let normalized = id.trim().toUpperCase();
+
+    // If result is empty or invalid placeholder, return UNKNOWN
+    if (!normalized || normalized === 'UNKNOWN' || normalized === 'NULL' || normalized === 'UNDEFINED') {
+        return 'UNKNOWN';
+    }
+
+    // Replace spaces and underscores with dashes (these are likely separator errors)
+    normalized = normalized.replace(/[\s_]+/g, '-');
+
+    // If the ID has a letter prefix followed directly by numbers (no separator),
+    // insert a dash after the letter prefix. E.g., "DL12345" -> "DL-12345"
+    // Pattern: 1-4 uppercase letters followed by digits with no separator
+    normalized = normalized.replace(/^([A-Z]{1,4})(\d)/, '$1-$2');
+
+    // Clean up multiple consecutive dashes
+    normalized = normalized.replace(/-+/g, '-');
+
+    return normalized;
+};
+
 // This is the JSON schema Gemini will be forced to output.
 // MANDATORY FIELDS are marked as required (not nullable) to ensure they're always extracted
 const getResponseSchema = () => ({
@@ -68,7 +111,7 @@ ${basePrompt}`;
 
 **CRITICAL: MANDATORY FIELDS**
 The following fields are MANDATORY and MUST ALWAYS be extracted. If a field is not clearly visible, use these defaults:
-- hardwareSystemId: **CRITICAL**: Look in the **TOP LEFT** corner of the image. The ID typically looks like "DL-12345" or "System ID: 12345". Valid labels: 'System ID', 'DL Number', 'DL No'. Pattern is typically 2-4 uppercase letters followed by a hyphen or space and 5-20 digits. If not clearly visible in the top left, use "UNKNOWN".
+- hardwareSystemId: **CRITICAL**: Look in the **TOP LEFT** corner of the image. The ID format is "DL-12345" (letters, DASH, numbers). **YOU MUST PRESERVE THE DASH EXACTLY AS SHOWN IN THE SCREENSHOT.** Valid labels: 'System ID', 'DL Number', 'DL No'. Pattern is 2-4 uppercase letters, followed by a DASH (-), followed by 5-20 digits. Example: "DL-12345678". **DO NOT REMOVE THE DASH.** If not clearly visible, use "UNKNOWN".
 - stateOfCharge: If not visible, use 0
 - overallVoltage: If not visible, use 0
 - current: If not visible, use 0
@@ -85,7 +128,7 @@ The following fields are MANDATORY and MUST ALWAYS be extracted. If a field is n
 
 1.  **JSON Object Output**: Your entire response MUST be a single, valid JSON object.
 2.  **Strict Schema Adherence**: MANDATORY fields must NEVER be null. Optional fields can be null or [] for arrays.
-    -   \`hardwareSystemId\`: Look in the **TOP LEFT** corner. This is the SINGLE MOST IMPORTANT field. It usually starts with "DL" or "S/N". Pattern: Uppercase letters, optional dash/space, then digits. Example: "DL-12345678". NEVER leave this null.
+    -   \`hardwareSystemId\`: Look in the **TOP LEFT** corner. This is the SINGLE MOST IMPORTANT field. It usually starts with "DL" or "S/N". **Format: Uppercase letters, DASH, then digits. YOU MUST PRESERVE THE DASH.** Example: "DL-12345678". NEVER leave this null. NEVER remove the dash.
     -   \`stateOfCharge\`: Extract 'SOC' percentage. MANDATORY.
     -   \`overallVoltage\`: Extract 'voltage' or 'Total Voltage'. MANDATORY.
     -   \`current\`: Extract 'current'. **CRITICAL: Preserve the negative sign if it exists.** A negative sign indicates discharge. MANDATORY.
@@ -146,11 +189,17 @@ const mapExtractedToAnalysisData = (extracted, log) => {
     }
     log('debug', 'Mapping extracted data to analysis schema.', { extractedKeys: Object.keys(extracted) });
 
+    // CRITICAL: Normalize hardware ID to prevent inconsistent formatting (DL-123 vs DL123)
+    const rawHwId = extracted.hardwareSystemId || extracted.dlNumber;
+    const normalizedHwId = normalizeHardwareId(rawHwId);
+    log('debug', 'Normalized hardware ID.', { rawHwId, normalizedHwId });
+
     // Ensure all mandatory fields have values (apply defaults if missing)
     const analysis = {
         // Mandatory fields with defaults - use ?? to only default on null/undefined
-        hardwareSystemId: extracted.hardwareSystemId || extracted.dlNumber || 'UNKNOWN',
-        dlNumber: extracted.hardwareSystemId || extracted.dlNumber || 'UNKNOWN', // Legacy compat
+        // UNIFIED: Both fields get the same normalized value
+        hardwareSystemId: normalizedHwId,
+        dlNumber: normalizedHwId, // Legacy compat - always synced with hardwareSystemId
         stateOfCharge: extracted.stateOfCharge ?? 0,
         overallVoltage: extracted.overallVoltage ?? 0,
         current: extracted.current ?? 0,
@@ -347,8 +396,10 @@ const parseTimestamp = (timestampFromImage, fileName, log) => {
 const generateAnalysisKey = (analysis) => {
     if (!analysis) return null;
     try {
+        // UNIFIED: Use normalized hardware ID for consistent key generation
+        const hwId = normalizeHardwareId(analysis.hardwareSystemId || analysis.dlNumber);
         const keyParts = [
-            analysis.hardwareSystemId || analysis.dlNumber || 'noid',
+            hwId !== 'UNKNOWN' ? hwId : 'noid',
             (analysis.overallVoltage != null ? analysis.overallVoltage.toFixed(2) : 'nov'),
             (analysis.current != null ? analysis.current.toFixed(2) : 'noc'),
             (analysis.stateOfCharge != null ? analysis.stateOfCharge.toFixed(1) : 'nosoc'),
@@ -543,6 +594,7 @@ ${timeline.map((record, index) => `
 };
 
 module.exports = {
+    normalizeHardwareId,  // UNIFIED: Export for use in history.cjs, duplicate-check, etc.
     getResponseSchema,
     getImageExtractionPrompt,
     getStoryModePrompt,
