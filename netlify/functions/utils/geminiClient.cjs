@@ -42,17 +42,18 @@ class CircuitBreaker {
     } catch (error) {
       // Only count server errors (5xx) and rate limits (429) as circuit breaker failures
       // Client errors (4xx except 429) indicate a problem with the request, not the service
-      const isServerError = error.status >= 500;
-      const isRateLimit = error.status === 429;
+      const errorStatus = error?.status ?? null;
+      const isServerError = errorStatus !== null && errorStatus >= 500;
+      const isRateLimit = errorStatus === 429;
       const shouldTripCircuitBreaker = isServerError || isRateLimit;
-      
+
       if (shouldTripCircuitBreaker) {
         this.onFailure(logger, error);
       } else {
         // Log but don't count as circuit breaker failure
         logger.debug('Client error (not counting as circuit breaker failure)', {
-          status: error.status,
-          message: error.message
+          status: errorStatus,
+          message: error?.message || 'Unknown error'
         });
       }
       throw error;
@@ -179,8 +180,10 @@ class GeminiClient {
         return response;
 
       } catch (error) {
-        const isRateLimit = error.status === 429 || error.message?.includes('429');
-        const isServerError = error.status >= 500;
+        const errorStatus = error?.status ?? null;
+        const errorMessage = error?.message ?? 'Unknown error';
+        const isRateLimit = errorStatus === 429 || errorMessage.includes('429');
+        const isServerError = errorStatus !== null && errorStatus >= 500;
         const isLastAttempt = attempt === maxRetries;
 
         if (isRateLimit) {
@@ -206,7 +209,8 @@ class GeminiClient {
           logger.warn('Server error, retrying', {
             attempt: attempt + 1,
             delay,
-            error: error.message
+            error: errorMessage,
+            status: errorStatus
           });
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
@@ -214,10 +218,10 @@ class GeminiClient {
 
         logger.error('Gemini API error', {
           attempt: attempt + 1,
-          error: error.message,
-          status: error.status,
-          body: error.body, // Include the error body for debugging 400 errors
-          stack: error.stack
+          error: errorMessage,
+          status: errorStatus,
+          body: error?.body, // Include the error body for debugging 400 errors
+          stack: error?.stack
         });
         throw error;
       }

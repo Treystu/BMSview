@@ -104,10 +104,21 @@ const extractBmsData = async (image, mimeType, log, context, previousFeedback = 
             totalTokens: tokenMetadata.totalTokens
         });
 
-        const rawText = result.candidates[0]?.content.parts[0]?.text;
+        // Safely access nested properties with proper validation
+        const candidates = result?.candidates;
+        if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+            throw new Error("Invalid response structure from Gemini API: missing candidates array");
+        }
+
+        const firstCandidate = candidates[0];
+        if (!firstCandidate?.content?.parts) {
+            throw new Error("Invalid response structure from Gemini API: missing content or parts");
+        }
+
+        const rawText = firstCandidate.content.parts[0]?.text;
         // ... existing code ...
         if (!rawText) {
-            throw new Error("Invalid response structure from Gemini API client.");
+            throw new Error("Invalid response structure from Gemini API: missing text in response");
         }
         // ... existing code ...
         const parsedData = cleanAndParseJson(rawText, log);

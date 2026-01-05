@@ -73,10 +73,14 @@ exports.handler = async function (event, context) {
 
   const apiKey = process.env.WEATHER_API_KEY;
 
+  let parsedBody, lat, lon, timestamp, type;
   try {
     log.debug('Parsing request body');
-    const parsedBody = JSON.parse(event.body);
-    const { lat, lon, timestamp, type } = parsedBody;
+    if (!event.body) {
+      throw new Error('Request body is empty');
+    }
+    parsedBody = JSON.parse(event.body);
+    ({ lat, lon, timestamp, type } = parsedBody);
     log.info('Processing weather request', { lat, lon, timestamp, type });
 
     if (lat === undefined || lon === undefined) {
@@ -96,8 +100,24 @@ exports.handler = async function (event, context) {
       const timemachineUrl = `https://api.openweathermap.org/data/3.0/onecall/timemachine?lat=${lat}&lon=${lon}&dt=${unixTimestamp}&units=metric&appid=${apiKey}`;
 
       const mainResponse = await fetchWithRetry(timemachineUrl, log);
-      const mainData = await mainResponse.json();
-      if (!mainResponse.ok) throw new Error(mainData.message || 'Failed to fetch from OpenWeather Timemachine API.');
+      if (!mainResponse.ok) {
+        let errorMessage = 'Failed to fetch from OpenWeather Timemachine API.';
+        try {
+          const errorData = await mainResponse.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (jsonError) {
+          log.warn('Failed to parse error response from weather API', { error: jsonError.message });
+        }
+        throw new Error(errorMessage);
+      }
+
+      let mainData;
+      try {
+        mainData = await mainResponse.json();
+      } catch (jsonError) {
+        log.error('Failed to parse weather API response as JSON', { error: jsonError.message });
+        throw new Error(`Invalid JSON response from weather API: ${jsonError.message}`);
+      }
 
       timer.end({ type: 'hourly', dataPoints: (mainData.hourly || []).length });
       log.exit(200);
@@ -138,20 +158,56 @@ exports.handler = async function (event, context) {
       log.apiCall('OpenWeather', 'uvi', { lat, lon, timestamp: unixTimestamp });
 
       const [mainResponse, uviResponse] = await Promise.all([
-        fetchWithRetry(timemachineUrl, log),
-        fetchWithRetry(uviUrl, log)
+        fetchWithRetry(timemachineUrl, log).catch(err => {
+          log.error('Failed to fetch main weather data', { error: err.message });
+          throw new Error(`Weather API request failed: ${err.message}`);
+        }),
+        fetchWithRetry(uviUrl, log).catch(err => {
+          log.warn('Failed to fetch UVI data (non-critical)', { error: err.message });
+          return { ok: false, error: err }; // Return error object but don't fail
+        })
       ]);
 
       log.debug('API Responses Received', {
         mainStatus: mainResponse.status,
-        uviStatus: uviResponse.status
+        uviStatus: uviResponse.ok ? uviResponse.status : 'failed'
       });
 
-      const mainData = await mainResponse.json();
-      const uviData = await uviResponse.json();
-      if (!mainResponse.ok) throw new Error(mainData.message || 'Failed to fetch from OpenWeather Timemachine API.');
+      // Validate and parse main response first
+      if (!mainResponse.ok) {
+        let errorMessage = 'Failed to fetch from OpenWeather Timemachine API.';
+        try {
+          const errorData = await mainResponse.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (jsonError) {
+          log.warn('Failed to parse error response from weather API', { error: jsonError.message });
+        }
+        throw new Error(errorMessage);
+      }
+
+      let mainData;
+      try {
+        mainData = await mainResponse.json();
+      } catch (jsonError) {
+        log.error('Failed to parse main weather API response as JSON', { error: jsonError.message });
+        throw new Error(`Invalid JSON response from weather API: ${jsonError.message}`);
+      }
+
       const current = mainData.data?.[0];
-      if (!current) throw new Error('No weather data available in Timemachine API response.');
+      if (!current) {
+        log.error('No weather data in Timemachine API response', { mainData });
+        throw new Error('No weather data available in Timemachine API response.');
+      }
+
+      // Parse UVI response (non-critical)
+      let uviData = null;
+      if (uviResponse.ok) {
+        try {
+          uviData = await uviResponse.json();
+        } catch (jsonError) {
+          log.warn('Failed to parse UVI response as JSON', { error: jsonError.message });
+        }
+      }
 
       const result = {
         temp: current.temp,
@@ -182,11 +238,32 @@ exports.handler = async function (event, context) {
       const onecallUrl = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&units=metric&exclude=minutely,hourly,daily,alerts&appid=${apiKey}`;
 
       const weatherResponse = await fetchWithRetry(onecallUrl, log);
-      const weatherData = await weatherResponse.json();
-      if (!weatherResponse.ok) throw new Error(weatherData.message || 'Failed to fetch from OpenWeather API.');
+
+      // Check response status before parsing
+      if (!weatherResponse.ok) {
+        let errorMessage = 'Failed to fetch from OpenWeather API.';
+        try {
+          const errorData = await weatherResponse.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (jsonError) {
+          log.warn('Failed to parse error response from weather API', { error: jsonError.message });
+        }
+        throw new Error(errorMessage);
+      }
+
+      let weatherData;
+      try {
+        weatherData = await weatherResponse.json();
+      } catch (jsonError) {
+        log.error('Failed to parse current weather API response as JSON', { error: jsonError.message });
+        throw new Error(`Invalid JSON response from weather API: ${jsonError.message}`);
+      }
 
       const current = weatherData.current;
-      if (!current) throw new Error('No current weather data available in API response.');
+      if (!current) {
+        log.error('No current weather data in API response', { weatherData });
+        throw new Error('No current weather data available in API response.');
+      }
 
       const result = {
         temp: current.temp,
