@@ -147,7 +147,8 @@ exports.handler = async (event, context) => {
         }
 
         // Fetch the analysis record to get its timestamp
-        const analysisCollection = await getCollection('analysis-results');
+        // Use 'history' collection - that's where records are stored
+        const analysisCollection = await getCollection('history');
         /** @type {any} */
         const analysisFilter = ObjectId.isValid(analysisId)
           ? { $or: [{ _id: new ObjectId(analysisId) }, { id: analysisId }] }

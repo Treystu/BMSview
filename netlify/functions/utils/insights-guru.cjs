@@ -38,25 +38,15 @@ function clampToAvailableRange(minDate, maxDate, days = FORCED_CONTEXT_DAYS) {
 }
 
 async function getActualDateRange(systemId, log) {
-    const collection = await getCollection('analysis-results');
+    // Use 'history' collection - that's where records are stored
+    const collection = await getCollection('history');
 
-    const [primary] = await collection.aggregate([
+    const [result] = await collection.aggregate([
         { $match: { $or: [{ systemId }, { 'analysis.systemId': systemId }] } },
         { $group: { _id: null, minDate: { $min: '$timestamp' }, maxDate: { $max: '$timestamp' }, total: { $sum: 1 } } }
     ]).toArray();
 
-    if (primary?.minDate && primary?.maxDate) {
-        return primary;
-    }
-
-    // Fallback to history collection if analysis-results empty
-    const history = await getCollection('history');
-    const [fallback] = await history.aggregate([
-        { $match: { systemId } },
-        { $group: { _id: null, minDate: { $min: '$timestamp' }, maxDate: { $max: '$timestamp' }, total: { $sum: 1 } } }
-    ]).toArray();
-
-    return fallback || { minDate: null, maxDate: null, total: 0 };
+    return result || { minDate: null, maxDate: null, total: 0 };
 }
 
 async function fetchForcedTimeseries(systemId, range, log) {

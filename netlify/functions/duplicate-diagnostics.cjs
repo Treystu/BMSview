@@ -41,7 +41,8 @@ exports.handler = async (event, context) => {
 
   try {
     /** @type {any} */
-    const resultsCol = await getCollection('analysis-results');
+    // CRITICAL: Use 'history' collection - that's where records are stored
+    const resultsCol = await getCollection('history');
 
     // Check indexes
     const indexStartTime = Date.now();

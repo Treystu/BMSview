@@ -275,12 +275,12 @@ function checkNeedsUpgrade(record) {
  * Used by analyze.cjs and check-duplicates-batch.cjs via wrapper functions.
  * 
  * @param {string} contentHash - SHA-256 hash of image content (from calculateImageHash)
- * @param {Object} collection - MongoDB collection instance (analysis-results)
+ * @param {Object} collection - MongoDB collection instance (history)
  * @param {Object} log - Logger instance for structured logging
  * @returns {Promise<Object|null>} - Duplicate record or null if not found
  * 
  * @example
- * const resultsCol = await getCollection('analysis-results');
+ * const resultsCol = await getCollection('history');
  * const duplicate = await findDuplicateByHash(contentHash, resultsCol, log);
  * if (duplicate) {
  *   const upgradeCheck = checkNeedsUpgrade(duplicate);
@@ -354,7 +354,7 @@ async function findDuplicateByHash(contentHash, collection, log) {
  * - You want more control over the process
  * 
  * @param {string} base64Image - Base64-encoded image (without data:image/... prefix)
- * @param {Object} collection - MongoDB analysis-results collection
+ * @param {Object} collection - MongoDB history collection
  * @param {Object} log - Logger instance
  * @returns {Promise<Object>} Result object with:
  *   - {boolean} isDuplicate - True if duplicate exists

@@ -138,7 +138,8 @@ async function getRawData(systemId, options) {
   const SAFETY_LIMIT = 2500; // Hard limit to prevent lambda timeouts
 
   try {
-    const analysisCollection = await getCollection('analysis-results');
+    // Use 'history' collection - that's where records are stored
+    const analysisCollection = await getCollection('history');
     const startIso = timeRange.start;
     const endIso = timeRange.end;
     const startDate = new Date(timeRange.start);
@@ -553,7 +554,8 @@ async function computeTimeRange(systemId, options) {
 }
 
 async function getActualDateRange(systemId, log) {
-  const collection = await getCollection('analysis-results');
+  // Use 'history' collection - that's where records are stored
+  const collection = await getCollection('history');
   const pipeline = [
     { $match: { $or: [{ systemId }, { 'analysis.systemId': systemId }] } },
     { $group: { _id: null, minDate: { $min: '$timestamp' }, maxDate: { $max: '$timestamp' } } }

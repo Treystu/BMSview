@@ -78,7 +78,8 @@ function extractCurrentSnapshot(analysisData) {
  * @returns {Promise<Object>} Historical summary
  */
 async function generateHistoricalSummary(systemId, log) {
-  const collection = await getCollection('analysis-results');
+  // Use 'history' collection - that's where records are stored
+  const collection = await getCollection('history');
   
   // Get last 7 days of data
   const sevenDaysAgo = new Date();
