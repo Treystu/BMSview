@@ -102,10 +102,22 @@ exports.handler = async function (event, context) {
             }
 
             log.debug('Executing database queries in parallel');
-            const [systems, totalItems] = await Promise.all([
-                query.toArray(),
-                systemsCollection.countDocuments({})
-            ]);
+            let systems, totalItems;
+            try {
+                [systems, totalItems] = await Promise.all([
+                    query.toArray().catch(err => {
+                        log.error('Failed to fetch systems array', { error: err.message, stack: err.stack });
+                        throw new Error(`Database query failed: ${err.message}`);
+                    }),
+                    systemsCollection.countDocuments({}).catch(err => {
+                        log.error('Failed to count documents', { error: err.message, stack: err.stack });
+                        throw new Error(`Database count failed: ${err.message}`);
+                    })
+                ]);
+            } catch (parallelError) {
+                log.error('Parallel database operations failed', { error: parallelError.message });
+                throw new Error(`Failed to retrieve systems: ${parallelError.message}`);
+            }
             log.debug('Database queries complete', { returned: systems.length, total: totalItems });
 
             timer.end({ page: pageNum, returned: systems.length, total: totalItems });
@@ -116,7 +128,18 @@ exports.handler = async function (event, context) {
 
         if (event.httpMethod === 'POST') {
             log.debug('POST request received', logContext);
-            const parsedBody = JSON.parse(event.body);
+            let parsedBody;
+            try {
+                if (!event.body) {
+                    throw new Error('Request body is empty');
+                }
+                parsedBody = JSON.parse(event.body);
+            } catch (parseError) {
+                log.error('Failed to parse POST request body', { ...logContext, error: parseError.message });
+                timer.end({ error: 'invalid_json' });
+                log.exit(400);
+                return respond(400, { error: 'Invalid JSON in request body', details: parseError.message }, headers);
+            }
             log.debug('Parsing POST body', { ...logContext, bodyLength: event.body ? event.body.length : 0 });
 
             const { action, ...otherProps } = parsedBody;
@@ -166,22 +189,66 @@ exports.handler = async function (event, context) {
 
                 log.debug(`Re-assigning history records from ${idsToDelete.length} systems to primary system`, postLogContext);
                 log.debug('Executing history collection updateMany operation');
-                const { modifiedCount } = await historyCollection.updateMany(
-                    { systemId: { $in: idsToDelete } },
-                    { $set: { systemId: primarySystem.id, systemName: primarySystem.name } }
-                );
-                log.debug('History collection update complete', { modifiedCount });
-                log.info(`Updated ${modifiedCount} history records during merge`, { ...postLogContext, modifiedCount });
 
-                await systemsCollection.updateOne(
-                    { id: primarySystem.id },
-                    { $set: { associatedHardwareIds: primarySystem.associatedHardwareIds, associatedDLs: primarySystem.associatedDLs, mergeMetadata } }
-                );
-                log.info('Updated primary system in store', { ...postLogContext, systemId: primarySystem.id });
+                let modifiedCount = 0;
+                try {
+                    const updateResult = await historyCollection.updateMany(
+                        { systemId: { $in: idsToDelete } },
+                        { $set: { systemId: primarySystem.id, systemName: primarySystem.name } }
+                    );
+                    modifiedCount = updateResult.modifiedCount || 0;
+                    log.debug('History collection update complete', { modifiedCount });
+                    log.info(`Updated ${modifiedCount} history records during merge`, { ...postLogContext, modifiedCount });
+                } catch (historyUpdateError) {
+                    log.error('Failed to update history records during merge', {
+                        ...postLogContext,
+                        error: historyUpdateError.message,
+                        stack: historyUpdateError.stack
+                    });
+                    timer.end({ error: 'history_update_failed' });
+                    log.exit(500);
+                    return respond(500, {
+                        error: 'Failed to update history records during system merge',
+                        details: historyUpdateError.message
+                    }, headers);
+                }
+
+                try {
+                    await systemsCollection.updateOne(
+                        { id: primarySystem.id },
+                        { $set: { associatedHardwareIds: primarySystem.associatedHardwareIds, associatedDLs: primarySystem.associatedDLs, mergeMetadata } }
+                    );
+                    log.info('Updated primary system in store', { ...postLogContext, systemId: primarySystem.id });
+                } catch (primaryUpdateError) {
+                    log.error('Failed to update primary system during merge', {
+                        ...postLogContext,
+                        error: primaryUpdateError.message,
+                        stack: primaryUpdateError.stack
+                    });
+                    timer.end({ error: 'primary_update_failed' });
+                    log.exit(500);
+                    return respond(500, {
+                        error: 'Failed to update primary system during merge',
+                        details: primaryUpdateError.message
+                    }, headers);
+                }
 
                 if (idsToDelete.length > 0) {
-                    await systemsCollection.deleteMany({ id: { $in: idsToDelete } });
-                    log.info('Deleted merged systems', { ...postLogContext, deletedCount: idsToDelete.length });
+                    try {
+                        await systemsCollection.deleteMany({ id: { $in: idsToDelete } });
+                        log.info('Deleted merged systems', { ...postLogContext, deletedCount: idsToDelete.length });
+                    } catch (deleteError) {
+                        log.error('Failed to delete merged systems', {
+                            ...postLogContext,
+                            error: deleteError.message,
+                            stack: deleteError.stack
+                        });
+                        // Log but don't fail - the merge is already complete
+                        log.warn('Merge completed but failed to clean up merged systems', {
+                            ...postLogContext,
+                            idsToDelete
+                        });
+                    }
                 }
 
                 timer.end({ merged: true, conflicts: conflicts.length });
@@ -239,7 +306,18 @@ exports.handler = async function (event, context) {
             }
 
             log.info('Updating system', putLogContext);
-            const updateData = JSON.parse(event.body);
+            let updateData;
+            try {
+                if (!event.body) {
+                    throw new Error('Request body is empty');
+                }
+                updateData = JSON.parse(event.body);
+            } catch (parseError) {
+                log.error('Failed to parse PUT request body', { ...putLogContext, error: parseError.message });
+                timer.end({ error: 'invalid_json' });
+                log.exit(400);
+                return respond(400, { error: 'Invalid JSON in request body', details: parseError.message }, headers);
+            }
             const { id, ...dataToUpdate } = updateData;
             log.info('System update request', { ...logContext, fieldsToUpdate: Object.keys(dataToUpdate) });
 

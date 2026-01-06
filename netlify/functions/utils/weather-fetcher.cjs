@@ -55,20 +55,50 @@ async function fetchHistoricalWeather(lat, lon, timestamp, log) {
     log('debug', 'Fetching historical weather from OpenWeather APIs.', logContext);
 
     const [mainResponse, uviResponse] = await Promise.all([
-      fetchWithRetry(timemachineUrl, log),
-      fetchWithRetry(uviUrl, log)
+      fetchWithRetry(timemachineUrl, log).catch(err => {
+        log('error', 'Failed to fetch main weather data', { lat, lon, timestamp, error: err.message });
+        throw new Error(`Weather API request failed: ${err.message}`);
+      }),
+      fetchWithRetry(uviUrl, log).catch(err => {
+        log('warn', 'Failed to fetch UVI data (non-critical)', { lat, lon, timestamp, error: err.message });
+        return { ok: false, error: err }; // Return error object but don't fail
+      })
     ]);
 
-    const mainData = await mainResponse.json();
-    const uviData = await uviResponse.json();
-    
+    // Validate and parse main response first
     if (!mainResponse.ok) {
-      throw new Error(mainData.message || 'Failed to fetch from OpenWeather Timemachine API.');
+      let errorMessage = 'Failed to fetch from OpenWeather Timemachine API.';
+      try {
+        const errorData = await mainResponse.json();
+        errorMessage = errorData.message || errorMessage;
+      } catch (jsonError) {
+        log('warn', 'Failed to parse error response from weather API', { error: jsonError.message });
+      }
+      throw new Error(errorMessage);
     }
-    
+
+    let mainData;
+    try {
+      mainData = await mainResponse.json();
+    } catch (jsonError) {
+      log('error', 'Failed to parse main weather API response as JSON', { error: jsonError.message });
+      throw new Error(`Invalid JSON response from weather API: ${jsonError.message}`);
+    }
+
     const current = mainData.data?.[0];
     if (!current) {
+      log('error', 'No weather data in Timemachine API response', { mainData: JSON.stringify(mainData).substring(0, 200) });
       throw new Error('No weather data available in Timemachine API response.');
+    }
+
+    // Parse UVI response (non-critical)
+    let uviData = null;
+    if (uviResponse.ok) {
+      try {
+        uviData = await uviResponse.json();
+      } catch (jsonError) {
+        log('warn', 'Failed to parse UVI response as JSON', { error: jsonError.message });
+      }
     }
 
     const result = {
@@ -129,10 +159,25 @@ async function fetchHourlyWeather(lat, lon, date, log) {
     log('debug', 'Fetching hourly weather data from OpenWeather API.', logContext);
 
     const response = await fetchWithRetry(timemachineUrl, log);
-    const data = await response.json();
-    
+
+    // Check response status before parsing
     if (!response.ok) {
-      throw new Error(data.message || 'Failed to fetch from OpenWeather Timemachine API.');
+      let errorMessage = 'Failed to fetch from OpenWeather Timemachine API.';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || errorMessage;
+      } catch (jsonError) {
+        log('warn', 'Failed to parse error response from weather API', { error: jsonError.message });
+      }
+      throw new Error(errorMessage);
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (jsonError) {
+      log('error', 'Failed to parse hourly weather API response as JSON', { error: jsonError.message });
+      throw new Error(`Invalid JSON response from weather API: ${jsonError.message}`);
     }
 
     // OpenWeather Timemachine API returns hourly data in 'data.data' array

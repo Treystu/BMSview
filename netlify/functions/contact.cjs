@@ -95,7 +95,22 @@ exports.handler = async function (event, context) {
     };
     log.debug('Creating nodemailer transporter', { host: EMAIL_HOST, port: EMAIL_PORT });
 
-    const transporter = nodemailer.createTransport(transportConfig);
+    let transporter;
+    try {
+      transporter = nodemailer.createTransport(transportConfig);
+    } catch (transportError) {
+      log.error('Failed to create email transporter', {
+        error: transportError.message,
+        stack: transportError.stack
+      });
+      timer.end({ error: 'transporter_creation_failed' });
+      log.exit(500);
+      return {
+        statusCode: 500,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Email service configuration error' })
+      };
+    }
 
     const mailOptions = {
       from: `"${name}" <${EMAIL_USER}>`,
