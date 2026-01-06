@@ -111,7 +111,7 @@ const extractBmsData = async (image, mimeType, log, context, previousFeedback = 
         }
 
         const firstCandidate = candidates[0];
-        if (!firstCandidate?.content?.parts) {
+        if (!firstCandidate?.content?.parts || !Array.isArray(firstCandidate.content.parts) || firstCandidate.content.parts.length === 0) {
             throw new Error("Invalid response structure from Gemini API: missing content or parts");
         }
 
