@@ -1,5 +1,5 @@
-import type { AlertEventStats, HourlyAverages, SystemAnalytics } from '../services/clientService';
-import type { AnalysisRecord } from '../types';
+import type { AlertEventStats, HourlyAverages, SystemAnalytics } from '../../services/clientService';
+import type { AnalysisRecord } from '../../types';
 
 /**
  * Port of system-analytics.cjs logic to the frontend for better performance

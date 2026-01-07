@@ -6,7 +6,7 @@
  * the Generate Insights feature to fail.
  */
 
-const { createLogger, createTimer } = require('../src/utils/logger.cjs');
+const { createLogger, createTimer } = require('../utils/logger.cjs');
 
 describe('Logger debug method', () => {
   let consoleLogSpy;

@@ -1,5 +1,5 @@
 // @ts-nocheck
-const clientService = require('../../src/services/clientService');
+const clientService = require('../../services/clientService');
 
 // Mock window and netlifyIdentity
 global.window = {

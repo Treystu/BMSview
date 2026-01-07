@@ -1,9 +1,9 @@
 // @ts-nocheck
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { useFileUpload } from '../src/hooks/useFileUpload';
-import { checkFilesForDuplicates } from '../src/utils/duplicateChecker';
+import { useFileUpload } from '../hooks/useFileUpload';
+import { checkFilesForDuplicates } from '../utils/duplicateChecker';
 
-jest.mock('../src/utils/duplicateChecker', () => ({
+jest.mock('../utils/duplicateChecker', () => ({
     checkFilesForDuplicates: jest.fn(),
 }));
 

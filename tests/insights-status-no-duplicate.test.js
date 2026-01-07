@@ -10,10 +10,10 @@ const { handler } = require('../netlify/functions/generate-insights-status.cjs')
 
 // Mock dependencies
 jest.mock('../netlify/functions/utils/insights-jobs.cjs');
-jest.mock('../src/utils/logger.cjs');
+jest.mock('../utils/logger.cjs');
 
 const { getInsightsJob } = require('../netlify/functions/utils/insights-jobs.cjs');
-const { createLogger } = require('../src/utils/logger.cjs');
+const { createLogger } = require('../utils/logger.cjs');
 
 describe('Insights Status - No Duplicate Output', () => {
   let mockLog;

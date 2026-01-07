@@ -1,4 +1,4 @@
-const { buildPrompt } = require('../src/utils/battery-analysis.cjs');
+const { buildPrompt } = require('../utils/battery-analysis.cjs');
 
 describe('Generate Insights - Single Point Data Analysis', () => {
   describe('buildPrompt - Single Point Detection', () => {

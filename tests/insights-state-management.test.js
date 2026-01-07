@@ -13,7 +13,7 @@ describe('Insights State Management', () => {
   beforeEach(() => {
     // Dynamically require the actual reducer and initialState from appState.tsx
     jest.resetModules();
-    const appState = require('../src/state/appState.tsx');
+    const appState = require('../state/appState.tsx');
     appReducer = appState.appReducer;
     initialState = appState.initialState;
   });

@@ -1,4 +1,4 @@
-import { DEFAULT_VISIBLE_COLUMNS, HistoryColumnKey } from '../components/admin/columnDefinitions';
+import { DEFAULT_VISIBLE_COLUMNS, HistoryColumnKey } from 'components/admin/columnDefinitions';
 import React, { createContext, Dispatch, useContext, useReducer } from 'react';
 import type { AnalysisRecord, AnalysisStory, BmsSystem, DisplayableAnalysisResult } from '../types';
 

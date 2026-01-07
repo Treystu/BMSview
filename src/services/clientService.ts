@@ -1856,7 +1856,6 @@ export const getSystemById = async (systemId: string): Promise<BmsSystem> => {
     return apiFetch<BmsSystem>(`systems?systemId=${systemId}`);
 };
 
-// UNIFIED: Use hardwareSystemId consistently across the entire application
 export const associateHardwareIdToSystem = async (hardwareId: string, systemId: string): Promise<void> => {
     log('info', 'Associating hardware ID to system.', { hardwareId, systemId });
     const systemToUpdate = await getSystemById(systemId);
@@ -1877,12 +1876,6 @@ export const associateHardwareIdToSystem = async (hardwareId: string, systemId: 
     } else {
         log('info', 'Hardware ID already associated with system, no update needed.', { hardwareId, systemId });
     }
-};
-
-// LEGACY: Keep for backward compatibility but log deprecation
-export const associateDlToSystem = async (dlNumber: string, systemId: string): Promise<void> => {
-    log('warn', 'associateDlToSystem is deprecated, use associateHardwareIdToSystem instead', { dlNumber, systemId });
-    return associateHardwareIdToSystem(dlNumber, systemId);
 };
 
 export const updateBmsSystem = async (
@@ -3170,3 +3163,4 @@ export const getUnifiedHistory = async (systemId: string): Promise<UnifiedTimeli
 
     return unified;
 };
+

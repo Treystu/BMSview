@@ -4,12 +4,12 @@
  */
 
 // Mock the duplicateChecker module
-jest.mock('../src/utils/duplicateChecker', () => ({
+jest.mock('../utils/duplicateChecker', () => ({
     checkFilesForDuplicates: jest.fn(),
     CategorizedFiles: {}
 }));
 
-const { checkFilesForDuplicates } = require('../src/utils/duplicateChecker');
+const { checkFilesForDuplicates } = require('../utils/duplicateChecker');
 
 describe('ZIP Duplicate Detection', () => {
     beforeEach(() => {

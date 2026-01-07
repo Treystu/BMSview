@@ -4,7 +4,7 @@
  * Verifies that errors are properly handled and retried
  */
 
-const { checkHashes } = require('../src/services/clientService');
+const { checkHashes } = require('../services/clientService');
 
 // Mock apiFetch to simulate failures
 let mockApiFetch;
