@@ -34,7 +34,7 @@ import HistoricalChart from './HistoricalChart';
 import IpManagement from './IpManagement';
 import SpinnerIcon from './icons/SpinnerIcon';
 
-import UploadOptimizer from '../utils/uploadOptimizer';
+import UploadOptimizer from '../utils/uploadOptimizer.js';
 import { AIFeedbackDashboard } from './AIFeedbackDashboard';
 import CostDashboard from './CostDashboard';
 import { DiagnosticsGuru } from './DiagnosticsGuru';
@@ -386,12 +386,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             const { errors } = await optimizer.processBatch(filesToAnalyze, processFile);
 
             // Handle any errors that weren't caught per-file
-            for (const { file, error } of errors) {
+            for (const { item, error } of errors) {
                 const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                 if (errorMessage.includes('429')) {
                     setShowRateLimitWarning(true);
                 }
-                dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file, error: `Failed: ${errorMessage}` } });
+                // Extract file name from item (which could be a File object or contain one)
+                const fileName = item?.name || (typeof item === 'string' ? item : 'Unknown file');
+                dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName, error: `Failed: ${errorMessage}` } });
             }
 
             // Batch weather backfill: Fill weather gaps efficiently after bulk analysis

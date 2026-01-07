@@ -16,7 +16,7 @@ export const getIsActualError = (error: unknown): boolean => {
     // Treat known status messages as non-errors to prevent "Analysis Failed" UI during processing
     if (typeof error === 'string') {
         const lower = error.toLowerCase();
-        if (lower === 'processing' ||
+        if (lower.startsWith('processing') ||
             lower.includes('checking for duplicates') ||
             lower.includes('detecting duplicates') ||
             lower.includes('queued')) {

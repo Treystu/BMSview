@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 
 // Mock duplicateChecker to avoid pulling in worker-dependent services
-jest.mock('../utils/duplicateChecker', () => ({
+jest.mock('../src/utils/duplicateChecker', () => ({
   checkFilesForDuplicates: jest.fn(async (files) => {
     const toArray = Array.from(files || []);
     return {
@@ -22,17 +22,17 @@ jest.mock('../utils/duplicateChecker', () => ({
   processBatches: jest.fn()
 }));
 
-import { useFileUpload } from '../hooks/useFileUpload';
+import { useFileUpload } from '../src/hooks/useFileUpload';
 
 // Mock sha256Browser
-jest.mock('../utils', () => ({
+jest.mock('../src/utils', () => ({
   sha256Browser: jest.fn().mockImplementation(async (file) => {
     return `hash-${file.name}`;
   }),
 }));
 
 // Mock geminiService to avoid worker initialization in Jest
-jest.mock('../services/geminiService', () => ({
+jest.mock('../src/services/geminiService', () => ({
   checkFileDuplicate: jest.fn(async (file) => {
     if (file?.name === 'existing-perfect.png') {
       return { isDuplicate: true, needsUpgrade: false, recordId: 'rec-existing', timestamp: '2025-01-01T00:00:00Z', analysisData: { soc: 85 } };
@@ -45,7 +45,7 @@ jest.mock('../services/geminiService', () => ({
 }));
 
 // Mock the checkHashes service directly
-jest.mock('../services/clientService', () => ({
+jest.mock('../src/services/clientService', () => ({
   checkHashes: jest.fn().mockImplementation(async (/** @type {string[]} */ hashes) => {
     const duplicatesWithData = hashes
       .filter((/** @type {string} */ h) => h === 'hash-existing-perfect.png')

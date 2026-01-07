@@ -70,7 +70,7 @@ export const useAnalyticsData = ({
         // Add alerts from history records
         filteredHistory.forEach(record => {
             const recordTime = new Date(record.timestamp).getTime();
-            
+
             // Filter by visible time range if provided
             if (visibleTimeRange) {
                 if (recordTime < visibleTimeRange.start || recordTime > visibleTimeRange.end) {
@@ -83,16 +83,16 @@ export const useAnalyticsData = ({
                 record.analysis.alerts.forEach(alert => {
                     // Create unique key for deduplication: timestamp + alert
                     const uniqueKey = `${record.timestamp}-${alert}`;
-                    
+
                     if (!alertsSet.has(uniqueKey)) {
                         alertsSet.add(uniqueKey);
-                        
+
                         // Determine alert type based on content
                         let type: 'critical' | 'warning' | 'info' = 'info';
                         const upperAlert = alert.toUpperCase();
                         if (upperAlert.includes('CRITICAL')) type = 'critical';
                         else if (upperAlert.includes('WARNING')) type = 'warning';
-                        
+
                         alerts.push({
                             timestamp: record.timestamp,
                             type,
@@ -104,7 +104,7 @@ export const useAnalyticsData = ({
         });
 
         // Sort by timestamp (newest first)
-        return alerts.sort((a, b) => 
+        return alerts.sort((a, b) =>
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
         );
     })();

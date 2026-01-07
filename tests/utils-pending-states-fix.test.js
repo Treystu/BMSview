@@ -3,7 +3,7 @@
  * Tests actual behavior instead of implementation details
  */
 
-import { getIsActualError } from '../utils';
+import { getIsActualError } from '../src/utils';
 
 describe('Utils getIsActualError Fix', () => {
   test('should treat "Checking for duplicates..." as pending state', () => {
@@ -13,7 +13,7 @@ describe('Utils getIsActualError Fix', () => {
       error: 'Checking for duplicates...',
       submittedAt: Date.now()
     };
-    expect(getIsActualError(result)).toBe(false);
+    expect(getIsActualError(result.error)).toBe(false);
   });
 
   test('should treat "Queued for analysis..." as pending state', () => {
@@ -23,7 +23,7 @@ describe('Utils getIsActualError Fix', () => {
       error: 'Queued for analysis...',
       submittedAt: Date.now()
     };
-    expect(getIsActualError(result)).toBe(false);
+    expect(getIsActualError(result.error)).toBe(false);
   });
 
   test('should treat "Processing..." as pending state', () => {
@@ -33,7 +33,7 @@ describe('Utils getIsActualError Fix', () => {
       error: 'Processing...',
       submittedAt: Date.now()
     };
-    expect(getIsActualError(result)).toBe(false);
+    expect(getIsActualError(result.error)).toBe(false);
   });
 
   test('should treat actual errors as errors', () => {
@@ -43,7 +43,7 @@ describe('Utils getIsActualError Fix', () => {
       error: 'Network error',
       submittedAt: Date.now()
     };
-    expect(getIsActualError(result)).toBe(true);
+    expect(getIsActualError(result.error)).toBe(true);
   });
 
   test('should treat null error as not an error', () => {
@@ -53,6 +53,6 @@ describe('Utils getIsActualError Fix', () => {
       error: null,
       submittedAt: Date.now()
     };
-    expect(getIsActualError(result)).toBe(false);
+    expect(getIsActualError(result.error)).toBe(false);
   });
 });

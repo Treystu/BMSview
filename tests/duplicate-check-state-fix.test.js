@@ -13,7 +13,7 @@ const path = require('path');
 describe('Duplicate Check State Fix - Code Validation', () => {
   describe('duplicateChecker.ts implementation', () => {
     test('should use Promise.allSettled instead of Promise.all', () => {
-      const checkerPath = path.join(__dirname, '../utils/duplicateChecker.ts');
+      const checkerPath = path.join(__dirname, '../src/utils/duplicateChecker.ts');
       const source = fs.readFileSync(checkerPath, 'utf8');
 
       // Verify Promise.allSettled is used
@@ -29,7 +29,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
     });
 
     test('should handle unexpected rejections with proper error logging', () => {
-      const checkerPath = path.join(__dirname, '../utils/duplicateChecker.ts');
+      const checkerPath = path.join(__dirname, '../src/utils/duplicateChecker.ts');
       const source = fs.readFileSync(checkerPath, 'utf8');
 
       // Should log errors for unexpected rejections
@@ -40,7 +40,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
     });
 
     test('should preserve file references in error cases', () => {
-      const checkerPath = path.join(__dirname, '../utils/duplicateChecker.ts');
+      const checkerPath = path.join(__dirname, '../src/utils/duplicateChecker.ts');
       const source = fs.readFileSync(checkerPath, 'utf8');
 
       // Should use index to access the correct file from the files array
@@ -53,7 +53,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
 
   describe('geminiService.ts timeout configuration', () => {
     test('duplicate check timeout should be 20 seconds', () => {
-      const servicePath = path.join(__dirname, '../services/geminiService.ts');
+      const servicePath = path.join(__dirname, '../src/services/geminiService.ts');
       const source = fs.readFileSync(servicePath, 'utf8');
 
       // Check that the timeout is set to 25000ms (25 seconds)
@@ -66,7 +66,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
 
   describe('App.tsx Phase 1 error handling', () => {
     test('should have try-catch around duplicate check with fallback', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Verify error handling is in place
@@ -82,7 +82,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
     });
 
     test('should properly scope filesToAnalyze variable', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Verify filesToAnalyze is declared with proper scope
@@ -94,7 +94,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
     });
 
     test('should log Phase 1 completion with proper context', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Should log completion with file counts
@@ -104,7 +104,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
     });
 
     test('should transition properly from Phase 1 to Phase 2', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Phase 2 should start after Phase 1 handling
@@ -117,7 +117,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
 
   describe('Error messages and logging', () => {
     test('duplicateChecker should provide detailed error context', () => {
-      const checkerPath = path.join(__dirname, '../utils/duplicateChecker.ts');
+      const checkerPath = path.join(__dirname, '../src/utils/duplicateChecker.ts');
       const source = fs.readFileSync(checkerPath, 'utf8');
 
       // Should include fileName in error logs
@@ -128,7 +128,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
     });
 
     test('App.tsx should log error details before fallback', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Should extract error message - updated for generic error handling if changed
@@ -143,7 +143,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
 
   describe('State management integration', () => {
     test('should dispatch UPDATE_ANALYSIS_STATUS for state transitions', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Should update status for files needing upgrade

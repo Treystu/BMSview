@@ -36,13 +36,13 @@ describe('Visual Guru Expert Mode', () => {
 
   describe('InsightMode enum', () => {
     it('should include VISUAL_GURU mode', () => {
-      const { InsightMode } = require('../types');
+      const { InsightMode } = require('../src/types');
       expect(InsightMode.VISUAL_GURU).toBeDefined();
       expect(InsightMode.VISUAL_GURU).toBe('visual-guru');
     });
 
     it('should have description for VISUAL_GURU mode', () => {
-      const { InsightModeDescriptions, InsightMode } = require('../types');
+      const { InsightModeDescriptions, InsightMode } = require('../src/types');
       const description = InsightModeDescriptions[InsightMode.VISUAL_GURU];
       
       expect(description).toBeDefined();
@@ -205,17 +205,18 @@ describe('Visual Guru Expert Mode', () => {
 
   describe('selectEndpointForMode', () => {
     // Import the actual function to test routing
-    const { selectEndpointForMode } = require('../services/clientService');
-    const { InsightMode } = require('../types');
+    const { selectEndpointForMode } = require('../src/services/clientService');
+    const { InsightMode } = require('../src/types');
 
     it('should route VISUAL_GURU to generate-insights-with-tools endpoint', () => {
       const endpoint = selectEndpointForMode(InsightMode.VISUAL_GURU);
       expect(endpoint).toBe('/.netlify/functions/generate-insights-with-tools');
     });
 
-    it('should route FULL_CONTEXT to generate-insights-full-context endpoint', () => {
+    it('should route FULL_CONTEXT to generate-insights-async-trigger endpoint', () => {
+      // FULL_CONTEXT now uses async-trigger to avoid 504 timeouts
       const endpoint = selectEndpointForMode(InsightMode.FULL_CONTEXT);
-      expect(endpoint).toBe('/.netlify/functions/generate-insights-full-context');
+      expect(endpoint).toBe('/.netlify/functions/generate-insights-async-trigger');
     });
 
     it('should route STANDARD to generate-insights endpoint', () => {
@@ -241,7 +242,7 @@ describe('VisualInsightsRenderer component', () => {
       // Actual component testing requires @testing-library/react
       const fs = require('fs');
       const path = require('path');
-      const componentPath = path.join(__dirname, '../components/VisualInsightsRenderer.tsx');
+      const componentPath = path.join(__dirname, '../src/components/VisualInsightsRenderer.tsx');
       expect(fs.existsSync(componentPath)).toBe(true);
     });
 
@@ -249,7 +250,7 @@ describe('VisualInsightsRenderer component', () => {
       // Verify the component exports the expected interface structure
       const fs = require('fs');
       const path = require('path');
-      const componentPath = path.join(__dirname, '../components/VisualInsightsRenderer.tsx');
+      const componentPath = path.join(__dirname, '../src/components/VisualInsightsRenderer.tsx');
       const content = fs.readFileSync(componentPath, 'utf8');
       
       // Check for dimensions property in ChartConfig interface
@@ -268,7 +269,7 @@ describe('VisualInsightsRenderer component', () => {
       
       const fs = require('fs');
       const path = require('path');
-      const componentPath = path.join(__dirname, '../components/VisualInsightsRenderer.tsx');
+      const componentPath = path.join(__dirname, '../src/components/VisualInsightsRenderer.tsx');
       const content = fs.readFileSync(componentPath, 'utf8');
       
       supportedRatios.forEach(ratio => {
@@ -279,7 +280,7 @@ describe('VisualInsightsRenderer component', () => {
     it('should support width preferences', () => {
       const fs = require('fs');
       const path = require('path');
-      const componentPath = path.join(__dirname, '../components/VisualInsightsRenderer.tsx');
+      const componentPath = path.join(__dirname, '../src/components/VisualInsightsRenderer.tsx');
       const content = fs.readFileSync(componentPath, 'utf8');
       
       // Check for width preferences in type definition

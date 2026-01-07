@@ -1,5 +1,5 @@
 // Mock the clientService module to avoid real network calls
-jest.mock('../services/clientService', () => ({
+jest.mock('../src/services/clientService', () => ({
   createAnalysisStory: jest.fn().mockResolvedValue({
     title: 'Test Story',
     summary: 'This is a test story.',
@@ -15,7 +15,7 @@ jest.mock('../services/clientService', () => ({
   })
 }));
 
-const { createAnalysisStory, uploadStoryPhoto } = require('../services/clientService');
+const { createAnalysisStory, uploadStoryPhoto } = require('../src/services/clientService');
 
 describe('Story Mode', () => {
   beforeEach(() => {

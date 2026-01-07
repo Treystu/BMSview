@@ -1,4 +1,4 @@
-const clientService = require('../../services/clientService');
+const clientService = require('../../src/services/clientService');
 
 // Mock window and netlifyIdentity
 global.window = {
