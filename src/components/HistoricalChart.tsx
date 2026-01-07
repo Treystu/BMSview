@@ -1335,6 +1335,9 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [predictiveLoading, setPredictiveLoading] = useState(false);
     const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false); // New: separate analytics loading
 
+    // FIX: Race condition protection - track current request to prevent stale updates
+    const requestIdRef = useRef(0);
+
     const [zoomPercentage, setZoomPercentage] = useState<number>(100);
 
     const chartDimensions = useMemo(() => ({
@@ -1462,6 +1465,9 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const prepareChartData = useCallback(async () => {
         if (!selectedSystemId) return;
 
+        // FIX: Track this request to prevent race conditions
+        const currentRequestId = ++requestIdRef.current;
+
         // Prepare UTC ISO strings for API calls to prevent timezone drift
         const chartStartDate = startDate || toLocalISOString(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
         const chartEndDate = endDate || toLocalISOString(new Date());
@@ -1471,7 +1477,8 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
         setIsGenerating(true);
         setError(null);
-        setTimelineData(null);
+        // FIX: Don't clear timeline data immediately - this causes "disappearing data" flicker
+        // Only clear analytics which will be repopulated
         setAnalyticsData(null);
 
         try {
@@ -1490,17 +1497,21 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                 setIsAnalyticsLoading(true);
                 try {
                     const localAnalytics = calculateSystemAnalytics(filteredForAnalytics);
+                    // FIX: Check if this request is still current before updating state
+                    if (currentRequestId !== requestIdRef.current) return;
                     setAnalyticsData(localAnalytics);
                     setIsAnalyticsLoading(false);
                 } catch (err) {
                     console.error('Local analytics calculation failed:', err);
                     // Fallback to server if local fails
                     const analytics = await getSystemAnalytics(selectedSystemId);
+                    if (currentRequestId !== requestIdRef.current) return;
                     setAnalyticsData(analytics);
                 }
             } else {
                 // Not enough records locally or first time load, use server
                 const analytics = await getSystemAnalytics(selectedSystemId);
+                if (currentRequestId !== requestIdRef.current) return;
                 setAnalyticsData(analytics);
             }
 
@@ -1513,8 +1524,14 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             // Fire and forget - will update cache
             await syncWeather(selectedSystemId, apiStartDate, apiEndDate);
 
+            // FIX: Check if this request is still current after async operation
+            if (currentRequestId !== requestIdRef.current) return;
+
             // 2. Get Unified History (Memory join of History + Weather from Cache)
             const unifiedTimeline = await getUnifiedHistory(selectedSystemId);
+
+            // FIX: Check again after async
+            if (currentRequestId !== requestIdRef.current) return;
 
             // Filter by date range (client-side filter on unified stream)
             const startLimit = new Date(chartStartDate).getTime();
@@ -1535,7 +1552,10 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             chartDataPoints = filteredData.map(p => mapUnifiedPointToChartPoint(p, ratedCapacity));
 
             if (chartDataPoints.length < 2) {
-                setTimelineData(null);
+                // FIX: Only clear if this is still the current request
+                if (currentRequestId === requestIdRef.current) {
+                    setTimelineData(null);
+                }
             } else {
                 // Create LODs for zoom levels
                 const dataLODs: Record<string, any[]> = {
@@ -1552,25 +1572,34 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                 const xScale = (time: string | number) => ((new Date(time).getTime() - xMin) / (xMax - xMin || 1)) * chartDimensions.chartWidth;
                 xScale.invert = (px: number) => xMin + (px / chartDimensions.chartWidth) * (xMax - xMin || 1);
 
-                setTimelineData({
-                    dataLODs,
-                    xScale,
-                    xMin,
-                    xMax,
-                    averagingConfig: {
-                        enabled: averagingEnabled,
-                        manualBucketSize: manualBucketSize,
-                        autoBucketKey: 'raw', // Initial value, will be updated by useEffect
-                    }
-                });
-                setZoomPercentage(100);
-                setViewBox({ x: 0, width: chartDimensions.chartWidth });
+                // FIX: Only update if this is still the current request
+                if (currentRequestId === requestIdRef.current) {
+                    setTimelineData({
+                        dataLODs,
+                        xScale,
+                        xMin,
+                        xMax,
+                        averagingConfig: {
+                            enabled: averagingEnabled,
+                            manualBucketSize: manualBucketSize,
+                            autoBucketKey: 'raw', // Initial value, will be updated by useEffect
+                        }
+                    });
+                    setZoomPercentage(100);
+                    setViewBox({ x: 0, width: chartDimensions.chartWidth });
+                }
             }
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to generate chart data.");
+            // FIX: Only set error if this is still the current request
+            if (currentRequestId === requestIdRef.current) {
+                setError(err instanceof Error ? err.message : "Failed to generate chart data.");
+            }
         } finally {
-            setIsGenerating(false);
-            setIsAnalyticsLoading(false);
+            // FIX: Only update loading state if this is still the current request
+            if (currentRequestId === requestIdRef.current) {
+                setIsGenerating(false);
+                setIsAnalyticsLoading(false);
+            }
         }
     }, [selectedSystemId, history, systems, startDate, endDate, chartDimensions, averagingEnabled, manualBucketSize]);
 
