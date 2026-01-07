@@ -3124,7 +3124,8 @@ export interface UnifiedTimelinePoint {
 }
 
 export const getUnifiedHistory = async (systemId: string): Promise<UnifiedTimelinePoint[]> => {
-    log('info', 'Generating unified timeline.', { systemId });
+    const isAllData = systemId === '__ALL__';
+    log('info', 'Generating unified timeline.', { systemId, isAllData });
 
     // Default to empty arrays if cache disabled
     let historyRecords: AnalysisRecord[] = [];
@@ -3134,12 +3135,19 @@ export const getUnifiedHistory = async (systemId: string): Promise<UnifiedTimeli
         const cacheModule = await loadLocalCacheModule();
         if (cacheModule) {
             try {
-                const [history, weather] = await Promise.all([
-                    cacheModule.historyCache.getBySystemId(systemId),
-                    cacheModule.weatherCache.getBySystemId(systemId)
-                ]);
-                historyRecords = history;
-                weatherRecords = weather;
+                if (isAllData) {
+                    // FIX: Get ALL records regardless of systemId for "All Data" view
+                    historyRecords = await cacheModule.historyCache.getAll();
+                    // For weather, we skip since it's system-specific and would be too much data
+                    weatherRecords = [];
+                } else {
+                    const [history, weather] = await Promise.all([
+                        cacheModule.historyCache.getBySystemId(systemId),
+                        cacheModule.weatherCache.getBySystemId(systemId)
+                    ]);
+                    historyRecords = history;
+                    weatherRecords = weather;
+                }
             } catch (err) {
                 log('warn', 'Failed to load data for unified timeline.', { error: String(err) });
             }
@@ -3158,7 +3166,8 @@ export const getUnifiedHistory = async (systemId: string): Promise<UnifiedTimeli
     log('info', `Unified timeline generated.`, {
         total: unified.length,
         history: historyRecords.length,
-        weather: weatherRecords.length
+        weather: weatherRecords.length,
+        isAllData
     });
 
     return unified;

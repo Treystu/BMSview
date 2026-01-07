@@ -254,6 +254,7 @@ const ChartControls: React.FC<{
                     <select id="system-select-chart" value={selectedSystemId} onChange={(e) => setSelectedSystemId(e.target.value)}
                         className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-white focus:ring-secondary focus:border-secondary">
                         <option value="">-- Select a System --</option>
+                        <option value="__ALL__">📊 All Data (Combined)</option>
                         {systems.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                 </div>
@@ -1482,9 +1483,13 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
         setAnalyticsData(null);
 
         try {
+            const isAllData = selectedSystemId === '__ALL__';
+
             // OPTIMIZATION: Calculate analytics locally if we have history records.
             // This is MUCH faster than hitting the /system-analytics backend for 2k-4k records.
-            const systemHistory = history.filter(r => r.systemId === selectedSystemId);
+            const systemHistory = isAllData
+                ? history // All records for "All Data" view
+                : history.filter(r => r.systemId === selectedSystemId);
 
             // Filter by timeframe to ensure "Recurring Alert Analysis" is accurate
             const filteredForAnalytics = systemHistory.filter(r =>
@@ -1503,26 +1508,30 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                     setIsAnalyticsLoading(false);
                 } catch (err) {
                     console.error('Local analytics calculation failed:', err);
-                    // Fallback to server if local fails
-                    const analytics = await getSystemAnalytics(selectedSystemId);
-                    if (currentRequestId !== requestIdRef.current) return;
-                    setAnalyticsData(analytics);
+                    // Fallback to server if local fails (skip for __ALL__ since it's not a real system)
+                    if (!isAllData) {
+                        const analytics = await getSystemAnalytics(selectedSystemId);
+                        if (currentRequestId !== requestIdRef.current) return;
+                        setAnalyticsData(analytics);
+                    }
                 }
-            } else {
-                // Not enough records locally or first time load, use server
+            } else if (!isAllData) {
+                // Not enough records locally or first time load, use server (skip for __ALL__)
                 const analytics = await getSystemAnalytics(selectedSystemId);
                 if (currentRequestId !== requestIdRef.current) return;
                 setAnalyticsData(analytics);
             }
 
-            const system = systems.find(s => s.id === selectedSystemId);
+            const system = isAllData ? null : systems.find(s => s.id === selectedSystemId);
             const ratedCapacity = system?.capacity;
 
             let chartDataPoints: any[] = [];
 
-            // 1. Sync Weather Data (Local vs Server check)
-            // Fire and forget - will update cache
-            await syncWeather(selectedSystemId, apiStartDate, apiEndDate);
+            // 1. Sync Weather Data (Local vs Server check) - skip for __ALL__
+            if (!isAllData) {
+                // Fire and forget - will update cache
+                await syncWeather(selectedSystemId, apiStartDate, apiEndDate);
+            }
 
             // FIX: Check if this request is still current after async operation
             if (currentRequestId !== requestIdRef.current) return;

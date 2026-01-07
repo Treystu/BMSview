@@ -55,7 +55,8 @@ exports.handler = async (event, context) => {
             event: 'START'
         });
 
-        const collection = await getCollection('analysis-results');
+        // FIX: Changed from 'analysis-results' to 'history' - records are stored in 'history' collection
+        const collection = await getCollection('history');
 
         // Critical fields needed for a complete duplicate (optimization: use object for O(1) lookup)
         const criticalFieldsMap = {
@@ -83,7 +84,7 @@ exports.handler = async (event, context) => {
         // ENHANCED LOGGING: Log query details
         log.info('Executing MongoDB query', {
             queryType: 'find',
-            collection: 'analysis-results',
+            collection: 'history',
             hashesInQuery: hashes.length,
             event: 'QUERY_START'
         });
