@@ -24,6 +24,8 @@
  */
 
 const crypto = require('crypto');
+const { getCollection } = require('./mongodb.cjs');
+const { COLLECTIONS } = require('./collections.cjs');
 
 /**
  * Generate a short preview of a hash for safe logging.
@@ -568,6 +570,191 @@ async function detectFeedbackDuplicate(newFeedback, collection, options = {}, lo
   }
 }
 
+/**
+ * Checks for existing analysis by content hash using unified deduplication
+ * Now centralized in unified-deduplication.cjs (moved from analyze.cjs)
+ * 
+ * @param {string} contentHash - Content hash to check
+ * @param {any} log - Logger instance
+ * @param {string} [fileName] - Optional filename for legacy lookup
+ * @returns {Promise<any>} Existing analysis if found, { _isUpgrade: true, _existingRecord } if upgrade needed, or null
+ */
+async function checkExistingAnalysis(contentHash, log, fileName = null) {
+  const startTime = Date.now();
+  try {
+    const preview = contentHash ? contentHash.substring(0, 16) + '...' : 'null';
+    const hashLen = contentHash ? contentHash.length : 0;
+    
+    log.info('DUPLICATE_CHECK: Starting database lookup', {
+      contentHashPreview: preview,
+      fullHashLength: hashLen,
+      fileName,
+      event: 'DB_LOOKUP_START'
+    });
+
+    const resultsCol = await getCollection(COLLECTIONS.ANALYSIS_RESULTS);
+    const historyCol = await getCollection(COLLECTIONS.HISTORY);
+
+    // 1. Try unified deduplication module (Hash Match)
+    let existingRecord = await findDuplicateByHash(contentHash, resultsCol, log);
+
+    // 2. Fallback: Filename/Timestamp Match (Legacy Recovery)
+    if (!existingRecord && fileName) {
+        let matchMethod = null;
+
+        // Method A: Exact Filename Match
+        if (fileName.includes('Screenshot_') || fileName.match(/\d{8}-\d{6}/)) {
+            existingRecord = await resultsCol.findOne({ fileName });
+            if (!existingRecord) {
+                 existingRecord = await historyCol.findOne({ fileName });
+            }
+            if (existingRecord) matchMethod = 'filename';
+        }
+
+        // Method B: Timestamp Extraction Match (The "Smart" Check)
+        if (!existingRecord) {
+            const tsMatch = fileName.match(/Screenshot_(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+            if (tsMatch) {
+                const [_, y, m, d, h, min, s] = tsMatch;
+                const fileDate = new Date(`${y}-${m}-${d}T${h}:${min}:${s}`);
+                
+                if (!isNaN(fileDate.getTime())) {
+                    // Create a 5-second window around the filename time
+                    const start = new Date(fileDate.getTime() - 2500);
+                    const end = new Date(fileDate.getTime() + 2500);
+                    
+                    // Look in HISTORY (where legacy records live)
+                    existingRecord = await historyCol.findOne({
+                        timestamp: { $gte: start.toISOString(), $lte: end.toISOString() }
+                    });
+                    
+                    if (existingRecord) matchMethod = 'timestamp_heuristic';
+                }
+            }
+        }
+
+        if (existingRecord) {
+            const recId = existingRecord._id || existingRecord.id;
+            log.info(`DUPLICATE_CHECK: Found legacy record by ${matchMethod}`, {
+                fileName,
+                matchMethod,
+                recordId: recId,
+                event: 'LEGACY_FALLBACK_FOUND'
+            });
+
+            // AUTO-HEAL: Backfill the contentHash
+            try {
+                // Upsert into analysis-results
+                const update = { 
+                    contentHash, 
+                    updatedAt: new Date(),
+                    id: existingRecord.id,
+                    analysis: existingRecord.analysis,
+                    timestamp: existingRecord.timestamp,
+                    fileName: fileName
+                };
+                
+                await resultsCol.updateOne(
+                    { id: existingRecord.id },
+                    { $set: update },
+                    { upsert: true }
+                );
+                
+                // Update history collection hash
+                await historyCol.updateOne(
+                    { id: existingRecord.id },
+                    { $set: { analysisKey: contentHash, contentHash } }
+                );
+
+                log.info('DUPLICATE_CHECK: Backfilled contentHash for legacy record');
+                if (!existingRecord.validationScore) existingRecord.validationScore = 100;
+            } catch (e) {
+                log.warn('Failed to backfill hash', { error: e.message });
+            }
+        }
+    }
+
+    const totalDurationMs = Date.now() - startTime;
+
+    if (!existingRecord) {
+      log.info('DUPLICATE_CHECK: No existing analysis found in database', {
+        contentHashPreview: preview,
+        totalDurationMs,
+        event: 'NOT_FOUND'
+      });
+      return null;
+    }
+
+    const recId = existingRecord._id || existingRecord.id;
+
+    log.info('DUPLICATE_CHECK: Found existing record, checking quality', {
+      recordId: recId,
+      validationScore: existingRecord.validationScore,
+      extractionAttempts: existingRecord.extractionAttempts || 1,
+      isComplete: existingRecord.isComplete || false,
+      hasAnalysis: !!existingRecord.analysis,
+      contentHashPreview: preview,
+      event: 'RECORD_FOUND'
+    });
+
+    const upgradeCheck = checkNeedsUpgrade(existingRecord);
+
+    log.info('DUPLICATE_CHECK: Upgrade check result', {
+      needsUpgrade: upgradeCheck.needsUpgrade,
+      reason: upgradeCheck.reason,
+      shouldMarkComplete: upgradeCheck.shouldMarkComplete,
+      contentHashPreview: preview,
+      event: 'UPGRADE_CHECK_RESULT'
+    });
+
+    if (upgradeCheck.shouldMarkComplete && !existingRecord.isComplete) {
+      try {
+        await resultsCol.updateOne(
+          { _id: existingRecord._id },
+          { $set: { isComplete: true, completedAt: new Date() } }
+        );
+        existingRecord.isComplete = true;
+      } catch (markError) {
+        log.warn('DUPLICATE_CHECK: Failed to mark record as complete', { error: markError.message });
+      }
+    }
+
+    if (upgradeCheck.needsUpgrade) {
+      log.info('DUPLICATE_CHECK: Returning upgrade needed response', {
+        contentHashPreview: preview,
+        upgradeReason: upgradeCheck.reason,
+        recordId: recId,
+        totalDurationMs,
+        event: 'UPGRADE_NEEDED'
+      });
+      return { _isUpgrade: true, _existingRecord: existingRecord };
+    }
+
+    log.info('DUPLICATE_CHECK: Returning high-quality duplicate', {
+      contentHashPreview: preview,
+      validationScore: existingRecord.validationScore,
+      isComplete: existingRecord.isComplete || false,
+      recordId: recId,
+      totalDurationMs,
+      event: 'HIGH_QUALITY_DUPLICATE'
+    });
+
+    return existingRecord;
+  } catch (error) {
+    const totalDurationMs = Date.now() - startTime;
+    const preview = contentHash ? contentHash.substring(0, 16) + '...' : 'null';
+    log.error('DUPLICATE_CHECK: Database lookup failed', {
+      error: error.message,
+      stack: error.stack?.substring?.(0, 500),
+      contentHashPreview: preview,
+      totalDurationMs,
+      event: 'DB_LOOKUP_ERROR'
+    });
+    // Re-throw to let caller decide how to handle
+    throw error;
+  }
+}
+
 module.exports = {
   // ============================================
   // Image Hashing
@@ -601,6 +788,12 @@ module.exports = {
    * Use when you already have the hash
    */
   findDuplicateByHash,
+
+  /**
+   * checkExistingAnalysis: High-level check with Legacy Fallback (Filename/Timestamp)
+   * Use this when checking for duplicates before analysis
+   */
+  checkExistingAnalysis,
 
   /**
    * checkNeedsUpgrade: Determine if record needs quality upgrade

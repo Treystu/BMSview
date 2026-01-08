@@ -45,6 +45,7 @@ const { COLLECTIONS } = require('./utils/collections.cjs');
 const {
   calculateImageHash,
   findDuplicateByHash,
+  checkExistingAnalysis, // Now imported from unified-deduplication.cjs
   checkNeedsUpgrade
 } = require('./utils/unified-deduplication.cjs');
 // Import unified logic from analysis-helpers and intelligent-associator
@@ -780,8 +781,49 @@ async function checkExistingAnalysis(contentHash, log) {
 
     const resultsCol = await getCollection(COLLECTIONS.ANALYSIS_RESULTS);
 
-    // Use unified deduplication module to find the duplicate
-    const existingRecord = await findDuplicateByHash(contentHash, resultsCol, log);
+    // 1. Try unified deduplication module (Hash Match)
+    let existingRecord = await findDuplicateByHash(contentHash, resultsCol, log);
+
+    // 2. Fallback: Filename/Timestamp Match (Legacy Recovery)
+    if (!existingRecord && fileName) {
+        // Method A: Exact Filename
+        if (fileName.includes('Screenshot_') || fileName.match(/\d{8}-\d{6}/)) {
+            existingRecord = await resultsCol.findOne({ fileName });
+            if (!existingRecord) {
+                 const historyCol = await getCollection(COLLECTIONS.HISTORY);
+                 existingRecord = await historyCol.findOne({ fileName });
+            }
+        }
+
+        // Method B: Timestamp Heuristic
+        if (!existingRecord) {
+            const tsMatch = fileName.match(/Screenshot_(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+            if (tsMatch) {
+                const [_, y, m, d, h, min, s] = tsMatch;
+                const fileDate = new Date(`${y}-${m}-${d}T${h}:${min}:${s}`);
+                if (!isNaN(fileDate.getTime())) {
+                    const start = new Date(fileDate.getTime() - 2500);
+                    const end = new Date(fileDate.getTime() + 2500);
+                    const historyCol = await getCollection(COLLECTIONS.HISTORY);
+                    existingRecord = await historyCol.findOne({
+                        timestamp: { $gte: start.toISOString(), $lte: end.toISOString() }
+                    });
+                }
+            }
+        }
+
+        if (existingRecord) {
+            log.info('DUPLICATE_CHECK: Found legacy record via fallback', { fileName, recordId: existingRecord.id || existingRecord._id });
+            // Backfill Hash
+            try {
+                await resultsCol.updateOne(
+                    { id: existingRecord.id },
+                    { $set: { contentHash, updatedAt: new Date() } },
+                    { upsert: true }
+                );
+            } catch (e) {}
+        }
+    }
 
     const totalDurationMs = Date.now() - startTime;
 

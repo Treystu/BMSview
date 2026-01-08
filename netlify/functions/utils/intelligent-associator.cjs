@@ -194,6 +194,34 @@ class IntelligentAssociator {
             }
         }
 
+        // Tier 1.8: Substring Match (Partial ID)
+        // Handles cases where "DL-" prefix is missing (e.g. "4018..." vs "DL-4018...")
+        for (const candidateId of candidates) {
+            const strippedCandidate = candidateId.replace(/[^A-Z0-9]/g, ''); // Pure alphanumeric
+            if (strippedCandidate.length < 6) continue; // Too short for safe substring
+
+            for (const [knownId, systems] of this.hardwareIdMap.entries()) {
+                if (systems.length !== 1) continue;
+                
+                const strippedKnown = knownId.replace(/[^A-Z0-9]/g, '');
+                
+                // Check if one contains the other
+                if (strippedKnown.includes(strippedCandidate) || strippedCandidate.includes(strippedKnown)) {
+                     const system = systems[0];
+                     const validation = this.validateMatch(system, record);
+                     if (validation.valid) {
+                         return {
+                             systemId: system.id,
+                             systemName: system.name,
+                             status: 'matched_substring',
+                             matchedId: knownId,
+                             reason: `Substring match`
+                         };
+                     }
+                }
+            }
+        }
+
         // Tier 2: Fuzzy Match
         // Only run if no strict match
         let bestFuzzy = null;
