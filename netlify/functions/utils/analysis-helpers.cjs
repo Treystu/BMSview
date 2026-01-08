@@ -76,6 +76,10 @@ const getResponseSchema = () => ({
         cellVoltageDifference: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Voltage difference in V. If in mV, convert to V by dividing by 1000." },
         cycleCount: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Cycle count. If not visible, use 0." },
         power: { "type": Type.NUMBER, "nullable": false, "description": "MANDATORY: Power in Watts. If in kW, convert to W. If current is negative, power MUST be negative." },
+        
+        // NEW: Obstruction Detection
+        obstructionDetected: { "type": Type.BOOLEAN, "nullable": false, "description": "MANDATORY: Set to true if ANY critical data (Voltage, Current, SOC) is obscured by glare, a finger, an overlay, or is physically cut off. If the image is clear, set to false." },
+        obstructionReason: { "type": Type.STRING, "nullable": true, "description": "If obstructionDetected is true, briefly describe what is blocking the view (e.g., 'Glare on screen', 'Finger covering voltage', 'UI overlay')." },
 
         // OPTIONAL FIELDS
         timestampFromImage: { "type": Type.STRING, "nullable": true },
@@ -135,6 +139,7 @@ The following fields are MANDATORY and MUST ALWAYS be extracted. If a field is n
     -   \`remainingCapacity\`: Extract 'Remaining Cap' or 'remaining capacity'. MANDATORY.
     -   \`fullCapacity\`: Extract 'Full Cap' or 'full capacity'. Optional.
     -   \`power\`: Extract 'Power'. If in 'kW', multiply by 1000 for Watts. **IMPORTANT: If the 'current' value is negative, the 'power' value MUST also be negative.** MANDATORY.
+    -   \`obstructionDetected\`: Set to \`true\` ONLY if you cannot read a critical value (Voltage, Current, SOC) due to visual obstruction (glare, finger, overlay). If you can read them, set to \`false\`. MANDATORY.
     -   \`chargeMosOn\`, \`dischargeMosOn\`, \`balanceOn\`: For each, determine if the indicator ('Chg MOS', 'Dischg MOS', 'Balance') is on (green, lit) which is \`true\`, or off (grey, unlit) which is \`false\`. MANDATORY.
     -   \`highestCellVoltage\`, \`lowestCellVoltage\`, \`averageCellVoltage\`: Extract these from the display OR calculate from cellVoltages array. MANDATORY.
     -   \`cellVoltageDifference\`: Extract 'voltage difference'. **If the unit is 'mV', divide by 1000 to convert to 'V'.** The schema requires Volts. MANDATORY.

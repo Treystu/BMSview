@@ -201,6 +201,16 @@ function checkNeedsUpgrade(record) {
     };
   }
 
+  // Check for validated obstruction (New Feature)
+  // If the AI previously determined the image was obstructed, don't retry endlessly.
+  if (record.analysis && record.analysis.obstructionDetected === true) {
+    return {
+      needsUpgrade: false,
+      reason: `Obstruction detected: ${record.analysis.obstructionReason || 'Unknown'}`,
+      shouldMarkComplete: true
+    };
+  }
+
   // CRITICAL: Check for missing critical fields FIRST (highest priority)
   // This must come before validation score check
   const hasAllCriticalFields = CRITICAL_FIELDS.every(field => {

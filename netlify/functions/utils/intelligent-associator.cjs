@@ -240,12 +240,74 @@ class IntelligentAssociator {
              }
         }
 
-        // Tier 3: New Candidate
-        // If we have valid IDs but no match, it's a new system
+        // Tier 3: New Candidate (Initial Check)
+        // If we have valid IDs but no match, it's a new candidate... unless Physics says otherwise.
+        
+        // Tier 4: Physics Inference (The "Smart" Match)
+        // User Logic: "If average discharge is 2% per hour... SOC variance tolerance ~4%"
+        // We iterate ALL systems to see if this record fits into their timeline.
+        
+        let bestPhysicsMatch = null;
+        let minPhysicsError = Infinity;
+
+        // Only try physics inference if we have valid data
+        if (record.analysis && record.analysis.stateOfCharge != null && record.timestamp) {
+            const recordTime = new Date(record.timestamp).getTime();
+            const recordSoc = record.analysis.stateOfCharge;
+
+            for (const system of this.systems) {
+                const stats = this.systemStats[system.id];
+                if (!stats || !stats.lastTimestamp || stats.lastSoc == null) continue;
+
+                const sysTime = new Date(stats.lastTimestamp).getTime();
+                const timeDiffHours = (recordTime - sysTime) / (1000 * 60 * 60);
+                
+                // Only infer if within 4 hours (to be safe)
+                if (Math.abs(timeDiffHours) > 4) continue;
+
+                // Expected SOC change: 2% per hour (Discharge) or Charging?
+                // We don't know if charging. But we know SOC shouldn't jump 50% in 5 mins.
+                // User Rule: 5% margin of error + time variance.
+                // Base tolerance: 5%
+                // Time factor: 2% per hour
+                const tolerance = 5 + (Math.abs(timeDiffHours) * 2);
+                
+                const socDiff = Math.abs(recordSoc - stats.lastSoc);
+                
+                // Simple Physics Fit: Is the SOC difference within the tolerance window?
+                if (socDiff <= tolerance) {
+                    // Check Voltage too if available (Secondary check)
+                    if (record.analysis.overallVoltage && stats.avgVoltage) {
+                        const voltDiffPct = (Math.abs(record.analysis.overallVoltage - stats.avgVoltage) / stats.avgVoltage) * 100;
+                        if (voltDiffPct > 20) continue; // Voltage mismatch (24v vs 48v) rejects it
+                    }
+
+                    // We found a fit. Is it the BEST fit?
+                    // Error metric: How far is it from "No Change" or "Standard Discharge"?
+                    // Let's just use raw SOC deviation as error metric.
+                    if (socDiff < minPhysicsError) {
+                        minPhysicsError = socDiff;
+                        bestPhysicsMatch = system;
+                    }
+                }
+            }
+        }
+
+        if (bestPhysicsMatch) {
+             return { 
+                 systemId: bestPhysicsMatch.id, 
+                 systemName: bestPhysicsMatch.name, 
+                 status: 'matched_physics', 
+                 matchedId: 'INFERRED',
+                 reason: `Physics Inference: SOC diff ${minPhysicsError.toFixed(1)}% within tolerance`
+             };
+        }
+
+        // Tier 5: Truly New Candidate
         return { 
             systemId: null, 
             status: 'new_candidate', 
-            reason: 'No matching system found',
+            reason: 'No matching system found (ID or Physics)',
             isNewCandidate: true,
             candidateIds: Array.from(candidates)
         };

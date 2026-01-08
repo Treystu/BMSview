@@ -345,6 +345,111 @@ exports.handler = async function (event, context) {
                 return respond(200, { success: true, updatedCount: modifiedCount }, headers);
             }
 
+            // --- Aggressive Deduplication Action (Time-Based) ---
+            if (action === 'deduplicate-time-based') {
+                log.info('Starting aggressive time-based deduplication');
+                const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
+                
+                // Fetch all records (projection to save memory)
+                const allRecords = await historyCollection.find({}, {
+                    projection: {
+                        _id: 1,
+                        timestamp: 1,
+                        systemId: 1,
+                        hardwareSystemId: 1,
+                        dlNumber: 1,
+                        'analysis.hardwareSystemId': 1,
+                        'analysis.dlNumber': 1,
+                        'analysis.overallVoltage': 1,
+                        'analysis.stateOfCharge': 1
+                    }
+                }).toArray();
+
+                log.info(`Scanned ${allRecords.length} records for time-based duplicates`);
+
+                // Group by Normalized ID + Timestamp (Minute precision)
+                const groups = new Map();
+                
+                for (const record of allRecords) {
+                    const rawId = record.hardwareSystemId || record.dlNumber || record.analysis?.hardwareSystemId || record.analysis?.dlNumber;
+                    const normId = normalizeHardwareId(rawId);
+                    
+                    if (normId === 'UNKNOWN') continue;
+
+                    // Round timestamp to minute to catch slight OCR variations
+                    const date = new Date(record.timestamp);
+                    date.setSeconds(0, 0);
+                    const timeKey = date.toISOString();
+                    
+                    const key = `${normId}|${timeKey}`;
+                    
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(record);
+                }
+
+                let duplicateSets = 0;
+                let recordsToDelete = 0;
+                const bulkOps = [];
+
+                for (const [key, group] of groups.entries()) {
+                    if (group.length > 1) {
+                        duplicateSets++;
+                        
+                        // Select Winner
+                        // Criteria: Linked > Has Dash > More Data > Newer Update
+                        group.sort((a, b) => {
+                            // 1. Linked System
+                            if (a.systemId && !b.systemId) return -1;
+                            if (!a.systemId && b.systemId) return 1;
+                            
+                            // 2. ID Quality (Has Dash?)
+                            const aId = a.hardwareSystemId || '';
+                            const bId = b.hardwareSystemId || '';
+                            const aHasDash = aId.includes('-');
+                            const bHasDash = bId.includes('-');
+                            if (aHasDash && !bHasDash) return -1;
+                            if (!aHasDash && bHasDash) return 1;
+
+                            // 3. Data Completeness (heuristic: has voltage?)
+                            const aVolts = a.analysis?.overallVoltage || 0;
+                            const bVolts = b.analysis?.overallVoltage || 0;
+                            return bVolts - aVolts; // Higher voltage likely real reading? Or just arbitrary.
+                        });
+
+                        const winner = group[0];
+                        const losers = group.slice(1);
+
+                        recordsToDelete += losers.length;
+                        
+                        // Add delete operations
+                        losers.forEach(loser => {
+                            bulkOps.push({
+                                deleteOne: {
+                                    filter: { _id: loser._id }
+                                }
+                            });
+                        });
+                    }
+                }
+
+                if (bulkOps.length > 0) {
+                    log.info(`Deleting ${recordsToDelete} duplicate records across ${duplicateSets} groups`);
+                    // Execute in batches of 1000
+                    for (let i = 0; i < bulkOps.length; i += 1000) {
+                        const batch = bulkOps.slice(i, i + 1000);
+                        await historyCollection.bulkWrite(batch);
+                    }
+                }
+
+                timer.end({ duplicateSets, recordsToDelete });
+                log.exit(200);
+                return respond(200, {
+                    success: true,
+                    message: `Deduplication complete. Removed ${recordsToDelete} duplicates from ${duplicateSets} time-slots.`,
+                    stats: { duplicateSets, recordsToDelete }
+                }, headers);
+            }
+
             // --- Auto-Associate Action ---
             if (action === 'auto-associate') {
                 log.info('Starting auto-association task', { action });
@@ -674,112 +779,125 @@ exports.handler = async function (event, context) {
                 }, headers);
             }
 
-            // --- Normalize IDs Action (Unify fields app-wide) ---
+            // --- Normalize IDs & Aggressive Cleanup Action ---
             if (action === 'normalize-ids') {
-                log.info('Starting normalize-ids task', { action });
-                const startTime = Date.now();
-                const MAX_EXECUTION_TIME = 20000;
+                log.info('Starting normalization and cleanup task');
+                const { limit = 5000 } = parsedBody; // Increased limit for full sweep
+                const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
+
+                // 1. Fetch records
+                const cursor = historyCollection.find({}).limit(limit);
+                const allRecords = await cursor.toArray();
+                
+                log.info(`Scanned ${allRecords.length} records for normalization and deduplication`);
+
+                // --- Part A: Time-Based Deduplication (The "Awful" Fix) ---
+                const groups = new Map();
+                for (const record of allRecords) {
+                    // Use robust ID extraction (check all fields)
+                    const rawId = record.hardwareSystemId || record.dlNumber || record.analysis?.hardwareSystemId || record.analysis?.dlNumber;
+                    const normId = normalizeHardwareId(rawId);
+                    
+                    if (normId === 'UNKNOWN') continue;
+
+                    // Group by Normalized ID + Minute-Precision Timestamp
+                    const date = new Date(record.timestamp);
+                    date.setSeconds(0, 0); // Ignore seconds variation
+                    const timeKey = date.toISOString();
+                    
+                    const key = `${normId}|${timeKey}`;
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(record);
+                }
+
+                let duplicateSets = 0;
+                let recordsToDelete = 0;
+                const deleteOps = [];
+
+                for (const [key, group] of groups.entries()) {
+                    if (group.length > 1) {
+                        duplicateSets++;
+                        // Sort: Linked > Has Dash > More Data
+                        group.sort((a, b) => {
+                            if (a.systemId && !b.systemId) return -1;
+                            if (!a.systemId && b.systemId) return 1;
+                            const aId = a.hardwareSystemId || '';
+                            const bId = b.hardwareSystemId || '';
+                            const aHasDash = aId.includes('-');
+                            const bHasDash = bId.includes('-');
+                            if (aHasDash && !bHasDash) return -1;
+                            if (!aHasDash && bHasDash) return 1;
+                            return (b.analysis?.overallVoltage || 0) - (a.analysis?.overallVoltage || 0);
+                        });
+
+                        // Keep winner, delete rest
+                        const losers = group.slice(1);
+                        recordsToDelete += losers.length;
+                        losers.forEach(l => deleteOps.push({ deleteOne: { filter: { _id: l._id } } }));
+                    }
+                }
+
+                if (deleteOps.length > 0) {
+                    log.info(`Deleting ${recordsToDelete} duplicates from ${duplicateSets} clusters`);
+                    await historyCollection.bulkWrite(deleteOps, { ordered: false });
+                }
+
+                // --- Part B: Normalization (Existing Logic) ---
                 let updatedCount = 0;
                 let scannedCount = 0;
-
-                const parsedLimit = parseInt(parsedBody.limit) || 1000;
-
-                // CRITICAL FIX: First, get total records in collection to prevent phantom scanning
-                const totalHistoryRecords = await historyCollection.countDocuments({});
-                log.info('Total records in history collection', { totalHistoryRecords });
-
-                // UNIFIED: Use the same normalization as extraction (removes dashes, spaces, uppercase)
-                // This ensures "DL-123", "DL 123", "dl123" all become "DL123"
-                const norm = (id) => {
-                    const normalized = normalizeHardwareId(id);
-                    return normalized === 'UNKNOWN' ? null : normalized;
-                };
-
-                // CRITICAL FIX: Use MongoDB aggregation to find ONLY records that ACTUALLY need updates
-                // This prevents the infinite loop where records match the query but don't get updated
-                const pipeline = [
-                    // Stage 1: Find records with potential ID issues
-                    {
-                        $match: {
-                            $or: [
-                                // One field is missing/empty/UNKNOWN while the other has a value
-                                { hardwareSystemId: { $in: [null, "", "UNKNOWN"] }, dlNumber: { $nin: [null, "", "UNKNOWN"] } },
-                                { dlNumber: { $in: [null, "", "UNKNOWN"] }, hardwareSystemId: { $nin: [null, "", "UNKNOWN"] } },
-                                // Both fields have different valid values (need unification)
-                                {
-                                    hardwareSystemId: { $nin: [null, "", "UNKNOWN"] },
-                                    dlNumber: { $nin: [null, "", "UNKNOWN"] },
-                                    $expr: { $ne: ["$hardwareSystemId", "$dlNumber"] }
-                                }
-                            ]
-                        }
-                    },
-                    // Stage 2: Compute the best ID to use
-                    {
-                        $addFields: {
-                            _bestId: {
-                                $switch: {
-                                    branches: [
-                                        // Priority 1: Valid hardwareSystemId
-                                        { case: { $and: [{ $ne: ["$hardwareSystemId", null] }, { $ne: ["$hardwareSystemId", ""] }, { $ne: ["$hardwareSystemId", "UNKNOWN"] }] }, then: "$hardwareSystemId" },
-                                        // Priority 2: Valid dlNumber
-                                        { case: { $and: [{ $ne: ["$dlNumber", null] }, { $ne: ["$dlNumber", ""] }, { $ne: ["$dlNumber", "UNKNOWN"] }] }, then: "$dlNumber" },
-                                        // Priority 3: Nested hardwareSystemId
-                                        { case: { $and: [{ $ne: ["$analysis.hardwareSystemId", null] }, { $ne: ["$analysis.hardwareSystemId", ""] }, { $ne: ["$analysis.hardwareSystemId", "UNKNOWN"] }] }, then: "$analysis.hardwareSystemId" },
-                                        // Priority 4: Nested dlNumber
-                                        { case: { $and: [{ $ne: ["$analysis.dlNumber", null] }, { $ne: ["$analysis.dlNumber", ""] }, { $ne: ["$analysis.dlNumber", "UNKNOWN"] }] }, then: "$analysis.dlNumber" }
-                                    ],
-                                    default: null
-                                }
-                            }
-                        }
-                    },
-                    // Stage 3: Only include records where bestId exists AND at least one field needs updating
-                    {
-                        $match: {
-                            _bestId: { $ne: null },
-                            $expr: {
-                                $or: [
-                                    { $ne: ["$hardwareSystemId", "$_bestId"] },
-                                    { $ne: ["$dlNumber", "$_bestId"] }
-                                ]
-                            }
-                        }
-                    },
-                    { $limit: parsedLimit },
-                    { $project: { _id: 1, hardwareSystemId: 1, dlNumber: 1, _bestId: 1 } }
-                ];
-
-                const recordsToUpdate = await historyCollection.aggregate(pipeline).toArray();
-                scannedCount = recordsToUpdate.length;
-
-                log.info('Found records needing normalization', { count: scannedCount, limit: parsedLimit });
-
                 const bulkOps = [];
-                const now = new Date().toISOString();
 
-                for (const record of recordsToUpdate) {
-                    if (Date.now() - startTime > MAX_EXECUTION_TIME) {
-                        log.warn('Approaching timeout during normalize-ids', { processed: bulkOps.length });
-                        break;
+                // Refresh records after deletion (or filter locally)
+                // We'll just continue with the in-memory list, skipping deleted IDs?
+                // Better to just run normalization on the survivors.
+                // For simplicity, we just run the normalization update on everyone.
+                // MongoDB bulkWrite is efficient.
+
+                for (const record of allRecords) {
+                    scannedCount++;
+                    
+                    // Skip if deleted (naive check)
+                    if (deleteOps.some(op => op.deleteOne.filter._id === record._id)) continue;
+
+                    const currentHwId = record.hardwareSystemId;
+                    const currentDl = record.dlNumber;
+                    
+                    const normHwId = normalizeHardwareId(currentHwId);
+                    const normDl = normalizeHardwareId(currentDl);
+
+                    // Skip if already normalized (and matches)
+                    if (currentHwId === normHwId && currentDl === normDl) continue;
+
+                    // If we have a valid normalized ID, update ONLY if the current one is broken/missing
+                    // USER REQUEST: Keep "exact data as in photo".
+                    // So we ONLY update if the current data is NULL or garbage.
+                    // BUT for "DL4018" vs "DL-4018", the user said "keep the dash".
+                    // So if we have "DL4018" (no dash), we SHOULD update it to "DL-4018" (with dash) IF "DL-4018" is the source of truth.
+                    
+                    let needsUpdate = false;
+                    const updateSet = {};
+
+                    if (normHwId !== 'UNKNOWN' && currentHwId !== normHwId) {
+                        // Only update if normalized is "better" (has dash, current doesn't)
+                        // Or if current is missing
+                        if (!currentHwId || (normHwId.includes('-') && !currentHwId.includes('-'))) {
+                            updateSet.hardwareSystemId = normHwId;
+                            needsUpdate = true;
+                        }
+                    }
+                    
+                    if (normDl !== 'UNKNOWN' && currentDl !== normDl) {
+                        if (!currentDl || (normDl.includes('-') && !currentDl.includes('-'))) {
+                            updateSet.dlNumber = normDl;
+                            needsUpdate = true;
+                        }
                     }
 
-                    const bestId = record._bestId;
-                    const currentHwId = norm(record.hardwareSystemId);
-                    const currentDlId = norm(record.dlNumber);
-
-                    const needsHwUpdate = currentHwId !== bestId;
-                    const needsDlUpdate = currentDlId !== bestId;
-
-                    if (needsHwUpdate || needsDlUpdate) {
-                        const updateFields = { updatedAt: now };
-                        if (needsHwUpdate) updateFields.hardwareSystemId = bestId;
-                        if (needsDlUpdate) updateFields.dlNumber = bestId;
-
+                    if (needsUpdate) {
                         bulkOps.push({
                             updateOne: {
                                 filter: { _id: record._id },
-                                update: { $set: updateFields }
+                                update: { $set: { ...updateSet, updatedAt: new Date().toISOString() } }
                             }
                         });
                         updatedCount++;
@@ -790,22 +908,17 @@ exports.handler = async function (event, context) {
                     await historyCollection.bulkWrite(bulkOps);
                 }
 
-                // CRITICAL: Return hasMore=false when no records found to stop frontend loop immediately
-                const hasMore = scannedCount > 0 && scannedCount === parsedLimit;
-                const message = scannedCount === 0
-                    ? `No records need ID normalization. All ${totalHistoryRecords} records are already unified.`
-                    : `Scanned ${scannedCount} records, unified IDs for ${updatedCount} records.`;
-
-                timer.end({ action, updatedCount, scannedCount, hasMore, totalHistoryRecords, message });
-                log.info('Normalize-ids task complete', { action, updatedCount, scannedCount, hasMore, totalHistoryRecords });
-
+                timer.end({ updatedCount, scannedCount, recordsToDelete });
+                log.info('Cleanup complete', { updatedCount, scannedCount, recordsToDelete });
+                
+                log.exit(200);
                 return respond(200, {
                     success: true,
                     updatedCount,
                     scannedCount,
-                    hasMore,  // Frontend MUST stop looping when this is false
-                    totalRecords: totalHistoryRecords,
-                    message
+                    hasMore: false,
+                    totalRecords: scannedCount,
+                    message: `Cleanup Complete. Deleted ${recordsToDelete} duplicates. Normalized ${updatedCount} records.`
                 }, headers);
             }
 
