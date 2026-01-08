@@ -77,7 +77,8 @@ exports.handler = async (event, context) => {
         };
         const criticalFieldsList = Object.keys(criticalFieldsMap);
 
-        const query = { contentHash: { $in: hashes } };
+        // FIX: 'history' collection stores hash as 'analysisKey', not 'contentHash'
+        const query = { analysisKey: { $in: hashes } };
 
         const queryStartTime = Date.now();
 
@@ -86,13 +87,14 @@ exports.handler = async (event, context) => {
             queryType: 'find',
             collection: 'history',
             hashesInQuery: hashes.length,
+            queryField: 'analysisKey',
             event: 'QUERY_START'
         });
 
         // Optimized projection - only fetch what we need
         const allMatchingRecords = await collection.find(query, {
             projection: {
-                contentHash: 1,
+                analysisKey: 1,
                 'analysis.dlNumber': 1,
                 'analysis.stateOfCharge': 1,
                 'analysis.overallVoltage': 1,
@@ -112,7 +114,8 @@ exports.handler = async (event, context) => {
         }).toArray();
 
         const queryDurationMs = Date.now() - queryStartTime;
-        const uniqueHashesFound = new Set(allMatchingRecords.map(r => r.contentHash)).size;
+        // FIX: Use analysisKey field (not contentHash) - that's what's stored in history collection
+        const uniqueHashesFound = new Set(allMatchingRecords.map(r => r.analysisKey)).size;
 
         // ENHANCED LOGGING: Log query results with performance metrics
         log.info('MongoDB query complete', {
@@ -133,7 +136,9 @@ exports.handler = async (event, context) => {
 
         // Optimized field checking - batch process records
         for (const record of allMatchingRecords) {
-            if (seenHashes.has(record.contentHash)) continue;
+            // FIX: Use analysisKey field
+            const recordHash = record.analysisKey;
+            if (!recordHash || seenHashes.has(recordHash)) continue;
 
             // Fast field existence check - short-circuit on first missing field
             const analysis = record.analysis || {};
@@ -147,19 +152,19 @@ exports.handler = async (event, context) => {
 
             if (hasAllCriticalFields) {
                 duplicates.push({
-                    hash: record.contentHash,
+                    hash: recordHash,
                     data: { ...analysis, _recordId: record._id.toString() },
                 });
-                seenHashes.add(record.contentHash);
+                seenHashes.add(recordHash);
 
                 // ENHANCED LOGGING: Log duplicate found (debug level for high volume)
                 log.debug('Duplicate detected', {
-                    hash: record.contentHash.substring(0, 16) + '...',
+                    hash: recordHash.substring(0, 16) + '...',
                     recordId: record._id.toString(),
                     dlNumber: analysis.dlNumber
                 });
             } else {
-                upgrades.add(record.contentHash);
+                upgrades.add(recordHash);
 
                 // ENHANCED LOGGING: Log upgrade needed with missing fields
                 const missingFields = criticalFieldsList.filter(field =>
@@ -167,7 +172,7 @@ exports.handler = async (event, context) => {
                 );
 
                 log.debug('Upgrade needed - missing fields', {
-                    hash: record.contentHash.substring(0, 16) + '...',
+                    hash: recordHash.substring(0, 16) + '...',
                     recordId: record._id.toString(),
                     missingFields: missingFields,
                     missingCount: missingFields.length

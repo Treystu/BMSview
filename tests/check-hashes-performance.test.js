@@ -90,7 +90,8 @@ describe('check-hashes endpoint performance optimizations', () => {
       
       // Should project specific fields, not entire analysis object
       const projection = findCall[1].projection;
-      expect(projection).toHaveProperty('contentHash', 1);
+      // FIX: 'history' collection uses 'analysisKey' not 'contentHash'
+      expect(projection).toHaveProperty('analysisKey', 1);
       expect(projection).toHaveProperty('_id', 1);
       
       // Should project critical analysis fields individually (note: MongoDB uses quoted keys for nested paths)
@@ -108,7 +109,7 @@ describe('check-hashes endpoint performance optimizations', () => {
         toArray: jest.fn().mockResolvedValue([
           {
             _id: 'id1',
-            contentHash: 'hash1',
+            analysisKey: 'hash1',
             analysis: {
               dlNumber: 'DL001',
               stateOfCharge: 85,
@@ -171,7 +172,7 @@ describe('check-hashes endpoint performance optimizations', () => {
         toArray: jest.fn().mockResolvedValue([
           {
             _id: 'id1',
-            contentHash: 'hash1',
+            analysisKey: 'hash1',
             analysis: {
               dlNumber: 'DL001',
               stateOfCharge: 85,
@@ -192,7 +193,7 @@ describe('check-hashes endpoint performance optimizations', () => {
           },
           {
             _id: 'id2',
-            contentHash: 'hash2',
+            analysisKey: 'hash2',
             analysis: {
               dlNumber: 'DL002',
               // Missing some critical fields
@@ -234,7 +235,7 @@ describe('check-hashes endpoint performance optimizations', () => {
       
       const recordWithAllFields = {
         _id: 'id1',
-        contentHash: 'hash1',
+        analysisKey: 'hash1',
         analysis: {
           dlNumber: 'DL001',
           stateOfCharge: 85,
@@ -277,7 +278,7 @@ describe('check-hashes endpoint performance optimizations', () => {
       
       const recordMissingFields = {
         _id: 'id1',
-        contentHash: 'hash1',
+        analysisKey: 'hash1',
         analysis: {
           dlNumber: 'DL001',
           stateOfCharge: 85,
@@ -314,7 +315,7 @@ describe('check-hashes endpoint performance optimizations', () => {
       // Create 50 records with all fields and 25 needing upgrade
       const records = Array.from({ length: 75 }, (_, i) => ({
         _id: `id${i}`,
-        contentHash: `hash${i}`,
+        analysisKey: `hash${i}`,
         analysis: i < 50 ? {
           dlNumber: `DL${i}`,
           stateOfCharge: 85,

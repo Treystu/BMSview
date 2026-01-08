@@ -1,10 +1,10 @@
 /**
  * Diagnostic endpoint for duplicate detection system
- * 
+ *
  * GET /.netlify/functions/duplicate-diagnostics
- * 
+ *
  * Returns:
- * - MongoDB index status for contentHash
+ * - MongoDB index status for analysisKey (history collection uses 'analysisKey', not 'contentHash')
  * - Sample query performance metrics
  * - Duplicate detection statistics
  */
@@ -49,8 +49,9 @@ exports.handler = async (event, context) => {
     const indexes = await resultsCol.indexes();
     const indexDurationMs = Date.now() - indexStartTime;
 
-    const contentHashIndex = indexes.find(/** @param {any} idx */(idx) => idx.key && idx.key.contentHash !== undefined);
-    const hasContentHashIndex = !!contentHashIndex;
+    // FIX: 'history' collection uses 'analysisKey', not 'contentHash'
+    const analysisKeyIndex = indexes.find(/** @param {any} idx */(idx) => idx.key && idx.key.analysisKey !== undefined);
+    const hasAnalysisKeyIndex = !!analysisKeyIndex;
 
     // Get collection stats
     const statsStartTime = Date.now();
@@ -62,22 +63,22 @@ exports.handler = async (event, context) => {
     const totalRecords = await resultsCol.countDocuments();
     const countDurationMs = Date.now() - countStartTime;
 
-    // Count records with contentHash
+    // Count records with analysisKey (FIX: history collection uses 'analysisKey', not 'contentHash')
     const hashCountStartTime = Date.now();
-    const recordsWithHash = await resultsCol.countDocuments({ contentHash: { $exists: true, $ne: null } });
+    const recordsWithHash = await resultsCol.countDocuments({ analysisKey: { $exists: true, $ne: null } });
     const hashCountDurationMs = Date.now() - hashCountStartTime;
 
-    // Sample query performance (find one by contentHash)
+    // Sample query performance (find one by analysisKey)
     let sampleQueryDurationMs = null;
     let sampleQueryUsedIndex = false;
 
     if (recordsWithHash > 0) {
-      // Get a sample contentHash
-      const sampleRecord = await resultsCol.findOne({ contentHash: { $exists: true } });
+      // Get a sample analysisKey
+      const sampleRecord = await resultsCol.findOne({ analysisKey: { $exists: true } });
 
-      if (sampleRecord && sampleRecord.contentHash) {
+      if (sampleRecord && sampleRecord.analysisKey) {
         const queryStartTime = Date.now();
-        const explainResult = await resultsCol.find({ contentHash: sampleRecord.contentHash }).explain('executionStats');
+        const explainResult = await resultsCol.find({ analysisKey: sampleRecord.analysisKey }).explain('executionStats');
         sampleQueryDurationMs = Date.now() - queryStartTime;
 
         // Check if index was used (IXSCAN vs COLLSCAN)
@@ -113,10 +114,10 @@ exports.handler = async (event, context) => {
     ]).toArray();
     const attemptsDurationMs = Date.now() - attemptsStartTime;
 
-    const durationMs = timer.end({ hasIndex: hasContentHashIndex });
+    const durationMs = timer.end({ hasIndex: hasAnalysisKeyIndex });
 
     log.info('Duplicate diagnostics complete', {
-      hasContentHashIndex,
+      hasAnalysisKeyIndex,
       totalRecords,
       recordsWithHash,
       sampleQueryUsedIndex,
@@ -131,8 +132,9 @@ exports.handler = async (event, context) => {
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         indexes: {
-          hasContentHashIndex,
-          contentHashIndexDetails: contentHashIndex || null,
+          // FIX: 'history' collection uses 'analysisKey', not 'contentHash'
+          hasAnalysisKeyIndex,
+          analysisKeyIndexDetails: analysisKeyIndex || null,
           totalIndexes: indexes.length,
           allIndexes: indexes.map(/** @param {any} idx */(idx) => ({
             name: idx.name,
@@ -154,10 +156,10 @@ exports.handler = async (event, context) => {
         performance: {
           sampleQueryDurationMs,
           sampleQueryUsedIndex,
-          expectedQueryType: hasContentHashIndex ? 'IXSCAN (index scan)' : 'COLLSCAN (collection scan)',
-          recommendation: hasContentHashIndex
+          expectedQueryType: hasAnalysisKeyIndex ? 'IXSCAN (index scan)' : 'COLLSCAN (collection scan)',
+          recommendation: hasAnalysisKeyIndex
             ? (sampleQueryUsedIndex ? 'Index is present and being used correctly' : 'Index exists but may not be used - check query patterns')
-            : 'CRITICAL: contentHash index is missing - duplicate detection will be very slow'
+            : 'CRITICAL: analysisKey index is missing - duplicate detection will be very slow'
         },
         qualityDistribution: {
           byValidationScore: scoreRanges.map(/** @param {any} r */(r) => ({
@@ -177,9 +179,10 @@ exports.handler = async (event, context) => {
           attemptsDurationMs
         },
         recommendations: [
-          !hasContentHashIndex && 'Create contentHash index: db.analysis_results.createIndex({ contentHash: 1 }, { unique: true, sparse: true, background: true })',
+          // FIX: Updated index recommendation for 'history' collection
+          !hasAnalysisKeyIndex && 'Create analysisKey index: db.history.createIndex({ analysisKey: 1 }, { unique: true, sparse: true, background: true })',
           sampleQueryDurationMs && sampleQueryDurationMs > 100 && 'Query performance is slow - check if index is being used',
-          recordsWithHash < totalRecords && `${totalRecords - recordsWithHash} records are missing contentHash - run migration to add hashes`,
+          recordsWithHash < totalRecords && `${totalRecords - recordsWithHash} records are missing analysisKey - run migration to add hashes`,
         ].filter(Boolean),
         timing: {
           totalDurationMs: durationMs,

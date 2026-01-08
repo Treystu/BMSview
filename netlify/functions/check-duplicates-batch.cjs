@@ -91,9 +91,10 @@ async function batchCheckExistingAnalyses(contentHashes, log, includeData = fals
 
     // Optimization: Use projection if full data is not requested (PR #339)
     // We still need metadata for checkIfNeedsUpgrade to work correctly
+    // FIX: 'history' collection stores hash as 'analysisKey', not 'contentHash'
     const projection = includeData ? {} : {
       _id: 1,
-      contentHash: 1,
+      analysisKey: 1,
       timestamp: 1,
       validationScore: 1,
       extractionAttempts: 1,
@@ -104,8 +105,9 @@ async function batchCheckExistingAnalyses(contentHashes, log, includeData = fals
       _newQuality: 1
     };
 
+    // FIX: Query on 'analysisKey' field - that's what 'history' collection uses
     const existingRecords = await resultsCol.find(
-      { contentHash: { $in: contentHashes } },
+      { analysisKey: { $in: contentHashes } },
       { projection }
     ).toArray();
     const queryDurationMs = Date.now() - queryStartTime;
@@ -123,9 +125,10 @@ async function batchCheckExistingAnalyses(contentHashes, log, includeData = fals
     });
 
     // Convert array to Map for O(1) lookups
+    // FIX: Use 'analysisKey' field - that's what 'history' collection uses
     const resultMap = new Map();
     for (const record of existingRecords) {
-      resultMap.set(record.contentHash, record);
+      resultMap.set(record.analysisKey, record);
     }
 
     return resultMap;

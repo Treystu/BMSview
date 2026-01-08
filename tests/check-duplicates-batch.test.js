@@ -50,11 +50,12 @@ describe('check-duplicates-batch handler', () => {
     });
     checkNeedsUpgrade.mockReturnValue({ needsUpgrade: false });
 
+    // FIX: 'history' collection uses 'analysisKey', not 'contentHash'
     getCollection.mockResolvedValue({
       find: jest.fn(() => ({
         toArray: jest.fn().mockResolvedValue([
           {
-            contentHash: 'hash-good-image',
+            analysisKey: 'hash-good-image',
             _id: 'rec-1',
             timestamp: '2024-01-01T00:00:00Z',
             validationScore: 90,

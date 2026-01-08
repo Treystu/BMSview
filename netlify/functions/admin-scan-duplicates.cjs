@@ -1,14 +1,15 @@
 /**
  * Admin Duplicate Scanner Endpoint
- * 
+ *
  * Scans all analysis records for duplicates using the SAME logic as main app
- * (contentHash-based, not client-side voltage/current keys).
- * 
- * Returns duplicate sets grouped by contentHash, sorted by timestamp.
+ * (analysisKey-based, not client-side voltage/current keys).
+ *
+ * FIX: 'history' collection stores hash as 'analysisKey', not 'contentHash'.
+ * Returns duplicate sets grouped by analysisKey, sorted by timestamp.
  * Earliest record in each set is kept, others marked for deletion.
- * 
+ *
  * This ensures admin duplicate scanner uses UNIFIED backend logic.
- * 
+ *
  * AUTHENTICATION: This endpoint follows the BMSview admin access control pattern.
  * Admin access is controlled at the page level (admin.html) via OAuth.
  * See ADMIN_ACCESS_CONTROL.md for details. No function-level auth checks are performed.
@@ -60,15 +61,16 @@ exports.handler = async (event, context) => {
     const resultsCol = await getCollection('history');
 
     // Use MongoDB aggregation for memory-efficient duplicate detection
-    // This groups records by contentHash and only returns groups with 2+ records
+    // FIX: 'history' collection uses 'analysisKey', not 'contentHash'
+    // This groups records by analysisKey and only returns groups with 2+ records
     log.info('Starting duplicate scan using aggregation pipeline');
 
     const duplicateSets = [];
     const pipeline = [
-      // Group by contentHash, collecting all records in each group
+      // Group by analysisKey (FIX: was incorrectly using contentHash)
       {
         $group: {
-          _id: '$contentHash',
+          _id: '$analysisKey',
           records: {
             $push: {
               id: { $toString: '$_id' },
@@ -84,7 +86,7 @@ exports.handler = async (event, context) => {
       },
       // Only keep groups with 2 or more records (actual duplicates)
       { $match: { count: { $gte: 2 } } },
-      // Sort by contentHash for consistency
+      // Sort by analysisKey for consistency
       { $sort: { _id: 1 } }
     ];
 
@@ -92,18 +94,18 @@ exports.handler = async (event, context) => {
     let totalRecords = 0;
 
     for await (const group of cursor) {
-      if (!group._id) continue; // Skip groups without contentHash
+      if (!group._id) continue; // Skip groups without analysisKey
 
       // Sort records within each group by timestamp (earliest first)
       const sortedRecords = group.records.sort((/** @type {any} */ a, /** @type {any} */ b) =>
         new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
 
-      // Add contentHash to each record for display
+      // Add analysisKey to each record for display (using 'contentHash' key name for backward compatibility)
       const formattedSet = sortedRecords.map((/** @type {any} */ record) => ({
         ...record,
         systemName: record.systemId,
-        contentHash: group._id.substring(0, 16) + '...'
+        contentHash: group._id.substring(0, 16) + '...'  // Keep key name for UI compatibility
       }));
 
       duplicateSets.push(formattedSet);
