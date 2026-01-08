@@ -169,6 +169,31 @@ class IntelligentAssociator {
             }
         }
 
+        // Tier 1.5: Stripped Match (Ignore Dashes)
+        // Solves "JHBC-890" vs "JHB-C890" mismatch caused by normalization heuristics
+        for (const candidateId of candidates) {
+            const strippedCandidate = candidateId.replace(/-/g, '');
+            for (const [knownId, systems] of this.hardwareIdMap.entries()) {
+                if (systems.length !== 1) continue;
+                
+                const strippedKnown = knownId.replace(/-/g, '');
+                if (strippedCandidate === strippedKnown) {
+                    const system = systems[0];
+                    const validation = this.validateMatch(system, record);
+                    
+                    if (validation.valid) {
+                        return { 
+                            systemId: system.id, 
+                            systemName: system.name, 
+                            status: 'matched_stripped', 
+                            matchedId: knownId, // Use the SYSTEM'S normalized ID
+                            reason: `Stripped match (Dash position mismatch)`
+                        };
+                    }
+                }
+            }
+        }
+
         // Tier 2: Fuzzy Match
         // Only run if no strict match
         let bestFuzzy = null;

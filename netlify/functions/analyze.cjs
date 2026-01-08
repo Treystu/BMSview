@@ -82,7 +82,10 @@ async function ensureSystemAssociation(record, log) {
       const resultsCollection = await getCollection(COLLECTIONS.ANALYSIS_RESULTS);
 
       // Use the matched ID (which might be the canonical one from the system, not the raw one)
-      const finalHwId = result.matchedId || normalizeHardwareId(record.hardwareSystemId);
+      // USER REQUEST: Keep the exact data as in the photo as the source of truth.
+      // So, if we have a raw hardwareSystemId from the record, PRESERVE IT.
+      // Only use the matched/normalized ID if the record doesn't have one.
+      const finalHwId = record.hardwareSystemId || result.matchedId || normalizeHardwareId(record.hardwareSystemId);
 
       await historyCollection.updateOne(
         { id: record.id },

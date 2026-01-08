@@ -484,17 +484,30 @@ const SvgChart: React.FC<{
             const segments: { d: string; source: string; color: string }[] = [];
             let currentSegment: any[] = [];
             let currentSource = '';
+            let lastPointOfPrevSegment: any = null; // Track last point to stitch segments
 
-            dataToRender.filter((d: any) => d[key] !== null).forEach((d: any, _: number) => {
+            // Filter nulls first
+            const validData = dataToRender.filter((d: any) => d[key] !== null);
+
+            validData.forEach((d: any, idx: number) => {
                 const pointSource = d.source || 'bms';
 
                 if (currentSource !== pointSource && currentSegment.length > 0) {
                     // Source changed, finish current segment
-                    const pathData = currentSegment.map((p, idx) =>
-                        `${idx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(p[key]).toFixed(2)}`
+                    const pathData = currentSegment.map((p, pIdx) =>
+                        `${pIdx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(p[key]).toFixed(2)}`
                     ).join(' ');
                     segments.push({ d: pathData, source: currentSource, color: METRICS[key].color });
+                    
+                    // Capture last point for stitching
+                    lastPointOfPrevSegment = currentSegment[currentSegment.length - 1];
                     currentSegment = [];
+                }
+
+                // If starting a new segment and we have a previous point, add it as anchor
+                // This ensures visual continuity (no gaps) between different sources
+                if (currentSegment.length === 0 && lastPointOfPrevSegment) {
+                    currentSegment.push(lastPointOfPrevSegment);
                 }
 
                 currentSegment.push(d);
@@ -503,8 +516,8 @@ const SvgChart: React.FC<{
 
             // Add final segment
             if (currentSegment.length > 0) {
-                const pathData = currentSegment.map((p, idx) =>
-                    `${idx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(p[key]).toFixed(2)}`
+                const pathData = currentSegment.map((p, pIdx) =>
+                    `${pIdx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(p[key]).toFixed(2)}`
                 ).join(' ');
                 segments.push({ d: pathData, source: currentSource, color: METRICS[key].color });
             }

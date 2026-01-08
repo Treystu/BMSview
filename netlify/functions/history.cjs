@@ -268,11 +268,11 @@ exports.handler = async function (event, context) {
                     log.info('Fetching ALL history records', logContext);
                 }
 
-                // LIMIT to 500 and sort by updatedAt ASC to allow incremental processing
-                // without hitting Netlify response limits (6MB) or timeouts.
+                // USER REQUEST: "all=all" (No limit).
+                // WARNING: Large datasets may hit Netlify 6MB response limit or 10s timeout.
+                // The frontend SyncManager must handle pagination if this fails, but for now we obey the "all" directive.
                 const allHistory = await historyCollection.find(query, { projection: { _id: 0 } })
                     .sort({ updatedAt: 1 })
-                    .limit(500)
                     .toArray();
 
                 timer.end({ all: true, incremental: !!updatedSince, count: allHistory.length });
