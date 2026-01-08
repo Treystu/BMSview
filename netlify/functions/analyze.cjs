@@ -589,6 +589,71 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
     // Ensure Hardware ID-based association for new/updated record before persisting responses
     record = await ensureSystemAssociation(record, log);
 
+    // --- POST-ANALYSIS DEDUPLICATION (Safety Net) ---
+    // If the image hash was new (so we ran analysis), we might STILL have a "Functional Duplicate"
+    // (e.g. same System + same Timestamp + same SOC, but different screenshot file).
+    // If so, we should link this new file hash to the OLD record and discard the new record data to avoid DB clutter.
+    try {
+      if (record.systemId && record.timestamp) {
+        const historyCol = await getCollection(COLLECTIONS.HISTORY);
+        const resultsCol = await getCollection(COLLECTIONS.ANALYSIS_RESULTS);
+        
+        // Look for existing record with same System + Time (Minute precision)
+        const date = new Date(record.timestamp);
+        date.setSeconds(0, 0);
+        const timeStart = date.toISOString();
+        const timeEnd = new Date(date.getTime() + 60000).toISOString();
+
+        const functionalDup = await historyCol.findOne({
+          systemId: record.systemId,
+          timestamp: { $gte: timeStart, $lt: timeEnd },
+          id: { $ne: record.id } // Don't find self
+        });
+
+        if (functionalDup) {
+          log.info('Functional Duplicate Detected (Post-Analysis)', {
+            newRecordId: record.id,
+            existingRecordId: functionalDup.id,
+            systemId: record.systemId,
+            timestamp: record.timestamp
+          });
+
+          // 1. Update the EXISTING record to include the NEW contentHash (if possible)
+          // Actually, we can't easily have multiple hashes per record in the current schema without an array.
+          // But we CAN update the 'analysis-results' collection to point the NEW hash to the OLD record ID.
+          // This ensures future uploads of this file hit the OLD record.
+          
+          if (contentHash) {
+             // Upsert result to point contentHash -> functionalDup.id
+             await resultsCol.updateOne(
+               { contentHash },
+               { 
+                 $set: { 
+                   id: functionalDup.id, // Point to OLD ID
+                   // Copy other metadata from old record if needed, or keep new analysis?
+                   // Let's keep the NEW analysis if it's better?
+                   // For now, just linking the ID is the key.
+                   updatedAt: new Date()
+                 }
+               },
+               { upsert: true }
+             );
+             
+             log.info('Redirected new contentHash to existing record', { contentHash, targetId: functionalDup.id });
+             
+             // 2. Return the EXISTING record to the client
+             record = {
+               ...functionalDup,
+               isDuplicate: true,
+               _functionalDuplicate: true
+             };
+          }
+        }
+      }
+    } catch (postDedupeError) {
+      log.warn('Post-analysis deduplication failed', { error: postDedupeError.message });
+    }
+
     // Validate analysis result
     if (!record || !record.analysis) {
       throw new Error('Analysis pipeline returned invalid result');

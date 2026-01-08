@@ -782,7 +782,9 @@ exports.handler = async function (event, context) {
             // --- Normalize IDs & Aggressive Cleanup Action ---
             if (action === 'normalize-ids') {
                 log.info('Starting normalization and cleanup task');
-                const { limit = 5000 } = parsedBody; // Increased limit for full sweep
+                // USER REQUEST: "Work across the entire database".
+                // Override any frontend limit. Use 0 (unlimited) or a very high number.
+                const limit = 100000; 
                 const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
 
                 // 1. Fetch records
