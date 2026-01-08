@@ -353,8 +353,9 @@ exports.handler = async function (event, context) {
                 const MAX_EXECUTION_TIME = 15000;
                 let timeoutReached = false;
 
-                // Helper for normalization
-                const normalizeId = (id) => id ? id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : null;
+                // Import Unified Logic
+                const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
+                const { IntelligentAssociator } = require('./utils/intelligent-associator.cjs');
 
                 // Fetch all systems first (needed for cleanup and association)
                 const systems = await systemsCollection.find({}).toArray();
@@ -375,6 +376,36 @@ exports.handler = async function (event, context) {
                         log.info(`Cleaned up ${orphansCleaned} orphaned records (invalid systemId -> null).`);
                     }
                 }
+
+                // --- PHASE 0.5: Pre-calculate System Stats for Semantic Validation ---
+                // We need avg voltage and last SOC for the "Intelligent" check
+                log.info('Phase 0.5: Building System Context for Semantic Validation...');
+                const systemStats = {};
+                
+                // Aggregation to get Avg Voltage and Last Record per system
+                const statsAgg = await historyCollection.aggregate([
+                    { $match: { systemId: { $in: allSystemIds } } },
+                    { $sort: { timestamp: 1 } },
+                    {
+                        $group: {
+                            _id: "$systemId",
+                            avgVoltage: { $avg: "$analysis.overallVoltage" },
+                            lastSoc: { $last: "$analysis.stateOfCharge" },
+                            lastTimestamp: { $last: "$timestamp" }
+                        }
+                    }
+                ]).toArray();
+
+                statsAgg.forEach(stat => {
+                    systemStats[stat._id] = {
+                        avgVoltage: stat.avgVoltage,
+                        lastSoc: stat.lastSoc,
+                        lastTimestamp: stat.lastTimestamp
+                    };
+                });
+
+                // Initialize Intelligent Associator
+                const associator = new IntelligentAssociator(systems, systemStats);
 
                 // --- PHASE 1: Learn from existing links (Self-Healing) ---
                 // Find all records that ARE linked but have IDs not yet in the system definition
@@ -405,10 +436,6 @@ exports.handler = async function (event, context) {
 
                 let systemsUpdatedCount = 0;
                 const systemUpdateBulkOps = [];
-
-                // Fetch all systems for comparison (Already fetched in Phase 0)
-                // const systems = await systemsCollection.find({}).toArray();
-                // const systemMap = new Map(systems.map(s => [s.id, s]));
 
                 for (const group of linkedIdAggregation) {
                     const systemId = group._id;
@@ -452,45 +479,20 @@ exports.handler = async function (event, context) {
                     await systemsCollection.bulkWrite(systemUpdateBulkOps);
                 }
 
-                // --- PHASE 2: Standard Auto-Association ---
-                log.info('Phase 2: Running auto-association with updated system definitions...');
+                // --- PHASE 2: Intelligent Auto-Association ---
+                log.info('Phase 2: Running intelligent auto-association...');
                 let debugInfo = {
                     orphansCleaned,
                     phase1Updates: systemUpdateBulkOps.length,
                     systemsLoaded: systems.length,
-                    mapEntries: 0,
+                    mapEntries: associator.hardwareIdMap.size,
                     unlinkedFound: 0,
                     unmatchableCount: 0,
-                    sampleFailures: []
+                    sampleFailures: [],
+                    newCandidatesFound: 0
                 };
 
-                const hardwareIdMap = new Map(); // Map normalized ID -> array of system objects
-
-                // Re-process systems (using updated memory objects)
-                systems.forEach(s => {
-                    const allIds = new Set([
-                        s.id, // Explicitly include the System ID itself as a match target
-                        ...(s.associatedDLs || []),
-                        ...(s.associatedHardwareIds || []) // Include alias
-                    ]);
-
-                    allIds.forEach(rawId => {
-                        const normId = normalizeId(rawId);
-                        if (normId) {
-                            if (!hardwareIdMap.has(normId)) hardwareIdMap.set(normId, []);
-                            // Prevent duplicates in map if dlNumber and hardwareSystemId overlap
-                            const existing = hardwareIdMap.get(normId);
-                            if (!existing.some(ex => ex.id === s.id)) {
-                                existing.push({ id: s.id, name: s.name });
-                            }
-                        }
-                    });
-                });
-
                 // Get stats on unmatchable records first
-                // Updated logic: Include records where fields are empty string '' as unmatchable
-                // Get stats on unmatchable records first
-                // Updated logic: Include records where fields are empty string '' as unmatchable
                 const stats = await historyCollection.aggregate([
                     { $match: { systemId: null } },
                     {
@@ -520,7 +522,6 @@ exports.handler = async function (event, context) {
                 ]).toArray();
 
                 debugInfo.unmatchableCount = stats[0]?.unmatchable || 0;
-                const totalUnlinked = stats[0]?.totalUnlinked || 0;
 
                 const unlinkedCursor = historyCollection.find({
                     $or: [{ systemId: null }, { systemId: '' }],
@@ -540,6 +541,7 @@ exports.handler = async function (event, context) {
                 let processedCount = 0;
                 let ambiguousCount = 0;
                 const bulkOps = [];
+                let newCandidatesCount = 0;
 
                 for await (const record of unlinkedCursor) {
                     if (Date.now() - startTime > MAX_EXECUTION_TIME) {
@@ -549,99 +551,60 @@ exports.handler = async function (event, context) {
                     }
                     processedCount++;
 
-                    // Try to extract a valid ID from the record (checking root AND nested fields)
-                    // Try to extract a valid ID from the record (checking root AND nested fields)
-                    // CRITICAL FIX: Check ALL potential valid IDs, don't just take the first one.
-                    // This allows later fields (like dlNumber) to find a match even if earlier fields (like hardwareSystemId) are present but unmatchable.
-                    const candidates = new Set([
-                        normalizeId(record.hardwareSystemId),
-                        normalizeId(record.dlNumber),
-                        normalizeId(record.analysis?.hardwareSystemId),
-                        normalizeId(record.analysis?.dlNumber)
-                    ].filter(id => id && id !== 'UNKNOWN' && id !== 'NULL'));
+                    // Use Intelligent Associator
+                    const result = associator.findMatch(record);
 
-                    let matchedSystem = null;
-                    let matchFound = false;
-                    let matchingId = null;
-
-                    // Check all candidates for a system match
-                    for (const candidateId of candidates) {
-                        const potentialSystems = hardwareIdMap.get(candidateId);
-                        if (potentialSystems && potentialSystems.length === 1) {
-                            const sys = potentialSystems[0];
-                            if (!matchedSystem) {
-                                matchedSystem = sys;
-                                matchingId = candidateId;
-                                matchFound = true;
-                            } else if (matchedSystem.id !== sys.id) {
-                                // Ambiguity: Different fields on this record point to DIFFERENT systems
-                                matchedSystem = null;
-                                matchFound = false;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (matchFound && matchedSystem) {
+                    if (result.systemId) {
+                        // Match Found (Strict or Fuzzy)
+                        const matchedSystem = systemMap.get(result.systemId);
+                        
                         bulkOps.push({
                             updateOne: {
-                                filter: { _id: record._id }, // Use _id for bulk ops
+                                filter: { _id: record._id },
                                 update: {
                                     $set: {
                                         systemId: matchedSystem.id,
                                         systemName: matchedSystem.name,
-                                        // Ensure standard fields are populated (lifting nested ID to root)
-                                        // Use the ID that actually matched
-                                        hardwareSystemId: record.hardwareSystemId || matchingId,
-                                        dlNumber: record.dlNumber || matchingId,
-                                        updatedAt: new Date().toISOString()
+                                        // Update standard fields with the MATCHED ID
+                                        hardwareSystemId: record.hardwareSystemId || result.matchedId,
+                                        dlNumber: record.dlNumber || result.matchedId,
+                                        updatedAt: new Date().toISOString(),
+                                        // Store fuzzy match info if applicable
+                                        _matchType: result.status,
+                                        _matchReason: result.reason
                                     }
                                 }
                             }
                         });
                         associatedCount++;
-                        if (bulkOps.length >= 500) { // Process in batches
+                        if (bulkOps.length >= 500) {
                             await historyCollection.bulkWrite(bulkOps, { ordered: false });
-                            bulkOps.length = 0; // Clear the array
-                            log.debug('Processed auto-associate batch', { action, count: 500 });
+                            bulkOps.length = 0;
                         }
-                    } else if (candidates.size > 0 && !matchedSystem) {
-                        // If we had candidates but no match (or ambiguous), log failure
-                        const candidateArray = Array.from(candidates);
-                        // Check if it was ambiguous (multiple systems found) or just no match
-                        let isAmbiguous = false;
-                        // re-scan to check for multiple system matches strictly for logging
-                        const systemsFound = new Set();
-                        for (const cid of candidates) {
-                            const ps = hardwareIdMap.get(cid);
-                            if (ps) ps.forEach(s => systemsFound.add(s.id));
+                    } else {
+                        // No Match (Ambiguous, Rejected, or New Candidate)
+                        if (result.status === 'ambiguous') {
+                            ambiguousCount++;
+                        } else if (result.isNewCandidate) {
+                            newCandidatesCount++;
+                            // Optional: Flag as new candidate in DB if we want to surface it in UI
+                            // For now, just logging it to debugInfo
                         }
 
-                        if (systemsFound.size > 1) {
-                            ambiguousCount++;
-                            if (debugInfo.sampleFailures.length < 50) {
-                                debugInfo.sampleFailures.push({
-                                    reason: 'ambiguous_multi_field',
-                                    candidates: candidateArray,
-                                    systems: Array.from(systemsFound)
-                                });
-                            }
-                        } else {
-                            // No match found for any candidate
-                            if (debugInfo.sampleFailures.length < 50) {
-                                debugInfo.sampleFailures.push({
-                                    reason: 'no_match',
-                                    candidates: candidateArray,
-                                    recordId: record.id
-                                });
-                            }
+                        if (debugInfo.sampleFailures.length < 50) {
+                            debugInfo.sampleFailures.push({
+                                recordId: record.id,
+                                status: result.status,
+                                reason: result.reason,
+                                candidates: result.candidateIds
+                            });
                         }
                     }
                 }
 
                 debugInfo.unlinkedFound = processedCount;
                 debugInfo.associated = associatedCount;
-                debugInfo.mapEntries = hardwareIdMap.size;
+                debugInfo.newCandidatesFound = newCandidatesCount;
 
                 if (bulkOps.length > 0) {
                     await historyCollection.bulkWrite(bulkOps, { ordered: false });
@@ -659,6 +622,9 @@ exports.handler = async function (event, context) {
                 }
                 if (debugInfo.unmatchableCount > 0) {
                     message += ` (Unmatchable: ${debugInfo.unmatchableCount})`;
+                }
+                if (newCandidatesCount > 0) {
+                    message += ` (New Candidates: ${newCandidatesCount})`;
                 }
 
                 if (systemsUpdatedCount > 0) {

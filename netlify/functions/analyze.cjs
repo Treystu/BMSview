@@ -47,21 +47,13 @@ const {
   findDuplicateByHash,
   checkNeedsUpgrade
 } = require('./utils/unified-deduplication.cjs');
-
-/**
- * Normalize a Hardware ID for comparison
- * @param {string | null | undefined} id
- * @returns {string | null}
- */
-function normalizeHardwareId(id) {
-  if (!id || typeof id !== 'string') return null;
-  // Remove non-alphanumeric and uppercase
-  return id.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-}
+// Import unified logic from analysis-helpers and intelligent-associator
+const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
+const { IntelligentAssociator } = require('./utils/intelligent-associator.cjs');
 
 /**
  * Ensure a record is linked to a system using Hardware ID if unlinked.
- * It only links when exactly one system matches the Hardware ID.
+ * Uses IntelligentAssociator for robust matching (Strict -> Fuzzy -> Semantic).
  * @param {any} record - Analysis or history record
  * @param {any} log - Logger
  * @returns {Promise<any>} Updated record (or original if unchanged)
@@ -70,61 +62,70 @@ async function ensureSystemAssociation(record, log) {
   try {
     if (!record || record.systemId) return record;
 
-    const rawId = record.hardwareSystemId || record.analysis?.hardwareSystemId || record.dlNumber || record.analysis?.dlNumber || null;
-    const hardwareId = normalizeHardwareId(rawId);
-    if (!hardwareId || hardwareId === 'UNKNOWN') {
-      return record;
-    }
-
+    // Use IntelligentAssociator logic
     const systemsCollection = await getCollection(COLLECTIONS.SYSTEMS);
     const systems = await systemsCollection.find({}).toArray();
+    
+    // We need limited stats for semantic validation (optional but good)
+    // For immediate analysis, we might not have full stats handy, so we pass empty stats
+    // or we could do a quick aggregation if latency permits. 
+    // For now, let's trust the Associator's fuzzy/strict logic primarily.
+    const associator = new IntelligentAssociator(systems, {});
+    
+    const result = associator.findMatch(record);
 
-    const matches = systems.filter((s) =>
-    (
-      s.id === hardwareId ||
-      (s.associatedHardwareIds || s.associatedDLs || []).some((id) => normalizeHardwareId(/** @type {string} */(id)) === hardwareId)
-    )
-    );
+    if (result.systemId) {
+      const system = systems.find(s => s.id === result.systemId);
+      if (!system) return record; // Should not happen given result.systemId comes from systems
 
-    if (matches.length !== 1) {
-      if (matches.length > 1) {
-        log.warn('Auto-association skipped due to multiple matches', { hardwareId, matchCount: matches.length, matchingSystemIds: matches.map(s => s.id) });
-      } else {
-        log.info('Auto-association: No matching system found', { hardwareId });
-      }
+      const historyCollection = await getCollection(COLLECTIONS.HISTORY);
+      const resultsCollection = await getCollection(COLLECTIONS.ANALYSIS_RESULTS);
+
+      // Use the matched ID (which might be the canonical one from the system, not the raw one)
+      const finalHwId = result.matchedId || normalizeHardwareId(record.hardwareSystemId);
+
+      await historyCollection.updateOne(
+        { id: record.id },
+        { 
+          $set: { 
+            systemId: system.id, 
+            systemName: system.name, 
+            hardwareSystemId: finalHwId, 
+            dlNumber: finalHwId 
+          } 
+        }
+      );
+
+      await resultsCollection.updateOne(
+        { id: record.id },
+        { $set: { systemId: system.id, systemName: system.name } }
+      );
+
+      const updated = {
+        ...record,
+        systemId: system.id,
+        systemName: system.name,
+        hardwareSystemId: finalHwId,
+        dlNumber: finalHwId
+      };
+
+      log.info('Auto-associated record using Intelligent Associator', {
+        recordId: record.id,
+        status: result.status,
+        reason: result.reason,
+        systemId: system.id,
+        systemName: system.name
+      });
+
+      return updated;
+    } else {
+      log.info('Auto-association: No matching system found', { 
+        status: result.status, 
+        reason: result.reason,
+        isNewCandidate: result.isNewCandidate 
+      });
       return record;
     }
-
-    const system = matches[0];
-    const historyCollection = await getCollection(COLLECTIONS.HISTORY);
-    const resultsCollection = await getCollection(COLLECTIONS.ANALYSIS_RESULTS);
-
-    await historyCollection.updateOne(
-      { id: record.id },
-      { $set: { systemId: system.id, systemName: system.name, hardwareSystemId: rawId || hardwareId, dlNumber: rawId || hardwareId } }
-    );
-
-    await resultsCollection.updateOne(
-      { id: record.id },
-      { $set: { systemId: system.id, systemName: system.name } }
-    );
-
-    const updated = {
-      ...record,
-      systemId: system.id,
-      systemName: system.name,
-      hardwareSystemId: rawId || hardwareId,
-      dlNumber: rawId || hardwareId // Strict mirroring per DATA_MODEL.md
-    };
-
-    log.info('Auto-associated record using Hardware ID match', {
-      recordId: record.id,
-      hardwareId,
-      systemId: system.id,
-      systemName: system.name
-    });
-
-    return updated;
   } catch (error) {
     const err = /** @type {any} */ (error);
     log.warn('Failed to auto-associate record by Hardware ID', { error: err?.message, recordId: record?.id });

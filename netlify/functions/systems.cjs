@@ -4,6 +4,8 @@ const { getCollection } = require("./utils/mongodb.cjs");
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+// Unified Normalizer
+const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
 
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
@@ -161,7 +163,11 @@ exports.handler = async function (event, context) {
                 const idsToDelete = idsToMerge.filter(id => id !== primarySystemId);
                 // UNIFIED: Merge all hardware IDs from both fields (associatedHardwareIds is source of truth)
                 const allHardwareIdsToMerge = systemsToMerge.flatMap(s => s.associatedHardwareIds || s.associatedDLs || []);
-                const mergedHardwareIds = [...new Set([...(primarySystem.associatedHardwareIds || primarySystem.associatedDLs || []), ...allHardwareIdsToMerge])];
+                // Normalize during merge
+                const mergedHardwareIds = [...new Set([...(primarySystem.associatedHardwareIds || primarySystem.associatedDLs || []), ...allHardwareIdsToMerge])]
+                    .map(id => normalizeHardwareId(id))
+                    .filter(id => id && id !== 'UNKNOWN');
+
                 primarySystem.associatedHardwareIds = mergedHardwareIds;
                 primarySystem.associatedDLs = mergedHardwareIds; // Keep in sync for backward compat
 
@@ -261,7 +267,10 @@ exports.handler = async function (event, context) {
             try {
                 const validatedSystem = SystemSchema.parse(parsedBody);
                 // Ensure backward compatibility: Sync associatedHardwareIds -> associatedDLs
-                const dls = validatedSystem.associatedHardwareIds || validatedSystem.associatedDLs || [];
+                let dls = validatedSystem.associatedHardwareIds || validatedSystem.associatedDLs || [];
+                
+                // UNIFIED: Normalize incoming IDs immediately
+                dls = dls.map(id => normalizeHardwareId(id)).filter(id => id && id !== 'UNKNOWN');
 
                 const newSystem = {
                     ...validatedSystem,
@@ -336,7 +345,13 @@ exports.handler = async function (event, context) {
                 }
                 // If both provided, prefer hardwareIds? Or assume they match? Let's sync them.
                 if (validatedUpdate.associatedHardwareIds) {
-                    validatedUpdate.associatedDLs = validatedUpdate.associatedHardwareIds;
+                    // UNIFIED: Normalize on update
+                    const normIds = validatedUpdate.associatedHardwareIds
+                        .map(hid => normalizeHardwareId(hid))
+                        .filter(hid => hid && hid !== 'UNKNOWN');
+                        
+                    validatedUpdate.associatedHardwareIds = normIds;
+                    validatedUpdate.associatedDLs = normIds;
                 }
 
                 const result = await systemsCollection.updateOne({ id: systemId }, { $set: validatedUpdate });

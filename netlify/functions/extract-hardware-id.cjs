@@ -11,7 +11,10 @@
  * - Variations of the above.
  */
 
-// Constants for Hardware ID validation
+// Import the canonical normalizer from analysis-helpers
+const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
+
+// Constants for Hardware ID validation (kept for regex usage reference, but normalization logic is now centralized)
 const MIN_ID_DIGITS = 5;
 const MAX_ID_DIGITS = 14;
 
@@ -30,27 +33,6 @@ const hardwareIdRegexes = [
     // STRICT: S/N label (common alternative)
     new RegExp(`\\bS\\/N[\\s:-]+([A-Z0-9-]{5,})`, 'gi')
 ];
-
-/**
- * Normalizes a raw Hardware System ID string.
- * Removes spaces, special chars, and uppercases.
- * @param {string} raw - The raw extracted string.
- * @returns {string|null} - Normalized ID or null if invalid.
- */
-function normalizeHardwareId(raw) {
-    if (!raw) return null;
-    // Strip everything non-alphanumeric (allowing hyphens) to be safe and consistent.
-    // We only remove characters that are definitely not part of an ID.
-    const normalized = raw.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase();
-
-    // Remove leading/trailing hyphens
-    const clean = normalized.replace(/^-+|-+$/g, '');
-
-    if (clean.length < MIN_ID_DIGITS || clean.length > MAX_ID_DIGITS) {
-        return null;
-    }
-    return clean;
-}
 
 /**
  * Extracts possible Hardware System IDs from a text block.
@@ -73,8 +55,10 @@ function extractHardwareSystemId(text, log = console.log) {
         let match;
         while ((match = regex.exec(text)) !== null) {
             const rawId = match[1];
+            // Use the centralized normalizer
             const normalized = normalizeHardwareId(rawId);
-            if (normalized) {
+            // Check against UNKNOWN/NULL which the normalizer returns for bad input
+            if (normalized && normalized !== 'UNKNOWN') {
                 candidates.add(normalized);
                 logDebug(`Found Hardware ID candidate: ${normalized} (raw: ${rawId})`);
             } else {
@@ -105,7 +89,7 @@ function extractHardwareSystemId(text, log = console.log) {
 
 module.exports = {
     extractHardwareSystemId,
-    normalizeHardwareId,
-    MIN_ID_DIGITS, // constants exported for backward compat if needed
+    normalizeHardwareId, // Re-export the imported one
+    MIN_ID_DIGITS,
     MAX_ID_DIGITS
 };
