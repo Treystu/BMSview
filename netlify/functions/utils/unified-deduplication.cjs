@@ -755,6 +755,218 @@ async function checkExistingAnalysis(contentHash, log, fileName = null) {
   }
 }
 
+/**
+ * Batch check for existing analyses by content hash with legacy filename fallback
+ * 
+ * **Unified Batch Processing Logic**
+ * Handles both fast hash lookups and slow legacy recovery with dual-write backfill.
+ * 
+ * @param {Array<{fileName: string, contentHash: string}>} validHashEntries - Array of { fileName, contentHash } objects
+ * @param {import('./jsdoc-types.cjs').LogLike} log - Logger instance
+ * @param {boolean} [includeData=false] - Whether to include full record data (PR #339)
+ * @returns {Promise<Map<string, any>>} Map of contentHash -> existing record
+ */
+async function batchCheckExistingAnalyses(validHashEntries, log, includeData = false) {
+  const startTime = Date.now();
+  // Extract just the hashes for the primary query
+  const contentHashes = validHashEntries.map(e => e.contentHash);
+
+  try {
+    const collectionStartTime = Date.now();
+    // CRITICAL FIX: Use 'history' collection, NOT 'analysis-results'
+    // Records are saved to 'history', so duplicate detection must check there
+    // The 'analysis-results' collection was not being populated, causing missed duplicates
+    const resultsCol = await getCollection('history');
+    
+    // For dual-write backfill
+    const analysisResultsCol = await getCollection('analysis-results');
+    
+    const collectionDurationMs = Date.now() - collectionStartTime;
+
+    // Use $in query to fetch all matching records in one go
+    const queryStartTime = Date.now();
+
+    // Optimization: Use projection if full data is not requested (PR #339)
+    // We still need metadata for checkIfNeedsUpgrade to work correctly
+    // FIX: 'history' collection stores hash as 'analysisKey', not 'contentHash'
+    const projection = includeData ? {} : {
+      _id: 1,
+      analysisKey: 1,
+      timestamp: 1,
+      fileName: 1, // Needed for legacy matching
+      validationScore: 1,
+      extractionAttempts: 1,
+      isComplete: 1,
+      analysis: 1, // We fetch the analysis object but it's much smaller than rawOutput or images if stored
+      _wasUpgraded: 1,
+      _previousQuality: 1,
+      _newQuality: 1
+    };
+
+    // FIX: Query on 'analysisKey' field - that's what 'history' collection uses
+    const existingRecords = await resultsCol.find(
+      { analysisKey: { $in: contentHashes } },
+      { projection }
+    ).toArray();
+
+    // -------------------------------------------------------------------------
+    // LEGACY RECOVERY: Fallback to filename matching for items not found by hash
+    // -------------------------------------------------------------------------
+    const foundHashes = new Set(existingRecords.map(r => r.analysisKey));
+    const missingEntries = validHashEntries.filter(e => !foundHashes.has(e.contentHash));
+
+    let recoveredCount = 0;
+    
+    if (missingEntries.length > 0) {
+      const legacyStartTime = Date.now();
+      const missingFileNames = missingEntries.map(e => e.fileName);
+      
+      // Find potential legacy records by filename
+      // Note: Filenames might not be unique globally, but within a batch context/source of truth re-upload,
+      // it's a strong signal. Ideally we'd check timestamps too but we don't have them in hash-only mode.
+      const legacyMatches = await resultsCol.find(
+        { 
+          fileName: { $in: missingFileNames },
+          analysisKey: { $exists: false } // Only match records that DON'T have a hash yet (true legacy)
+        },
+        { projection }
+      ).toArray();
+
+      if (legacyMatches.length > 0) {
+        log.info('Batch duplicate check: Found potential legacy records by filename', {
+          count: legacyMatches.length,
+          totalMissing: missingEntries.length
+        });
+
+        // Prepare bulk update to backfill hashes
+        const historyBulkOps = [];
+        const resultsBulkOps = [];
+        
+        for (const match of legacyMatches) {
+          // Find which input entry corresponds to this legacy record
+          // Note: If multiple inputs have same filename, this might pick one. 
+          // But inputs are unique by file instance usually.
+          const entry = missingEntries.find(e => e.fileName === match.fileName);
+          
+          if (entry) {
+            // MATCH FOUND!
+            // 1. Add to existingRecords (as if we found it by hash)
+            // We must inject the analysisKey so the map below works
+            match.analysisKey = entry.contentHash; 
+            existingRecords.push(match);
+            recoveredCount++;
+
+            const updateData = { 
+              analysisKey: entry.contentHash, 
+              contentHash: entry.contentHash, 
+              updatedAt: new Date() 
+            };
+
+            // 2. Queue backfill operation for HISTORY
+            historyBulkOps.push({
+              updateOne: {
+                filter: { _id: match._id },
+                update: { $set: updateData }
+              }
+            });
+
+            // 3. Queue upsert/backfill operation for ANALYSIS-RESULTS
+            // We need to mirror the record to analysis-results to ensure consistency
+            // The match object from 'history' has _id, analysis, timestamp, fileName etc.
+            // We need to map it to analysis-results schema (which uses 'id' string primarily, not _id ObjectId)
+            // match.id is likely the string ID.
+            if (match.id) {
+                const resultRecord = {
+                    id: match.id,
+                    contentHash: entry.contentHash,
+                    fileName: match.fileName,
+                    timestamp: match.timestamp,
+                    analysis: match.analysis,
+                    updatedAt: new Date(),
+                    // Carry over other fields if present
+                    validationScore: match.validationScore || 100,
+                    systemId: match.systemId || match.analysis?.systemId
+                };
+
+                resultsBulkOps.push({
+                    updateOne: {
+                        filter: { id: match.id },
+                        update: { $set: resultRecord },
+                        upsert: true
+                    }
+                });
+            }
+          }
+        }
+
+        // Execute backfill for HISTORY
+        if (historyBulkOps.length > 0) {
+          try {
+            const bulkWriteResult = await resultsCol.bulkWrite(historyBulkOps, { ordered: false });
+            log.info('Batch duplicate check: Backfilled hashes for legacy records (HISTORY)', {
+              matched: bulkWriteResult.matchedCount,
+              modified: bulkWriteResult.modifiedCount,
+              durationMs: Date.now() - legacyStartTime
+            });
+          } catch (writeError) {
+            log.warn('Batch duplicate check: Failed to backfill hashes (HISTORY)', { error: writeError.message });
+          }
+        }
+
+        // Execute backfill for ANALYSIS-RESULTS
+        if (resultsBulkOps.length > 0) {
+            try {
+              const bulkWriteResult = await analysisResultsCol.bulkWrite(resultsBulkOps, { ordered: false });
+              log.info('Batch duplicate check: Backfilled hashes for legacy records (ANALYSIS-RESULTS)', {
+                matched: bulkWriteResult.matchedCount,
+                modified: bulkWriteResult.modifiedCount,
+                upserted: bulkWriteResult.upsertedCount,
+                durationMs: Date.now() - legacyStartTime
+              });
+            } catch (writeError) {
+              log.warn('Batch duplicate check: Failed to backfill hashes (ANALYSIS-RESULTS)', { error: writeError.message });
+            }
+          }
+      }
+    }
+
+    const queryDurationMs = Date.now() - queryStartTime;
+    const totalDurationMs = Date.now() - startTime;
+
+    log.info('Batch duplicate check complete', {
+      requestedCount: contentHashes.length,
+      foundCount: existingRecords.length,
+      legacyRecovered: recoveredCount,
+      collectionDurationMs,
+      queryDurationMs,
+      totalDurationMs,
+      avgPerHashMs: (totalDurationMs / contentHashes.length).toFixed(2),
+      event: 'BATCH_CHECK_COMPLETE'
+    });
+
+    // Convert array to Map for O(1) lookups
+    // FIX: Use 'analysisKey' field - that's what 'history' collection uses
+    const resultMap = new Map();
+    for (const record of existingRecords) {
+      if (record.analysisKey) {
+        resultMap.set(record.analysisKey, record);
+      }
+    }
+
+    return resultMap;
+  } catch (error) {
+    const totalDurationMs = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log.error('Batch duplicate check failed', {
+      error: errorMessage,
+      hashCount: contentHashes.length,
+      totalDurationMs,
+      event: 'BATCH_CHECK_ERROR'
+    });
+    throw error;
+  }
+}
+
 module.exports = {
   // ============================================
   // Image Hashing
@@ -794,6 +1006,12 @@ module.exports = {
    * Use this when checking for duplicates before analysis
    */
   checkExistingAnalysis,
+
+  /**
+   * batchCheckExistingAnalyses: Batch check with Legacy Fallback and Dual-Write Backfill
+   * Use this for bulk upload duplicate checking
+   */
+  batchCheckExistingAnalyses,
 
   /**
    * checkNeedsUpgrade: Determine if record needs quality upgrade

@@ -41,7 +41,7 @@ try {
   ({ getCorsHeaders } = require('./utils/cors.cjs'));
   ({ createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs'));
   // Use unified deduplication module as canonical source
-  ({ calculateImageHash, checkNeedsUpgrade, formatHashPreview } = require('./utils/unified-deduplication.cjs'));
+  ({ calculateImageHash, checkNeedsUpgrade, formatHashPreview, batchCheckExistingAnalyses } = require('./utils/unified-deduplication.cjs'));
 } catch (e) {
   const initException = e instanceof Error ? e : new Error(String(e));
   initError = initException;
@@ -67,83 +67,6 @@ const formatFileNameForLog = (file, index) => file?.fileName || `file-${index}`;
 
 // Shared constant for hash validation (SHA-256 produces 64 hex characters)
 const VALID_HASH_REGEX = /^[a-f0-9]{64}$/i;
-
-/**
- * Batch check for existing analyses by content hash
- * @param {string[]} contentHashes - Array of content hashes to check
- * @param {import('./utils/jsdoc-types.cjs').LogLike} log - Logger instance
- * @param {boolean} [includeData=false] - Whether to include full record data (PR #339)
- * @returns {Promise<Map<string, any>>} Map of contentHash -> existing record
- */
-async function batchCheckExistingAnalyses(contentHashes, log, includeData = false) {
-  const startTime = Date.now();
-
-  try {
-    const collectionStartTime = Date.now();
-    // CRITICAL FIX: Use 'history' collection, NOT 'analysis-results'
-    // Records are saved to 'history', so duplicate detection must check there
-    // The 'analysis-results' collection was not being populated, causing missed duplicates
-    const resultsCol = await getCollection('history');
-    const collectionDurationMs = Date.now() - collectionStartTime;
-
-    // Use $in query to fetch all matching records in one go
-    const queryStartTime = Date.now();
-
-    // Optimization: Use projection if full data is not requested (PR #339)
-    // We still need metadata for checkIfNeedsUpgrade to work correctly
-    // FIX: 'history' collection stores hash as 'analysisKey', not 'contentHash'
-    const projection = includeData ? {} : {
-      _id: 1,
-      analysisKey: 1,
-      timestamp: 1,
-      validationScore: 1,
-      extractionAttempts: 1,
-      isComplete: 1,
-      analysis: 1, // We fetch the analysis object but it's much smaller than rawOutput or images if stored
-      _wasUpgraded: 1,
-      _previousQuality: 1,
-      _newQuality: 1
-    };
-
-    // FIX: Query on 'analysisKey' field - that's what 'history' collection uses
-    const existingRecords = await resultsCol.find(
-      { analysisKey: { $in: contentHashes } },
-      { projection }
-    ).toArray();
-    const queryDurationMs = Date.now() - queryStartTime;
-
-    const totalDurationMs = Date.now() - startTime;
-
-    log.info('Batch duplicate check complete', {
-      requestedCount: contentHashes.length,
-      foundCount: existingRecords.length,
-      collectionDurationMs,
-      queryDurationMs,
-      totalDurationMs,
-      avgPerHashMs: (totalDurationMs / contentHashes.length).toFixed(2),
-      event: 'BATCH_CHECK_COMPLETE'
-    });
-
-    // Convert array to Map for O(1) lookups
-    // FIX: Use 'analysisKey' field - that's what 'history' collection uses
-    const resultMap = new Map();
-    for (const record of existingRecords) {
-      resultMap.set(record.analysisKey, record);
-    }
-
-    return resultMap;
-  } catch (error) {
-    const totalDurationMs = Date.now() - startTime;
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    log.error('Batch duplicate check failed', {
-      error: errorMessage,
-      hashCount: contentHashes.length,
-      totalDurationMs,
-      event: 'BATCH_CHECK_ERROR'
-    });
-    throw error;
-  }
-}
 
 /**
  * Determine if an existing record needs upgrade using unified deduplication
@@ -444,12 +367,11 @@ exports.handler = async (event, context) => {
       });
     }
 
-    // Get all valid hashes
-    const validHashes = fileHashes
-      .filter(h => h.contentHash)
-      .map(h => /** @type {string} */(h.contentHash));
+    // Get all valid hash entries (containing { contentHash, fileName })
+    const validHashEntries = fileHashes
+      .filter(h => h.contentHash);
 
-    if (validHashes.length === 0) {
+    if (validHashEntries.length === 0) {
       log.warn('No valid hashes generated, returning non-duplicate results', {
         fileCount: files.length,
         event: 'NO_VALID_HASHES'
@@ -458,8 +380,8 @@ exports.handler = async (event, context) => {
 
     // Batch check MongoDB
     let existingRecordsMap = new Map();
-    if (validHashes.length > 0) {
-      existingRecordsMap = await batchCheckExistingAnalyses(validHashes, log, includeData);
+    if (validHashEntries.length > 0) {
+      existingRecordsMap = await batchCheckExistingAnalyses(validHashEntries, log, includeData);
     }
 
     // Build results array
