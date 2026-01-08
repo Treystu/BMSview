@@ -248,7 +248,10 @@ function checkNeedsUpgrade(record) {
   }
 
   // Check validation score (only if critical fields are present and not already retried)
-  const validationScore = record.validationScore ?? 0;
+  // FIX: Default to 100 (acceptable quality) if validationScore is not stored
+  // The 'history' collection doesn't have validationScore, so we assume records there are valid
+  // if they have all critical fields (which was already checked above)
+  const validationScore = record.validationScore ?? 100;
 
   if (validationScore < DUPLICATE_UPGRADE_THRESHOLD && (record.extractionAttempts || 1) < 2) {
     return {
