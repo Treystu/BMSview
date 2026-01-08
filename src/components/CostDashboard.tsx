@@ -276,6 +276,7 @@ const CostDashboard: React.FC = () => {
     const [settingsLoading, setSettingsLoading] = useState(false);
     const [settingsError, setSettingsError] = useState<string | null>(null);
     const [settingsSaving, setSettingsSaving] = useState(false);
+    const [alertsResetting, setAlertsResetting] = useState(false);
 
     // Form state for editing
     const [editTokenBudget, setEditTokenBudget] = useState('');
@@ -358,6 +359,32 @@ const CostDashboard: React.FC = () => {
             setEditTokenBudget(String(settingsDefaults.monthlyTokenBudget));
             setEditCostBudget(String(settingsDefaults.monthlyCostBudget));
             setEditAlertThreshold(String(Math.round(settingsDefaults.alertThreshold * 100)));
+        }
+    };
+
+    const handleResetAlerts = async () => {
+        if (!confirm('Are you sure you want to reset all budget alerts for this month? This will resolve existing warnings.')) {
+            return;
+        }
+        
+        setAlertsResetting(true);
+        try {
+            const response = await fetch('/.netlify/functions/ai-budget-settings', {
+                method: 'DELETE',
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `Failed to reset alerts: ${response.status}`);
+            }
+            
+            log('info', 'Budget alerts reset');
+            loadStats();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to reset alerts';
+            setSettingsError(message);
+        } finally {
+            setAlertsResetting(false);
         }
     };
 
@@ -537,14 +564,23 @@ const CostDashboard: React.FC = () => {
                                 </div>
 
                                 {/* Actions */}
-                                <div className="flex justify-between items-center pt-2">
+                                <div className="flex justify-between items-center pt-2 border-t border-gray-700 mt-4">
                                     <button
-                                        onClick={handleResetToDefaults}
-                                        className="px-4 py-2 text-gray-400 hover:text-white transition"
+                                        onClick={handleResetAlerts}
+                                        disabled={alertsResetting}
+                                        className="text-red-400 hover:text-red-300 text-sm flex items-center gap-2"
                                     >
-                                        Reset to Defaults
+                                        {alertsResetting ? <SpinnerIcon className="w-3 h-3" /> : '⚠️'}
+                                        Reset Alerts
                                     </button>
-                                    <div className="flex gap-2">
+
+                                    <div className="flex gap-2 items-center">
+                                        <button
+                                            onClick={handleResetToDefaults}
+                                            className="text-gray-400 hover:text-white text-sm mr-2"
+                                        >
+                                            Defaults
+                                        </button>
                                         <button
                                             onClick={() => setShowSettings(false)}
                                             className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded transition"

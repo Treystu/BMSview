@@ -2,15 +2,15 @@ module.exports = {
   testEnvironment: 'jsdom',
   roots: ['<rootDir>/tests'],
   testMatch: [
-    '**/__tests__/**/*.js',
-    '**/?(*.)+(spec|test).js',
+    '**/__tests__/**/*.[jt]s?(x)',
+    '**/?(*.)+(spec|test).[jt]s?(x)',
     '**/*.simple.test.js'
   ],
   collectCoverageFrom: [
-    'src/**/*.js',
-    'netlify/functions/**/*.js',
-    '!src/**/*.test.js',
-    '!src/**/*.spec.js'
+    'src/**/*.{js,jsx,ts,tsx}',
+    'netlify/functions/**/*.{js,cjs,mjs}',
+    '!src/**/*.test.{js,jsx,ts,tsx}',
+    '!src/**/*.spec.{js,jsx,ts,tsx}'
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],

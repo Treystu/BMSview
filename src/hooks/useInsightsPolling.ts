@@ -165,7 +165,12 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
       // For HTTP errors, status is attached to error object (see line 102)
       // For network errors (no response), status will be undefined - treat as transient
       const status = err.status;
-      const isCatastrophic = status === 404 || // Job not found
+      
+      // RACE CONDITION FIX: 404s are transient during startup (DB record creation lag)
+      // Only treat 404 as catastrophic if we've retried a few times
+      const isStartupPhase = retryCountRef.current < 5;
+      
+      const isCatastrophic = (status === 404 && !isStartupPhase) || // Job not found (only fatal after grace period)
                              status === 403 || // Forbidden
                              status === 401;   // Unauthorized
       
@@ -175,7 +180,12 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
         return true;
       }
 
+      if (status === 404 && isStartupPhase) {
+        console.warn(`Job record not found yet (attempt ${retryCountRef.current}), waiting for propagation...`);
+      }
+
       // For transient errors (network failures, 5xx errors), don't update UI error state
+
       // This keeps the UI showing "Analyzing..." instead of flashing error messages
       return false; // Continue polling
     }

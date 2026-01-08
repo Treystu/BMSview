@@ -111,6 +111,50 @@ async function updateBudgetSettings(newSettings, log) {
 }
 
 /**
+ * Delete budget alerts for the current month
+ * @param {import('./utils/logger.cjs').LogFunction} log
+ */
+async function deleteBudgetAlerts(log) {
+    const alertsCollection = await getCollection('anomaly_alerts');
+    const budgetAlertsCollection = await getCollection('budget_alerts');
+    
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    
+    // Delete from budget_alerts (prevents recreation)
+    const budgetResult = await budgetAlertsCollection.deleteMany({
+        month: currentMonth
+    });
+    
+    // Resolve in anomaly_alerts (UI display)
+    const alertsResult = await alertsCollection.updateMany(
+        { 
+            type: { $in: ['cost_spike', 'budget_warning'] },
+            resolved: { $ne: true }
+        },
+        { 
+            $set: { 
+                resolved: true,
+                resolvedAt: now.toISOString(),
+                resolvedBy: 'admin_reset'
+            } 
+        }
+    );
+    
+    log.audit('admin_action', {
+        action: 'reset_budget_alerts',
+        month: currentMonth,
+        deletedBudgetAlerts: budgetResult.deletedCount,
+        resolvedAnomalyAlerts: alertsResult.modifiedCount
+    });
+    
+    return {
+        deletedBudgetAlerts: budgetResult.deletedCount,
+        resolvedAnomalyAlerts: alertsResult.modifiedCount
+    };
+}
+
+/**
  * Main handler
  * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
  * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
@@ -167,6 +211,22 @@ exports.handler = async (event, context) => {
                     success: true,
                     settings: updatedSettings,
                     message: 'Budget settings updated successfully'
+                })
+            };
+        }
+
+        if (event.httpMethod === 'DELETE') {
+            const result = await deleteBudgetAlerts(log);
+            timer.end({ action: 'delete_alerts' });
+            log.exit(200);
+
+            return {
+                statusCode: 200,
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: true,
+                    message: 'Budget alerts reset successfully',
+                    details: result
                 })
             };
         }
