@@ -66,6 +66,7 @@ describe('BMS Screenshot Data Extraction - End-to-End', () => {
     /**
      * This simulates what Gemini AI would extract from the screenshot.
      * The values match what's visible in Screenshot_20251123-132836.png
+     * NOTE: Power is in Watts (W) as per schema requirement, not kW
      */
     const expectedExtractedData = {
       // MANDATORY FIELDS - These are all visible in the screenshot
@@ -82,7 +83,7 @@ describe('BMS Screenshot Data Extraction - End-to-End', () => {
       averageCellVoltage: 3.348,
       cellVoltageDifference: 0.008,
       cycleCount: 34,
-      power: 0.647, // kW shown in screenshot, should be converted to W
+      power: 647, // Screenshot shows 0.647kW = 647W (Gemini converts kW to W as instructed)
 
       // OPTIONAL FIELDS
       temperatures: [26], // T1: 26°C
@@ -120,23 +121,23 @@ describe('BMS Screenshot Data Extraction - End-to-End', () => {
       expect(analysisData.cycleCount).toBe(34);
 
       // Power should be auto-corrected to negative when current is negative
-      // The screenshot shows 0.647kW, but with current -12.1A, power should be negative
-      expect(analysisData.power).toBe(-0.647);
+      // Screenshot shows 0.647kW = 647W, with current -12.1A, power should be -647W
+      expect(analysisData.power).toBe(-647);
     });
 
     test('should auto-correct power sign when extracted with wrong sign', () => {
-      // Test data has positive power (0.647) but negative current (-12.1)
+      // Test data has positive power (647W) but negative current (-12.1A)
       // This is physically incorrect - discharging should have negative power
       const extractedWithWrongSign = {
         ...expectedExtractedData,
-        power: 0.647 // Positive power with negative current - incorrect
+        power: 647 // Positive power with negative current - incorrect
       };
 
       const analysisData = mapExtractedToAnalysisData(extractedWithWrongSign, mockLogger);
 
       // The system should auto-correct the sign to match the current
-      // P = V * I = 53.5V * (-12.1A) = -647.35W = -0.647kW
-      expect(analysisData.power).toBe(-0.647); // Auto-corrected to negative
+      // P = V * I = 53.5V * (-12.1A) = -647.35W
+      expect(analysisData.power).toBe(-647); // Auto-corrected to negative
     });
 
     test('should calculate power from voltage and current if power is missing', () => {
@@ -484,15 +485,10 @@ describe('BMS Screenshot Data Extraction - End-to-End', () => {
       expect(record.analysis.power).toBe(-647);
       expect(record.timestamp).toContain('2025-11-23T13:28:36');
 
-      console.log('\n✅ FULL WORKFLOW VERIFIED:');
-      console.log(`  Hardware ID: ${record.hardwareSystemId}`);
-      console.log(`  SOC: ${record.analysis.stateOfCharge}%`);
-      console.log(`  Voltage: ${record.analysis.overallVoltage}V`);
-      console.log(`  Current: ${record.analysis.current}A`);
-      console.log(`  Power: ${record.analysis.power}W`);
-      console.log(`  Status: ${record.analysis.status}`);
-      console.log(`  Quality Score: ${validation.qualityScore}/100`);
-      console.log(`  Timestamp: ${record.timestamp}\n`);
+      // Workflow verification complete - all assertions passed
+      // Hardware ID: DL-40181001173B
+      // SOC: 84.1%, Voltage: 53.5V, Current: -12.1A, Power: -647W
+      // Status: Normal, Quality Score: 95+/100
     });
   });
 });

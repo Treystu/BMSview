@@ -616,6 +616,7 @@ async function checkExistingAnalysis(contentHash, log, fileName = null) {
 
         // AUTO-HEAL: Backfill to ANALYSIS_RESULTS for future fast lookups
         try {
+          // CRITICAL FIX: Preserve all relational fields to maintain data integrity
           const backfillData = {
             id: existingRecord.id,
             contentHash: contentHash,
@@ -624,7 +625,13 @@ async function checkExistingAnalysis(contentHash, log, fileName = null) {
             analysis: existingRecord.analysis,
             validationScore: existingRecord.validationScore || 100,
             extractionAttempts: existingRecord.extractionAttempts || 1,
-            isComplete: existingRecord.isComplete !== false,
+            // FIX: Only set isComplete=true when explicitly marked, not for undefined
+            // This prevents blocking future quality upgrades for legacy records
+            isComplete: existingRecord.isComplete === true,
+            // Preserve relational fields critical for system association
+            systemId: existingRecord.systemId,
+            systemName: existingRecord.systemName,
+            hardwareSystemId: existingRecord.hardwareSystemId,
             updatedAt: new Date()
           };
 
@@ -644,11 +651,17 @@ async function checkExistingAnalysis(contentHash, log, fileName = null) {
 
           log.info('DUPLICATE_CHECK: Backfilled record to ANALYSIS_RESULTS', {
             recordId: existingRecord.id,
+            preservedSystemId: !!existingRecord.systemId,
+            isComplete: backfillData.isComplete,
             event: 'BACKFILL_SUCCESS'
           });
         } catch (backfillError) {
-          log.warn('DUPLICATE_CHECK: Failed to backfill to ANALYSIS_RESULTS', {
+          // IMPROVED: Document implications of backfill failure
+          log.warn('DUPLICATE_CHECK: Failed to backfill to ANALYSIS_RESULTS - future lookups will use slower HISTORY scan', {
             error: backfillError.message,
+            recordId: existingRecord.id,
+            remediation: 'Record will be automatically backfilled on next successful lookup',
+            performanceImpact: 'Temporary - lookup will be slower until backfill succeeds',
             event: 'BACKFILL_FAILED'
           });
         }
@@ -701,32 +714,49 @@ async function checkExistingAnalysis(contentHash, log, fileName = null) {
 
             // AUTO-HEAL: Backfill the contentHash
             try {
-                // Upsert into analysis-results
-                const update = { 
-                    contentHash, 
+                // Upsert into analysis-results with complete data preservation
+                const update = {
+                    contentHash,
                     updatedAt: new Date(),
                     id: existingRecord.id,
                     analysis: existingRecord.analysis,
                     timestamp: existingRecord.timestamp,
-                    fileName: fileName
+                    fileName: fileName,
+                    validationScore: existingRecord.validationScore || 100,
+                    extractionAttempts: existingRecord.extractionAttempts || 1,
+                    // FIX: Only set isComplete=true when explicitly marked
+                    isComplete: existingRecord.isComplete === true,
+                    // Preserve relational fields
+                    systemId: existingRecord.systemId,
+                    systemName: existingRecord.systemName,
+                    hardwareSystemId: existingRecord.hardwareSystemId
                 };
-                
+
                 await resultsCol.updateOne(
                     { id: existingRecord.id },
                     { $set: update },
                     { upsert: true }
                 );
-                
+
                 // Update history collection hash
                 await historyCol.updateOne(
                     { id: existingRecord.id },
                     { $set: { analysisKey: contentHash, contentHash } }
                 );
 
-                log.info('DUPLICATE_CHECK: Backfilled contentHash for legacy record');
+                log.info('DUPLICATE_CHECK: Backfilled contentHash for legacy record', {
+                    method: matchMethod,
+                    preservedSystemId: !!existingRecord.systemId,
+                    event: 'LEGACY_BACKFILL_SUCCESS'
+                });
                 if (!existingRecord.validationScore) existingRecord.validationScore = 100;
             } catch (e) {
-                log.warn('Failed to backfill hash', { error: e.message });
+                log.warn('DUPLICATE_CHECK: Failed to backfill legacy record - future lookups will use slower scan', {
+                    error: e.message,
+                    recordId: existingRecord.id,
+                    remediation: 'Will retry on next lookup',
+                    event: 'LEGACY_BACKFILL_FAILED'
+                });
             }
         }
     }
