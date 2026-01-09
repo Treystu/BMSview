@@ -1,4 +1,4 @@
-const { calculateRuntimeEstimate, generateGeneratorRecommendations } = require('../utils/battery-analysis.new.cjs');
+const { calculateRuntimeEstimate, generateGeneratorRecommendations } = require('../src/utils/battery-analysis.cjs');
 
 describe('calculateRuntimeEstimate', () => {
     test('returns null runtime when no data', () => {

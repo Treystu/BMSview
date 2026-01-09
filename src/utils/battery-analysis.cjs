@@ -176,85 +176,69 @@ function calculateChargeEfficiency(measurements) {
  * @returns {RuntimeResult} Runtime estimate
  */
 function calculateRuntimeEstimate(measurements, lastKnown = {}) {
-  const msToHours = (ms) => ms / (1000 * 60 * 60);
-
-  // Default conservative estimate
   const defaultResult = {
     runtimeHours: null,
     explanation: 'Insufficient data for runtime estimate',
     confidence: 'low'
   };
 
-  if (!measurements?.length) return defaultResult;
-
-  // Get capacity and voltage from measurements or lastKnown
-  const capacity = lastKnown.capacityAh || lastKnown.capacity ||
-    measurements[measurements.length - 1]?.capacity || null;
-  const voltage = lastKnown.voltage || measurements[measurements.length - 1]?.voltage || null;
-  const soc = lastKnown.stateOfCharge ?? measurements[measurements.length - 1]?.stateOfCharge ?? null;
-
-  if (capacity === null || voltage === null || soc === null) {
+  if (!Array.isArray(measurements) || measurements.length === 0) {
     return defaultResult;
   }
 
-  // Calculate usable energy
-  const usableWh = capacity * voltage * (soc / 100);
+  // Prefer explicit lastKnown values; fall back to latest measurement.
+  const capacityAh = lastKnown.capacityAh || lastKnown.capacity || measurements[measurements.length - 1].capacity;
+  const voltage = lastKnown.voltage || measurements[measurements.length - 1].voltage;
+  const soc = lastKnown.stateOfCharge ?? lastKnown.soc ?? measurements[measurements.length - 1].stateOfCharge;
 
-  // Get discharge measurements with valid current and voltage
-  const discharge = measurements.filter(m =>
-    typeof m?.current === 'number' &&
-    typeof m?.voltage === 'number' &&
-    m.current < 0
-  );
+  if (capacityAh == null || voltage == null || soc == null) {
+    return defaultResult;
+  }
+
+  // Usable energy in Wh.
+  const usableWh = capacityAh * voltage * (soc / 100);
+
+  // Find discharge measurements (negative current) with valid voltage.
+  const discharge = measurements.filter(m => typeof m.current === 'number' && m.current < 0 && typeof m.voltage === 'number');
 
   let runtime = null;
   let explanation = '';
   let confidence = 'low';
 
   if (discharge.length > 0) {
-    // Calculate average power draw
-    const powers = discharge.map(m => {
-      const current = m.current || 0;
-      const voltage = m.voltage || 0;
-      return Math.abs(current * voltage);
-    });
-    const avgPowerW = powers.reduce((sum, p) => sum + p, 0) / discharge.length;
-
+    // Average power draw in Watts.
+    const avgPowerW = discharge.reduce((sum, m) => sum + Math.abs(m.current * m.voltage), 0) / discharge.length;
     if (avgPowerW > 0) {
       runtime = usableWh / avgPowerW;
-      explanation = `Based on average power draw of ${Math.round(avgPowerW)}W`;
+      explanation = `Estimated from last known capacity using average discharge power of ${Math.round(avgPowerW)}W`;
       confidence = discharge.length > 100 ? 'high' : 'medium';
     }
   }
 
-  // Fallback to SoC-based estimate
+  // Fallback: estimate based on state of charge change over time.
   if (runtime === null) {
     const socRecords = measurements.filter(m => typeof m.stateOfCharge === 'number');
     if (socRecords.length >= 2) {
       const first = socRecords[0];
       const last = socRecords[socRecords.length - 1];
-      const hours = msToHours(new Date(last.timestamp).getTime() - new Date(first.timestamp).getTime());
+      const hours = (new Date(last.timestamp).getTime() - new Date(first.timestamp).getTime()) / 3600000;
       const socDrop = (first.stateOfCharge || 0) - (last.stateOfCharge || 0);
-
       if (hours > 0 && socDrop > 0) {
         runtime = ((last.stateOfCharge || 0) / (socDrop / hours));
-        explanation = `Based on SoC trend over ${Math.round(hours)}h`;
+        explanation = `Estimated from SOC trend over ${Math.round(hours)}h`;
         confidence = 'low';
       }
     }
   }
 
-  // Ensure reasonable bounds
   if (runtime !== null) {
-    runtime = Math.max(1, Math.min(168, runtime)); // 1h to 1 week
+    // Clamp to realistic bounds (1 hour to 1 week).
+    runtime = Math.max(1, Math.min(168, runtime));
     runtime = Math.round(runtime * 10) / 10;
+    return { runtimeHours: runtime, explanation, confidence };
   }
 
-  return {
-    runtimeHours: runtime,
-    explanation,
-    confidence
-  };
+  return defaultResult;
 }
 
 /**
@@ -424,35 +408,41 @@ function parseInsights(text, batteryData, _log = console) {
  * Generate generator recommendations
  * @param {number|null} runtimeHours Runtime estimate in hours
  * @param {number|null} avgPowerW Average power draw in watts
- * @returns {string[]} Generator recommendations
+ * @returns {Array<{recommended: boolean, suggestedGeneratorKW?: number, message: string}>} Generator recommendations
  */
 function generateGeneratorRecommendations(runtimeHours, avgPowerW) {
   const recommendations = [];
 
   if (typeof runtimeHours !== 'number' || typeof avgPowerW !== 'number') {
-    return ['Insufficient data for generator recommendations'];
+    recommendations.push({ recommended: false, message: 'Insufficient data for generator recommendations' });
+    return recommendations;
+  }
+
+  // Determine generator size in kW.
+  let suggestedKW = 0;
+  if (avgPowerW < 1000) {
+    suggestedKW = 2; // small portable
+  } else if (avgPowerW < 3000) {
+    suggestedKW = 5; // mid-sized
+  } else {
+    suggestedKW = 7; // large standby
+  }
+
+  recommendations.push({
+    recommended: true,
+    suggestedGeneratorKW: suggestedKW,
+    message: `Generator size ${suggestedKW}kW recommended for avg power ${avgPowerW}W`
+  });
+
+  // Runtime based advice.
+  if (runtimeHours < 4) {
+    recommendations.push({ recommended: true, message: 'Consider adding battery capacity for longer runtime' });
+  } else if (runtimeHours > 24) {
+    recommendations.push({ recommended: true, message: 'Current capacity sufficient for extended outages' });
   }
 
   const dailyKwh = (avgPowerW * 24) / 1000;
-
-  // Size recommendations
-  if (avgPowerW < 1000) {
-    recommendations.push('Small portable generator (1-2kW) suitable for basic backup');
-  } else if (avgPowerW < 3000) {
-    recommendations.push('Mid-sized generator (3-5kW) recommended for reliable coverage');
-  } else {
-    recommendations.push('Large standby generator (6kW+) required for full power needs');
-  }
-
-  // Runtime recommendations
-  if (runtimeHours < 4) {
-    recommendations.push('Consider adding battery capacity for longer runtime');
-  } else if (runtimeHours > 24) {
-    recommendations.push('Current capacity sufficient for extended outages');
-  }
-
-  // Daily consumption guidance
-  recommendations.push(`Estimated daily consumption: ${Math.round(dailyKwh)}kWh`);
+  recommendations.push({ recommended: true, message: `Estimated daily consumption: ${Math.round(dailyKwh)}kWh` });
 
   return recommendations;
 }

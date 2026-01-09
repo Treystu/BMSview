@@ -792,6 +792,7 @@ async function batchCheckExistingAnalyses(validHashEntries, log, includeData = f
     const projection = includeData ? {} : {
       _id: 1,
       analysisKey: 1,
+      contentHash: 1, // Include contentHash for analysis-results check
       timestamp: 1,
       fileName: 1, // Needed for legacy matching
       validationScore: 1,
@@ -803,17 +804,51 @@ async function batchCheckExistingAnalyses(validHashEntries, log, includeData = f
       _newQuality: 1
     };
 
-    // FIX: Query on 'analysisKey' field - that's what 'history' collection uses
-    const existingRecords = await resultsCol.find(
-      { analysisKey: { $in: contentHashes } },
+    // 1. Primary Check: 'analysis-results' collection (Source of Truth)
+    // This collection uses 'contentHash' field
+    const primaryRecords = await analysisResultsCol.find(
+      { contentHash: { $in: contentHashes } },
       { projection }
     ).toArray();
+
+    // Map primary records to contentHash
+    const resultMap = new Map();
+    for (const record of primaryRecords) {
+      if (record.contentHash) {
+        resultMap.set(record.contentHash, record);
+      }
+    }
+
+    // 2. Secondary Check: 'history' collection (Legacy)
+    // Only check for hashes not found in primary source
+    const foundPrimaryHashes = new Set(primaryRecords.map(r => r.contentHash));
+    const pendingHashes = contentHashes.filter(h => !foundPrimaryHashes.has(h));
+
+    const existingRecords = [];
+    
+    if (pendingHashes.length > 0) {
+      // FIX: Query on 'analysisKey' field - that's what 'history' collection uses
+      const historyRecords = await resultsCol.find(
+        { analysisKey: { $in: pendingHashes } },
+        { projection }
+      ).toArray();
+      
+      existingRecords.push(...historyRecords);
+      
+      // Add history records to map (using analysisKey as hash)
+      for (const record of historyRecords) {
+        if (record.analysisKey) {
+          resultMap.set(record.analysisKey, record);
+        }
+      }
+    }
 
     // -------------------------------------------------------------------------
     // LEGACY RECOVERY: Fallback to filename matching for items not found by hash
     // -------------------------------------------------------------------------
-    const foundHashes = new Set(existingRecords.map(r => r.analysisKey));
-    const missingEntries = validHashEntries.filter(e => !foundHashes.has(e.contentHash));
+    // Combine found hashes from both sources
+    const allFoundHashes = new Set([...foundPrimaryHashes, ...existingRecords.map(r => r.analysisKey)]);
+    const missingEntries = validHashEntries.filter(e => !allFoundHashes.has(e.contentHash));
 
     let recoveredCount = 0;
     
@@ -935,7 +970,8 @@ async function batchCheckExistingAnalyses(validHashEntries, log, includeData = f
 
     log.info('Batch duplicate check complete', {
       requestedCount: contentHashes.length,
-      foundCount: existingRecords.length,
+      foundPrimaryCount: primaryRecords.length,
+      foundLegacyCount: existingRecords.length,
       legacyRecovered: recoveredCount,
       collectionDurationMs,
       queryDurationMs,
@@ -945,14 +981,9 @@ async function batchCheckExistingAnalyses(validHashEntries, log, includeData = f
     });
 
     // Convert array to Map for O(1) lookups
-    // FIX: Use 'analysisKey' field - that's what 'history' collection uses
-    const resultMap = new Map();
-    for (const record of existingRecords) {
-      if (record.analysisKey) {
-        resultMap.set(record.analysisKey, record);
-      }
-    }
-
+    // Map is already built above!
+    // Just return it.
+    
     return resultMap;
   } catch (error) {
     const totalDurationMs = Date.now() - startTime;

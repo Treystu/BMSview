@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { getSystemAnalytics, type SystemAnalytics } from '../../services/clientService';
 import SpinnerIcon from '../icons/SpinnerIcon';
 
-const MonitoringDashboard = () => {
+const FeedbackMonitoringDashboard = () => {
   const [analytics, setAnalytics] = useState<SystemAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,4 +79,4 @@ const MonitoringDashboard = () => {
   );
 };
 
-export default MonitoringDashboard;
+export default FeedbackMonitoringDashboard;
