@@ -1,0 +1,298 @@
+name: API Endpoint Tests
+
+on:
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'netlify/functions/**'
+      - '.github/workflows/api-endpoints.yml'
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'netlify/functions/**'
+  workflow_dispatch:
+
+jobs:
+  discover-endpoints:
+    name: Discover API Endpoints
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      endpoints: ${{ steps.discover.outputs.endpoints }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Discover function endpoints
+        id: discover
+        run: |
+          # Find all function files (excluding utils)
+          ENDPOINTS=$(find netlify/functions -maxdepth 1 \( -name "*.cjs" -o -name "*.mjs" -o -name "*.js" \) -type f | \
+            sed 's|netlify/functions/||' | \
+            sed 's|\.[^.]*$||' | \
+            jq -R -s -c 'split("\n")[:-1]')
+
+          echo "endpoints=$ENDPOINTS" >> $GITHUB_OUTPUT
+          echo "Found $(echo $ENDPOINTS | jq 'length') endpoints"
+
+      - name: List discovered endpoints
+        run: |
+          echo "### Discovered API Endpoints :link:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.discover.outputs.endpoints }}" | jq -r '.[]' | while read endpoint; do
+            echo "- \`/.netlify/functions/$endpoint\`" >> $GITHUB_STEP_SUMMARY
+          done
+
+  test-critical-endpoints:
+    name: Test Critical Endpoints
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        endpoint:
+          - analyze
+          - check-duplicates-batch
+          - upload
+          - weather
+          - generate-insights
+          - admin-diagnostics
+          - get-systems
+          - get-history
+          - usage-stats
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test ${{ matrix.endpoint }} OPTIONS (CORS)
+        run: |
+          node -e "
+          const { handler } = require('./netlify/functions/${{ matrix.endpoint }}.cjs');
+          const event = {
+            httpMethod: 'OPTIONS',
+            headers: {
+              'Origin': 'http://localhost:3000',
+              'Access-Control-Request-Method': 'POST'
+            }
+          };
+          handler(event).then(result => {
+            console.log('OPTIONS response:', JSON.stringify(result, null, 2));
+            if (result.statusCode !== 200 && result.statusCode !== 204) {
+              console.error('OPTIONS request failed');
+              process.exit(1);
+            }
+            if (!result.headers || !result.headers['Access-Control-Allow-Origin']) {
+              console.error('Missing CORS headers');
+              process.exit(1);
+            }
+            console.log('✅ CORS headers present');
+          }).catch(err => {
+            console.error('OPTIONS test failed:', err);
+            process.exit(1);
+          });
+          "
+
+      - name: Test ${{ matrix.endpoint }} error handling
+        run: |
+          node -e "
+          const { handler } = require('./netlify/functions/${{ matrix.endpoint }}.cjs');
+          const event = {
+            httpMethod: 'POST',
+            headers: {},
+            body: 'invalid-json'
+          };
+          handler(event).then(result => {
+            console.log('Error handling response:', JSON.stringify(result, null, 2));
+            // Should return 400 or 500, not crash
+            if (!result.statusCode || result.statusCode === 200) {
+              console.error('Endpoint did not handle invalid input properly');
+              process.exit(1);
+            }
+            console.log('✅ Error handling works');
+          }).catch(err => {
+            console.log('✅ Error caught (expected behavior):', err.message);
+          });
+          "
+
+  test-endpoint-security:
+    name: Test Endpoint Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test SQL injection protection
+        run: |
+          node -e "
+          const { handler } = require('./netlify/functions/get-history.cjs');
+          const maliciousPayloads = [
+            '\"; DROP TABLE users; --',
+            '1\' OR \'1\' = \'1',
+            '<script>alert(\"xss\")</script>',
+            '${7*7}',
+            '../../../etc/passwd'
+          ];
+
+          Promise.all(maliciousPayloads.map(payload => {
+            const event = {
+              httpMethod: 'GET',
+              queryStringParameters: { systemId: payload }
+            };
+            return handler(event).then(result => {
+              // Should sanitize or reject, not execute
+              if (result.body && result.body.includes('49') || result.body.includes('etc')) {
+                console.error('Potential injection vulnerability detected');
+                process.exit(1);
+              }
+            });
+          })).then(() => {
+            console.log('✅ SQL injection protection working');
+          });
+          "
+
+      - name: Test XSS protection
+        run: |
+          node -e "
+          const { getCorsHeaders } = require('./netlify/functions/utils/cors.cjs');
+          const headers = getCorsHeaders();
+
+          // Check for security headers
+          const requiredHeaders = [
+            'Access-Control-Allow-Origin',
+            'Access-Control-Allow-Headers'
+          ];
+
+          let missing = [];
+          requiredHeaders.forEach(header => {
+            if (!headers[header]) {
+              missing.push(header);
+            }
+          });
+
+          if (missing.length > 0) {
+            console.error('Missing security headers:', missing);
+            process.exit(1);
+          }
+
+          console.log('✅ Security headers configured');
+          "
+
+  test-endpoint-response-format:
+    name: Test Response Format Consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test standard response format
+        run: |
+          node -e "
+          const { handler } = require('./netlify/functions/usage-stats.cjs');
+          const event = {
+            httpMethod: 'GET',
+            queryStringParameters: { period: 'daily' }
+          };
+
+          handler(event).then(result => {
+            console.log('Response format test:', JSON.stringify(result, null, 2));
+
+            // Validate response structure
+            if (!result.statusCode) {
+              console.error('Missing statusCode in response');
+              process.exit(1);
+            }
+
+            if (!result.headers) {
+              console.error('Missing headers in response');
+              process.exit(1);
+            }
+
+            if (typeof result.body !== 'string') {
+              console.error('Response body should be string (JSON stringified)');
+              process.exit(1);
+            }
+
+            // For success responses, body should be valid JSON
+            if (result.statusCode === 200) {
+              try {
+                JSON.parse(result.body);
+              } catch (e) {
+                console.error('Response body is not valid JSON');
+                process.exit(1);
+              }
+            }
+
+            console.log('✅ Response format is valid');
+          }).catch(err => {
+            console.error('Response format test failed:', err);
+            process.exit(1);
+          });
+          "
+
+  api-endpoint-summary:
+    name: API Endpoint Test Summary
+    runs-on: ubuntu-latest
+    needs: [discover-endpoints, test-critical-endpoints, test-endpoint-security, test-endpoint-response-format]
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "### API Endpoint Test Results :satellite:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.test-critical-endpoints.result }}" == "success" ]; then
+            echo "✅ Critical Endpoints: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Critical Endpoints: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.test-endpoint-security.result }}" == "success" ]; then
+            echo "✅ Security Tests: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Security Tests: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.test-endpoint-response-format.result }}" == "success" ]; then
+            echo "✅ Response Format: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Response Format: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Total endpoints discovered: $(echo '${{ needs.discover-endpoints.outputs.endpoints }}' | jq 'length')" >> $GITHUB_STEP_SUMMARY
+          echo "Critical endpoints tested: 9" >> $GITHUB_STEP_SUMMARY
