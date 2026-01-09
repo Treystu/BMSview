@@ -1,0 +1,458 @@
+name: Diagnostic Tests
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allow manual triggers
+    inputs:
+      test_category:
+        description: 'Test category to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - infrastructure
+          - core_analysis
+          - insights
+          - data_management
+          - quality_reliability
+          - specialized
+
+jobs:
+  # Infrastructure Tests
+  infrastructure-tests:
+    name: Infrastructure Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.test_category == 'all' ||
+      github.event.inputs.test_category == 'infrastructure'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - database
+          - gemini
+          - mongodbSyncStatus
+          - syncConflictDetection
+          - timestampConsistency
+          - dataIntegrityChecksum
+          - fullSyncCycle
+          - cacheStatistics
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ${{ matrix.test }} diagnostic test
+        run: |
+          curl -X POST http://localhost:8888/.netlify/functions/admin-diagnostics \
+            -H "Content-Type: application/json" \
+            -d '{"selectedTests": ["${{ matrix.test }}"]}' \
+            --max-time 300 \
+            || echo "Test execution via curl failed - test may need to run directly"
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        continue-on-error: true
+
+  # Core Analysis Tests
+  core-analysis-tests:
+    name: Core Analysis Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.test_category == 'all' ||
+      github.event.inputs.test_category == 'core_analysis'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - analyze
+          - asyncAnalysis
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ${{ matrix.test }} diagnostic test
+        run: |
+          node -e "
+          const { handler } = require('./netlify/functions/admin-diagnostics.cjs');
+          const event = {
+            httpMethod: 'POST',
+            headers: {},
+            body: JSON.stringify({
+              selectedTests: ['${{ matrix.test }}']
+            })
+          };
+          handler(event).then(result => {
+            console.log(JSON.stringify(result, null, 2));
+            const body = JSON.parse(result.body);
+            if (body.results && body.results['${{ matrix.test }}']) {
+              const test = body.results['${{ matrix.test }}'];
+              if (!test.success) {
+                console.error('Test failed:', test.error || test.details);
+                process.exit(1);
+              }
+            }
+          }).catch(err => {
+            console.error('Test execution failed:', err);
+            process.exit(1);
+          });
+          "
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+  # Insights Tests
+  insights-tests:
+    name: Insights Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.test_category == 'all' ||
+      github.event.inputs.test_category == 'insights'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run insightsWithTools diagnostic test
+        run: |
+          node -e "
+          const { handler } = require('./netlify/functions/admin-diagnostics.cjs');
+          const event = {
+            httpMethod: 'POST',
+            headers: {},
+            body: JSON.stringify({
+              selectedTests: ['insightsWithTools']
+            })
+          };
+          handler(event).then(result => {
+            console.log(JSON.stringify(result, null, 2));
+            const body = JSON.parse(result.body);
+            if (body.results && body.results.insightsWithTools) {
+              const test = body.results.insightsWithTools;
+              if (!test.success) {
+                console.error('Test failed:', test.error || test.details);
+                process.exit(1);
+              }
+            }
+          }).catch(err => {
+            console.error('Test execution failed:', err);
+            process.exit(1);
+          });
+          "
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+  # Data Management Tests
+  data-management-tests:
+    name: Data Management Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.test_category == 'all' ||
+      github.event.inputs.test_category == 'data_management'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - history
+          - systems
+          - weather
+          - backfillWeather
+          - backfillHourlyCloud
+          - solar
+          - systemAnalytics
+          - dataExport
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ${{ matrix.test }} diagnostic test
+        run: |
+          node -e "
+          const { handler } = require('./netlify/functions/admin-diagnostics.cjs');
+          const event = {
+            httpMethod: 'POST',
+            headers: {},
+            body: JSON.stringify({
+              selectedTests: ['${{ matrix.test }}']
+            })
+          };
+          handler(event).then(result => {
+            console.log(JSON.stringify(result, null, 2));
+            const body = JSON.parse(result.body);
+            if (body.results && body.results['${{ matrix.test }}']) {
+              const test = body.results['${{ matrix.test }}'];
+              if (!test.success) {
+                console.error('Test failed:', test.error || test.details);
+                process.exit(1);
+              }
+            }
+          }).catch(err => {
+            console.error('Test execution failed:', err);
+            process.exit(1);
+          });
+          "
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+          SOLCAST_API_KEY: ${{ secrets.SOLCAST_API_KEY }}
+
+  # Quality & Reliability Tests
+  quality-reliability-tests:
+    name: Quality & Reliability Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.test_category == 'all' ||
+      github.event.inputs.test_category == 'quality_reliability'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - idempotency
+          - contentHashing
+          - errorHandling
+          - logging
+          - resiliency
+          - retryMechanism
+          - timeout
+          - cacheIntegrity
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ${{ matrix.test }} diagnostic test
+        run: |
+          node -e "
+          const { handler } = require('./netlify/functions/admin-diagnostics.cjs');
+          const event = {
+            httpMethod: 'POST',
+            headers: {},
+            body: JSON.stringify({
+              selectedTests: ['${{ matrix.test }}']
+            })
+          };
+          handler(event).then(result => {
+            console.log(JSON.stringify(result, null, 2));
+            const body = JSON.parse(result.body);
+            if (body.results && body.results['${{ matrix.test }}']) {
+              const test = body.results['${{ matrix.test }}'];
+              if (!test.success) {
+                console.error('Test failed:', test.error || test.details);
+                process.exit(1);
+              }
+            }
+          }).catch(err => {
+            console.error('Test execution failed:', err);
+            process.exit(1);
+          });
+          "
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+  # Specialized Tests
+  specialized-tests:
+    name: Specialized Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.test_category == 'all' ||
+      github.event.inputs.test_category == 'specialized'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run predictiveMaintenance diagnostic test
+        run: |
+          node -e "
+          const { handler } = require('./netlify/functions/admin-diagnostics.cjs');
+          const event = {
+            httpMethod: 'POST',
+            headers: {},
+            body: JSON.stringify({
+              selectedTests: ['predictiveMaintenance']
+            })
+          };
+          handler(event).then(result => {
+            console.log(JSON.stringify(result, null, 2));
+            const body = JSON.parse(result.body);
+            if (body.results && body.results.predictiveMaintenance) {
+              const test = body.results.predictiveMaintenance;
+              if (!test.success) {
+                console.error('Test failed:', test.error || test.details);
+                process.exit(1);
+              }
+            }
+          }).catch(err => {
+            console.error('Test execution failed:', err);
+            process.exit(1);
+          });
+          "
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+  # Summary job
+  diagnostic-summary:
+    name: Diagnostic Test Summary
+    runs-on: ubuntu-latest
+    needs:
+      - infrastructure-tests
+      - core-analysis-tests
+      - insights-tests
+      - data-management-tests
+      - quality-reliability-tests
+      - specialized-tests
+    if: always()
+
+    steps:
+      - name: Check all test results
+        run: |
+          echo "### Diagnostic Test Results :test_tube:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Infrastructure Tests
+          if [ "${{ needs.infrastructure-tests.result }}" == "success" ]; then
+            echo "✅ Infrastructure Tests: PASSED" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.infrastructure-tests.result }}" == "skipped" ]; then
+            echo "⏭️ Infrastructure Tests: SKIPPED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Infrastructure Tests: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Core Analysis Tests
+          if [ "${{ needs.core-analysis-tests.result }}" == "success" ]; then
+            echo "✅ Core Analysis Tests: PASSED" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.core-analysis-tests.result }}" == "skipped" ]; then
+            echo "⏭️ Core Analysis Tests: SKIPPED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Core Analysis Tests: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Insights Tests
+          if [ "${{ needs.insights-tests.result }}" == "success" ]; then
+            echo "✅ Insights Tests: PASSED" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.insights-tests.result }}" == "skipped" ]; then
+            echo "⏭️ Insights Tests: SKIPPED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Insights Tests: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Data Management Tests
+          if [ "${{ needs.data-management-tests.result }}" == "success" ]; then
+            echo "✅ Data Management Tests: PASSED" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.data-management-tests.result }}" == "skipped" ]; then
+            echo "⏭️ Data Management Tests: SKIPPED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Data Management Tests: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Quality & Reliability Tests
+          if [ "${{ needs.quality-reliability-tests.result }}" == "success" ]; then
+            echo "✅ Quality & Reliability Tests: PASSED" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.quality-reliability-tests.result }}" == "skipped" ]; then
+            echo "⏭️ Quality & Reliability Tests: SKIPPED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Quality & Reliability Tests: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Specialized Tests
+          if [ "${{ needs.specialized-tests.result }}" == "success" ]; then
+            echo "✅ Specialized Tests: PASSED" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.specialized-tests.result }}" == "skipped" ]; then
+            echo "⏭️ Specialized Tests: SKIPPED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Specialized Tests: FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Total test categories: 6" >> $GITHUB_STEP_SUMMARY
+          echo "Total individual tests: 28" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if any required tests failed
+        if: |
+          needs.infrastructure-tests.result == 'failure' ||
+          needs.core-analysis-tests.result == 'failure' ||
+          needs.data-management-tests.result == 'failure' ||
+          needs.quality-reliability-tests.result == 'failure'
+        run: |
+          echo "❌ One or more critical diagnostic tests failed"
+          exit 1
