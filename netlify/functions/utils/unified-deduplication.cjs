@@ -595,10 +595,67 @@ async function checkExistingAnalysis(contentHash, log, fileName = null) {
     const resultsCol = await getCollection(COLLECTIONS.ANALYSIS_RESULTS);
     const historyCol = await getCollection(COLLECTIONS.HISTORY);
 
-    // 1. Try unified deduplication module (Hash Match)
+    // 1. Try ANALYSIS_RESULTS collection (Primary - uses contentHash field)
     let existingRecord = await findDuplicateByHash(contentHash, resultsCol, log);
 
-    // 2. Fallback: Filename/Timestamp Match (Legacy Recovery)
+    // 2. CRITICAL FIX: Try HISTORY collection (Secondary - uses analysisKey field)
+    // This catches legacy records that only exist in HISTORY but not in ANALYSIS_RESULTS
+    if (!existingRecord && contentHash) {
+      log.info('DUPLICATE_CHECK: Checking HISTORY collection for analysisKey', {
+        contentHashPreview: contentHash.substring(0, 16) + '...',
+        event: 'HISTORY_LOOKUP_START'
+      });
+
+      existingRecord = await historyCol.findOne({ analysisKey: contentHash });
+
+      if (existingRecord) {
+        log.info('DUPLICATE_CHECK: Found record in HISTORY by analysisKey', {
+          recordId: existingRecord.id || existingRecord._id,
+          event: 'HISTORY_MATCH_FOUND'
+        });
+
+        // AUTO-HEAL: Backfill to ANALYSIS_RESULTS for future fast lookups
+        try {
+          const backfillData = {
+            id: existingRecord.id,
+            contentHash: contentHash,
+            fileName: existingRecord.fileName || fileName,
+            timestamp: existingRecord.timestamp,
+            analysis: existingRecord.analysis,
+            validationScore: existingRecord.validationScore || 100,
+            extractionAttempts: existingRecord.extractionAttempts || 1,
+            isComplete: existingRecord.isComplete !== false,
+            updatedAt: new Date()
+          };
+
+          await resultsCol.updateOne(
+            { id: existingRecord.id },
+            { $set: backfillData },
+            { upsert: true }
+          );
+
+          // Also update HISTORY with contentHash if missing
+          if (!existingRecord.contentHash) {
+            await historyCol.updateOne(
+              { id: existingRecord.id },
+              { $set: { contentHash: contentHash } }
+            );
+          }
+
+          log.info('DUPLICATE_CHECK: Backfilled record to ANALYSIS_RESULTS', {
+            recordId: existingRecord.id,
+            event: 'BACKFILL_SUCCESS'
+          });
+        } catch (backfillError) {
+          log.warn('DUPLICATE_CHECK: Failed to backfill to ANALYSIS_RESULTS', {
+            error: backfillError.message,
+            event: 'BACKFILL_FAILED'
+          });
+        }
+      }
+    }
+
+    // 3. Fallback: Filename/Timestamp Match (Legacy Recovery)
     if (!existingRecord && fileName) {
         let matchMethod = null;
 
