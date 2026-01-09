@@ -3,11 +3,12 @@ name: API Endpoint Tests
 on:
   pull_request:
     branches: [ main, master ]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'netlify/functions/**'
       - '.github/workflows/api-endpoints.yml'
   push:
-    branches: [ main, master ]
+    branches: [ main, master, 'claude/**' ]
     paths:
       - 'netlify/functions/**'
   workflow_dispatch:

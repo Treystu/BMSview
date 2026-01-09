@@ -3,8 +3,9 @@ name: Security Scanning
 on:
   pull_request:
     branches: [ main, master ]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [ main, master ]
+    branches: [ main, master, 'claude/**' ]
   schedule:
     # Run weekly on Sundays at 2am UTC
     - cron: '0 2 * * 0'

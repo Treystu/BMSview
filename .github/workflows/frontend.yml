@@ -3,6 +3,7 @@ name: Frontend Tests
 on:
   pull_request:
     branches: [ main, master ]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'src/**'
       - 'index.html'
@@ -10,7 +11,7 @@ on:
       - 'tailwind.config.js'
       - '.github/workflows/frontend.yml'
   push:
-    branches: [ main, master ]
+    branches: [ main, master, 'claude/**' ]
     paths:
       - 'src/**'
   workflow_dispatch:
