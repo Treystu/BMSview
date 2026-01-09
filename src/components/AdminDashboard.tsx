@@ -43,7 +43,7 @@ import AdminHeader from './admin/AdminHeader';
 import AdminStoryManager from './admin/AdminStoryManager';
 import DataManagement from './admin/DataManagement';
 import HistoryTable from './admin/HistoryTable';
-import MonitoringDashboard from './admin/MonitoringDashboard';
+import FeedbackMonitoringDashboard from './admin/FeedbackMonitoringDashboard';
 import SystemsTable from './admin/SystemsTable';
 import { getNestedValue } from './admin/columnDefinitions';
 import ReconciliationDashboard from './admin/reconciliation/ReconciliationDashboard';
@@ -1149,7 +1149,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                         <section id="monitoring-dashboard-section">
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">AI Feedback Monitoring</h2>
                             <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
-                                <MonitoringDashboard />
+                                <FeedbackMonitoringDashboard />
                             </div>
                         </section>
                         <section id="system-diagnostics-section">
