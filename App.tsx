@@ -15,7 +15,7 @@ import {
   linkAnalysisToSystem,
   registerBmsSystem
 } from './services/clientService';
-import { analyzeBmsScreenshot } from './services/geminiService';
+import { uploadFile } from './src/services/uploadService';
 import UploadOptimizer from './src/utils/uploadOptimizer';
 import { useAppState } from './state/appState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from './types';
@@ -228,14 +228,22 @@ function App() {
           count: filesToAnalyze.length
         });
 
-        // Define single-file processor for optimizer
+        // Define single-file processor for optimizer using optimized upload endpoint
         const processFile = async (item: { file: File }) => {
           const file = item.file;
           dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
 
-          const analysisData = await analyzeBmsScreenshot(file, false);
+          // Use optimized upload endpoint instead of direct analysis
+          const uploadResult = await uploadFile(file);
 
-          log('info', 'Processing synchronous analysis result.', { fileName: file.name });
+          if (!uploadResult.success) {
+            throw new Error(uploadResult.error || 'Upload failed');
+          }
+
+          // The upload endpoint returns the analysis data directly
+          const analysisData = uploadResult.processingResult as AnalysisData;
+
+          log('info', 'Processing optimized upload result.', { fileName: file.name });
           dispatch({
             type: 'SYNC_ANALYSIS_COMPLETE',
             payload: {
@@ -284,9 +292,17 @@ function App() {
         for (const file of files) {
           try {
             dispatch({ type: 'UPDATE_ANALYSIS_STATUS', payload: { fileName: file.name, status: 'Processing' } });
-            const analysisData = await analyzeBmsScreenshot(file, true);
 
-            log('info', 'Processing synchronous analysis result.', { fileName: file.name });
+            // Use optimized upload endpoint even for force reanalysis
+            const uploadResult = await uploadFile(file);
+
+            if (!uploadResult.success) {
+              throw new Error(uploadResult.error || 'Upload failed');
+            }
+
+            const analysisData = uploadResult.processingResult as AnalysisData;
+
+            log('info', 'Processing optimized upload result (force reanalysis).', { fileName: file.name });
             dispatch({
               type: 'SYNC_ANALYSIS_COMPLETE',
               payload: {

@@ -1405,7 +1405,7 @@ async function executeReActLoop(params) {
 
             // EDGE CASE PROTECTION: Check if we have enough time for a meaningful iteration
             // Need at least MIN_GEMINI_CALL_TIMEOUT_MS for the call, plus buffers for checkpoint and response
-            const MIN_ITERATION_TIME = MIN_GEMINI_CALL_TIMEOUT_MS + CHECKPOINT_SAVE_BUFFER_MS + RESPONSE_BUFFER_MS;
+            const MIN_ITERATION_TIME = MIN_GEMINI_CALL_TIMEOUT_MS;
             if (timeRemaining < MIN_ITERATION_TIME) {
                 log.info('Insufficient time for another iteration, saving checkpoint', {
                     turn: turnCount,
@@ -2069,7 +2069,7 @@ async function executeReActLoop(params) {
             // Heavy tools (like request_bms_data) consume significant time. We must check budget again.
             const postToolElapsedMs = Date.now() - startTime;
             const postToolTimeRemaining = totalBudgetMs - postToolElapsedMs;
-            const MIN_POST_TOOL_TIME = MIN_GEMINI_CALL_TIMEOUT_MS + CHECKPOINT_SAVE_BUFFER_MS + RESPONSE_BUFFER_MS;
+            const MIN_POST_TOOL_TIME = MIN_GEMINI_CALL_TIMEOUT_MS;
 
             if (postToolTimeRemaining < MIN_POST_TOOL_TIME) {
                 log.warn('Insufficient time for next iteration after tool execution, saving checkpoint', {

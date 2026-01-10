@@ -25,7 +25,7 @@ import {
 import { analyzeBmsScreenshot } from '../services/geminiService';
 import { useAdminState } from '../state/adminState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
-import { checkFilesForDuplicates, partitionCachedFiles, type DuplicateCheckResult } from '../utils/duplicateChecker';
+import { checkFilesForDuplicates, partitionCachedFiles, type CachedDuplicateResult, type DuplicateCheckResult } from '../utils/duplicateChecker';
 import BulkUpload from './BulkUpload';
 import DiagnosticsModal from './DiagnosticsModal';
 import EditSystemModal from './EditSystemModal';
@@ -41,8 +41,8 @@ import { SolarIntegrationDashboard } from './SolarIntegrationDashboard';
 import AdminHeader from './admin/AdminHeader';
 import AdminStoryManager from './admin/AdminStoryManager';
 import DataManagement from './admin/DataManagement';
-import HistoryTable from './admin/HistoryTable';
 import FeedbackMonitoringDashboard from './admin/FeedbackMonitoringDashboard';
+import HistoryTable from './admin/HistoryTable';
 import SystemsTable from './admin/SystemsTable';
 import { getNestedValue } from './admin/columnDefinitions';
 import ReconciliationDashboard from './admin/reconciliation/ReconciliationDashboard';
@@ -61,7 +61,7 @@ interface AdminDashboardProps {
     onLogout: () => void;
 }
 
-const log = (level: string, message: string, context: any = {}) => {
+const log = (level: string, message: string, context: Record<string, unknown> = {}) => {
     console.log(JSON.stringify({
         level: level.toUpperCase(),
         timestamp: new Date().toISOString(),
@@ -114,14 +114,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
             const responses = await Promise.all(promises);
 
-            const payload: any = {};
+            const payload: {
+                systems?: { items: BmsSystem[]; total: number };
+                history?: { items: AnalysisRecord[]; total: number };
+            } = {};
+
             if (type === 'all') {
-                payload.systems = responses[0];
-                payload.history = responses[1];
+                const [systemsResponse, historyResponse] = responses as [
+                    { items: BmsSystem[]; total: number },
+                    { items: AnalysisRecord[]; total: number }
+                ];
+                payload.systems = systemsResponse;
+                payload.history = historyResponse;
             } else if (type === 'systems') {
-                payload.systems = responses[0];
+                payload.systems = responses[0] as { items: BmsSystem[]; total: number };
             } else if (type === 'history') {
-                payload.history = responses[0];
+                payload.history = responses[0] as { items: AnalysisRecord[]; total: number };
             }
 
             dispatch({ type: 'FETCH_PAGE_DATA_SUCCESS', payload });
@@ -238,7 +246,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             let trueDuplicates: DuplicateCheckResult[] = [];
             let needsUpgrade: DuplicateCheckResult[] = [];
             let newFiles: DuplicateCheckResult[] = [];
-            let cachedDuplicates: any[] = []; // Using any to avoid complex type reconstruction here
+            let cachedDuplicates: CachedDuplicateResult[] = [];
             let cachedUpgrades: File[] = [];
 
             if (forceReanalysis) {
@@ -352,10 +360,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 // If async, we might just get a jobId and status='pending'
                 // We should handle that gracefully in the UI
                 if (analysisData.status === 'pending') {
-                     dispatch({
+                    dispatch({
                         type: 'UPDATE_BULK_UPLOAD_RESULT',
-                        payload: { 
-                            fileName: file.name, 
+                        payload: {
+                            fileName: file.name,
                             error: 'Async Job Started', // User-friendly status
                             data: analysisData // Attach data so it counts as "success" or handled
                         }
@@ -529,7 +537,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
     const handleGenericAction = async (
         actionName: keyof typeof state.actionStatus,
-        actionFn: () => Promise<any>,
+        actionFn: () => Promise<unknown>,
         _successMessage: string,
         refreshType: 'systems' | 'history' | 'all' | 'none' = 'none',
         options: { requiresConfirm?: boolean; confirmMessage?: string } = {}
@@ -946,8 +954,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             log('error', 'Diagnostics orchestration failed.', { error });
 
             // Create an error response object
-            const errorResponse: any = {
-                status: 'error',
+            const errorResponse = {
+                status: 'error' as const,
                 timestamp: new Date().toISOString(),
                 duration: Date.now() - startTime,
                 results: selectedTests.map(testId => {

@@ -1,5 +1,6 @@
 
 import axios from 'axios';
+import type { AnalysisData } from '../../types';
 
 export interface UploadResult {
   success: boolean;
@@ -7,7 +8,7 @@ export interface UploadResult {
   filename?: string;
   message?: string;
   error?: string;
-  processingResult?: any;
+  processingResult?: AnalysisData;
 }
 
 export interface UploadProgress {
@@ -44,15 +45,16 @@ export async function uploadFile(
     });
 
     return response.data;
-  } catch (error: any) {
-    if (error.response) {
+  } catch (error: unknown) {
+    if (error && typeof error === 'object' && 'response' in error) {
+      const axiosError = error as { response?: { data?: { error?: string; message?: string } } };
       // Server responded with error
       return {
         success: false,
-        error: error.response.data.error || 'Upload failed',
-        message: error.response.data.message
+        error: axiosError.response?.data?.error || 'Upload failed',
+        message: axiosError.response?.data?.message
       };
-    } else if (error.request) {
+    } else if (error && typeof error === 'object' && 'request' in error) {
       // Request made but no response
       return {
         success: false,
@@ -61,9 +63,10 @@ export async function uploadFile(
       };
     } else {
       // Setup error
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       return {
         success: false,
-        error: error.message || 'Unknown error'
+        error: errorMessage
       };
     }
   }
@@ -82,7 +85,7 @@ export async function uploadFiles(
   let completed = 0;
   const totalFiles = files.length;
 
-  const promises = files.map(file => 
+  const promises = files.map(file =>
     uploadFile(file).then(result => {
       completed++;
       if (onProgress) {

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import SpinnerIcon from './icons/SpinnerIcon';
+import React, { useEffect, useRef, useState } from 'react';
 import { ensureNumber } from '../utils/stateHelpers';
+import SpinnerIcon from './icons/SpinnerIcon';
 
 interface DiagnosticsGuruProps {
   className?: string;
@@ -14,8 +14,8 @@ interface WorkloadStatus {
   totalSteps: number;
   progress: number;
   message: string;
-  results?: any[];
-  feedbackSubmitted?: any[];
+  results?: unknown[];
+  feedbackSubmitted?: unknown[];
   summary?: {
     totalToolsTested: number;
     totalTests: number | string;
@@ -62,20 +62,20 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
     setIsRunning(true);
     setError(null);
     setStatus(null);
-    
+
     try {
       const response = await fetch('/.netlify/functions/diagnostics-workload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'start' })
       });
-      
+
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || 'Failed to start diagnostics');
       }
-      
+
       const newWorkloadId = data.workloadId;
       setWorkloadId(newWorkloadId);
       setStatus({
@@ -87,10 +87,10 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
         progress: 0,
         message: 'Starting diagnostics...'
       });
-      
+
       // Start polling for status (backend will execute steps autonomously)
       startPolling(newWorkloadId);
-      
+
       // Trigger backend to start executing steps
       await triggerBackendExecution(newWorkloadId);
     } catch (err) {
@@ -103,12 +103,12 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
   const triggerBackendExecution = async (wid: string) => {
     if (isExecutingRef.current) return;
     isExecutingRef.current = true;
-    
+
     try {
       let isComplete = false;
       let consecutiveErrors = 0;
       const maxConsecutiveErrors = 3;
-      
+
       // Keep executing steps until the workload is complete
       while (!isComplete && consecutiveErrors < maxConsecutiveErrors) {
         try {
@@ -117,17 +117,17 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'step', workloadId: wid })
           });
-          
+
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
           }
-          
+
           const data = await response.json();
-          
+
           if (!data.success) {
             throw new Error(data.error || 'Step execution failed');
           }
-          
+
           // Log step completion
           console.log('Step completed:', {
             step: data.step,
@@ -135,37 +135,37 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             complete: data.complete,
             warning: data.warning
           });
-          
+
           // If this step reported completion, we're done
           if (data.complete) {
             isComplete = true;
             console.log('Diagnostics workload complete');
             break;
           }
-          
+
           // Safety check: prevent infinite loops if backend returns malformed response
           if (!data.nextStep && !isComplete) {
             console.warn('No next step indicated but not complete - treating as complete');
             isComplete = true;
             break;
           }
-          
+
           // Reset error counter on success
           consecutiveErrors = 0;
-          
+
           // Small delay between steps to avoid overwhelming the backend
           await new Promise(resolve => setTimeout(resolve, 500));
-          
+
         } catch (err) {
           consecutiveErrors++;
           console.error(`Step execution error (${consecutiveErrors}/${maxConsecutiveErrors}):`, err);
-          
+
           if (consecutiveErrors >= maxConsecutiveErrors) {
             setError(err instanceof Error ? err.message : 'Step execution failed after multiple retries');
             setIsRunning(false);
             break;
           }
-          
+
           // Exponential backoff on errors: 1s, 2s, 4s
           await new Promise(resolve => setTimeout(resolve, Math.pow(2, consecutiveErrors - 1) * 1000));
         }
@@ -185,7 +185,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
     }
-    
+
     const interval = setInterval(async () => {
       try {
         const response = await fetch('/.netlify/functions/diagnostics-workload', {
@@ -193,9 +193,9 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'status', workloadId: wid })
         });
-        
+
         const data = await response.json();
-        
+
         // Debug logging for diagnostics
         console.log('Diagnostics status response:', {
           success: data.success,
@@ -204,7 +204,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
           hasSummary: !!data.summary,
           summaryKeys: data.summary ? Object.keys(data.summary) : []
         });
-        
+
         if (data.success) {
           // CRITICAL FIX: Defensive state update with explicit defaults
           setStatus({
@@ -220,7 +220,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             summary: data.summary || undefined,
             warning: data.warning || undefined
           });
-          
+
           // Stop polling if complete
           if (data.status === 'completed' || data.status === 'failed') {
             if (pollingIntervalRef.current) {
@@ -234,7 +234,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
         console.error('Polling error:', err);
       }
     }, 2000); // Poll every 2 seconds
-    
+
     pollingIntervalRef.current = interval;
   };
 
@@ -284,7 +284,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
               <li>Provides comprehensive pass/fail summary</li>
             </ul>
           </div>
-          
+
           <button
             onClick={startDiagnostics}
             disabled={isRunning}
@@ -308,20 +308,20 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
                 Step {(ensureNumber(status.stepIndex, 0) + 1)} / {ensureNumber(status.totalSteps, 0)}
               </span>
             </div>
-            
+
             {/* Progress bar */}
             <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <div 
+              <div
                 className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
                 style={{ width: `${Math.min(100, Math.max(0, ensureNumber(status.progress, 0)))}%` }}
               ></div>
             </div>
-            
+
             <div className="text-xs text-gray-500 mt-1 text-right">
               {ensureNumber(status.progress, 0)}%
             </div>
           </div>
-          
+
           <div className="flex items-center justify-center text-blue-600">
             <SpinnerIcon className="h-5 w-5 mr-2" />
             <span className="text-sm">Running diagnostics...</span>
@@ -337,13 +337,13 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
               <span className="text-xl mr-2">✅</span>
               Diagnostics Complete
             </h3>
-            
+
             {workloadId && (
               <div className="text-xs text-gray-600 mb-3 font-mono">
                 Workload ID: {workloadId}
               </div>
             )}
-            
+
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <div className="text-gray-600">Total Tests</div>
@@ -376,7 +376,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
                 </div>
               </div>
             </div>
-            
+
             {/* Show warnings/errors if any occurred during processing */}
             {status.summary.errors && (status.summary.errors.analysisError || status.summary.errors.feedbackError || status.summary.errors.finalizationError) && (
               <div className="mt-4 bg-yellow-50 border border-yellow-300 rounded p-3">
@@ -404,19 +404,22 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             <div className="bg-white border border-gray-200 rounded-lg p-4">
               <h3 className="font-semibold text-gray-900 mb-3">🔧 Tool Test Results</h3>
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {status.summary.toolResults.map((tool: any, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                    <span className="text-sm font-medium text-gray-700">{tool.tool}</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-1 rounded ${tool.validTestPassed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        Valid: {tool.validTestPassed ? '✅' : '❌'}
-                      </span>
-                      <span className={`text-xs px-2 py-1 rounded ${tool.edgeCaseTestPassed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        Edge: {tool.edgeCaseTestPassed ? '✅' : '❌'}
-                      </span>
+                {status.summary.toolResults.map((tool: unknown, idx: number) => {
+                  const toolResult = tool as { tool: string; validTestPassed: boolean; edgeCaseTestPassed: boolean };
+                  return (
+                    <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                      <span className="text-sm font-medium text-gray-700">{toolResult.tool}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-1 rounded ${toolResult.validTestPassed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          Valid: {toolResult.validTestPassed ? '✅' : '❌'}
+                        </span>
+                        <span className={`text-xs px-2 py-1 rounded ${toolResult.edgeCaseTestPassed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          Edge: {toolResult.edgeCaseTestPassed ? '✅' : '❌'}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -426,26 +429,33 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <h3 className="font-semibold text-blue-900 mb-3">💡 Recommendations</h3>
               <div className="space-y-2">
-                {status.summary.recommendations.map((rec: any, idx: number) => (
-                  <div key={idx} className={`p-3 rounded border ${
-                    rec.severity === 'critical' ? 'bg-red-50 border-red-300' :
-                    rec.severity === 'high' ? 'bg-orange-50 border-orange-300' :
-                    rec.severity === 'medium' ? 'bg-yellow-50 border-yellow-300' :
-                    'bg-blue-50 border-blue-200'
-                  }`}>
-                    <div className="flex items-start gap-2">
-                      <span className="text-lg">
-                        {rec.severity === 'critical' ? '🔴' :
-                         rec.severity === 'high' ? '🟠' :
-                         rec.severity === 'medium' ? '🟡' : 'ℹ️'}
-                      </span>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900">{rec.message}</p>
-                        <p className="text-xs text-gray-600 mt-1">{rec.action}</p>
+                {status.summary.recommendations.map((rec: unknown, idx: number) => {
+                  const recommendation = rec as {
+                    severity: string;
+                    message: string;
+                    action: string;
+                    priority: string
+                  };
+                  return (
+                    <div key={idx} className={`p-3 rounded border ${recommendation.severity === 'critical' ? 'bg-red-50 border-red-300' :
+                      recommendation.severity === 'high' ? 'bg-orange-50 border-orange-300' :
+                        recommendation.severity === 'medium' ? 'bg-yellow-50 border-yellow-300' :
+                          'bg-blue-50 border-blue-200'
+                      }`}>
+                      <div className="flex items-start gap-2">
+                        <span className="text-lg">
+                          {recommendation.severity === 'critical' ? '🔴' :
+                            recommendation.severity === 'high' ? '🟠' :
+                              recommendation.severity === 'medium' ? '🟡' : 'ℹ️'}
+                        </span>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">{recommendation.message}</p>
+                          <p className="text-xs text-gray-600 mt-1">{recommendation.action}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -457,23 +467,33 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
                 🎫 GitHub Issues Created ({status.summary.githubIssuesCreated.length})
               </h3>
               <div className="space-y-2">
-                {status.summary.githubIssuesCreated.map((issue: any, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between p-2 bg-white rounded border border-purple-200">
-                    <div className="flex-1">
-                      <span className="text-sm font-medium text-purple-900">
-                        #{issue.issueNumber} - {issue.category?.replace(/_/g, ' ') || 'Unknown'}
-                      </span>
+                {status.summary.githubIssuesCreated.map((issue: unknown, idx: number) => {
+                  const githubIssue = issue as {
+                    issueNumber: number;
+                    category?: string;
+                    title: string;
+                    url: string;
+                    issueUrl: string;
+                    status: string;
+                  };
+                  return (
+                    <div key={idx} className="flex items-center justify-between p-2 bg-white rounded border border-purple-200">
+                      <div className="flex-1">
+                        <span className="text-sm font-medium text-purple-900">
+                          #{githubIssue.issueNumber} - {githubIssue.category?.replace(/_/g, ' ') || 'Unknown'}
+                        </span>
+                      </div>
+                      <a
+                        href={githubIssue.issueUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
+                      >
+                        View Issue →
+                      </a>
                     </div>
-                    <a
-                      href={issue.issueUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
-                    >
-                      View Issue →
-                    </a>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <p className="text-xs text-purple-700 mt-3">
                 Critical failures have been automatically reported. Review and assign these issues as needed.
@@ -484,17 +504,26 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
           {status.feedbackSubmitted && Array.isArray(status.feedbackSubmitted) && status.feedbackSubmitted.length > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <h3 className="font-semibold text-yellow-900 mb-2">
-                📤 Feedback Submitted ({status.feedbackSubmitted.filter((fb: any) => fb && fb.feedbackId).length} / {status.feedbackSubmitted.length})
+                📤 Feedback Submitted
               </h3>
               <ul className="text-sm text-yellow-800 space-y-1">
-                {status.feedbackSubmitted.map((fb: any, idx: number) => {
-                  const failureCount = (fb && typeof fb.failureCount === 'number') ? fb.failureCount : 0;
+                {status.feedbackSubmitted && status.feedbackSubmitted.map((fb: unknown, idx: number) => {
+                  const feedback = fb as {
+                    feedbackId?: string;
+                    failureCount?: number;
+                    title?: string;
+                    status?: string;
+                    category?: string;
+                    isDuplicate?: boolean;
+                    error?: string;
+                  };
+                  const failureCount = (feedback && typeof feedback.failureCount === 'number') ? feedback.failureCount : 0;
                   return (
                     <li key={idx} className="flex items-center justify-between">
                       <span>
-                        {(fb && fb.feedbackId) ? '✅' : '❌'} {(fb && fb.category) ? fb.category.replace(/_/g, ' ') : 'Unknown category'} 
-                        {fb && fb.isDuplicate && <span className="text-yellow-600 ml-2">(duplicate)</span>}
-                        {fb && fb.error && <span className="text-red-600 ml-2 text-xs">({fb.error})</span>}
+                        {(feedback && feedback.feedbackId) ? '✅' : '❌'} {(feedback && feedback.category) ? feedback.category.replace(/_/g, ' ') : 'Unknown category'}
+                        {feedback && feedback.isDuplicate && <span className="text-yellow-600 ml-2">(duplicate)</span>}
+                        {feedback && feedback.error && <span className="text-red-600 ml-2 text-xs">({feedback.error})</span>}
                       </span>
                       <span className="text-xs text-yellow-600">
                         {failureCount} failure{failureCount !== 1 ? 's' : ''}
@@ -508,7 +537,7 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
               </p>
             </div>
           )}
-          
+
           <button
             onClick={() => {
               setStatus(null);
@@ -519,15 +548,18 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             Run Again
           </button>
         </div>
-      )}
+      )
+      }
 
       {/* Error */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <h3 className="font-semibold text-red-900 mb-2">❌ Error</h3>
-          <p className="text-sm text-red-800">{error}</p>
-        </div>
-      )}
-    </div>
+      {
+        error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <h3 className="font-semibold text-red-900 mb-2">❌ Error</h3>
+            <p className="text-sm text-red-800">{error}</p>
+          </div>
+        )
+      }
+    </div >
   );
 };

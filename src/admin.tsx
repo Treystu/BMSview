@@ -1,18 +1,27 @@
-import React, { useState, useEffect, Suspense } from 'react';
-import ReactDOM from 'react-dom/client';
-const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
-import './index.css';
 import { Buffer } from 'buffer';
+import React, { Suspense, useEffect, useState } from 'react';
+import ReactDOM from 'react-dom/client';
+import './index.css';
 import { AdminStateProvider } from './state/adminState';
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
 
 // Polyfill Node.js globals for the browser environment.
 // jszip relies on 'Buffer'.
 
 // Add 'Buffer' to the global window object.
+interface NetlifyIdentityWidget {
+  open: () => void;
+  close: () => void;
+  logout: () => void;
+  init: () => void;
+  on: (event: string, callback: (...args: unknown[]) => void) => void;
+  off: (event: string, callback: (...args: unknown[]) => void) => void;
+}
+
 declare global {
   interface Window {
     Buffer: typeof Buffer;
-    netlifyIdentity: any;
+    netlifyIdentity?: NetlifyIdentityWidget;
   }
 }
 window.Buffer = Buffer;
@@ -25,13 +34,13 @@ interface NetlifyUser {
 }
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
-    console.log(JSON.stringify({
-        level: level.toUpperCase(),
-        timestamp: new Date().toISOString(),
-        component: 'AdminApp',
-        message,
-        context
-    }));
+  console.log(JSON.stringify({
+    level: level.toUpperCase(),
+    timestamp: new Date().toISOString(),
+    component: 'AdminApp',
+    message,
+    context
+  }));
 };
 
 const AdminApp: React.FC = () => {
@@ -39,10 +48,11 @@ const AdminApp: React.FC = () => {
 
   useEffect(() => {
     // Define stable handlers to be used for both adding and removing listeners.
-    const handleInit = (user: NetlifyUser | null) => {
-      log('info', 'Netlify Identity init event.', { hasUser: !!user });
-      setUser(user);
-      if (!user) {
+    const handleInit = (identityUser: unknown) => {
+      const typedUser = identityUser as NetlifyUser | null;
+      log('info', 'Netlify Identity init event.', { hasUser: !!typedUser });
+      setUser(typedUser);
+      if (!typedUser) {
         // Delay opening the modal to ensure widget is fully loaded
         setTimeout(() => {
           if (window.netlifyIdentity) {
@@ -56,12 +66,13 @@ const AdminApp: React.FC = () => {
       }
     };
 
-    const handleLogin = (loggedInUser: NetlifyUser) => {
-      log('info', 'Netlify Identity login event.', { userEmail: loggedInUser.email });
-      setUser(loggedInUser);
-      window.netlifyIdentity.close();
+    const handleLogin = (loggedInUser: unknown) => {
+      const typedUser = loggedInUser as NetlifyUser;
+      log('info', 'Netlify Identity login event.', { userEmail: typedUser.email });
+      setUser(typedUser);
+      window.netlifyIdentity?.close();
     };
-    
+
     const handleLogout = () => {
       log('info', 'Netlify Identity logout event.');
       setUser(null);
@@ -77,10 +88,10 @@ const AdminApp: React.FC = () => {
       }, 500);
     };
 
-    const handleError = (error: any) => {
+    const handleError = (error: unknown) => {
       log('error', 'Netlify Identity error event.', { error: String(error) });
     };
-    
+
     // Wait for widget to be fully loaded
     const initializeWidget = () => {
       if (window.netlifyIdentity) {
@@ -142,14 +153,14 @@ const AdminApp: React.FC = () => {
         <div className="max-w-md">
           <h1 className="text-2xl font-bold mb-4">Admin Portal</h1>
           <p className="mb-4">Please log in to continue.</p>
-          
+
           <button
             onClick={handleManualLogin}
             className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors mb-4"
           >
             Open Login
           </button>
-          
+
           <div className="text-sm text-gray-400 space-y-2">
             <p>If the login window does not appear:</p>
             <ul className="list-disc list-inside text-left">

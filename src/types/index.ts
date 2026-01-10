@@ -15,7 +15,7 @@ export interface BatteryAnalysisRequest {
   metadata?: {
     source: string;
     timestamp: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 

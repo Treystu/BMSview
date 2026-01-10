@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { hasOpenCircuitBreakers, resetAllCircuitBreakers } from '../services/circuitBreakerService';
 import { getRecentHistoryForSystem, streamInsights } from '../services/clientService';
 import { useAppState } from '../state/appState';
-import type { AnalysisData, BmsSystem, DisplayableAnalysisResult, WeatherData } from '../types';
+import type { AnalysisData, AnalysisRecord, BmsSystem, DisplayableAnalysisResult, WeatherData } from '../types';
 import { InsightMode, InsightModeDescriptions } from '../types';
 import { CostEstimateBadge, estimateInsightsCost } from './CostEstimateBadge';
 import CloudIcon from './icons/CloudIcon';
@@ -155,7 +155,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
     try {
 
       // Fetch recent history from local cache to bridge the sync gap
-      let recentHistory: any[] = [];
+      let recentHistory: AnalysisRecord[] = [];
       if (systemId) {
         try {
           recentHistory = await getRecentHistoryForSystem(systemId, contextWindowDays);

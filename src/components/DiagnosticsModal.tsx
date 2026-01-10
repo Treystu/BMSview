@@ -6,13 +6,13 @@ interface DiagnosticTestResult {
   name: string;
   status: 'success' | 'warning' | 'error' | 'partial' | 'running';
   duration: number;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
   error?: string;
   // Nested test structures
-  steps?: Array<{ step: string; status: string; time?: number; [key: string]: any }>;
-  tests?: Array<{ test: string; status: string; [key: string]: any }>;
-  stages?: Array<{ stage: string; status: string; duration?: number; [key: string]: any }>;
-  jobLifecycle?: Array<{ event: string; time?: number; [key: string]: any }>;
+  steps?: Array<{ step: string; status: string; time?: number;[key: string]: unknown }>;
+  tests?: Array<{ test: string; status: string;[key: string]: unknown }>;
+  stages?: Array<{ stage: string; status: string; duration?: number;[key: string]: unknown }>;
+  jobLifecycle?: Array<{ event: string; time?: number;[key: string]: unknown }>;
 }
 
 interface DiagnosticsResponse {
@@ -37,7 +37,7 @@ interface DiagnosticsResponse {
     environment?: string;
     requestId?: string;
   };
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 interface DiagnosticsModalProps {
@@ -65,13 +65,14 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
   };
 
   // Helper function to safely render error messages
-  const renderError = (error: any): string => {
+  const renderError = (error: unknown): string => {
     if (typeof error === 'string') {
       return error;
     }
     if (error && typeof error === 'object') {
       // If it's an object, try to extract a message or stringify it
-      return error.message || JSON.stringify(error, null, 2);
+      const errorObj = error as { message?: string };
+      return errorObj.message || JSON.stringify(error, null, 2);
     }
     return 'Unknown error occurred';
   };
@@ -128,9 +129,9 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
   };
 
   // Render nested steps/stages/tests
-  const renderNestedItems = (items: any[], label: string, testName: string) => {
+  const renderNestedItems = (items: unknown[], label: string, testName: string) => {
     if (!items || items.length === 0) return null;
-    
+
     const sectionKey = `${testName}-${label}`;
     const isExpanded = expandedSections.has(sectionKey);
 
@@ -146,9 +147,19 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
         {isExpanded && (
           <div className="space-y-2">
             {items.map((item, idx) => {
-              const itemName = item.step || item.test || item.stage || item.event || `Item ${idx + 1}`;
-              const itemStatus = item.status || 'unknown';
-              const duration = item.time || item.duration;
+              const typedItem = item as {
+                step?: string;
+                test?: string;
+                stage?: string;
+                event?: string;
+                status?: string;
+                time?: number;
+                duration?: number;
+                [key: string]: unknown;
+              };
+              const itemName = typedItem.step || typedItem.test || typedItem.stage || typedItem.event || `Item ${idx + 1}`;
+              const itemStatus = typedItem.status || 'unknown';
+              const duration = typedItem.time || typedItem.duration;
 
               return (
                 <div key={idx} className="bg-gray-800/50 rounded p-2 text-sm">
@@ -165,9 +176,9 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                       </span>
                     )}
                   </div>
-                  {Object.keys(item).length > 3 && (
+                  {Object.keys(typedItem).length > 3 && (
                     <div className="mt-1 pl-6 text-xs text-gray-400 space-y-0.5">
-                      {Object.entries(item)
+                      {Object.entries(typedItem)
                         .filter(([key]) => !['step', 'test', 'stage', 'event', 'status', 'time', 'duration'].includes(key))
                         .map(([key, value]) => (
                           <div key={key}>
@@ -190,7 +201,7 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
   const hasGeneralError = results?.status === 'error' && results?.error && (!results.results || results.results.length === 0);
   const summary = results?.summary;
   const testResults = results?.results || [];
-  
+
   // If we have an error but also have results, show both
   const hasResultsWithError = results?.status === 'error' && testResults.length > 0;
 
@@ -229,12 +240,12 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                 </h3>
                 <p className="text-red-300 mt-2 pl-6">{renderError(results?.error)}</p>
                 <p className="text-red-200 text-sm mt-3 pl-6">
-                  The diagnostic system encountered a critical error before tests could run. 
+                  The diagnostic system encountered a critical error before tests could run.
                   This usually indicates a configuration or connectivity issue.
                 </p>
               </div>
             )}
-            
+
             {/* Show warning at top if we have results but overall status is error */}
             {hasResultsWithError && results?.error && (
               <div className="bg-yellow-900/50 border border-yellow-500 rounded-md p-3 mb-4">
@@ -246,209 +257,207 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
 
             {/* ALWAYS show results if available, even when overall status is error */}
             {results ? (
-          <>
-            {/* Show progress indicator when tests are still running */}
-            {isLoading && (
-              <div className="bg-blue-900/20 border border-blue-500 p-3 rounded-md mb-4">
-                <div className="flex items-center">
-                  <SpinnerIcon className="w-5 h-5 text-blue-400 mr-3" />
-                  <div className="flex-1">
-                    <div className="font-semibold text-blue-300">Tests Running in Parallel...</div>
+              <>
+                {/* Show progress indicator when tests are still running */}
+                {isLoading && (
+                  <div className="bg-blue-900/20 border border-blue-500 p-3 rounded-md mb-4">
+                    <div className="flex items-center">
+                      <SpinnerIcon className="w-5 h-5 text-blue-400 mr-3" />
+                      <div className="flex-1">
+                        <div className="font-semibold text-blue-300">Tests Running in Parallel...</div>
+                        {summary && (
+                          <div className="text-sm text-gray-400 mt-1">
+                            {summary.success + summary.errors + (summary.warnings || 0)} of {summary.total} completed
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {/* Progress bar */}
                     {summary && (
-                      <div className="text-sm text-gray-400 mt-1">
-                        {summary.success + summary.errors + (summary.warnings || 0)} of {summary.total} completed
+                      <div className="mt-3 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 transition-all duration-300"
+                          style={{
+                            width: `${((summary.success + summary.errors + (summary.warnings || 0)) / summary.total * 100)}%`
+                          }}
+                        />
                       </div>
                     )}
                   </div>
-                </div>
-                {/* Progress bar */}
-                {summary && (
-                  <div className="mt-3 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-blue-500 transition-all duration-300"
-                      style={{ 
-                        width: `${((summary.success + summary.errors + (summary.warnings || 0)) / summary.total * 100)}%`
-                      }}
-                    />
+                )}
+
+                {/* Overall Status Banner - Only show if diagnostic system itself failed */}
+                {results.status && results.status !== 'error' && (
+                  <div className={`border rounded-md p-4 mb-4 ${getOverallStatusColor(results.status)}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <span className={`text-2xl mr-3 ${getStatusColor(results.status)}`}>
+                          {getStatusIcon(results.status)}
+                        </span>
+                        <div>
+                          <h3 className="font-semibold text-lg">
+                            {results.status === 'success' && 'All Tests Passed'}
+                            {results.status === 'partial' && 'Partial Success'}
+                            {results.status === 'warning' && 'Tests Completed with Warnings'}
+                          </h3>
+                          <p className="text-sm text-gray-300 mt-1">
+                            Completed in {results.duration ? `${(results.duration / 1000).toFixed(2)}s` : 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
-              </div>
-            )}
-            
-            {/* Overall Status Banner - Only show if diagnostic system itself failed */}
-            {results.status && results.status !== 'error' && (
-              <div className={`border rounded-md p-4 mb-4 ${getOverallStatusColor(results.status)}`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <span className={`text-2xl mr-3 ${getStatusColor(results.status)}`}>
-                      {getStatusIcon(results.status)}
-                    </span>
-                    <div>
-                      <h3 className="font-semibold text-lg">
-                        {results.status === 'success' && 'All Tests Passed'}
-                        {results.status === 'partial' && 'Partial Success'}
-                        {results.status === 'warning' && 'Tests Completed with Warnings'}
-                      </h3>
-                      <p className="text-sm text-gray-300 mt-1">
-                        Completed in {results.duration ? `${(results.duration / 1000).toFixed(2)}s` : 'N/A'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            {/* Display summary if available */}
-            {summary && summary.total > 0 && (
-              <div className="bg-gray-700 p-4 rounded-md mb-4">
-                <h3 className="font-semibold text-lg mb-3">Test Summary</h3>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-gray-300">{summary.total}</div>
-                    <div className="text-sm text-gray-400">Total Tests</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-400">{summary.success}</div>
-                    <div className="text-sm text-gray-400">Passed</div>
-                  </div>
-                  {(summary.partial && summary.partial > 0) && (
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-yellow-400">{summary.partial}</div>
-                      <div className="text-sm text-gray-400">Partial</div>
-                    </div>
-                  )}
-                  {(summary.warnings && summary.warnings > 0) && (
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-yellow-400">{summary.warnings}</div>
-                      <div className="text-sm text-gray-400">Warnings</div>
-                    </div>
-                  )}
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-red-400">{summary.errors}</div>
-                    <div className="text-sm text-gray-400">Failed</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Display individual test results */}
-            {testResults.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="font-semibold text-lg mb-2">Test Results</h3>
-                {testResults.map((result, index) => {
-                  const isExpanded = expandedTestId === result.name;
-                  const hasDetails = result.details || result.error;
-                  const hasNestedItems = result.steps || result.tests || result.stages || result.jobLifecycle;
-
-                  return (
-                    <div 
-                      key={index} 
-                      className={`bg-gray-700 p-4 rounded-md transition-all ${
-                        result.status === 'error' ? 'border border-red-500/30' : 
-                        result.status === 'warning' ? 'border border-yellow-500/30' : 
-                        result.status === 'partial' ? 'border border-yellow-500/30' : ''
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center">
-                            {result.status === 'running' ? (
-                              <SpinnerIcon className="w-5 h-5 text-blue-400 mr-2" />
-                            ) : (
-                              <span className={`text-xl mr-2 ${getStatusColor(result.status)}`}>
-                                {getStatusIcon(result.status)}
-                              </span>
-                            )}
-                            <h4 className="font-semibold text-base">{result.name}</h4>
-                            <span className="ml-3 text-xs text-gray-400">
-                              {result.status === 'running' ? (
-                                <span className="text-blue-400">running...</span>
-                              ) : result.duration ? (
-                                `${result.duration}ms`
-                              ) : ''}
-                            </span>
-                          </div>
-                          
-                          {result.error && !isExpanded && (
-                            <p className="text-sm text-red-300 mt-2 pl-7">{renderError(result.error)}</p>
-                          )}
-
-                          {/* Show nested items inline when collapsed */}
-                          {hasNestedItems && !isExpanded && (
-                            <div className="mt-2 pl-7 text-sm text-gray-400">
-                              {result.steps && <span>• {result.steps.length} steps</span>}
-                              {result.tests && <span>• {result.tests.length} tests</span>}
-                              {result.stages && <span>• {result.stages.length} stages</span>}
-                              {result.jobLifecycle && <span>• {result.jobLifecycle.length} lifecycle events</span>}
-                            </div>
-                          )}
-                        </div>
-                        
-                        {(hasDetails || hasNestedItems) && (
-                          <button
-                            onClick={() => setExpandedTestId(isExpanded ? null : result.name)}
-                            className={`ml-2 text-xs px-3 py-1 rounded transition-colors whitespace-nowrap ${
-                              result.status === 'error' 
-                                ? 'text-red-400 hover:text-red-300 bg-red-900/30 hover:bg-red-900/50' 
-                                : 'text-blue-400 hover:text-blue-300 bg-blue-900/30 hover:bg-blue-900/50'
-                            }`}
-                          >
-                            {isExpanded ? 'Hide Details' : 'Show Details'}
-                          </button>
-                        )}
+                {/* Display summary if available */}
+                {summary && summary.total > 0 && (
+                  <div className="bg-gray-700 p-4 rounded-md mb-4">
+                    <h3 className="font-semibold text-lg mb-3">Test Summary</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-gray-300">{summary.total}</div>
+                        <div className="text-sm text-gray-400">Total Tests</div>
                       </div>
-
-                      {/* Expanded details */}
-                      {isExpanded && (hasDetails || hasNestedItems) && (
-                        <div className="mt-4 p-3 bg-gray-800 rounded border border-gray-600">
-                          {result.error && (
-                            <div className="mb-3">
-                              <div className="font-semibold text-red-300 text-sm mb-1">Error:</div>
-                              <div className="text-sm text-red-200 font-mono bg-red-900/20 p-2 rounded whitespace-pre-wrap break-words">
-                                {renderError(result.error)}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Render nested structures */}
-                          {result.steps && renderNestedItems(result.steps, 'Steps', result.name)}
-                          {result.tests && renderNestedItems(result.tests, 'Tests', result.name)}
-                          {result.stages && renderNestedItems(result.stages, 'Stages', result.name)}
-                          {result.jobLifecycle && renderNestedItems(result.jobLifecycle, 'Job Lifecycle', result.name)}
-                          
-                          {result.details && Object.keys(result.details).length > 0 && (
-                            <div className="mt-3">
-                              <div className="font-semibold text-gray-300 text-sm mb-2">Additional Details:</div>
-                              <div className="text-xs text-gray-300 font-mono bg-gray-900/50 p-3 rounded overflow-x-auto max-h-64 overflow-y-auto">
-                                <pre>{JSON.stringify(result.details, null, 2)}</pre>
-                              </div>
-                            </div>
-                          )}
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-green-400">{summary.success}</div>
+                        <div className="text-sm text-gray-400">Passed</div>
+                      </div>
+                      {(summary.partial && summary.partial > 0) && (
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-yellow-400">{summary.partial}</div>
+                          <div className="text-sm text-gray-400">Partial</div>
                         </div>
                       )}
+                      {(summary.warnings && summary.warnings > 0) && (
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-yellow-400">{summary.warnings}</div>
+                          <div className="text-sm text-gray-400">Warnings</div>
+                        </div>
+                      )}
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-red-400">{summary.errors}</div>
+                        <div className="text-sm text-gray-400">Failed</div>
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  </div>
+                )}
 
-            {/* Troubleshooting section for failures */}
-            {testResults.some(r => r.status === 'error' || r.status === 'warning') && (
-              <div className="bg-blue-900/20 border border-blue-500 p-4 rounded-md mt-4">
-                <h3 className="font-semibold text-lg text-blue-300 mb-2 flex items-center">
-                  <span className="mr-2">💡</span>
-                  Troubleshooting Tips
-                </h3>
-                <ul className="list-disc list-inside text-gray-300 space-y-2 text-sm">
-                  <li><strong>Check Dependencies:</strong> Ensure MongoDB, Netlify Functions, and external APIs (Gemini, Weather) are reachable.</li>
-                  <li><strong>Review Logs:</strong> Check Netlify function logs for detailed error messages and stack traces.</li>
-                  <li><strong>Configuration:</strong> Verify environment variables (GEMINI_API_KEY, MONGODB_URI, etc.) are set correctly.</li>
-                  <li><strong>Network Issues:</strong> Verify connectivity and timeout values if requests are timing out.</li>
-                  <li><strong>Async Analysis:</strong> If async analysis shows warnings, ensure background job processor is running.</li>
-                </ul>
-              </div>
-            )}
-          </>
+                {/* Display individual test results */}
+                {testResults.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="font-semibold text-lg mb-2">Test Results</h3>
+                    {testResults.map((result, index) => {
+                      const isExpanded = expandedTestId === result.name;
+                      const hasDetails = result.details || result.error;
+                      const hasNestedItems = result.steps || result.tests || result.stages || result.jobLifecycle;
+
+                      return (
+                        <div
+                          key={index}
+                          className={`bg-gray-700 p-4 rounded-md transition-all ${result.status === 'error' ? 'border border-red-500/30' :
+                            result.status === 'warning' ? 'border border-yellow-500/30' :
+                              result.status === 'partial' ? 'border border-yellow-500/30' : ''
+                            }`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center">
+                                {result.status === 'running' ? (
+                                  <SpinnerIcon className="w-5 h-5 text-blue-400 mr-2" />
+                                ) : (
+                                  <span className={`text-xl mr-2 ${getStatusColor(result.status)}`}>
+                                    {getStatusIcon(result.status)}
+                                  </span>
+                                )}
+                                <h4 className="font-semibold text-base">{result.name}</h4>
+                                <span className="ml-3 text-xs text-gray-400">
+                                  {result.status === 'running' ? (
+                                    <span className="text-blue-400">running...</span>
+                                  ) : result.duration ? (
+                                    `${result.duration}ms`
+                                  ) : ''}
+                                </span>
+                              </div>
+
+                              {result.error && !isExpanded && (
+                                <p className="text-sm text-red-300 mt-2 pl-7">{renderError(result.error)}</p>
+                              )}
+
+                              {/* Show nested items inline when collapsed */}
+                              {hasNestedItems && !isExpanded && (
+                                <div className="mt-2 pl-7 text-sm text-gray-400">
+                                  {result.steps && <span>• {result.steps.length} steps</span>}
+                                  {result.tests && <span>• {result.tests.length} tests</span>}
+                                  {result.stages && <span>• {result.stages.length} stages</span>}
+                                  {result.jobLifecycle && <span>• {result.jobLifecycle.length} lifecycle events</span>}
+                                </div>
+                              )}
+                            </div>
+
+                            {(hasDetails || hasNestedItems) && (
+                              <button
+                                onClick={() => setExpandedTestId(isExpanded ? null : result.name)}
+                                className={`ml-2 text-xs px-3 py-1 rounded transition-colors whitespace-nowrap ${result.status === 'error'
+                                  ? 'text-red-400 hover:text-red-300 bg-red-900/30 hover:bg-red-900/50'
+                                  : 'text-blue-400 hover:text-blue-300 bg-blue-900/30 hover:bg-blue-900/50'
+                                  }`}
+                              >
+                                {isExpanded ? 'Hide Details' : 'Show Details'}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Expanded details */}
+                          {isExpanded && (hasDetails || hasNestedItems) && (
+                            <div className="mt-4 p-3 bg-gray-800 rounded border border-gray-600">
+                              {result.error && (
+                                <div className="mb-3">
+                                  <div className="font-semibold text-red-300 text-sm mb-1">Error:</div>
+                                  <div className="text-sm text-red-200 font-mono bg-red-900/20 p-2 rounded whitespace-pre-wrap break-words">
+                                    {renderError(result.error)}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Render nested structures */}
+                              {result.steps && renderNestedItems(result.steps, 'Steps', result.name)}
+                              {result.tests && renderNestedItems(result.tests, 'Tests', result.name)}
+                              {result.stages && renderNestedItems(result.stages, 'Stages', result.name)}
+                              {result.jobLifecycle && renderNestedItems(result.jobLifecycle, 'Job Lifecycle', result.name)}
+
+                              {result.details && Object.keys(result.details).length > 0 && (
+                                <div className="mt-3">
+                                  <div className="font-semibold text-gray-300 text-sm mb-2">Additional Details:</div>
+                                  <div className="text-xs text-gray-300 font-mono bg-gray-900/50 p-3 rounded overflow-x-auto max-h-64 overflow-y-auto">
+                                    <pre>{JSON.stringify(result.details, null, 2)}</pre>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Troubleshooting section for failures */}
+                {testResults.some(r => r.status === 'error' || r.status === 'warning') && (
+                  <div className="bg-blue-900/20 border border-blue-500 p-4 rounded-md mt-4">
+                    <h3 className="font-semibold text-lg text-blue-300 mb-2 flex items-center">
+                      <span className="mr-2">💡</span>
+                      Troubleshooting Tips
+                    </h3>
+                    <ul className="list-disc list-inside text-gray-300 space-y-2 text-sm">
+                      <li><strong>Check Dependencies:</strong> Ensure MongoDB, Netlify Functions, and external APIs (Gemini, Weather) are reachable.</li>
+                      <li><strong>Review Logs:</strong> Check Netlify function logs for detailed error messages and stack traces.</li>
+                      <li><strong>Configuration:</strong> Verify environment variables (GEMINI_API_KEY, MONGODB_URI, etc.) are set correctly.</li>
+                      <li><strong>Network Issues:</strong> Verify connectivity and timeout values if requests are timing out.</li>
+                      <li><strong>Async Analysis:</strong> If async analysis shows warnings, ensure background job processor is running.</li>
+                    </ul>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-center text-gray-400 py-8">
                 No diagnostic results available. Click Run Tests to start diagnostics.

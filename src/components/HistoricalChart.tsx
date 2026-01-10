@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getHourlySocPredictions, getSystemAnalytics, getUnifiedHistory, syncWeather, SystemAnalytics, type UnifiedTimelinePoint } from '../services/clientService';
-import type { AnalysisData, AnalysisRecord, BmsSystem, WeatherData } from '../types';
+import type { AnalysisRecord, BmsSystem } from '../types';
 import { calculateSystemAnalytics } from '../utils/analytics';
 import AlertAnalysis from './admin/AlertAnalysis';
 import SpinnerIcon from './icons/SpinnerIcon';
@@ -15,6 +15,107 @@ export interface ChartAnnotation {
     type: 'critical' | 'warning' | 'info';
     message: string;
 }
+
+type ChartAnomaly = {
+    type: 'critical' | 'warning';
+    message: string;
+    key: MetricKey;
+};
+
+type ChartPoint = {
+    timestamp: string;
+    recordCount: number;
+    anomalies: ChartAnomaly[];
+    source: 'bms' | 'weather' | 'cloud' | 'estimated' | 'interpolated';
+    [key: string]: unknown;
+};
+
+type TimeLabel = {
+    x: number;
+    label: string;
+    hour: number;
+};
+
+interface PredictiveSocMetadata {
+    actualHours?: number;
+    predictedHours?: number;
+    coveragePercent?: number;
+    avgDischargeRatePerHour?: number;
+    avgChargeRatePerHour?: number;
+    actualDataPoints?: number;
+    timeRange?: {
+        start?: string;
+        end?: string;
+    };
+}
+
+type PredictiveSocData = {
+    predictions: Array<{
+        timestamp: string;
+        predicted: number;
+        actual?: number;
+    }>;
+    metadata?: PredictiveSocMetadata;
+};
+
+type ChartDimensions = {
+    WIDTH: number;
+    CHART_HEIGHT: number;
+    BRUSH_HEIGHT: number;
+    MARGIN: { top: number; right: number; bottom: number; left: number };
+    chartWidth: number;
+    chartHeight: number;
+    totalHeight: number;
+};
+
+type TimelineData = {
+    dataLODs: Record<string, ChartPoint[]>;
+    xScale: ((time: string | number) => number) & { invert: (px: number) => number };
+    xMin: number;
+    xMax: number;
+    averagingConfig: {
+        enabled: boolean;
+        manualBucketSize: string | null;
+        autoBucketKey: string;
+    };
+};
+
+type YAxisTick = { value: number; y: number };
+
+type PathSegment = { d: string; source: string; color: string };
+
+type MetricPath = { key: MetricKey; segments: PathSegment[]; color: string };
+
+type BandSegment = {
+    x: number;
+    min: number;
+    max: number;
+    yScale: (val: number) => number;
+    bandwidth: number;
+    timestamp: string;
+};
+
+type MetricBand = { key: MetricKey; segments: BandSegment[]; color: string };
+
+type RenderedAnomaly = ChartAnomaly & { timestamp: string; y: number };
+
+type SvgComputed = {
+    paths: MetricPath[];
+    anomalies: RenderedAnomaly[];
+    bands: MetricBand[];
+    cloudAreaPath: string;
+    yScaleLeft: (val: number) => number;
+    yTicksLeft: YAxisTick[];
+    yAxisLabelLeft: string;
+    yScaleRight: (val: number) => number;
+    yTicksRight: YAxisTick[];
+    yAxisLabelRight: string;
+};
+
+const getPointNumber = (point: ChartPoint, key: string): number | null => {
+    const value = point[key];
+    return typeof value === 'number' ? value : null;
+};
 
 // Optional props for admin features
 export interface HistoricalChartProps {
@@ -60,11 +161,11 @@ const METRIC_GROUPS = Object.entries(METRICS).reduce((acc, [key, metric]) => {
 }, {} as Record<string, MetricKey[]>);
 
 const mapRecordToPoint = (r: AnalysisRecord, ratedCapacity?: number | null) => {
-    const point: { [key: string]: any } = { timestamp: r.timestamp, recordCount: 1, anomalies: [], source: 'bms' };
+    const point: ChartPoint = { timestamp: r.timestamp, recordCount: 1, anomalies: [], source: 'bms' };
     Object.keys(METRICS).forEach(m => {
         const metric = m as MetricKey;
         const { source, multiplier = 1, anomaly } = METRICS[metric];
-        let value;
+        let value: unknown;
 
         // Special handling for metrics with different names or derived values
         if (metric === 'irradiance') {
@@ -80,7 +181,13 @@ const mapRecordToPoint = (r: AnalysisRecord, ratedCapacity?: number | null) => {
                 value = null;
             }
         } else {
-            value = source === 'analysis' ? (r.analysis as any)?.[metric] : (r.weather as any)?.[metric];
+            if (source === 'analysis') {
+                const analysisObj = r.analysis as unknown as Record<string, unknown> | null | undefined;
+                value = analysisObj?.[metric];
+            } else {
+                const weatherObj = r.weather as unknown as Record<string, unknown> | undefined;
+                value = weatherObj?.[metric];
+            }
         }
 
         if (value != null && typeof value === 'number') {
@@ -111,7 +218,7 @@ const mapUnifiedPointToChartPoint = (p: UnifiedTimelinePoint, ratedCapacity?: nu
 
     // It is a weather point
     const weather = p.data;
-    const point: { [key: string]: any } = {
+    const point: ChartPoint = {
         timestamp: p.timestamp,
         recordCount: 1,
         anomalies: [],
@@ -125,9 +232,11 @@ const mapUnifiedPointToChartPoint = (p: UnifiedTimelinePoint, ratedCapacity?: nu
         let value;
         // Weather points only provide weather metrics (and estimated irradiance)
         if (metric === 'irradiance') {
-            value = (weather as any).estimated_irradiance_w_m2 ?? null;
+            const weatherObj = weather as unknown as Record<string, unknown>;
+            value = weatherObj.estimated_irradiance_w_m2 ?? null;
         } else if (source === 'weather') {
-            value = (weather as any)[metric];
+            const weatherObj = weather as unknown as Record<string, unknown>;
+            value = weatherObj[metric];
         } else {
             value = null; // Battery metrics are null for weather-only points
         }
@@ -142,20 +251,20 @@ const mapUnifiedPointToChartPoint = (p: UnifiedTimelinePoint, ratedCapacity?: nu
     return point;
 };
 
-const aggregateData = (data: any[], bucketMinutes: number): any[] => {
+const aggregateData = (data: ChartPoint[], bucketMinutes: number): ChartPoint[] => {
     if (bucketMinutes <= 0) return data;
 
     const bucketMillis = bucketMinutes * 60 * 1000;
-    const buckets = new Map<number, any[]>();
+    const buckets = new Map<number, ChartPoint[]>();
     data.forEach(r => {
-        const timestamp = typeof r.timestamp === 'string' ? r.timestamp : r.timestamp;
+        const timestamp = r.timestamp;
         const key = Math.floor(new Date(timestamp).getTime() / bucketMillis) * bucketMillis;
         if (!buckets.has(key)) buckets.set(key, []);
         buckets.get(key)!.push(r);
     });
 
     return Array.from(buckets.entries()).map(([key, bucket]) => {
-        const avgPoint: { [key: string]: any } = {
+        const avgPoint: ChartPoint = {
             timestamp: new Date(key).toISOString(),
             recordCount: bucket.length,
             anomalies: [],
@@ -163,18 +272,13 @@ const aggregateData = (data: any[], bucketMinutes: number): any[] => {
         };
         Object.keys(METRICS).forEach(m => {
             const metric = m as MetricKey;
-            const { source, multiplier = 1, anomaly } = METRICS[metric];
+            const { multiplier = 1, anomaly } = METRICS[metric];
 
             // Get values from bucket, handling both old (analysis/weather) and new (data) formats
             const values = bucket.map(r => {
-                if (r.analysis || r.weather) {
-                    // Old format (AnalysisRecord) - need to apply multiplier
-                    const rawValue = source === 'analysis' ? r.analysis?.[metric as keyof AnalysisData] : r.weather?.[metric as keyof WeatherData];
-                    return rawValue != null && typeof rawValue === 'number' ? rawValue * multiplier : null;
-                } else {
-                    // New format (already a chart point with multiplier applied)
-                    return r[metric];
-                }
+                // Chart points already have multiplier applied
+                const rawValue = getPointNumber(r, metric);
+                return rawValue != null ? rawValue : null;
             }).filter((v): v is number => v != null);
 
             if (values.length > 0) {
@@ -411,18 +515,18 @@ const ChartControls: React.FC<{
 };
 
 const SvgChart: React.FC<{
-    chartData: any;
+    chartData: TimelineData;
     metricConfig: Partial<Record<MetricKey, { axis: Axis }>>;
     hiddenMetrics: Set<MetricKey>;
     viewBox: { x: number; width: number };
     setViewBox: React.Dispatch<React.SetStateAction<{ x: number, width: number }>>;
-    chartDimensions: any;
+    chartDimensions: ChartDimensions;
     bandEnabled?: boolean;
     annotations?: ChartAnnotation[];
     showSolarOverlay?: boolean;
 }> = ({ chartData, metricConfig, hiddenMetrics, viewBox, setViewBox, chartDimensions, bandEnabled = false, annotations = [], showSolarOverlay = false }) => {
     const svgRef = useRef<SVGSVGElement>(null);
-    const [tooltip, setTooltip] = useState<{ x: number; y: number; point: any } | null>(null);
+    const [tooltip, setTooltip] = useState<{ x: number; y: number; point: ChartPoint } | null>(null);
 
     const interactionState = useRef({
         isPanning: false,
@@ -439,7 +543,7 @@ const SvgChart: React.FC<{
         WIDTH, CHART_HEIGHT, BRUSH_HEIGHT, MARGIN, chartWidth, chartHeight, totalHeight
     } = chartDimensions;
 
-    const dataToRender = useMemo(() => {
+    const dataToRender = useMemo<ChartPoint[]>(() => {
         if (!averagingConfig.enabled) return dataLODs['raw'];
         const bucketKey = averagingConfig.manualBucketSize ? String(averagingConfig.manualBucketSize) : averagingConfig.autoBucketKey;
         if (bucketKey === 'raw') return dataLODs['raw'];
@@ -456,7 +560,7 @@ const SvgChart: React.FC<{
         paths, anomalies, bands, cloudAreaPath,
         yScaleLeft, yTicksLeft, yAxisLabelLeft,
         yScaleRight, yTicksRight, yAxisLabelRight
-    } = useMemo(() => {
+    } = useMemo<SvgComputed>(() => {
         const activeMetrics = Object.entries(metricConfig).map(([key, config]) => ({ key: key as MetricKey, axis: config!.axis }));
         const leftMetrics = activeMetrics.filter(m => m.axis === 'left').map(m => m.key);
         const rightMetrics = activeMetrics.filter(m => m.axis === 'right').map(m => m.key);
@@ -464,7 +568,13 @@ const SvgChart: React.FC<{
         const calculateYAxis = (keys: MetricKey[]) => {
             if (keys.length === 0) return { scale: () => 0, ticks: [], label: '' };
             let yMin = Infinity, yMax = -Infinity;
-            keys.forEach(key => dataToRender.forEach((d: any) => { if (d[key] !== null) { yMin = Math.min(yMin, d[key]); yMax = Math.max(yMax, d[key]); } }));
+            keys.forEach(key => dataToRender.forEach((d) => {
+                const value = getPointNumber(d, key);
+                if (value != null) {
+                    yMin = Math.min(yMin, value);
+                    yMax = Math.max(yMax, value);
+                }
+            }));
             if (yMin === Infinity) return { scale: () => 0, ticks: [], label: '' };
             const buffer = (yMax - yMin) * 0.1 || 1;
             const scaleMin = yMin - buffer, scaleMax = yMax + buffer;
@@ -476,29 +586,31 @@ const SvgChart: React.FC<{
         const { scale: yScaleLeft, ticks: yTicksLeft, label: yAxisLabelLeft } = calculateYAxis(leftMetrics);
         const { scale: yScaleRight, ticks: yTicksRight, label: yAxisLabelRight } = calculateYAxis(rightMetrics);
 
-        const paths = activeMetrics.map(({ key, axis }) => {
+        const paths = activeMetrics.map(({ key, axis }): MetricPath | null => {
             const yScale = axis === 'left' ? yScaleLeft : yScaleRight;
             if (!yScale) return null;
 
+            const pointAtKey = (p: ChartPoint) => getPointNumber(p, key) ?? 0;
+
             // Group consecutive points by source type to create path segments
-            const segments: { d: string; source: string; color: string }[] = [];
-            let currentSegment: any[] = [];
+            const segments: PathSegment[] = [];
+            let currentSegment: ChartPoint[] = [];
             let currentSource = '';
-            let lastPointOfPrevSegment: any = null; // Track last point to stitch segments
+            let lastPointOfPrevSegment: ChartPoint | null = null; // Track last point to stitch segments
 
             // Filter nulls first
-            const validData = dataToRender.filter((d: any) => d[key] !== null);
+            const validData = dataToRender.filter((d) => getPointNumber(d, key) != null);
 
-            validData.forEach((d: any) => {
+            validData.forEach((d) => {
                 const pointSource = d.source || 'bms';
 
                 if (currentSource !== pointSource && currentSegment.length > 0) {
                     // Source changed, finish current segment
                     const pathData = currentSegment.map((p, pIdx) =>
-                        `${pIdx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(p[key]).toFixed(2)}`
+                        `${pIdx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(pointAtKey(p)).toFixed(2)}`
                     ).join(' ');
                     segments.push({ d: pathData, source: currentSource, color: METRICS[key].color });
-                    
+
                     // Capture last point for stitching
                     lastPointOfPrevSegment = currentSegment[currentSegment.length - 1];
                     currentSegment = [];
@@ -517,42 +629,45 @@ const SvgChart: React.FC<{
             // Add final segment
             if (currentSegment.length > 0) {
                 const pathData = currentSegment.map((p, pIdx) =>
-                    `${pIdx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(p[key]).toFixed(2)}`
+                    `${pIdx === 0 ? 'M' : 'L'} ${xScale(p.timestamp).toFixed(2)} ${yScale(pointAtKey(p)).toFixed(2)}`
                 ).join(' ');
                 segments.push({ d: pathData, source: currentSource, color: METRICS[key].color });
             }
 
             return { key, segments, color: METRICS[key].color };
-        }).filter(Boolean);
+        }).filter((p): p is MetricPath => p !== null);
 
         // Calculate min/max bands for each metric using bucket-local min/max
-        const bands = bandEnabled ? activeMetrics.map(({ key, axis }) => {
+        const bands: MetricBand[] = bandEnabled ? activeMetrics.map(({ key, axis }): MetricBand | null => {
             const yScale = axis === 'left' ? yScaleLeft : yScaleRight;
             if (!yScale) return null;
 
-            const filteredData = dataToRender.filter((d: any) => d[key] !== null);
+            const filteredData = dataToRender.filter((d) => getPointNumber(d, key) != null);
             if (filteredData.length === 0) return null;
 
             // Create band segments using localized min/max from the bucket
             const segments = filteredData
-                .map((d: any) => {
+                .map((d): Omit<BandSegment, 'min' | 'max'> & { min: number | null; max: number | null } => {
                     // Use bucket-local min/max if available, fallback to point value
-                    const min = d[`${key}_min`] ?? d[key];
-                    const max = d[`${key}_max`] ?? d[key];
+                    const minCandidate = d[`${key}_min`];
+                    const maxCandidate = d[`${key}_max`];
+                    const pointValue = getPointNumber(d, key);
+                    const min = typeof minCandidate === 'number' ? minCandidate : pointValue;
+                    const max = typeof maxCandidate === 'number' ? maxCandidate : pointValue;
                     const x = xScale(d.timestamp);
                     const bandwidth = Math.max(2, (chartWidth / filteredData.length) * 0.8);
 
                     return { x, min, max, yScale, bandwidth, timestamp: d.timestamp };
                 })
-                .filter((seg: any) => seg.min !== seg.max); // Only show bands where there's variance
+                .filter((seg): seg is BandSegment => typeof seg.min === 'number' && typeof seg.max === 'number' && seg.min !== seg.max); // Only show bands where there's variance
 
             if (segments.length === 0) return null;
             return { key, segments, color: METRICS[key].color };
-        }).filter(Boolean) : [];
+        }).filter((b): b is MetricBand => b !== null) : [];
 
-        // FIX: Deduplicate anomalies using Set of composite keys
+        // Deduplicate anomalies using Set of composite keys
         const anomalySet = new Set<string>();
-        const anomalies = dataToRender.flatMap((d: any) => d.anomalies.map((a: any) => {
+        const anomalies = dataToRender.flatMap((d) => d.anomalies.map((a): RenderedAnomaly | null => {
             const metricConf = metricConfig[a.key as MetricKey];
             if (!metricConf) return null;
 
@@ -562,8 +677,10 @@ const SvgChart: React.FC<{
             anomalySet.add(uniqueKey);
 
             const yScale = metricConf.axis === 'left' ? yScaleLeft : yScaleRight;
-            return { ...a, timestamp: d.timestamp, y: yScale(d[a.key]) };
-        })).filter(Boolean);
+            const valueAtKey = getPointNumber(d, a.key);
+            if (valueAtKey == null) return null;
+            return { ...a, timestamp: d.timestamp, y: yScale(valueAtKey) };
+        })).filter((a): a is RenderedAnomaly => a !== null);
 
         // Generate area path for cloud cover (if enabled)
         let cloudAreaPath = '';
@@ -571,7 +688,7 @@ const SvgChart: React.FC<{
         if (cloudMetricConfig && !hiddenMetrics.has('clouds')) {
             const cloudYScale = cloudMetricConfig.axis === 'left' ? yScaleLeft : yScaleRight;
             if (cloudYScale) {
-                const cloudPoints = dataToRender.filter((d: any) => d.clouds !== null);
+                const cloudPoints = dataToRender.filter((d) => getPointNumber(d, 'clouds') != null);
                 if (cloudPoints.length > 0) {
                     // Create area path (from baseline to cloud value)
                     const baselineY = cloudYScale(0);
@@ -579,11 +696,11 @@ const SvgChart: React.FC<{
 
                     // Start at first point
                     pathParts.push(`M ${xScale(cloudPoints[0].timestamp).toFixed(2)} ${baselineY}`);
-                    pathParts.push(`L ${xScale(cloudPoints[0].timestamp).toFixed(2)} ${cloudYScale(cloudPoints[0].clouds).toFixed(2)}`);
+                    pathParts.push(`L ${xScale(cloudPoints[0].timestamp).toFixed(2)} ${cloudYScale(getPointNumber(cloudPoints[0], 'clouds') ?? 0).toFixed(2)}`);
 
                     // Add all cloud points
                     for (let i = 1; i < cloudPoints.length; i++) {
-                        pathParts.push(`L ${xScale(cloudPoints[i].timestamp).toFixed(2)} ${cloudYScale(cloudPoints[i].clouds).toFixed(2)}`);
+                        pathParts.push(`L ${xScale(cloudPoints[i].timestamp).toFixed(2)} ${cloudYScale(getPointNumber(cloudPoints[i], 'clouds') ?? 0).toFixed(2)}`);
                     }
 
                     // Close path back to baseline
@@ -698,7 +815,7 @@ const SvgChart: React.FC<{
         const chartMouseX = svgPoint.x - MARGIN.left;
         const timeValue = xScale.invert(chartMouseX * (viewBox.width / chartWidth) + viewBox.x);
 
-        const closestPoint = dataToRender.reduce((prev: any, curr: any) =>
+        const closestPoint = dataToRender.reduce((prev: ChartPoint, curr: ChartPoint) =>
             Math.abs(new Date(curr.timestamp).getTime() - timeValue) < Math.abs(new Date(prev.timestamp).getTime() - timeValue)
                 ? curr
                 : prev
@@ -758,15 +875,15 @@ const SvgChart: React.FC<{
                 {/* Main Chart Area */}
                 <g transform={`translate(${MARGIN.left}, ${MARGIN.top})`}>
                     {/* Grid Lines (Styled) */}
-                    {yTicksLeft.map((tick: any, i: number) => <line key={`gl-l-${i}`} x1="0" y1={tick.y} x2={chartWidth} y2={tick.y} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" opacity="0.4" />)}
-                    {xTicks.map((tick: any, i: number) => <line key={`gl-x-${i}`} x1={tick.x} y1="0" x2={tick.x} y2={chartHeight} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" opacity="0.4" />)}
+                    {yTicksLeft.map((tick, i: number) => <line key={`gl-l-${i}`} x1="0" y1={tick.y} x2={chartWidth} y2={tick.y} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" opacity="0.4" />)}
+                    {xTicks.map((tick, i: number) => <line key={`gl-x-${i}`} x1={tick.x} y1="0" x2={tick.x} y2={chartHeight} stroke="#374151" strokeWidth="1" strokeDasharray="4 4" opacity="0.4" />)}
 
                     <g clipPath="url(#chart-area)">
                         <g transform={`translate(${-viewBox.x * (chartWidth / viewBox.width)}, 0) scale(${chartWidth / viewBox.width}, 1)`}>
                             {/* Min/Max Bands - lighter and narrower using std dev */}
-                            {bands.map((band: any) => band && !hiddenMetrics.has(band.key) && (
+                            {bands.map((band) => band && !hiddenMetrics.has(band.key) && (
                                 <g key={`band-${band.key}`}>
-                                    {band.segments.map((seg: any, i: number) => (
+                                    {band.segments.map((seg, i: number) => (
                                         <rect
                                             key={`band-${band.key}-${i}`}
                                             x={seg.x - seg.bandwidth / 2}
@@ -792,7 +909,7 @@ const SvgChart: React.FC<{
                                 />
                             )}
 
-                            {paths.map((p: any) => p && !hiddenMetrics.has(p.key) && p.segments.map((seg: any, segIdx: number) => {
+                            {paths.map((p) => p && !hiddenMetrics.has(p.key) && p.segments.map((seg, segIdx: number) => {
                                 const isIrradiance = p.key === 'irradiance';
                                 return (
                                     <path
@@ -812,22 +929,24 @@ const SvgChart: React.FC<{
                                 if (hiddenMetrics.has(key)) return [];
                                 const yScale = axis === 'left' ? yScaleLeft : yScaleRight;
                                 if (!yScale) return [];
-                                return dataToRender.filter((d: any) => d[key] !== null).map((d: any) => (
-                                    <ellipse
-                                        key={`${key}-${d.timestamp}`}
-                                        cx={xScale(d.timestamp).toFixed(2)}
-                                        cy={yScale(d[key]).toFixed(2)}
-                                        rx={3 / zoomRatio}
-                                        ry={3}
-                                        fill={METRICS[key].color}
-                                        stroke="white"
-                                        strokeWidth="1"
-                                        vectorEffect="non-scaling-stroke"
-                                    />
-                                ));
+                                return dataToRender
+                                    .filter((d) => getPointNumber(d, key) != null)
+                                    .map((d) => (
+                                        <ellipse
+                                            key={`${key}-${d.timestamp}`}
+                                            cx={xScale(d.timestamp).toFixed(2)}
+                                            cy={yScale(getPointNumber(d, key) ?? 0).toFixed(2)}
+                                            rx={3 / zoomRatio}
+                                            ry={3}
+                                            fill={METRICS[key].color}
+                                            stroke="white"
+                                            strokeWidth="1"
+                                            vectorEffect="non-scaling-stroke"
+                                        />
+                                    ));
                             })}
 
-                            {anomalies.map((a: any, i: number) => !hiddenMetrics.has(a.key) &&
+                            {anomalies.map((a, i: number) => !hiddenMetrics.has(a.key) &&
                                 <ellipse
                                     key={`anomaly-${i}`}
                                     cx={xScale(a.timestamp).toFixed(2)}
@@ -877,9 +996,9 @@ const SvgChart: React.FC<{
                             })}
                         </g>
                     </g>
-                    <g>{yTicksLeft.map((tick: any, i: number) => <text key={`tl-l-${i}`} x={-8} y={tick.y} textAnchor='end' dy="0.32em" fill="#d1d5db" fontSize="12">{tick.value.toFixed(1)}</text>)}<text transform={`translate(-55, ${chartHeight / 2}) rotate(-90)`} textAnchor="middle" fill="#d1d5db" fontSize="14" fontWeight="bold">{yAxisLabelLeft}</text></g>
-                    <g transform={`translate(${chartWidth}, 0)`}>{yTicksRight.map((tick: any, i: number) => <text key={`tl-r-${i}`} x={8} y={tick.y} textAnchor='start' dy="0.32em" fill="#d1d5db" fontSize="12">{tick.value.toFixed(1)}</text>)}<text transform={`translate(55, ${chartHeight / 2}) rotate(-90)`} textAnchor="middle" fill="#d1d5db" fontSize="14" fontWeight="bold">{yAxisLabelRight}</text></g>
-                    <g transform={`translate(0, ${chartHeight})`}>{xTicks.map((tick: any, i: number) => <g key={`tx-${i}`} transform={`translate(${tick.x}, 0)`}><text y="20" textAnchor="middle" fill="#d1d5db" fontSize="12">{tick.label}<tspan x={0} dy="1.2em">{tick.dateLabel}</tspan></text></g>)}</g>
+                    <g>{yTicksLeft.map((tick, i: number) => <text key={`tl-l-${i}`} x={-8} y={tick.y} textAnchor='end' dy="0.32em" fill="#d1d5db" fontSize="12">{tick.value.toFixed(1)}</text>)}<text transform={`translate(-55, ${chartHeight / 2}) rotate(-90)`} textAnchor="middle" fill="#d1d5db" fontSize="14" fontWeight="bold">{yAxisLabelLeft}</text></g>
+                    <g transform={`translate(${chartWidth}, 0)`}>{yTicksRight.map((tick, i: number) => <text key={`tl-r-${i}`} x={8} y={tick.y} textAnchor='start' dy="0.32em" fill="#d1d5db" fontSize="12">{tick.value.toFixed(1)}</text>)}<text transform={`translate(55, ${chartHeight / 2}) rotate(-90)`} textAnchor="middle" fill="#d1d5db" fontSize="14" fontWeight="bold">{yAxisLabelRight}</text></g>
+                    <g transform={`translate(0, ${chartHeight})`}>{xTicks.map((tick, i: number) => <g key={`tx-${i}`} transform={`translate(${tick.x}, 0)`}><text y="20" textAnchor="middle" fill="#d1d5db" fontSize="12">{tick.label}<tspan x={0} dy="1.2em">{tick.dateLabel}</tspan></text></g>)}</g>
                     <rect width={chartWidth} height={chartHeight} fill="transparent" cursor="grab" onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseLeave={() => setTooltip(null)} />
                     {tooltip && <line x1={tooltip.x} y1="0" x2={tooltip.x} y2={chartHeight} stroke="#a3a3a3" strokeWidth="1" strokeDasharray="4 4" pointerEvents="none" />}
                 </g>
@@ -887,7 +1006,7 @@ const SvgChart: React.FC<{
                 {/* Brush/Minimap Area */}
                 <g transform={`translate(${MARGIN.left}, ${CHART_HEIGHT + MARGIN.bottom})`}>
                     <rect width={chartWidth} height={BRUSH_HEIGHT} fill="#27272a" />
-                    {dataLODs['240']?.map((p: any, i: number) => <rect key={i} x={xScale(p.timestamp)} y={0} width="1" height={BRUSH_HEIGHT} fill="#404040" />)}
+                    {dataLODs['240']?.map((p, i: number) => <rect key={i} x={xScale(p.timestamp)} y={0} width="1" height={BRUSH_HEIGHT} fill="#404040" />)}
                     <rect x={viewBox.x} y="0" width={viewBox.width} height={BRUSH_HEIGHT} fill="white" fillOpacity="0.1" stroke="white" strokeOpacity="0.5" cursor="move" onMouseDown={handleBrushPanStart} />
                     <rect x={viewBox.x - 4} y={0} width="8" height={BRUSH_HEIGHT} fill="white" fillOpacity={0.3} cursor="ew-resize" onMouseDown={(e) => handleBrushResizeStart(e, 'left')} />
                     <rect x={viewBox.x + viewBox.width - 4} y={0} width="8" height={BRUSH_HEIGHT} fill="white" fillOpacity={0.3} cursor="ew-resize" onMouseDown={(e) => handleBrushResizeStart(e, 'right')} />
@@ -915,24 +1034,33 @@ const SvgChart: React.FC<{
                     {tooltip.point.source && (
                         <p className="text-xs mb-2">
                             <span className={`px-2 py-0.5 rounded ${tooltip.point.source === 'bms' ? 'bg-green-900/50 text-green-300' :
-                                tooltip.point.source === 'cloud' ? 'bg-blue-900/50 text-blue-300' :
+                                tooltip.point.source === 'cloud' || tooltip.point.source === 'weather' ? 'bg-blue-900/50 text-blue-300' :
                                     'bg-purple-900/50 text-purple-300'
                                 }`}>
                                 {tooltip.point.source === 'bms' ? '📸 BMS Screenshot' :
-                                    tooltip.point.source === 'cloud' ? '☁️ Hourly Weather' :
+                                    tooltip.point.source === 'cloud' || tooltip.point.source === 'weather' ? '☁️ Hourly Weather' :
                                         '🔮 Interpolated'}
                             </span>
                         </p>
                     )}
                     {tooltip.point.recordCount > 1 && <p className="text-xs text-gray-400 mb-2 italic">Averaged over {tooltip.point.recordCount} records</p>}
                     <table className="min-w-full text-left"><tbody>
-                        {Object.keys(METRICS).filter(k => metricConfig[k as MetricKey] && !hiddenMetrics.has(k as MetricKey)).map(key => (
-                            <tr key={key}><td className="pr-4 py-1 flex items-center"><div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: METRICS[key as MetricKey].color }} />{METRICS[key as MetricKey].label}</td><td className="font-mono text-right">{tooltip.point[key] !== null ? tooltip.point[key].toFixed(2) : 'N/A'} {METRICS[key as MetricKey].unit}</td></tr>
-                        ))}
+                        {Object.keys(METRICS).filter(k => metricConfig[k as MetricKey] && !hiddenMetrics.has(k as MetricKey)).map(key => {
+                            const value = getPointNumber(tooltip.point, key);
+                            return (
+                                <tr key={key}>
+                                    <td className="pr-4 py-1 flex items-center">
+                                        <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: METRICS[key as MetricKey].color }} />
+                                        {METRICS[key as MetricKey].label}
+                                    </td>
+                                    <td className="font-mono text-right">{value != null ? value.toFixed(2) : 'N/A'} {METRICS[key as MetricKey].unit}</td>
+                                </tr>
+                            );
+                        })}
                     </tbody></table>
                     {tooltip.point.anomalies.length > 0 && (
                         <div className="mt-2 pt-2 border-t border-gray-700 space-y-1">
-                            {tooltip.point.anomalies.map((a: any) => <p key={a.message} className={`text-xs ${a.type === 'critical' ? 'text-red-400' : 'text-yellow-400'}`}>{a.message}</p>)}
+                            {tooltip.point.anomalies.map((a) => <p key={a.message} className={`text-xs ${a.type === 'critical' ? 'text-red-400' : 'text-yellow-400'}`}>{a.message}</p>)}
                         </div>
                     )}
                 </div>
@@ -957,11 +1085,11 @@ const HourlyAverageChart: React.FC<{
     const { yScale, yTicks, yDomainMin, xBandwidth } = useMemo(() => {
         const allValues = [0]; // Include 0 in the domain
         hourlyAverages.forEach(d => {
-            const metricData = (d.metrics as any)[metricKey];
+            const metricData = d.metrics[metricKey];
             if (metricData) {
-                if ('avg' in metricData) allValues.push(metricData.avg);
-                if ('avgCharge' in metricData) allValues.push(metricData.avgCharge);
-                if ('avgDischarge' in metricData) allValues.push(metricData.avgDischarge);
+                if (metricData.avg !== undefined) allValues.push(metricData.avg);
+                if (metricData.avgCharge !== undefined) allValues.push(metricData.avgCharge);
+                if (metricData.avgDischarge !== undefined) allValues.push(metricData.avgDischarge);
             }
         });
         if (metricKey === 'current') {
@@ -1024,18 +1152,18 @@ const HourlyAverageChart: React.FC<{
 
                 {/* Bars */}
                 {hourlyAverages.map(d => {
-                    const metricData = (d.metrics as any)[metricKey];
+                    const metricData = d.metrics[metricKey];
                     if (!metricData) return null;
 
                     return (
                         <g key={d.hour} transform={`translate(${d.hour * xBandwidth}, 0)`}>
-                            {isBidirectional && 'avgCharge' in metricData && metricData.avgCharge > 0 ? (
+                            {isBidirectional && metricData.avgCharge !== undefined && metricData.avgCharge > 0 ? (
                                 <rect x={xBandwidth / 2 - barWidth - 1} y={yScale(metricData.avgCharge)} width={barWidth} height={yScale(0) - yScale(metricData.avgCharge)} fill="#10b981" />
                             ) : null}
-                            {isBidirectional && 'avgDischarge' in metricData && metricData.avgDischarge < 0 ? (
+                            {isBidirectional && metricData.avgDischarge !== undefined && metricData.avgDischarge < 0 ? (
                                 <rect x={xBandwidth / 2 + 1} y={yScale(0)} width={barWidth} height={yScale(metricData.avgDischarge) - yScale(0)} fill="#3b82f6" />
                             ) : null}
-                            {!isBidirectional && 'avg' in metricData ? (
+                            {!isBidirectional && metricData.avg !== undefined ? (
                                 <rect x={xBandwidth / 2 - barWidth / 2} y={yScale(metricData.avg)} width={barWidth} height={yScale(yDomainMin > 0 ? yDomainMin : 0) - yScale(metricData.avg)} fill={metricInfo.color} />
                             ) : null}
                         </g>
@@ -1077,7 +1205,7 @@ const HourlyAverageChart: React.FC<{
  * Predictive SOC Chart Component
  * Displays hourly SOC predictions with actual vs predicted values
  */
-const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
+const PredictiveSocChart: React.FC<{ data: PredictiveSocData }> = ({ data }) => {
     if (!data || !data.predictions || data.predictions.length === 0) {
         return (
             <div className="text-center text-gray-400 p-8">
@@ -1096,7 +1224,7 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
     const innerHeight = chartHeight - margin.top - margin.bottom;
 
     // Find SOC range
-    const socValues = predictions.map((p: any) => p.soc).filter((v: any) => v != null);
+    const socValues = predictions.map(p => p.predicted).filter(v => v != null);
     const minSoc = Math.max(0, Math.min(...socValues) - 5);
     const maxSoc = Math.min(100, Math.max(...socValues) + 5);
 
@@ -1108,9 +1236,9 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
     const actualPoints: { x: number; y: number }[] = [];
     const predictedPath: string[] = [];
 
-    predictions.forEach((p: any, i: number) => {
+    predictions.forEach((p, i: number) => {
         const x = xScale(i);
-        const y = yScale(p.soc);
+        const y = yScale(p.predicted);
 
         if (!p.predicted) {
             actualPoints.push({ x, y });
@@ -1118,10 +1246,10 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
     });
 
     // Generate predicted line as dashed segments
-    predictions.forEach((p: any, i: number) => {
+    predictions.forEach((p, i: number) => {
         if (p.predicted) {
             const x = xScale(i);
-            const y = yScale(p.soc);
+            const y = yScale(p.predicted);
             if (predictedPath.length === 0) {
                 predictedPath.push(`M ${x} ${y}`);
             } else {
@@ -1134,8 +1262,8 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
 
     // Time labels - show every 12 hours
     const timeLabels = predictions
-        .filter((_: any, i: number) => i % 12 === 0)
-        .map((p: any, labelIndex: number) => {
+        .filter((_, i: number) => i % 12 === 0)
+        .map((p, labelIndex: number) => {
             const index = labelIndex * 12;
             const date = new Date(p.timestamp);
             return {
@@ -1166,7 +1294,7 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
                         <span className="text-gray-300">Predicted</span>
                     </div>
                     <div className="text-xs text-gray-500 mt-2">
-                        Coverage: {metadata?.coveragePercent?.toFixed(1)}%
+                        Coverage: {metadata?.coveragePercent?.toFixed(1) || 'N/A'}%
                     </div>
                 </div>
             </div>
@@ -1203,7 +1331,7 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
                     ))}
 
                     {/* X-axis labels */}
-                    {timeLabels.map((label: any, i: number) => (
+                    {timeLabels.map((label: TimeLabel, i: number) => (
                         <text
                             key={i}
                             x={label.x}
@@ -1219,9 +1347,9 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
 
                     {/* Predicted line - connect all points as continuous line */}
                     <path
-                        d={predictions.map((p: any, i: number) => {
+                        d={predictions.map((p, i: number) => {
                             const x = xScale(i);
-                            const y = yScale(p.soc);
+                            const y = yScale(p.predicted);
                             return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
                         }).join(' ')}
                         fill="none"
@@ -1274,21 +1402,21 @@ const PredictiveSocChart: React.FC<{ data: any }> = ({ data }) => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div className="bg-gray-800 p-3 rounded">
                         <div className="text-gray-400">Avg Discharge Rate</div>
-                        <div className="text-white font-semibold">{metadata.avgDischargeRatePerHour?.toFixed(2)}% /hr</div>
+                        <div className="text-white font-semibold">{metadata?.avgDischargeRatePerHour?.toFixed(2) || 'N/A'}% /hr</div>
                     </div>
                     <div className="bg-gray-800 p-3 rounded">
                         <div className="text-gray-400">Avg Charge Rate</div>
-                        <div className="text-white font-semibold">{metadata.avgChargeRatePerHour?.toFixed(2)}% /hr</div>
+                        <div className="text-white font-semibold">{metadata?.avgChargeRatePerHour?.toFixed(2) || 'N/A'}% /hr</div>
                     </div>
                     <div className="bg-gray-800 p-3 rounded">
                         <div className="text-gray-400">Data Points</div>
-                        <div className="text-white font-semibold">{metadata.actualDataPoints}</div>
+                        <div className="text-white font-semibold">{metadata?.actualDataPoints || 'N/A'}</div>
                     </div>
                     <div className="bg-gray-800 p-3 rounded">
                         <div className="text-gray-400">Time Range</div>
                         <div className="text-white font-semibold text-xs">
-                            {new Date(metadata.timeRange?.start).toLocaleDateString()} -<br />
-                            {new Date(metadata.timeRange?.end).toLocaleDateString()}
+                            {metadata?.timeRange?.start ? new Date(metadata.timeRange.start).toLocaleDateString() : 'N/A'} -<br />
+                            {metadata?.timeRange?.end ? new Date(metadata.timeRange.end).toLocaleDateString() : 'N/A'}
                         </div>
                     </div>
                 </div>
@@ -1335,7 +1463,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     );
     const [endDate, setEndDate] = useState<string>(''); // Empty defaults to "Now"
 
-    const [timelineData, setTimelineData] = useState<any | null>(null);
+    const [timelineData, setTimelineData] = useState<TimelineData | null>(null);
     const [bandEnabled, setBandEnabled] = useState<boolean>(false);
 
     const [analyticsData, setAnalyticsData] = useState<SystemAnalytics | null>(null);
@@ -1345,7 +1473,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [error, setError] = useState<string | null>(null);
     const [averagingEnabled, setAveragingEnabled] = useState(true);
     const [manualBucketSize, setManualBucketSize] = useState<string | null>(null);
-    const [predictiveData, setPredictiveData] = useState<any | null>(null);
+    const [predictiveData, setPredictiveData] = useState<PredictiveSocData | null>(null);
     const [predictiveLoading, setPredictiveLoading] = useState(false);
     const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false); // New: separate analytics loading
 
@@ -1438,7 +1566,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     // Ensures immediate updates when user toggles data averaging or selects a bucket size
     useEffect(() => {
         if (timelineData) {
-            setTimelineData((prev: any) => {
+            setTimelineData((prev) => {
                 if (!prev) return null;
                 return {
                     ...prev,
@@ -1463,7 +1591,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             else if (zoomRatio < 50) autoBucketKey = '15';
             else if (zoomRatio < 100) autoBucketKey = '5';
 
-            setTimelineData((prev: any) => {
+            setTimelineData((prev) => {
                 if (!prev) return null; // Guard against race condition
                 return {
                     ...prev,
@@ -1538,7 +1666,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             const system = isAllData ? null : systems.find(s => s.id === selectedSystemId);
             const ratedCapacity = system?.capacity;
 
-            let chartDataPoints: any[] = [];
+            let chartDataPoints: ChartPoint[] = [];
 
             // 1. Sync Weather Data (Local vs Server check) - skip for __ALL__
             if (!isAllData) {
@@ -1580,13 +1708,13 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                 }
             } else {
                 // Create LODs for zoom levels
-                const dataLODs: Record<string, any[]> = {
+                const dataLODs: Record<string, ChartPoint[]> = {
                     'raw': chartDataPoints,
-                    '5': aggregateData(chartDataPoints as any, 5),
-                    '15': aggregateData(chartDataPoints as any, 15),
-                    '60': aggregateData(chartDataPoints as any, 60),
-                    '240': aggregateData(chartDataPoints as any, 240),
-                    '1440': aggregateData(chartDataPoints as any, 1440),
+                    '5': aggregateData(chartDataPoints, 5),
+                    '15': aggregateData(chartDataPoints, 15),
+                    '60': aggregateData(chartDataPoints, 60),
+                    '240': aggregateData(chartDataPoints, 240),
+                    '1440': aggregateData(chartDataPoints, 1440),
                 };
 
                 const xMin = new Date(chartDataPoints[0].timestamp).getTime();

@@ -7,12 +7,12 @@
  * @module hooks/useInsightsPolling
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export interface InsightsProgress {
   timestamp: string;
   type: 'tool_call' | 'tool_response' | 'ai_response' | 'iteration' | 'status' | 'error';
-  data: any;
+  data: unknown;
 }
 
 export interface InsightsJobStatus {
@@ -20,11 +20,11 @@ export interface InsightsJobStatus {
   status: 'queued' | 'processing' | 'completed' | 'failed';
   createdAt: string;
   updatedAt: string;
-  initialSummary?: any;
+  initialSummary?: unknown;
   progress?: InsightsProgress[];
   progressCount?: number;
   partialInsights?: string;
-  finalInsights?: any;
+  finalInsights?: unknown;
   error?: string;
 }
 
@@ -33,7 +33,7 @@ interface PollingConfig {
   maxInterval?: number;
   backoffMultiplier?: number;
   maxRetries?: number;
-  onComplete?: (jobId: string, insights: any) => void;
+  onComplete?: (jobId: string, insights: unknown) => void;
   onError?: (jobId: string, error: string) => void;
   onProgress?: (jobId: string, progress: InsightsProgress[]) => void;
 }
@@ -43,9 +43,9 @@ const DEFAULT_CONFIG: Required<PollingConfig> = {
   maxInterval: 10000,
   backoffMultiplier: 1.3,
   maxRetries: 1000, // Very high limit (~8+ hours with backoff) instead of Infinity to prevent resource exhaustion
-  onComplete: () => {},
-  onError: () => {},
-  onProgress: () => {}
+  onComplete: () => { },
+  onError: () => { },
+  onProgress: () => { }
 };
 
 /**
@@ -66,12 +66,12 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
     config.onError,
     config.onProgress
   ]);
-  
+
   const [status, setStatus] = useState<InsightsJobStatus | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastProgressCount, setLastProgressCount] = useState(0);
-  
+
   const intervalRef = useRef<number>(fullConfig.initialInterval);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const retryCountRef = useRef<number>(0);
@@ -100,12 +100,12 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
 
       if (!response.ok) {
         const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
-        (error as any).status = response.status;
+        (error as { status?: number }).status = response.status;
         throw error;
       }
 
       const data: InsightsJobStatus = await response.json();
-      
+
       setStatus(data);
       setError(null);
       consecutiveErrorsRef.current = 0;
@@ -133,24 +133,25 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
       intervalRef.current = fullConfig.initialInterval;
       return false; // Continue polling
 
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') {
         // Request was cancelled, ignore
         return false;
       }
 
       // Log error for debugging but don't update UI state to "Error"
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       console.warn(JSON.stringify({
         level: 'WARN',
         timestamp: new Date().toISOString(),
         message: 'Polling request failed, will retry',
         context: {
-          error: err.message,
+          error: errorMessage,
           consecutiveErrors: consecutiveErrorsRef.current + 1,
           jobId
         }
       }));
-      
+
       consecutiveErrorsRef.current++;
 
       // Exponential backoff on errors
@@ -164,13 +165,13 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
       // "Starter Motor" approach: Only stop on catastrophic errors that won't recover
       // For HTTP errors, status is attached to error object (see line 102)
       // For network errors (no response), status will be undefined - treat as transient
-      const status = err.status;
+      const status = err instanceof Error && 'status' in err ? (err as { status?: number }).status : undefined;
       const isCatastrophic = status === 404 || // Job not found
-                             status === 403 || // Forbidden
-                             status === 401;   // Unauthorized
-      
+        status === 403 || // Forbidden
+        status === 401;   // Unauthorized
+
       if (isCatastrophic) {
-        setError(`Fatal error: ${err.message}`);
+        setError(`Fatal error: ${errorMessage}`);
         setIsPolling(false);
         return true;
       }
@@ -227,7 +228,7 @@ export function useInsightsPolling(jobId: string | null, config: PollingConfig =
 
   const startPolling = useCallback(() => {
     if (!jobId) return;
-    
+
     setIsPolling(true);
     setError(null);
     setLastProgressCount(0);
