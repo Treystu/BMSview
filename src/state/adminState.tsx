@@ -196,13 +196,19 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
     case 'START_HISTORY_CACHE_BUILD':
       return { ...state, isCacheBuilding: true, historyCache: [] };
     case 'APPEND_HISTORY_CACHE': {
-      if (!Array.isArray(action.payload)) {
-        console.error('APPEND_HISTORY_CACHE received non-array payload:', action.payload);
+      let records: AnalysisRecord[] | null = null;
+      if (Array.isArray(action.payload)) {
+        records = action.payload;
+      } else if (action.payload && typeof action.payload === 'object' && 'items' in action.payload && Array.isArray((action.payload as { items: unknown }).items)) {
+        records = (action.payload as { items: AnalysisRecord[] }).items;
+      }
+      if (!records) {
+        console.error('APPEND_HISTORY_CACHE received invalid payload:', action.payload);
         return state;
       }
       // OPTIMIZATION: Use a Set for O(1) ID lookups to avoid O(N^2) complexity with large datasets (4k+ records)
       const existingIds = new Set(state.historyCache.map(r => r.id));
-      const newRecords = action.payload.filter(p => !existingIds.has(p.id));
+      const newRecords = records.filter((p: AnalysisRecord) => !existingIds.has(p.id));
       if (newRecords.length === 0) return state;
 
       const updatedCache = [...state.historyCache, ...newRecords];

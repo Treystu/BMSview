@@ -480,30 +480,40 @@ export const getAnalysisHistory = async (page = 1, limit: number | 'all' = 100, 
     if (!isForceRefresh) {
         const cached = await getCachedHistoryPage(page, limit);
         if (cached) {
+            log('info', 'Serving analysis history from cache.', { items: cached.items.length, total: cached.total });
             return cached;
         }
     }
 
-    const response = isForceRefresh
-        ? await apiFetch<PaginatedResponse<AnalysisRecord>>(`history?page=${page}&limit=${limit}`)
-        : await fetchWithCache<PaginatedResponse<AnalysisRecord>>(`history?page=${page}&limit=${limit}`, 5_000);
+    try {
+        const response = isForceRefresh
+            ? await apiFetch<PaginatedResponse<AnalysisRecord>>(`history?page=${page}&limit=${limit}`)
+            : await fetchWithCache<PaginatedResponse<AnalysisRecord>>(`history?page=${page}&limit=${limit}`, 5_000);
 
-    let result: PaginatedResponse<AnalysisRecord> = { items: [], total: 0 };
+        log('info', 'Raw analysis history response.', { response });
 
-    if (Array.isArray(response)) {
-        result = { items: response, total: response.length };
-    } else if (response && typeof response === 'object') {
-        const items = Array.isArray(response.items) ? response.items : [];
-        const totalCandidates = [response.total, response.totalItems, response.count];
-        const totalItems = totalCandidates.find(value => typeof value === 'number' && Number.isFinite(value));
-        result = {
-            items,
-            total: totalItems || 0
-        };
+        let result: PaginatedResponse<AnalysisRecord> = { items: [], total: 0 };
+
+        if (Array.isArray(response)) {
+            result = { items: response, total: response.length };
+        } else if (response && typeof response === 'object') {
+            const items = Array.isArray(response.items) ? response.items : [];
+            const totalCandidates = [response.total, response.totalItems, response.count];
+            const totalItems = totalCandidates.find(value => typeof value === 'number' && Number.isFinite(value));
+            result = {
+                items,
+                total: totalItems || 0
+            };
+        }
+
+        log('info', 'Normalized analysis history response.', { items: result.items.length, total: result.total });
+
+        setCachedHistoryPage(page, limit, result);
+        return result;
+    } catch (error) {
+        log('error', 'Failed to fetch analysis history.', { error: String(error) });
+        return { items: [], total: 0 };
     }
-
-    setCachedHistoryPage(page, limit, result);
-    return result;
 };
 
 // --- Helper functions for insights generation ---

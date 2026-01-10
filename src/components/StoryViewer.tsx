@@ -284,12 +284,12 @@ const StoryViewer: React.FC<StoryViewerProps> = ({ selectedStoryId, onBack }) =>
   }, []);
 
   useEffect(() => {
-    if (selectedStoryId) {
+    if (selectedStoryId && (!currentStory || currentStory.id !== selectedStoryId)) {
       fetchStory(selectedStoryId);
-    } else if (!currentStory) {
+    } else if (!selectedStoryId && !currentStory) {
       fetchStories();
     }
-  }, [selectedStoryId, currentStory]);
+  }, [selectedStoryId, currentStory?.id]);
 
   const handleSelectStory = (id: string) => {
     fetchStory(id);
