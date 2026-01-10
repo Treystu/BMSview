@@ -139,8 +139,8 @@ const StoryDetail: React.FC<{ story: AnalysisStory; onBack: () => void; onDelete
         <button
           onClick={handleDelete}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${confirmDelete
-              ? 'bg-red-600 hover:bg-red-700 text-white'
-              : 'bg-gray-700 hover:bg-red-600/20 text-red-400 hover:text-red-300'
+            ? 'bg-red-600 hover:bg-red-700 text-white'
+            : 'bg-gray-700 hover:bg-red-600/20 text-red-400 hover:text-red-300'
             }`}
         >
           {confirmDelete ? 'Click again to confirm' : 'Delete Story'}
@@ -289,7 +289,7 @@ const StoryViewer: React.FC<StoryViewerProps> = ({ selectedStoryId, onBack }) =>
     } else if (!currentStory) {
       fetchStories();
     }
-  }, [selectedStoryId, fetchStory, fetchStories, currentStory]);
+  }, [selectedStoryId, currentStory]);
 
   const handleSelectStory = (id: string) => {
     fetchStory(id);

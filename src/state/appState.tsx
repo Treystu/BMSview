@@ -123,6 +123,10 @@ export type AppAction =
 export const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
     case 'PREPARE_ANALYSIS': {
+      if (!Array.isArray(action.payload)) {
+        console.error('PREPARE_ANALYSIS received non-array payload:', action.payload);
+        return state;
+      }
       const existingFileNames = new Set(state.analysisResults.map(r => r.fileName));
       const newResults = action.payload.filter(p => !existingFileNames.has(p.fileName));
       return { ...state, isLoading: true, error: null, analysisResults: [...state.analysisResults, ...newResults] };
