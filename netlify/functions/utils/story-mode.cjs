@@ -11,18 +11,18 @@ async function generateStoryInterpretation(story, log) {
   try {
     log.info('Generating AI interpretation for story', { storyId: story.id });
     
-    const geminiClient = getGeminiClient(log);
+    const geminiClient = getGeminiClient();
     
     // Build context from timeline records
     const timelineContext = story.timeline.map((record, index) => {
-      const data = record.data || {};
+      const analysis = record.analysis || {};
       return `Screenshot ${index + 1} (${record.fileName}):
   - Time: ${record.timestamp || 'Unknown'}
-  - SOC: ${data.stateOfCharge || 'N/A'}%
-  - Voltage: ${data.voltage || 'N/A'}V
-  - Current: ${data.current || 'N/A'}A
-  - Power: ${data.power || 'N/A'}W
-  - Temperature: ${data.temperature || 'N/A'}°C`;
+  - SOC: ${analysis.stateOfCharge || 'N/A'}%
+  - Voltage: ${analysis.overallVoltage || 'N/A'}V
+  - Current: ${analysis.current || 'N/A'}A
+  - Power: ${analysis.power || 'N/A'}W
+  - Temperature: ${analysis.temperature || 'N/A'}°C`;
     }).join('\n\n');
 
     const prompt = `You are analyzing a sequence of BMS (Battery Management System) screenshots provided by an admin user.
@@ -48,21 +48,29 @@ Focus on:
 3. Detecting any anomalies or noteworthy patterns
 4. Providing actionable insights`;
 
-    const response = await geminiClient.generateText(prompt);
+    // Use callAPI (the correct method) instead of non-existent generateText
+    const result = await geminiClient.callAPI(prompt, { model: 'gemini-2.5-flash' }, log);
+    
+    // Extract text from Gemini response
+    const candidates = result?.candidates;
+    if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+      throw new Error('Invalid response structure from Gemini API');
+    }
+    const responseText = candidates[0]?.content?.parts?.[0]?.text || '';
     
     // Parse JSON response
     let interpretation;
     try {
       // Extract JSON from response (handle markdown code blocks)
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         interpretation = JSON.parse(jsonMatch[0]);
       } else {
-        interpretation = { summary: response };
+        interpretation = { summary: responseText };
       }
     } catch (parseError) {
       log.warn('Failed to parse AI response as JSON, using raw text', { error: parseError.message });
-      interpretation = { summary: response };
+      interpretation = { summary: responseText };
     }
 
     return {
@@ -86,16 +94,33 @@ async function handleStoryModeAnalysis(requestBody, idemKey, forceReanalysis, he
 
     log.info('Starting story mode analysis', { sequenceId, timelineCount: timeline.length, title });
 
-    const timelineRecords = [];
-    for (let i = 0; i < timeline.length; i++) {
-      const imagePayload = timeline[i];
-      imagePayload.sequenceId = sequenceId;
-      imagePayload.timelinePosition = i;
+    // Process images in PARALLEL to avoid Netlify timeout (7 images × 6s = 42s > 26s limit)
+    log.info('Processing timeline images in parallel', { count: timeline.length });
+    
+    const analysisPromises = timeline.map((imagePayload, i) => {
+      // Clone to avoid mutation issues in parallel execution
+      const payload = { ...imagePayload, sequenceId, timelinePosition: i };
+      return performAnalysisPipeline(payload, null, log, context)
+        .then(record => ({ index: i, record }))
+        .catch(error => {
+          log.error('Failed to analyze timeline image', { index: i, fileName: imagePayload.fileName, error: error.message });
+          return { index: i, record: null, error: error.message };
+        });
+    });
 
-      // This re-uses the single-image analysis logic
-      const record = await performAnalysisPipeline(imagePayload, null, log, context);
-      timelineRecords.push(record);
-    }
+    const results = await Promise.all(analysisPromises);
+    
+    // Sort by original timeline position and filter out failures
+    const timelineRecords = results
+      .sort((a, b) => a.index - b.index)
+      .filter(r => r.record !== null)
+      .map(r => r.record);
+    
+    log.info('Timeline analysis complete', { 
+      requested: timeline.length, 
+      successful: timelineRecords.length,
+      failed: timeline.length - timelineRecords.length
+    });
 
     const story = {
       id: sequenceId,
