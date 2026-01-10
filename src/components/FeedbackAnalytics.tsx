@@ -22,7 +22,8 @@
  * - Auto-refresh capability
  * - Loading and error states
  */
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import type { NetlifyIdentityWidget } from '../types';
 
 interface FeedbackROIMetrics {
   feedbackId: string;
@@ -119,17 +120,14 @@ export const FeedbackAnalytics: React.FC = () => {
       const headers: HeadersInit = {
         'Content-Type': 'application/json'
       };
-      
+
       // Add Netlify Identity token if available (admin-only endpoint)
-      if (typeof window !== 'undefined' && (window as any).netlifyIdentity?.currentUser) {
+      const netlifyIdentity = (window as unknown as { netlifyIdentity?: NetlifyIdentityWidget }).netlifyIdentity;
+      if (typeof window !== 'undefined' && netlifyIdentity?.currentUser) {
         try {
-          const user = (window as any).netlifyIdentity.currentUser();
-          if (user) {
-            const token = await user.jwt();
-            if (token) {
-              headers['Authorization'] = `Bearer ${token}`;
-            }
-          }
+          const user = netlifyIdentity.currentUser?.() ?? null;
+          const token = (await user?.jwt?.()) ?? '';
+          if (token) headers['Authorization'] = `Bearer ${token}`;
         } catch (tokenErr) {
           console.warn('Could not get auth token:', tokenErr);
         }
@@ -205,11 +203,10 @@ export const FeedbackAnalytics: React.FC = () => {
         <button
           key={tab.id}
           onClick={() => setActiveTab(tab.id as typeof activeTab)}
-          className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
-            activeTab === tab.id
-              ? 'bg-gray-700 text-white border-b-2 border-blue-500'
-              : 'text-gray-400 hover:text-white hover:bg-gray-800'
-          }`}
+          className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${activeTab === tab.id
+            ? 'bg-gray-700 text-white border-b-2 border-blue-500'
+            : 'text-gray-400 hover:text-white hover:bg-gray-800'
+            }`}
         >
           {tab.label}
         </button>
@@ -500,7 +497,7 @@ export const FeedbackAnalytics: React.FC = () => {
   const renderEffectiveness = () => {
     const eff = analytics.effectivenessOverview;
     const sat = analytics.userSatisfaction;
-    
+
     return (
       <div className="space-y-6">
         {/* Effectiveness Summary */}
@@ -542,12 +539,12 @@ export const FeedbackAnalytics: React.FC = () => {
                 return (
                   <div key={bucket.range} className="flex flex-col items-center">
                     {bucket.count > 0 ? (
-                      <div 
+                      <div
                         className={`w-12 ${colors[idx]} rounded-t`}
                         style={{ height: `${heightPercent}%` }}
                       ></div>
                     ) : (
-                      <div 
+                      <div
                         className="w-12 bg-gray-600/40 rounded-t flex items-center justify-center"
                         style={{ height: '8px' }}
                       >
@@ -670,7 +667,7 @@ export const FeedbackAnalytics: React.FC = () => {
                 return (
                   <div key={item.month} className="flex flex-col items-center">
                     <div className="text-xs text-gray-400 mb-1">{item.count}</div>
-                    <div 
+                    <div
                       className="w-10 bg-blue-500 rounded-t"
                       style={{ height: `${Math.max(heightPercent, 5)}%` }}
                     ></div>
@@ -724,7 +721,7 @@ export const FeedbackAnalytics: React.FC = () => {
   return (
     <div className="space-y-4">
       {renderTabs()}
-      
+
       {activeTab === 'overview' && renderOverview()}
       {activeTab === 'implementation' && renderImplementation()}
       {activeTab === 'roi' && renderROI()}

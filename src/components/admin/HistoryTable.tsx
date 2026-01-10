@@ -91,7 +91,9 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ history, systems, state, di
                                         if (!colDef) return <td key={colKey} className="p-3"></td>;
 
                                         const value = getNestedValue(record, colKey);
-                                        const displayValue = colDef.format ? colDef.format(value, record) : (value ?? 'N/A');
+                                        const displayValue = colDef.format
+                                            ? colDef.format(value, record)
+                                            : (value == null ? 'N/A' : (typeof value === 'string' || typeof value === 'number' ? value : String(value)));
 
                                         return (
                                             <td key={colKey} className={`p-3 whitespace-nowrap ${colKey.includes('Number') || colKey.includes('dlNumber') || colKey === 'hardwareSystemId' ? 'font-mono text-xs' : ''}`}>

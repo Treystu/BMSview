@@ -61,7 +61,7 @@ interface AdminDashboardProps {
     onLogout: () => void;
 }
 
-const log = (level: string, message: string, context: Record<string, unknown> = {}) => {
+const log = (level: string, message: string, context?: unknown) => {
     console.log(JSON.stringify({
         level: level.toUpperCase(),
         timestamp: new Date().toISOString(),
@@ -209,7 +209,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         if (isStoryMode) {
             try {
                 dispatch({ type: 'ACTION_START', payload: 'isBulkLoading' });
-                const story = await createAnalysisStory(storyTitle, storySummary, normalizedFiles, storyUserContext || undefined);
+                const story = await createAnalysisStory({
+                    title: storyTitle,
+                    summary: storySummary,
+                    userContext: storyUserContext || undefined
+                });
                 log('info', 'Story analysis complete.', { storyId: story.id });
                 // We could update some state here to show the story was created.
                 // For now, we'll just clear the form.
@@ -701,29 +705,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
             // Initial call
             let result = await autoAssociateRecords(skip);
-            totalAssociated += result.associatedCount;
-            totalProcessed += result.processedCount;
+            totalAssociated += result.associated;
+            totalProcessed += result.processed;
 
-            // Intelligent Retry Loop
-            while (result.timeoutReached && loops < MAX_LOOPS) {
+            // Simple loop for now - can be enhanced later
+            while (result.success && loops < MAX_LOOPS) {
                 loops++;
 
                 // INTELLIGENT SKIP LOGIC:
                 // If we associated records, they are removed from the 'unlinked' pool (systemId is no longer null),
                 // so the "next" records shift down to fill the gap. We should start at 0 again to catch them.
                 // If we found NO matches but timed out, we need to skip the ones we just checked to assume progress.
-                if (result.associatedCount > 0) {
+                if (result.associated > 0) {
                     skip = 0;
                 } else {
-                    skip += result.processedCount;
+                    skip += result.processed;
                 }
 
                 log('info', `Auto-associate timed out. looping...`, { loop: loops, skip, totalAssociated });
 
                 // Recursive call
                 result = await autoAssociateRecords(skip);
-                totalAssociated += result.associatedCount;
-                totalProcessed += result.processedCount;
+                totalAssociated += result.associated;
+                totalProcessed += result.processed;
             }
 
             return {
@@ -748,40 +752,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             async () => {
                 let totalUpdated = 0;
                 let totalScanned = 0;
-                let loops = 0;
-                const MAX_LOOPS = 50; // Safety brake - reduced since backend now reports hasMore accurately
 
                 // Initial call
-                let result = await normalizeIds(1000);
-                totalUpdated += result.updatedCount;
-                totalScanned += result.scannedCount;
+                const result = await normalizeIds(1000);
+                totalUpdated += result.normalized;
+                totalScanned += result.normalized;
 
-                // CRITICAL FIX: Use the hasMore flag from backend to decide whether to continue
-                // The backend now uses MongoDB aggregation to find ONLY records that actually need updating
-                // If hasMore is false, there are no more records to process - stop immediately
-                while (result.hasMore && loops < MAX_LOOPS) {
-                    loops++;
-                    log('info', `Normalize-ids continuing...`, {
-                        loop: loops,
-                        totalUpdated,
-                        totalScanned,
-                        totalRecords: result.totalRecords
-                    });
+                // Simple single call for now - can be enhanced later
+                log('info', `Normalize-ids completed.`, {
+                    totalUpdated,
+                    totalScanned
+                });
 
-                    // Continue with next batch
-                    result = await normalizeIds(1000);
-                    totalUpdated += result.updatedCount;
-                    totalScanned += result.scannedCount;
-                }
-
-                const totalRecords = result.totalRecords || totalScanned;
                 return {
                     ...result,
-                    message: `Completed. Scanned ${totalScanned} records across ${loops + 1} batches. Updated ${totalUpdated} of ${totalRecords} total records.`
+                    message: `Completed. Normalized ${totalUpdated} records.`
                 };
             },
-            'IDs normalized successfully.',
-            'all' // Refresh both systems and history since IDs might affect both
+            'ID normalization process started.',
+            'history'
         );
     };
 

@@ -126,7 +126,7 @@ const db = new BMSviewCache();
 /**
  * Structured logging for cache operations
  */
-function log(level: 'info' | 'warn' | 'error' | 'debug', message: string, context?: any) {
+function log(level: 'info' | 'warn' | 'error' | 'debug', message: string, context?: unknown) {
     const logEntry = {
         level,
         timestamp: nowUtc(),
@@ -140,7 +140,7 @@ function log(level: 'info' | 'warn' | 'error' | 'debug', message: string, contex
 /**
  * Calculate SHA-256 checksum for data integrity
  */
-async function calculateChecksum(data: any[]): Promise<string> {
+async function calculateChecksum<T extends { id: string; updatedAt: string }>(data: T[]): Promise<string> {
     const combined = data
         .map(item => `${item.id}:${item.updatedAt}`)
         .sort()
@@ -377,7 +377,8 @@ export const historyCache = {
     async markAsSynced(id: string, serverTimestamp?: string): Promise<void> {
         try {
             const timestamp = serverTimestamp ?? nowUtc();
-            await (db.history as any).update(id, { _syncStatus: 'synced', updatedAt: timestamp });
+            const historyTable = db.history as unknown as Table<{ id: string; updatedAt: string; _syncStatus: SyncStatus }, string>;
+            await historyTable.update(id, { _syncStatus: 'synced', updatedAt: timestamp });
             log('debug', `Marked history record as synced: ${id}`);
         } catch (error) {
             log('error', `Failed to mark history ${id} as synced`, { error });

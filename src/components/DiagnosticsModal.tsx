@@ -274,14 +274,11 @@ const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({ isOpen, onClose, re
                     </div>
                     {/* Progress bar */}
                     {summary && (
-                      <div className="mt-3 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-blue-500 transition-all duration-300"
-                          style={{
-                            width: `${((summary.success + summary.errors + (summary.warnings || 0)) / summary.total * 100)}%`
-                          }}
-                        />
-                      </div>
+                      <progress
+                        className="mt-3 w-full h-1.5 rounded-full overflow-hidden bg-gray-700 accent-blue-500"
+                        max={100}
+                        value={summary.total > 0 ? ((summary.success + summary.errors + (summary.warnings || 0)) / summary.total * 100) : 0}
+                      />
                     )}
                   </div>
                 )}

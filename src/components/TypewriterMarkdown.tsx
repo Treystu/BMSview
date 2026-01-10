@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -77,12 +77,14 @@ export const TypewriterMarkdown: React.FC<TypewriterMarkdownProps> = ({
           li: ({ node: _node, ...props }) => <li className="text-gray-700 ml-2 leading-relaxed break-words" {...props} />,
           strong: ({ node: _node, ...props }) => <strong className="font-bold text-gray-900" {...props} />,
           em: ({ node: _node, ...props }) => <em className="italic text-gray-700" {...props} />,
-          code: ({ node: _node, inline, ...props }: any) =>
-            inline ? (
-              <code className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-sm break-words" {...props} />
-            ) : (
-              <code className="block bg-gray-900 text-green-400 p-3 rounded-lg text-sm overflow-x-auto mb-3" {...props} />
-            ),
+          code: ({ node: _node, className, ...props }) => {
+            const baseClassName = className ? String(className) : '';
+            const isInline = baseClassName.length === 0;
+            const mergedClassName = isInline
+              ? `bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-sm break-words${baseClassName ? ` ${baseClassName}` : ''}`
+              : `block bg-gray-900 text-green-400 p-3 rounded-lg text-sm overflow-x-auto mb-3${baseClassName ? ` ${baseClassName}` : ''}`;
+            return <code className={mergedClassName} {...props} />;
+          },
           blockquote: ({ node: _node, ...props }) => (
             <blockquote className="border-l-4 border-blue-500 pl-4 py-2 mb-3 italic text-gray-600 bg-blue-50 rounded-r break-words" {...props} />
           ),

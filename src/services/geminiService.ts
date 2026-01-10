@@ -1,5 +1,20 @@
 import type { AnalysisData } from '../types';
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    value != null && typeof value === 'object' && !Array.isArray(value);
+
+const isAnalysisData = (value: unknown): value is AnalysisData => {
+    if (!isRecord(value)) return false;
+    const cellVoltages = value.cellVoltages;
+    return (
+        'overallVoltage' in value &&
+        'current' in value &&
+        'stateOfCharge' in value &&
+        'temperature' in value &&
+        Array.isArray(cellVoltages)
+    );
+};
+
 const fileWithMetadataToBase64 = (file: File): Promise<{ image: string, mimeType: string, fileName: string }> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -46,7 +61,7 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
 
     let endpoint = '/.netlify/functions/analyze';
     const params = new URLSearchParams();
-    
+
     if (!useAsync) {
         params.append('sync', 'true');
     }
@@ -67,48 +82,52 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
 
         // Handle Async Response (202 Accepted)
         if (useAsync) {
-             // In async mode, we get { success: true, jobId: "..." }
-             // We need to return a placeholder AnalysisData or handle polling.
-             // For now, let's return a "Pending" record.
-             log('info', 'Async analysis accepted.', responseJson);
-             return {
-                 _recordId: responseJson.jobId,
-                 _timestamp: new Date().toISOString(),
-                 _isDuplicate: false,
-                 status: 'pending',
-                 // Minimal valid shape to satisfy type
-                 hardwareSystemId: 'PENDING',
-                 serialNumber: 'PENDING',
-                 stateOfCharge: 0,
-                 overallVoltage: 0,
-                 current: 0,
-                 power: 0,
-                 fullCapacity: 0,
-                 remainingCapacity: 0,
-                 cycleCount: 0,
-                 temperature: 0,
-                 cellVoltages: []
-             } as unknown as AnalysisData;
+            // In async mode, we get { success: true, jobId: "..." }
+            // We need to return a placeholder AnalysisData or handle polling.
+            // For now, let's return a "Pending" record.
+            log('info', 'Async analysis accepted.', responseJson);
+            const jobId = typeof responseJson.jobId === 'string' ? responseJson.jobId : 'unknown-job';
+            return {
+                _recordId: jobId,
+                _timestamp: new Date().toISOString(),
+                _isDuplicate: false,
+                status: 'pending',
+                // Minimal valid shape to satisfy type
+                hardwareSystemId: 'PENDING',
+                serialNumber: 'PENDING',
+                stateOfCharge: 0,
+                overallVoltage: 0,
+                current: 0,
+                power: 0,
+                fullCapacity: 0,
+                remainingCapacity: 0,
+                cycleCount: 0,
+                temperature: 0,
+                cellVoltages: []
+            } as unknown as AnalysisData;
         }
 
         // In sync mode, the server returns the full AnalysisRecord directly.
         // We extract the 'analysis' part and also check for isDuplicate flag
-        const result: { analysis: AnalysisData; isDuplicate?: boolean; recordId?: string; timestamp?: string } = responseJson;
-
-        if (!result.analysis) {
-            log('error', 'API response was successful but missing analysis data.', result);
+        const analysis = responseJson.analysis;
+        if (!isAnalysisData(analysis)) {
+            log('error', 'API response was successful but missing analysis data.', responseJson);
             throw new Error('API response was successful but missing analysis data.');
         }
 
-        log('info', 'Synchronous analysis successful.', { fileName: file.name, isDuplicate: !!result.isDuplicate });
+        const isDuplicate = typeof responseJson.isDuplicate === 'boolean' ? responseJson.isDuplicate : false;
+        const recordId = typeof responseJson.recordId === 'string' ? responseJson.recordId : undefined;
+        const timestamp = typeof responseJson.timestamp === 'string' ? responseJson.timestamp : undefined;
+
+        log('info', 'Synchronous analysis successful.', { fileName: file.name, isDuplicate });
 
         // Attach metadata about duplicate detection to the analysis data
         // This allows the UI to show duplicate status
         const analysisWithMeta = {
-            ...result.analysis,
-            _isDuplicate: result.isDuplicate || false,
-            _recordId: result.recordId,
-            _timestamp: result.timestamp
+            ...analysis,
+            _isDuplicate: isDuplicate,
+            _recordId: recordId,
+            _timestamp: timestamp
         };
 
         return analysisWithMeta as AnalysisData;
@@ -132,7 +151,7 @@ export const checkFileDuplicate = async (file: File): Promise<{
     needsUpgrade: boolean;
     recordId?: string;
     timestamp?: string;
-    analysisData?: any;
+    analysisData?: unknown;
 }> => {
     const startTime = Date.now();
     const checkContext = { fileName: file.name, fileSize: file.size };
@@ -212,10 +231,10 @@ export const checkFileDuplicate = async (file: File): Promise<{
         });
 
         return {
-            isDuplicate: result.isDuplicate || false,
-            needsUpgrade: result.needsUpgrade || false,
-            recordId: result.recordId,
-            timestamp: result.timestamp,
+            isDuplicate: typeof result.isDuplicate === 'boolean' ? result.isDuplicate : false,
+            needsUpgrade: typeof result.needsUpgrade === 'boolean' ? result.needsUpgrade : false,
+            recordId: typeof result.recordId === 'string' ? result.recordId : undefined,
+            timestamp: typeof result.timestamp === 'string' ? result.timestamp : undefined,
             analysisData: result.analysisData
         };
 
@@ -249,7 +268,7 @@ export const checkFileDuplicate = async (file: File): Promise<{
  * Shared helper to perform analysis requests (analyze or duplicate check)
  * Tries to use Worker (for resizing efficiency) then falls back to main thread.
  */
-async function performAnalysisRequest(file: File, relativeEndpoint: string, context: object, timeoutMs: number = 60000): Promise<any> {
+async function performAnalysisRequest(file: File, relativeEndpoint: string, context: object, timeoutMs: number = 60000): Promise<Record<string, unknown>> {
 
 
     // 1. Direct Fetch (Main Thread) - Worker path removed for stability
@@ -290,9 +309,8 @@ async function performAnalysisRequest(file: File, relativeEndpoint: string, cont
             throw new Error(errorMessage);
         }
 
-        const data = await response.json();
-
-        // Attach headers for rate-limit aware processing
+        const rawData = await response.json() as unknown;
+        const data = isRecord(rawData) ? rawData : { data: rawData };
         return {
             ...data,
             _meta: {

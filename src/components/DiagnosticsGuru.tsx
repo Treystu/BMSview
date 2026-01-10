@@ -310,12 +310,11 @@ export const DiagnosticsGuru: React.FC<DiagnosticsGuruProps> = ({ className = ''
             </div>
 
             {/* Progress bar */}
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <div
-                className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                style={{ width: `${Math.min(100, Math.max(0, ensureNumber(status.progress, 0)))}%` }}
-              ></div>
-            </div>
+            <progress
+              className="w-full h-2.5 rounded-full overflow-hidden bg-gray-200 accent-blue-600"
+              max={100}
+              value={Math.min(100, Math.max(0, ensureNumber(status.progress, 0)))}
+            />
 
             <div className="text-xs text-gray-500 mt-1 text-right">
               {ensureNumber(status.progress, 0)}%

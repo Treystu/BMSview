@@ -40,6 +40,16 @@ export interface BatteryInsights {
   rawText: string;
 }
 
+export interface NetlifyIdentityWidget {
+  open: () => void;
+  close: () => void;
+  logout: () => void;
+  init: () => void;
+  currentUser?: () => { jwt?: () => Promise<string> } | null;
+  on: (event: string, callback: (...args: unknown[]) => void) => void;
+  off: (event: string, callback: (...args: unknown[]) => void) => void;
+}
+
 export interface AnalysisResponse {
   success: boolean;
   insights: BatteryInsights;

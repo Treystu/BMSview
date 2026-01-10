@@ -2,13 +2,13 @@ import JSZip from 'jszip';
 import { useCallback, useEffect, useState } from 'react';
 import { checkFilesForDuplicates } from '../utils/duplicateChecker';
 
-const log = (level: string, message: string, context: object = {}) => {
+const log = (level: string, message: string, context?: unknown) => {
     console.log(JSON.stringify({
         level: level.toUpperCase(),
         timestamp: new Date().toISOString(),
         hook: 'useFileUpload',
         message,
-        context
+        context: context ?? {}
     }));
 };
 
@@ -204,10 +204,13 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [], propagat
 
                 if (propagateDuplicates) {
                     // Propagate duplicates as files with metadata for consumers (e.g. AdminDashboard restoration)
-                    (baseFile as any)._isDuplicate = true;
-                    (baseFile as any)._analysisData = dup.analysisData;
-                    (baseFile as any)._recordId = dup.recordId;
-                    (baseFile as any)._timestamp = dup.timestamp;
+                    // Extend File with metadata properties (safe mutation of native File instance)
+                    Object.assign(baseFile, {
+                        _isDuplicate: true,
+                        _analysisData: dup.analysisData,
+                        _recordId: dup.recordId,
+                        _timestamp: dup.timestamp
+                    });
                     processedFiles.push(baseFile);
                 } else {
                     duplicateReasons.set(duplicateDescription, 'Already uploaded');
@@ -219,7 +222,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [], propagat
                 const baseFile = ensureFileInstance(item.file);
                 // Preserve the native File/Blob brand by mutating the real File instance instead of cloning.
                 // Cloning via Object.assign/Object.create strips internal slots and breaks FileReader in Safari/Chromium.
-                (baseFile as any)._isUpgrade = true;
+                Object.assign(baseFile, { _isUpgrade: true });
                 processedFiles.push(baseFile);
             }
 
@@ -307,7 +310,7 @@ export const useFileUpload = ({ maxFileSizeMb = 4.5, initialFiles = [], propagat
 
                 currentChunk.push(promise);
                 // Use uncompressed size estimate (or fallback to 500KB average)
-                const entrySize = (zipEntry as any)._data?.uncompressedSize || 500 * 1024;
+                const entrySize = (zipEntry as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize || 500 * 1024;
                 currentChunkSize += entrySize;
 
                 if (currentChunkSize >= CHUNK_SIZE_BYTES) {

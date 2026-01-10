@@ -1,22 +1,22 @@
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface SystemStatus {
   timestamp: string;
   analysis: {
-    events?: any[];
+    events?: unknown[];
     count?: number;
     error?: string;
   };
   health: {
     mongodb: string;
     uptime?: number;
-    memory?: any;
+    memory?: unknown;
     recentAnalyses?: number;
     error?: string;
   };
   insights: {
-    activeJobs?: any[];
+    activeJobs?: unknown[];
     count?: number;
     error?: string;
   };
@@ -36,7 +36,7 @@ const DEFAULT_CONFIG: Required<PollingConfig> = {
 
 export function useAdaptivePolling(config: PollingConfig = {}) {
   const { activeInterval, idleInterval, errorInterval } = { ...DEFAULT_CONFIG, ...config };
-  
+
   const [data, setData] = useState<SystemStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +48,7 @@ export function useAdaptivePolling(config: PollingConfig = {}) {
   // Activity detection
   useEffect(() => {
     let idleTimer: NodeJS.Timeout;
-    
+
     const resetIdle = () => {
       setIsIdle(false);
       clearTimeout(idleTimer);
@@ -58,7 +58,7 @@ export function useAdaptivePolling(config: PollingConfig = {}) {
     window.addEventListener('mousemove', resetIdle);
     window.addEventListener('keypress', resetIdle);
     window.addEventListener('click', resetIdle);
-    
+
     resetIdle();
 
     return () => {
@@ -71,7 +71,7 @@ export function useAdaptivePolling(config: PollingConfig = {}) {
 
   const fetchData = useCallback(async () => {
     if (!mountedRef.current) return;
-    
+
     // Skip if tab is hidden
     if (document.hidden) return;
 
@@ -79,7 +79,7 @@ export function useAdaptivePolling(config: PollingConfig = {}) {
     try {
       const response = await fetch('/.netlify/functions/poll-updates');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      
+
       const result = await response.json();
       if (mountedRef.current) {
         setData(result);
@@ -98,14 +98,14 @@ export function useAdaptivePolling(config: PollingConfig = {}) {
 
   useEffect(() => {
     mountedRef.current = true;
-    
+
     const loop = async () => {
       await fetchData();
-      
+
       let nextInterval = activeInterval;
       if (error) nextInterval = errorInterval;
       else if (isIdle) nextInterval = idleInterval;
-      
+
       if (mountedRef.current) {
         timeoutRef.current = setTimeout(loop, nextInterval);
       }

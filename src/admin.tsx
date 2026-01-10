@@ -3,20 +3,11 @@ import React, { Suspense, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import { AdminStateProvider } from './state/adminState';
+import type { NetlifyIdentityWidget } from './types';
 const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
 
 // Polyfill Node.js globals for the browser environment.
 // jszip relies on 'Buffer'.
-
-// Add 'Buffer' to the global window object.
-interface NetlifyIdentityWidget {
-  open: () => void;
-  close: () => void;
-  logout: () => void;
-  init: () => void;
-  on: (event: string, callback: (...args: unknown[]) => void) => void;
-  off: (event: string, callback: (...args: unknown[]) => void) => void;
-}
 
 declare global {
   interface Window {

@@ -5,15 +5,15 @@ import type { AnalysisRecord, AnalysisStory, BmsSystem, DisplayableAnalysisResul
 export type HistorySortKey = HistoryColumnKey;
 
 // Diagnostic types
-interface DiagnosticTestResult {
+export interface DiagnosticTestResult {
   name: string;
   status: 'success' | 'warning' | 'error' | 'partial' | 'running';
   duration: number;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
   error?: string;
 }
 
-interface DiagnosticsResponse {
+export interface DiagnosticsResponse {
   status: 'success' | 'partial' | 'warning' | 'error';
   timestamp: string;
   duration: number;

@@ -7,10 +7,10 @@
  * Implements "Starter Motor" approach: reassuring messages for long-running analyses.
  */
 
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { InsightsProgress, InsightsJobStatus } from '../hooks/useInsightsPolling';
+import type { InsightsJobStatus, InsightsProgress } from '../hooks/useInsightsPolling';
 
 // Time thresholds for progress messages (in seconds)
 const TIME_THRESHOLD_INITIAL = 30;
@@ -28,7 +28,7 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
   const [showThinking, setShowThinking] = useState(true);
   const [analysisStartTime, setAnalysisStartTime] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  
+
   // Track when analysis started
   useEffect(() => {
     if (isPolling && !analysisStartTime) {
@@ -42,7 +42,7 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
   // Update elapsed time every second
   useEffect(() => {
     if (!analysisStartTime) return;
-    
+
     const interval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - analysisStartTime) / 1000);
       setElapsedSeconds(elapsed);
@@ -56,7 +56,7 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
     if (status?.status === 'completed') {
       return 'AI Analysis Complete';
     }
-    
+
     if (elapsedSeconds < TIME_THRESHOLD_INITIAL) {
       return 'AI Analyzing Your Battery...';
     } else if (elapsedSeconds < TIME_THRESHOLD_ANALYZING) {
@@ -69,7 +69,7 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
       return 'Processing Comprehensive Analysis...';
     }
   };
-  
+
   // Auto-collapse thinking section when analysis completes
   useEffect(() => {
     if (status?.status === 'completed' && status?.finalInsights) {
@@ -104,7 +104,7 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
       </div>
 
       {/* Final Insights - Show prominently when complete */}
-      {status?.finalInsights && (
+      {status?.finalInsights != null && (
         <FinalInsightsDisplay insights={status.finalInsights} />
       )}
 
@@ -125,7 +125,7 @@ export function InsightsProgressDisplay({ status, isPolling, error }: InsightsPr
           {showThinking && (
             <div className="mt-3">
               {/* Initial Summary */}
-              {status?.initialSummary && (
+              {status?.initialSummary != null && (
                 <InitialSummaryDisplay summary={status.initialSummary} />
               )}
 
@@ -187,7 +187,7 @@ function StatusBadge({ status, isPolling, error, elapsedSeconds }: { status?: st
 
   if (status === 'processing' || isPolling) {
     const message = getStatusBadgeMessage();
-    
+
     return (
       <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
         <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-800" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -206,39 +206,41 @@ function StatusBadge({ status, isPolling, error, elapsedSeconds }: { status?: st
   );
 }
 
-function InitialSummaryDisplay({ summary }: { summary: any }) {
+function InitialSummaryDisplay({ summary }: { summary: unknown }) {
   if (!summary) return null;
 
-  const { current, historical } = summary;
+  const summaryObj = (summary && typeof summary === 'object') ? (summary as Record<string, unknown>) : {};
+  const current = (summaryObj.current && typeof summaryObj.current === 'object') ? (summaryObj.current as Record<string, unknown>) : null;
+  const historical = (summaryObj.historical && typeof summaryObj.historical === 'object') ? (summaryObj.historical as Record<string, unknown>) : null;
 
   return (
     <div className="mt-4 p-4 bg-blue-50 rounded-lg">
       <h4 className="text-sm font-semibold text-blue-900 mb-3">📊 Initial Battery Summary</h4>
-      
+
       {/* Current Snapshot */}
       {current && (
         <div className="mb-3">
           <p className="text-xs font-medium text-blue-800 mb-2">Current Snapshot:</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-            {current.voltage && (
+            {typeof current.voltage === 'number' && (
               <div>
                 <span className="text-gray-600">Voltage:</span>{' '}
                 <span className="font-semibold">{current.voltage.toFixed(2)}V</span>
               </div>
             )}
-            {current.current !== null && (
+            {typeof current.current === 'number' && (
               <div>
                 <span className="text-gray-600">Current:</span>{' '}
                 <span className="font-semibold">{current.current.toFixed(2)}A</span>
               </div>
             )}
-            {current.soc !== null && (
+            {typeof current.soc === 'number' && (
               <div>
                 <span className="text-gray-600">SOC:</span>{' '}
                 <span className="font-semibold">{current.soc.toFixed(1)}%</span>
               </div>
             )}
-            {current.cellCount > 0 && (
+            {typeof current.cellCount === 'number' && current.cellCount > 0 && (
               <div>
                 <span className="text-gray-600">Cells:</span>{' '}
                 <span className="font-semibold">{current.cellCount}</span>
@@ -253,10 +255,18 @@ function InitialSummaryDisplay({ summary }: { summary: any }) {
         <div>
           <p className="text-xs font-medium text-blue-800 mb-2">Last 7 Days:</p>
           <div className="text-xs text-gray-700">
-            <p>{historical.recordCount} data points collected</p>
-            {historical.daily && historical.daily.length > 0 && (
+            <p>{typeof historical.recordCount === 'number' ? historical.recordCount : 0} data points collected</p>
+            {Array.isArray(historical.daily) && historical.daily.length > 0 && (
               <p className="mt-1">
-                Daily average: {(historical.daily.reduce((sum: number, d: any) => sum + (d.avgSOC || 0), 0) / historical.daily.length).toFixed(1)}% SOC
+                {(() => {
+                  const daily = historical.daily as unknown[];
+                  const avg = daily.reduce<number>((sum, d) => {
+                    const obj = (d && typeof d === 'object') ? (d as Record<string, unknown>) : {};
+                    const v = typeof obj.avgSOC === 'number' ? obj.avgSOC : 0;
+                    return sum + v;
+                  }, 0) / daily.length;
+                  return `Daily average: ${avg.toFixed(1)}% SOC`;
+                })()}
               </p>
             )}
           </div>
@@ -323,23 +333,25 @@ function ProgressEventItem({ event, isLatest }: { event: InsightsProgress; isLat
   };
 
   const getMessage = () => {
+    const data = (event.data && typeof event.data === 'object') ? (event.data as Record<string, unknown>) : {};
+    const message = typeof data.message === 'string' ? data.message : undefined;
     // Use event.data.message if it exists (our new formatted messages)
-    if (event.data.message) {
-      return event.data.message;
+    if (message) {
+      return message;
     }
-    
+
     // Fallback to old formatting
     switch (event.type) {
       case 'context_built':
-        return `🧠 Context built for AI (${Math.round((event.data.promptLength || 0) / 1000)}KB prompt)`;
+        return `🧠 Context built for AI (${Math.round(((typeof data.promptLength === 'number' ? data.promptLength : 0) || 0) / 1000)}KB prompt)`;
       case 'tool_call': {
-        const params = event.data.parameters || {};
+        const params = (data.parameters && typeof data.parameters === 'object') ? (data.parameters as Record<string, unknown>) : {};
         const paramSummary = Object.entries(params)
           .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
           .join(', ');
         return (
           <div>
-            <div className="font-medium">Requesting data: {event.data.tool}</div>
+            <div className="font-medium">Requesting data: {typeof data.tool === 'string' ? data.tool : 'tool'}</div>
             {paramSummary && (
               <div className="text-xs text-gray-500 mt-1 font-mono">
                 {paramSummary}
@@ -349,47 +361,46 @@ function ProgressEventItem({ event, isLatest }: { event: InsightsProgress; isLat
         );
       }
       case 'tool_response': {
-        const success = event.data.success !== false;
+        const success = data.success !== false;
         return (
           <div>
             <div className={success ? 'text-green-700' : 'text-red-700'}>
-              {success ? '✓' : '✗'} {event.data.tool} response received ({(event.data.dataSize || 0).toLocaleString()} bytes)
+              {success ? '✓' : '✗'} {typeof data.tool === 'string' ? data.tool : 'tool'} response received ({(typeof data.dataSize === 'number' ? data.dataSize : 0).toLocaleString()} bytes)
             </div>
-            {event.data.parameters && (
+            {data.parameters != null && (
               <div className="text-xs text-gray-500 mt-1">
-                Query: {JSON.stringify(event.data.parameters).substring(0, 100)}
-                {JSON.stringify(event.data.parameters).length > 100 && '...'}
+                Query: {JSON.stringify(data.parameters).substring(0, 100)}
+                {JSON.stringify(data.parameters).length > 100 && '...'}
               </div>
             )}
           </div>
         );
       }
       case 'prompt_sent':
-        return `📤 Sending prompt to AI (${event.data.messageCount} messages, ${Math.round((event.data.promptLength || 0) / 1000)}KB)`;
+        return `📤 Sending prompt to AI (${typeof data.messageCount === 'number' ? data.messageCount : 0} messages, ${Math.round(((typeof data.promptLength === 'number' ? data.promptLength : 0) || 0) / 1000)}KB)`;
       case 'response_received':
-        if (event.data.isEmpty) {
+        if (data.isEmpty) {
           return '⚠️ Received empty response from AI';
         }
-        return `📥 Received response from AI (${Math.round((event.data.responseLength || 0) / 1000)}KB)`;
+        return `📥 Received response from AI (${Math.round(((typeof data.responseLength === 'number' ? data.responseLength : 0) || 0) / 1000)}KB)`;
       case 'ai_response':
         return 'AI generated response';
       case 'iteration':
-        return `📈 Iteration ${event.data.iteration} of ?`;
+        return `📈 Iteration ${typeof data.iteration === 'number' ? data.iteration : '?'} of ?`;
       case 'status':
-        return event.data.message;
+        return typeof data.message === 'string' ? data.message : '';
       case 'error':
-        return `Error: ${event.data.error}`;
+        return `Error: ${typeof data.error === 'string' ? data.error : 'Unknown error'}`;
       default:
         return JSON.stringify(event.data);
     }
   };
 
   return (
-    <div className={`flex items-start gap-2 text-xs p-3 rounded-lg transition-all duration-300 ${
-      isLatest 
-        ? 'bg-white border-2 border-blue-300 shadow-md animate-pulse-subtle' 
-        : 'bg-white bg-opacity-60 border border-blue-100'
-    }`}>
+    <div className={`flex items-start gap-2 text-xs p-3 rounded-lg transition-all duration-300 ${isLatest
+      ? 'bg-white border-2 border-blue-300 shadow-md animate-pulse-subtle'
+      : 'bg-white bg-opacity-60 border border-blue-100'
+      }`}>
       <span className="text-lg flex-shrink-0">{getIcon()}</span>
       <div className="flex-1 min-w-0">
         <div className="text-gray-700 whitespace-pre-wrap break-words text-xs leading-relaxed">
@@ -416,8 +427,13 @@ function PartialInsightsDisplay({ insights }: { insights: string }) {
   );
 }
 
-function FinalInsightsDisplay({ insights }: { insights: any }) {
-  const displayText = insights.formattedText || insights.rawText || JSON.stringify(insights);
+function FinalInsightsDisplay({ insights }: { insights: unknown }) {
+  const obj = (insights && typeof insights === 'object') ? (insights as Record<string, unknown>) : null;
+  const displayText =
+    (typeof insights === 'string' ? insights : null) ||
+    (obj && typeof obj.formattedText === 'string' ? obj.formattedText : null) ||
+    (obj && typeof obj.rawText === 'string' ? obj.rawText : null) ||
+    JSON.stringify(insights);
 
   return (
     <div className="mt-4 p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200 shadow-sm">
@@ -439,12 +455,14 @@ function FinalInsightsDisplay({ insights }: { insights: any }) {
             li: ({ node: _node, ...props }) => <li className="text-gray-700 ml-2 leading-relaxed" {...props} />,
             strong: ({ node: _node, ...props }) => <strong className="font-bold text-gray-900" {...props} />,
             em: ({ node: _node, ...props }) => <em className="italic text-gray-700" {...props} />,
-            code: ({ node: _node, inline, ...props }: any) =>
-              inline ? (
-                <code className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-sm break-words" {...props} />
-              ) : (
-                <code className="block bg-gray-900 text-green-400 p-3 rounded-lg text-sm overflow-x-auto mb-3" {...props} />
-              ),
+            code: ({ node: _node, className, ...props }) => {
+              const baseClassName = className ? String(className) : '';
+              const isInline = baseClassName.length === 0;
+              const mergedClassName = isInline
+                ? `bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-sm break-words${baseClassName ? ` ${baseClassName}` : ''}`
+                : `block bg-gray-900 text-green-400 p-3 rounded-lg text-sm overflow-x-auto mb-3${baseClassName ? ` ${baseClassName}` : ''}`;
+              return <code className={mergedClassName} {...props} />;
+            },
             blockquote: ({ node: _node, ...props }) => (
               <blockquote className="border-l-4 border-green-500 pl-4 py-2 mb-3 italic text-gray-600 bg-green-50 rounded-r" {...props} />
             ),
@@ -476,7 +494,7 @@ function ErrorDisplay({ error }: { error: string }) {
   const lines = error.split('\n').filter(line => line.trim());
   const mainMessage = lines[0] || 'An error occurred';
   const hasDetails = lines.length > 1;
-  
+
   return (
     <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
       <h4 className="text-sm font-semibold text-amber-900 mb-2 flex items-center gap-2">

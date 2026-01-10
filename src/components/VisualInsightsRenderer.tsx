@@ -66,25 +66,25 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
 const parseChartConfigs = (content: string): { charts: ChartConfig[]; cleanContent: string } => {
   const charts: ChartConfig[] = [];
   const chartBlockRegex = /```chart\s*\n([\s\S]*?)```/g;
-  
+
   let cleanContent = content;
   let match;
   let chartIndex = 0;
-  
+
   while ((match = chartBlockRegex.exec(content)) !== null) {
     try {
       const jsonStr = match[1].trim();
       const chartConfig = JSON.parse(jsonStr) as ChartConfig;
-      
+
       // Validate chart config has required fields
       if (chartConfig.chartType && chartConfig.title) {
         charts.push(chartConfig);
-        log('info', 'Parsed chart configuration', { 
-          chartType: chartConfig.chartType, 
+        log('info', 'Parsed chart configuration', {
+          chartType: chartConfig.chartType,
           title: chartConfig.title,
-          hasData: chartConfig.series ? chartConfig.series.length > 0 : !!chartConfig.value 
+          hasData: chartConfig.series ? chartConfig.series.length > 0 : !!chartConfig.value
         });
-        
+
         // Replace chart block with placeholder
         cleanContent = cleanContent.replace(match[0], `\n[CHART_PLACEHOLDER_${chartIndex}]\n`);
         chartIndex++;
@@ -92,13 +92,13 @@ const parseChartConfigs = (content: string): { charts: ChartConfig[]; cleanConte
         log('warn', 'Invalid chart config - missing required fields', { chartConfig });
       }
     } catch (e) {
-      log('warn', 'Failed to parse chart configuration', { 
+      log('warn', 'Failed to parse chart configuration', {
         error: e instanceof Error ? e.message : String(e),
         rawContent: match[1].substring(0, 100)
       });
     }
   }
-  
+
   return { charts, cleanContent };
 };
 
@@ -108,18 +108,18 @@ const parseChartConfigs = (content: string): { charts: ChartConfig[]; cleanConte
 const GaugeChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
   const { value = 0, min = 0, max = 100, title, thresholds = [], insights } = config;
   const percentage = Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
-  
+
   // Determine color based on thresholds
   let color = '#3B82F6'; // Default blue
   for (const threshold of thresholds.sort((a, b) => b.value - a.value)) {
     if (value >= threshold.value) {
-      color = threshold.color === 'green' ? '#22C55E' : 
-              threshold.color === 'yellow' ? '#EAB308' : 
-              threshold.color === 'red' ? '#EF4444' : threshold.color;
+      color = threshold.color === 'green' ? '#22C55E' :
+        threshold.color === 'yellow' ? '#EAB308' :
+          threshold.color === 'red' ? '#EF4444' : threshold.color;
       break;
     }
   }
-  
+
   // Get status label
   let statusLabel = 'Normal';
   for (const threshold of thresholds.sort((a, b) => b.value - a.value)) {
@@ -180,12 +180,12 @@ const getChartDimensions = (dimensions?: ChartConfig['dimensions']) => {
     '2:1': 2,
     '3:2': 3 / 2
   };
-  
+
   const aspectRatio = dimensions?.aspectRatio ? aspectRatioMap[dimensions.aspectRatio] : 16 / 9;
   const minHeight = dimensions?.minHeight || 200;
   const maxHeight = dimensions?.maxHeight || 400;
   const preferredWidth = dimensions?.preferredWidth || 'full';
-  
+
   // Calculate height class based on aspect ratio (approximate for CSS)
   let heightClass = 'h-48'; // Default ~192px
   if (aspectRatio <= 1) {
@@ -193,11 +193,11 @@ const getChartDimensions = (dimensions?: ChartConfig['dimensions']) => {
   } else if (aspectRatio >= 2) {
     heightClass = 'h-40'; // Wide, shorter
   }
-  
+
   // Width class based on preferred width
-  const widthClass = preferredWidth === 'half' ? 'w-full md:w-1/2' : 
-                     preferredWidth === 'third' ? 'w-full md:w-1/3' : 'w-full';
-  
+  const widthClass = preferredWidth === 'half' ? 'w-full md:w-1/2' :
+    preferredWidth === 'third' ? 'w-full md:w-1/3' : 'w-full';
+
   return { heightClass, widthClass, minHeight, maxHeight, aspectRatio };
 };
 
@@ -207,35 +207,35 @@ const getChartDimensions = (dimensions?: ChartConfig['dimensions']) => {
  */
 const SimpleChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
   const { chartType, title, description, series = [], xAxis, yAxis, insights, dimensions } = config;
-  
+
   // Memoize dimension settings to avoid recalculating on every render
   const { heightClass, widthClass, minHeight, maxHeight } = useMemo(
     () => getChartDimensions(dimensions),
     [dimensions]
   );
-  
+
   // Get all data points
   const allData = series.flatMap(s => s.data);
   const values = allData.map(d => d[1]);
   const minValue = yAxis?.min ?? Math.min(...values, 0);
   const maxValue = yAxis?.max ?? Math.max(...values);
   const range = maxValue - minValue || 1;
-  
+
   // Limit to first 20 points for display
   const displayData = series[0]?.data.slice(-20) || [];
-  
+
   const getBarHeight = (value: number) => {
     return Math.max(5, ((value - minValue) / range) * 100);
   };
-  
+
   const colors = ['#3B82F6', '#22C55E', '#EAB308', '#EF4444', '#8B5CF6'];
-  
+
   return (
     <div className={`bg-white rounded-xl p-6 shadow-lg border border-gray-200 ${widthClass}`}>
       <h4 className="text-lg font-bold text-gray-800 mb-2">{title}</h4>
       {description && <p className="text-sm text-gray-600 mb-4">{description}</p>}
-      
-      <div 
+
+      <div
         className={`relative ${heightClass} bg-gray-50 rounded-lg p-4`}
         style={{ minHeight: `${minHeight}px`, maxHeight: `${maxHeight}px` }}
       >
@@ -245,20 +245,20 @@ const SimpleChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
           <span>{((maxValue + minValue) / 2).toFixed(1)}</span>
           <span>{minValue.toFixed(1)}</span>
         </div>
-        
+
         {/* Chart area */}
         <div className="ml-14 h-full flex items-end space-x-1">
           {chartType === 'bar' || chartType === 'stacked_bar' ? (
             // Bar chart
             displayData.map((point, idx) => (
-              <div 
+              <div
                 key={idx}
                 className="flex-1 flex flex-col justify-end"
                 title={`${point[0]}: ${point[1]}`}
               >
-                <div 
+                <div
                   className="rounded-t transition-all duration-500 ease-out"
-                  style={{ 
+                  style={{
                     height: `${getBarHeight(point[1])}%`,
                     backgroundColor: colors[0],
                     minHeight: '4px'
@@ -269,14 +269,14 @@ const SimpleChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
           ) : (
             // Line chart - simplified as connected bars
             displayData.map((point, idx) => (
-              <div 
+              <div
                 key={idx}
                 className="flex-1 flex flex-col justify-end"
                 title={`${point[0]}: ${point[1]}`}
               >
-                <div 
+                <div
                   className="w-2 h-2 rounded-full mx-auto transition-all duration-500 ease-out"
-                  style={{ 
+                  style={{
                     marginBottom: `${getBarHeight(point[1])}%`,
                     backgroundColor: colors[0]
                   }}
@@ -285,7 +285,7 @@ const SimpleChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
             ))
           )}
         </div>
-        
+
         {/* X-axis label */}
         {xAxis?.label && (
           <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 text-xs text-gray-500 mt-2">
@@ -293,13 +293,13 @@ const SimpleChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
           </div>
         )}
       </div>
-      
+
       {/* Legend */}
       {series.length > 0 && (
         <div className="flex flex-wrap gap-4 mt-4 justify-center">
           {series.map((s, idx) => (
             <div key={idx} className="flex items-center space-x-2">
-              <div 
+              <div
                 className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: s.color || colors[idx % colors.length] }}
               />
@@ -308,7 +308,7 @@ const SimpleChart: React.FC<{ config: ChartConfig }> = ({ config }) => {
           ))}
         </div>
       )}
-      
+
       {insights && (
         <p className="text-sm text-gray-600 mt-4 text-center italic border-t border-gray-200 pt-3">
           ✨ {insights}
@@ -337,7 +337,7 @@ export const VisualInsightsRenderer: React.FC<VisualInsightsRendererProps> = ({
   className = ''
 }) => {
   const { charts, cleanContent } = useMemo(() => parseChartConfigs(content), [content]);
-  
+
   // Split content by chart placeholders
   const contentParts = useMemo(() => {
     const parts: Array<{ type: 'text' | 'chart'; content: string; chartIndex?: number }> = [];
@@ -345,7 +345,7 @@ export const VisualInsightsRenderer: React.FC<VisualInsightsRendererProps> = ({
     const placeholderRegex = /\[CHART_PLACEHOLDER_(\d+)\]/g;
     let lastIndex = 0;
     let match;
-    
+
     while ((match = placeholderRegex.exec(cleanContent)) !== null) {
       // Add text before placeholder
       if (match.index > lastIndex) {
@@ -354,16 +354,16 @@ export const VisualInsightsRenderer: React.FC<VisualInsightsRendererProps> = ({
           parts.push({ type: 'text', content: textContent });
         }
       }
-      
+
       // Add chart placeholder
       const chartIndex = parseInt(match[1], 10);
       if (charts[chartIndex]) {
         parts.push({ type: 'chart', content: '', chartIndex });
       }
-      
+
       lastIndex = match.index + match[0].length;
     }
-    
+
     // Add remaining text
     if (lastIndex < cleanContent.length) {
       const remainingText = cleanContent.substring(lastIndex).trim();
@@ -371,18 +371,18 @@ export const VisualInsightsRenderer: React.FC<VisualInsightsRendererProps> = ({
         parts.push({ type: 'text', content: remainingText });
       }
     }
-    
+
     // If no parts, treat entire content as text
     if (parts.length === 0) {
       parts.push({ type: 'text', content: cleanContent });
     }
-    
+
     return parts;
   }, [cleanContent, charts]);
 
-  log('info', 'Rendering visual insights', { 
-    chartsFound: charts.length, 
-    contentParts: contentParts.length 
+  log('info', 'Rendering visual insights', {
+    chartsFound: charts.length,
+    contentParts: contentParts.length
   });
 
   return (
@@ -404,12 +404,14 @@ export const VisualInsightsRenderer: React.FC<VisualInsightsRendererProps> = ({
                   li: ({ node: _node, ...props }) => <li className="text-gray-700 ml-2 leading-relaxed break-words" {...props} />,
                   strong: ({ node: _node, ...props }) => <strong className="font-bold text-gray-900" {...props} />,
                   em: ({ node: _node, ...props }) => <em className="italic text-gray-700" {...props} />,
-                  code: ({ node: _node, inline, ...props }: any) =>
-                    inline ? (
-                      <code className="bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-sm break-words" {...props} />
-                    ) : (
-                      <code className="block bg-gray-900 text-green-400 p-3 rounded-lg text-sm overflow-x-auto mb-3" {...props} />
-                    ),
+                  code: ({ node: _node, className, ...props }) => {
+                    const baseClassName = className ? String(className) : '';
+                    const isInline = baseClassName.length === 0;
+                    const mergedClassName = isInline
+                      ? `bg-gray-100 text-pink-600 px-1.5 py-0.5 rounded text-sm break-words${baseClassName ? ` ${baseClassName}` : ''}`
+                      : `block bg-gray-900 text-green-400 p-3 rounded-lg text-sm overflow-x-auto mb-3${baseClassName ? ` ${baseClassName}` : ''}`;
+                    return <code className={mergedClassName} {...props} />;
+                  },
                   blockquote: ({ node: _node, ...props }) => (
                     <blockquote className="border-l-4 border-blue-500 pl-4 py-2 mb-3 italic text-gray-600 bg-blue-50 rounded-r break-words" {...props} />
                   ),
@@ -419,19 +421,19 @@ export const VisualInsightsRenderer: React.FC<VisualInsightsRendererProps> = ({
               </ReactMarkdown>
             </div>
           ) : (
-            <ChartRenderer 
-              config={charts[part.chartIndex!]} 
-              index={part.chartIndex!} 
+            <ChartRenderer
+              config={charts[part.chartIndex!]}
+              index={part.chartIndex!}
             />
           )}
         </div>
       ))}
-      
+
       {/* Show warning if Visual Guru mode but no charts found */}
       {charts.length === 0 && content.includes('📊') && (
         <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
           <p className="text-sm text-yellow-700">
-            <span className="font-semibold">📊 Visual Note:</span> No chart configurations were found in this response. 
+            <span className="font-semibold">📊 Visual Note:</span> No chart configurations were found in this response.
             The AI may not have detected time-series data suitable for visualization, or the chart format may need adjustment.
           </p>
         </div>

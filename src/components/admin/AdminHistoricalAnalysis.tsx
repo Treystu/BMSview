@@ -1,11 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
+import { useAnalyticsData } from '../../hooks/useAnalyticsData';
 import type { AnalysisRecord, BmsSystem } from '../../types';
 import HistoricalChart from '../HistoricalChart';
-import TrendingOverview from './analytics/TrendingOverview';
-import ToolsPanel from './analytics/ToolsPanel';
-import AlertAnalysis from './AlertAnalysis';
-import { useAnalyticsData } from '../../hooks/useAnalyticsData';
 import SpinnerIcon from '../icons/SpinnerIcon';
+import AlertAnalysis from './AlertAnalysis';
+import ToolsPanel from './analytics/ToolsPanel';
+import TrendingOverview from './analytics/TrendingOverview';
 
 interface AdminHistoricalAnalysisProps {
     systems: BmsSystem[];
@@ -22,8 +22,8 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
 }) => {
     const [selectedSystemId] = useState<string>('');
     const [visibleTimeRange, setVisibleTimeRange] = useState<{ start: number; end: number } | null>(null);
-    const [analysisResult, setAnalysisResult] = useState<any>(null);
-    const [predictionResult, setPredictionResult] = useState<any>(null);
+    const [analysisResult, setAnalysisResult] = useState<unknown>(null);
+    const [predictionResult, setPredictionResult] = useState<unknown>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isPredicting, setIsPredicting] = useState(false);
 
@@ -162,13 +162,13 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
             </div>
 
             {/* Analysis and Prediction Results */}
-            {analysisResult && (
+            {analysisResult != null && (
                 <div className="mb-6 p-4 bg-gray-800 rounded-lg shadow-inner">
                     <h3 className="text-lg font-semibold text-white mb-2">Analysis Result</h3>
                     <pre className="text-sm text-gray-300 bg-gray-900 p-4 rounded">{JSON.stringify(analysisResult, null, 2)}</pre>
                 </div>
             )}
-            {predictionResult && (
+            {predictionResult != null && (
                 <div className="mb-6 p-4 bg-gray-800 rounded-lg shadow-inner">
                     <h3 className="text-lg font-semibold text-white mb-2">Prediction Result</h3>
                     <pre className="text-sm text-gray-300 bg-gray-900 p-4 rounded">{JSON.stringify(predictionResult, null, 2)}</pre>
@@ -186,18 +186,18 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
                             {visibleTimeRange && (
                                 <p className="text-sm text-gray-400 mt-1">
                                     Showing alerts within visible time range: {
-                                        new Date(visibleTimeRange.start).toLocaleString('en-US', { 
-                                            month: 'short', 
-                                            day: 'numeric', 
-                                            hour: '2-digit', 
+                                        new Date(visibleTimeRange.start).toLocaleString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: '2-digit',
                                             minute: '2-digit',
                                             timeZone: 'UTC'
                                         })
                                     } - {
-                                        new Date(visibleTimeRange.end).toLocaleString('en-US', { 
-                                            month: 'short', 
-                                            day: 'numeric', 
-                                            hour: '2-digit', 
+                                        new Date(visibleTimeRange.end).toLocaleString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: '2-digit',
                                             minute: '2-digit',
                                             timeZone: 'UTC'
                                         })
@@ -206,7 +206,7 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
                             )}
                         </div>
                         <AlertAnalysis data={analyticsData.alertAnalysis} />
-                        
+
                         {/* Visible Alerts List */}
                         {visibleAlerts.length > 0 && (
                             <div className="mt-4 border-t border-gray-700 pt-4">
@@ -215,13 +215,12 @@ const AdminHistoricalAnalysis: React.FC<AdminHistoricalAnalysisProps> = ({
                                 </h4>
                                 <div className="max-h-60 overflow-y-auto space-y-2">
                                     {visibleAlerts.slice(0, 10).map((alert, idx) => (
-                                        <div 
+                                        <div
                                             key={idx}
-                                            className={`p-2 rounded text-xs ${
-                                                alert.type === 'critical' ? 'bg-red-900/30 border border-red-700' :
+                                            className={`p-2 rounded text-xs ${alert.type === 'critical' ? 'bg-red-900/30 border border-red-700' :
                                                 alert.type === 'warning' ? 'bg-yellow-900/30 border border-yellow-700' :
-                                                'bg-blue-900/30 border border-blue-700'
-                                            }`}
+                                                    'bg-blue-900/30 border border-blue-700'
+                                                }`}
                                         >
                                             <div className="flex items-start justify-between">
                                                 <span className="text-gray-300">{alert.message}</span>

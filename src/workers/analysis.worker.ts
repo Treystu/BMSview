@@ -1,4 +1,8 @@
-declare const FileReaderSync: any;
+declare const FileReaderSync: {
+  new(): {
+    readAsDataURL: (file: Blob) => string;
+  };
+};
 
 self.addEventListener('message', async (ev: MessageEvent) => {
   try {

@@ -19,7 +19,7 @@ const TrendingOverview: React.FC<TrendingOverviewProps> = ({
     onQuickRangeSelect
 }) => {
     const selectedSystem = systems.find(s => s.id === selectedSystemId);
-    
+
     // Calculate aggregate metrics from analytics data
     const calculateMetrics = () => {
         if (!analyticsData) return null;
@@ -34,18 +34,18 @@ const TrendingOverview: React.FC<TrendingOverviewProps> = ({
 
         hourlyAverages.forEach(({ metrics }) => {
             if (metrics.current) {
-                if (metrics.current.chargePoints > 0) {
+                if (metrics.current.avgCharge && metrics.current.avgCharge > 0) {
                     totalChargeHours++;
-                    avgChargingCurrent += metrics.current.avgCharge;
+                    avgChargingCurrent += metrics.current.avgCharge || 0;
                 }
-                if (metrics.current.dischargePoints > 0) {
+                if (metrics.current.avgDischarge && metrics.current.avgDischarge < 0) {
                     totalDischargeHours++;
-                    avgDischargingCurrent += Math.abs(metrics.current.avgDischarge);
+                    avgDischargingCurrent += Math.abs(metrics.current.avgDischarge || 0);
                 }
             }
         });
 
-        const chargeDischargeRatio = totalDischargeHours > 0 
+        const chargeDischargeRatio = totalDischargeHours > 0
             ? (avgChargingCurrent / totalChargeHours) / (avgDischargingCurrent / totalDischargeHours)
             : 0;
 
@@ -98,7 +98,7 @@ const TrendingOverview: React.FC<TrendingOverviewProps> = ({
                         {selectedSystem?.name || 'Unknown System'} • Performance Overview
                     </p>
                 </div>
-                
+
                 {/* Quick Range Toggles */}
                 {onQuickRangeSelect && (
                     <div className="flex gap-2">
@@ -154,17 +154,16 @@ const TrendingOverview: React.FC<TrendingOverviewProps> = ({
                 <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs uppercase tracking-wide text-gray-400">Charge/Discharge Ratio</span>
-                        <div className={`w-2 h-2 rounded-full ${
-                            metrics.chargeDischargeRatio >= 1 ? 'bg-green-500' : 
+                        <div className={`w-2 h-2 rounded-full ${metrics.chargeDischargeRatio >= 1 ? 'bg-green-500' :
                             metrics.chargeDischargeRatio >= 0.8 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}></div>
+                            }`}></div>
                     </div>
                     <div className="text-2xl font-bold text-white">
                         {metrics.chargeDischargeRatio.toFixed(2)}
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
-                        {metrics.chargeDischargeRatio >= 1 ? 'Surplus' : 
-                         metrics.chargeDischargeRatio >= 0.8 ? 'Balanced' : 'Deficit'}
+                        {metrics.chargeDischargeRatio >= 1 ? 'Surplus' :
+                            metrics.chargeDischargeRatio >= 0.8 ? 'Balanced' : 'Deficit'}
                     </p>
                 </div>
 
@@ -172,10 +171,9 @@ const TrendingOverview: React.FC<TrendingOverviewProps> = ({
                 <div className="bg-gray-900 p-4 rounded-lg border border-gray-700">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs uppercase tracking-wide text-gray-400">Total Alerts</span>
-                        <div className={`w-2 h-2 rounded-full ${
-                            metrics.totalAlerts === 0 ? 'bg-green-500' : 
+                        <div className={`w-2 h-2 rounded-full ${metrics.totalAlerts === 0 ? 'bg-green-500' :
                             metrics.totalAlerts < 10 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}></div>
+                            }`}></div>
                     </div>
                     <div className="text-2xl font-bold text-white">
                         {metrics.totalAlerts}

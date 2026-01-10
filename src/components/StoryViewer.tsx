@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import type { AnalysisStory, AnalysisRecord, AnalysisData } from '../types';
-import { getStories, getStory, deleteStory, type StoriesResponse } from '../services/clientService';
+import React, { useCallback, useEffect, useState } from 'react';
+import { deleteStory, getStories, getStory, type StoriesResponse } from '../services/clientService';
+import type { AnalysisData, AnalysisRecord, AnalysisStory } from '../types';
 
 interface StoryViewerProps {
   selectedStoryId?: string | null;
@@ -10,7 +10,7 @@ interface StoryViewerProps {
 // Timeline card for individual analysis records
 const TimelineCard: React.FC<{ record: AnalysisRecord; index: number }> = ({ record, index }) => {
   const data = record.analysis || {} as Partial<AnalysisData>;
-  
+
   return (
     <div className="relative pl-8 pb-6 border-l-2 border-secondary last:border-l-0">
       <div className="absolute left-0 top-0 w-4 h-4 bg-secondary rounded-full -translate-x-1/2"></div>
@@ -108,10 +108,10 @@ const AiInterpretationPanel: React.FC<{ interpretation: AnalysisStory['aiInterpr
 };
 
 // Story detail view
-const StoryDetail: React.FC<{ story: AnalysisStory; onBack: () => void; onDelete: (id: string) => void }> = ({ 
-  story, 
+const StoryDetail: React.FC<{ story: AnalysisStory; onBack: () => void; onDelete: (id: string) => void }> = ({
+  story,
   onBack,
-  onDelete 
+  onDelete
 }) => {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -138,11 +138,10 @@ const StoryDetail: React.FC<{ story: AnalysisStory; onBack: () => void; onDelete
         </button>
         <button
           onClick={handleDelete}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            confirmDelete 
-              ? 'bg-red-600 hover:bg-red-700 text-white' 
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${confirmDelete
+              ? 'bg-red-600 hover:bg-red-700 text-white'
               : 'bg-gray-700 hover:bg-red-600/20 text-red-400 hover:text-red-300'
-          }`}
+            }`}
         >
           {confirmDelete ? 'Click again to confirm' : 'Delete Story'}
         </button>
@@ -161,14 +160,14 @@ const StoryDetail: React.FC<{ story: AnalysisStory; onBack: () => void; onDelete
             </>
           )}
         </div>
-        
+
         {story.summary && (
           <div className="mb-4">
             <h4 className="text-sm font-medium text-secondary mb-1">Summary</h4>
             <p className="text-gray-300">{story.summary}</p>
           </div>
         )}
-        
+
         {story.userContext && (
           <div className="bg-gray-700/50 rounded-lg p-4 border-l-4 border-secondary">
             <h4 className="text-sm font-medium text-secondary mb-1">User Context</h4>
@@ -222,7 +221,7 @@ const StoryDetail: React.FC<{ story: AnalysisStory; onBack: () => void; onDelete
 // Story list item
 const StoryListItem: React.FC<{ story: AnalysisStory; onSelect: (id: string) => void }> = ({ story, onSelect }) => {
   return (
-    <div 
+    <div
       onClick={() => onSelect(story.id)}
       className="bg-gray-800 rounded-lg p-4 hover:bg-gray-700 cursor-pointer transition-colors border border-transparent hover:border-secondary/30"
     >
@@ -262,8 +261,8 @@ const StoryViewer: React.FC<StoryViewerProps> = ({ selectedStoryId, onBack }) =>
     setError(null);
     try {
       const response: StoriesResponse = await getStories(page, 10);
-      setStories(response.items);
-      setTotalPages(response.totalPages);
+      setStories(response.stories);
+      setTotalPages(Math.ceil(response.total / 10));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch stories');
     } finally {
@@ -329,7 +328,7 @@ const StoryViewer: React.FC<StoryViewerProps> = ({ selectedStoryId, onBack }) =>
       <div className="bg-red-900/20 border border-red-600 rounded-lg p-4 text-red-400">
         <p className="font-medium">Error</p>
         <p className="text-sm">{error}</p>
-        <button 
+        <button
           onClick={() => currentStory ? fetchStory(currentStory.id) : fetchStories()}
           className="mt-2 text-sm text-secondary hover:underline"
         >

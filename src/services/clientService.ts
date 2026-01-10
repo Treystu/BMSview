@@ -1,4 +1,4 @@
-import type { AdminStoriesResponse, AdminStory, AnalysisData, AnalysisRecord, AnalysisStory, BmsSystem, InsightMode, WeatherData } from '../types';
+import type { AdminStoriesResponse, AdminStory, AnalysisData, AnalysisRecord, AnalysisStory, BmsSystem, InsightMode, NetlifyIdentityWidget, WeatherData } from '../types';
 import { InsightMode as InsightModeEnum } from '../types';
 import { calculateSystemAnalytics } from '../utils/analytics';
 
@@ -112,7 +112,7 @@ function detectCacheMode(): CacheMode {
     }
 
     const globalOverride = typeof globalThis !== 'undefined'
-        ? globalThis.__BMSVIEW_DISABLE_CACHE
+        ? (globalThis as typeof globalThis & { __BMSVIEW_DISABLE_CACHE?: boolean }).__BMSVIEW_DISABLE_CACHE
         : undefined;
 
     if (globalOverride === true) {
@@ -214,9 +214,7 @@ declare global {
         __BMSVIEW_GET_STATS?: () => ClientServiceMetrics;
         __BMSVIEW_RESET_STATS?: () => void;
         __BMSVIEW_SET_CACHE_DISABLED?: (disabled: boolean) => void;
-        netlifyIdentity?: {
-            currentUser?: () => { jwt?: () => Promise<string> } | null;
-        };
+        netlifyIdentity?: NetlifyIdentityWidget;
     }
     interface GlobalThis {
         __BMSVIEW_DISABLE_CACHE?: boolean;
@@ -334,7 +332,7 @@ export const setCacheDisabled = (disabled: boolean) => {
         }
 
         if (typeof globalThis !== 'undefined') {
-            globalThis.__BMSVIEW_DISABLE_CACHE = disabled;
+            (globalThis as typeof globalThis & { __BMSVIEW_DISABLE_CACHE?: boolean }).__BMSVIEW_DISABLE_CACHE = disabled;
         }
 
         metrics.cache.mode = detectCacheMode();
@@ -530,272 +528,6 @@ const formatInitialSummary = (summary: unknown): string => {
     return parts.filter(p => p).join('\n');
 };
 
-const formatContextSummary = (summary: unknown): string => {
-    if (!summary || typeof summary !== 'object') {
-        return '';
-    }
-    const obj = summary as Record<string, unknown>;
-    const lines: string[] = ['🧠 Guru Context Primer:\n'];
-
-    if (obj.systemProfile && typeof obj.systemProfile === 'object') {
-        const profile = obj.systemProfile as Record<string, unknown>;
-        const profilePieces: string[] = [];
-        if (typeof profile.name === 'string') profilePieces.push(profile.name);
-        if (typeof profile.chemistry === 'string') profilePieces.push(profile.chemistry);
-        if (typeof profile.voltage === 'number') {
-            profilePieces.push(`${profile.voltage.toFixed(1)}V`);
-        }
-        if (profilePieces.length > 0) {
-            lines.push(`• System: ${profilePieces.join(' | ')}`);
-        }
-    }
-
-    if (obj.snapshot && typeof obj.snapshot === 'object') {
-        const snapshot = obj.snapshot as Record<string, unknown>;
-        const snapshotBits: string[] = [];
-        if (typeof snapshot.voltage === 'number') snapshotBits.push(`${snapshot.voltage.toFixed(2)}V`);
-        if (typeof snapshot.current === 'number') snapshotBits.push(`${snapshot.current.toFixed(1)}A`);
-        if (typeof snapshot.soc === 'number') snapshotBits.push(`${snapshot.soc.toFixed(1)}% SOC`);
-        if (snapshotBits.length > 0) {
-            lines.push(`• Live snapshot: ${snapshotBits.join(' | ')}`);
-        }
-    }
-
-    if (obj.energyBudget && typeof obj.energyBudget === 'object') {
-        const budget = obj.energyBudget as Record<string, unknown>;
-        const budgetParts: string[] = [];
-        if (typeof budget.solarSufficiency === 'number') {
-            budgetParts.push(`Solar ${budget.solarSufficiency.toFixed(0)}%`);
-        }
-        if (typeof budget.autonomyDays === 'number') {
-            budgetParts.push(`${budget.autonomyDays.toFixed(1)} days autonomy`);
-        }
-        if (budgetParts.length > 0) {
-            lines.push(`• Energy budget: ${budgetParts.join(' | ')}`);
-        }
-    }
-
-    if (obj.predictions && typeof obj.predictions === 'object') {
-        const predictions = obj.predictions as Record<string, unknown>;
-        if (predictions.capacity && typeof predictions.capacity === 'object') {
-            const capacity = predictions.capacity as Record<string, unknown>;
-            const predPieces: string[] = [];
-            if (typeof capacity.degradationAhPerDay === 'number') {
-                predPieces.push(`${capacity.degradationAhPerDay.toFixed(2)} Ah/day fade`);
-            }
-            if (typeof capacity.daysToThreshold === 'number') {
-                predPieces.push(`${capacity.daysToThreshold} days to threshold`);
-            }
-            if (predPieces.length > 0) {
-                lines.push(`• Forecast: ${predPieces.join(' | ')}`);
-            }
-        }
-        if (typeof predictions.lifetimeMonths === 'number') {
-            lines.push(`• Remaining life: ${predictions.lifetimeMonths} months`);
-        }
-    }
-
-    if (obj.anomalies && typeof obj.anomalies === 'object') {
-        const anomalies = obj.anomalies as Record<string, unknown>;
-        if (typeof anomalies.total === 'number') {
-            const anomalyParts: string[] = [`${anomalies.total} anomalies`];
-            if (typeof anomalies.highSeverity === 'number') {
-                anomalyParts.push(`${anomalies.highSeverity} high severity`);
-            }
-            lines.push(`• Anomalies: ${anomalyParts.join(' | ')}`);
-        }
-    }
-
-    if (obj.weather && typeof obj.weather === 'object') {
-        const weather = obj.weather as Record<string, unknown>;
-        const weatherBits: string[] = [];
-        if (typeof weather.temp === 'number') weatherBits.push(`${weather.temp.toFixed(1)}°C`);
-        if (typeof weather.clouds === 'number') weatherBits.push(`${weather.clouds.toFixed(0)}% clouds`);
-        if (typeof weather.uvi === 'number') weatherBits.push(`UVI ${weather.uvi.toFixed(1)}`);
-        if (weatherBits.length > 0) {
-            lines.push(`• Weather: ${weatherBits.join(' | ')}`);
-        }
-    }
-
-    if (obj.recentSnapshots && typeof obj.recentSnapshots === 'object') {
-        const snaps = obj.recentSnapshots as Record<string, unknown>;
-        const snapshotMeta: string[] = [];
-        if (typeof snaps.count === 'number') {
-            snapshotMeta.push(`${snaps.count} samples`);
-        }
-        if (typeof snaps.netSocDelta === 'number') {
-            snapshotMeta.push(`ΔSOC ${snaps.netSocDelta >= 0 ? '+' : ''}${snaps.netSocDelta.toFixed(1)}%`);
-        }
-        if (typeof snaps.netAhDelta === 'number') {
-            snapshotMeta.push(`ΔAh ${snaps.netAhDelta >= 0 ? '+' : ''}${snaps.netAhDelta.toFixed(2)}`);
-        }
-        if (typeof snaps.alertCount === 'number' && snaps.alertCount > 0) {
-            snapshotMeta.push(`${snaps.alertCount} alerts`);
-        }
-        if (snapshotMeta.length > 0) {
-            lines.push(`• Recent logs: ${snapshotMeta.join(' | ')}`);
-        }
-    }
-
-    if (obj.meta && typeof obj.meta === 'object') {
-        const meta = obj.meta as Record<string, unknown>;
-        if (typeof meta.contextBuildMs === 'number') {
-            lines.push(`• Context build time: ${Math.round(meta.contextBuildMs)} ms${meta.truncated ? ' (truncated)' : ''}`);
-        }
-    }
-
-    const filtered = lines.filter(Boolean);
-    if (filtered.length <= 1) {
-        return '';
-    }
-
-    return filtered.join('\n') + '\n';
-};
-
-const pollInsightsJobCompletion = async (
-    jobId: string,
-    onChunk: (chunk: string) => void,
-    onError: (error: Error) => void,
-    maxAttempts: number = 600,
-    initialInterval: number = 2000,
-    initialContextSummary?: unknown,
-    contextWindowDays?: number
-): Promise<void> => {
-    const attempts = 0;
-    let lastProgressCount = 0;
-    let currentInterval = initialInterval;
-    const maxInterval = 10000;
-    const backoffMultiplier = 1.3;
-    let contextSummarySent = false;
-    const pollingStartTime = Date.now();
-
-    const emitContextSummary = (summary: unknown) => {
-        if (!summary || contextSummarySent) {
-            return;
-        }
-        contextSummarySent = true;
-        const formatted = formatContextSummary(summary);
-        if (formatted) {
-            onChunk(formatted);
-        }
-    };
-
-    emitContextSummary(initialContextSummary);
-
-    return new Promise((resolve, reject) => {
-        const poll = async () => {
-            try {
-                const response = await fetch('/.netlify/functions/generate-insights-status', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ jobId }),
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Status check failed: ${response.status} ${errorText}`);
-                }
-
-                const status = await response.json();
-
-                // Emit context summary if available
-                if (status.contextSummary) {
-                    emitContextSummary(status.contextSummary);
-                }
-
-                // Emit any new progress chunks
-                if (status.progress && Array.isArray(status.progress)) {
-                    const newChunks = status.progress.slice(lastProgressCount);
-                    newChunks.forEach((chunk: unknown) => {
-                        if (typeof chunk === 'string') {
-                            onChunk(chunk);
-                        }
-                    });
-                    lastProgressCount = status.progress.length;
-                }
-
-                if (status.status === 'completed') {
-                    onChunk('\n\n✅ Analysis Complete!\n');
-                    resolve();
-                    return;
-                }
-
-                if (status.status === 'failed') {
-                    const errorMessage = status.error || 'Analysis failed';
-                    onChunk(`\n\n❌ ${errorMessage}\n`);
-                    onError(new Error(errorMessage));
-                    reject(new Error(errorMessage));
-                    return;
-                }
-
-                // Continue polling with backoff
-                currentInterval = Math.min(currentInterval * backoffMultiplier, maxInterval);
-                setTimeout(poll, currentInterval);
-            } catch (err) {
-                const error = err instanceof Error ? err : new Error(String(err));
-
-                // "Starter Motor" approach: Log network errors but keep polling
-                // Only reject on catastrophic errors (404, 403, 401)
-                let status: number | undefined = undefined;
-                if (error && typeof error === 'object' && 'response' in error) {
-                    const resp = (error as { response?: { status?: number } }).response;
-                    if (typeof resp?.status === 'number') {
-                        status = resp.status;
-                    }
-                } else if (error && typeof error === 'object' && 'status' in error) {
-                    const st = (error as { status?: number }).status;
-                    if (typeof st === 'number') {
-                        status = st;
-                    }
-                }
-
-                const isCatastrophic = status === 404 || status === 403 || status === 401;
-
-                if (isCatastrophic) {
-                    log('error', 'Catastrophic error polling insights job status', {
-                        jobId,
-                        error: error.message,
-                        status
-                    });
-                    onError(error);
-                    reject(error);
-                    return;
-                }
-
-                // For network errors, continue polling with exponential backoff
-                log('warn', 'Network error polling insights job status, retrying...', {
-                    jobId,
-                    error: error.message,
-                    attempt: attempts + 1
-                });
-
-                currentInterval = Math.min(currentInterval * backoffMultiplier, maxInterval);
-                setTimeout(poll, currentInterval);
-            }
-        };
-
-        // Start polling
-        poll();
-    });
-};
-
-const formatProgressEvent = (event: unknown): string => {
-    if (!event || typeof event !== 'object') return '';
-    const ev = event as Record<string, unknown>;
-    switch (ev.type) {
-        case 'checkpoint':
-            return typeof ev.message === 'string' ? ev.message : '';
-        case 'error':
-            return typeof ev.message === 'string' ? `❌ ${ev.message}` : '';
-        case 'context':
-            return typeof ev.message === 'string' ? ev.message : '';
-        default:
-            return typeof ev.message === 'string' ? ev.message : '';
-    }
-};
-
 const formatInsightsObject = (insights: unknown): string => {
     if (typeof insights === 'string') return insights;
     if (!insights || typeof insights !== 'object') return '';
@@ -923,8 +655,6 @@ export const streamInsights = async (
     const mode = payload.insightMode || InsightModeEnum.WITH_TOOLS;
     const endpoint = selectEndpointForMode(mode);
 
-    const contextSummarySent = false;
-
     // Check if we are passing client-side history to bridge the sync gap
     const hasRecentHistory = Array.isArray(payload.recentHistory) && payload.recentHistory.length > 0;
 
@@ -932,7 +662,6 @@ export const streamInsights = async (
     const MAX_RESUME_ATTEMPTS = 60;
     let resumeJobId: string | undefined = undefined;
     let attemptCount = 0;
-    const lastErrorDetails: { code?: string; message?: string; status?: number } | null = null;
 
     log('info', 'Streaming insights from server.', {
         systemId: payload.systemId,
@@ -1077,7 +806,7 @@ export const streamInsights = async (
 };
 
 // Helper to select endpoint based on mode
-function selectEndpointForMode(mode: InsightMode): string {
+function selectEndpointForMode(_mode: InsightMode): string {
     // All modes currently use the with-tools endpoint
     return '/.netlify/functions/generate-insights-with-tools';
 }
@@ -1242,11 +971,16 @@ export interface DiagnosticTestResult {
     name: string;
     status: 'success' | 'warning' | 'error' | 'partial' | 'running';
     message?: string;
+    error?: string;
     details?: Record<string, unknown>;
-    duration?: number;
+    duration: number;
 }
 
 export interface DiagnosticsResponse {
+    status: 'success' | 'partial' | 'warning' | 'error';
+    timestamp: string;
+    duration: number;
+    results: DiagnosticTestResult[];
     summary: {
         total: number;
         passed: number;
@@ -1254,8 +988,6 @@ export interface DiagnosticsResponse {
         errors: number;
         skipped: number;
     };
-    tests: DiagnosticTestResult[];
-    timestamp: string;
 }
 
 export const runDiagnostics = async (selectedTests?: string[]): Promise<DiagnosticsResponse> => {
@@ -1293,7 +1025,47 @@ export const runDiagnostics = async (selectedTests?: string[]): Promise<Diagnost
             throw new Error(`Diagnostics failed: ${response.status} ${errorText}`);
         }
 
-        return response.json();
+        const apiResponse: unknown = await response.json();
+
+        const respObj = (apiResponse && typeof apiResponse === 'object') ? (apiResponse as Record<string, unknown>) : {};
+        const rawResults = (Array.isArray(respObj.results) ? respObj.results : (Array.isArray(respObj.tests) ? respObj.tests : [])) as unknown[];
+
+        const normalizedResults: DiagnosticTestResult[] = rawResults.map((raw) => {
+            const obj = (raw && typeof raw === 'object') ? (raw as Record<string, unknown>) : {};
+            const duration = typeof obj.duration === 'number' ? obj.duration : 0;
+            const name = typeof obj.name === 'string' ? obj.name : 'Unknown';
+            const status = (obj.status === 'success' || obj.status === 'warning' || obj.status === 'error' || obj.status === 'partial' || obj.status === 'running')
+                ? obj.status
+                : 'error';
+            const message = typeof obj.message === 'string' ? obj.message : undefined;
+            const error = typeof obj.error === 'string' ? obj.error : undefined;
+            const details = (obj.details && typeof obj.details === 'object') ? (obj.details as Record<string, unknown>) : undefined;
+
+            return { name, status, duration, message, error, details };
+        });
+
+        const summaryObj = (respObj.summary && typeof respObj.summary === 'object') ? (respObj.summary as Record<string, unknown>) : {};
+        const status = (respObj.status === 'success' || respObj.status === 'partial' || respObj.status === 'warning' || respObj.status === 'error')
+            ? respObj.status
+            : 'success';
+
+        const timestamp = typeof respObj.timestamp === 'string' ? respObj.timestamp : new Date().toISOString();
+        const duration = typeof respObj.duration === 'number' ? respObj.duration : 0;
+
+        // Transform API response to match DiagnosticsResponse interface
+        return {
+            status,
+            timestamp,
+            duration,
+            results: normalizedResults,
+            summary: {
+                total: typeof summaryObj.total === 'number' ? summaryObj.total : normalizedResults.length,
+                passed: typeof summaryObj.passed === 'number' ? summaryObj.passed : (typeof summaryObj.success === 'number' ? summaryObj.success : 0),
+                warnings: typeof summaryObj.warnings === 'number' ? summaryObj.warnings : 0,
+                errors: typeof summaryObj.errors === 'number' ? summaryObj.errors : 0,
+                skipped: typeof summaryObj.skipped === 'number' ? summaryObj.skipped : 0,
+            }
+        };
     } catch (error) {
         clearTimeout(timeoutId);
         const err = error instanceof Error ? error : new Error(String(error));
@@ -1392,10 +1164,21 @@ export const checkHashes = async (hashes: string[]): Promise<{ duplicates: { has
 
 export const runSingleDiagnosticTest = async (testScope: string): Promise<DiagnosticTestResult> => {
     log('info', 'Running single diagnostic test.', { testScope });
-    return apiFetch('run-diagnostic', {
+    const result = await apiFetch<unknown>('run-diagnostic', {
         method: 'POST',
         body: JSON.stringify({ testScope }),
     });
+
+    const obj = (result && typeof result === 'object') ? (result as Record<string, unknown>) : {};
+    const duration = typeof obj.duration === 'number' ? obj.duration : 0;
+    const name = typeof obj.name === 'string' ? obj.name : testScope;
+    const status = (obj.status === 'success' || obj.status === 'warning' || obj.status === 'error' || obj.status === 'partial' || obj.status === 'running')
+        ? obj.status
+        : 'error';
+    const message = typeof obj.message === 'string' ? obj.message : undefined;
+    const error = typeof obj.error === 'string' ? obj.error : undefined;
+    const details = (obj.details && typeof obj.details === 'object') ? (obj.details as Record<string, unknown>) : undefined;
+    return { name, status, duration, message, error, details };
 };
 
 export const getHourlySocPredictions = async (systemId: string, hoursBack: number = 72): Promise<unknown> => {
@@ -1571,5 +1354,74 @@ export const associateHardwareIdToSystem = async (hardwareId: string, systemId: 
     await apiFetch('systems/associate-hardware', {
         method: 'POST',
         body: JSON.stringify({ hardwareId, systemId }),
+    });
+};
+
+export const backfillWeatherData = async (): Promise<{
+    success: boolean;
+    updatedCount: number;
+    errorCount?: number;
+    processedCount?: number;
+    completed?: boolean;
+    message?: string;
+}> => {
+    log('info', 'Sending request to backfill weather data.');
+    return apiFetch<{
+        success: boolean;
+        updatedCount: number;
+        errorCount?: number;
+        processedCount?: number;
+        completed?: boolean;
+        message?: string;
+    }>('history', {
+        method: 'POST',
+        body: JSON.stringify({
+            action: 'backfill-weather',
+            maxRecords: 50 // Process 50 records per run to avoid timeout
+        }),
+    });
+};
+
+export const backfillHourlyCloudData = async (): Promise<{
+    success: boolean;
+    processedDays: number;
+    hoursInserted: number;
+    errors: number;
+    systemsProcessed: number;
+    completed?: boolean;
+    message?: string;
+}> => {
+    log('info', 'Sending request to backfill hourly cloud data.');
+    return apiFetch<{
+        success: boolean;
+        processedDays: number;
+        hoursInserted: number;
+        errors: number;
+        systemsProcessed: number;
+        completed?: boolean;
+        message?: string;
+    }>('history', {
+        method: 'POST',
+        body: JSON.stringify({
+            action: 'hourly-cloud-backfill',
+            maxDays: 10 // Process 10 days per run to avoid timeout
+        }),
+    });
+};
+
+export const cleanupLinks = async (): Promise<{ success: boolean; updatedCount: number }> => {
+    return apiFetch('admin/cleanup-links', { method: 'POST' });
+};
+
+export const autoAssociateRecords = async (skip: number = 0): Promise<{
+    success: boolean;
+    processed: number;
+    associated: number;
+    errors: number;
+    message?: string;
+}> => {
+    return apiFetch('admin/auto-associate', {
+        method: 'POST',
+        body: JSON.stringify({ skip }),
     });
 };

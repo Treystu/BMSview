@@ -140,44 +140,41 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({
             {/* Diagnostics Result */}
             {diagnosticsResult && (
                 <div className="mt-4 space-y-2">
-                    <div className={`p-3 rounded-lg ${
-                        diagnosticsResult.status === 'success' ? 'bg-green-900/30 border border-green-700' :
-                        diagnosticsResult.status === 'warning' ? 'bg-yellow-900/30 border border-yellow-700' :
-                        'bg-red-900/30 border border-red-700'
-                    }`}>
+                    <div className={`p-3 rounded-lg ${diagnosticsResult.status === 'success' ? 'bg-green-900/30 border border-green-700' :
+                            diagnosticsResult.status === 'warning' ? 'bg-yellow-900/30 border border-yellow-700' :
+                                'bg-red-900/30 border border-red-700'
+                        }`}>
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-sm font-semibold text-white">Diagnostics Complete</span>
-                            <span className={`text-xs font-medium px-2 py-1 rounded ${
-                                diagnosticsResult.status === 'success' ? 'bg-green-500 text-white' :
-                                diagnosticsResult.status === 'warning' ? 'bg-yellow-500 text-black' :
-                                'bg-red-500 text-white'
-                            }`}>
+                            <span className={`text-xs font-medium px-2 py-1 rounded ${diagnosticsResult.status === 'success' ? 'bg-green-500 text-white' :
+                                    diagnosticsResult.status === 'warning' ? 'bg-yellow-500 text-black' :
+                                        'bg-red-500 text-white'
+                                }`}>
                                 {diagnosticsResult.status.toUpperCase()}
                             </span>
                         </div>
                         {diagnosticsResult.summary && (
                             <div className="text-xs text-gray-300 grid grid-cols-4 gap-2">
                                 <div>Total: {diagnosticsResult.summary.total}</div>
-                                <div className="text-green-400">Success: {diagnosticsResult.summary.success}</div>
+                                <div className="text-green-400">Success: {diagnosticsResult.summary.passed}</div>
                                 <div className="text-yellow-400">Warnings: {diagnosticsResult.summary.warnings}</div>
                                 <div className="text-red-400">Errors: {diagnosticsResult.summary.errors}</div>
                             </div>
                         )}
                     </div>
-                    
+
                     {diagnosticsResult.results && diagnosticsResult.results.length > 0 && (
                         <div className="max-h-60 overflow-y-auto space-y-1">
                             {diagnosticsResult.results.map((test, idx) => (
-                                <div 
-                                    key={idx} 
+                                <div
+                                    key={idx}
                                     className="text-xs p-2 rounded bg-gray-900 border border-gray-700 flex items-center justify-between"
                                 >
                                     <span className="text-gray-300">{test.name}</span>
-                                    <span className={`font-medium ${
-                                        test.status === 'success' ? 'text-green-400' :
-                                        test.status === 'warning' ? 'text-yellow-400' :
-                                        'text-red-400'
-                                    }`}>
+                                    <span className={`font-medium ${test.status === 'success' ? 'text-green-400' :
+                                            test.status === 'warning' ? 'text-yellow-400' :
+                                                'text-red-400'
+                                        }`}>
                                         {test.status}
                                     </span>
                                 </div>

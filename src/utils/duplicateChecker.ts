@@ -28,7 +28,7 @@ export interface DuplicateCheckResult {
     needsUpgrade: boolean;
     recordId?: string;
     timestamp?: string;
-    analysisData?: any;
+    analysisData?: unknown;
 }
 
 export interface CategorizedFiles {
@@ -139,7 +139,7 @@ export function buildRecordFromCachedDuplicate(
  */
 async function checkSingleFile(
     file: File,
-    log: (level: string, message: string, context?: any) => void
+    log: (level: string, message: string, context?: unknown) => void
 ): Promise<DuplicateCheckResult> {
     const fileStartTime = Date.now();
     try {
@@ -182,7 +182,7 @@ const BATCH_API_LIMIT = 1000;
 
 export async function checkFilesForDuplicates(
     files: File[],
-    log: (level: string, message: string, context?: any) => void,
+    log: (level: string, message: string, context?: unknown) => void,
     options: { includeData?: boolean } = {}
 ): Promise<CategorizedFiles> {
     const { includeData = false } = options;
@@ -248,15 +248,19 @@ export async function checkFilesForDuplicates(
 
             if (!response.ok) throw new Error(`Batch API failed: ${response.status}`);
 
-            const data = await response.json();
+            const data = await response.json() as { results: Array<{ fileName: string; isDuplicate?: boolean; needsUpgrade?: boolean; recordId?: string; timestamp?: string; analysisData?: unknown }> };
 
             // Map results back to original files
-            return data.results.map((r: any) => {
+            return data.results.map((r) => {
                 const h = chunk.hashes.find(ch => ch.file.name === r.fileName);
+                const file = h?.file || chunk.files.find(f => f.name === r.fileName);
+                if (!file) {
+                    throw new Error(`File not found in batch for result: ${r.fileName}`);
+                }
                 return {
-                    file: h?.file || chunk.files.find(f => f.name === r.fileName),
-                    isDuplicate: r.isDuplicate,
-                    needsUpgrade: r.needsUpgrade,
+                    file,
+                    isDuplicate: r.isDuplicate || false,
+                    needsUpgrade: r.needsUpgrade || false,
                     recordId: r.recordId,
                     timestamp: r.timestamp,
                     analysisData: r.analysisData
@@ -301,7 +305,7 @@ export async function checkFilesForDuplicates(
  */
 async function checkFilesIndividually(
     files: File[],
-    log: (level: string, message: string, context?: any) => void
+    log: (level: string, message: string, context?: unknown) => void
 ): Promise<DuplicateCheckResult[]> {
     // Use batch processing for large file sets to avoid overwhelming the backend
     // (unless batching is disabled via config)

@@ -32,7 +32,50 @@ export interface LocalMetadata {
     checksum?: string;
 }
 
+import type { AnalysisRecord, BmsSystem } from '../types';
 import { nowUtc } from '../utils/time';
+type CacheCollection = 'systems' | 'history' | 'analytics' | 'weather';
+
+function isCacheCollection(value: string): value is CacheCollection {
+    return value === 'systems' || value === 'history' || value === 'analytics' || value === 'weather';
+}
+
+type LocalCacheModule = typeof import('./localCache');
+
+type LocalCacheApi = {
+    getPendingItems?: () => Promise<{
+        systems: Array<{ id: string } & Record<string, unknown>>;
+        history: Array<{ id: string } & Record<string, unknown>>;
+    }>;
+    getMetadata?: (collection: CacheCollection) => Promise<{
+        lastModified?: string | null;
+        recordCount: number;
+        checksum?: string | null;
+    } | null>;
+    markAsSynced?: (collection: 'systems' | 'history', ids: string[], timestamp: string) => Promise<void>;
+};
+
+function resolveLocalCacheApi(module: LocalCacheModule): LocalCacheApi | null {
+    const mod = module as unknown as Record<string, unknown>;
+    const candidate = (mod.localCache ?? mod.default) as unknown;
+    if (!candidate || typeof candidate !== 'object') return null;
+    return candidate as LocalCacheApi;
+}
+
+type IdentifiableRecord = {
+    id: string;
+    updatedAt?: string | number | null;
+    [key: string]: unknown;
+};
+
+function stripSyncStatus(item: unknown): Record<string, unknown> {
+    if (!item || typeof item !== 'object') {
+        return {};
+    }
+    const { _syncStatus: _syncStatus, ...rest } = item as Record<string, unknown>;
+    void _syncStatus;
+    return rest;
+}
 
 const log = (level: 'info' | 'debug' | 'warn' | 'error', message: string, context: object = {}) => {
     console.log(JSON.stringify({
@@ -178,12 +221,12 @@ export function intelligentSync(localMeta: LocalMetadata, serverMeta: SyncMetada
  * Returns merged dataset with conflict resolution
  */
 export function reconcileData(
-    localData: any[],
-    serverData: any[],
+    localData: IdentifiableRecord[],
+    serverData: IdentifiableRecord[],
     serverDeletedIds: string[] = []
-): { merged: any[]; conflicts: any[] } {
-    const merged: any[] = [];
-    const conflicts: any[] = [];
+): { merged: IdentifiableRecord[]; conflicts: Array<{ id: string; localVersion: IdentifiableRecord; serverVersion: IdentifiableRecord; resolution: 'server-won' | 'local-won' }> } {
+    const merged: IdentifiableRecord[] = [];
+    const conflicts: Array<{ id: string; localVersion: IdentifiableRecord; serverVersion: IdentifiableRecord; resolution: 'server-won' | 'local-won' }> = [];
 
     // Create maps by ID for O(1) lookup
     const localMap = new Map(localData.map(item => [item.id, item]));
@@ -311,7 +354,8 @@ export class SyncManager {
 
         try {
             // Load local cache lazily to avoid SSR/indexedDB issues
-            const localCache = await this.loadLocalCache();
+            const localCacheModule = await this.loadLocalCache();
+            const localCacheApi = localCacheModule ? resolveLocalCacheApi(localCacheModule) : null;
 
             // Get local metadata from IndexedDB if available
             let localMeta: LocalMetadata = {
@@ -323,15 +367,17 @@ export class SyncManager {
                 checksum: undefined
             };
 
-            if (localCache) {
+            if (localCacheApi && localCacheApi.getMetadata && isCacheCollection(collection)) {
                 try {
-                    const meta = await localCache.getMetadata(collection as any);
-                    localMeta = {
-                        collection,
-                        lastModified: meta.lastModified || localMeta.lastModified,
-                        recordCount: meta.recordCount,
-                        checksum: meta.checksum || undefined
-                    };
+                    const meta = await localCacheApi.getMetadata(collection);
+                    if (meta) {
+                        localMeta = {
+                            collection,
+                            lastModified: meta.lastModified || localMeta.lastModified,
+                            recordCount: meta.recordCount,
+                            checksum: meta.checksum || undefined
+                        };
+                    }
                 } catch (e) {
                     log('warn', 'Failed to read local metadata, falling back to empty', { collection, error: (e as Error).message });
                 }
@@ -434,36 +480,52 @@ export class SyncManager {
         try {
             log('info', 'Performing periodic sync');
 
-            const localCache = await this.loadLocalCache();
+            const localCacheModule = await this.loadLocalCache();
 
             // If local cache unavailable (SSR or disabled), skip gracefully
-            if (!localCache) {
+            if (!localCacheModule) {
                 log('warn', 'Local cache unavailable, skipping periodic sync');
                 return;
             }
 
+            const localCacheApi = resolveLocalCacheApi(localCacheModule);
+            if (!localCacheApi || !localCacheApi.getPendingItems) {
+                log('warn', 'Local cache API unavailable, skipping periodic sync');
+                return;
+            }
+
             // 1. Find all pending items in localCache
-            const pending = await localCache.getPendingItems();
+            const pending = await localCacheApi.getPendingItems();
             const pendingSystems = pending.systems;
             const pendingHistory = pending.history;
 
             // 2. Batch push via sync-push endpoint (systems)
             if (pendingSystems.length > 0) {
-                await this.pushBatch('systems', pendingSystems.map(({ _syncStatus, ...rest }) => rest));
+                await this.pushBatch(
+                    'systems',
+                    pendingSystems.map(stripSyncStatus)
+                );
                 // Mark all pushed items as synced in batch
-                await localCache.markAsSynced('systems', pendingSystems.map(item => item.id), nowUtc());
+                if (localCacheApi.markAsSynced) {
+                    await localCacheApi.markAsSynced('systems', pendingSystems.map(item => item.id), nowUtc());
+                }
             }
 
             // 2b. Batch push via sync-push endpoint (history)
             if (pendingHistory.length > 0) {
-                await this.pushBatch('history', pendingHistory.map(({ _syncStatus, ...rest }) => rest));
+                await this.pushBatch(
+                    'history',
+                    pendingHistory.map(stripSyncStatus)
+                );
                 // Mark all pushed items as synced in batch
-                await localCache.markAsSynced('history', pendingHistory.map(item => item.id), nowUtc());
+                if (localCacheApi.markAsSynced) {
+                    await localCacheApi.markAsSynced('history', pendingHistory.map(item => item.id), nowUtc());
+                }
             }
 
             // 3. Pull incremental updates for both collections
-            await this.pullIncremental('systems', localCache);
-            await this.pullIncremental('history', localCache);
+            await this.pullIncremental('systems', localCacheModule);
+            await this.pullIncremental('history', localCacheModule);
 
             this.lastSyncTime['all'] = Date.now();
             this.syncError = null;
@@ -529,26 +591,17 @@ export class SyncManager {
     // ===========================
     // Internal helpers
     // ===========================
-    private async loadLocalCache(): Promise<null | {
-        getMetadata: (collection: 'systems' | 'history' | 'analytics' | 'weather') => Promise<{ lastModified: string | null; recordCount: number; checksum: string | null }>;
-        getPendingItems: () => Promise<{ systems: any[]; history: any[]; analytics: any[] }>;
-        markAsSynced: (collection: 'systems' | 'history' | 'analytics' | 'weather', ids: string[], serverTimestamp?: string) => Promise<void>;
-        // Minimal writes for pull
-        systemsCache?: { put: (item: any) => Promise<void>; bulkPut?: (items: any[]) => Promise<void> };
-        historyCache?: { put: (item: any) => Promise<void>; bulkPut?: (items: any[]) => Promise<void> };
-    }> {
+    private async loadLocalCache(): Promise<LocalCacheModule | null> {
         try {
             // Dynamic import to respect ESM and alias
-            const mod = await import('@/services/localCache');
-            // localCache is a named export, access it correctly
-            return (mod as any).localCache ?? mod.default ?? mod;
+            return await import('./localCache');
         } catch (e) {
             log('warn', 'Failed to load local cache module', { error: (e as Error).message });
             return null;
         }
     }
 
-    private async pushBatch(collection: 'systems' | 'history', items: any[]): Promise<void> {
+    private async pushBatch(collection: 'systems' | 'history', items: Array<Record<string, unknown>>): Promise<void> {
         if (!items.length) return;
         const resp = await fetch('/.netlify/functions/sync-push', {
             method: 'POST',
@@ -562,7 +615,7 @@ export class SyncManager {
         log('info', 'Pushed batch to server', { collection, count: items.length });
     }
 
-    private async pullIncremental(collection: 'systems' | 'history', localCache: any): Promise<void> {
+    private async pullIncremental(collection: 'systems' | 'history', localCacheModule: LocalCacheModule): Promise<void> {
         const since = this.lastSyncTime[collection]
             ? new Date(this.lastSyncTime[collection]).toISOString()
             : new Date(0).toISOString();
@@ -572,17 +625,31 @@ export class SyncManager {
             const text = await resp.text();
             throw new Error(`sync-incremental ${collection} failed: ${resp.status} ${text}`);
         }
-        const data = await resp.json();
-        const updates: any[] = data.items || [];
-        const deletedIds: string[] = data.deletedIds || [];
+        const data: unknown = await resp.json();
+        const obj = (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
+        const itemsRaw = Array.isArray(obj.items) ? obj.items : [];
+        const deletedRaw = Array.isArray(obj.deletedIds) ? obj.deletedIds : [];
+        const deletedIds: string[] = deletedRaw.filter((v): v is string => typeof v === 'string');
+
+        const updates: BmsSystem[] | AnalysisRecord[] = collection === 'systems'
+            ? (itemsRaw as BmsSystem[])
+            : (itemsRaw as AnalysisRecord[]);
 
         // Apply updates to local cache
         if (updates.length) {
             try {
-                if (localCache[`${collection}Cache`]?.bulkPut) {
-                    await localCache[`${collection}Cache`].bulkPut(updates);
-                } else if (localCache[`${collection}Cache`]?.put) {
-                    for (const u of updates) await localCache[`${collection}Cache`].put(u);
+                if (collection === 'systems') {
+                    if (localCacheModule.systemsCache.bulkPut) {
+                        await localCacheModule.systemsCache.bulkPut(updates as BmsSystem[]);
+                    } else {
+                        for (const u of updates as BmsSystem[]) await localCacheModule.systemsCache.put(u);
+                    }
+                } else {
+                    if (localCacheModule.historyCache.bulkPut) {
+                        await localCacheModule.historyCache.bulkPut(updates as AnalysisRecord[]);
+                    } else {
+                        for (const u of updates as AnalysisRecord[]) await localCacheModule.historyCache.put(u);
+                    }
                 }
             } catch (e) {
                 log('warn', 'Failed to write updates to local cache', { collection, error: (e as Error).message });
@@ -590,9 +657,13 @@ export class SyncManager {
         }
 
         // Apply deletions to local cache if API exists
-        if (deletedIds.length && localCache[`${collection}Cache`]?.delete) {
+        if (deletedIds.length) {
             try {
-                for (const id of deletedIds) await localCache[`${collection}Cache`].delete(id);
+                if (collection === 'systems') {
+                    for (const id of deletedIds) await localCacheModule.systemsCache.delete(id);
+                } else {
+                    for (const id of deletedIds) await localCacheModule.historyCache.delete(id);
+                }
             } catch (e) {
                 log('warn', 'Failed to delete records from local cache', { collection, error: (e as Error).message });
             }

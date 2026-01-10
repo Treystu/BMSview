@@ -18,7 +18,7 @@ export interface DiagnosticResult {
     status: 'Success' | 'Failure' | 'Warning' | 'Running';
     duration: number;
     message: string;
-    details?: Record<string, any>;
+    details?: Record<string, unknown>;
 }
 
 export const DiagnosticsPanel: React.FC = () => {

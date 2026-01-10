@@ -64,7 +64,17 @@ const NETLIFY_FUNCTIONS: FunctionDiagnostic[] = [
 
 export const DiagnosticsQueryGuru: React.FC = () => {
     const [selectedFunction, setSelectedFunction] = useState<string>('');
-    const [diagnosticResults, setDiagnosticResults] = useState<any>(null);
+    type DiagnosticCollectionStatus = Record<string, { count: number; recentCount?: number }>;
+    type DiagnosticLogEntry = { timestamp?: string; level?: string; message?: string };
+    type DiagnosticResults = {
+        error?: boolean;
+        message?: string;
+        collectionStatus?: DiagnosticCollectionStatus;
+        issues?: string[];
+        recommendations?: string;
+        logs?: DiagnosticLogEntry[];
+    };
+    const [diagnosticResults, setDiagnosticResults] = useState<DiagnosticResults | null>(null);
     const [isRunning, setIsRunning] = useState(false);
     const [customQuery, setCustomQuery] = useState('');
 
@@ -155,11 +165,10 @@ export const DiagnosticsQueryGuru: React.FC = () => {
                     {NETLIFY_FUNCTIONS.map(func => (
                         <div
                             key={func.name}
-                            className={`border rounded-lg p-4 cursor-pointer transition-all ${
-                                selectedFunction === func.name
-                                    ? 'border-blue-500 bg-blue-50'
-                                    : 'border-gray-300 hover:border-blue-300'
-                            }`}
+                            className={`border rounded-lg p-4 cursor-pointer transition-all ${selectedFunction === func.name
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-gray-300 hover:border-blue-300'
+                                }`}
                             onClick={() => setSelectedFunction(func.name)}
                         >
                             <h4 className="font-semibold text-gray-800 mb-1">{func.name}</h4>
@@ -190,11 +199,10 @@ export const DiagnosticsQueryGuru: React.FC = () => {
                 <button
                     onClick={() => selectedFunction && runDiagnostics(selectedFunction)}
                     disabled={!selectedFunction || isRunning}
-                    className={`px-4 py-2 rounded font-semibold transition-colors ${
-                        !selectedFunction || isRunning
-                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}
+                    className={`px-4 py-2 rounded font-semibold transition-colors ${!selectedFunction || isRunning
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
                 >
                     {isRunning ? 'Running Diagnostics...' : 'Run Function Diagnostics'}
                 </button>
@@ -224,11 +232,10 @@ export const DiagnosticsQueryGuru: React.FC = () => {
                 <button
                     onClick={runCustomQuery}
                     disabled={isRunning || !customQuery.trim()}
-                    className={`px-4 py-2 rounded font-semibold transition-colors ${
-                        isRunning || !customQuery.trim()
-                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                            : 'bg-green-600 text-white hover:bg-green-700'
-                    }`}
+                    className={`px-4 py-2 rounded font-semibold transition-colors ${isRunning || !customQuery.trim()
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
                 >
                     {isRunning ? 'Analyzing...' : 'Run Custom Query'}
                 </button>
@@ -252,7 +259,7 @@ export const DiagnosticsQueryGuru: React.FC = () => {
                                         Collection Status
                                     </h4>
                                     {Object.entries(diagnosticResults.collectionStatus).map(
-                                        ([collection, status]: [string, any]) => (
+                                        ([collection, status]) => (
                                             <div key={collection} className="text-sm mb-2">
                                                 <span className="font-medium">{collection}:</span>{' '}
                                                 {status.count} records
@@ -298,16 +305,15 @@ export const DiagnosticsQueryGuru: React.FC = () => {
                                         Recent Logs (Last 10)
                                     </h4>
                                     <div className="text-xs font-mono space-y-1 max-h-64 overflow-y-auto">
-                                        {diagnosticResults.logs.map((log: any, idx: number) => (
+                                        {diagnosticResults.logs.map((log, idx: number) => (
                                             <div
                                                 key={idx}
-                                                className={`p-2 rounded ${
-                                                    log.level === 'error'
-                                                        ? 'bg-red-100'
-                                                        : log.level === 'warn'
+                                                className={`p-2 rounded ${log.level === 'error'
+                                                    ? 'bg-red-100'
+                                                    : log.level === 'warn'
                                                         ? 'bg-yellow-100'
                                                         : 'bg-white'
-                                                }`}
+                                                    }`}
                                             >
                                                 <span className="text-gray-500">
                                                     {log.timestamp}

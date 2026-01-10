@@ -151,6 +151,22 @@ const METRICS: Record<MetricKey, {
     solarPower: { label: 'Solar', unit: 'W', color: '#fbbf24', source: 'analysis', group: 'Solar' },
 };
 
+const METRIC_COLOR_CLASSES: Record<MetricKey, { text: string; bg: string; accent: string }> = {
+    stateOfCharge: { text: 'text-[#34d399]', bg: 'bg-[#34d399]', accent: 'accent-[#34d399]' },
+    overallVoltage: { text: 'text-[#fbbf24]', bg: 'bg-[#fbbf24]', accent: 'accent-[#fbbf24]' },
+    current: { text: 'text-[#60a5fa]', bg: 'bg-[#60a5fa]', accent: 'accent-[#60a5fa]' },
+    temperature: { text: 'text-[#f87171]', bg: 'bg-[#f87171]', accent: 'accent-[#f87171]' },
+    power: { text: 'text-[#c084fc]', bg: 'bg-[#c084fc]', accent: 'accent-[#c084fc]' },
+    cellVoltageDifference: { text: 'text-[#a3a3a3]', bg: 'bg-[#a3a3a3]', accent: 'accent-[#a3a3a3]' },
+    clouds: { text: 'text-[#94a3b8]', bg: 'bg-[#94a3b8]', accent: 'accent-[#94a3b8]' },
+    uvi: { text: 'text-[#fde047]', bg: 'bg-[#fde047]', accent: 'accent-[#fde047]' },
+    temp: { text: 'text-[#a78bfa]', bg: 'bg-[#a78bfa]', accent: 'accent-[#a78bfa]' },
+    irradiance: { text: 'text-[#fbbf24]', bg: 'bg-[#fbbf24]', accent: 'accent-[#fbbf24]' },
+    soh: { text: 'text-[#ec4899]', bg: 'bg-[#ec4899]', accent: 'accent-[#ec4899]' },
+    mosTemperature: { text: 'text-[#fca5a5]', bg: 'bg-[#fca5a5]', accent: 'accent-[#fca5a5]' },
+    solarPower: { text: 'text-[#fbbf24]', bg: 'bg-[#fbbf24]', accent: 'accent-[#fbbf24]' },
+};
+
 const HOURLY_METRICS: MetricKey[] = ['power', 'current', 'stateOfCharge', 'temperature', 'mosTemperature', 'cellVoltageDifference', 'overallVoltage', 'clouds', 'irradiance', 'soh', 'solarPower'];
 
 
@@ -445,6 +461,8 @@ const ChartControls: React.FC<{
                                 <select
                                     value={manualBucketSize || 'auto'}
                                     onChange={(e) => setManualBucketSize(e.target.value === 'auto' ? null : e.target.value)}
+                                    aria-label="Averaging interval"
+                                    title="Averaging interval"
                                     className="bg-gray-700 border border-gray-600 rounded-md px-2 py-1 text-sm text-white focus:ring-secondary focus:border-secondary"
                                 >
                                     <option value="auto">Auto (Zoom-based)</option>
@@ -487,9 +505,8 @@ const ChartControls: React.FC<{
                                                             <div key={key}>
                                                                 <label className="flex items-center space-x-2 text-sm text-white cursor-pointer select-none">
                                                                     <input type="checkbox" checked={!!config} onChange={(e) => handleMetricConfigChange(key, e.target.checked ? { axis: 'left' } : undefined)}
-                                                                        className="form-checkbox h-4 w-4 bg-gray-800 border-gray-600 text-secondary focus:ring-secondary focus:ring-offset-gray-800"
-                                                                        style={{ color: METRICS[key].color }} />
-                                                                    <span style={{ color: METRICS[key].color }}>{METRICS[key].label}</span>
+                                                                        className={`form-checkbox h-4 w-4 bg-gray-800 border-gray-600 text-secondary focus:ring-secondary focus:ring-offset-gray-800 ${METRIC_COLOR_CLASSES[key].accent}`} />
+                                                                    <span className={METRIC_COLOR_CLASSES[key].text}>{METRICS[key].label}</span>
                                                                 </label>
                                                                 {config && (
                                                                     <div className="text-xs flex items-center space-x-3 mt-1 pl-6">
@@ -527,6 +544,7 @@ const SvgChart: React.FC<{
 }> = ({ chartData, metricConfig, hiddenMetrics, viewBox, setViewBox, chartDimensions, bandEnabled = false, annotations = [], showSolarOverlay = false }) => {
     const svgRef = useRef<SVGSVGElement>(null);
     const [tooltip, setTooltip] = useState<{ x: number; y: number; point: ChartPoint } | null>(null);
+    const tooltipRef = useRef<HTMLDivElement | null>(null);
 
     const interactionState = useRef({
         isPanning: false,
@@ -552,6 +570,16 @@ const SvgChart: React.FC<{
 
     const zoomRatio = chartWidth / viewBox.width;
     const showDataPoints = zoomRatio > 100; // Show points when very zoomed in
+
+    useEffect(() => {
+        if (!tooltip || !tooltipRef.current) return;
+        const el = tooltipRef.current;
+        el.style.left = `${tooltip.x + MARGIN.left}px`;
+        el.style.top = `${tooltip.y}px`;
+        el.style.transform = tooltip.x > chartWidth * 0.6
+            ? 'translate(calc(-100% - 15px), 15px)'
+            : 'translate(15px, 15px)';
+    }, [tooltip, chartWidth, MARGIN.left]);
 
     // Define standard gradients for metrics
 
@@ -1014,12 +1042,7 @@ const SvgChart: React.FC<{
             </svg>
 
             {tooltip && (
-                <div className="absolute p-3 bg-gray-900 border border-gray-600 rounded-lg shadow-lg text-sm text-white pointer-events-none z-50"
-                    style={{
-                        left: tooltip.x + MARGIN.left,
-                        top: tooltip.y,
-                        transform: tooltip.x > chartWidth * 0.6 ? 'translate(calc(-100% - 15px), 15px)' : 'translate(15px, 15px)'
-                    }}>
+                <div ref={tooltipRef} className="absolute p-3 bg-gray-900 border border-gray-600 rounded-lg shadow-lg text-sm text-white pointer-events-none z-50">
                     <p className="font-bold mb-2">{new Date(tooltip.point.timestamp).toLocaleString('en-US', {
                         year: 'numeric',
                         month: 'short',
@@ -1050,7 +1073,7 @@ const SvgChart: React.FC<{
                             return (
                                 <tr key={key}>
                                     <td className="pr-4 py-1 flex items-center">
-                                        <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: METRICS[key as MetricKey].color }} />
+                                        <div className={`w-3 h-3 rounded-full mr-2 ${METRIC_COLOR_CLASSES[key as MetricKey].bg}`} />
                                         {METRICS[key as MetricKey].label}
                                     </td>
                                     <td className="font-mono text-right">{value != null ? value.toFixed(2) : 'N/A'} {METRICS[key as MetricKey].unit}</td>
@@ -1523,7 +1546,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
         try {
             const predictions = await getHourlySocPredictions(selectedSystemId, 72);
-            setPredictiveData(predictions);
+            setPredictiveData(predictions as PredictiveSocData);
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : 'Failed to load predictive data';
             setError(errorMsg);

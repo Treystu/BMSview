@@ -22,12 +22,12 @@ export function safeGetItems<T>(
   if (!data) {
     return [];
   }
-  
+
   // Already an array - return it
   if (Array.isArray(data)) {
     return data;
   }
-  
+
   // Paginated response - extract items
   if (typeof data === 'object' && 'items' in data) {
     if (Array.isArray(data.items)) {
@@ -37,7 +37,7 @@ export function safeGetItems<T>(
     console.warn('Malformed PaginatedResponse: items property is not an array', data);
     return [];
   }
-  
+
   // Unexpected format - return empty array
   console.warn('Unexpected data format in safeGetItems:', typeof data);
   return [];
@@ -56,12 +56,12 @@ export function safeGetTotal<T>(
   if (!data) {
     return 0;
   }
-  
+
   // Array - return length
   if (Array.isArray(data)) {
     return data.length;
   }
-  
+
   // Paginated response - extract total
   if (typeof data === 'object') {
     if ('totalItems' in data && typeof data.totalItems === 'number') {
@@ -75,7 +75,7 @@ export function safeGetTotal<T>(
       return data.items.length;
     }
   }
-  
+
   return 0;
 }
 
@@ -89,11 +89,11 @@ export function safeGetPage<T>(
   if (!data || Array.isArray(data)) {
     return defaultPage;
   }
-  
+
   if (typeof data === 'object' && 'page' in data && typeof data.page === 'number') {
     return data.page;
   }
-  
+
   return defaultPage;
 }
 
@@ -107,11 +107,11 @@ export function safeGetPageSize<T>(
   if (!data || Array.isArray(data)) {
     return defaultPageSize;
   }
-  
+
   if (typeof data === 'object' && 'pageSize' in data && typeof data.pageSize === 'number') {
     return data.pageSize;
   }
-  
+
   return defaultPageSize;
 }
 
@@ -119,13 +119,13 @@ export function safeGetPageSize<T>(
  * Type guard to check if data is PaginatedResponse
  */
 export function isPaginatedResponse<T>(
-  data: any
+  data: unknown
 ): data is PaginatedResponse<T> {
   return (
-    data &&
+    data != null &&
     typeof data === 'object' &&
     'items' in data &&
-    Array.isArray(data.items)
+    Array.isArray((data as Record<string, unknown>).items)
   );
 }
 
@@ -135,21 +135,21 @@ export function isPaginatedResponse<T>(
  * @example
  * const error = safeGet(status, ['summary', 'errors', 'analysisError'], null);
  */
-export function safeGet<T = any>(
-  obj: any,
+export function safeGet<T>(
+  obj: unknown,
   path: string[],
   defaultValue: T
 ): T {
-  let current = obj;
-  
+  let current: unknown = obj;
+
   for (const key of path) {
     if (current == null || typeof current !== 'object') {
       return defaultValue;
     }
-    current = current[key];
+    current = (current as Record<string, unknown>)[key];
   }
-  
-  return current !== undefined ? current : defaultValue;
+
+  return current !== undefined ? (current as T) : defaultValue;
 }
 
 /**
@@ -166,7 +166,7 @@ export function safeArrayAccess<T>(
   if (!Array.isArray(arr) || index < 0 || index >= arr.length) {
     return defaultValue;
   }
-  
+
   return arr[index];
 }
 
@@ -177,18 +177,18 @@ export function safeArrayAccess<T>(
  * const stepIndex = ensureNumber(status.stepIndex, 0);
  */
 export function ensureNumber(
-  value: any,
+  value: unknown,
   defaultValue: number = 0
 ): number {
   if (typeof value === 'number' && !isNaN(value) && isFinite(value)) {
     return value;
   }
-  
-  const parsed = parseFloat(value);
+
+  const parsed = typeof value === 'string' ? parseFloat(value) : Number(value);
   if (!isNaN(parsed) && isFinite(parsed)) {
     return parsed;
   }
-  
+
   return defaultValue;
 }
 
@@ -196,17 +196,17 @@ export function ensureNumber(
  * Ensure a value is a valid string, return default if not
  */
 export function ensureString(
-  value: any,
+  value: unknown,
   defaultValue: string = ''
 ): string {
   if (typeof value === 'string') {
     return value;
   }
-  
+
   if (value != null) {
     return String(value);
   }
-  
+
   return defaultValue;
 }
 
@@ -214,13 +214,13 @@ export function ensureString(
  * Ensure a value is a valid array, return default if not
  */
 export function ensureArray<T>(
-  value: any,
+  value: unknown,
   defaultValue: T[] = []
 ): T[] {
   if (Array.isArray(value)) {
     return value;
   }
-  
+
   return defaultValue;
 }
 
@@ -237,14 +237,14 @@ export function safePercentage(
 ): number {
   const num = ensureNumber(numerator, 0);
   const denom = ensureNumber(denominator, 0);
-  
+
   if (denom === 0) {
     return 0;
   }
-  
+
   const percentage = (num / denom) * 100;
   const clamped = Math.max(0, Math.min(100, percentage));
-  
+
   return parseFloat(clamped.toFixed(decimals));
 }
 
@@ -257,38 +257,38 @@ export function safePercentage(
  * Use this function when you need to ensure all default properties exist,
  * but be aware that array item validation is not performed.
  */
-export function mergeWithDefaults<T extends Record<string, any>>(
+export function mergeWithDefaults<T extends Record<string, unknown>>(
   defaults: T,
   override: Partial<T> | undefined | null
 ): T {
   if (!override || typeof override !== 'object') {
     return { ...defaults };
   }
-  
-  const result: any = { ...defaults };
-  
-  for (const key in override) {
+
+  const result: Record<string, unknown> = { ...defaults };
+
+  for (const key of Object.keys(override) as Array<keyof T>) {
     const value = override[key];
     const defaultValue = defaults[key];
-    
+
     // Type-safe merging based on default type
     // IMPORTANT: Always copy default arrays/objects to avoid mutation of defaults
     if (Array.isArray(defaultValue)) {
-      result[key] = Array.isArray(value) ? value : [...defaultValue];
+      result[String(key)] = Array.isArray(value) ? value : [...defaultValue];
     } else if (typeof defaultValue === 'number') {
-      result[key] = typeof value === 'number' ? value : defaultValue;
+      result[String(key)] = typeof value === 'number' ? value : defaultValue;
     } else if (typeof defaultValue === 'string') {
-      result[key] = typeof value === 'string' ? value : defaultValue;
+      result[String(key)] = typeof value === 'string' ? value : defaultValue;
     } else if (typeof defaultValue === 'boolean') {
-      result[key] = typeof value === 'boolean' ? value : defaultValue;
+      result[String(key)] = typeof value === 'boolean' ? value : defaultValue;
     } else if (typeof defaultValue === 'object' && defaultValue !== null) {
-      result[key] = typeof value === 'object' && value !== null ? value : { ...defaultValue };
+      result[String(key)] = typeof value === 'object' && value !== null ? value : { ...(defaultValue as Record<string, unknown>) };
     } else {
-      result[key] = value !== undefined ? value : defaultValue;
+      result[String(key)] = value !== undefined ? value : defaultValue;
     }
   }
-  
-  return result;
+
+  return result as T;
 }
 
 /**
@@ -298,16 +298,16 @@ export function mergeWithDefaults<T extends Record<string, any>>(
  * const display = formatDisplayValue(value, 'N/A');
  */
 export function formatDisplayValue(
-  value: any,
+  value: unknown,
   fallback: string = 'N/A'
 ): string {
   if (value === null || value === undefined || value === '') {
     return fallback;
   }
-  
+
   if (typeof value === 'number') {
     return isNaN(value) ? fallback : String(value);
   }
-  
+
   return String(value);
 }

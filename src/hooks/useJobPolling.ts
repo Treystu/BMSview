@@ -3,7 +3,7 @@
  * Implements exponential backoff and intelligent retry logic
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface JobStatus {
   jobId: string;
@@ -30,17 +30,17 @@ const DEFAULT_CONFIG: Required<PollingConfig> = {
   maxInterval: 30000,
   backoffMultiplier: 1.5,
   maxRetries: 50,
-  onComplete: () => {},
-  onError: () => {}
+  onComplete: () => { },
+  onError: () => { }
 };
 
 export function useJobPolling(jobIds: string[], config: PollingConfig = {}) {
   const fullConfig = { ...DEFAULT_CONFIG, ...config };
-  
+
   const [statuses, setStatuses] = useState<Map<string, JobStatus>>(new Map());
   const [isPolling, setIsPolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   const intervalRef = useRef<number>(fullConfig.initialInterval);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const retryCountRef = useRef<number>(0);
@@ -73,7 +73,7 @@ export function useJobPolling(jobIds: string[], config: PollingConfig = {}) {
 
       const data = await response.json();
       const newStatuses = new Map<string, JobStatus>();
-      
+
       let allCompleted = true;
       let hasErrors = false;
 
@@ -105,8 +105,8 @@ export function useJobPolling(jobIds: string[], config: PollingConfig = {}) {
       intervalRef.current = fullConfig.initialInterval;
       return false; // Continue polling
 
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') {
         // Request was cancelled, ignore
         return false;
       }
@@ -129,7 +129,7 @@ export function useJobPolling(jobIds: string[], config: PollingConfig = {}) {
         return true;
       }
 
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
       return false;
     }
   }, [jobIds, fullConfig]);
@@ -154,7 +154,7 @@ export function useJobPolling(jobIds: string[], config: PollingConfig = {}) {
 
   const startPolling = useCallback(() => {
     if (jobIds.length === 0) return;
-    
+
     setIsPolling(true);
     setError(null);
     retryCountRef.current = 0;

@@ -17,14 +17,14 @@ import {
 } from './services/clientService';
 import { analyzeBmsScreenshot } from './services/geminiService';
 import { useAppState } from './state/appState';
-import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from './types';
+import type { AnalysisData, AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from './types';
 import { buildRecordFromCachedDuplicate, checkFilesForDuplicates, EMPTY_CATEGORIZATION, partitionCachedFiles, type DuplicateCheckResult } from './utils/duplicateChecker';
 import { safeGetItems } from './utils/stateHelpers';
 import UploadOptimizer from './utils/uploadOptimizer';
 // ***REMOVED***: No longer need job polling
 // import { getIsActualError } from './utils';
 
-const log = (level: string, message: string, context: object = {}) => {
+const log = (level: string, message: string, context?: unknown) => {
   console.log(JSON.stringify({
     level: level.toUpperCase(),
     timestamp: new Date().toISOString(),
@@ -178,7 +178,7 @@ function App() {
               record: {
                 id: dup.recordId || `local-duplicate-${Date.now()}`,
                 timestamp: dup.timestamp || new Date().toISOString(),
-                analysis: dup.analysisData || null,
+                analysis: (dup.analysisData as AnalysisData | null | undefined) ?? null,
                 fileName: dup.file.name,
               },
             });

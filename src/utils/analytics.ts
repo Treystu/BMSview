@@ -49,7 +49,7 @@ export function calculateSystemAnalytics(history: AnalysisRecord[]): SystemAnaly
                 if (metric === 'clouds') {
                     value = weather?.clouds;
                 } else {
-                    value = (analysis as any)[metric];
+                    value = (analysis as unknown as Record<string, unknown>)[metric] as number | null | undefined;
                 }
 
                 if (value == null || typeof value !== 'number') return;
@@ -80,7 +80,7 @@ export function calculateSystemAnalytics(history: AnalysisRecord[]): SystemAnaly
                 const avgCharge = chargeValues.length > 0 ? average(chargeValues) : 0;
                 const avgDischarge = dischargeValues.length > 0 ? average(dischargeValues) : 0;
                 if (chargeValues.length > 0 || dischargeValues.length > 0) {
-                    (hourData.metrics as any)[metric] = {
+                    (hourData.metrics as Record<string, unknown>)[metric] = {
                         avgCharge,
                         avgDischarge,
                         chargePoints: chargeValues.length,
@@ -91,7 +91,7 @@ export function calculateSystemAnalytics(history: AnalysisRecord[]): SystemAnaly
                 const allValues = stats.values[metric].all || [];
                 const avg = allValues.length > 0 ? average(allValues) : 0;
                 if (allValues.length > 0) {
-                    (hourData.metrics as any)[metric] = {
+                    (hourData.metrics as Record<string, unknown>)[metric] = {
                         avg,
                         points: allValues.length,
                     };
@@ -225,7 +225,7 @@ function normalizeAlert(alert: string): string {
         .trim();
 }
 
-function closeAllEvents(active: Map<string, { startTime: number, lastTime: number }>, finished: any[]) {
+function closeAllEvents(active: Map<string, { startTime: number, lastTime: number }>, finished: Array<{ alert: string; startTime: string; endTime: string; durationMinutes: number }>) {
     for (const [alert, data] of active.entries()) {
         const durationMinutes = Math.max(0, (data.lastTime - data.startTime) / 60000);
         finished.push({
