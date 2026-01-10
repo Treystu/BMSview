@@ -1628,10 +1628,18 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     }, [viewBox.width, chartDimensions.chartWidth, timelineData]);
 
     const prepareChartData = useCallback(async () => {
-        if (!selectedSystemId) return;
+        if (!selectedSystemId) {
+            console.log('[HistoricalChart] No system selected, skipping chart data preparation');
+            return;
+        }
 
         // FIX: Track this request to prevent race conditions
         const currentRequestId = ++requestIdRef.current;
+        console.log('[HistoricalChart] Starting chart data preparation', {
+            requestId: currentRequestId,
+            selectedSystemId,
+            historyCount: history.length
+        });
 
         // Prepare UTC ISO strings for API calls to prevent timezone drift
         const chartStartDate = startDate || toLocalISOString(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
@@ -1639,6 +1647,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
         const apiStartDate = new Date(chartStartDate).toISOString();
         const apiEndDate = new Date(chartEndDate).toISOString();
+        console.log('[HistoricalChart] Date range', { chartStartDate, chartEndDate, apiStartDate, apiEndDate });
 
         setIsGenerating(true);
         setError(null);
@@ -1694,17 +1703,27 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             // 1. Sync Weather Data (Local vs Server check) - skip for __ALL__
             if (!isAllData) {
                 // Fire and forget - will update cache
+                console.log('[HistoricalChart] Syncing weather data', { systemId: selectedSystemId, apiStartDate, apiEndDate });
                 await syncWeather(selectedSystemId, apiStartDate, apiEndDate);
+                console.log('[HistoricalChart] Weather sync complete');
             }
 
             // FIX: Check if this request is still current after async operation
-            if (currentRequestId !== requestIdRef.current) return;
+            if (currentRequestId !== requestIdRef.current) {
+                console.log('[HistoricalChart] Request cancelled (stale after weather sync)', { currentRequestId, activeRequestId: requestIdRef.current });
+                return;
+            }
 
             // 2. Get Unified History (Memory join of History + Weather from Cache)
+            console.log('[HistoricalChart] Fetching unified history', { systemId: selectedSystemId });
             const unifiedTimeline = await getUnifiedHistory(selectedSystemId);
+            console.log('[HistoricalChart] Unified history received', { count: unifiedTimeline.length });
 
             // FIX: Check again after async
-            if (currentRequestId !== requestIdRef.current) return;
+            if (currentRequestId !== requestIdRef.current) {
+                console.log('[HistoricalChart] Request cancelled (stale after unified history)', { currentRequestId, activeRequestId: requestIdRef.current });
+                return;
+            }
 
             // Filter by date range (client-side filter on unified stream)
             const startLimit = new Date(chartStartDate).getTime();
@@ -1714,8 +1733,15 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                 const t = new Date(p.timestamp).getTime();
                 return t >= startLimit && t <= endLimit;
             });
+            console.log('[HistoricalChart] Filtered data by date range', {
+                originalCount: unifiedTimeline.length,
+                filteredCount: filteredData.length,
+                startLimit: new Date(startLimit).toISOString(),
+                endLimit: new Date(endLimit).toISOString()
+            });
 
             if (filteredData.length === 0) {
+                console.log('[HistoricalChart] No data in date range, clearing chart');
                 setTimelineData(null);
                 setIsGenerating(false);
                 return;
@@ -1723,8 +1749,10 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
 
             // 3. Process into Chart Points
             chartDataPoints = filteredData.map(p => mapUnifiedPointToChartPoint(p, ratedCapacity));
+            console.log('[HistoricalChart] Processed chart points', { count: chartDataPoints.length });
 
             if (chartDataPoints.length < 2) {
+                console.log('[HistoricalChart] Not enough chart points (< 2), clearing chart');
                 // FIX: Only clear if this is still the current request
                 if (currentRequestId === requestIdRef.current) {
                     setTimelineData(null);
@@ -1763,11 +1791,13 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                 }
             }
         } catch (err) {
+            console.error('[HistoricalChart] Error preparing chart data', { error: err, message: err instanceof Error ? err.message : String(err) });
             // FIX: Only set error if this is still the current request
             if (currentRequestId === requestIdRef.current) {
                 setError(err instanceof Error ? err.message : "Failed to generate chart data.");
             }
         } finally {
+            console.log('[HistoricalChart] Chart data preparation complete', { requestId: currentRequestId });
             // FIX: Only update loading state if this is still the current request
             if (currentRequestId === requestIdRef.current) {
                 setIsGenerating(false);

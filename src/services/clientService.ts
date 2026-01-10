@@ -1232,10 +1232,15 @@ export const getMergedTimelineData = async (
 
 export const syncWeather = async (systemId: string, startDate: string, endDate: string): Promise<void> => {
     log('info', 'Triggering weather sync.', { systemId, startDate, endDate });
-    await apiFetch('sync-weather', {
-        method: 'POST',
-        body: JSON.stringify({ systemId, startDate, endDate }),
-    });
+    try {
+        await apiFetch('sync-weather', {
+            method: 'POST',
+            body: JSON.stringify({ systemId, startDate, endDate }),
+        });
+    } catch (error) {
+        // sync-weather endpoint may not exist - fail gracefully
+        log('warn', 'Weather sync failed (endpoint may not exist).', { error: String(error) });
+    }
 };
 
 export interface UnifiedTimelinePoint {
@@ -1251,11 +1256,16 @@ export const getUnifiedHistory = async (systemId: string): Promise<UnifiedTimeli
     let weatherRecords: WeatherData[] = [];
 
     if (!isAllData) {
-        [historyRecords, weatherRecords] = await Promise.all([
-            getAnalysisHistory(1, 'all', { strategy: FetchStrategy.FORCE_FRESH }).then(r => r.items),
-            // Fallback: use empty array if syncManager method doesn't exist
-            Promise.resolve([])
-        ]);
+        log('info', 'Fetching history records for unified timeline.', { systemId });
+        try {
+            const historyResponse = await getAnalysisHistory(1, 'all', { strategy: FetchStrategy.FORCE_FRESH });
+            historyRecords = historyResponse.items;
+            log('info', 'History records fetched for unified timeline.', { count: historyRecords.length });
+        } catch (error) {
+            log('error', 'Failed to fetch history for unified timeline.', { error: String(error) });
+        }
+        // Weather records are currently empty - could be populated from cache in future
+        weatherRecords = [];
     }
 
     const unified: UnifiedTimelinePoint[] = [
@@ -1277,8 +1287,11 @@ export const getUnifiedHistory = async (systemId: string): Promise<UnifiedTimeli
 export const streamAllHistory = async (onData: (records: AnalysisRecord[]) => void, onComplete: () => void): Promise<void> => {
     log('info', 'Starting smart history sync.');
     try {
-        const response = await apiFetch<AnalysisRecord[]>('history?limit=all');
-        onData(response);
+        const response = await apiFetch<AnalysisRecord[] | { items: AnalysisRecord[]; totalItems?: number }>('history?limit=all');
+        // Handle both array response and {items, totalItems} object response
+        const records = Array.isArray(response) ? response : (response && 'items' in response && Array.isArray(response.items) ? response.items : []);
+        log('info', 'History sync complete.', { recordCount: records.length });
+        onData(records);
         onComplete();
     } catch (error) {
         log('error', 'Failed to stream history', { error: String(error) });
