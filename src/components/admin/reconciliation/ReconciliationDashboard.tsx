@@ -232,9 +232,8 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
                         }}
                         isSaving={isSavingNewSystem}
                         initialData={{
-                            name: `System for ${adoptingDL.dl_id}`,
-                            associatedHardwareIds: [adoptingDL.dl_id],
-                            associatedDLs: [adoptingDL.dl_id], // Legacy support
+                            name: `System for ${adoptingDL.hardware_id || adoptingDL.dl_id}`,
+                            associatedHardwareIds: [adoptingDL.hardware_id || adoptingDL.dl_id],
                             chemistry: 'LiFePO4', // Default
                             voltage: null,
                             capacity: null,

@@ -528,12 +528,30 @@ exports.handler = async function (event, context) {
                         }
                     },
                     {
+                        $project: {
+                            systemId: 1,
+                            // Create an array of ALL potential IDs found in this record
+                            allIds: [
+                                "$hardwareSystemId",
+                                "$dlNumber",
+                                "$analysis.hardwareSystemId",
+                                "$analysis.dlNumber"
+                            ]
+                        }
+                    },
+                    {
+                        $unwind: "$allIds" // Unwind the array to process each ID
+                    },
+                    {
+                        $match: {
+                            allIds: { $ne: null, $ne: "" } // Filter out nulls/empties
+                        }
+                    },
+                    {
                         $group: {
                             _id: "$systemId",
                             associatedIDs: {
-                                $addToSet: {
-                                    $ifNull: ["$hardwareSystemId", "$dlNumber", "$analysis.hardwareSystemId", "$analysis.dlNumber"]
-                                }
+                                $addToSet: "$allIds" // Collect unique IDs per system
                             }
                         }
                     }
@@ -692,8 +710,6 @@ exports.handler = async function (event, context) {
                             ambiguousCount++;
                         } else if (result.isNewCandidate) {
                             newCandidatesCount++;
-                            // Optional: Flag as new candidate in DB if we want to surface it in UI
-                            // For now, just logging it to debugInfo
                         }
 
                         if (debugInfo.sampleFailures.length < 50) {

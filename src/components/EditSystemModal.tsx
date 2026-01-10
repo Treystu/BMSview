@@ -51,8 +51,7 @@ const EditSystemModal: React.FC<EditSystemModalProps> = ({
             setCapacity(system.capacity?.toString() || '');
             setLatitude(system.latitude?.toString() || '');
             setLongitude(system.longitude?.toString() || '');
-            // Prefer associatedHardwareIds, fallback to associatedDLs for legacy
-            setAssociatedHardwareIds((system.associatedHardwareIds || system.associatedDLs || []).join(', '));
+            setAssociatedHardwareIds((system.associatedHardwareIds || []).join(', '));
             setMaxAmpsSolarCharging(system.maxAmpsSolarCharging?.toString() || '');
             setMaxAmpsGeneratorCharging(system.maxAmpsGeneratorCharging?.toString() || '');
         } else if (initialData) {
@@ -63,7 +62,7 @@ const EditSystemModal: React.FC<EditSystemModalProps> = ({
             setCapacity(initialData.capacity?.toString() || '');
             setLatitude(initialData.latitude?.toString() || '');
             setLongitude(initialData.longitude?.toString() || '');
-            setAssociatedHardwareIds((initialData.associatedHardwareIds || initialData.associatedDLs || []).join(', '));
+            setAssociatedHardwareIds((initialData.associatedHardwareIds || []).join(', '));
             setMaxAmpsSolarCharging(initialData.maxAmpsSolarCharging?.toString() || '');
             setMaxAmpsGeneratorCharging(initialData.maxAmpsGeneratorCharging?.toString() || '');
         }

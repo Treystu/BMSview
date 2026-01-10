@@ -5,7 +5,7 @@ import type { BmsSystem } from '../types';
 import SpinnerIcon from './icons/SpinnerIcon';
 
 interface RegisterBmsProps {
-    onRegister: (systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>) => void;
+    onRegister: (systemData: Omit<BmsSystem, 'id' | 'associatedHardwareIds'>) => void;
     isRegistering: boolean;
     error: string | null;
     successMessage: string | null;

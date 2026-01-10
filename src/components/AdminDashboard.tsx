@@ -23,7 +23,6 @@ import {
     updateBmsSystem
 } from '../services/clientService';
 import { analyzeBmsScreenshot } from '../services/geminiService';
-import { historyCache as historyCacheService } from '../services/localCache';
 import { useAdminState } from '../state/adminState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
 import { checkFilesForDuplicates, partitionCachedFiles, type DuplicateCheckResult } from '../utils/duplicateChecker';
@@ -361,7 +360,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 // that rely on the cache-first strategy can see the new record immediately.
                 try {
                     // We mark as 'synced' because this data just came from the server analysis
-                    await historyCacheService.put(tempRecord, 'synced');
+                    const localCacheModule = await import('../services/localCache');
+                    await localCacheModule.historyCache.put(tempRecord, 'synced');
                     log('info', 'Updated local cache with new analysis record', { id: tempRecord.id });
                 } catch (err) {
                     log('warn', 'Failed to update local cache with new record', { error: err instanceof Error ? err.message : String(err) });

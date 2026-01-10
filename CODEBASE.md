@@ -27,6 +27,15 @@ Database: bmsview (or MONGODB_DB_NAME env var)
 
 Connection: Always use `getCollection()` from utils/mongodb.cjs
 
+## Unified Data Models (Hardware ID)
+
+**Critical**: The application uses a unified `hardwareSystemId` as the source of truth for identifying BMS hardware.
+
+- **Frontend**: Use `associatedHardwareIds` in system registration and management.
+- **Backend**: `hardwareSystemId` is the primary key for aggregations and linking.
+- **Legacy**: `dlNumber` and `associatedDLs` are deprecated but maintained in the database for backward compatibility. New code should ALWAYS prefer the unified fields.
+- **Normalization**: All IDs are normalized to uppercase with dashes (e.g., `DL-12345`) by `analysis-helpers.cjs`.
+
 ## Path Aliases
 
 Frontend only (configured in vite.config.ts and tsconfig.json):

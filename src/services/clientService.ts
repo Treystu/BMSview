@@ -1,5 +1,6 @@
 import type { AdminStoriesResponse, AdminStory, AnalysisData, AnalysisRecord, AnalysisStory, BmsSystem, InsightMode, StoryPhoto, WeatherData } from '../types';
 import { InsightMode as InsightModeEnum } from '../types';
+import syncManager from '@/services/syncManager';
 
 // Import shared type or define compatible shape
 export interface PaginatedResponse<T> {
@@ -1785,9 +1786,8 @@ async function dualWriteWithTimerReset<T>(
 
         // 3. Reset sync timer to trigger periodic sync
         try {
-            const sm = await import('@/services/syncManager');
-            if (sm.default && sm.default.resetPeriodicTimer) {
-                sm.default.resetPeriodicTimer();
+            if (syncManager && syncManager.resetPeriodicTimer) {
+                syncManager.resetPeriodicTimer();
                 log('info', `Dual-write: sync timer reset (${operation})`, context);
             }
         } catch (timerErr) {

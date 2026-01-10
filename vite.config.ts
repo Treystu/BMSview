@@ -16,22 +16,12 @@ export default defineConfig({
     },
   },
   build: {
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        admin: resolve(__dirname, 'admin.html'),
+      rollupOptions: {
+        input: {
+          main: resolve(__dirname, 'index.html'),
+          admin: resolve(__dirname, 'admin.html'),
+        },
       },
-      output: {
-        manualChunks(id) {
-          if (id.includes('/src/services/') || id.includes('/services/')) {
-            return 'services';
-          }
-          if (id.includes('/src/utils/') || id.includes('/utils/')) {
-            return 'shared-utils';
-          }
-        }
-      }
-    },
   },
   server: {
     proxy: {

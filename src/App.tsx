@@ -351,7 +351,7 @@ function App() {
     await handleAnalyze([fileToReprocess], { forceFileName: fileToReprocess.name, forceReanalysis: true });
   };
 
-  const handleRegisterSystem = async (systemData: Omit<BmsSystem, 'id' | 'associatedDLs'>) => {
+  const handleRegisterSystem = async (systemData: Omit<BmsSystem, 'id' | 'associatedHardwareIds'>) => {
     dispatch({ type: 'REGISTER_SYSTEM_START' });
     try {
       const newSystem = await registerBmsSystem({ ...systemData, associatedHardwareIds: [] });
