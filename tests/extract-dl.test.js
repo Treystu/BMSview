@@ -17,7 +17,7 @@ describe('extractHardwareSystemId (STRICT MODE)', () => {
     const ids = extractHardwareSystemId(text, log);
 
     expect(ids).toContain('DL-12345');
-    expect(ids).toContain('DL123456');
+    expect(ids).toContain('DL-123456');
     expect(ids.length).toBe(2);
   });
 

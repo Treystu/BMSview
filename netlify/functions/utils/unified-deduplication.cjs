@@ -195,11 +195,13 @@ function checkNeedsUpgrade(record) {
 
   // Check if record is marked as complete (admin override or confident extraction)
   // Complete records are NEVER upgraded unless explicitly forced by admin
-  if (record.isComplete === true) {
+  // FIX: Treat legacy records (undefined) as complete to prevent them from being filtered out
+  if (record.isComplete === true || record.isComplete === undefined) {
     return {
       needsUpgrade: false,
-      reason: 'Record marked as complete',
-      isComplete: true
+      reason: 'Record marked as complete (or legacy)',
+      isComplete: true,
+      shouldMarkComplete: true // Signal to backfill isComplete=true in DB
     };
   }
 
