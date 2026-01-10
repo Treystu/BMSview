@@ -47,6 +47,8 @@ import SystemsTable from './admin/SystemsTable';
 import { getNestedValue } from './admin/columnDefinitions';
 import ReconciliationDashboard from './admin/reconciliation/ReconciliationDashboard';
 
+import { SystemStatusWidget } from './admin/SystemStatusWidget';
+
 interface NetlifyUser {
     email: string;
     user_metadata: {
@@ -188,13 +190,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
      * ***MODIFIED***: This is the new, simpler bulk analysis handler.
      * It processes files one by one and gets results immediately.
      */
-    const handleBulkAnalyze = async (files: File[] | FileList | null | undefined, options: { forceReanalysis?: boolean } = {}) => {
+    const handleBulkAnalyze = async (files: File[] | FileList | null | undefined, options: { forceReanalysis?: boolean; useAsync?: boolean } = {}) => {
         const normalizedFiles = Array.isArray(files) ? files : Array.from(files || []);
         if (normalizedFiles.length === 0) return;
-        const { forceReanalysis = false } = options;
+        const { forceReanalysis = false, useAsync = false } = options;
 
         const newRecords: AnalysisRecord[] = []; // Track all processed records (including restored duplicates)
-        log('info', 'Starting bulk analysis.', { fileCount: normalizedFiles.length, isStoryMode, forceReanalysis });
+        log('info', 'Starting bulk analysis.', { fileCount: normalizedFiles.length, isStoryMode, forceReanalysis, useAsync });
 
         if (isStoryMode) {
             try {
@@ -343,9 +345,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 const file = item.file;
                 dispatch({ type: 'UPDATE_BULK_UPLOAD_RESULT', payload: { fileName: file.name, error: 'Processing' } });
 
-                const analysisData = await analyzeBmsScreenshot(file, forceReanalysis, state.primarySystemId);
+                const analysisData = await analyzeBmsScreenshot(file, forceReanalysis, state.primarySystemId, useAsync);
 
-                log('info', 'Processing synchronous analysis result.', { fileName: file.name });
+                log('info', 'Processing analysis result.', { fileName: file.name, useAsync });
+
+                // If async, we might just get a jobId and status='pending'
+                // We should handle that gracefully in the UI
+                if (analysisData.status === 'pending') {
+                     dispatch({
+                        type: 'UPDATE_BULK_UPLOAD_RESULT',
+                        payload: { 
+                            fileName: file.name, 
+                            error: 'Async Job Started', // User-friendly status
+                            data: analysisData // Attach data so it counts as "success" or handled
+                        }
+                    });
+                    return analysisData;
+                }
 
                 const tempRecord: AnalysisRecord = {
                     id: analysisData._recordId || `local-${Date.now()}`,
@@ -989,6 +1005,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     return (
         <div className="bg-neutral-dark min-h-screen text-neutral-light p-4 sm:p-6 md:p-8">
             <AdminHeader user={user} onLogout={onLogout} />
+            <SystemStatusWidget />
 
             {state.error && (
                 <div className="mb-6 p-4 bg-red-900/50 border border-red-500 rounded-md text-red-300 flex justify-between items-center">

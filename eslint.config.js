@@ -33,7 +33,7 @@ export default tseslint.config(
             ...react.configs.recommended.rules,
             ...react.configs['jsx-runtime'].rules,
             'react/prop-types': 'off', // specific to this project's needs
-            '@typescript-eslint/no-explicit-any': 'off',
+            '@typescript-eslint/no-explicit-any': 'warn',
             '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
         },
         settings: {

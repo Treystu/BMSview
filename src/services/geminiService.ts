@@ -37,17 +37,59 @@ const log = (level: 'info' | 'warn' | 'error' | 'debug', message: string, contex
  * This replaces the old `analyzeBmsScreenshots` job-based function.
  * @param file - The file to analyze
  * @param forceReanalysis - If true, bypasses duplicate detection and forces a new analysis
+ * @param systemId - Optional system ID to associate with
+ * @param useAsync - If true, uses the asynchronous analysis path (returns jobId)
  */
-export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean = false, systemId?: string): Promise<AnalysisData> => {
-    const analysisContext = { fileName: file.name, fileSize: file.size, forceReanalysis };
-    log('info', 'Starting synchronous analysis.', analysisContext);
+export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean = false, systemId?: string, useAsync: boolean = false): Promise<AnalysisData> => {
+    const analysisContext = { fileName: file.name, fileSize: file.size, forceReanalysis, useAsync };
+    log('info', `Starting ${useAsync ? 'async' : 'synchronous'} analysis.`, analysisContext);
 
-    const endpoint = forceReanalysis
-        ? `/.netlify/functions/analyze?sync=true&force=true${systemId ? `&systemId=${systemId}` : ''}`
-        : `/.netlify/functions/analyze?sync=true${systemId ? `&systemId=${systemId}` : ''}`;
+    let endpoint = '/.netlify/functions/analyze';
+    const params = new URLSearchParams();
+    
+    if (!useAsync) {
+        params.append('sync', 'true');
+    }
+    if (forceReanalysis) {
+        params.append('force', 'true');
+    }
+    if (systemId) {
+        params.append('systemId', systemId);
+    }
+
+    const queryString = params.toString();
+    if (queryString) {
+        endpoint += `?${queryString}`;
+    }
 
     try {
         const responseJson = await performAnalysisRequest(file, endpoint, analysisContext);
+
+        // Handle Async Response (202 Accepted)
+        if (useAsync) {
+             // In async mode, we get { success: true, jobId: "..." }
+             // We need to return a placeholder AnalysisData or handle polling.
+             // For now, let's return a "Pending" record.
+             log('info', 'Async analysis accepted.', responseJson);
+             return {
+                 _recordId: responseJson.jobId,
+                 _timestamp: new Date().toISOString(),
+                 _isDuplicate: false,
+                 status: 'pending',
+                 // Minimal valid shape to satisfy type
+                 hardwareSystemId: 'PENDING',
+                 serialNumber: 'PENDING',
+                 stateOfCharge: 0,
+                 overallVoltage: 0,
+                 current: 0,
+                 power: 0,
+                 fullCapacity: 0,
+                 remainingCapacity: 0,
+                 cycleCount: 0,
+                 temperature: 0,
+                 cellVoltages: []
+             } as unknown as AnalysisData;
+        }
 
         // In sync mode, the server returns the full AnalysisRecord directly.
         // We extract the 'analysis' part and also check for isDuplicate flag

@@ -320,9 +320,9 @@ export interface InsightsRequestConfig {
 export enum InsightMode {
   WITH_TOOLS = 'with-tools',      // AI "Battery Guru" with function calling (default, most comprehensive)
   FULL_CONTEXT = 'full-context',  // Full Context Mode with AI Feedback capability
-  STANDARD = 'standard',          // Legacy endpoint (proxies to WITH_TOOLS for backward compatibility)
-  VISUAL_GURU = 'visual-guru',    // Visual Guru Expert mode - infographic-style, chart-focused output
-  ASYNC_WORKLOAD = 'async-workload' // Netlify Async Workload - durable, unlimited timeout, multi-step execution
+  STANDARD = 'standard',
+  VISUAL_GURU = 'visual-guru',
+  ASYNC_WORKLOAD = 'async-workload'
 }
 
 // Human-readable descriptions for each mode
@@ -350,12 +350,12 @@ export const InsightModeDescriptions: Record<InsightMode, { label: string; descr
     ]
   },
   [InsightMode.STANDARD]: {
-    label: '⚠️ Deprecated - Use Battery Guru',
-    description: 'This mode is deprecated and will be removed in a future version',
+    label: 'Sync Analysis',
+    description: 'Synchronous analysis mode',
     features: [
-      'Automatically redirects to Battery Guru (WITH_TOOLS)',
-      'Maintained for backward compatibility only',
-      'Please switch to Battery Guru mode for continued support'
+      'Fast, direct response',
+      'Best for simple, immediate queries',
+      'Standard data context window'
     ]
   },
   [InsightMode.VISUAL_GURU]: {
@@ -370,8 +370,8 @@ export const InsightModeDescriptions: Record<InsightMode, { label: string; descr
     ]
   },
   [InsightMode.ASYNC_WORKLOAD]: {
-    label: '⚡ Async Workload (Experimental)',
-    description: 'Durable async execution with unlimited timeout and multi-step resilience',
+    label: 'Async Analysis',
+    description: 'Durable asynchronous execution',
     features: [
       'Unlimited execution time (no timeout limits)',
       'Automatic retries with intelligent backoff',

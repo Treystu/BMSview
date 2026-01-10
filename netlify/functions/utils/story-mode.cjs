@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require("uuid");
 const { createTimer } = require('./logger.cjs');
-const { executeAnalysisPipeline } = require('./analysis-pipeline.cjs');
+const { performAnalysisPipeline } = require('./analysis-pipeline.cjs');
 const { getCollection } = require('./mongodb.cjs');
 const { getGeminiClient } = require('./geminiClient.cjs');
 
@@ -93,7 +93,7 @@ async function handleStoryModeAnalysis(requestBody, idemKey, forceReanalysis, he
       imagePayload.timelinePosition = i;
 
       // This re-uses the single-image analysis logic
-      const record = await executeAnalysisPipeline(imagePayload, log, context);
+      const record = await performAnalysisPipeline(imagePayload, null, log, context);
       timelineRecords.push(record);
     }
 

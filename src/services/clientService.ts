@@ -2702,7 +2702,7 @@ export const createAnalysisStory = async (title: string, summary: string, timeli
         };
     }));
 
-    return apiFetch<AnalysisStory>('analyze', {
+    return apiFetch<AnalysisStory>('analyze?sync=true', {
         method: 'POST',
         body: JSON.stringify({
             storyMode: true,

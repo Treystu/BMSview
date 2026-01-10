@@ -489,7 +489,7 @@ const SvgChart: React.FC<{
             // Filter nulls first
             const validData = dataToRender.filter((d: any) => d[key] !== null);
 
-            validData.forEach((d: any, idx: number) => {
+            validData.forEach((d: any) => {
                 const pointSource = d.source || 'bms';
 
                 if (currentSource !== pointSource && currentSegment.length > 0) {

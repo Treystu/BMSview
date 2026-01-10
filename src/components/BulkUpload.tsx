@@ -7,7 +7,7 @@ import type { FileWithMeta } from '../utils/duplicateChecker';
 import { CostEstimateBadge, estimateAnalysisCost } from './CostEstimateBadge';
 
 interface BulkUploadProps {
-  onAnalyze: (files: File[], options?: { forceReanalysis?: boolean }) => void;
+  onAnalyze: (files: File[], options?: { forceReanalysis?: boolean; useAsync?: boolean }) => void;
   results: DisplayableAnalysisResult[];
   isLoading: boolean;
   showRateLimitWarning: boolean;
@@ -71,6 +71,7 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
     clearFiles,
   } = useFileUpload({ propagateDuplicates: true });
   const [forceMode, setForceMode] = React.useState(false);
+  const [useAsync, setUseAsync] = React.useState(false);
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -79,7 +80,7 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
 
   const handleAnalyzeClick = () => {
     if (files.length > 0) {
-      onAnalyze(files, { forceReanalysis: forceMode });
+      onAnalyze(files, { forceReanalysis: forceMode, useAsync });
       // Don't clear files immediately - let them stay visible during analysis
       // Files will be cleared when user uploads new files or manually clicks clear
     }
@@ -142,6 +143,19 @@ const BulkUpload: React.FC<BulkUploadProps> = ({
           />
           <label htmlFor="force-override-mode" className="ml-2 text-sm font-medium text-red-200 cursor-pointer">
             Force Re-Analysis
+          </label>
+        </div>
+
+        <div className="flex items-center" title="Use asynchronous background processing (recommended for large batches)">
+          <input
+            type="checkbox"
+            id="async-analysis-mode"
+            checked={useAsync}
+            onChange={(e) => setUseAsync(e.target.checked)}
+            className="w-4 h-4 text-purple-500 rounded focus:ring-2 focus:ring-purple-500 bg-gray-700 border-gray-600"
+          />
+          <label htmlFor="async-analysis-mode" className="ml-2 text-sm font-medium text-purple-200 cursor-pointer">
+            Async Analysis
           </label>
         </div>
       </div>

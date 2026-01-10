@@ -27,7 +27,7 @@
  * MongoDB Collections Used:
  * - idempotent-requests: Stores request/response pairs for idempotency
  * - analysis-results: Stores analysis results and content hashes for deduplication
- * - progress-events: Stores legacy job progress events
+ * - progress-events: Stores async job progress events
  */
 
 const { errorResponse } = require('./utils/errors.cjs');
@@ -125,7 +125,7 @@ async function ensureSystemAssociation(record, log) {
     } else {
       log.info('Auto-association: No matching system found', { 
         status: result.status, 
-        reason: result.reason,
+        reason: result.reason, 
         isNewCandidate: result.isNewCandidate 
       });
       return record;
@@ -310,8 +310,8 @@ exports.handler = async (event, context) => {
       return result;
     }
 
-    // Legacy asynchronous analysis path
-    const result = await handleLegacyAnalysis(parsed.value, headers, log, requestContext);
+    // Asynchronous analysis path
+    const result = await handleAsyncAnalysis(parsed.value, headers, log, requestContext);
     timer.end({ mode: 'async', statusCode: result.statusCode });
     log.exit(result.statusCode);
     return result;
@@ -324,7 +324,7 @@ exports.handler = async (event, context) => {
       errorType: error.constructor?.name
     });
 
-    // Best-effort legacy progress event logging
+    // Best-effort async progress event logging
     try {
       if (requestContext.jobId) {
         await storeProgressEvent(requestContext.jobId, {
@@ -702,16 +702,16 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
 }
 
 /**
- * Handles legacy asynchronous analysis requests
+ * Handles asynchronous analysis requests
  * @param {any} requestBody - Parsed request body
  * @param {any} headers - Response headers
  * @param {any} log - Logger instance
  * @param {any} requestContext - Request context for error handling
  */
-async function handleLegacyAnalysis(requestBody, headers, log, requestContext) {
+async function handleAsyncAnalysis(requestBody, headers, log, requestContext) {
   const validated = validateAnalyzeRequest(requestBody, log);
   if (!validated.ok) {
-    log.warn('Legacy analyze request missing parameters.', { details: validated.details });
+    log.warn('Async analyze request missing parameters.', { details: validated.details });
     log.exit(400);
     return errorResponse(400, 'missing_parameters', validated.error || 'Missing parameters', validated.details, { ...headers, 'Content-Type': 'application/json' });
   }
@@ -719,12 +719,12 @@ async function handleLegacyAnalysis(requestBody, headers, log, requestContext) {
   const { jobId, fileData } = /** @type {any} */ (validated).value;
   requestContext.jobId = jobId;
 
-  log.info('Legacy analyze request received.', { jobId, fileBytes: fileData ? fileData.length : 0 });
-  log.exit(202, { mode: 'legacy' });
+  log.info('Async analyze request received.', { jobId, fileBytes: fileData ? fileData.length : 0 });
+  log.exit(202, { mode: 'async' });
   return {
     statusCode: 202,
     headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ success: true, jobId, message: 'Legacy analysis accepted for processing' })
+    body: JSON.stringify({ success: true, jobId, message: 'Async analysis accepted for processing' })
   };
 }
 
@@ -976,7 +976,7 @@ async function storeIdempotentResponse(idemKey, response, reasonCode = 'new_anal
 }
 
 /**
- * Stores a progress event for legacy jobs
+ * Stores a progress event for async jobs
  * @param {string} jobId - Job identifier
  * @param {any} eventData - Event data to store
  */

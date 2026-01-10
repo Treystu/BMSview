@@ -1,266 +1,96 @@
-import crypto from 'crypto';
-import { MongoClient } from 'mongodb';
 
-interface UploadResponse {
-  status: 'success' | 'skipped' | 'error';
-  reason?: string;
+import axios from 'axios';
+
+export interface UploadResult {
+  success: boolean;
   fileId?: string;
+  filename?: string;
   message?: string;
-}
-let __dbPromise: Promise<any> | null = null;
-async function getDb() {
-  if (!__dbPromise) {
-    __dbPromise = (async () => {
-      const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/test';
-      const client = new MongoClient(uri);
-      await client.connect();
-      // In tests, the mock ignores the db name and returns a stub
-      return client.db('test');
-    })();
-  }
-  return __dbPromise;
+  error?: string;
+  processingResult?: any;
 }
 
-// Compute a content hash that works in both browser and Node test environments
-async function getContentHash(file: any): Promise<string | null> {
-  try {
-    if (file && typeof file.arrayBuffer === 'function' && (globalThis as any).crypto?.subtle) {
-      const buffer = await file.arrayBuffer();
-      const hashBuffer = await (globalThis as any).crypto.subtle.digest('SHA-256', buffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    // Node path: use Buffer data if provided
-    const data: Buffer | undefined = (file && (file.data as Buffer)) || undefined;
-    if (data && Buffer.isBuffer(data)) {
-      return crypto.createHash('sha256').update(data).digest('hex');
-    }
-    return null;
-  } catch {
-    return null;
-  }
+export interface UploadProgress {
+  loaded: number;
+  total: number;
 }
 
-async function checkForDuplicate(file: any): Promise<{ isDuplicate: boolean, existingId?: string }> {
+/**
+ * Upload a file to the optimized upload endpoint
+ * @param file File to upload
+ * @param onProgress Optional callback for upload progress
+ * @returns Upload result
+ */
+export async function uploadFile(
+  file: File,
+  onProgress?: (progress: UploadProgress) => void
+): Promise<UploadResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
   try {
-    // Calculate content hash (works in Node tests via Buffer)
-    const contentHash = await getContentHash(file);
-    const db = await getDb();
-    // Check for duplicates by filename AND content hash (single-tenant - no userId)
-    const existing = await db.collection('uploads').findOne({
-      $or: [
-        {
-          filename: file.name,
-          status: { $in: ['completed', 'processing'] }
-        },
-        contentHash ? {
-          contentHash,
-          status: { $in: ['completed', 'processing'] }
-        } : null
-      ].filter(Boolean)
+    const response = await axios.post('/.netlify/functions/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          onProgress({
+            loaded: progressEvent.loaded,
+            total: progressEvent.total,
+          });
+        }
+      },
     });
 
-    if (existing) {
+    return response.data;
+  } catch (error: any) {
+    if (error.response) {
+      // Server responded with error
       return {
-        isDuplicate: true,
-        existingId: existing._id
+        success: false,
+        error: error.response.data.error || 'Upload failed',
+        message: error.response.data.message
       };
-    }
-
-    return { isDuplicate: false };
-  } catch (error) {
-    console.error('Error checking for duplicate:', error);
-    // If hash calculation fails, fall back to filename check
-    const db = await getDb();
-    const existing = await db.collection('uploads').findOne({
-      filename: file.name,
-      status: { $in: ['completed', 'processing'] }
-    });
-    return {
-      isDuplicate: !!existing,
-      existingId: existing?._id
-    };
-  }
-}
-
-function validateFilename(filename: string): { valid: boolean; error?: string } {
-  // Check for valid filename patterns
-  const invalidPatterns = [
-    /[<>:"|?*]/, // Invalid Windows characters
-    /^\./, // Hidden files
-    /\.exe$/i, // Executable files
-    /\.bat$/i, // Batch files
-    /\.cmd$/i, // Command files
-  ];
-
-  // Check file extension
-  const allowedExtensions = ['.csv', '.json', '.txt', '.log', '.xml'];
-  const fileExtension = filename.toLowerCase().substring(filename.lastIndexOf('.'));
-
-  if (!allowedExtensions.includes(fileExtension)) {
-    return {
-      valid: false,
-      error: `invalid file type ${fileExtension}. Allowed types: ${allowedExtensions.join(', ')}`
-    };
-  }
-
-  // Check for invalid patterns
-  for (const pattern of invalidPatterns) {
-    if (pattern.test(filename)) {
+    } else if (error.request) {
+      // Request made but no response
       return {
-        valid: false,
-        error: 'Filename contains invalid characters'
+        success: false,
+        error: 'Network error',
+        message: 'No response from server'
+      };
+    } else {
+      // Setup error
+      return {
+        success: false,
+        error: error.message || 'Unknown error'
       };
     }
   }
-
-  // Check file length
-  if (filename.length > 255) {
-    return {
-      valid: false,
-      error: 'invalid filename length (max 255 characters)'
-    };
-  }
-
-  return { valid: true };
 }
 
-async function processFile(_file: any): Promise<string> {
-  // Simulate file processing
-  const processingSteps = [
-    { stage: 'uploaded', progress: 25 },
-    { stage: 'validating', progress: 50 },
-    { stage: 'parsing', progress: 75 },
-    { stage: 'completed', progress: 100 }
-  ];
+/**
+ * Upload multiple files in parallel
+ * @param files Array of files to upload
+ * @param onProgress Optional callback for aggregate progress
+ * @returns Array of upload results
+ */
+export async function uploadFiles(
+  files: File[],
+  onProgress?: (progress: number) => void
+): Promise<UploadResult[]> {
+  let completed = 0;
+  const totalFiles = files.length;
 
-  const fileId = 'file-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-
-  const delayMs = process.env.NODE_ENV === 'test' ? 10 : 1000;
-  for (const step of processingSteps) {
-    await new Promise(resolve => setTimeout(resolve, delayMs));
-    console.log(`File ${fileId} - Stage: ${step.stage}, Progress: ${step.progress}%`);
-  }
-
-  return fileId;
-}
-
-const inProgressKeys = new Set<string>();
-export async function uploadFile(file: any): Promise<UploadResponse> {
-  try {
-    // Validate filename
-    const filenameValidation = validateFilename(file.name);
-    if (!filenameValidation.valid) {
-      return {
-        status: 'error',
-        reason: filenameValidation.error
-      };
-    }
-
-    // Prevent duplicate concurrent uploads (best-effort lock) - single-tenant
-    const key = String(file.name).toLowerCase();
-    if (inProgressKeys.has(key)) {
-      return { status: 'skipped', reason: 'duplicate' };
-    }
-    inProgressKeys.add(key);
-
-    try {
-      // Check for duplicates
-      const duplicateCheck = await checkForDuplicate(file);
-      if (duplicateCheck.isDuplicate) {
-        return {
-          status: 'skipped',
-          reason: 'duplicate',
-          message: `Duplicate of existing file (ID: ${duplicateCheck.existingId})`,
-          fileId: duplicateCheck.existingId
-        };
+  const promises = files.map(file => 
+    uploadFile(file).then(result => {
+      completed++;
+      if (onProgress) {
+        onProgress((completed / totalFiles) * 100);
       }
+      return result;
+    })
+  );
 
-      const db = await getDb();
-      // Insert upload record in processing state
-      await db.collection('uploads').insertOne({
-        filename: file.name,
-        status: 'processing',
-        createdAt: new Date(),
-        fileSize: file.size
-      });
-
-      // Process the file
-      const fileId = await processFile(file);
-
-      // Update record to completed
-      await db.collection('uploads').updateOne(
-        { filename: file.name },
-        {
-          $set: {
-            status: 'completed',
-            fileId,
-            completedAt: new Date()
-          }
-        }
-      );
-
-      return {
-        status: 'success',
-        fileId,
-        message: `File ${file.name} uploaded and processed successfully`
-      };
-    } finally {
-      inProgressKeys.delete(key);
-    }
-
-  } catch (err) {
-    console.error('Upload error:', err);
-    const error = err as Error;
-
-    // Update record to failed if it exists
-    const db = await getDb();
-    await db.collection('uploads').updateOne(
-      { filename: file.name },
-      {
-        $set: {
-          status: 'failed',
-          error: error?.message || 'Unknown error',
-          failedAt: new Date()
-        }
-      }
-    );
-
-    return {
-      status: 'error',
-      reason: error?.message || 'Unknown upload error'
-    };
-  }
-}
-
-export async function getUploadHistory(): Promise<any[]> {
-  try {
-    const db = await getDb();
-    const uploads = await db.collection('uploads').find({}).toArray();
-    return uploads || [];
-  } catch (error) {
-    console.error('Error getting upload history:', error);
-    return [];
-  }
-}
-
-export async function deleteUpload(filename: string): Promise<boolean> {
-  try {
-    const db = await getDb();
-    // Update status to deleted instead of actually deleting
-    const result = await db.collection('uploads').updateOne(
-      { filename },
-      {
-        $set: {
-          status: 'deleted',
-          deletedAt: new Date()
-        }
-      }
-    );
-
-    return result.modifiedCount > 0;
-  } catch (error) {
-    console.error('Error deleting upload:', error);
-    return false;
-  }
+  return Promise.all(promises);
 }

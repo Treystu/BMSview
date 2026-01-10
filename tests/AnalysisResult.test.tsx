@@ -29,10 +29,10 @@ jest.mock('../src/components/TypewriterMarkdown', () => {
 });
 
 // Mock Icons
-jest.mock('../src/components/icons/SpinnerIcon', () => () => <svg data-testid="spinner" />);
-jest.mock('../src/components/icons/CloudIcon', () => () => <svg />);
-jest.mock('../src/components/icons/SunIcon', () => () => <svg />);
-jest.mock('../src/components/icons/ThermometerIcon', () => () => <svg />);
+jest.mock('../src/components/icons/SpinnerIcon', () => function SpinnerIcon() { return <svg data-testid="spinner" />; });
+jest.mock('../src/components/icons/CloudIcon', () => function CloudIcon() { return <svg />; });
+jest.mock('../src/components/icons/SunIcon', () => function SunIcon() { return <svg />; });
+jest.mock('../src/components/icons/ThermometerIcon', () => function ThermometerIcon() { return <svg />; });
 
 describe('AnalysisResult Component', () => {
   const mockDispatch = jest.fn();

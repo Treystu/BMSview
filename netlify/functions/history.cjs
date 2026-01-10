@@ -509,9 +509,6 @@ exports.handler = async function (event, context) {
                     };
                 });
 
-                // Initialize Intelligent Associator
-                const associator = new IntelligentAssociator(systems, systemStats);
-
                 // --- PHASE 1: Learn from existing links (Self-Healing) ---
                 // Find all records that ARE linked but have IDs not yet in the system definition
                 log.info('Phase 1: Learning associations from history...');
@@ -544,7 +541,7 @@ exports.handler = async function (event, context) {
                     },
                     {
                         $match: {
-                            allIds: { $ne: null, $ne: "" } // Filter out nulls/empties
+                            allIds: { $nin: [null, ""] } // Filter out nulls/empties
                         }
                     },
                     {
@@ -601,6 +598,9 @@ exports.handler = async function (event, context) {
                     log.info(`Updating ${systemUpdateBulkOps.length} systems with learned IDs.`);
                     await systemsCollection.bulkWrite(systemUpdateBulkOps);
                 }
+
+                // Initialize Intelligent Associator (AFTER learning phase so it knows about new IDs)
+                const associator = new IntelligentAssociator(systems, systemStats);
 
                 // --- PHASE 2: Intelligent Auto-Association ---
                 log.info('Phase 2: Running intelligent auto-association...');

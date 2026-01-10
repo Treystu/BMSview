@@ -25,7 +25,7 @@ const InsightModeLoadingStates: Record<InsightMode, { title: string; description
   },
   [InsightMode.STANDARD]: {
     title: '⚡ Generating Insights...',
-    description: 'Processing your request using the legacy endpoint (same capabilities as Battery Guru).'
+    description: 'Processing your request using the standard analysis engine.'
   },
   [InsightMode.VISUAL_GURU]: {
     title: '📊 Visual Guru Expert Analyzing...',
@@ -346,7 +346,7 @@ const DeeperInsightsSection: React.FC<{ analysisData: AnalysisData, systemId?: s
                 )}
                 {selectedMode === InsightMode.STANDARD && (
                   <>
-                    <li>This is a legacy endpoint - use <strong>Battery Guru</strong> mode directly for better support</li>
+                    <li>Try using <strong>Battery Guru</strong> mode for enhanced analysis capabilities</li>
                     <li>Reduce the data analysis window (currently {getContextWindowLabel(contextWindowDays)})</li>
                     <li>Ensure your system has enough historical data</li>
                   </>

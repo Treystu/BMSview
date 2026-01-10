@@ -29,6 +29,8 @@ let checkNeedsUpgrade;
 /** @type {(...args: any[]) => any} */
 let formatHashPreview;
 /** @type {(...args: any[]) => any} */
+let batchCheckExistingAnalyses;
+/** @type {(...args: any[]) => any} */
 let createStandardEntryMeta;
 /** @type {(...args: any[]) => any} */
 let logDebugRequestSummary;
@@ -122,7 +124,8 @@ exports.handler = async (event, context) => {
     !logDebugRequestSummary ||
     !calculateImageHash ||
     !checkNeedsUpgrade ||
-    !formatHashPreview
+    !formatHashPreview ||
+    !batchCheckExistingAnalyses
   ) {
     console.error('CHECK-DUPLICATES-BATCH missing helper modules after initialization');
     return {
