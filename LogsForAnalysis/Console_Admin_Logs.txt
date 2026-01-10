@@ -1,75 +1,173 @@
-admin-CTik8F1P.js:2 {"level":"WARN","timestamp":"2026-01-10T00:58:47.473Z","component":"AdminApp","message":"Netlify Identity widget not available, retrying...","context":{}}
-admin-CTik8F1P.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.476Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
-admin-CTik8F1P.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.493Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.516Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.516Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
-AdminDashboard-DGAxZHh-.js:7 {"level":"INFO","timestamp":"2026-01-10T00:58:48.523Z","component":"AdminDashboard","message":"Performing initial data load (page 1).","context":{}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.524Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":"all","strategy":"cache-first"}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.526Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":100,"strategy":"cache-first"}}
-localCache-CFbLafuo.js:3 {"level":"debug","timestamp":"2026-01-10T00:58:48.540Z","service":"localCache","message":"Retrieved 4 systems from cache"}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.540Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":"all","returned":4,"total":4}}
-localCache-CFbLafuo.js:3 {"level":"debug","timestamp":"2026-01-10T00:58:48.617Z","service":"localCache","message":"Retrieved 3865 history records from cache"}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.617Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":100,"returned":100,"total":3865}}
-AdminDashboard-DGAxZHh-.js:7 {"level":"INFO","timestamp":"2026-01-10T00:58:48.617Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":4,"historyCount":100}}
-AdminDashboard-DGAxZHh-.js:7 {"level":"INFO","timestamp":"2026-01-10T00:58:48.624Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.624Z","service":"clientService","message":"Fetching data integrity audit from admin endpoint.","context":{}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.624Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"admin-data-integrity","method":"GET"}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.624Z","service":"clientService","message":"Fetching IP management data.","context":{}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.624Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"ip-admin","method":"GET"}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.624Z","service":"clientService","message":"Fetching current user IP.","context":{}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.624Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"get-ip","method":"GET"}}
-AdminDashboard-DGAxZHh-.js:7 {"level":"INFO","timestamp":"2026-01-10T00:58:48.625Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.625Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"default-system"}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.625Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET"}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:48.833Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"get-ip","method":"GET","status":200}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:49.476Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET","status":200}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:49.565Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"ip-admin","method":"GET","status":200}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:49.587Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"admin-data-integrity","method":"GET","status":200}}
-AdminDashboard-DGAxZHh-.js:7 {"level":"INFO","timestamp":"2026-01-10T00:58:49.587Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":7,"matched":3,"orphaned":4,"total_records":845,"orphaned_records":21}}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:50.118Z","service":"clientService","message":"Starting smart history sync.","context":{}}
-localCache-CFbLafuo.js:3 {"level":"debug","timestamp":"2026-01-10T00:58:50.187Z","service":"localCache","message":"Retrieved 3865 history records from cache"}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:50.187Z","service":"clientService","message":"Loaded 3865 records from local cache.","context":{"count":3865}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:50.188Z","service":"clientService","message":"Syncing batch 1/100...","context":{"updatedSince":"2026-01-10T00:55:26.126Z","totalSoFar":0}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:50.188Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?all=true&updatedSince=2026-01-10T00%3A55%3A26.126Z","method":"GET"}}
-AdminDashboard-DGAxZHh-.js:7 {"level":"INFO","timestamp":"2026-01-10T00:58:50.220Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.08960459999999988,"days":4}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:50.849Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?all=true&updatedSince=2026-01-10T00%3A55%3A26.126Z","method":"GET","status":200}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:50.849Z","service":"clientService","message":"No more new records from server.","context":{}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:50.849Z","service":"clientService","message":"Incremental sync finished. Total received: 0 records across 1 batches.","context":{"localCount":3865,"serverCount":0,"totalUnified":3865}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T00:58:50.850Z","service":"clientService","message":"Finished smart history sync.","context":{}}
+admin-Wx_y2GrA.js:2 {"level":"WARN","timestamp":"2026-01-10T02:03:25.100Z","component":"AdminApp","message":"Netlify Identity widget not available, retrying...","context":{}}
+admin-Wx_y2GrA.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:26.102Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
+admin-Wx_y2GrA.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:26.120Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:26.707Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:26.707Z","service":"clientService","message":"Client service instrumentation attached to window.","context":{"cacheMode":"enabled"}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:03:26.712Z","component":"AdminDashboard","message":"Performing initial data load (page 1).","context":{}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:26.713Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":"all","strategy":"cache-first"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:26.713Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":100,"strategy":"cache-first"}}
+localCache-CokYfgUi.js:3 {"level":"debug","timestamp":"2026-01-10T02:03:27.093Z","service":"localCache","message":"Retrieved 4 systems from cache"}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:27.093Z","service":"clientService","message":"Serving systems from local cache.","context":{"page":1,"limit":"all","returned":4,"total":4}}
+localCache-CokYfgUi.js:3 {"level":"debug","timestamp":"2026-01-10T02:03:27.161Z","service":"localCache","message":"Retrieved 3865 history records from cache"}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:27.161Z","service":"clientService","message":"Serving analysis history from local cache.","context":{"page":1,"limit":100,"returned":100,"total":3865}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:03:27.161Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":4,"historyCount":100}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:03:27.175Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:27.175Z","service":"clientService","message":"Fetching data integrity audit from admin endpoint.","context":{}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:27.175Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"admin-data-integrity","method":"GET"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:27.175Z","service":"clientService","message":"Fetching IP management data.","context":{}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:27.175Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"ip-admin","method":"GET"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:27.175Z","service":"clientService","message":"Fetching current user IP.","context":{}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:27.175Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"get-ip","method":"GET"}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:03:27.175Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:27.176Z","service":"clientService","message":"Fetching system analytics.","context":{"systemId":"default-system"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:27.176Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:28.512Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"get-ip","method":"GET","status":200}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:28.663Z","service":"clientService","message":"Starting smart history sync.","context":{}}
+localCache-CokYfgUi.js:3 {"level":"debug","timestamp":"2026-01-10T02:03:28.749Z","service":"localCache","message":"Retrieved 3865 history records from cache"}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:28.749Z","service":"clientService","message":"Loaded 3865 records from local cache.","context":{"count":3865}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:28.750Z","service":"clientService","message":"Syncing batch 1/100...","context":{"updatedSince":"2026-01-10T00:55:26.126Z","totalSoFar":0}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:28.750Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?all=true&updatedSince=2026-01-10T00%3A55%3A26.126Z","method":"GET"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:29.666Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?all=true&updatedSince=2026-01-10T00%3A55%3A26.126Z","method":"GET","status":200}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:29.667Z","service":"clientService","message":"No more new records from server.","context":{}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:29.667Z","service":"clientService","message":"Incremental sync finished. Total received: 0 records across 1 batches.","context":{"localCount":3865,"serverCount":0,"totalUnified":3865}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:29.667Z","service":"clientService","message":"Finished smart history sync.","context":{}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:29.908Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"ip-admin","method":"GET","status":200}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:29.942Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"system-analytics?systemId=default-system","method":"GET","status":200}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:30.056Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"admin-data-integrity","method":"GET","status":200}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:03:30.056Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":7,"matched":3,"orphaned":4,"total_records":845,"orphaned_records":21}}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:03:30.462Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.08960459999999988,"days":4}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:30.553Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2025-12-11T02:03:00.000Z","endDate":"2026-01-10T02:03:00.000Z"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:30.553Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-11T02:03:00.000Z&endDate=2026-01-10T02:03:00.000Z","method":"GET"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:30.949Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-12-11T02:03:00.000Z&endDate=2026-01-10T02:03:00.000Z","method":"GET","status":200}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:30.949Z","service":"clientService","message":"Received 14 weather records.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+localCache-CokYfgUi.js:3 {"level":"debug","timestamp":"2026-01-10T02:03:30.955Z","service":"localCache","message":"Bulk cached 14 weather records"}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:30.955Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","isAllData":false}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:30.998Z","service":"clientService","message":"Unified timeline generated.","context":{"total":2710,"history":2682,"weather":28,"isAllData":false}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:35.855Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2026-01-03T02:03:00.000Z","endDate":"2026-01-10T02:03:00.000Z"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:35.855Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2026-01-03T02:03:00.000Z&endDate=2026-01-10T02:03:00.000Z","method":"GET"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:35.926Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2025-03-11T02:03:00.000Z","endDate":"2026-01-10T02:03:00.000Z"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:35.927Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-03-11T02:03:00.000Z&endDate=2026-01-10T02:03:00.000Z","method":"GET"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:36.294Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2026-01-03T02:03:00.000Z&endDate=2026-01-10T02:03:00.000Z","method":"GET","status":200}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:36.294Z","service":"clientService","message":"No weather data received for range.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:36.720Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-03-11T02:03:00.000Z&endDate=2026-01-10T02:03:00.000Z","method":"GET","status":200}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:36.720Z","service":"clientService","message":"Received 28 weather records.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+localCache-CokYfgUi.js:3 {"level":"debug","timestamp":"2026-01-10T02:03:36.739Z","service":"localCache","message":"Bulk cached 28 weather records"}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:36.739Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","isAllData":false}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:03:36.800Z","service":"clientService","message":"Unified timeline generated.","context":{"total":2710,"history":2682,"weather":28,"isAllData":false}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:04:05.526Z","component":"AdminDashboard","message":"Starting action: isNormalizingIds.","context":{}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:05.526Z","service":"clientService","message":"Sending request to normalize IDs.","context":{"limit":1000}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:05.526Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:07.337Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:04:07.337Z","component":"AdminDashboard","message":"isNormalizingIds completed successfully.","context":{"result":{"success":true,"updatedCount":0,"scannedCount":845,"hasMore":false,"totalRecords":845,"message":"Completed. Scanned 845 records across 1 batches. Updated 0 of 845 total records."}}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:04:07.337Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"all","forceRefresh":true}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:07.337Z","service":"clientService","message":"Fetching paginated registered BMS systems.","context":{"page":1,"limit":100,"strategy":"cache-first"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:07.337Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"systems?page=1&limit=100","method":"GET"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:07.337Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":100,"strategy":"cache-first"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:07.337Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?page=1&limit=100","method":"GET"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:07.926Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?page=1&limit=100","method":"GET","status":200}}
+localCache-CokYfgUi.js:3 {"level":"info","timestamp":"2026-01-10T02:04:07.956Z","service":"localCache","message":"Bulk cached 100 history records","context":{"syncStatus":"synced"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:08.565Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"systems?page=1&limit=100","method":"GET","status":200}}
+localCache-CokYfgUi.js:3 {"level":"info","timestamp":"2026-01-10T02:04:08.581Z","service":"localCache","message":"Bulk cached 4 systems","context":{"syncStatus":"synced"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:08.601Z","service":"clientService","message":"Syncing weather data for unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","startDate":"2025-03-11T02:03:00.000Z","endDate":"2026-01-10T02:04:00.000Z"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:08.601Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-03-11T02:03:00.000Z&endDate=2026-01-10T02:04:00.000Z","method":"GET"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:09.098Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?weatherOnly=true&systemId=6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd&startDate=2025-03-11T02:03:00.000Z&endDate=2026-01-10T02:04:00.000Z","method":"GET","status":200}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:09.098Z","service":"clientService","message":"Received 28 weather records.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd"}}
+localCache-CokYfgUi.js:3 {"level":"debug","timestamp":"2026-01-10T02:04:09.116Z","service":"localCache","message":"Bulk cached 28 weather records"}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:09.116Z","service":"clientService","message":"Generating unified timeline.","context":{"systemId":"6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd","isAllData":false}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:09.180Z","service":"clientService","message":"Unified timeline generated.","context":{"total":2710,"history":2682,"weather":28,"isAllData":false}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:04:14.175Z","component":"AdminDashboard","message":"Starting action: isAutoAssociating.","context":{}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:14.175Z","service":"clientService","message":"Sending request to auto-associate unlinked records.","context":{"skip":0}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:14.175Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history","method":"POST"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:14.843Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history","method":"POST","status":200}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:04:14.843Z","component":"AdminDashboard","message":"isAutoAssociating completed successfully.","context":{"result":{"success":true,"associatedCount":0,"processedCount":21,"message":"Completed. Processed 21 records across 1 batches. Associated 0 records.","debugInfo":{"orphansCleaned":0,"phase1Updates":0,"systemsLoaded":4,"mapEntries":7,"unlinkedFound":21,"unmatchableCount":0,"sampleFailures":[{"recordId":"707b17dd-2750-4d7d-b325-6e32d8325100","status":"new_candidate","reason":"No matching system found (ID or Physics)","candidates":["JHB-C890A8D82CF8"]},{"recordId":"fff9e47e-403d-4f03-8435-2cf588c4fcd6","status":"no_id","reason":"No valid ID found in record"},{"recordId":"fff9e47e-403d-4f03-8435-2cf588c4fcd6","status":"no_id","reason":"No valid ID found in record"},{"recordId":"fff9e47e-403d-4f03-8435-2cf588c4fcd6","status":"no_id","reason":"No valid ID found in record"},{"recordId":"fff9e47e-403d-4f03-8435-2cf588c4fcd6","status":"no_id","reason":"No valid ID found in record"},{"recordId":"d47734c4-a480-4ed2-a2f9-297b7ce8b5d3","status":"new_candidate","reason":"No matching system found (ID or Physics)","candidates":["JHB-D21910019CE6"]},{"recordId":"5ff25216-968c-4480-bfbf-d1b639e7f119","status":"no_id","reason":"No valid ID found in record"},{"recordId":"5ff25216-968c-4480-bfbf-d1b639e7f119","status":"no_id","reason":"No valid ID found in record"},{"recordId":"665eab5e-4472-4900-a6a9-e49813c30af0","status":"new_candidate","reason":"No matching system found (ID or Physics)","candidates":["S/N:-000173B"]},{"recordId":"134d504b-b475-49e0-b20c-dfb33e6968ad","status":"no_id","reason":"No valid ID found in record"},{"recordId":"134d504b-b475-49e0-b20c-dfb33e6968ad","status":"no_id","reason":"No valid ID found in record"},{"recordId":"f4f4f3e5-2645-4ba2-9a4a-a3f8ad0f586d","status":"no_id","reason":"No valid ID found in record"},{"recordId":"f4f4f3e5-2645-4ba2-9a4a-a3f8ad0f586d","status":"no_id","reason":"No valid ID found in record"},{"recordId":"f4f4f3e5-2645-4ba2-9a4a-a3f8ad0f586d","status":"no_id","reason":"No valid ID found in record"},{"recordId":"f4f4f3e5-2645-4ba2-9a4a-a3f8ad0f586d","status":"no_id","reason":"No valid ID found in record"},{"recordId":"53422017-20d5-47d0-9c7c-eae0f1eff462","status":"no_id","reason":"No valid ID found in record"},{"recordId":"53422017-20d5-47d0-9c7c-eae0f1eff462","status":"no_id","reason":"No valid ID found in record"},{"recordId":"53422017-20d5-47d0-9c7c-eae0f1eff462","status":"no_id","reason":"No valid ID found in record"},{"recordId":"53422017-20d5-47d0-9c7c-eae0f1eff462","status":"no_id","reason":"No valid ID found in record"},{"recordId":"e91894ee-8a74-42f9-a039-236a1c733f1e","status":"new_candidate","reason":"No matching system found (ID or Physics)","candidates":["JHB-D21910019CE6"]},{"recordId":"7bafdaf2-85fb-4647-917d-c0d3b2820f71","status":"new_candidate","reason":"No matching system found (ID or Physics)","candidates":["JHB-D21910019CE6"]}],"newCandidatesFound":5,"associated":0}}}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:04:14.843Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:14.844Z","service":"clientService","message":"Fetching paginated analysis history.","context":{"page":1,"limit":100,"strategy":"cache-first"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:14.844Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"history?page=1&limit=100","method":"GET"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:04:15.550Z","service":"clientService","message":"API fetch successful.","context":{"endpoint":"history?page=1&limit=100","method":"GET","status":200}}
+localCache-CokYfgUi.js:3 {"level":"info","timestamp":"2026-01-10T02:04:15.569Z","service":"localCache","message":"Bulk cached 100 history records","context":{"syncStatus":"synced"}}
 admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
 admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
 admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
 admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
-uploadOptimizer-17v0LGZI.js:56 {"level":"INFO","timestamp":"2026-01-10T01:00:55.413Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
-uploadOptimizer-17v0LGZI.js:56 {"level":"INFO","timestamp":"2026-01-10T01:00:55.413Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":0,"oversizedCount":0,"zipCount":1}}
-uploadOptimizer-17v0LGZI.js:56 {"level":"INFO","timestamp":"2026-01-10T01:00:55.414Z","hook":"useFileUpload","message":"Starting to process ZIP file.","context":{"fileName":"Photos-3-001 (9).zip","size":1860122}}
-uploadOptimizer-17v0LGZI.js:56 {"level":"INFO","timestamp":"2026-01-10T01:00:55.441Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":7,"fileNames":["Screenshot_20260109-115004.png","Screenshot_20260109-115009.png","Screenshot_20260109-114954.png","Screenshot_20260109-114950.png","Screenshot_20260109-115014.png","Screenshot_20260109-114959.png","Screenshot_20260109-115019.png"],"event":"CHECK_START"}}
-uploadOptimizer-17v0LGZI.js:56 {"level":"INFO","timestamp":"2026-01-10T01:00:55.441Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":7,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
-uploadOptimizer-17v0LGZI.js:56 Calculating file hashes for batch {count: 7, fileNames: Array(5), event: 'FILE_HASH_START'}
-uploadOptimizer-17v0LGZI.js:56 Client hash generated {hashPreview: '77da6db1a3ea447b...', imageLength: 361808}
-uploadOptimizer-17v0LGZI.js:56 Client hash generated {hashPreview: '2fef7c32e7ade956...', imageLength: 358192}
-uploadOptimizer-17v0LGZI.js:56 Client hash generated {hashPreview: '683f779ece452929...', imageLength: 323908}
-uploadOptimizer-17v0LGZI.js:56 Client hash generated {hashPreview: '123ed0f7c1779da8...', imageLength: 352840}
-uploadOptimizer-17v0LGZI.js:56 Client hash generated {hashPreview: '214e65a8945d0059...', imageLength: 358284}
-uploadOptimizer-17v0LGZI.js:56 Client hash generated {hashPreview: '733bc029c57c870a...', imageLength: 361532}
-uploadOptimizer-17v0LGZI.js:56 Client hash generated {hashPreview: 'bde24a1125d888e1...', imageLength: 361020}
-uploadOptimizer-17v0LGZI.js:56 File hash batch complete {totalFiles: 7, successfulHashes: 7, failedHashes: 0, durationMs: 18, avgPerFileMs: '2.57', …}
-uploadOptimizer-17v0LGZI.js:56 {"level":"INFO","timestamp":"2026-01-10T01:00:55.459Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":7,"durationMs":18,"event":"HASHING_COMPLETE"}}
-uploadOptimizer-17v0LGZI.js:56 {"level":"INFO","timestamp":"2026-01-10T01:00:55.459Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-uploadOptimizer-17v0LGZI.js:56 {"level":"INFO","timestamp":"2026-01-10T01:00:56.880Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":7,"trueDuplicates":0,"needsUpgrade":0,"newFiles":7,"durationMs":1438,"avgPerFileMs":"205.43","event":"PHASE1_COMPLETE"}}
-uploadOptimizer-17v0LGZI.js:56 {"level":"INFO","timestamp":"2026-01-10T01:00:56.880Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":7,"duplicates":0,"upgrades":0,"newFiles":7,"event":"CHECK_COMPLETE"}}
-uploadOptimizer-17v0LGZI.js:56 {"level":"INFO","timestamp":"2026-01-10T01:00:56.880Z","hook":"useFileUpload","message":"Successfully extracted all files from ZIP.","context":{"fileName":"Photos-3-001 (9).zip","size":1860122,"extractedCount":7}}
-AdminDashboard-DGAxZHh-.js:7 {"level":"INFO","timestamp":"2026-01-10T01:01:00.379Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":7,"isStoryMode":true,"forceReanalysis":false}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T01:01:00.380Z","service":"clientService","message":"Creating analysis story.","context":{"title":"Enhanced Info","summary":"Precise Power Draw info for Net charging calculation.","timelineCount":7,"hasUserContext":true}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T01:01:00.410Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"analyze","method":"POST"}}
-uploadOptimizer-17v0LGZI.js:2  POST https://bmsview.netlify.app/.netlify/functions/analyze 400 (Bad Request)
-Oe @ uploadOptimizer-17v0LGZI.js:2
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+[Violation] 'message' handler took <N>ms
+uploadOptimizer-BuJ_zntV.js:56 {"level":"INFO","timestamp":"2026-01-10T02:15:28.354Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
+uploadOptimizer-BuJ_zntV.js:56 {"level":"INFO","timestamp":"2026-01-10T02:15:28.354Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":0,"oversizedCount":0,"zipCount":1}}
+uploadOptimizer-BuJ_zntV.js:56 {"level":"INFO","timestamp":"2026-01-10T02:15:28.355Z","hook":"useFileUpload","message":"Starting to process ZIP file.","context":{"fileName":"Photos-3-001 (9).zip","size":1860122}}
+uploadOptimizer-BuJ_zntV.js:56 {"level":"INFO","timestamp":"2026-01-10T02:15:28.486Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":7,"fileNames":["Screenshot_20260109-115004.png","Screenshot_20260109-115009.png","Screenshot_20260109-114954.png","Screenshot_20260109-114950.png","Screenshot_20260109-115014.png","Screenshot_20260109-114959.png","Screenshot_20260109-115019.png"],"event":"CHECK_START"}}
+uploadOptimizer-BuJ_zntV.js:56 {"level":"INFO","timestamp":"2026-01-10T02:15:28.486Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":7,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
+uploadOptimizer-BuJ_zntV.js:56 Calculating file hashes for batch {count: 7, fileNames: Array(5), event: 'FILE_HASH_START'}
+uploadOptimizer-BuJ_zntV.js:56 Client hash generated {hashPreview: '77da6db1a3ea447b...', imageLength: 361808}
+uploadOptimizer-BuJ_zntV.js:56 Client hash generated {hashPreview: '2fef7c32e7ade956...', imageLength: 358192}
+uploadOptimizer-BuJ_zntV.js:56 Client hash generated {hashPreview: '123ed0f7c1779da8...', imageLength: 352840}
+uploadOptimizer-BuJ_zntV.js:56 Client hash generated {hashPreview: '683f779ece452929...', imageLength: 323908}
+uploadOptimizer-BuJ_zntV.js:56 Client hash generated {hashPreview: '214e65a8945d0059...', imageLength: 358284}
+uploadOptimizer-BuJ_zntV.js:56 Client hash generated {hashPreview: '733bc029c57c870a...', imageLength: 361532}
+uploadOptimizer-BuJ_zntV.js:56 Client hash generated {hashPreview: 'bde24a1125d888e1...', imageLength: 361020}
+uploadOptimizer-BuJ_zntV.js:56 File hash batch complete {totalFiles: 7, successfulHashes: 7, failedHashes: 0, durationMs: 34, avgPerFileMs: '4.86', …}
+uploadOptimizer-BuJ_zntV.js:56 {"level":"INFO","timestamp":"2026-01-10T02:15:28.520Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":7,"durationMs":34,"event":"HASHING_COMPLETE"}}
+uploadOptimizer-BuJ_zntV.js:56 {"level":"INFO","timestamp":"2026-01-10T02:15:28.520Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+uploadOptimizer-BuJ_zntV.js:56 {"level":"INFO","timestamp":"2026-01-10T02:15:31.161Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":7,"trueDuplicates":0,"needsUpgrade":0,"newFiles":7,"durationMs":2675,"avgPerFileMs":"382.14","event":"PHASE1_COMPLETE"}}
+uploadOptimizer-BuJ_zntV.js:56 {"level":"INFO","timestamp":"2026-01-10T02:15:31.161Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":7,"duplicates":0,"upgrades":0,"newFiles":7,"event":"CHECK_COMPLETE"}}
+uploadOptimizer-BuJ_zntV.js:56 {"level":"INFO","timestamp":"2026-01-10T02:15:31.161Z","hook":"useFileUpload","message":"Successfully extracted all files from ZIP.","context":{"fileName":"Photos-3-001 (9).zip","size":1860122,"extractedCount":7}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"INFO","timestamp":"2026-01-10T02:15:33.025Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":7,"isStoryMode":true,"forceReanalysis":false,"useAsync":false}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:15:33.025Z","service":"clientService","message":"Creating analysis story.","context":{"title":"Known Power Draw ","summary":"This comes with a known AC power drawn for the timeframe while these were captured","timelineCount":7,"hasUserContext":true}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"INFO","timestamp":"2026-01-10T02:15:33.052Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"analyze?sync=true","method":"POST"}}
+uploadOptimizer-BuJ_zntV.js:2  POST https://bmsview.netlify.app/.netlify/functions/analyze?sync=true 500 (Internal Server Error)
+Oe @ uploadOptimizer-BuJ_zntV.js:2
 await in Oe
-st @ uploadOptimizer-17v0LGZI.js:2
-Kr @ uploadOptimizer-17v0LGZI.js:55
-await in Kr
-Se @ AdminDashboard-DGAxZHh-.js:7
-L @ AdminDashboard-DGAxZHh-.js:2
+st @ uploadOptimizer-BuJ_zntV.js:2
+qr @ uploadOptimizer-BuJ_zntV.js:55
+await in qr
+Ce @ AdminDashboard-tuB_P8E1.js:7
+Y @ AdminDashboard-tuB_P8E1.js:2
 Va @ index-BzNk4tgp.js:5
 Ha @ index-BzNk4tgp.js:5
 $a @ index-BzNk4tgp.js:5
@@ -81,31 +179,8 @@ Gu @ index-BzNk4tgp.js:5
 Ii @ index-BzNk4tgp.js:5
 si @ index-BzNk4tgp.js:5
 of @ index-BzNk4tgp.js:5
-uploadOptimizer-17v0LGZI.js:2 {"level":"ERROR","timestamp":"2026-01-10T01:01:04.883Z","service":"clientService","message":"API fetch failed.","context":{"endpoint":"analyze","method":"POST","status":400,"error":{"code":"missing_parameters","message":"Missing required parameters","details":{"missing":["jobId","fileData"]}}}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"ERROR","timestamp":"2026-01-10T01:01:04.883Z","service":"clientService","message":"API fetch encountered a network or parsing error.","context":{"endpoint":"analyze","method":"POST","error":"[object Object]"}}
-AdminDashboard-DGAxZHh-.js:7 {"level":"ERROR","timestamp":"2026-01-10T01:01:04.884Z","component":"AdminDashboard","message":"Story mode analysis failed.","context":{"error":"[object Object]"}}
-AdminDashboard-DGAxZHh-.js:7 {"level":"INFO","timestamp":"2026-01-10T01:01:14.135Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":7,"isStoryMode":true,"forceReanalysis":false}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T01:01:14.135Z","service":"clientService","message":"Creating analysis story.","context":{"title":"Enhanced Info","summary":"Precise Power Draw info for Net charging calculation.","timelineCount":7,"hasUserContext":true}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"INFO","timestamp":"2026-01-10T01:01:14.165Z","service":"clientService","message":"API fetch started.","context":{"endpoint":"analyze","method":"POST"}}
-uploadOptimizer-17v0LGZI.js:2  POST https://bmsview.netlify.app/.netlify/functions/analyze 400 (Bad Request)
-Oe @ uploadOptimizer-17v0LGZI.js:2
-await in Oe
-st @ uploadOptimizer-17v0LGZI.js:2
-Kr @ uploadOptimizer-17v0LGZI.js:55
-await in Kr
-Se @ AdminDashboard-DGAxZHh-.js:7
-L @ AdminDashboard-DGAxZHh-.js:2
-Va @ index-BzNk4tgp.js:5
-Ha @ index-BzNk4tgp.js:5
-$a @ index-BzNk4tgp.js:5
-Wo @ index-BzNk4tgp.js:5
-Ho @ index-BzNk4tgp.js:5
-(anonymous) @ index-BzNk4tgp.js:5
-Iu @ index-BzNk4tgp.js:8
-Gu @ index-BzNk4tgp.js:5
-Ii @ index-BzNk4tgp.js:5
-si @ index-BzNk4tgp.js:5
-of @ index-BzNk4tgp.js:5
-uploadOptimizer-17v0LGZI.js:2 {"level":"ERROR","timestamp":"2026-01-10T01:01:17.621Z","service":"clientService","message":"API fetch failed.","context":{"endpoint":"analyze","method":"POST","status":400,"error":{"code":"missing_parameters","message":"Missing required parameters","details":{"missing":["jobId","fileData"]}}}}
-uploadOptimizer-17v0LGZI.js:2 {"level":"ERROR","timestamp":"2026-01-10T01:01:17.621Z","service":"clientService","message":"API fetch encountered a network or parsing error.","context":{"endpoint":"analyze","method":"POST","error":"[object Object]"}}
-AdminDashboard-DGAxZHh-.js:7 {"level":"ERROR","timestamp":"2026-01-10T01:01:17.621Z","component":"AdminDashboard","message":"Story mode analysis failed.","context":{"error":"[object Object]"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"ERROR","timestamp":"2026-01-10T02:15:41.952Z","service":"clientService","message":"API fetch failed.","context":{"endpoint":"analyze?sync=true","method":"POST","status":500,"error":"Failed to process story mode analysis"}}
+uploadOptimizer-BuJ_zntV.js:2 {"level":"ERROR","timestamp":"2026-01-10T02:15:41.952Z","service":"clientService","message":"API fetch encountered a network or parsing error.","context":{"endpoint":"analyze?sync=true","method":"POST","error":"Failed to process story mode analysis"}}
+AdminDashboard-tuB_P8E1.js:7 {"level":"ERROR","timestamp":"2026-01-10T02:15:41.952Z","component":"AdminDashboard","message":"Story mode analysis failed.","context":{"error":"Failed to process story mode analysis"}}
+AdminDashboard-tuB_P8E1.js:7 [Violation] 'setTimeout' handler took 53ms
+AdminDashboard-tuB_P8E1.js:7 [Violation] 'setTimeout' handler took 54ms

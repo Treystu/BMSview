@@ -829,7 +829,8 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
             id: originalId,
             fileName: record.fileName,
             timestamp: record.timestamp,
-            systemId: record.analysis?.systemId || null, // Top-level for query efficiency
+            systemId: record.systemId || null, // Top-level for query efficiency (FIXED: was incorrectly reading from analysis)
+            systemName: record.systemName || null, // Preserve system name
             analysis: record.analysis,
             updatedAt: new Date(),
             _wasUpgraded: true,
@@ -864,7 +865,8 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
           { id: originalId },
           {
             $set: {
-              systemId: record.analysis?.systemId || null,
+              systemId: record.systemId || null, // FIXED: was incorrectly reading from analysis
+              systemName: record.systemName || null,
               analysis: record.analysis,
               timestamp: record.timestamp,
               fileName: record.fileName,
@@ -885,7 +887,8 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         id: record.id,
         fileName: record.fileName,
         timestamp: record.timestamp,
-        systemId: record.analysis?.systemId || null, // Top-level for query efficiency
+        systemId: record.systemId || null, // FIXED: was incorrectly reading from analysis
+        systemName: record.systemName || null, // Preserve system name for linked records
         analysis: record.analysis,
         contentHash,
         createdAt: new Date(),
@@ -900,7 +903,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
       // All admins share the same analysis data indexed by contentHash
       log.debug('Storing new analysis record', {
         recordId: record.id,
-        systemId: record.analysis?.systemId || null,
+        systemId: record.systemId || null, // FIXED: was incorrectly reading from analysis
         hasContentHash: !!contentHash,
         qualityScore: record.validationScore
       });
@@ -909,7 +912,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
 
       log.info('Analysis results stored for deduplication', {
         recordId: record.id,
-        systemId: record.analysis?.systemId || null,
+        systemId: record.systemId || null, // FIXED: was incorrectly reading from analysis
         contentHash: contentHash.substring(0, 16) + '...',
         qualityScore: record.validationScore
       });
@@ -921,11 +924,12 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         const historyRecord = {
           id: record.id,
           timestamp: record.timestamp,
-          systemId: record.analysis?.systemId || null,
-          systemName: null, // Will be filled when linked to a system
+          systemId: record.systemId || null, // FIXED: was incorrectly reading from analysis
+          systemName: record.systemName || null, // FIXED: was always null, now propagates linked name
           analysis: record.analysis,
           weather: record.weather || null,
-          dlNumber: record.analysis?.dlNumber || null,
+          dlNumber: record.analysis?.dlNumber || record.analysis?.hardwareSystemId || null,
+          hardwareSystemId: record.analysis?.hardwareSystemId || null, // Ensure hardware ID is persisted
           fileName: record.fileName,
           analysisKey: contentHash // Use contentHash as analysisKey for consistency
         };
@@ -934,7 +938,7 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
 
         log.info('Dual-write to history collection successful', {
           recordId: record.id,
-          systemId: record.analysis?.systemId
+          systemId: record.systemId || null // FIXED: was incorrectly reading from analysis
         });
       } catch (/** @type {any} */ historyError) {
         log.warn('Dual-write to history collection failed (non-fatal)', {

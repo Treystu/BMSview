@@ -2696,7 +2696,7 @@ export const createAnalysisStory = async (title: string, summary: string, timeli
         });
 
         return {
-            image: image.split(','),
+            image: image.split(',')[1],
             mimeType: file.type,
             fileName: file.name,
         };
@@ -2727,7 +2727,7 @@ export const uploadStoryPhoto = async (storyId: string, photo: File, caption: st
 
     return apiFetch<StoryPhoto>(`upload-story-photo?storyId=${storyId}&caption=${caption}&timestamp=${timestamp}`, {
         method: 'POST',
-        body: JSON.stringify({ image: image.split(',') }),
+        body: JSON.stringify({ image: image.split(',')[1] }),
     });
 };
 
