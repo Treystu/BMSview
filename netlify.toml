@@ -46,6 +46,20 @@ node_bundler = "esbuild"
 [functions."generate-insights".build_options]
 format = "cjs"
 
+# Configure analyze function to reduce bundle size
+[functions."analyze"]
+node_bundler = "esbuild"
+external_node_modules = ["@google/genai", "mongodb", "nodemailer", "uuid"]
+[functions."analyze".build_options]
+format = "cjs"
+
+# Configure get-job-status function
+[functions."get-job-status"]
+node_bundler = "esbuild"
+external_node_modules = ["mongodb"]
+[functions."get-job-status".build_options]
+format = "cjs"
+
 # Admin diagnostics function - needs longer timeout for comprehensive testing
 [functions."admin-diagnostics"]
 # Note: This is a hint; actual timeout depends on Netlify plan tier
