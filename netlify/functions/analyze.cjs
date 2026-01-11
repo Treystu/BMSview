@@ -66,13 +66,13 @@ async function ensureSystemAssociation(record, log) {
     // Use IntelligentAssociator logic
     const systemsCollection = await getCollection(COLLECTIONS.SYSTEMS);
     const systems = await systemsCollection.find({}).toArray();
-    
+
     // We need limited stats for semantic validation (optional but good)
     // For immediate analysis, we might not have full stats handy, so we pass empty stats
     // or we could do a quick aggregation if latency permits. 
     // For now, let's trust the Associator's fuzzy/strict logic primarily.
     const associator = new IntelligentAssociator(systems, {});
-    
+
     const result = associator.findMatch(record);
 
     if (result.systemId) {
@@ -90,13 +90,13 @@ async function ensureSystemAssociation(record, log) {
 
       await historyCollection.updateOne(
         { id: record.id },
-        { 
-          $set: { 
-            systemId: system.id, 
-            systemName: system.name, 
-            hardwareSystemId: finalHwId, 
-            dlNumber: finalHwId 
-          } 
+        {
+          $set: {
+            systemId: system.id,
+            systemName: system.name,
+            hardwareSystemId: finalHwId,
+            dlNumber: finalHwId
+          }
         }
       );
 
@@ -123,10 +123,10 @@ async function ensureSystemAssociation(record, log) {
 
       return updated;
     } else {
-      log.info('Auto-association: No matching system found', { 
-        status: result.status, 
-        reason: result.reason, 
-        isNewCandidate: result.isNewCandidate 
+      log.info('Auto-association: No matching system found', {
+        status: result.status,
+        reason: result.reason,
+        isNewCandidate: result.isNewCandidate
       });
       return record;
     }
@@ -587,7 +587,7 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
       if (record.systemId && record.timestamp) {
         const historyCol = await getCollection(COLLECTIONS.HISTORY);
         const resultsCol = await getCollection(COLLECTIONS.ANALYSIS_RESULTS);
-        
+
         // Look for existing record with same System + Time (Minute precision)
         const date = new Date(record.timestamp);
         date.setSeconds(0, 0);
@@ -612,31 +612,31 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
           // Actually, we can't easily have multiple hashes per record in the current schema without an array.
           // But we CAN update the 'analysis-results' collection to point the NEW hash to the OLD record ID.
           // This ensures future uploads of this file hit the OLD record.
-          
+
           if (contentHash) {
-             // Upsert result to point contentHash -> functionalDup.id
-             await resultsCol.updateOne(
-               { contentHash },
-               { 
-                 $set: { 
-                   id: functionalDup.id, // Point to OLD ID
-                   // Copy other metadata from old record if needed, or keep new analysis?
-                   // Let's keep the NEW analysis if it's better?
-                   // For now, just linking the ID is the key.
-                   updatedAt: new Date()
-                 }
-               },
-               { upsert: true }
-             );
-             
-             log.info('Redirected new contentHash to existing record', { contentHash, targetId: functionalDup.id });
-             
-             // 2. Return the EXISTING record to the client
-             record = {
-               ...functionalDup,
-               isDuplicate: true,
-               _functionalDuplicate: true
-             };
+            // Upsert result to point contentHash -> functionalDup.id
+            await resultsCol.updateOne(
+              { contentHash },
+              {
+                $set: {
+                  id: functionalDup.id, // Point to OLD ID
+                  // Copy other metadata from old record if needed, or keep new analysis?
+                  // Let's keep the NEW analysis if it's better?
+                  // For now, just linking the ID is the key.
+                  updatedAt: new Date()
+                }
+              },
+              { upsert: true }
+            );
+
+            log.info('Redirected new contentHash to existing record', { contentHash, targetId: functionalDup.id });
+
+            // 2. Return the EXISTING record to the client
+            record = {
+              ...functionalDup,
+              isDuplicate: true,
+              _functionalDuplicate: true
+            };
           }
         }
       }
@@ -720,12 +720,62 @@ async function handleAsyncAnalysis(requestBody, headers, log, requestContext) {
   requestContext.jobId = jobId;
 
   log.info('Async analyze request received.', { jobId, fileBytes: fileData ? fileData.length : 0 });
-  log.exit(202, { mode: 'async' });
-  return {
-    statusCode: 202,
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ success: true, jobId, message: 'Async analysis accepted for processing' })
-  };
+
+  // Import async client dynamically to avoid bundle issues
+  const { triggerAnalysisAsync } = require('./utils/analysis-async-client.cjs');
+
+  try {
+    // Extract additional data from request body if available
+    const { fileName, mimeType, systemId, forceReanalysis, systems } = requestBody || {};
+
+    // Trigger the async workload
+    const result = await triggerAnalysisAsync({
+      jobId,
+      fileData,
+      fileName: fileName || 'unknown.png',
+      mimeType: mimeType || 'image/png',
+      systemId,
+      forceReanalysis,
+      systems
+    }, log);
+
+    log.info('Async analysis job triggered successfully.', { jobId, eventId: result.eventId });
+    log.exit(202, { mode: 'async', eventId: result.eventId });
+
+    return {
+      statusCode: 202,
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        success: true,
+        jobId,
+        message: 'Async analysis accepted for processing',
+        eventId: result.eventId
+      })
+    };
+
+  } catch (error) {
+    log.error('Failed to trigger async analysis job.', {
+      jobId,
+      error: error.message,
+      stack: error.stack
+    });
+
+    // Store error progress event
+    await storeProgressEvent(jobId, {
+      stage: 'error',
+      progress: 0,
+      message: `Failed to start analysis: ${error.message}`
+    });
+
+    log.exit(500);
+    return errorResponse(
+      500,
+      'async_trigger_failed',
+      'Failed to trigger async analysis',
+      { error: error.message },
+      { ...headers, 'Content-Type': 'application/json' }
+    );
+  }
 }
 
 /**

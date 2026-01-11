@@ -78,13 +78,31 @@ export const analyzeBmsScreenshot = async (file: File, forceReanalysis: boolean 
     }
 
     try {
-        const responseJson = await performAnalysisRequest(file, endpoint, analysisContext);
+        const imagePayload = await fileWithMetadataToBase64(file);
+
+        // For async analysis, we need to send a different payload structure
+        let requestBody: Record<string, unknown>;
+        if (useAsync) {
+            // Generate a unique jobId for async requests
+            const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            requestBody = {
+                jobId,
+                fileData: imagePayload.image,
+                fileName: imagePayload.fileName,
+                mimeType: imagePayload.mimeType,
+                systemId,
+                forceReanalysis
+            };
+        } else {
+            // Sync requests use the existing payload structure
+            requestBody = { image: imagePayload };
+        }
+
+        const responseJson = await performAnalysisRequest(file, endpoint, analysisContext, requestBody);
 
         // Handle Async Response (202 Accepted)
         if (useAsync) {
-            // In async mode, we get { success: true, jobId: "..." }
-            // We need to return a placeholder AnalysisData or handle polling.
-            // For now, let's return a "Pending" record.
+            // In async mode, we get { success: true, jobId: "...", eventId?: "..." }
             log('info', 'Async analysis accepted.', responseJson);
             const jobId = typeof responseJson.jobId === 'string' ? responseJson.jobId : 'unknown-job';
             return {
@@ -213,7 +231,7 @@ export const checkFileDuplicate = async (file: File): Promise<{
         // Fallback or if hash failing: Use worker (without resizing per user feedback) for check
         // This uploads the file, which is slower but reliable
         const endpoint = '/.netlify/functions/analyze?sync=true&check=true';
-        const responseJson = await performAnalysisRequest(file, endpoint, checkContext, 25000); // 25s timeout
+        const responseJson = await performAnalysisRequest(file, endpoint, checkContext, undefined, 25000); // 25s timeout
 
         const totalDurationMs = Date.now() - startTime;
         const result = responseJson;
@@ -268,7 +286,7 @@ export const checkFileDuplicate = async (file: File): Promise<{
  * Shared helper to perform analysis requests (analyze or duplicate check)
  * Tries to use Worker (for resizing efficiency) then falls back to main thread.
  */
-async function performAnalysisRequest(file: File, relativeEndpoint: string, context: object, timeoutMs: number = 60000): Promise<Record<string, unknown>> {
+async function performAnalysisRequest(file: File, relativeEndpoint: string, context: object, requestBody?: Record<string, unknown>, timeoutMs: number = 60000): Promise<Record<string, unknown>> {
 
 
     // 1. Direct Fetch (Main Thread) - Worker path removed for stability
@@ -285,10 +303,13 @@ async function performAnalysisRequest(file: File, relativeEndpoint: string, cont
     try {
         log('info', `Submitting request to ${relativeEndpoint} (Basic Fetch)`, context);
 
+        // Use provided request body or default to image payload
+        const body = requestBody || { image: imagePayload };
+
         const response = await fetch(relativeEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: imagePayload }),
+            body: JSON.stringify(body),
             signal: controller.signal,
         });
 

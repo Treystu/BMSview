@@ -1,5 +1,6 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useJobPolling } from '../hooks/useJobPolling';
 import {
     autoAssociateRecords,
     backfillHourlyCloudData,
@@ -26,6 +27,7 @@ import { analyzeBmsScreenshot } from '../services/geminiService';
 import { useAdminState } from '../state/adminState';
 import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../types';
 import { checkFilesForDuplicates, partitionCachedFiles, type CachedDuplicateResult, type DuplicateCheckResult } from '../utils/duplicateChecker';
+
 import BulkUpload from './BulkUpload';
 import DiagnosticsModal from './DiagnosticsModal';
 import EditSystemModal from './EditSystemModal';
@@ -99,6 +101,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     // Cache of ALL systems for dropdowns (independent of pagination)
     const [allSystems, setAllSystems] = useState<BmsSystem[]>([]);
 
+    // Track job IDs from async analysis requests
+    const [asyncJobIds, setAsyncJobIds] = useState<string[]>([]);
+
     // --- Data Fetching ---
     const fetchData = useCallback(async (page: number, type: 'systems' | 'history' | 'all', options: { forceRefresh?: boolean } = {}) => {
         log('info', 'Fetching admin page data.', { page, type, ...options });
@@ -140,6 +145,78 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             dispatch({ type: 'SET_ERROR', payload: error });
         }
     }, [dispatch]); // Removed page dependencies to allow fetching specific pages
+
+    // --- Job Polling for Async Analysis ---
+    const jobPollingConfig: {
+        onComplete: (jobId: string, recordId: string) => Promise<void>;
+        onError: (jobId: string, error: string) => void;
+    } = {
+        onComplete: useCallback(async (jobId: string, recordId: string) => {
+            log('info', 'Async analysis job completed', { jobId, recordId });
+
+            // Fetch the completed analysis record
+            try {
+                const historyResponse = await getAnalysisHistory(1, 1);
+                const completedRecord = historyResponse.items.find(r => r.id === recordId);
+
+                if (completedRecord) {
+                    // Update the bulk upload results with the completed record
+                    dispatch({
+                        type: 'UPDATE_BULK_JOB_COMPLETED',
+                        payload: {
+                            record: completedRecord,
+                            fileName: completedRecord.fileName || 'Unknown'
+                        }
+                    });
+
+                    // Update local cache
+                    const localCacheModule = await import('../services/localCache');
+                    await localCacheModule.historyCache.put(completedRecord, 'synced');
+
+                    // Refresh history table
+                    await fetchData(historyPage, 'history', { forceRefresh: true });
+                }
+            } catch (error) {
+                log('error', 'Failed to fetch completed analysis record', { jobId, recordId, error });
+            }
+
+            // Remove job from tracking
+            setAsyncJobIds(prev => prev.filter(id => id !== jobId));
+        }, [dispatch, historyPage, fetchData]),
+
+        onError: useCallback((jobId: string, error: string) => {
+            log('error', 'Async analysis job failed', { jobId, error });
+
+            // Find the corresponding result and update with error
+            const failedResult = bulkUploadResults.find(r =>
+                r.data && typeof r.data === 'object' && '_recordId' in r.data && r.data._recordId === jobId
+            );
+
+            if (failedResult) {
+                dispatch({
+                    type: 'UPDATE_BULK_UPLOAD_RESULT',
+                    payload: {
+                        fileName: failedResult.fileName,
+                        error: `Failed: ${error}`
+                    }
+                });
+            }
+
+            // Remove job from tracking
+            setAsyncJobIds(prev => prev.filter(id => id !== jobId));
+        }, [dispatch, bulkUploadResults])
+    };
+
+    const { isPolling, startPolling, stopPolling } = useJobPolling(asyncJobIds, jobPollingConfig);
+
+    // Auto-start polling when there are jobs
+    useEffect(() => {
+        if (asyncJobIds.length > 0 && !isPolling) {
+            startPolling();
+        } else if (asyncJobIds.length === 0 && isPolling) {
+            stopPolling();
+        }
+    }, [asyncJobIds, isPolling, startPolling, stopPolling]);
 
     // Initial data load and background cache building
     useEffect(() => {
@@ -364,6 +441,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 // If async, we might just get a jobId and status='pending'
                 // We should handle that gracefully in the UI
                 if (analysisData.status === 'pending') {
+                    // Track the job ID for polling
+                    if (analysisData._recordId) {
+                        setAsyncJobIds(prev => [...prev, analysisData._recordId!]);
+                    }
+
                     dispatch({
                         type: 'UPDATE_BULK_UPLOAD_RESULT',
                         payload: {

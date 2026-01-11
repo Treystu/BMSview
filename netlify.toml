@@ -25,6 +25,15 @@ async_workloads = true
 [functions."generate-insights-background".build_options]
 format = "esm"
 
+# Async Workloads configuration for BMS analysis
+# Uses Netlify's durable async workload system for extended execution
+[functions."analysis-background"]
+node_bundler = "esbuild"
+external_node_modules = ["@netlify/async-workloads", "mongodb"]
+async_workloads = true
+[functions."analysis-background".build_options]
+format = "esm"
+
 # Fix for size limits on synchronous functions
 # Externalize heavy deps and use esbuild for tree-shaking potential
 [functions."generate-insights-with-tools"]
