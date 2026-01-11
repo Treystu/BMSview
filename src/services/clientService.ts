@@ -1255,18 +1255,28 @@ export const getUnifiedHistory = async (systemId: string): Promise<UnifiedTimeli
     let historyRecords: AnalysisRecord[] = [];
     let weatherRecords: WeatherData[] = [];
 
-    if (!isAllData) {
-        log('info', 'Fetching history records for unified timeline.', { systemId });
-        try {
-            const historyResponse = await getAnalysisHistory(1, 'all', { strategy: FetchStrategy.FORCE_FRESH });
-            historyRecords = historyResponse.items;
-            log('info', 'History records fetched for unified timeline.', { count: historyRecords.length });
-        } catch (error) {
-            log('error', 'Failed to fetch history for unified timeline.', { error: String(error) });
+    log('info', 'Fetching history records for unified timeline.', { systemId, isAllData });
+    try {
+        const historyResponse = await getAnalysisHistory(1, 'all', { strategy: FetchStrategy.FORCE_FRESH });
+        historyRecords = historyResponse.items;
+        log('info', 'History records fetched for unified timeline.', { count: historyRecords.length });
+
+        // FIX: Filter records by systemId unless showing all data
+        // This is the critical fix - previously records were not filtered by system
+        if (!isAllData && systemId) {
+            const beforeFilter = historyRecords.length;
+            historyRecords = historyRecords.filter(r => r.systemId === systemId);
+            log('info', 'Filtered history records by systemId.', {
+                systemId,
+                beforeFilter,
+                afterFilter: historyRecords.length
+            });
         }
-        // Weather records are currently empty - could be populated from cache in future
-        weatherRecords = [];
+    } catch (error) {
+        log('error', 'Failed to fetch history for unified timeline.', { error: String(error) });
     }
+    // Weather records are currently empty - could be populated from cache in future
+    weatherRecords = [];
 
     const unified: UnifiedTimelinePoint[] = [
         ...historyRecords.map(r => ({ type: 'analysis' as const, timestamp: r.timestamp, data: r })),
@@ -1277,7 +1287,8 @@ export const getUnifiedHistory = async (systemId: string): Promise<UnifiedTimeli
         total: unified.length,
         history: historyRecords.length,
         weather: weatherRecords.length,
-        isAllData
+        isAllData,
+        systemId
     });
 
     return unified;
