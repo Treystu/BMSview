@@ -237,3 +237,4 @@ exports.handler = async (event, context) => {
         return errorResponse(500, 'internal_error', 'Failed to get job status', { message }, headers);
     }
 };
+// Trigger redeploy Sat Jan 10 22:27:04 HST 2026
