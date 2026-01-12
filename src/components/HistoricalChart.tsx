@@ -1,9 +1,59 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { loadChartPreferences, saveChartPreferences } from '../services/adminPreferences';
 import { getHourlySocPredictions, getSystemAnalytics, getUnifiedHistory, syncWeather, SystemAnalytics, type UnifiedTimelinePoint } from '../services/clientService';
 import type { AnalysisRecord, BmsSystem } from '../types';
 import { calculateSystemAnalytics } from '../utils/analytics';
 import AlertAnalysis from './admin/AlertAnalysis';
 import SpinnerIcon from './icons/SpinnerIcon';
+
+// Error Boundary to prevent chart crashes from breaking the entire page
+interface ChartErrorBoundaryState {
+    hasError: boolean;
+    error: Error | null;
+}
+
+class ChartErrorBoundary extends Component<{ children: React.ReactNode; onRetry?: () => void }, ChartErrorBoundaryState> {
+    constructor(props: { children: React.ReactNode; onRetry?: () => void }) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+
+    static getDerivedStateFromError(error: Error): ChartErrorBoundaryState {
+        return { hasError: true, error };
+    }
+
+    componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+        console.error('[HistoricalChart] Error caught by boundary:', error, errorInfo);
+    }
+
+    handleRetry = () => {
+        this.setState({ hasError: false, error: null });
+        this.props.onRetry?.();
+    };
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="flex flex-col items-center justify-center h-96 bg-gray-900/50 rounded-lg p-8 text-center">
+                    <div className="text-red-400 text-lg font-medium mb-2">Chart Error</div>
+                    <p className="text-gray-400 mb-4 max-w-md">
+                        An error occurred while rendering the chart. This may be due to data processing issues.
+                    </p>
+                    <p className="text-gray-500 text-sm mb-4 font-mono">
+                        {this.state.error?.message || 'Unknown error'}
+                    </p>
+                    <button
+                        onClick={this.handleRetry}
+                        className="px-4 py-2 bg-secondary hover:bg-secondary/80 text-white rounded-md transition-colors"
+                    >
+                        Retry
+                    </button>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
 
 type MetricKey = 'stateOfCharge' | 'overallVoltage' | 'current' | 'temperature' | 'power' | 'cellVoltageDifference' | 'clouds' | 'uvi' | 'temp' | 'soh' | 'mosTemperature' | 'solarPower' | 'irradiance';
 type Axis = 'left' | 'right';
@@ -342,7 +392,9 @@ const ChartControls: React.FC<{
     setManualBucketSize: (size: string | null) => void;
     bandEnabled: boolean;
     setBandEnabled: (enabled: boolean) => void;
-}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, averagingEnabled, setAveragingEnabled, manualBucketSize, setManualBucketSize, bandEnabled, setBandEnabled }) => {
+    onSavePreferences?: () => void;
+    preferencesSaved?: boolean;
+}> = ({ systems, selectedSystemId, setSelectedSystemId, startDate, setStartDate, endDate, setEndDate, metricConfig, setMetricConfig, onResetView, hasChartData, zoomPercentage, setZoomPercentage, chartView, setChartView, hourlyMetric, setHourlyMetric, averagingEnabled, setAveragingEnabled, manualBucketSize, setManualBucketSize, bandEnabled, setBandEnabled, onSavePreferences, preferencesSaved }) => {
     const [isMetricConfigOpen, setIsMetricConfigOpen] = useState(false);
     const metricConfigRef = useRef<HTMLDivElement>(null);
 
@@ -488,7 +540,19 @@ const ChartControls: React.FC<{
                             </label>
                         </div>
 
-
+                        {/* Save Preferences Button */}
+                        {onSavePreferences && (
+                            <button
+                                onClick={onSavePreferences}
+                                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${preferencesSaved
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-gray-600 hover:bg-gray-500 text-white'
+                                    }`}
+                                title="Save current chart configuration as default"
+                            >
+                                {preferencesSaved ? '✓ Saved' : '💾 Save as Default'}
+                            </button>
+                        )}
 
                         <div className="relative" ref={metricConfigRef}>
                             <button onClick={() => setIsMetricConfigOpen(o => !o)} className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md transition-colors">Configure Metrics</button>
@@ -562,10 +626,11 @@ const SvgChart: React.FC<{
     } = chartDimensions;
 
     const dataToRender = useMemo<ChartPoint[]>(() => {
+        if (!dataLODs || !dataLODs['raw']) return [];
         if (!averagingConfig.enabled) return dataLODs['raw'];
         const bucketKey = averagingConfig.manualBucketSize ? String(averagingConfig.manualBucketSize) : averagingConfig.autoBucketKey;
         if (bucketKey === 'raw') return dataLODs['raw'];
-        return dataLODs[bucketKey] || dataLODs['raw'];
+        return dataLODs[bucketKey] || dataLODs['raw'] || [];
     }, [dataLODs, averagingConfig]);
 
     const zoomRatio = chartWidth / viewBox.width;
@@ -594,7 +659,7 @@ const SvgChart: React.FC<{
         const rightMetrics = activeMetrics.filter(m => m.axis === 'right').map(m => m.key);
 
         const calculateYAxis = (keys: MetricKey[]) => {
-            if (keys.length === 0) return { scale: () => 0, ticks: [], label: '' };
+            if (keys.length === 0 || !dataToRender || dataToRender.length === 0) return { scale: () => 0, ticks: [], label: '' };
             let yMin = Infinity, yMax = -Infinity;
             keys.forEach(key => dataToRender.forEach((d) => {
                 const value = getPointNumber(d, key);
@@ -1462,14 +1527,17 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     annotations = [],
     onZoomDomainChange
 }) => {
-    const [selectedSystemId, setSelectedSystemId] = useState<string>('');
-    // Default to showing core battery metrics - users can enable/disable via config panel
-    const [metricConfig, setMetricConfig] = useState<Partial<Record<MetricKey, { axis: Axis }>>>({
-        stateOfCharge: { axis: 'left' },
-        overallVoltage: { axis: 'left' },
-        current: { axis: 'right' },
-        power: { axis: 'right' }
-    });
+    // Load saved preferences on mount
+    const savedPrefs = useMemo(() => loadChartPreferences(), []);
+
+    const [selectedSystemId, setSelectedSystemId] = useState<string>(savedPrefs.defaultSystemId || '');
+    const [metricConfig, setMetricConfig] = useState<Partial<Record<MetricKey, { axis: Axis }>>>(
+        savedPrefs.metricConfig || {
+            stateOfCharge: { axis: 'left' },
+            current: { axis: 'right' },
+            power: { axis: 'right' }
+        }
+    );
     const [hiddenMetrics] = useState<Set<MetricKey>>(new Set());
 
     // Helper to get local time string for inputs (YYYY-MM-DDTHH:mm)
@@ -1487,15 +1555,16 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     const [endDate, setEndDate] = useState<string>(''); // Empty defaults to "Now"
 
     const [timelineData, setTimelineData] = useState<TimelineData | null>(null);
-    const [bandEnabled, setBandEnabled] = useState<boolean>(false);
+    const [bandEnabled, setBandEnabled] = useState<boolean>(savedPrefs.bandEnabled ?? false);
 
     const [analyticsData, setAnalyticsData] = useState<SystemAnalytics | null>(null);
-    const [chartView, setChartView] = useState<ChartView>('timeline');
-    const [hourlyMetric, setHourlyMetric] = useState<MetricKey>('power');
+    const [chartView, setChartView] = useState<ChartView>(savedPrefs.chartView || 'timeline');
+    const [hourlyMetric, setHourlyMetric] = useState<MetricKey>(savedPrefs.hourlyMetric || 'power');
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [averagingEnabled, setAveragingEnabled] = useState(true);
-    const [manualBucketSize, setManualBucketSize] = useState<string | null>(null);
+    const [averagingEnabled, setAveragingEnabled] = useState(savedPrefs.averagingEnabled ?? true);
+    const [manualBucketSize, setManualBucketSize] = useState<string | null>(savedPrefs.manualBucketSize ?? null);
+    const [preferencesSaved, setPreferencesSaved] = useState(false);
     const [predictiveData, setPredictiveData] = useState<PredictiveSocData | null>(null);
     const [predictiveLoading, setPredictiveLoading] = useState(false);
     const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false); // New: separate analytics loading
@@ -1818,6 +1887,21 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
         setViewBox({ x: 0, width: chartDimensions.chartWidth });
     };
 
+    const handleSavePreferences = useCallback(() => {
+        saveChartPreferences({
+            metricConfig,
+            chartView,
+            hourlyMetric,
+            averagingEnabled,
+            manualBucketSize,
+            bandEnabled,
+            defaultSystemId: selectedSystemId || undefined,
+        });
+        setPreferencesSaved(true);
+        // Reset the saved indicator after 2 seconds
+        setTimeout(() => setPreferencesSaved(false), 2000);
+    }, [metricConfig, chartView, hourlyMetric, averagingEnabled, manualBucketSize, bandEnabled, selectedSystemId]);
+
     const hasChartData = timelineData || (analyticsData?.hourlyAverages?.length ?? 0) > 0;
 
     return (
@@ -1836,6 +1920,8 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                 setManualBucketSize={setManualBucketSize}
                 bandEnabled={bandEnabled}
                 setBandEnabled={setBandEnabled}
+                onSavePreferences={handleSavePreferences}
+                preferencesSaved={preferencesSaved}
             />
             <div className="mt-4 min-h-[600px] relative">
                 {isGenerating && (
@@ -1855,17 +1941,19 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                             <div className="grid lg:grid-cols-3 gap-8 items-start">
                                 <div className="lg:col-span-2">
                                     {chartView === 'timeline' && timelineData && (
-                                        <SvgChart
-                                            chartData={timelineData}
-                                            metricConfig={metricConfig}
-                                            hiddenMetrics={hiddenMetrics}
-                                            viewBox={viewBox}
-                                            setViewBox={setViewBox}
-                                            chartDimensions={chartDimensions}
-                                            bandEnabled={bandEnabled}
-                                            annotations={annotations}
-                                            showSolarOverlay={showSolarOverlay}
-                                        />
+                                        <ChartErrorBoundary onRetry={prepareChartData}>
+                                            <SvgChart
+                                                chartData={timelineData}
+                                                metricConfig={metricConfig}
+                                                hiddenMetrics={hiddenMetrics}
+                                                viewBox={viewBox}
+                                                setViewBox={setViewBox}
+                                                chartDimensions={chartDimensions}
+                                                bandEnabled={bandEnabled}
+                                                annotations={annotations}
+                                                showSolarOverlay={showSolarOverlay}
+                                            />
+                                        </ChartErrorBoundary>
                                     )}
                                     {chartView === 'hourly' && (
                                         isAnalyticsLoading ? (
@@ -1874,7 +1962,9 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                                                 <span className="ml-4 text-gray-400">Loading Hourly Averages...</span>
                                             </div>
                                         ) : analyticsData ? (
-                                            <HourlyAverageChart analyticsData={analyticsData} metricKey={hourlyMetric} />
+                                            <ChartErrorBoundary onRetry={prepareChartData}>
+                                                <HourlyAverageChart analyticsData={analyticsData} metricKey={hourlyMetric} />
+                                            </ChartErrorBoundary>
                                         ) : (
                                             <div className="flex items-center justify-center h-96 text-gray-400">No analytics data available for selected period.</div>
                                         )
@@ -1887,7 +1977,9 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
                                                     <span className="ml-4 text-gray-400">Loading predictions...</span>
                                                 </div>
                                             ) : predictiveData ? (
-                                                <PredictiveSocChart data={predictiveData} />
+                                                <ChartErrorBoundary onRetry={prepareChartData}>
+                                                    <PredictiveSocChart data={predictiveData} />
+                                                </ChartErrorBoundary>
                                             ) : (
                                                 <div className="flex items-center justify-center h-96 text-gray-400">
                                                     Select a system to view hourly SOC predictions
