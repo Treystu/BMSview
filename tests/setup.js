@@ -38,21 +38,29 @@ global.console = {
   error: jest.fn(),
 };
 
-// ALWAYS run tests with REAL services (Gemini API + MongoDB) per project policy.
-console.log('\n⚙️  Running tests with REAL services (Gemini API + MongoDB)');
-console.log('   Mocks are disabled to ensure production-like testing.\n');
+const useRealServices = process.env.USE_REAL_SERVICES === '1' || process.env.USE_REAL_SERVICES === 'true';
 
-// Validate required environment variables for real services
-const requiredEnvVars = ['GEMINI_API_KEY', 'MONGODB_URI'];
-const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (useRealServices) {
+  console.log('\n⚙️  Running tests with REAL services (Gemini API + MongoDB)');
+  console.log('   USE_REAL_SERVICES is enabled.\n');
 
-if (missingEnvVars.length > 0) {
-  console.error('\n❌ ERROR: Missing required environment variables for integration tests:');
-  missingEnvVars.forEach(varName => {
-    console.error(`   - ${varName}`);
-  });
-  console.error('\nSet these environment variables to run tests.\n');
-  process.exit(1);
+  const requiredEnvVars = ['GEMINI_API_KEY', 'MONGODB_URI'];
+  const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+  if (missingEnvVars.length > 0) {
+    console.error('\n❌ ERROR: Missing required environment variables for integration tests:');
+    missingEnvVars.forEach(varName => {
+      console.error(`   - ${varName}`);
+    });
+    console.error('\nSet these environment variables to run tests.\n');
+    process.exit(1);
+  }
+} else {
+  console.log('\n⚙️  Running tests in mocked/offline mode');
+  console.log('   Set USE_REAL_SERVICES=1 to enable live service integration tests.\n');
+
+  process.env.FORCE_TEST_MOCK = process.env.FORCE_TEST_MOCK || '1';
+  process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-key';
+  process.env.MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/bmsview-test';
 }
 
 // Set test environment

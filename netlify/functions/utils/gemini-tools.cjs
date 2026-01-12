@@ -64,6 +64,7 @@ const { aggregateHourlyData, sampleDataPoints, computeBucketMetrics } = require(
 const forecasting = require('./forecasting.cjs');
 const patternAnalysis = require('./pattern-analysis.cjs');
 const energyBudget = require('./energy-budget.cjs');
+const { internalFetchJson } = require('./internal-netlify-fetch.cjs');
 
 // GitHub API integration for repository access
 let githubApi;
@@ -1210,10 +1211,6 @@ async function getWeatherData(params, log) {
 
   log.debug('Fetching weather data', { latitude, longitude, timestamp, type });
 
-  // Call the weather function
-  const baseUrl = process.env.URL || 'http://localhost:8888';
-  const url = `${baseUrl}/.netlify/functions/weather`;
-
   const body = {
     lat: latitude,
     lon: longitude,
@@ -1221,28 +1218,15 @@ async function getWeatherData(params, log) {
     ...(type === 'hourly' && { type: 'hourly' })
   };
 
-  log.debug('Calling weather API', { url, bodyKeys: Object.keys(body) });
+  log.debug('Calling weather API', { path: '/.netlify/functions/weather', bodyKeys: Object.keys(body) });
 
   const fetchStartTime = Date.now();
-
-  const response = await fetch(url, {
+  const data = await internalFetchJson('/.netlify/functions/weather', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-
+    body: JSON.stringify(body),
+    fetchImpl: fetch,
+  }, log);
   const fetchDuration = Date.now() - fetchStartTime;
-
-  if (!response.ok) {
-    log.error('Weather API error', {
-      status: response.status,
-      statusText: response.statusText,
-      duration: `${fetchDuration}ms`
-    });
-    throw new Error(`Weather API returned ${response.status}`);
-  }
-
-  const data = await response.json();
   log.info('Retrieved weather data', {
     latitude,
     longitude,
@@ -1270,8 +1254,6 @@ async function getSolarEstimate(params, log) {
 
   const { location, panelWatts, startDate, endDate } = params;
 
-  // Call the solar-estimate function
-  const baseUrl = process.env.URL || 'http://localhost:8888';
   const queryParams = new URLSearchParams({
     location,
     panelWatts: panelWatts.toString(),
@@ -1279,15 +1261,12 @@ async function getSolarEstimate(params, log) {
     endDate
   });
 
-  const url = `${baseUrl}/.netlify/functions/solar-estimate?${queryParams}`;
-
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`Solar API returned ${response.status}`);
-  }
-
-  const data = await response.json();
+  const fetchStartTime = Date.now();
+  const data = await internalFetchJson(`/.netlify/functions/solar-estimate?${queryParams}`, {
+    method: 'GET',
+    fetchImpl: fetch,
+  }, log);
+  const fetchDuration = Date.now() - fetchStartTime;
   log.info('Retrieved solar estimate', { location, panelWatts, startDate, endDate });
 
   return data;
@@ -1312,28 +1291,14 @@ async function getSystemAnalytics(params, log) {
 
   log.debug('Fetching system analytics', { systemId });
 
-  // Call the system-analytics function
-  const baseUrl = process.env.URL || 'http://localhost:8888';
-  const url = `${baseUrl}/.netlify/functions/system-analytics?systemId=${systemId}`;
-
-  log.debug('Calling system analytics API', { url });
+  log.debug('Calling system analytics API', { path: '/.netlify/functions/system-analytics', systemId });
 
   const fetchStartTime = Date.now();
-
-  const response = await fetch(url);
-
+  const data = await internalFetchJson(`/.netlify/functions/system-analytics?systemId=${encodeURIComponent(systemId)}`, {
+    method: 'GET',
+    fetchImpl: fetch,
+  }, log);
   const fetchDuration = Date.now() - fetchStartTime;
-
-  if (!response.ok) {
-    log.error('System analytics API error', {
-      status: response.status,
-      statusText: response.statusText,
-      duration: `${fetchDuration}ms`
-    });
-    throw new Error(`System analytics API returned ${response.status}`);
-  }
-
-  const data = await response.json();
   log.info('Retrieved system analytics', {
     systemId,
     duration: `${fetchDuration}ms`,

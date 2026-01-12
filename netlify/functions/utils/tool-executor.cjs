@@ -7,6 +7,7 @@
 const { getCollection } = require('./mongodb.cjs');
 const { createLogger } = require('./logger.cjs');
 const { groupAlertEvents } = require('./analysis-utilities.cjs');
+const { internalFetchJson } = require('./internal-netlify-fetch.cjs');
 
 /**
  * Main dispatcher for tool execution
@@ -204,11 +205,11 @@ async function requestBmsData(params, log) {
             note = `Data aggregated from ${records.length} raw records to ${processedData.length} ${granularity === 'daily_avg' ? 'daily' : 'hourly'} points`;
         }
         if (granularity === 'daily_avg') {
-            note = note 
+            note = note
                 ? `${note}. Each day includes hourly breakdown (up to 24 hours) for detailed analysis.`
                 : 'Each daily record includes hourly breakdown data (up to 24 hours) for detailed analysis.';
         }
-        
+
         // Add energy calculation guidance
         const energyNote = `ENERGY FIELDS EXPLAINED: ` +
             `avgPower_W = instantaneous power (rate), ` +
@@ -402,7 +403,7 @@ function aggregateByDay(records, metric, log) {
  */
 function computeAggregateMetrics(records, metric, options = {}) {
     const { bucketHours = 1 } = options; // Default to 1 hour for backward compatibility
-    
+
     const metricsToCompute = metric === 'all'
         ? ['voltage', 'current', 'power', 'soc', 'capacity', 'temperature', 'cell_voltage_difference']
         : [metric];
@@ -425,7 +426,7 @@ function computeAggregateMetrics(records, metric, options = {}) {
         result[`min${capitalize(fieldName)}`] = Number(min.toFixed(2));
         result[`max${capitalize(fieldName)}`] = Number(max.toFixed(2));
     }
-    
+
     // Calculate energy metrics if we have the necessary data
     // This is the KEY addition - converting power to energy with proper time integration
     if (metric === 'all' || metric === 'power' || metric === 'current') {
@@ -433,32 +434,32 @@ function computeAggregateMetrics(records, metric, options = {}) {
         const voltages = records
             .map(r => r.analysis?.overallVoltage)
             .filter(v => typeof v === 'number' && isFinite(v));
-        const avgVoltage = voltages.length > 0 
-            ? voltages.reduce((a, b) => a + b, 0) / voltages.length 
+        const avgVoltage = voltages.length > 0
+            ? voltages.reduce((a, b) => a + b, 0) / voltages.length
             : null;
-        
+
         // Separate charging and discharging data
-        const chargingRecords = records.filter(r => 
+        const chargingRecords = records.filter(r =>
             r.analysis?.current != null && r.analysis.current > 0.5
         );
-        const dischargingRecords = records.filter(r => 
+        const dischargingRecords = records.filter(r =>
             r.analysis?.current != null && r.analysis.current < -0.5
         );
-        
+
         // Calculate charging metrics with energy
         if (chargingRecords.length > 0) {
             const chargingCurrents = chargingRecords
                 .map(r => r.analysis.current)
                 .filter(v => typeof v === 'number');
             const avgChargingCurrent = chargingCurrents.reduce((a, b) => a + b, 0) / chargingCurrents.length;
-            
+
             const chargingPowers = chargingRecords
                 .map(r => r.analysis.power)
                 .filter(v => typeof v === 'number' && v > 0);
             const avgChargingPower = chargingPowers.length > 0
                 ? chargingPowers.reduce((a, b) => a + b, 0) / chargingPowers.length
                 : null;
-            
+
             // Estimate charging duration as proportion of active (charging + discharging) time
             // to prevent proportions from summing to >100%
             const activeRecordsCount = chargingRecords.length + dischargingRecords.length;
@@ -466,20 +467,20 @@ function computeAggregateMetrics(records, metric, options = {}) {
                 ? chargingRecords.length / activeRecordsCount
                 : 0;
             const estimatedChargingHours = bucketHours * chargingHoursProportion;
-            
+
             result.avgChargingCurrent_A = Number(avgChargingCurrent.toFixed(2));
             result.chargingDataPoints = chargingRecords.length;
             result.estimatedChargingHours = Number(estimatedChargingHours.toFixed(2));
-            
+
             // Calculate Ah charged during this period: Current (A) × Time (h) = Ah
             result.chargingAh = Number((avgChargingCurrent * estimatedChargingHours).toFixed(2));
-            
+
             // Convert Ah to Wh if we have voltage: Ah × V = Wh
             if (avgVoltage) {
                 result.chargingWh = Number((result.chargingAh * avgVoltage).toFixed(1));
                 result.chargingKWh = Number((result.chargingWh / 1000).toFixed(3));
             }
-            
+
             // Also calculate from power if available (more accurate)
             if (avgChargingPower != null) {
                 result.avgChargingPower_W = Number(avgChargingPower.toFixed(1));
@@ -488,41 +489,41 @@ function computeAggregateMetrics(records, metric, options = {}) {
                 result.chargingEnergyKWh = Number((result.chargingEnergyWh / 1000).toFixed(3));
             }
         }
-        
+
         // Calculate discharging metrics with energy
         if (dischargingRecords.length > 0) {
             const dischargingCurrents = dischargingRecords
                 .map(r => Math.abs(r.analysis.current))
                 .filter(v => typeof v === 'number');
             const avgDischargingCurrent = dischargingCurrents.reduce((a, b) => a + b, 0) / dischargingCurrents.length;
-            
+
             const dischargingPowers = dischargingRecords
                 .map(r => Math.abs(r.analysis.power))
                 .filter(v => typeof v === 'number' && v > 0);
             const avgDischargingPower = dischargingPowers.length > 0
                 ? dischargingPowers.reduce((a, b) => a + b, 0) / dischargingPowers.length
                 : null;
-            
+
             // Estimate discharging duration as proportion of active time
             const activeRecordsCount = chargingRecords.length + dischargingRecords.length;
             const dischargingHoursProportion = activeRecordsCount > 0
                 ? dischargingRecords.length / activeRecordsCount
                 : 0;
             const estimatedDischargingHours = bucketHours * dischargingHoursProportion;
-            
+
             result.avgDischargingCurrent_A = Number(avgDischargingCurrent.toFixed(2));
             result.dischargingDataPoints = dischargingRecords.length;
             result.estimatedDischargingHours = Number(estimatedDischargingHours.toFixed(2));
-            
+
             // Calculate Ah discharged during this period
             result.dischargingAh = Number((avgDischargingCurrent * estimatedDischargingHours).toFixed(2));
-            
+
             // Convert Ah to Wh if we have voltage
             if (avgVoltage) {
                 result.dischargingWh = Number((result.dischargingAh * avgVoltage).toFixed(1));
                 result.dischargingKWh = Number((result.dischargingWh / 1000).toFixed(3));
             }
-            
+
             // Also calculate from power if available
             if (avgDischargingPower != null) {
                 result.avgDischargingPower_W = Number(avgDischargingPower.toFixed(1));
@@ -531,7 +532,7 @@ function computeAggregateMetrics(records, metric, options = {}) {
                 result.dischargingEnergyKWh = Number((result.dischargingEnergyWh / 1000).toFixed(3));
             }
         }
-        
+
         // Calculate net energy balance
         const chargingEnergy = result.chargingEnergyWh || result.chargingWh || 0;
         const dischargingEnergy = result.dischargingEnergyWh || result.dischargingWh || 0;
@@ -580,13 +581,13 @@ async function getSystemHistory(params, log) {
 
     // Calculate time range
     let time_range_start, time_range_end;
-    
+
     if (endDate) {
         time_range_end = new Date(endDate).toISOString();
     } else {
         time_range_end = new Date().toISOString();
     }
-    
+
     if (startDate) {
         time_range_start = new Date(startDate).toISOString();
     } else {
@@ -642,19 +643,10 @@ async function getWeatherData(params, log) {
     // The URL is relative to the function's execution context.
     const weatherFunctionUrl = '/.netlify/functions/weather';
 
-    const response = await fetch(weatherFunctionUrl, {
+    const result = await internalFetchJson(weatherFunctionUrl, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
         body: JSON.stringify({ lat: latitude, lon: longitude, timestamp, type }),
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-        throw new Error(result.error || `Weather service responded with status: ${response.status}`);
-    }
+    }, log);
 
     return result;
 }
@@ -673,18 +665,9 @@ async function getSolarEstimate(params, log) {
 
     const solarFunctionUrl = `/.netlify/functions/solar-estimate?location=${encodeURIComponent(location)}&panelWatts=${panelWatts}&startDate=${startDate}&endDate=${endDate}`;
 
-    const response = await fetch(solarFunctionUrl, {
-        method: 'GET',
-        headers: {
-            'Accept': 'application/json',
-        },
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-        throw new Error(result.error || `Solar estimate service responded with status: ${response.status}`);
-    }
+    const result = await internalFetchJson(solarFunctionUrl, {
+        method: 'GET'
+    }, log);
 
     return result;
 }
@@ -709,7 +692,7 @@ function calculateHourlyAverages(records) {
     // Group records by hour
     for (const record of records) {
         if (!record.timestamp || !record.analysis) continue;
-        
+
         const hour = new Date(record.timestamp).getHours();
         const analysis = record.analysis;
 
@@ -723,7 +706,7 @@ function calculateHourlyAverages(records) {
     // Calculate averages for each hour
     const averages = hourlyBuckets.map((bucket, hour) => {
         const avg = (arr) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
-        
+
         return {
             hour,
             avgSOC: avg(bucket.soc),
@@ -764,7 +747,7 @@ function calculatePerformanceBaseline(records) {
     // Collect all values
     for (const record of records) {
         if (!record.analysis) continue;
-        
+
         const analysis = record.analysis;
         if (analysis.stateOfCharge != null) values.soc.push(analysis.stateOfCharge);
         if (analysis.voltage != null) values.voltage.push(analysis.voltage);
@@ -778,8 +761,8 @@ function calculatePerformanceBaseline(records) {
         if (arr.length === 0) return null;
         const sorted = [...arr].sort((a, b) => a - b);
         const mid = Math.floor(sorted.length / 2);
-        return sorted.length % 2 === 0 
-            ? (sorted[mid - 1] + sorted[mid]) / 2 
+        return sorted.length % 2 === 0
+            ? (sorted[mid - 1] + sorted[mid]) / 2
             : sorted[mid];
     };
 
@@ -862,7 +845,7 @@ async function getSystemAnalytics(params, log) {
 
         // Calculate hourly averages
         const hourlyAverages = calculateHourlyAverages(records);
-        
+
         // Calculate performance baseline (median values from recent data)
         const performanceBaseline = calculatePerformanceBaseline(records);
 
