@@ -18,12 +18,12 @@
  */
 
 import { asyncWorkloadFn, ErrorDoNotRetry, ErrorRetryAfterDelay } from '@netlify/async-workloads';
-import { performAnalysisPipeline } from './utils/analysis-pipeline.mjs';
-import { COLLECTIONS } from './utils/collections.mjs';
-import { createForwardingLogger } from './utils/log-forwarder.mjs';
-import { createLogger } from './utils/logger.mjs';
-import { getCollection } from './utils/mongodb.mjs';
-import { calculateImageHash, checkExistingAnalysis } from './utils/unified-deduplication.mjs';
+import { performAnalysisPipeline } from './utils/analysis-pipeline.cjs';
+import { COLLECTIONS } from './utils/collections.cjs';
+import { createForwardingLogger } from './utils/log-forwarder.cjs';
+import { createLogger } from './utils/logger.cjs';
+import { getCollection } from './utils/mongodb.cjs';
+import { calculateImageHash, checkExistingAnalysis } from './utils/unified-deduplication.cjs';
 
 // Retry delay constants (in milliseconds)
 const RATE_LIMIT_RETRY_DELAY_MS = 300000; // 5 minutes
