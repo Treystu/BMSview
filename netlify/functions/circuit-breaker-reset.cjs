@@ -14,6 +14,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * @param {any} event
@@ -30,6 +31,10 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('circuit-breaker-reset', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Circuit breaker reset request', includeBody: true });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('circuit-breaker-reset');
+
   /** @type {any} */
   const timer = createTimer(log, 'circuit-breaker-reset');
 

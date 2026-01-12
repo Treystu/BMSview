@@ -3,6 +3,7 @@
 
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 const {
     createStandardEntryMeta,
     logDebugRequestSummary
@@ -216,7 +217,64 @@ const checkSecurity = async (request, log) => {
  * @param {any} event
  * @param {any} context
  */
-exports.handler = async function (event, context) {
+exports.handler = async function (event, context) {exports.handler = async function (event, context) {
+    const log = createLoggerFromEvent('security-handler', event, context);
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('security');
+    /** @type {any} */
+    const timer = createTimer(log, 'security-handler');
+
+    log.entry(createStandardEntryMeta(event));
+    logDebugRequestSummary(log, event, { label: 'Security check request', includeBody: false });
+
+    if (!validateEnvironment(log)) {
+        timer.end({ success: false, error: 'configuration' });
+        log.exit(500);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Server configuration error' })
+        };
+    }
+
+    const clientIp = event.headers['x-nf-client-connection-ip'];
+    const logContext = { clientIp, httpMethod: event.httpMethod };
+
+    try {
+        await checkSecurity(event, log);
+        log.info('Security check passed', logContext);
+        timer.end({ success: true });
+        log.exit(200);
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ message: 'Security check passed' }),
+            headers: { 'Content-Type': 'application/json' }
+        };
+    } catch (error) {
+        if (error instanceof HttpError) {
+            log.warn('Security check failed', { ...logContext, statusCode: error.statusCode });
+            timer.end({ success: false, statusCode: error.statusCode });
+            log.exit(error.statusCode);
+            return {
+                statusCode: error.statusCode,
+                body: JSON.stringify({ error: error.message }),
+                headers: { 'Content-Type': 'application/json' }
+            };
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        log.error('Security handler error', { ...logContext, error: message });
+        timer.end({ success: false, error: message });
+        log.exit(500);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Internal server error' }),
+            headers: { 'Content-Type': 'application/json' }
+        };
+    }
+};
+
+module.exports = { checkSecurity, HttpError };
+
     const log = createLoggerFromEvent('security-handler', event, context);
     /** @type {any} */
     const timer = createTimer(log, 'security-handler');

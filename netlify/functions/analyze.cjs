@@ -40,6 +40,7 @@ const { withTimeout, retryAsync, circuitBreaker } = require('./utils/retry.cjs')
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { handleStoryModeAnalysis } = require('./utils/story-mode.cjs');
 const { COLLECTIONS } = require('./utils/collections.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 // @ts-nocheck
 "use strict";
 const {
@@ -270,6 +271,10 @@ exports.handler = async (event, context) => {
   /** @type {any} */
   const log = createLoggerFromEvent('analyze', event, context);
   log.entry(createStandardEntryMeta(event));
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('analyze');
+
   /** @type {any} */
   const timer = createTimer(log, 'analyze');
 

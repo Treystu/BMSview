@@ -18,6 +18,7 @@ const COLLECTIONS = {
     MEASUREMENTS: 'measurements', // Used in upload key flow
     IDEMPOTENT_REQUESTS: 'idempotent-requests',
     PROGRESS_EVENTS: 'progress-events',
+    LOGS: 'logs', // Unified log collection
 
     // Explicitely Deprecated - DO NOT USE
     // RECORDS: 'records', 

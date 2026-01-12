@@ -2,6 +2,7 @@
 
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 const {
     createStandardEntryMeta,
     logDebugRequestSummary
@@ -202,7 +203,69 @@ async function ensureDeletedRecordsIndexes(log) {
  * @param {any} event
  * @param {any} context
  */
-exports.handler = async function (event, context) {
+exports.handler = async function (event, context) {exports.handler = async function (event, context) {
+    const log = createLoggerFromEvent("migrate-add-sync-fields", event, context);
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('migrate-add-sync-fields');
+    /** @type {any} */
+    const timer = createTimer(log, 'migrate-add-sync-fields-handler');
+
+    log.entry(createStandardEntryMeta(event));
+    logDebugRequestSummary(log, event, {
+        label: "Migrate add sync fields request",
+        includeBody: true
+    });
+
+    if (!validateEnvironment(log)) {
+        timer.end({ success: false, error: 'configuration' });
+        log.exit(500);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Server configuration error' })
+        };
+    }
+
+    if (event.httpMethod !== "POST") {
+        log.warn("Method not allowed", { method: event.httpMethod });
+        timer.end();
+        log.exit(405);
+        return jsonResponse(405, { error: "Method Not Allowed" });
+    }
+
+    const serverTimeIso = new Date().toISOString();
+
+    try {
+        /** @type {any[]} */
+        const results = [];
+
+        for (const collectionName of TARGET_COLLECTIONS) {
+            const summary = await migrateCollection(collectionName, serverTimeIso, log);
+            results.push(summary);
+        }
+
+        await ensureSyncMetadata(serverTimeIso, results, log);
+        await ensureDeletedRecordsIndexes(log);
+
+        log.exit(200, { migratedCollections: TARGET_COLLECTIONS.length });
+        timer.end({ success: true, migratedCollections: TARGET_COLLECTIONS.length });
+
+        return jsonResponse(200, {
+            success: true,
+            migratedCollections: results,
+            syncMetadataInitialized: true,
+            serverTime: serverTimeIso
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        log.error("Migration failed", { message, stack });
+        log.exit(500, {});
+        timer.end({ success: false, error: message });
+        return errorResponse(500, "migration_error", "Failed to perform sync field migration.");
+    }
+};
+
     const log = createLoggerFromEvent("migrate-add-sync-fields", event, context);
     /** @type {any} */
     const timer = createTimer(log, 'migrate-add-sync-fields-handler');

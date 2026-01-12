@@ -20,6 +20,7 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 const { ensureAdminAuthorized } = require('./utils/auth.cjs');
 const { getCostMetrics, getRealtimeMetrics, createAlert } = require('./utils/metrics-collector.cjs');
 const { v4: uuidv4 } = require('uuid');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 const sanitizeHeaders = (headers = {}) => {
     /** @type {Object.<string, string>} */
@@ -493,6 +494,9 @@ exports.handler = async (event, context) => {
         headers: sanitizeHeaders(event.headers),
         bodyLength: event.body ? event.body.length : 0
     });
+
+    // Unified logging: also forward to centralized collector
+    const forwardLog = createForwardingLogger('usage-stats');
 
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {

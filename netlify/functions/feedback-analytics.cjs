@@ -17,6 +17,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * Calculate time difference in days
@@ -659,6 +660,9 @@ exports.handler = async (event, context) => {
 
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Feedback analytics request', includeBody: false });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('feedback-analytics');
 
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {

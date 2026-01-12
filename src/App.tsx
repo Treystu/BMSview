@@ -78,7 +78,15 @@ function App() {
     }
   }, [dispatch]);
 
+  // Guard: Do not initialize main app logic on admin page
+  const isAdminPage = window.location.pathname.includes('/admin.html');
+
   useEffect(() => {
+    if (isAdminPage) {
+      log('info', 'Detected admin page - skipping main app initialization');
+      return;
+    }
+
     fetchAppData(true); // Initial load is manual (unthrottled)
 
     // Subscribe to SyncManager events
@@ -115,7 +123,7 @@ function App() {
       unsubscribe();
       syncManager.stopPeriodicSync();
     };
-  }, [fetchAppData]);
+  }, [fetchAppData, isAdminPage]);
 
   const handleLinkRecordToSystem = async (recordId: string, systemId: string, hardwareSystemId?: string | null) => {
     log('info', 'Linking record to system.', { recordId, systemId });
@@ -373,6 +381,17 @@ function App() {
   const handleCloseRegisterModal = () => {
     dispatch({ type: 'CLOSE_REGISTER_MODAL' });
   };
+
+  // Guard: Do not render main app UI on admin page
+  if (isAdminPage) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-neutral-light">
+        <div className="text-center">
+          <p className="text-neutral-dark">Admin page detected. Main app is not rendered here.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-neutral-light">

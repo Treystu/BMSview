@@ -8,6 +8,7 @@
 // @ts-nocheck
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -32,6 +33,9 @@ const handler = async (event, context) => {
   const timer = createTimer(log, 'generate-insights-legacy-handler');
 
   log.entry(createStandardEntryMeta(event));
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('generate-insights-legacy');
 
   if (!validateEnvironment(log)) {
     timer.end({ success: false, error: 'configuration' });

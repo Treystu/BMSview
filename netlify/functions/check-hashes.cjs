@@ -8,6 +8,7 @@ const {
     createStandardEntryMeta,
     logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * @typedef {import('./utils/jsdoc-types.cjs').LogLike} LogLike
@@ -27,6 +28,10 @@ exports.handler = async (event, context) => {
     const log = createLoggerFromEvent('check-hashes', event, context);
     log.entry(createStandardEntryMeta(event));
     logDebugRequestSummary(log, event, { label: 'Check hashes request', includeBody: true });
+
+    // Unified logging: also forward to centralized collector
+    const forwardLog = createForwardingLogger('check-hashes');
+
     /** @type {any} */
     const timer = createTimer(log, 'check-hashes');
 

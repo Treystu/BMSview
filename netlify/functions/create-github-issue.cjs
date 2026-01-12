@@ -13,6 +13,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * Emoji pattern used throughout for normalization
@@ -349,6 +350,9 @@ exports.handler = async (event, context) => {
     includeBody: true,
     bodyMaxStringLength: 20000
   });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('create-github-issue');
 
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {

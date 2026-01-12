@@ -8,6 +8,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * @param {import('./utils/logger.cjs').LogFunction} log
@@ -3800,6 +3801,10 @@ exports.handler = async (event, context) => {
   logger = log; // Retain shared reference for helper functions that rely on module-scope logger
   log.entry(createStandardEntryMeta(event, { query: event.queryStringParameters, headers: sanitizedHeaders }));
   logDebugRequestSummary(log, event, { label: 'Admin diagnostics request', includeBody: true, bodyMaxStringLength: 20000 });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('admin-diagnostics');
+
   const timer = createTimer(log, 'admin-diagnostics');
 
   // Handle CORS preflight early

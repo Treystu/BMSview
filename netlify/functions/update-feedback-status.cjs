@@ -11,6 +11,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('update-feedback-status', event, context);
@@ -19,6 +20,9 @@ exports.handler = async (event, context) => {
 
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Update feedback status request', includeBody: true, bodyMaxStringLength: 20000 });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('update-feedback-status');
 
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {

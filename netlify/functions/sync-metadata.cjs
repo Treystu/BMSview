@@ -23,6 +23,7 @@ function validateEnvironment(log) {
     return true;
 }
 const { createLogger, createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 const { errorResponse } = require("./utils/errors.cjs");
 
 const JSON_HEADERS = {
@@ -179,7 +180,107 @@ async function calculateChecksum(payload) {
  * @param {import('./utils/jsdoc-types.cjs').NetlifyEvent} event
  * @param {import('./utils/jsdoc-types.cjs').NetlifyContext} context
  */
-exports.handler = async function (event, context) {
+exports.handler = async function (event, context) {exports.handler = async function (event, context) {
+    const log = createLoggerFromEvent("sync-metadata", event, context);
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('sync-metadata');
+    /** @type {any} */
+    const timer = createTimer(log, 'sync-metadata-handler');
+
+    log.entry(createStandardEntryMeta(event));
+    logDebugRequestSummary(log, event, {
+        label: "Sync metadata request",
+        includeBody: false
+    });
+
+    if (!validateEnvironment(log)) {
+        timer.end({ success: false, error: 'configuration' });
+        log.exit(500);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Server configuration error' })
+        };
+    }
+
+    const requestStartedAt = Date.now();
+
+    if (event.httpMethod !== "GET") {
+        log.warn("Method not allowed", { method: event.httpMethod });
+        timer.end();
+        log.exit(405);
+        return jsonResponse(405, { error: "Method Not Allowed" });
+    }
+
+    const collectionKey = event.queryStringParameters && event.queryStringParameters.collection;
+    if (!collectionKey) {
+        log.warn("Missing collection query parameter");
+        return errorResponse(400, "missing_collection", "The 'collection' query parameter is required.");
+    }
+
+    const config = COLLECTION_CONFIG[collectionKey];
+    if (!config) {
+        log.warn("Unsupported collection requested", { collection: collectionKey });
+        return errorResponse(400, "invalid_collection", `Collection '${collectionKey}' is not supported.`);
+    }
+
+    try {
+        const collection = await getCollection(config.dbName);
+        /** @type {FallbackField[]} */
+        const fallbackFields = config.fallbackUpdatedAtFields || [];
+
+        /** @type {Record<string, 0 | 1>} */
+        const projection = { _id: 0, id: 1, updatedAt: 1 };
+        for (const field of fallbackFields) {
+            projection[field.name] = 1;
+        }
+
+        const queryStartedAt = Date.now();
+        const records = await collection.find({}, { projection }).toArray();
+        const queryDurationMs = Date.now() - queryStartedAt;
+        log.debug("Mongo query completed", {
+            collection: collectionKey,
+            queryDurationMs,
+            recordsReturned: records.length
+        });
+        const recordCount = records.length;
+
+        const { payload, lastModified, legacyTimestampCount } = buildChecksumPayload(records, fallbackFields);
+        const checksum = await calculateChecksum(payload);
+        const serverTime = new Date().toISOString();
+
+        log.info("Sync metadata computed", {
+            collection: collectionKey,
+            recordCount,
+            lastModified,
+            checksumPresent: !!checksum,
+            legacyTimestampCount,
+            durationMs: Date.now() - requestStartedAt
+        });
+        log.exit(200, { collection: collectionKey, recordCount });
+        timer.end({ success: true, recordCount });
+
+        return jsonResponse(200, {
+            collection: collectionKey,
+            recordCount,
+            lastModified,
+            checksum,
+            serverTime
+        });
+    } catch (error) {
+        const err = /** @type {any} */ (error);
+        log.error("Failed to compute sync metadata", {
+            message: err && err.message ? err.message : String(error),
+            stack: err && err.stack ? err.stack : undefined,
+            collection: collectionKey,
+            durationMs: Date.now() - requestStartedAt
+        });
+        log.exit(500, { collection: collectionKey });
+        timer.end({ success: false, error: err && err.message ? err.message : String(error) });
+        return errorResponse(500, "metadata_error", "Failed to compute metadata for the requested collection.");
+    }
+};
+
     const log = createLoggerFromEvent("sync-metadata", event, context);
     /** @type {any} */
     const timer = createTimer(log, 'sync-metadata-handler');

@@ -7,6 +7,7 @@ const {
   getRealtimeMetrics,
   getCostMetrics
 } = require('./utils/metrics-collector.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * Monitoring Endpoint
@@ -32,6 +33,10 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('monitoring', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Monitoring request', includeBody: false });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('monitoring');
+
   const timer = createTimer(log, 'monitoring');
 
   try {

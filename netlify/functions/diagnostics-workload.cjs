@@ -18,6 +18,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 const {
   initializeDiagnostics,
   testTool,
@@ -65,6 +66,9 @@ exports.handler = async (/** @type {any} */ event, /** @type {any} */ context) =
   const log = createLoggerFromEvent('diagnostics-workload', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Diagnostics workload request', includeBody: true, bodyMaxStringLength: 20000 });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('diagnostics-workload');
 
   // Sanitize headers for DEBUG logging
   const sanitizedHeaders = event.headers ? {

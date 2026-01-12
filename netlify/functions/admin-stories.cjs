@@ -9,6 +9,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * Admin Stories - CRUD operations for story management
@@ -34,6 +35,9 @@ exports.handler = async (event, context) => {
   } : {};
   log.entry(createStandardEntryMeta(event, { query: event.queryStringParameters, headers: sanitizedHeaders }));
   logDebugRequestSummary(log, event, { label: 'Admin stories request', includeBody: true, bodyMaxStringLength: 20000 });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('admin-stories');
 
   if (event.httpMethod === 'OPTIONS') {
     timer.end({ outcome: 'preflight' });

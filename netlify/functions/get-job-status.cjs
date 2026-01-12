@@ -6,6 +6,7 @@ const { errorResponse } = require('./utils/errors.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { COLLECTIONS } = require('./utils/collections.cjs');
 const { createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 const MAX_JOB_IDS = 100;
 
@@ -160,6 +161,10 @@ exports.handler = async (event, context) => {
     const log = createLoggerFromEvent('get-job-status', event, context);
     log.entry(createStandardEntryMeta(event));
     logDebugRequestSummary(log, event, { label: 'Get job status request', includeBody: true, bodyMaxStringLength: 20000 });
+
+    // Unified logging: also forward to centralized collector
+    const forwardLog = createForwardingLogger('get-job-status');
+
     const timer = createTimer(log, 'get-job-status');
 
     try {

@@ -34,6 +34,8 @@ let batchCheckExistingAnalyses;
 let createStandardEntryMeta;
 /** @type {(...args: any[]) => any} */
 let logDebugRequestSummary;
+/** @type {(...args: any[]) => any} */
+let createForwardingLogger;
 
 try {
   ({ errorResponse } = require('./utils/errors.cjs'));
@@ -44,6 +46,7 @@ try {
   ({ createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs'));
   // Use unified deduplication module as canonical source
   ({ calculateImageHash, checkNeedsUpgrade, formatHashPreview, batchCheckExistingAnalyses } = require('./utils/unified-deduplication.cjs'));
+  ({ createForwardingLogger } = require('./utils/log-forwarder.cjs'));
 } catch (e) {
   const initException = e instanceof Error ? e : new Error(String(e));
   initError = initException;
@@ -124,6 +127,7 @@ exports.handler = async (event, context) => {
     !logDebugRequestSummary ||
     !calculateImageHash ||
     !checkNeedsUpgrade ||
+    !createForwardingLogger ||
     !formatHashPreview ||
     !batchCheckExistingAnalyses
   ) {
@@ -158,6 +162,10 @@ exports.handler = async (event, context) => {
     includeBody: true,
     bodyMaxStringLength: 20000
   });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('check-duplicates-batch');
+
   /** @type {any} */
   const timer = createTimer(log, 'check-duplicates-batch');
 

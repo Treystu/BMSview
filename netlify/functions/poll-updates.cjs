@@ -3,6 +3,7 @@ const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * Polling endpoint for admin panel updates (Replacement for broken SSE)
@@ -92,6 +93,10 @@ exports.handler = async (event, context) => {
 
   const log = createLoggerFromEvent('poll-updates', event, context);
   log.entry(createStandardEntryMeta(event));
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('poll-updates');
+
   const timer = createTimer(log, 'poll-updates');
 
   try {

@@ -5,6 +5,7 @@ const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { ensureAdminAuthorized } = require('./utils/auth.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 // Validate environment variables
 function validateEnvironment(log) {
@@ -23,6 +24,9 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('admin-systems', event, context);
   const timer = createTimer(log, 'admin-systems');
   log.entry(createStandardEntryMeta(event));
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('admin-systems');
 
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {

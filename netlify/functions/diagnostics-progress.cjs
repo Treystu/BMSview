@@ -1,6 +1,7 @@
 const { getDb } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -21,19 +22,23 @@ function validateEnvironment(log) {
  */
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
-  
+
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers };
   }
-  
+
   // Get testId early for logging (may be undefined)
   const testId = event.queryStringParameters?.testId || undefined;
-  
+
   const logger = createLoggerFromEvent('diagnostics-progress', event, context, { jobId: testId });
   logger.entry({ method: event.httpMethod, path: event.path, testId: testId || 'not_provided' });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('diagnostics-progress');
+
   const timer = createTimer(logger, 'diagnostics-progress');
-  
+
   if (!validateEnvironment(logger)) {
     timer.end({ error: 'env_validation_failed' });
     logger.exit(500);
@@ -43,7 +48,7 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({ error: 'Server configuration error' })
     };
   }
-  
+
   try {
     // Only support GET
     if (event.httpMethod !== 'GET') {
@@ -55,16 +60,16 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({ error: 'Method not allowed. Use GET.' })
       };
     }
-    
+
     if (!testId) {
       logger.warn('Missing testId query parameter');
       logger.exit(400);
       return {
         statusCode: 400,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           error: 'Missing testId query parameter',
-          usage: '/.netlify/functions/diagnostics-progress?testId=<testId>' 
+          usage: '/.netlify/functions/diagnostics-progress?testId=<testId>'
         })
       };
     }
@@ -82,9 +87,9 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 404,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           error: 'Diagnostic run not found',
-          testId 
+          testId
         })
       };
     }
@@ -113,11 +118,11 @@ exports.handler = async (event, context) => {
     };
 
     timer.end({ completed: completedCount, total: totalTests, isComplete });
-    logger.info('Progress fetched', { 
-      testId, 
-      completed: completedCount, 
+    logger.info('Progress fetched', {
+      testId,
+      completed: completedCount,
       total: totalTests,
-      isComplete 
+      isComplete
     });
     logger.exit(200);
 
@@ -142,7 +147,7 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         error: 'Failed to fetch diagnostic progress',
         message: error.message
       })

@@ -31,6 +31,7 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 const { sanitizeSystemId, SanitizationError } = require('./utils/security-sanitizer.cjs');
 const { calculateImageHash } = require('./utils/unified-deduplication.cjs');
 const { triggerInsightsWorkload } = require('./utils/insights-async-client.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 const generateJobId = () => `insights_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -91,6 +92,9 @@ exports.handler = async (event) => {
 
   const log = createLoggerFromEvent('generate-insights-async-trigger', event);
   const timer = createTimer();
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('generate-insights-async-trigger');
 
   try {
     log.info('Async trigger invoked', {

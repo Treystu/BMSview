@@ -10,6 +10,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * @param {any} event
@@ -26,6 +27,9 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('test-generate-insights', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Test generate insights request', includeBody: true, bodyMaxStringLength: 20000 });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('test-generate-insights');
 
   try {
     log.info('Starting integration tests');

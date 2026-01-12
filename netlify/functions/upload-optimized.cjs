@@ -2,6 +2,7 @@
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 /* eslint-disable */
 const { getCollection } = require('./utils/mongodb.cjs');
 const crypto = require('crypto');
@@ -172,6 +173,10 @@ exports.handler = async (event, context) => {
     log.entry(createStandardEntryMeta(event));
     // This endpoint is JSON-body based; log a capped request summary to aid debugging.
     logDebugRequestSummary(log, event, { label: 'Optimized upload request', includeBody: true, bodyMaxStringLength: 20000 });
+
+    // Unified logging: also forward to centralized collector
+    const forwardLog = createForwardingLogger('optimized-upload');
+
     const timer = createTimer(log, 'optimized-upload');
 
     try {

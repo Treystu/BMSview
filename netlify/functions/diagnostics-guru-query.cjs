@@ -8,6 +8,7 @@
 const { createLoggerFromEvent } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
@@ -17,6 +18,9 @@ exports.handler = async (event, context) => {
   }
 
   const log = createLoggerFromEvent('diagnostics-guru-query', event, context);
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('diagnostics-guru-query');
 
   try {
     const { query, includeContext, systemId } = JSON.parse(event.body || '{}');
@@ -29,10 +33,10 @@ exports.handler = async (event, context) => {
       };
     }
 
-    log.info('Processing diagnostics query', { 
+    log.info('Processing diagnostics query', {
       queryLength: query.length,
       includeContext,
-      systemId 
+      systemId
     });
 
     // Build diagnostic context if requested
@@ -123,7 +127,7 @@ Focus on practical troubleshooting guidance.
 
     // Forward to insights endpoint
     const insightsUrl = `${process.env.URL || 'http://localhost:8888'}${insightsEndpoint}`;
-    
+
     log.info('Forwarding to insights endpoint', { url: insightsUrl });
 
     const response = await fetch(insightsUrl, {
@@ -162,9 +166,9 @@ Focus on practical troubleshooting guidance.
     };
 
   } catch (error) {
-    log.error('Diagnostics query failed', { 
-      error: error.message, 
-      stack: error.stack 
+    log.error('Diagnostics query failed', {
+      error: error.message,
+      stack: error.stack
     });
 
     return {

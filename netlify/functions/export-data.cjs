@@ -18,6 +18,7 @@ const {
     createStandardEntryMeta,
     logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * @param {import('./utils/jsdoc-types.cjs').LogLike} log
@@ -207,6 +208,9 @@ exports.handler = async (event, context) => {
 
     log.entry(createStandardEntryMeta(event));
     logDebugRequestSummary(log, event, { label: 'Export data request', includeBody: false });
+
+    // Unified logging: also forward to centralized collector
+    const forwardLog = createForwardingLogger('export-data');
 
     if (!validateEnvironment(log)) {
         timer.end({ success: false, error: 'configuration' });

@@ -17,6 +17,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * @param {import('@netlify/functions').HandlerEvent} event
@@ -36,6 +37,10 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('duplicate-diagnostics', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Duplicate diagnostics request', includeBody: false });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('duplicate-diagnostics');
+
   /** @type {any} */
   const timer = createTimer(log, 'duplicate-diagnostics');
 

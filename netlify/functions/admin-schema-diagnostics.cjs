@@ -17,6 +17,7 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { ensureAdminAuthorized } = require('./utils/auth.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * Analyze schema patterns for a given systemId
@@ -179,6 +180,9 @@ async function getAllSystemsOverview(log) {
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent(event, context, 'admin-schema-diagnostics');
   const headers = getCorsHeaders(event);
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('admin-schema-diagnostics');
 
   try {
     const authResponse = await ensureAdminAuthorized(event, context, headers, log);

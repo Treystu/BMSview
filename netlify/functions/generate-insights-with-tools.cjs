@@ -18,6 +18,7 @@ const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { executeReActLoop } = require('./utils/react-loop.cjs');
 const { applyRateLimit, RateLimitError } = require('./utils/rate-limiter.cjs');
 const { sanitizeInsightsRequest, SanitizationError } = require('./utils/security-sanitizer.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -69,6 +70,10 @@ exports.handler = async (event, context) => {
 
   const log = createLoggerFromEvent('generate-insights-with-tools', event, context);
   log.entry(createStandardEntryMeta(event));
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('generate-insights-with-tools');
+
   const timer = createTimer(log, 'generate-insights-with-tools');
   const startTime = Date.now();
 

@@ -1,36 +1,63 @@
-admin-CsRcGAgZ.js:2 {"level":"INFO","timestamp":"2026-01-10T21:42:11.372Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
-admin-CsRcGAgZ.js:2 {"level":"INFO","timestamp":"2026-01-10T21:42:11.379Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
-AdminDashboard-Ct0Vt6w2.js:7 {"level":"INFO","timestamp":"2026-01-10T21:42:12.183Z","component":"AdminDashboard","message":"Performing initial data load (page 1)."}
-AdminDashboard-Ct0Vt6w2.js:7 {"level":"INFO","timestamp":"2026-01-10T21:42:13.299Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":4,"historyCount":100}}
-AdminDashboard-Ct0Vt6w2.js:7 {"level":"INFO","timestamp":"2026-01-10T21:42:13.324Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
-AdminDashboard-Ct0Vt6w2.js:7 {"level":"INFO","timestamp":"2026-01-10T21:42:13.325Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
-AdminDashboard-Ct0Vt6w2.js:7 {"level":"INFO","timestamp":"2026-01-10T21:42:15.773Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":7,"matched":3,"orphaned":4,"total_records":853,"orphaned_records":21}}}
-AdminDashboard-Ct0Vt6w2.js:7 {"level":"INFO","timestamp":"2026-01-10T21:42:16.282Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.0926475999999999,"days":4}}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Starting chart data preparation {requestId: 1, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 853}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Date range {chartStartDate: '2025-12-11T11:42', chartEndDate: '2026-01-10T11:42', apiStartDate: '2025-12-11T21:42:00.000Z', apiEndDate: '2026-01-10T21:42:00.000Z'}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2025-12-11T21:42:00.000Z', apiEndDate: '2026-01-10T21:42:00.000Z'}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Fetching unified history {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd'}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Unified history received {count: 853}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Filtered data by date range {originalCount: 853, filteredCount: 163, startLimit: '2025-12-11T21:42:00.000Z', endLimit: '2026-01-10T21:42:00.000Z'}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Processed chart points {count: 163}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Chart data preparation complete {requestId: 1}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Starting chart data preparation {requestId: 2, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 853}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Date range {chartStartDate: '2026-01-03T11:42', chartEndDate: '2026-01-10T11:42', apiStartDate: '2026-01-03T21:42:00.000Z', apiEndDate: '2026-01-10T21:42:00.000Z'}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2026-01-03T21:42:00.000Z', apiEndDate: '2026-01-10T21:42:00.000Z'}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Starting chart data preparation {requestId: 3, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 853}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Date range {chartStartDate: '2025-01-11T11:42', chartEndDate: '2026-01-10T11:42', apiStartDate: '2025-01-11T21:42:00.000Z', apiEndDate: '2026-01-10T21:42:00.000Z'}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2025-01-11T21:42:00.000Z', apiEndDate: '2026-01-10T21:42:00.000Z'}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Request cancelled (stale after weather sync) {currentRequestId: 2, activeRequestId: 3}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Chart data preparation complete {requestId: 2}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Fetching unified history {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd'}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Unified history received {count: 853}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Filtered data by date range {originalCount: 853, filteredCount: 853, startLimit: '2025-01-11T21:42:00.000Z', endLimit: '2026-01-10T21:42:00.000Z'}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Processed chart points {count: 853}
-AdminDashboard-Ct0Vt6w2.js:2 [HistoricalChart] Chart data preparation complete {requestId: 3}
-admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
-admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
-admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
-admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+admin-CF4ICmt2.js:2 {"level":"INFO","timestamp":"2026-01-12T18:43:31.491Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
+admin-CF4ICmt2.js:2 {"level":"INFO","timestamp":"2026-01-12T18:43:31.494Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:43:32.027Z","component":"AdminDashboard","message":"Performing initial data load (page 1)."}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:43:35.010Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":4,"historyCount":100}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:43:35.045Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:43:35.045Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:43:37.602Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":7,"matched":3,"orphaned":4,"total_records":913,"orphaned_records":21}}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:43:38.298Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.0976109999999999,"days":4}}
+uploadOptimizer-CmPkEZ6k.js:8 {"level":"INFO","timestamp":"2026-01-12T18:46:15.830Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
+uploadOptimizer-CmPkEZ6k.js:8 {"level":"INFO","timestamp":"2026-01-12T18:46:15.835Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":1,"oversizedCount":0,"zipCount":0}}
+uploadOptimizer-CmPkEZ6k.js:8 {"level":"INFO","timestamp":"2026-01-12T18:46:15.835Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":1,"fileNames":["Screenshot_20260111-160615.png"],"event":"CHECK_START"}}
+uploadOptimizer-CmPkEZ6k.js:8 {"level":"INFO","timestamp":"2026-01-12T18:46:15.836Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
+uploadOptimizer-CmPkEZ6k.js:8 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
+uploadOptimizer-CmPkEZ6k.js:8 Client hash generated {hashPreview: '9ab406f369c60133...', imageLength: 354216}
+uploadOptimizer-CmPkEZ6k.js:8 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 5, avgPerFileMs: '5.00', …}
+uploadOptimizer-CmPkEZ6k.js:8 {"level":"INFO","timestamp":"2026-01-12T18:46:15.841Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":5,"event":"HASHING_COMPLETE"}}
+uploadOptimizer-CmPkEZ6k.js:8 {"level":"INFO","timestamp":"2026-01-12T18:46:15.841Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+uploadOptimizer-CmPkEZ6k.js:8 {"level":"INFO","timestamp":"2026-01-12T18:46:18.351Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":2515,"avgPerFileMs":"2515.00","event":"PHASE1_COMPLETE"}}
+uploadOptimizer-CmPkEZ6k.js:8 {"level":"INFO","timestamp":"2026-01-12T18:46:18.352Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":1,"duplicates":0,"upgrades":0,"newFiles":1,"event":"CHECK_COMPLETE"}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:46:31.074Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":1,"isStoryMode":false,"forceReanalysis":false,"useAsync":false}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:46:31.075Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"includeData":false,"event":"PHASE1_START"}}
+uploadOptimizer-CmPkEZ6k.js:8 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
+uploadOptimizer-CmPkEZ6k.js:8 Client hash generated {hashPreview: '9ab406f369c60133...', imageLength: 354216}
+uploadOptimizer-CmPkEZ6k.js:8 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 38, avgPerFileMs: '38.00', …}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:46:31.113Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":38,"event":"HASHING_COMPLETE"}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:46:31.113Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:46:32.027Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":952,"avgPerFileMs":"952.00","event":"PHASE1_COMPLETE"}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:46:32.027Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":1,"upgrades":0,"new":1,"cachedDuplicates":0,"cachedUpgrades":0,"forceReanalysis":false}}
+uploadOptimizer-CmPkEZ6k.js:8 Processing 1 files. Initial concurrency: 1
+uploadOptimizer-CmPkEZ6k.js:8 {"level":"INFO","timestamp":"2026-01-12T18:46:32.028Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260111-160615.png","fileSize":265660,"forceReanalysis":false,"useAsync":false}}
+uploadOptimizer-CmPkEZ6k.js:8 {"level":"INFO","timestamp":"2026-01-12T18:46:32.049Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260111-160615.png","fileSize":265660,"forceReanalysis":false,"useAsync":false}}
+uploadOptimizer-CmPkEZ6k.js:8 {"level":"INFO","timestamp":"2026-01-12T18:46:43.818Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260111-160615.png","isDuplicate":false}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:46:43.818Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260111-160615.png","useAsync":false}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:46:44.399Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
+main-DQ3LknOH.js:37 [SW] Service worker already registered in this session.
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:46:44.416Z","service":"app-ui","message":"Fetching application data.","context":{"isManual":true}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:46:44.417Z","service":"SyncManager","message":"Starting periodic sync","context":{"intervalMs":90000}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:46:44.417Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
+main-DQ3LknOH.js:37 {"level":"DEBUG","timestamp":"2026-01-12T18:46:44.417Z","service":"SyncManager","message":"Periodic sync scheduled","context":{"intervalMs":90000}}
+localCache-yiYcel0-.js:3 {"level":"debug","timestamp":"2026-01-12T18:46:44.445Z","service":"localCache","message":"Found 0 pending systems"}
+localCache-yiYcel0-.js:3 {"level":"info","timestamp":"2026-01-12T18:46:44.447Z","service":"localCache","message":"Cached analysis record: 957f3ed1-2e0e-4342-8c87-a6e7a207adea","context":{"syncStatus":"synced"}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:46:44.447Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"957f3ed1-2e0e-4342-8c87-a6e7a207adea"}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:46:44.447Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260111-160615.png","recordId":"957f3ed1-2e0e-4342-8c87-a6e7a207adea","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:46:44.447Z","component":"AdminDashboard","message":"Bulk analysis run complete."}
+AdminDashboard-CWRQ7zXA.js:7 {"level":"INFO","timestamp":"2026-01-12T18:46:44.447Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+localCache-yiYcel0-.js:3 {"level":"debug","timestamp":"2026-01-12T18:46:44.468Z","service":"localCache","message":"Found 0 pending history records"}
+localCache-yiYcel0-.js:3 {"level":"info","timestamp":"2026-01-12T18:46:44.468Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
+localCache-yiYcel0-.js:3 {"level":"info","timestamp":"2026-01-12T18:46:46.924Z","service":"localCache","message":"Bulk cached 1 systems","context":{"syncStatus":"synced"}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:46:46.924Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":1,"deleted":0}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:46:46.924Z","service":"app-ui","message":"Data changed via sync, refreshing app data","context":{"collection":"systems"}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:46:46.924Z","service":"app-ui","message":"Fetching application data.","context":{"isManual":false}}
+localCache-yiYcel0-.js:3 {"level":"info","timestamp":"2026-01-12T18:46:48.777Z","service":"localCache","message":"Bulk cached 915 history records","context":{"syncStatus":"synced"}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:46:48.777Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":915,"deleted":0}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:46:48.777Z","service":"app-ui","message":"Data changed via sync, refreshing app data","context":{"collection":"history"}}
+main-DQ3LknOH.js:37 {"level":"DEBUG","timestamp":"2026-01-12T18:46:48.777Z","service":"app-ui","message":"Throttling background data refresh.","context":{"lastRefresh":1768243606924}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:46:48.777Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":4360}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:48:14.419Z","service":"SyncManager","message":"Performing periodic sync","context":{}}
+localCache-yiYcel0-.js:3 {"level":"debug","timestamp":"2026-01-12T18:48:14.421Z","service":"localCache","message":"Found 0 pending systems"}
+localCache-yiYcel0-.js:3 {"level":"debug","timestamp":"2026-01-12T18:48:14.421Z","service":"localCache","message":"Found 0 pending history records"}
+localCache-yiYcel0-.js:3 {"level":"info","timestamp":"2026-01-12T18:48:14.421Z","service":"localCache","message":"Found 0 pending items total","context":{"systems":0,"history":0,"analytics":0,"weather":0}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:48:15.448Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"systems","updates":0,"deleted":0}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:48:15.870Z","service":"SyncManager","message":"Pulled incremental updates","context":{"collection":"history","updates":0,"deleted":0}}
+main-DQ3LknOH.js:37 {"level":"INFO","timestamp":"2026-01-12T18:48:15.870Z","service":"SyncManager","message":"Periodic sync complete","context":{"duration":1451}}

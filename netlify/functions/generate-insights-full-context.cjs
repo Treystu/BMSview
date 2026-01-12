@@ -8,6 +8,7 @@ const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { generateFullContextInsights, countDataPoints } = require('./utils/full-context-logic.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * Main handler for full context insights
@@ -24,6 +25,10 @@ exports.handler = async (event, context) => {
 
   const log = createLoggerFromEvent('generate-insights-full-context', event, context);
   log.entry(createStandardEntryMeta(event));
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('generate-insights-full-context');
+
   const timer = createTimer(log, 'full-context-insights');
 
   try {

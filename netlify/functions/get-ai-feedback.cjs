@@ -11,6 +11,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('get-ai-feedback', event, context);
@@ -19,6 +20,9 @@ exports.handler = async (event, context) => {
 
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Get AI feedback request', includeBody: false });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('get-ai-feedback');
 
   // Handle preflight
   if (event.httpMethod === 'OPTIONS') {

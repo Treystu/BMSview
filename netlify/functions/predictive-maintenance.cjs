@@ -5,6 +5,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * @param {import('./utils/logger.cjs').LogFunction} log
@@ -40,6 +41,9 @@ exports.handler = async (event, context) => {
   const timer = createTimer(log, 'predictive-maintenance-handler');
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Predictive maintenance request', includeBody: true, bodyMaxStringLength: 20000 });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('predictive-maintenance');
   // Enable CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',

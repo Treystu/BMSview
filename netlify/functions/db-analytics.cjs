@@ -4,6 +4,7 @@ const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { ensureAdminAuthorized } = require('./utils/auth.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 // Helper to format bytes to human readable
 const formatBytes = (bytes, decimals = 2) => {
@@ -25,6 +26,9 @@ exports.handler = async (event, context) => {
     const headers = getCorsHeaders(event);
 
     log.entry(createStandardEntryMeta(event));
+
+    // Unified logging: also forward to centralized collector
+    const forwardLog = createForwardingLogger('db-analytics');
 
     if (event.httpMethod === 'OPTIONS') {
         return { statusCode: 200, headers };

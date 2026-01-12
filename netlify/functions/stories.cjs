@@ -6,6 +6,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * @param {any} event
@@ -24,6 +25,10 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('stories', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Stories request', includeBody: false });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('stories');
+
   /** @type {any} */
   const timer = createTimer(log, 'stories');
 

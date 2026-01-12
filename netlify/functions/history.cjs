@@ -6,6 +6,7 @@ const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
 const { ensureAdminAuthorized: ensureAdminAuthorizedShared } = require('./utils/auth.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
@@ -123,6 +124,10 @@ exports.handler = async function (event, context) {
 
     const log = createLoggerFromEvent('history', event, context);
     log.entry(createStandardEntryMeta(event));
+
+    // Unified logging: also forward to centralized collector
+    const forwardLog = createForwardingLogger('history');
+
     const timer = createTimer(log, 'history');
 
     // Define logContext for consistent logging throughout the function

@@ -2,6 +2,7 @@
 
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 exports.handler = async (event, context) => {
     const corsHeaders = getCorsHeaders(event);
@@ -9,6 +10,9 @@ exports.handler = async (event, context) => {
         ...corsHeaders,
         'Content-Type': 'application/json'
     };
+
+    // Unified logging: also forward to centralized collector
+    const forwardLog = createForwardingLogger('get-job-status-simple');
 
     try {
         if (event.httpMethod === 'OPTIONS') {

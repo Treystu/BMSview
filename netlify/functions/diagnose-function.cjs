@@ -8,6 +8,7 @@
 const { createLoggerFromEvent } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 const FUNCTION_DIAGNOSTICS = {
   'analyze.cjs': {
@@ -48,8 +49,8 @@ const FUNCTION_DIAGNOSTICS = {
         }
 
         // Check for dual-write consistency
-        if (collectionStatus['analysis-results'] && 
-            Math.abs(totalCount - collectionStatus['analysis-results'].count) > 10) {
+        if (collectionStatus['analysis-results'] &&
+          Math.abs(totalCount - collectionStatus['analysis-results'].count) > 10) {
           issues.push(
             `WARNING: Collection mismatch detected! ` +
             `analysis-results has ${collectionStatus['analysis-results'].count} records ` +
@@ -279,6 +280,9 @@ exports.handler = async (event, context) => {
   }
 
   const log = createLoggerFromEvent('diagnose-function', event, context);
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('diagnose-function');
 
   try {
     const { functionName, customQuery } = JSON.parse(event.body || '{}');

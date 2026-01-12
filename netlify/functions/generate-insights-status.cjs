@@ -11,6 +11,7 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * @param {import('./utils/jsdoc-types.cjs').LogLike} log
@@ -66,6 +67,10 @@ exports.handler = async (event, context) => {
   );
   log.entry(createStandardEntryMeta(event, jobIdForLog ? { jobId: jobIdForLog } : undefined));
   logDebugRequestSummary(log, event, { label: 'Generate insights status request', includeBody: true, bodyMaxStringLength: 20000 });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('generate-insights-status');
+
   /** @type {any} */
   const timer = createTimer(log, 'status-check');
 

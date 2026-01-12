@@ -4,6 +4,7 @@ const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta, logDebugRequestSummary } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const multiparty = require('multiparty');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 function validateEnvironment(log) {
   if (!process.env.MONGODB_URI) {
@@ -29,6 +30,10 @@ exports.handler = async (event, context) => {
   const log = createLoggerFromEvent('upload', event, context);
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'Upload request', includeBody: false });
+
+  // Unified logging: also forward to centralized collector
+  const forwardLog = createForwardingLogger('upload');
+
   const timer = createTimer(log, 'upload-handler');
 
   if (event.httpMethod !== 'POST') {

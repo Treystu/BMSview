@@ -12,6 +12,7 @@ const {
     createStandardEntryMeta,
     logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
 
 /**
  * @typedef {{
@@ -39,6 +40,9 @@ exports.handler = async (event, context) => {
     const headers = getCorsHeaders(event);
     log.entry(createStandardEntryMeta(event));
     logDebugRequestSummary(log, event, { label: 'Model pricing request', includeBody: false });
+
+    // Unified logging: also forward to centralized collector
+    const forwardLog = createForwardingLogger('model-pricing');
 
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {
