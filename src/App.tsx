@@ -382,15 +382,9 @@ function App() {
     dispatch({ type: 'CLOSE_REGISTER_MODAL' });
   };
 
-  // Guard: Do not render main app UI on admin page
+  // Guard: Do not render main app UI on admin page - return null to avoid covering admin dashboard
   if (isAdminPage) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-light">
-        <div className="text-center">
-          <p className="text-neutral-dark">Admin page detected. Main app is not rendered here.</p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
