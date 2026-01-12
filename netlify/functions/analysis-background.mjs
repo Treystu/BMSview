@@ -22,6 +22,7 @@ import { performAnalysisPipeline } from './utils/analysis-pipeline.cjs';
 import { COLLECTIONS } from './utils/collections.cjs';
 import { createLogger } from './utils/logger.cjs';
 import { getCollection } from './utils/mongodb.cjs';
+import { calculateImageHash, checkExistingAnalysis } from './utils/unified-deduplication.cjs';
 
 // Retry delay constants (in milliseconds)
 const RATE_LIMIT_RETRY_DELAY_MS = 300000; // 5 minutes
@@ -57,6 +58,32 @@ async function createOrUpdateAnalysisJob(jobData, log) {
 
     log.info('Analysis job created/updated', { jobId: jobData.jobId, fileName: jobData.fileName });
     return jobDoc;
+}
+
+async function upsertAnalysisResults({ recordId, fileName, timestamp, systemId, systemName, analysis, contentHash }, log) {
+    if (!contentHash || !recordId) return;
+    try {
+        const resultsCol = await getCollection(COLLECTIONS.ANALYSIS_RESULTS);
+        await resultsCol.updateOne(
+            { contentHash },
+            {
+                $set: {
+                    id: recordId,
+                    fileName,
+                    timestamp,
+                    systemId: systemId || null,
+                    systemName: systemName || null,
+                    analysis,
+                    contentHash,
+                    updatedAt: new Date()
+                },
+                $setOnInsert: { createdAt: new Date() }
+            },
+            { upsert: true }
+        );
+    } catch (e) {
+        log.warn('Failed to upsert analysis-results (non-fatal)', { error: e?.message || String(e), recordId });
+    }
 }
 
 /**
@@ -187,10 +214,63 @@ const handler = asyncWorkloadFn(async (event) => {
             });
         });
 
-        // STEP 3: Perform the analysis
+        // STEP 3: Check for existing analysis by content hash (parity with sync mode)
+        let contentHash = null;
+        let existingRecordDoc = null;
+        let isUpgrade = false;
+        await step.run('check-duplicates', async () => {
+            log.info('Step 3: Checking content-hash duplicates', { jobId });
+
+            contentHash = calculateImageHash(jobDoc.image, log, { skipValidation: true });
+            if (!contentHash) {
+                log.warn('Failed to compute content hash for async job (will proceed without dedupe)', { jobId });
+                return;
+            }
+
+            const dedupeResult = await checkExistingAnalysis(contentHash, log, jobDoc.fileName);
+            isUpgrade = !!dedupeResult?._isUpgrade;
+            existingRecordDoc = isUpgrade ? dedupeResult?._existingRecord : dedupeResult;
+            const isDuplicate = !!existingRecordDoc && !isUpgrade;
+
+            log.info('Async dedupe result', {
+                jobId,
+                hasHash: !!contentHash,
+                isDuplicate,
+                needsUpgrade: isUpgrade,
+                forceReanalysis: !!jobDoc.forceReanalysis
+            });
+
+            // Standardize: async path returns existing record unless explicitly forced
+            if (isDuplicate && !jobDoc.forceReanalysis) {
+                const recordId = existingRecordDoc.id || existingRecordDoc._id;
+                await updateJobStatus(jobId, 'completed', log, { recordId, completedAt: new Date() });
+                await storeProgressEvent(jobId, {
+                    stage: 'completed',
+                    progress: 100,
+                    message: 'Duplicate detected - returning existing record',
+                    recordId
+                }, log);
+
+                log.info('Async job short-circuited due to duplicate', { jobId, recordId });
+                return;
+            }
+        });
+
+        // If we short-circuited due to duplicate, stop here.
+        if (existingRecordDoc && !isUpgrade && !jobDoc.forceReanalysis) {
+            return {
+                success: true,
+                jobId,
+                recordId: existingRecordDoc.id || existingRecordDoc._id,
+                fileName: jobDoc.fileName,
+                isDuplicate: true
+            };
+        }
+
+        // STEP 4: Perform the analysis
         let analysisRecord;
         await step.run('perform-analysis', async () => {
-            log.info('Step 3: Performing BMS analysis', { jobId });
+            log.info('Step 4: Performing BMS analysis', { jobId });
 
             await storeProgressEvent(jobId, {
                 stage: 'analyzing',
@@ -198,16 +278,22 @@ const handler = asyncWorkloadFn(async (event) => {
                 message: 'Extracting BMS data using AI...'
             }, log);
 
-            // Use the existing analysis pipeline
+            // Use the existing analysis pipeline (NOTE: it expects { image, fileName, mimeType, force })
             analysisRecord = await performAnalysisPipeline(
-                jobDoc,
+                {
+                    image: jobDoc.image,
+                    fileName: jobDoc.fileName,
+                    mimeType: jobDoc.mimeType,
+                    force: !!jobDoc.forceReanalysis
+                },
                 jobDoc.systems || { items: [] },
                 log,
                 {
                     functionName: 'analysis-background',
                     jobId,
                     eventId
-                }
+                },
+                jobDoc.systemId || null
             );
 
             log.info('Analysis completed successfully', {
@@ -217,9 +303,92 @@ const handler = asyncWorkloadFn(async (event) => {
             });
         });
 
-        // STEP 4: Complete the job
+        // STEP 5: Upsert analysis-results + backfill contentHash
+        await step.run('persist-analysis-results', async () => {
+            if (!contentHash) {
+                contentHash = calculateImageHash(jobDoc.image);
+            }
+
+            await upsertAnalysisResults({
+                recordId: analysisRecord.id,
+                fileName: jobDoc.fileName,
+                timestamp: analysisRecord.timestamp,
+                systemId: analysisRecord.systemId,
+                systemName: analysisRecord.systemName,
+                analysis: analysisRecord.analysis,
+                contentHash
+            }, log);
+
+            try {
+                const historyCol = await getCollection(COLLECTIONS.HISTORY);
+                await historyCol.updateOne(
+                    { id: analysisRecord.id },
+                    { $set: { contentHash, analysisKey: contentHash } }
+                );
+            } catch (e) {
+                log.warn('Failed to backfill history contentHash (non-fatal)', { error: e?.message || String(e), jobId });
+            }
+        });
+
+        // STEP 6: Complete the job
         await step.run('complete-job', async () => {
-            log.info('Step 4: Completing job', { jobId, recordId: analysisRecord.id });
+            log.info('Step 6: Completing job', { jobId, recordId: analysisRecord.id });
+
+            // If this job was a forced reanalysis of an existing record, overwrite the existing record and delete the new one.
+            const shouldMergeIntoExisting = (jobDoc.forceReanalysis || isUpgrade) && existingRecordDoc && (existingRecordDoc.id || existingRecordDoc._id);
+            if (shouldMergeIntoExisting) {
+                const canonicalId = existingRecordDoc.id || existingRecordDoc._id;
+
+                try {
+                    const historyCol = await getCollection(COLLECTIONS.HISTORY);
+                    await historyCol.updateOne(
+                        { id: canonicalId },
+                        {
+                            $set: {
+                                analysis: analysisRecord.analysis,
+                                timestamp: analysisRecord.timestamp,
+                                systemId: analysisRecord.systemId || null,
+                                systemName: analysisRecord.systemName || null,
+                                fileName: analysisRecord.fileName || jobDoc.fileName,
+                                contentHash: contentHash || null,
+                                analysisKey: contentHash || null,
+                                updatedAt: new Date().toISOString()
+                            }
+                        }
+                    );
+
+                    await historyCol.deleteOne({ id: analysisRecord.id });
+                    analysisRecord.id = canonicalId;
+                } catch (e) {
+                    log.warn('Failed to merge forced reanalysis into existing record (non-fatal)', {
+                        error: e?.message || String(e),
+                        jobId
+                    });
+                }
+
+                await upsertAnalysisResults({
+                    recordId: canonicalId,
+                    fileName: jobDoc.fileName,
+                    timestamp: analysisRecord.timestamp,
+                    systemId: analysisRecord.systemId,
+                    systemName: analysisRecord.systemName,
+                    analysis: analysisRecord.analysis,
+                    contentHash
+                }, log);
+            }
+
+            // Ensure canonical record (whether merged or newly created) has contentHash backfilled
+            if (contentHash) {
+                try {
+                    const historyCol = await getCollection(COLLECTIONS.HISTORY);
+                    await historyCol.updateOne(
+                        { id: analysisRecord.id },
+                        { $set: { contentHash, analysisKey: contentHash } }
+                    );
+                } catch (e) {
+                    log.warn('Failed to backfill history contentHash at completion (non-fatal)', { error: e?.message || String(e), jobId });
+                }
+            }
 
             await updateJobStatus(jobId, 'completed', log, {
                 recordId: analysisRecord.id,

@@ -2,6 +2,7 @@ import EditSystemModal from 'components/EditSystemModal';
 import SpinnerIcon from 'components/icons/SpinnerIcon';
 import React, { useEffect, useState } from 'react';
 import {
+    associateHardwareIdToSystem,
     getDataIntegrity,
     registerBmsSystem,
     type DataIntegrityItem,
@@ -11,6 +12,7 @@ import type { BmsSystem } from '../../../types';
 
 interface ReconciliationDashboardProps {
     onSystemCreated: () => void; // Callback to refresh systems list
+    systems: BmsSystem[];
 }
 
 const log = (level: 'info' | 'warn' | 'error', message: string, context: object = {}) => {
@@ -24,7 +26,8 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
 };
 
 const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
-    onSystemCreated
+    onSystemCreated,
+    systems
 }) => {
     const [integrityData, setIntegrityData] = useState<DataIntegrityResponse | null>(null);
     const [loading, setLoading] = useState(true);
@@ -32,6 +35,8 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
     const [adoptingDL, setAdoptingDL] = useState<DataIntegrityItem | null>(null);
     const [isSavingNewSystem, setIsSavingNewSystem] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    const [assignSelections, setAssignSelections] = useState<Record<string, string>>({});
+    const [assigningHwId, setAssigningHwId] = useState<string | null>(null);
 
     // Fetch data integrity report
     const fetchIntegrityData = async () => {
@@ -59,6 +64,27 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
         const hwId = orphanedDL.hardware_id || orphanedDL.dl_id;
         log('info', 'User initiated adopt system workflow.', { hardware_id: hwId });
         setAdoptingDL(orphanedDL);
+    };
+
+    const handleAssignToExistingSystem = async (item: DataIntegrityItem) => {
+        const hwId = item.hardware_id || item.dl_id;
+        const selectedSystemId = assignSelections[hwId];
+
+        if (!hwId || hwId === 'UNIDENTIFIED') return;
+        if (!selectedSystemId) return;
+
+        setAssigningHwId(hwId);
+        setSaveError(null);
+        try {
+            await associateHardwareIdToSystem(hwId, selectedSystemId);
+            await onSystemCreated();
+            await fetchIntegrityData();
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Failed to assign hardware ID to system.';
+            setSaveError(errorMessage);
+        } finally {
+            setAssigningHwId(null);
+        }
     };
 
     const handleSaveNewSystem = async (systemData: Omit<BmsSystem, 'id'>) => {
@@ -199,12 +225,37 @@ const ReconciliationDashboard: React.FC<ReconciliationDashboardProps> = ({
                                                     ⚠️ Extraction Failed - Re-upload Required
                                                 </span>
                                             ) : (
-                                                <button
-                                                    onClick={() => handleAdoptSystem(item)}
-                                                    className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors text-sm"
-                                                >
-                                                    ➕ Adopt System
-                                                </button>
+                                                <div className="space-y-2">
+                                                    <div className="flex flex-wrap gap-2 items-center">
+                                                        <select
+                                                            aria-label="Assign orphaned hardware ID to existing system"
+                                                            value={assignSelections[item.hardware_id || item.dl_id] || ''}
+                                                            onChange={(e) => {
+                                                                const key = item.hardware_id || item.dl_id;
+                                                                setAssignSelections(prev => ({ ...prev, [key]: e.target.value }));
+                                                            }}
+                                                            className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-gray-100"
+                                                        >
+                                                            <option value="">Assign to existing system...</option>
+                                                            {systems.map((s) => (
+                                                                <option key={s.id} value={s.id}>{s.name}</option>
+                                                            ))}
+                                                        </select>
+                                                        <button
+                                                            onClick={() => handleAssignToExistingSystem(item)}
+                                                            disabled={assigningHwId === (item.hardware_id || item.dl_id) || !assignSelections[item.hardware_id || item.dl_id]}
+                                                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors text-sm disabled:bg-gray-700 disabled:cursor-not-allowed"
+                                                        >
+                                                            {assigningHwId === (item.hardware_id || item.dl_id) ? 'Assigning...' : '🔗 Assign'}
+                                                        </button>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleAdoptSystem(item)}
+                                                        className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors text-sm"
+                                                    >
+                                                        ➕ Create New System
+                                                    </button>
+                                                </div>
                                             )}
                                         </td>
                                     </tr>

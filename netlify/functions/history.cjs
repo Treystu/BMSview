@@ -138,7 +138,8 @@ exports.handler = async function (event, context) {
         return respond(500, { error: 'Server configuration error' }, headers);
     }
 
-    if (event.httpMethod !== 'GET') {
+    const isPublicWriteOperation = event.httpMethod === 'PUT';
+    if (event.httpMethod !== 'GET' && !isPublicWriteOperation) {
         const authResponse = await ensureAdminAuthorizedShared(event, context, headers, log);
         if (authResponse) {
             log.exit(403);

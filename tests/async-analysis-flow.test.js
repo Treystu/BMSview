@@ -14,10 +14,11 @@ global.fetch = jest.fn();
 
 describe('Async Analysis Flow', () => {
     describe('get-job-status endpoint', () => {
-        test('should return empty array for no job IDs', async () => {
+        test('should return 400 for missing job IDs (POST)', async () => {
             fetch.mockResolvedValueOnce({
-                ok: true,
-                json: async () => ({ jobs: [], count: 0 })
+                ok: false,
+                status: 400,
+                json: async () => ({ error: { code: 'bad_request', message: 'jobIds is required' } })
             });
 
             const response = await fetch('http://localhost:8888/.netlify/functions/get-job-status', {
@@ -26,24 +27,23 @@ describe('Async Analysis Flow', () => {
                 body: JSON.stringify({ jobIds: [] })
             });
 
-            expect(response.ok).toBe(true);
-            const data = await response.json();
-            expect(data.jobs).toEqual([]);
-            expect(data.count).toBe(0);
+            expect(response.ok).toBe(false);
+            expect(response.status).toBe(400);
         });
 
-        test('should handle GET request with query params', async () => {
+        test('should handle GET request with query params (returns statuses[])', async () => {
             fetch.mockResolvedValueOnce({
                 ok: true,
-                json: async () => ({ jobs: [], count: 0 })
+                json: async () => ({ statuses: [{ jobId: 'job1', status: 'queued' }, { jobId: 'job2', status: 'completed', recordId: 'r2' }] })
             });
 
             const response = await fetch('http://localhost:8888/.netlify/functions/get-job-status?ids=job1,job2');
 
             expect(response.ok).toBe(true);
             const data = await response.json();
-            expect(data.jobs).toBeDefined();
-            expect(Array.isArray(data.jobs)).toBe(true);
+            expect(data.statuses).toBeDefined();
+            expect(Array.isArray(data.statuses)).toBe(true);
+            expect(data.statuses).toHaveLength(2);
         });
     });
 

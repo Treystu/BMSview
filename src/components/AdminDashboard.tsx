@@ -11,6 +11,7 @@ import {
     createAnalysisStory,
     deleteAnalysisRecord,
     deleteAnalysisRecords,
+    deleteBmsSystem,
     deleteUnlinkedAnalysisHistory,
     findDuplicateAnalysisSets,
     fixPowerSigns,
@@ -19,6 +20,7 @@ import {
     linkAnalysisToSystem,
     mergeBmsSystems,
     normalizeIds,
+    registerBmsSystem,
     runSingleDiagnosticTest,
     streamAllHistory,
     updateBmsSystem
@@ -30,7 +32,6 @@ import { checkFilesForDuplicates, partitionCachedFiles, type CachedDuplicateResu
 
 import BulkUpload from './BulkUpload';
 import DiagnosticsModal from './DiagnosticsModal';
-import EditSystemModal from './EditSystemModal';
 import HistoricalChart from './HistoricalChart';
 import IpManagement from './IpManagement';
 import SpinnerIcon from './icons/SpinnerIcon';
@@ -42,6 +43,7 @@ import { DiagnosticsGuru } from './DiagnosticsGuru';
 import { SolarIntegrationDashboard } from './SolarIntegrationDashboard';
 import AdminHeader from './admin/AdminHeader';
 import AdminStoryManager from './admin/AdminStoryManager';
+import AdminSystemsManager from './admin/AdminSystemsManager';
 import DataManagement from './admin/DataManagement';
 import FeedbackMonitoringDashboard from './admin/FeedbackMonitoringDashboard';
 import HistoryTable from './admin/HistoryTable';
@@ -100,6 +102,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
 
     // Cache of ALL systems for dropdowns (independent of pagination)
     const [allSystems, setAllSystems] = useState<BmsSystem[]>([]);
+
+    const [isCreatingSystem, setIsCreatingSystem] = useState(false);
 
     // Track job IDs from async analysis requests
     const [asyncJobIds, setAsyncJobIds] = useState<string[]>([]);
@@ -601,19 +605,47 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         }
     };
 
-    const handleSaveSystem = async (updatedData: Omit<BmsSystem, 'id'>) => {
-        if (!editingSystem) return;
-        log('info', 'Saving system edits.', { systemId: editingSystem.id });
+    const handleSaveSystem = async (system: BmsSystem) => {
+        const isEdit = !!editingSystem && !isCreatingSystem;
+        const systemId = editingSystem?.id;
+        log('info', 'Saving system.', { mode: isEdit ? 'edit' : 'create', systemId: systemId || null });
         dispatch({ type: 'ACTION_START', payload: 'isSaving' });
         try {
-            await updateBmsSystem(editingSystem.id, updatedData);
+            if (isEdit && systemId) {
+                const updatedData = { ...system };
+                delete (updatedData as Partial<BmsSystem>).id;
+                await updateBmsSystem(systemId, updatedData);
+            } else {
+                const createData = { ...system };
+                delete (createData as Partial<BmsSystem>).id;
+                await registerBmsSystem(createData);
+            }
+
             log('info', 'System saved successfully.');
+            setIsCreatingSystem(false);
             dispatch({ type: 'SET_EDITING_SYSTEM', payload: null });
-            await fetchData(systemsPage, 'systems', { forceRefresh: true }); // Refresh current systems page
+            await fetchData(systemsPage, 'systems', { forceRefresh: true });
+            await fetchData(1, 'systems', { forceRefresh: true });
         } catch (err) {
             const error = err instanceof Error ? err.message : "Failed to save system.";
-            log('error', 'Failed to save system.', { systemId: editingSystem.id, error });
-            dispatch({ type: 'SET_ERROR', payload: error }); // Keep modal open on error
+            log('error', 'Failed to save system.', { systemId: systemId || null, error });
+            dispatch({ type: 'SET_ERROR', payload: error });
+        } finally {
+            dispatch({ type: 'ACTION_END', payload: 'isSaving' });
+        }
+    };
+
+    const handleDeleteSystem = async (systemId: string) => {
+        log('info', 'Deleting system.', { systemId });
+        dispatch({ type: 'ACTION_START', payload: 'isSaving' });
+        try {
+            await deleteBmsSystem(systemId);
+            setIsCreatingSystem(false);
+            dispatch({ type: 'SET_EDITING_SYSTEM', payload: null });
+            await fetchData(1, 'systems', { forceRefresh: true });
+        } catch (err) {
+            const error = err instanceof Error ? err.message : 'Failed to delete system.';
+            dispatch({ type: 'SET_ERROR', payload: error });
         } finally {
             dispatch({ type: 'ACTION_END', payload: 'isSaving' });
         }
@@ -1158,6 +1190,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                 await handleMergeSystems();
                             }}
                         />
+                        <div className="flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsCreatingSystem(true);
+                                    dispatch({ type: 'SET_EDITING_SYSTEM', payload: null });
+                                }}
+                                className="bg-secondary hover:bg-primary text-white font-bold py-2 px-4 rounded-md transition-colors"
+                            >
+                                ➕ Create System
+                            </button>
+                        </div>
                         <HistoryTable
                             history={sortedHistoryForTable}
                             systems={systems}
@@ -1196,6 +1240,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                 Orphaned ID Management
                             </h2>
                             <ReconciliationDashboard
+                                systems={allSystems.length > 0 ? allSystems : systems}
                                 onSystemCreated={async () => {
                                     // Refresh systems list after creating a new system
                                     await fetchData(1, 'systems');
@@ -1386,12 +1431,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 )}
             </main>
 
-            {editingSystem && (
-                <EditSystemModal
-                    system={editingSystem}
+            {(editingSystem || isCreatingSystem) && (
+                <AdminSystemsManager
+                    editingSystem={isCreatingSystem ? null : editingSystem}
+                    dispatch={dispatch}
+                    onClose={() => {
+                        setIsCreatingSystem(false);
+                        dispatch({ type: 'SET_EDITING_SYSTEM', payload: null });
+                    }}
                     onSave={handleSaveSystem}
-                    onClose={() => dispatch({ type: 'SET_EDITING_SYSTEM', payload: null })}
-                    isSaving={actionStatus.isSaving}
+                    onDelete={handleDeleteSystem}
                 />
             )}
 

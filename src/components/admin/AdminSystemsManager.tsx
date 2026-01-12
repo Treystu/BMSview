@@ -205,8 +205,9 @@ const AdminSystemsManager: React.FC<AdminSystemsManagerProps> = ({
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium mb-2">Chemistry</label>
+                                <label htmlFor="system-chemistry" className="block text-sm font-medium mb-2">Chemistry</label>
                                 <select
+                                    id="system-chemistry"
                                     value={formData.chemistry}
                                     onChange={(e) => setFormData({ ...formData, chemistry: e.target.value })}
                                     className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-secondary"
@@ -215,7 +216,7 @@ const AdminSystemsManager: React.FC<AdminSystemsManagerProps> = ({
                                     <option value="LiFePO4">LiFePO4 (Lithium Iron Phosphate)</option>
                                     <option value="NMC">NMC (Nickel Manganese Cobalt)</option>
                                     <option value="LTO">LTO (Lithium Titanate)</option>
-                                    <option value="Lead-Acid">Lead-Acid</option>
+                                    <option value="LeadAcid">Lead-Acid</option>
                                     <option value="AGM">AGM (Absorbed Glass Mat)</option>
                                     <option value="Gel">Gel</option>
                                     <option value="Other">Other</option>

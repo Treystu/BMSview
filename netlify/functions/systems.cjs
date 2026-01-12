@@ -45,9 +45,17 @@ const respond = (statusCode, body, headers = {}) => ({
 exports.handler = async function (event, context) {
     const headers = getCorsHeaders(event);
 
+    const rawPath = event.path || '';
+    const basePath = '/.netlify/functions/systems';
+    const subPath = rawPath.startsWith(basePath) ? rawPath.slice(basePath.length) : '';
+    const subParts = subPath.split('/').filter(Boolean);
+    const isMergePath = subParts.length === 1 && subParts[0] === 'merge';
+    const isAssociateHardwarePath = subParts.length === 1 && subParts[0] === 'associate-hardware';
+    const pathSystemId = subParts.length >= 1 && !['merge', 'associate-hardware'].includes(subParts[0]) ? subParts[0] : null;
+    const isMergedTimelinePath = subParts.length === 2 && subParts[1] === 'merged-timeline' && !!pathSystemId;
+
     // Handle preflight
     if (event.httpMethod === 'OPTIONS') {
-        log.debug('Preflight request received', { method: event.httpMethod, path: event.path });
         return { statusCode: 200, headers };
     }
 
@@ -79,8 +87,42 @@ exports.handler = async function (event, context) {
         log.debug('MongoDB collections connected', { systemsCollection: 'systems', historyCollection: 'history' });
 
         if (event.httpMethod === 'GET') {
-            const { systemId, page = '1', limit = '25' } = event.queryStringParameters || {};
+            const { systemId: qsSystemId, page = '1', limit = '25', startDate: qsStartDate, endDate: qsEndDate, downsample: qsDownsample, maxPoints: qsMaxPoints } = event.queryStringParameters || {};
+            const systemId = qsSystemId || pathSystemId || undefined;
             log.debug('GET request - parsing query parameters', { systemId, page, limit });
+
+            if (isMergedTimelinePath) {
+                const now = new Date();
+                const endDate = qsEndDate || now.toISOString();
+                const startDate = qsStartDate || new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+                const downsample = qsDownsample === 'true';
+                const maxPoints = qsMaxPoints ? parseInt(qsMaxPoints, 10) : 2000;
+
+                try {
+                    const { mergeBmsAndCloudData, downsampleMergedData } = require('./utils/data-merge.cjs');
+                    let mergedData = await mergeBmsAndCloudData(systemId, startDate, endDate, log);
+                    if (downsample) {
+                        mergedData = downsampleMergedData(mergedData, Number.isFinite(maxPoints) ? maxPoints : 2000, log);
+                    }
+
+                    timer.end({ mergedTimeline: true, dataPoints: mergedData.length });
+                    log.exit(200);
+                    return respond(200, {
+                        systemId,
+                        startDate,
+                        endDate,
+                        totalPoints: mergedData.length,
+                        downsampled: downsample,
+                        data: mergedData
+                    }, headers);
+                } catch (err) {
+                    const e = err instanceof Error ? err : new Error(String(err));
+                    log.error('Failed to fetch merged timeline data', { error: e.message, stack: e.stack });
+                    timer.end({ error: 'merged_timeline_failed' });
+                    log.exit(500);
+                    return respond(500, { error: 'Failed to fetch merged timeline data', details: e.message }, headers);
+                }
+            }
 
             if (systemId) {
                 log.debug('Fetching single system by ID', { systemId });
@@ -143,6 +185,16 @@ exports.handler = async function (event, context) {
                 return respond(400, { error: 'Invalid JSON in request body', details: parseError.message }, headers);
             }
             log.debug('Parsing POST body', { ...logContext, bodyLength: event.body ? event.body.length : 0 });
+
+            if (isMergePath && !parsedBody.action) {
+                parsedBody.action = 'merge';
+            }
+            if (isAssociateHardwarePath && !parsedBody.action) {
+                parsedBody.action = 'associate-hardware';
+            }
+            if (!parsedBody.action && parsedBody.primarySystemId && Array.isArray(parsedBody.idsToMerge)) {
+                parsedBody.action = 'merge';
+            }
 
             const { action, ...otherProps } = parsedBody;
             const postLogContext = { ...logContext, action, fieldsProvided: Object.keys(otherProps) };
@@ -263,12 +315,50 @@ exports.handler = async function (event, context) {
                 return respond(200, { success: true, conflicts: conflicts.length > 0 ? conflicts : undefined }, headers);
             }
 
+            if (action === 'associate-hardware') {
+                const { systemId, hardwareId } = parsedBody;
+                if (!systemId || !hardwareId) {
+                    timer.end({ error: 'missing_params' });
+                    log.exit(400);
+                    return respond(400, { error: 'systemId and hardwareId are required' }, headers);
+                }
+
+                const normalizedId = normalizeHardwareId(hardwareId);
+                if (!normalizedId || normalizedId === 'UNKNOWN') {
+                    timer.end({ error: 'invalid_hardware_id' });
+                    log.exit(400);
+                    return respond(400, { error: 'Invalid hardwareId' }, headers);
+                }
+
+                const system = await systemsCollection.findOne({ id: systemId }, { projection: { _id: 0 } });
+                if (!system) {
+                    timer.end({ error: 'not_found' });
+                    log.exit(404);
+                    return respond(404, { error: 'System not found.' }, headers);
+                }
+
+                const existingIds = Array.isArray(system.associatedHardwareIds)
+                    ? system.associatedHardwareIds
+                    : (Array.isArray(system.associatedDLs) ? system.associatedDLs : []);
+                const updatedIds = [...new Set([...existingIds, normalizedId])];
+                const added = updatedIds.length !== existingIds.length;
+
+                await systemsCollection.updateOne(
+                    { id: systemId },
+                    { $set: { associatedHardwareIds: updatedIds, associatedDLs: updatedIds } }
+                );
+
+                timer.end({ associated: true, added });
+                log.exit(200);
+                return respond(200, { success: true, systemId, hardwareId: normalizedId, added }, headers);
+            }
+
             // Validate and create new system
             try {
                 const validatedSystem = SystemSchema.parse(parsedBody);
                 // Ensure backward compatibility: Sync associatedHardwareIds -> associatedDLs
                 let dls = validatedSystem.associatedHardwareIds || validatedSystem.associatedDLs || [];
-                
+
                 // UNIFIED: Normalize incoming IDs immediately
                 dls = dls.map(id => normalizeHardwareId(id)).filter(id => id && id !== 'UNKNOWN');
 
@@ -306,7 +396,8 @@ exports.handler = async function (event, context) {
         }
 
         if (event.httpMethod === 'PUT') {
-            const { systemId } = event.queryStringParameters || {};
+            const { systemId: qsSystemId } = event.queryStringParameters || {};
+            const systemId = qsSystemId || pathSystemId;
             const putLogContext = { ...logContext, systemId };
             if (!systemId) {
                 timer.end({ error: 'missing_systemId' });
@@ -349,7 +440,7 @@ exports.handler = async function (event, context) {
                     const normIds = validatedUpdate.associatedHardwareIds
                         .map(hid => normalizeHardwareId(hid))
                         .filter(hid => hid && hid !== 'UNKNOWN');
-                        
+
                     validatedUpdate.associatedHardwareIds = normIds;
                     validatedUpdate.associatedDLs = normIds;
                 }
@@ -381,7 +472,8 @@ exports.handler = async function (event, context) {
         }
 
         if (event.httpMethod === 'DELETE') {
-            const { systemId } = event.queryStringParameters || {};
+            const { systemId: qsSystemId } = event.queryStringParameters || {};
+            const systemId = qsSystemId || pathSystemId;
 
             if (!systemId) {
                 log.warn('System ID missing for deletion');

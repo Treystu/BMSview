@@ -1,5 +1,5 @@
 // @ts-nocheck
-const { getCollection } = require('./utils/mongodb.cjs');
+const { getCollection, getDb } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
@@ -50,9 +50,7 @@ exports.handler = async (event, context) => {
 
         // 1. Database Level Stats
         if (mode === 'summary' || mode === 'full') {
-            const historyCol = await getCollection('history');
-            // db.stats() is a database level command, accessed via the db object
-            const db = historyCol.dbName ? historyCol.client.db(historyCol.dbName) : historyCol.s.db; // Safe access to db instance
+            const db = await getDb();
 
             log.dbOperation('stats', 'db');
             const dbStats = await db.stats();

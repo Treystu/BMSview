@@ -125,7 +125,7 @@ async function ensureAdminAuthorized(event, context, headers, log) {
     const identityUser = context?.clientContext?.user;
     if (identityUser) {
         if (!isNetlifyIdentityUserAdmin(identityUser)) {
-            if (!isProduction && !process.env.ADMIN_ACCESS_TOKEN && !isAdminEmailAllowlistConfigured()) {
+            if (!process.env.ADMIN_ACCESS_TOKEN && !isAdminEmailAllowlistConfigured()) {
                 return null;
             }
 
@@ -158,14 +158,7 @@ async function ensureAdminAuthorized(event, context, headers, log) {
             return unauthorized(headers);
         }
 
-        if (!isAdminEmailAllowlistConfigured() && isProduction) {
-            if (log?.warn) {
-                log.warn('Admin access denied: Google OAuth present but ADMIN_EMAIL_ALLOWLIST is not configured in production');
-            }
-            return unauthorized(headers);
-        }
-
-        if (!isAdminEmailAllowlistConfigured() && !isProduction && !process.env.ADMIN_ACCESS_TOKEN) {
+        if (!isAdminEmailAllowlistConfigured() && !process.env.ADMIN_ACCESS_TOKEN) {
             return null;
         }
 

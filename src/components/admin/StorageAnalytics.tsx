@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import type { NetlifyIdentityWidget } from '../../types';
 import SpinnerIcon from '../icons/SpinnerIcon';
 
 interface FieldStat {
@@ -44,10 +45,26 @@ const StorageAnalytics: React.FC = () => {
         setError(null);
         setMode(selectedMode);
         try {
-            const token = localStorage.getItem('site_password'); // Or however we auth
-            // Assuming the function uses the common admin auth check or just works if protected by Netlify Identity on page load
+            const headers: HeadersInit = {};
+
+            const legacyToken = localStorage.getItem('site_password');
+            if (legacyToken) {
+                headers['x-admin-token'] = legacyToken;
+            }
+
+            const netlifyIdentity = (window as unknown as { netlifyIdentity?: NetlifyIdentityWidget }).netlifyIdentity;
+            if (typeof window !== 'undefined' && netlifyIdentity?.currentUser) {
+                try {
+                    const user = netlifyIdentity.currentUser?.() ?? null;
+                    const token = (await user?.jwt?.()) ?? '';
+                    if (token) headers['Authorization'] = `Bearer ${token}`;
+                } catch (tokenErr) {
+                    console.warn('Could not get auth token:', tokenErr);
+                }
+            }
+
             const res = await fetch(`/.netlify/functions/db-analytics?mode=${selectedMode}&collection=history`, {
-                headers: token ? { 'x-admin-token': token } : {}
+                headers
             });
 
             if (!res.ok) throw new Error(`Analysis failed: ${res.statusText}`);

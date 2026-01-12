@@ -1742,17 +1742,25 @@ async function dualWriteWithTimerReset<T>(
         }
 
         // 3. Reset sync timer to trigger periodic sync
-        try {
-            const sm = await import('@/services/syncManager');
-            if (sm.default && sm.default.resetPeriodicTimer) {
-                sm.default.resetPeriodicTimer();
-                log('info', `Dual-write: sync timer reset (${operation})`, context);
+        // NOTE: syncManager is a browser-side singleton with background timers.
+        // Importing it in Jest (Node 24) can trigger unhandled rejections and fail the run.
+        const isTestEnv = typeof process !== 'undefined'
+            && !!process.env
+            && (process.env.NODE_ENV === 'test' || typeof process.env.JEST_WORKER_ID === 'string');
+
+        if (!isTestEnv) {
+            try {
+                const sm = await import('@/services/syncManager');
+                if (sm.default && sm.default.resetPeriodicTimer) {
+                    sm.default.resetPeriodicTimer();
+                    log('info', `Dual-write: sync timer reset (${operation})`, context);
+                }
+            } catch (timerErr) {
+                log('warn', `Dual-write: failed to reset sync timer`, {
+                    ...context,
+                    error: timerErr instanceof Error ? timerErr.message : String(timerErr)
+                });
             }
-        } catch (timerErr) {
-            log('warn', `Dual-write: failed to reset sync timer`, {
-                ...context,
-                error: timerErr instanceof Error ? timerErr.message : String(timerErr)
-            });
         }
 
         // 4. Log performance

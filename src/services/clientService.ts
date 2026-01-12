@@ -1317,6 +1317,12 @@ export const updateBmsSystem = async (systemId: string, updates: Partial<BmsSyst
     });
 };
 
+export const deleteBmsSystem = async (systemId: string): Promise<void> => {
+    await apiFetch(`systems/${systemId}`, {
+        method: 'DELETE'
+    });
+};
+
 export const mergeBmsSystems = async (primarySystemId: string, idsToMerge: string[]): Promise<void> => {
     await apiFetch('systems/merge', {
         method: 'POST',
@@ -1325,41 +1331,68 @@ export const mergeBmsSystems = async (primarySystemId: string, idsToMerge: strin
 };
 
 export const findDuplicateAnalysisSets = async (): Promise<AnalysisRecord[][]> => {
-    return apiFetch('analysis/find-duplicates');
+    const response = await apiFetch<{ duplicateSets?: AnalysisRecord[][] }>('admin-scan-duplicates');
+    if (response && typeof response === 'object' && Array.isArray(response.duplicateSets)) {
+        return response.duplicateSets;
+    }
+    return [];
 };
 
 export const deleteAnalysisRecords = async (recordIds: string[]): Promise<void> => {
-    await apiFetch('analysis/batch-delete', {
+    await apiFetch('history', {
         method: 'POST',
-        body: JSON.stringify({ recordIds }),
+        body: JSON.stringify({ action: 'deleteBatch', recordIds }),
     });
 };
 
 export const deleteUnlinkedAnalysisHistory = async (): Promise<void> => {
-    await apiFetch('analysis/cleanup-unlinked', { method: 'POST' });
+    await apiFetch('history?unlinked=true', { method: 'DELETE' });
 };
 
 export const deleteAnalysisRecord = async (recordId: string): Promise<void> => {
-    await apiFetch(`analysis/${recordId}`, { method: 'DELETE' });
+    await apiFetch(`history?id=${encodeURIComponent(recordId)}`, { method: 'DELETE' });
 };
 
 export const linkAnalysisToSystem = async (recordId: string, systemId: string, hardwareSystemId?: string | null): Promise<void> => {
-    await apiFetch('analysis/link-to-system', {
-        method: 'POST',
-        body: JSON.stringify({ recordId, systemId, hardwareSystemId }),
+    await apiFetch('history', {
+        method: 'PUT',
+        body: JSON.stringify({
+            recordId,
+            systemId,
+            dlNumber: hardwareSystemId ?? undefined
+        }),
     });
 };
 
 export const countRecordsNeedingWeather = async (): Promise<{ count: number }> => {
-    return apiFetch('analysis/count-needs-weather');
+    return apiFetch<{ count: number }>('history', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'count-records-needing-weather' })
+    });
 };
 
 export const normalizeIds = async (limit: number = 1000): Promise<{ normalized: number; errors: string[] }> => {
-    return apiFetch(`analysis/normalize-ids?limit=${limit}`);
+    const resp = await apiFetch<{ updatedCount?: number; errors?: string[] }>('history', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'normalize-ids', limit })
+    });
+
+    return {
+        normalized: typeof resp?.updatedCount === 'number' ? resp.updatedCount : 0,
+        errors: Array.isArray(resp?.errors) ? resp.errors : []
+    };
 };
 
 export const fixPowerSigns = async (): Promise<{ fixed: number; errors: string[] }> => {
-    return apiFetch('analysis/fix-power-signs');
+    const resp = await apiFetch<{ updatedCount?: number; errors?: string[] }>('history', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'fix-power-signs' })
+    });
+
+    return {
+        fixed: typeof resp?.updatedCount === 'number' ? resp.updatedCount : 0,
+        errors: Array.isArray(resp?.errors) ? resp.errors : []
+    };
 };
 
 export const createAnalysisStory = async (storyData: Partial<AnalysisStory>): Promise<AnalysisStory> => {
