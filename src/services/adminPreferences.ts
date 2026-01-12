@@ -43,7 +43,7 @@ const DEFAULT_CHART_PREFERENCES: ChartPreferences = {
     averagingEnabled: true,
     manualBucketSize: null,
     bandEnabled: false,
-    defaultDateRangeDays: 7,
+    defaultDateRangeDays: 180,
 };
 
 const DEFAULT_PREFERENCES: AdminPreferences = {

@@ -1547,11 +1547,12 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
         return localDate.toISOString().slice(0, 16);
     };
 
-    // Initialize with default 30-day range so charts load immediately
+    // Initialize with default date range from preferences
     // Use local time for input fields
-    const [startDate, setStartDate] = useState<string>(() =>
-        toLocalISOString(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
-    );
+    const [startDate, setStartDate] = useState<string>(() => {
+        const days = savedPrefs.defaultDateRangeDays || 30;
+        return toLocalISOString(new Date(Date.now() - days * 24 * 60 * 60 * 1000));
+    });
     const [endDate, setEndDate] = useState<string>(''); // Empty defaults to "Now"
 
     const [timelineData, setTimelineData] = useState<TimelineData | null>(null);
@@ -1711,7 +1712,7 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
         });
 
         // Prepare UTC ISO strings for API calls to prevent timezone drift
-        const chartStartDate = startDate || toLocalISOString(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+        const chartStartDate = startDate || toLocalISOString(new Date(Date.now() - (savedPrefs.defaultDateRangeDays || 180) * 24 * 60 * 60 * 1000));
         const chartEndDate = endDate || toLocalISOString(new Date());
 
         const apiStartDate = new Date(chartStartDate).toISOString();
@@ -1888,6 +1889,9 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
     };
 
     const handleSavePreferences = useCallback(() => {
+        // Calculate the current date range in days
+        const days = startDate ? Math.round((new Date().getTime() - new Date(startDate).getTime()) / (24 * 60 * 60 * 1000)) : 180;
+
         saveChartPreferences({
             metricConfig,
             chartView,
@@ -1896,11 +1900,12 @@ const HistoricalChart: React.FC<HistoricalChartProps> = ({
             manualBucketSize,
             bandEnabled,
             defaultSystemId: selectedSystemId || undefined,
+            defaultDateRangeDays: days,
         });
         setPreferencesSaved(true);
         // Reset the saved indicator after 2 seconds
         setTimeout(() => setPreferencesSaved(false), 2000);
-    }, [metricConfig, chartView, hourlyMetric, averagingEnabled, manualBucketSize, bandEnabled, selectedSystemId]);
+    }, [metricConfig, chartView, hourlyMetric, averagingEnabled, manualBucketSize, bandEnabled, selectedSystemId, startDate]);
 
     const hasChartData = timelineData || (analyticsData?.hourlyAverages?.length ?? 0) > 0;
 
