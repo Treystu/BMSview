@@ -4,6 +4,7 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { ensureAdminAuthorized } = require('./utils/auth.cjs');
 
 // Validate environment variables
 function validateEnvironment(log) {
@@ -38,6 +39,13 @@ exports.handler = async (event, context) => {
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: 'Server configuration error' })
     };
+  }
+
+  const authResponse = await ensureAdminAuthorized(event, context, headers, log);
+  if (authResponse) {
+    timer.end({ outcome: 'unauthorized' });
+    log.exit(403, { outcome: 'unauthorized' });
+    return authResponse;
   }
 
   try {

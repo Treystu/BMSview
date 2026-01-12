@@ -3,6 +3,7 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { ensureAdminAuthorized } = require('./utils/auth.cjs');
 
 // Helper to format bytes to human readable
 const formatBytes = (bytes, decimals = 2) => {
@@ -29,15 +30,11 @@ exports.handler = async (event, context) => {
         return { statusCode: 200, headers };
     }
 
-    // Security check - identical to history.cjs logic (simplified here for brevity as this is an admin tool)
-    // Assuming the frontend handles auth via Netlify Identity or params. 
-    // Ideally we duplicate the ensureAdminAuthorized logic or import it if it were shared.
-    // For now, checks for basic admin context presence or local dev.
-    const user = context.clientContext?.user;
-    if (!user && process.env.NODE_ENV === 'production') {
-        // If strict security is needed, implement here. 
-        // Proceeding assuming protected route structure or non-critical read-only analytics.
-        // (The user has asked for this specifically for debugging).
+    const authResponse = await ensureAdminAuthorized(event, context, headers, log);
+    if (authResponse) {
+        timer.end({ outcome: 'unauthorized' });
+        log.exit(403, { outcome: 'unauthorized' });
+        return authResponse;
     }
 
     try {

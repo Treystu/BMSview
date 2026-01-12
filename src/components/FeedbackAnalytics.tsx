@@ -135,7 +135,7 @@ export const FeedbackAnalytics: React.FC = () => {
 
       const response = await fetch('/.netlify/functions/feedback-analytics', { headers });
 
-      if (response.status === 401) {
+      if (response.status === 401 || response.status === 403) {
         throw new Error('Authentication required. Please ensure you are logged in to the Admin Dashboard.');
       }
 

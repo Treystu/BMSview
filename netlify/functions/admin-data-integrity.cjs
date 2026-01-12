@@ -13,6 +13,7 @@
 const { getCollection } = require("./utils/mongodb.cjs");
 const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { ensureAdminAuthorized } = require('./utils/auth.cjs');
 const {
     createStandardEntryMeta,
     logDebugRequestSummary
@@ -59,6 +60,13 @@ exports.handler = async function (event, context) {
         timer.end({ outcome: 'configuration_error' });
         log.exit(500, { outcome: 'configuration_error' });
         return respond(500, { error: 'Server configuration error' }, headers);
+    }
+
+    const authResponse = await ensureAdminAuthorized(event, context, headers, log);
+    if (authResponse) {
+        timer.end({ outcome: 'unauthorized' });
+        log.exit(403, { outcome: 'unauthorized' });
+        return authResponse;
     }
 
     if (event.httpMethod !== 'GET') {

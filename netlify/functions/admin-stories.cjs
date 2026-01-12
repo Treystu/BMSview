@@ -3,6 +3,7 @@ const { ObjectId } = require('mongodb');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
+const { ensureAdminAuthorized } = require('./utils/auth.cjs');
 const { v4: uuidv4 } = require('uuid');
 const {
   createStandardEntryMeta,
@@ -46,6 +47,13 @@ exports.handler = async (event, context) => {
       timer.end({ outcome: 'configuration_error' });
       log.exit(500, { outcome: 'configuration_error' });
       return errorResponse(500, 'server_error', 'Server configuration error', undefined, headers);
+    }
+
+    const authResponse = await ensureAdminAuthorized(event, context, headers, log);
+    if (authResponse) {
+      timer.end({ outcome: 'unauthorized' });
+      log.exit(403, { outcome: 'unauthorized' });
+      return authResponse;
     }
 
     const storiesCollection = await getCollection('stories');

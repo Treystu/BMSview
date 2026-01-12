@@ -13,6 +13,7 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { ensureAdminAuthorized } = require('./utils/auth.cjs');
 
 // Default values (same as usage-stats.cjs)
 const DEFAULTS = {
@@ -117,37 +118,37 @@ async function updateBudgetSettings(newSettings, log) {
 async function deleteBudgetAlerts(log) {
     const alertsCollection = await getCollection('anomaly_alerts');
     const budgetAlertsCollection = await getCollection('budget_alerts');
-    
+
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    
+
     // Delete from budget_alerts (prevents recreation)
     const budgetResult = await budgetAlertsCollection.deleteMany({
         month: currentMonth
     });
-    
+
     // Resolve in anomaly_alerts (UI display)
     const alertsResult = await alertsCollection.updateMany(
-        { 
+        {
             type: { $in: ['cost_spike', 'budget_warning'] },
             resolved: { $ne: true }
         },
-        { 
-            $set: { 
+        {
+            $set: {
                 resolved: true,
                 resolvedAt: now.toISOString(),
                 resolvedBy: 'admin_reset'
-            } 
+            }
         }
     );
-    
+
     log.audit('admin_action', {
         action: 'reset_budget_alerts',
         month: currentMonth,
         deletedBudgetAlerts: budgetResult.deletedCount,
         resolvedAnomalyAlerts: alertsResult.modifiedCount
     });
-    
+
     return {
         deletedBudgetAlerts: budgetResult.deletedCount,
         resolvedAnomalyAlerts: alertsResult.modifiedCount
@@ -173,6 +174,13 @@ exports.handler = async (event, context) => {
     if (event.httpMethod === 'OPTIONS') {
         timer.end({ outcome: 'preflight' });
         return { statusCode: 200, headers };
+    }
+
+    const authResponse = await ensureAdminAuthorized(event, context, headers, log);
+    if (authResponse) {
+        timer.end({ outcome: 'unauthorized' });
+        log.exit(403, { outcome: 'unauthorized' });
+        return authResponse;
     }
 
     try {

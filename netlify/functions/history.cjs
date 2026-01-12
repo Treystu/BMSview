@@ -5,6 +5,7 @@ const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 const { createStandardEntryMeta } = require('./utils/handler-logging.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
 const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
+const { ensureAdminAuthorized: ensureAdminAuthorizedShared } = require('./utils/auth.cjs');
 
 function validateEnvironment(log) {
     if (!process.env.MONGODB_URI) {
@@ -138,7 +139,7 @@ exports.handler = async function (event, context) {
     }
 
     if (event.httpMethod !== 'GET') {
-        const authResponse = await ensureAdminAuthorized(event, context, headers, log);
+        const authResponse = await ensureAdminAuthorizedShared(event, context, headers, log);
         if (authResponse) {
             log.exit(403);
             return authResponse;
@@ -349,7 +350,7 @@ exports.handler = async function (event, context) {
             if (action === 'deduplicate-time-based') {
                 log.info('Starting aggressive time-based deduplication');
                 const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
-                
+
                 // Fetch all records (projection to save memory)
                 const allRecords = await historyCollection.find({}, {
                     projection: {
@@ -369,20 +370,20 @@ exports.handler = async function (event, context) {
 
                 // Group by Normalized ID + Timestamp (Minute precision)
                 const groups = new Map();
-                
+
                 for (const record of allRecords) {
                     const rawId = record.hardwareSystemId || record.dlNumber || record.analysis?.hardwareSystemId || record.analysis?.dlNumber;
                     const normId = normalizeHardwareId(rawId);
-                    
+
                     if (normId === 'UNKNOWN') continue;
 
                     // Round timestamp to minute to catch slight OCR variations
                     const date = new Date(record.timestamp);
                     date.setSeconds(0, 0);
                     const timeKey = date.toISOString();
-                    
+
                     const key = `${normId}|${timeKey}`;
-                    
+
                     if (!groups.has(key)) groups.set(key, []);
                     groups.get(key).push(record);
                 }
@@ -394,14 +395,14 @@ exports.handler = async function (event, context) {
                 for (const [key, group] of groups.entries()) {
                     if (group.length > 1) {
                         duplicateSets++;
-                        
+
                         // Select Winner
                         // Criteria: Linked > Has Dash > More Data > Newer Update
                         group.sort((a, b) => {
                             // 1. Linked System
                             if (a.systemId && !b.systemId) return -1;
                             if (!a.systemId && b.systemId) return 1;
-                            
+
                             // 2. ID Quality (Has Dash?)
                             const aId = a.hardwareSystemId || '';
                             const bId = b.hardwareSystemId || '';
@@ -420,7 +421,7 @@ exports.handler = async function (event, context) {
                         const losers = group.slice(1);
 
                         recordsToDelete += losers.length;
-                        
+
                         // Add delete operations
                         losers.forEach(loser => {
                             bulkOps.push({
@@ -486,7 +487,7 @@ exports.handler = async function (event, context) {
                 // We need avg voltage and last SOC for the "Intelligent" check
                 log.info('Phase 0.5: Building System Context for Semantic Validation...');
                 const systemStats = {};
-                
+
                 // Aggregation to get Avg Voltage and Last Record per system
                 const statsAgg = await historyCollection.aggregate([
                     { $match: { systemId: { $in: allSystemIds } } },
@@ -680,7 +681,7 @@ exports.handler = async function (event, context) {
                     if (result.systemId) {
                         // Match Found (Strict or Fuzzy)
                         const matchedSystem = systemMap.get(result.systemId);
-                        
+
                         bulkOps.push({
                             updateOne: {
                                 filter: { _id: record._id },
@@ -800,13 +801,13 @@ exports.handler = async function (event, context) {
                 log.info('Starting normalization and cleanup task');
                 // USER REQUEST: "Work across the entire database".
                 // Override any frontend limit. Use 0 (unlimited) or a very high number.
-                const limit = 100000; 
+                const limit = 100000;
                 const { normalizeHardwareId } = require('./utils/analysis-helpers.cjs');
 
                 // 1. Fetch records
                 const cursor = historyCollection.find({}).limit(limit);
                 const allRecords = await cursor.toArray();
-                
+
                 log.info(`Scanned ${allRecords.length} records for normalization and deduplication`);
 
                 // --- Part A: Time-Based Deduplication (The "Awful" Fix) ---
@@ -815,14 +816,14 @@ exports.handler = async function (event, context) {
                     // Use robust ID extraction (check all fields)
                     const rawId = record.hardwareSystemId || record.dlNumber || record.analysis?.hardwareSystemId || record.analysis?.dlNumber;
                     const normId = normalizeHardwareId(rawId);
-                    
+
                     if (normId === 'UNKNOWN') continue;
 
                     // Group by Normalized ID + Minute-Precision Timestamp
                     const date = new Date(record.timestamp);
                     date.setSeconds(0, 0); // Ignore seconds variation
                     const timeKey = date.toISOString();
-                    
+
                     const key = `${normId}|${timeKey}`;
                     if (!groups.has(key)) groups.set(key, []);
                     groups.get(key).push(record);
@@ -873,13 +874,13 @@ exports.handler = async function (event, context) {
 
                 for (const record of allRecords) {
                     scannedCount++;
-                    
+
                     // Skip if deleted (naive check)
                     if (deleteOps.some(op => op.deleteOne.filter._id === record._id)) continue;
 
                     const currentHwId = record.hardwareSystemId;
                     const currentDl = record.dlNumber;
-                    
+
                     const normHwId = normalizeHardwareId(currentHwId);
                     const normDl = normalizeHardwareId(currentDl);
 
@@ -891,7 +892,7 @@ exports.handler = async function (event, context) {
                     // So we ONLY update if the current data is NULL or garbage.
                     // BUT for "DL4018" vs "DL-4018", the user said "keep the dash".
                     // So if we have "DL4018" (no dash), we SHOULD update it to "DL-4018" (with dash) IF "DL-4018" is the source of truth.
-                    
+
                     let needsUpdate = false;
                     const updateSet = {};
 
@@ -903,7 +904,7 @@ exports.handler = async function (event, context) {
                             needsUpdate = true;
                         }
                     }
-                    
+
                     if (normDl !== 'UNKNOWN' && currentDl !== normDl) {
                         if (!currentDl || (normDl.includes('-') && !currentDl.includes('-'))) {
                             updateSet.dlNumber = normDl;
@@ -928,7 +929,7 @@ exports.handler = async function (event, context) {
 
                 timer.end({ updatedCount, scannedCount, recordsToDelete });
                 log.info('Cleanup complete', { updatedCount, scannedCount, recordsToDelete });
-                
+
                 log.exit(200);
                 return respond(200, {
                     success: true,

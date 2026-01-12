@@ -17,6 +17,7 @@ const { getCollection } = require('./utils/mongodb.cjs');
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { errorResponse } = require('./utils/errors.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { ensureAdminAuthorized } = require('./utils/auth.cjs');
 const { getCostMetrics, getRealtimeMetrics, createAlert } = require('./utils/metrics-collector.cjs');
 const { v4: uuidv4 } = require('uuid');
 
@@ -498,6 +499,13 @@ exports.handler = async (event, context) => {
         timer.end({ outcome: 'preflight' });
         log.exit(200, { outcome: 'preflight' });
         return { statusCode: 200, headers };
+    }
+
+    const authResponse = await ensureAdminAuthorized(event, context, headers, log);
+    if (authResponse) {
+        timer.end({ outcome: 'unauthorized' });
+        log.exit(403, { outcome: 'unauthorized' });
+        return authResponse;
     }
 
     if (event.httpMethod !== 'GET') {

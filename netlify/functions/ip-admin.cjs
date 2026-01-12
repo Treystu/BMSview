@@ -4,6 +4,8 @@ const {
   createStandardEntryMeta,
   logDebugRequestSummary
 } = require('./utils/handler-logging.cjs');
+const { getCorsHeaders } = require('./utils/cors.cjs');
+const { ensureAdminAuthorized } = require('./utils/auth.cjs');
 
 /**
  * @param {any} log
@@ -57,10 +59,10 @@ const isIpInRanges = (ip, ranges, log) => {
  * @param {number} statusCode
  * @param {unknown} body
  */
-const respond = (statusCode, body) => ({
+const respond = (statusCode, body, headers = {}) => ({
   statusCode,
   body: JSON.stringify(body),
-  headers: { 'Content-Type': 'application/json' },
+  headers: { ...headers, 'Content-Type': 'application/json' },
 });
 
 /**
@@ -68,6 +70,7 @@ const respond = (statusCode, body) => ({
  * @param {any} context
  */
 exports.handler = async function (event, context) {
+  const headers = getCorsHeaders(event);
   const log = createLoggerFromEvent('ip-admin', event, context);
   /** @type {any} */
   const timer = createTimer(log, 'ip-admin-handler');
@@ -75,13 +78,23 @@ exports.handler = async function (event, context) {
   log.entry(createStandardEntryMeta(event));
   logDebugRequestSummary(log, event, { label: 'IP admin request', includeBody: true, bodyMaxStringLength: 20000 });
 
+  if (event.httpMethod === 'OPTIONS') {
+    timer.end({ success: true, outcome: 'preflight' });
+    log.exit(200, { outcome: 'preflight' });
+    return { statusCode: 200, headers };
+  }
+
+  const authResponse = await ensureAdminAuthorized(event, context, headers, log);
+  if (authResponse) {
+    timer.end({ success: false, outcome: 'unauthorized' });
+    log.exit(403, { outcome: 'unauthorized' });
+    return authResponse;
+  }
+
   if (!validateEnvironment(log)) {
     timer.end({ success: false, error: 'configuration' });
     log.exit(500);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'Server configuration error' })
-    };
+    return respond(500, { error: 'Server configuration error' }, headers);
   }
 
   const clientIp = event.headers['x-nf-client-connection-ip'];
@@ -112,11 +125,15 @@ exports.handler = async function (event, context) {
 
       timer.end({ success: true });
       log.exit(200, { trackedIpsCount: trackedIps.length });
-      return respond(200, {
-        trackedIps,
-        verifiedRanges: ipConfig.verified,
-        blockedRanges: ipConfig.blocked
-      });
+      return {
+        statusCode: 200,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trackedIps,
+          verifiedRanges: ipConfig.verified,
+          blockedRanges: ipConfig.blocked
+        })
+      };
     }
 
     if (httpMethod === 'POST') {
@@ -154,14 +171,14 @@ exports.handler = async function (event, context) {
       const updatedRanges = result && result.value
         ? (result.value[responseKey.slice(0, -1)] || [])
         : [range];
-      timer.end({ success: true });
-      log.exit(200, { action });
-      return respond(200, { [responseKey]: updatedRanges });
+      timer.end({ success: true, action });
+      log.exit(200);
+      return respond(200, { [responseKey]: updatedRanges }, headers);
     }
 
     timer.end({ success: false });
     log.exit(405);
-    return respond(405, { error: 'Method Not Allowed' });
+    return respond(405, { error: 'Method Not Allowed' }, headers);
 
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -169,6 +186,6 @@ exports.handler = async function (event, context) {
     log.error('Critical unhandled error in ip-admin handler.', { ...logContext, errorMessage: message, stack });
     timer.end({ success: false, error: message });
     log.exit(500);
-    return respond(500, { error: "An internal server error occurred in ip-admin." });
+    return respond(500, { error: "An internal server error occurred in ip-admin." }, headers);
   }
 };

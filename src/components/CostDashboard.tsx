@@ -107,8 +107,25 @@ const log = (level: 'info' | 'warn' | 'error', message: string, context: object 
     }));
 };
 
+const getAuthHeaders = async (): Promise<Record<string, string>> => {
+    const headers: Record<string, string> = {};
+
+    if (typeof window !== 'undefined' && window.netlifyIdentity?.currentUser) {
+        const user = window.netlifyIdentity.currentUser();
+        if (user?.jwt) {
+            const token = await user.jwt();
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+        }
+    }
+
+    return headers;
+};
+
 const fetchUsageStats = async (period: Period): Promise<UsageStats> => {
-    const response = await fetch(`/.netlify/functions/usage-stats?period=${period}`);
+    const headers = await getAuthHeaders();
+    const response = await fetch(`/.netlify/functions/usage-stats?period=${period}`, { headers });
     if (!response.ok) {
         throw new Error(`Failed to fetch usage stats: ${response.status}`);
     }
@@ -116,7 +133,8 @@ const fetchUsageStats = async (period: Period): Promise<UsageStats> => {
 };
 
 const fetchBudgetSettings = async (): Promise<{ settings: BudgetSettings; defaults: BudgetSettings }> => {
-    const response = await fetch('/.netlify/functions/ai-budget-settings');
+    const headers = await getAuthHeaders();
+    const response = await fetch('/.netlify/functions/ai-budget-settings', { headers });
     if (!response.ok) {
         throw new Error(`Failed to fetch budget settings: ${response.status}`);
     }
@@ -125,9 +143,10 @@ const fetchBudgetSettings = async (): Promise<{ settings: BudgetSettings; defaul
 };
 
 const updateBudgetSettings = async (settings: Partial<BudgetSettings>): Promise<BudgetSettings> => {
+    const authHeaders = await getAuthHeaders();
     const response = await fetch('/.netlify/functions/ai-budget-settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(settings)
     });
     if (!response.ok) {
@@ -366,18 +385,18 @@ const CostDashboard: React.FC = () => {
         if (!confirm('Are you sure you want to reset all budget alerts for this month? This will resolve existing warnings.')) {
             return;
         }
-        
+
         setAlertsResetting(true);
         try {
             const response = await fetch('/.netlify/functions/ai-budget-settings', {
                 method: 'DELETE',
             });
-            
+
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.message || `Failed to reset alerts: ${response.status}`);
             }
-            
+
             log('info', 'Budget alerts reset');
             loadStats();
         } catch (err) {
@@ -429,8 +448,8 @@ const CostDashboard: React.FC = () => {
                             key={p}
                             onClick={() => setPeriod(p)}
                             className={`px-3 py-1 rounded text-sm font-medium transition ${period === p
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                                 }`}
                         >
                             {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -510,10 +529,11 @@ const CostDashboard: React.FC = () => {
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     {/* Token Budget */}
                                     <div>
-                                        <label className="block text-sm text-gray-400 mb-1">
+                                        <label htmlFor="monthly-token-budget" className="block text-sm text-gray-400 mb-1">
                                             Monthly Token Budget
                                         </label>
                                         <input
+                                            id="monthly-token-budget"
                                             type="number"
                                             value={editTokenBudget}
                                             onChange={(e) => setEditTokenBudget(e.target.value)}
@@ -528,10 +548,11 @@ const CostDashboard: React.FC = () => {
 
                                     {/* Cost Budget */}
                                     <div>
-                                        <label className="block text-sm text-gray-400 mb-1">
+                                        <label htmlFor="monthly-cost-budget" className="block text-sm text-gray-400 mb-1">
                                             Monthly Cost Budget ($)
                                         </label>
                                         <input
+                                            id="monthly-cost-budget"
                                             type="number"
                                             value={editCostBudget}
                                             onChange={(e) => setEditCostBudget(e.target.value)}
@@ -546,10 +567,11 @@ const CostDashboard: React.FC = () => {
 
                                     {/* Alert Threshold */}
                                     <div>
-                                        <label className="block text-sm text-gray-400 mb-1">
+                                        <label htmlFor="alert-threshold" className="block text-sm text-gray-400 mb-1">
                                             Alert Threshold (%)
                                         </label>
                                         <input
+                                            id="alert-threshold"
                                             type="number"
                                             value={editAlertThreshold}
                                             onChange={(e) => setEditAlertThreshold(e.target.value)}
@@ -703,8 +725,8 @@ const CostDashboard: React.FC = () => {
                             <div
                                 key={alert.id}
                                 className={`p-3 rounded border-l-4 ${alert.severity === 'critical' ? 'bg-red-900/20 border-red-500' :
-                                        alert.severity === 'high' ? 'bg-orange-900/20 border-orange-500' :
-                                            'bg-yellow-900/20 border-yellow-500'
+                                    alert.severity === 'high' ? 'bg-orange-900/20 border-orange-500' :
+                                        'bg-yellow-900/20 border-yellow-500'
                                     }`}
                             >
                                 <div className="flex justify-between">

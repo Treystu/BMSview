@@ -12,6 +12,7 @@
 const { createLogger, createLoggerFromEvent, createTimer } = require('./utils/logger.cjs');
 const { getCollection } = require('./utils/mongodb.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { ensureAdminAuthorized } = require('./utils/auth.cjs');
 const {
   createStandardEntryMeta,
   logDebugRequestSummary
@@ -665,6 +666,13 @@ exports.handler = async (event, context) => {
     timer.end();
     log.exit(200);
     return { statusCode: 200, headers };
+  }
+
+  const authResponse = await ensureAdminAuthorized(event, context, headers, log);
+  if (authResponse) {
+    timer.end({ outcome: 'unauthorized' });
+    log.exit(403, { outcome: 'unauthorized' });
+    return authResponse;
   }
 
   try {

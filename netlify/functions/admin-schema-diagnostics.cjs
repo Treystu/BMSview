@@ -16,6 +16,7 @@
 const { getCollection } = require('./utils/mongodb.cjs');
 const { createLoggerFromEvent } = require('./utils/logger.cjs');
 const { getCorsHeaders } = require('./utils/cors.cjs');
+const { ensureAdminAuthorized } = require('./utils/auth.cjs');
 
 /**
  * Analyze schema patterns for a given systemId
@@ -180,6 +181,12 @@ exports.handler = async (event, context) => {
   const headers = getCorsHeaders(event);
 
   try {
+    const authResponse = await ensureAdminAuthorized(event, context, headers, log);
+    if (authResponse) {
+      log.exit(403, { outcome: 'unauthorized' });
+      return authResponse;
+    }
+
     log.info('Admin schema diagnostics request', {
       method: event.httpMethod,
       queryParams: event.queryStringParameters
