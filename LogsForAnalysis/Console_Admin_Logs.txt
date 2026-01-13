@@ -1,6 +1,182 @@
-.netlify/functions/db-analytics?mode=summary&collection=history:1  Failed to load resource: the server responded with a status of 500 ()
-.netlify/functions/db-analytics?mode=full&collection=history:1  Failed to load resource: the server responded with a status of 500 ()
-.netlify/functions/db-analytics?mode=deep&collection=history:1  Failed to load resource: the server responded with a status of 500 ()
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ File hash batch complete Object
+ {"level":"INFO","timestamp":"2026-01-13T01:51:53.597Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":400,"durationMs":1421,"event":"HASHING_COMPLETE"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:53.601Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:54.798Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":400,"trueDuplicates":400,"needsUpgrade":0,"newFiles":0,"durationMs":2622,"avgPerFileMs":"6.55","event":"PHASE1_COMPLETE"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:54.798Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":400,"duplicates":400,"upgrades":0,"newFiles":0,"event":"CHECK_COMPLETE"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:54.799Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":2764,"filteredOut":2763,"event":"PREVIEW_FILTER"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:55.267Z","hook":"useFileUpload","message":"ZIP chunk extracted.","context":{"chunkFiles":417,"totalSoFar":3181}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:55.267Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":417,"fileNames":["BMS screenshots/Screenshot_20250919-215147.png","BMS screenshots/Screenshot_20250928-170024.png","BMS screenshots/Screenshot_20250919-174951.png","BMS screenshots/Screenshot_20250927-222859.png","BMS screenshots/Screenshot_20250928-211427.png","BMS screenshots/Screenshot_20251007-144039.png","BMS screenshots/Screenshot_20250927-222910.png","BMS screenshots/Screenshot_20250927-222905.png","BMS screenshots/Screenshot_20250927-222855.png","BMS screenshots/Screenshot_20250927-222840.png"],"event":"CHECK_START"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:55.267Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":417,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
+ Calculating file hashes for batch Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
+ Client hash generated Object
  Client hash generated Object
  Client hash generated Object
  Client hash generated Object
@@ -292,14 +468,14 @@
  Client hash generated Object
  Client hash generated Object
  File hash batch complete Object
- {"level":"INFO","timestamp":"2026-01-13T01:34:44.222Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":417,"durationMs":2112,"event":"HASHING_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:44.227Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:45.374Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":417,"trueDuplicates":417,"needsUpgrade":0,"newFiles":0,"durationMs":3264,"avgPerFileMs":"7.83","event":"PHASE1_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:45.374Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":417,"duplicates":417,"upgrades":0,"newFiles":0,"event":"CHECK_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:45.377Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":3181,"filteredOut":3168,"event":"PREVIEW_FILTER"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:45.884Z","hook":"useFileUpload","message":"ZIP chunk extracted.","context":{"chunkFiles":399,"totalSoFar":3580}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:45.884Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":399,"fileNames":["BMS screenshots/Screenshot_20250813-145626.png","BMS screenshots/Screenshot_20250822-172047.png","BMS screenshots/Screenshot_20250812-233956.png","BMS screenshots/Screenshot_20250807-131323.png","BMS screenshots/Screenshot_20250811-181207.png","BMS screenshots/Screenshot_20250811-215616.png","BMS screenshots/Screenshot_20250807-144316.png","BMS screenshots/Screenshot_20250807-144306.png","BMS screenshots/Screenshot_20250903-015635.png","BMS screenshots/Screenshot_20250807-132146.png"],"event":"CHECK_START"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:45.884Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":399,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:56.733Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":417,"durationMs":1466,"event":"HASHING_COMPLETE"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:56.739Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:58.072Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":417,"trueDuplicates":417,"needsUpgrade":0,"newFiles":0,"durationMs":2805,"avgPerFileMs":"6.73","event":"PHASE1_COMPLETE"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:58.072Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":417,"duplicates":417,"upgrades":0,"newFiles":0,"event":"CHECK_COMPLETE"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:58.073Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":3181,"filteredOut":3180,"event":"PREVIEW_FILTER"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:58.518Z","hook":"useFileUpload","message":"ZIP chunk extracted.","context":{"chunkFiles":399,"totalSoFar":3580}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:58.518Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":399,"fileNames":["BMS screenshots/Screenshot_20250813-145626.png","BMS screenshots/Screenshot_20250822-172047.png","BMS screenshots/Screenshot_20250812-233956.png","BMS screenshots/Screenshot_20250807-131323.png","BMS screenshots/Screenshot_20250811-181207.png","BMS screenshots/Screenshot_20250811-215616.png","BMS screenshots/Screenshot_20250807-144316.png","BMS screenshots/Screenshot_20250807-144306.png","BMS screenshots/Screenshot_20250903-015635.png","BMS screenshots/Screenshot_20250807-132146.png"],"event":"CHECK_START"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:58.518Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":399,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
  Calculating file hashes for batch Object
  Client hash generated Object
  Client hash generated Object
@@ -701,13 +877,13 @@
  Client hash generated Object
  Client hash generated Object
  File hash batch complete Object
- {"level":"INFO","timestamp":"2026-01-13T01:34:47.937Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":399,"durationMs":2053,"event":"HASHING_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:47.942Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:49.145Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":399,"trueDuplicates":399,"needsUpgrade":0,"newFiles":0,"durationMs":3261,"avgPerFileMs":"8.17","event":"PHASE1_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:49.145Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":399,"duplicates":399,"upgrades":0,"newFiles":0,"event":"CHECK_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:49.147Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":3580,"filteredOut":3567,"event":"PREVIEW_FILTER"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:49.411Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":72,"fileNames":["BMS screenshots/Screenshot_20251130-122739.png","BMS screenshots/Screenshot_20251017-173413.png","BMS screenshots/Screenshot_20251202-145337.png","BMS screenshots/Screenshot_20251126-155520.png","BMS screenshots/Screenshot_20250928-211453.png","BMS screenshots/Screenshot_20251128-101104.png","BMS screenshots/Screenshot_20250904-191941.png","BMS screenshots/Screenshot_20250921-152015.png","BMS screenshots/Screenshot_20251214-224515.png","BMS screenshots/Screenshot_20250918-010616.png"],"event":"CHECK_START"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:49.411Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":72,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:59.959Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":399,"durationMs":1441,"event":"HASHING_COMPLETE"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:51:59.964Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:52:01.542Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":399,"trueDuplicates":399,"needsUpgrade":0,"newFiles":0,"durationMs":3024,"avgPerFileMs":"7.58","event":"PHASE1_COMPLETE"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:52:01.542Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":399,"duplicates":399,"upgrades":0,"newFiles":0,"event":"CHECK_COMPLETE"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:52:01.544Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":3580,"filteredOut":3579,"event":"PREVIEW_FILTER"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:52:01.805Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":72,"fileNames":["BMS screenshots/Screenshot_20251130-122739.png","BMS screenshots/Screenshot_20251017-173413.png","BMS screenshots/Screenshot_20251202-145337.png","BMS screenshots/Screenshot_20251126-155520.png","BMS screenshots/Screenshot_20250928-211453.png","BMS screenshots/Screenshot_20251128-101104.png","BMS screenshots/Screenshot_20250904-191941.png","BMS screenshots/Screenshot_20250921-152015.png","BMS screenshots/Screenshot_20251214-224515.png","BMS screenshots/Screenshot_20250918-010616.png"],"event":"CHECK_START"}}
+ {"level":"INFO","timestamp":"2026-01-13T01:52:01.805Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":72,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
  Calculating file hashes for batch Object
  Client hash generated Object
  Client hash generated Object
@@ -757,247 +933,68 @@
  Client hash generated Object
  Client hash generated Object
  Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- File hash batch complete Object
- {"level":"INFO","timestamp":"2026-01-13T01:34:49.786Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":72,"durationMs":375,"event":"HASHING_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:49.787Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:50.322Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":72,"trueDuplicates":72,"needsUpgrade":0,"newFiles":0,"durationMs":911,"avgPerFileMs":"12.65","event":"PHASE1_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:50.322Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":72,"duplicates":72,"upgrades":0,"newFiles":0,"event":"CHECK_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:50.322Z","hook":"useFileUpload","message":"Successfully extracted all files from ZIP.","context":{"fileName":"BMS screenshots-3-001 (5).zip","size":964298676,"extractedCount":3652}}
- {"level":"INFO","timestamp":"2026-01-13T01:34:50.324Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":3652,"filteredOut":3639,"event":"PREVIEW_FILTER"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:16.496Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":3652,"isStoryMode":false,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:16.498Z","component":"AdminDashboard","message":"Skipped 3639 cached duplicates."}
- {"level":"INFO","timestamp":"2026-01-13T01:35:16.498Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":13,"BATCH_API_LIMIT":1000,"includeData":false,"event":"PHASE1_START"}}
- Calculating file hashes for batch Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- Client hash generated Object
- File hash batch complete Object
- {"level":"INFO","timestamp":"2026-01-13T01:35:16.649Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":13,"durationMs":151,"event":"HASHING_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:16.649Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.078Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":13,"trueDuplicates":0,"needsUpgrade":0,"newFiles":13,"durationMs":580,"avgPerFileMs":"44.62","event":"PHASE1_COMPLETE"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.078Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":13,"upgrades":0,"new":13,"cachedDuplicates":3639,"cachedUpgrades":0,"forceReanalysis":false}}
- Processing 13 files. Initial concurrency: 3
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.078Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091210.png","fileSize":265221,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091146.png","fileSize":239075,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091205.png","fileSize":265348,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075143.png","fileSize":240753,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091200.png","fileSize":261968,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091225.png","fileSize":265678,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091155.png","fileSize":237881,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075148.png","fileSize":262768,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075157.png","fileSize":266142,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091220.png","fileSize":263305,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075153.png","fileSize":265833,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091216.png","fileSize":266043,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.079Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260109-082759.png","fileSize":238592,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.117Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-091210.png","fileSize":265221,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.118Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-091146.png","fileSize":239075,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.119Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-091205.png","fileSize":265348,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.120Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-075143.png","fileSize":240753,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.121Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-091200.png","fileSize":261968,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.122Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-091225.png","fileSize":265678,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.123Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-091155.png","fileSize":237881,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.123Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-075148.png","fileSize":262768,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.124Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-075157.png","fileSize":266142,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.126Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-091220.png","fileSize":263305,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.127Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-075153.png","fileSize":265833,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.127Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260112-091216.png","fileSize":266043,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:17.128Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260109-082759.png","fileSize":238592,"forceReanalysis":false,"useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:26.632Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260109-082759.png","isDuplicate":true}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:26.632Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260109-082759.png","useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:27.156Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
- [SW] Service worker already registered in this session.
- {"level":"INFO","timestamp":"2026-01-13T01:35:27.168Z","service":"app-ui","message":"Detected admin page - skipping main app initialization"}
- {"level":"info","timestamp":"2026-01-13T01:35:27.217Z","service":"localCache","message":"Cached analysis record: 0f42fecc-a017-4450-9cfc-380621b8e57d","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:27.217Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0f42fecc-a017-4450-9cfc-380621b8e57d"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:27.217Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260109-082759.png","recordId":"0f42fecc-a017-4450-9cfc-380621b8e57d","hasAnalysis":true,"analysisKeys":35}}
- [HistoricalChart] Starting chart data preparation Object
- [HistoricalChart] Date range Object
- [HistoricalChart] Syncing weather data Object
- [HistoricalChart] Weather sync complete
- [HistoricalChart] Fetching unified history Object
- {"level":"INFO","timestamp":"2026-01-13T01:35:28.229Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091210.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:28.230Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091210.png","useAsync":false}}
- {"level":"info","timestamp":"2026-01-13T01:35:28.253Z","service":"localCache","message":"Cached analysis record: d9f5b48c-ddee-4d02-982d-d79740d23f0a","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:28.253Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d9f5b48c-ddee-4d02-982d-d79740d23f0a"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:28.253Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-091210.png","recordId":"d9f5b48c-ddee-4d02-982d-d79740d23f0a","hasAnalysis":true,"analysisKeys":35}}
- [HistoricalChart] Starting chart data preparation Object
- [HistoricalChart] Date range Object
- [HistoricalChart] Syncing weather data Object
- [HistoricalChart] Weather sync complete
- [HistoricalChart] Fetching unified history Object
- [HistoricalChart] Unified history received Object
- [HistoricalChart] Request cancelled (stale after unified history) Object
- [HistoricalChart] Chart data preparation complete Object
- [HistoricalChart] Unified history received Object
- [HistoricalChart] Filtered data by date range Object
- [HistoricalChart] Processed chart points Object
- [HistoricalChart] Chart data preparation complete Object
- {"level":"INFO","timestamp":"2026-01-13T01:35:33.862Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091146.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:33.862Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091146.png","useAsync":false}}
- {"level":"info","timestamp":"2026-01-13T01:35:33.885Z","service":"localCache","message":"Cached analysis record: 9257de1a-6dd3-4d23-a81c-455b4e25e48e","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:33.885Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"9257de1a-6dd3-4d23-a81c-455b4e25e48e"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:33.885Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-091146.png","recordId":"9257de1a-6dd3-4d23-a81c-455b4e25e48e","hasAnalysis":true,"analysisKeys":35}}
- [HistoricalChart] Starting chart data preparation Object
- [HistoricalChart] Date range Object
- [HistoricalChart] Syncing weather data Object
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.176Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075153.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.176Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075153.png","useAsync":false}}
- {"level":"info","timestamp":"2026-01-13T01:35:34.200Z","service":"localCache","message":"Cached analysis record: 22c0e8b6-70b7-4f41-b523-809a5e8c1982","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.200Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"22c0e8b6-70b7-4f41-b523-809a5e8c1982"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.200Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-075153.png","recordId":"22c0e8b6-70b7-4f41-b523-809a5e8c1982","hasAnalysis":true,"analysisKeys":35}}
- [HistoricalChart] Starting chart data preparation Object
- [HistoricalChart] Date range Object
- [HistoricalChart] Syncing weather data Object
- [HistoricalChart] Weather sync complete
- [HistoricalChart] Request cancelled (stale after weather sync) Object
- [HistoricalChart] Chart data preparation complete Object
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.439Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075157.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.439Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075157.png","useAsync":false}}
- {"level":"info","timestamp":"2026-01-13T01:35:34.462Z","service":"localCache","message":"Cached analysis record: ffa2ae6c-f2df-4469-b7cf-2aa628490d3c","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.463Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"ffa2ae6c-f2df-4469-b7cf-2aa628490d3c"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.463Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-075157.png","recordId":"ffa2ae6c-f2df-4469-b7cf-2aa628490d3c","hasAnalysis":true,"analysisKeys":35}}
- [HistoricalChart] Starting chart data preparation Object
- [HistoricalChart] Date range Object
- [HistoricalChart] Syncing weather data Object
- [HistoricalChart] Weather sync complete
- [HistoricalChart] Request cancelled (stale after weather sync) Object
- [HistoricalChart] Chart data preparation complete Object
- [HistoricalChart] Weather sync complete
- [HistoricalChart] Fetching unified history Object
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.897Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091216.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.897Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091216.png","useAsync":false}}
- {"level":"info","timestamp":"2026-01-13T01:35:34.921Z","service":"localCache","message":"Cached analysis record: d9f5b48c-ddee-4d02-982d-d79740d23f0a","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.921Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d9f5b48c-ddee-4d02-982d-d79740d23f0a"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.921Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-091216.png","recordId":"d9f5b48c-ddee-4d02-982d-d79740d23f0a","hasAnalysis":true,"analysisKeys":35}}
- [HistoricalChart] Starting chart data preparation Object
- [HistoricalChart] Date range Object
- [HistoricalChart] Syncing weather data Object
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.966Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075143.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.966Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075143.png","useAsync":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.966Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091220.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.966Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091220.png","useAsync":false}}
- {"level":"info","timestamp":"2026-01-13T01:35:34.996Z","service":"localCache","message":"Cached analysis record: ffa2ae6c-f2df-4469-b7cf-2aa628490d3c","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.996Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"ffa2ae6c-f2df-4469-b7cf-2aa628490d3c"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:34.997Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-075143.png","recordId":"ffa2ae6c-f2df-4469-b7cf-2aa628490d3c","hasAnalysis":true,"analysisKeys":35}}
- [HistoricalChart] Starting chart data preparation Object
- [HistoricalChart] Date range Object
- [HistoricalChart] Syncing weather data Object
- {"level":"info","timestamp":"2026-01-13T01:35:35.029Z","service":"localCache","message":"Cached analysis record: d9f5b48c-ddee-4d02-982d-d79740d23f0a","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:35.029Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d9f5b48c-ddee-4d02-982d-d79740d23f0a"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:35.029Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-091220.png","recordId":"d9f5b48c-ddee-4d02-982d-d79740d23f0a","hasAnalysis":true,"analysisKeys":35}}
- [HistoricalChart] Starting chart data preparation Object
- [HistoricalChart] Date range Object
- [HistoricalChart] Syncing weather data Object
- [HistoricalChart] Weather sync complete
- [HistoricalChart] Request cancelled (stale after weather sync) Object
- [HistoricalChart] Chart data preparation complete Object
- {"level":"INFO","timestamp":"2026-01-13T01:35:35.353Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091155.png","isDuplicate":false}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:35.353Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091155.png","useAsync":false}}
- {"level":"info","timestamp":"2026-01-13T01:35:35.376Z","service":"localCache","message":"Cached analysis record: 9257de1a-6dd3-4d23-a81c-455b4e25e48e","context":{"syncStatus":"synced"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:35.376Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"9257de1a-6dd3-4d23-a81c-455b4e25e48e"}}
- {"level":"INFO","timestamp":"2026-01-13T01:35:35.376Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-091155.png","recordId":"9257de1a-6dd3-4d23-a81c-455b4e25e48e","hasAnalysis":true,"analysisKeys":35}}
- [HistoricalChart] Starting chart data preparation Object
- [HistoricalChart] Date range Object
- [HistoricalChart] Syncing weather data Object
- [HistoricalChart] Weather sync complete
- [HistoricalChart] Request cancelled (stale after weather sync) Object
- [HistoricalChart] Chart data preparation complete Object
- {"level":"INFO","timestamp":"2026-01-13T01:35:35.532Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091225.png","isDuplicate":false}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:35.532Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091225.png","useAsync":false}}
-localCache-DlN4dk1v.js:3 {"level":"info","timestamp":"2026-01-13T01:35:35.553Z","service":"localCache","message":"Cached analysis record: d9f5b48c-ddee-4d02-982d-d79740d23f0a","context":{"syncStatus":"synced"}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:35.553Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d9f5b48c-ddee-4d02-982d-d79740d23f0a"}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:35.553Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-091225.png","recordId":"d9f5b48c-ddee-4d02-982d-d79740d23f0a","hasAnalysis":true,"analysisKeys":35}}
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Starting chart data preparation Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Date range Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Syncing weather data Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Chart data preparation complete Object
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:35:35.601Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091205.png","isDuplicate":false}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:35.601Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091205.png","useAsync":false}}
-localCache-DlN4dk1v.js:3 {"level":"info","timestamp":"2026-01-13T01:35:35.623Z","service":"localCache","message":"Cached analysis record: d9f5b48c-ddee-4d02-982d-d79740d23f0a","context":{"syncStatus":"synced"}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:35.623Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d9f5b48c-ddee-4d02-982d-d79740d23f0a"}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:35.623Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-091205.png","recordId":"d9f5b48c-ddee-4d02-982d-d79740d23f0a","hasAnalysis":true,"analysisKeys":35}}
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Starting chart data preparation Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Date range Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Syncing weather data Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Chart data preparation complete Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Unified history received Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Request cancelled (stale after unified history) Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Chart data preparation complete Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Chart data preparation complete Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Fetching unified history Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Unified history received Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Filtered data by date range Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Processed chart points Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Chart data preparation complete Object
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:35:37.690Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075148.png","isDuplicate":false}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:37.690Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-075148.png","useAsync":false}}
-localCache-DlN4dk1v.js:3 {"level":"info","timestamp":"2026-01-13T01:35:37.721Z","service":"localCache","message":"Cached analysis record: ffa2ae6c-f2df-4469-b7cf-2aa628490d3c","context":{"syncStatus":"synced"}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:37.721Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"ffa2ae6c-f2df-4469-b7cf-2aa628490d3c"}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:37.721Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-075148.png","recordId":"ffa2ae6c-f2df-4469-b7cf-2aa628490d3c","hasAnalysis":true,"analysisKeys":35}}
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Starting chart data preparation Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Date range Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Syncing weather data Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Fetching unified history Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Unified history received Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Filtered data by date range Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Processed chart points Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Chart data preparation complete Object
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:35:39.307Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091200.png","isDuplicate":false}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:39.307Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260112-091200.png","useAsync":false}}
-localCache-DlN4dk1v.js:3 {"level":"info","timestamp":"2026-01-13T01:35:39.331Z","service":"localCache","message":"Cached analysis record: d9f5b48c-ddee-4d02-982d-d79740d23f0a","context":{"syncStatus":"synced"}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:39.331Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d9f5b48c-ddee-4d02-982d-d79740d23f0a"}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:39.331Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260112-091200.png","recordId":"d9f5b48c-ddee-4d02-982d-d79740d23f0a","hasAnalysis":true,"analysisKeys":35}}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:39.331Z","component":"AdminDashboard","message":"Bulk analysis run complete."}
-AdminDashboard-D7OjKI1K.js:7 {"level":"INFO","timestamp":"2026-01-13T01:35:39.331Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Starting chart data preparation Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Date range Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Syncing weather data Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Fetching unified history Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Unified history received Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Filtered data by date range Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Processed chart points Object
-AdminDashboard-D7OjKI1K.js:2 [HistoricalChart] Chart data preparation complete Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 File hash batch complete Object
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:52:02.113Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":72,"durationMs":308,"event":"HASHING_COMPLETE"}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:52:02.114Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:52:02.717Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":72,"trueDuplicates":72,"needsUpgrade":0,"newFiles":0,"durationMs":912,"avgPerFileMs":"12.67","event":"PHASE1_COMPLETE"}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:52:02.717Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":72,"duplicates":72,"upgrades":0,"newFiles":0,"event":"CHECK_COMPLETE"}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:52:02.717Z","hook":"useFileUpload","message":"Successfully extracted all files from ZIP.","context":{"fileName":"BMS screenshots-3-001 (5).zip","size":964298676,"extractedCount":3652}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:52:02.718Z","hook":"useFileUpload","message":"Excluded duplicate-tagged entries from preview generation.","context":{"total":3652,"filteredOut":3651,"event":"PREVIEW_FILTER"}}
+AdminDashboard-CFrdUA-7.js:7 {"level":"INFO","timestamp":"2026-01-13T01:52:48.590Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":3652,"isStoryMode":false,"forceReanalysis":false,"useAsync":false}}
+AdminDashboard-CFrdUA-7.js:7 {"level":"INFO","timestamp":"2026-01-13T01:52:48.592Z","component":"AdminDashboard","message":"Skipped 3651 cached duplicates."}
+AdminDashboard-CFrdUA-7.js:7 {"level":"INFO","timestamp":"2026-01-13T01:52:48.592Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"includeData":false,"event":"PHASE1_START"}}
+uploadOptimizer-DFwZst0q.js:8 Calculating file hashes for batch Object
+uploadOptimizer-DFwZst0q.js:8 Client hash generated Object
+uploadOptimizer-DFwZst0q.js:8 File hash batch complete Object
+AdminDashboard-CFrdUA-7.js:7 {"level":"INFO","timestamp":"2026-01-13T01:52:48.685Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":93,"event":"HASHING_COMPLETE"}}
+AdminDashboard-CFrdUA-7.js:7 {"level":"INFO","timestamp":"2026-01-13T01:52:48.685Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+AdminDashboard-CFrdUA-7.js:7 {"level":"INFO","timestamp":"2026-01-13T01:52:49.309Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":717,"avgPerFileMs":"717.00","event":"PHASE1_COMPLETE"}}
+AdminDashboard-CFrdUA-7.js:7 {"level":"INFO","timestamp":"2026-01-13T01:52:49.309Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":1,"upgrades":0,"new":1,"cachedDuplicates":3651,"cachedUpgrades":0,"forceReanalysis":false}}
+uploadOptimizer-DFwZst0q.js:8 Processing 1 files. Initial concurrency: 1
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:52:49.309Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"BMS screenshots/Screenshot_20260109-082802.png","fileSize":261815,"forceReanalysis":false,"useAsync":false}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:52:49.345Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"BMS screenshots/Screenshot_20260109-082802.png","fileSize":261815,"forceReanalysis":false,"useAsync":false}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T01:52:52.559Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"BMS screenshots/Screenshot_20260109-082802.png","isDuplicate":true}}
+AdminDashboard-CFrdUA-7.js:7 {"level":"INFO","timestamp":"2026-01-13T01:52:52.559Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"BMS screenshots/Screenshot_20260109-082802.png","useAsync":false}}
+main-C-S4EtX-.js:37 {"level":"INFO","timestamp":"2026-01-13T01:52:52.578Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
+main-C-S4EtX-.js:37 [SW] Service worker already registered in this session.
+main-C-S4EtX-.js:37 {"level":"INFO","timestamp":"2026-01-13T01:52:52.590Z","service":"app-ui","message":"Detected admin page - skipping main app initialization"}
+localCache-DlN4dk1v.js:3 {"level":"info","timestamp":"2026-01-13T01:52:52.624Z","service":"localCache","message":"Cached analysis record: 0f42fecc-a017-4450-9cfc-380621b8e57d","context":{"syncStatus":"synced"}}
+AdminDashboard-CFrdUA-7.js:7 {"level":"INFO","timestamp":"2026-01-13T01:52:52.624Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0f42fecc-a017-4450-9cfc-380621b8e57d"}}
+AdminDashboard-CFrdUA-7.js:7 {"level":"INFO","timestamp":"2026-01-13T01:52:52.624Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"BMS screenshots/Screenshot_20260109-082802.png","recordId":"0f42fecc-a017-4450-9cfc-380621b8e57d","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-CFrdUA-7.js:7 {"level":"INFO","timestamp":"2026-01-13T01:52:52.624Z","component":"AdminDashboard","message":"Bulk analysis run complete."}
+AdminDashboard-CFrdUA-7.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-CFrdUA-7.js:2 [HistoricalChart] Date range Object
+AdminDashboard-CFrdUA-7.js:2 [HistoricalChart] Syncing weather data Object
+AdminDashboard-CFrdUA-7.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-CFrdUA-7.js:2 [HistoricalChart] Fetching unified history Object
+AdminDashboard-CFrdUA-7.js:2 [HistoricalChart] Unified history received Object
+AdminDashboard-CFrdUA-7.js:2 [HistoricalChart] Filtered data by date range Object
+AdminDashboard-CFrdUA-7.js:2 [HistoricalChart] Processed chart points Object
+AdminDashboard-CFrdUA-7.js:2 [HistoricalChart] Chart data preparation complete Object
+admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+admin.html:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received

@@ -181,9 +181,7 @@ if (!rootElement) {
 
 const root = ReactDOM.createRoot(rootElement);
 root.render(
-  <React.StrictMode>
-    <AdminStateProvider>
-      <AdminApp />
-    </AdminStateProvider>
-  </React.StrictMode>
+  <AdminStateProvider>
+    <AdminApp />
+  </AdminStateProvider>
 );
