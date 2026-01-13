@@ -38,6 +38,18 @@ const AdminApp: React.FC = () => {
   const [user, setUser] = useState<NetlifyUser | null>(null);
 
   useEffect(() => {
+    // On admin page, ensure any previously registered service workers are unregistered
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        registrations.forEach(reg => {
+          if (reg.scope === location.origin + '/' || reg.scope === location.origin) {
+            reg.unregister().then(success => {
+              log('info', 'Unregistered service worker on admin page.', { scope: reg.scope, success });
+            });
+          }
+        });
+      });
+    }
     // Define stable handlers to be used for both adding and removing listeners.
     const handleInit = (identityUser: unknown) => {
       const typedUser = identityUser as NetlifyUser | null;
