@@ -118,7 +118,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 promises.push(getRegisteredSystems(page, ITEMS_PER_PAGE, options));
             }
             if (type === 'all' || type === 'history') {
-                promises.push(getAnalysisHistory(page, ITEMS_PER_PAGE, options));
+                // Include sorting parameters when fetching history
+                const historyOptions = {
+                    ...options,
+                    sortBy: state.historySortKey,
+                    sortOrder: state.historySortDirection
+                };
+                promises.push(getAnalysisHistory(page, ITEMS_PER_PAGE, historyOptions));
             }
 
             const responses = await Promise.all(promises);
@@ -148,7 +154,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             log('error', 'Failed to fetch admin data.', { error });
             dispatch({ type: 'SET_ERROR', payload: error });
         }
-    }, [dispatch]); // Removed page dependencies to allow fetching specific pages
+    }, [dispatch, state.historySortKey, state.historySortDirection]); // Added sort dependencies
 
     // --- Job Polling for Async Analysis ---
     const jobPollingConfig: {
@@ -271,6 +277,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
             fetchData(historyPage, 'history');
         }
     }, [historyPage, fetchData]);
+
+    // Refetch history when sorting changes (always go to page 1)
+    useEffect(() => {
+        if (state.historyPage === 1) {
+            fetchData(1, 'history', { forceRefresh: true });
+        } else {
+            // If not on page 1, dispatch to reset to page 1
+            dispatch({ type: 'SET_HISTORY_PAGE', payload: 1 });
+        }
+    }, [state.historySortKey, state.historySortDirection]); // Only depend on sort changes
 
 
     // --- CRUD and Data Management Handlers ---

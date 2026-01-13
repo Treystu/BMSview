@@ -472,10 +472,10 @@ export const getRegisteredSystems = async (page = 1, limit: number | 'all' = 100
     return result;
 };
 
-export const getAnalysisHistory = async (page = 1, limit: number | 'all' = 100, options: FetchListOptions = {}): Promise<PaginatedResponse<AnalysisRecord>> => {
-    const { forceRefresh = false, strategy = FetchStrategy.CACHE_FIRST } = options;
+export const getAnalysisHistory = async (page = 1, limit: number | 'all' = 100, options: FetchListOptions & { sortBy?: string; sortOrder?: 'asc' | 'desc' } = {}): Promise<PaginatedResponse<AnalysisRecord>> => {
+    const { forceRefresh = false, strategy = FetchStrategy.CACHE_FIRST, sortBy, sortOrder } = options;
     const isForceRefresh = forceRefresh || strategy === FetchStrategy.FORCE_FRESH;
-    log('info', 'Fetching paginated analysis history.', { page, limit, strategy });
+    log('info', 'Fetching paginated analysis history.', { page, limit, strategy, sortBy, sortOrder });
 
     if (!isForceRefresh) {
         const cached = await getCachedHistoryPage(page, limit);
@@ -486,9 +486,14 @@ export const getAnalysisHistory = async (page = 1, limit: number | 'all' = 100, 
     }
 
     try {
+        // Build query string with sorting parameters
+        let query = `history?page=${page}&limit=${limit}`;
+        if (sortBy) query += `&sortBy=${sortBy}`;
+        if (sortOrder) query += `&sortOrder=${sortOrder}`;
+
         const response = isForceRefresh
-            ? await apiFetch<PaginatedResponse<AnalysisRecord>>(`history?page=${page}&limit=${limit}`)
-            : await fetchWithCache<PaginatedResponse<AnalysisRecord>>(`history?page=${page}&limit=${limit}`, 5_000);
+            ? await apiFetch<PaginatedResponse<AnalysisRecord>>(query)
+            : await fetchWithCache<PaginatedResponse<AnalysisRecord>>(query, 5_000);
 
         log('info', 'Raw analysis history response.', { response });
 
@@ -1257,20 +1262,18 @@ export const getUnifiedHistory = async (systemId: string): Promise<UnifiedTimeli
 
     log('info', 'Fetching history records for unified timeline.', { systemId, isAllData });
     try {
-        const historyResponse = await getAnalysisHistory(1, 'all', { strategy: FetchStrategy.FORCE_FRESH });
-        historyRecords = historyResponse.items;
-        log('info', 'History records fetched for unified timeline.', { count: historyRecords.length });
-
-        // FIX: Filter records by systemId unless showing all data
-        // This is the critical fix - previously records were not filtered by system
+        // Use the system-specific endpoint when fetching for a specific system
+        // This bypasses the 1000 record limit and fetches ALL records for that system
         if (!isAllData && systemId) {
-            const beforeFilter = historyRecords.length;
-            historyRecords = historyRecords.filter(r => r.systemId === systemId);
-            log('info', 'Filtered history records by systemId.', {
-                systemId,
-                beforeFilter,
-                afterFilter: historyRecords.length
-            });
+            log('info', 'Fetching all history for specific system.', { systemId });
+            const response = await apiFetch<AnalysisRecord[]>(`history?systemId=${systemId}`);
+            historyRecords = Array.isArray(response) ? response : [];
+            log('info', 'System-specific history records fetched.', { systemId, count: historyRecords.length });
+        } else {
+            // For 'ALL' case, use the regular endpoint with 'all' limit
+            const historyResponse = await getAnalysisHistory(1, 'all', { strategy: FetchStrategy.FORCE_FRESH });
+            historyRecords = historyResponse.items;
+            log('info', 'All history records fetched.', { count: historyRecords.length });
         }
     } catch (error) {
         log('error', 'Failed to fetch history for unified timeline.', { error: String(error) });
