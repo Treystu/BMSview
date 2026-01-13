@@ -93,36 +93,52 @@ exports.handler = async (event, context) => {
 
             // Aggregation pipeline to calculate size per top-level field
             // Note: This scans the collection. efficient for <100k records.
+            // We'll use $strLenBytes for strings and estimate for other types
             const pipeline = [
                 {
                     $project: {
                         // Convert document to array of key-value pairs
-                        data: { $objectToArray: "$$ROOT" }
+                        data: { $objectToArray: "$$ROOT" },
+                        // Keep the original document for size estimation
+                        original: "$$ROOT"
                     }
                 },
                 { $unwind: "$data" },
                 {
                     $group: {
                         _id: "$data.k",
-                        totalSize: { $sum: { $bsonSize: "$data.v" } },
-                        count: { $sum: 1 }, // How many docs have this field
-                        avgSize: { $avg: { $bsonSize: "$data.v" } }
+                        docs: { $push: "$data.v" },
+                        count: { $sum: 1 }
                     }
                 },
-                { $sort: { totalSize: -1 } }
+                {
+                    $project: {
+                        field: "$_id",
+                        count: "$count",
+                        // Estimate size by checking string length and type
+                        avgStringSize: {
+                            $avg: {
+                                $cond: {
+                                    if: { $eq: [{ $type: "$data" }, "string"] },
+                                    then: { $strLenBytes: "$data" },
+                                    else: 50 // Estimated size for non-string fields
+                                }
+                            }
+                        }
+                    }
+                },
+                { $sort: { avgStringSize: -1 } }
             ];
-
-
 
             log.dbOperation('aggregate', collectionName, { pipelineStepCount: pipeline.length });
             const rawFieldStats = await targetCol.aggregate(pipeline).toArray();
 
-            // Format for output
+            // Format for output - estimate total size
             output.fieldAnalysis = rawFieldStats.map(f => ({
                 field: f._id,
-                totalSize: f.totalSize,
-                totalSizeHuman: formatBytes(f.totalSize),
-                avgSize: Math.round(f.avgSize),
+                totalSize: f.avgStringSize * f.count, // Estimated total
+                totalSizeHuman: formatBytes(f.avgStringSize * f.count),
+                avgSize: Math.round(f.avgStringSize),
                 count: f.count,
                 percentageOfData: '0%' // Will calc below
             }));
@@ -130,7 +146,7 @@ exports.handler = async (event, context) => {
             // Calc percentages
             const totalCalcSize = output.fieldAnalysis.reduce((acc, curr) => acc + curr.totalSize, 0);
             output.fieldAnalysis.forEach(f => {
-                f.percentageOfData = ((f.totalSize / totalCalcSize) * 100).toFixed(1) + '%';
+                f.percentageOfData = totalCalcSize > 0 ? ((f.totalSize / totalCalcSize) * 100).toFixed(1) + '%' : '0%';
             });
             output.stats.analyzedTotalSize = formatBytes(totalCalcSize);
         }
@@ -150,19 +166,35 @@ exports.handler = async (event, context) => {
                 {
                     $group: {
                         _id: { $concat: ["analysis.", "$analysisProps.k"] },
-                        totalSize: { $sum: { $bsonSize: "$analysisProps.v" } },
+                        docs: { $push: "$analysisProps.v" },
                         count: { $sum: 1 }
                     }
                 },
-                { $sort: { totalSize: -1 } }
+                {
+                    $project: {
+                        field: "$_id",
+                        count: "$count",
+                        // Estimate size by checking string length and type
+                        avgStringSize: {
+                            $avg: {
+                                $cond: {
+                                    if: { $eq: [{ $type: "$analysisProps.v" }, "string"] },
+                                    then: { $strLenBytes: "$analysisProps.v" },
+                                    else: 50 // Estimated size for non-string fields
+                                }
+                            }
+                        }
+                    }
+                },
+                { $sort: { avgStringSize: -1 } }
             ];
 
             log.dbOperation('aggregate', 'history', { pipelineStepCount: pipeline.length, analysisType: 'deep' });
             const deepStats = await targetCol.aggregate(pipeline).toArray();
             output.deepAnalysis = deepStats.map(f => ({
                 field: f._id,
-                totalSizeHuman: formatBytes(f.totalSize),
-                totalSize: f.totalSize
+                totalSizeHuman: formatBytes(f.avgStringSize * f.count),
+                totalSize: f.avgStringSize * f.count
             }));
         }
 
