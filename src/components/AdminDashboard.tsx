@@ -280,7 +280,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
     // Refetch history when sorting changes (always go to page 1)
     useEffect(() => {
         if (state.historyPage === 1) {
-            fetchData(1, 'history'); // Remove forceRefresh to avoid page reload
+            // Bypass cache to fetch freshly sorted page 1
+            fetchData(1, 'history', { forceRefresh: true });
         } else {
             // If not on page 1, dispatch to reset to page 1
             dispatch({ type: 'SET_HISTORY_PAGE', payload: 1 });

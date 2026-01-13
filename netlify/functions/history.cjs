@@ -296,14 +296,15 @@ exports.handler = async function (event, context) {
             const limitNum = isAll ? 1000 : parseInt(limit, 10);
             const skip = isAll ? 0 : (pageNum - 1) * limitNum;
 
-            // Support sorting parameters
+            // Support sorting parameters for any top-level or nested field
             const { sortBy = 'timestamp', sortOrder = 'desc' } = queryParams;
+
+            // Validate sortOrder
             const sortDirection = sortOrder === 'asc' ? 1 : -1;
-            const sortField = sortBy === 'timestamp' ? 'timestamp' :
-                sortBy === 'fileName' ? 'fileName' :
-                    sortBy === 'hardwareSystemId' ? 'hardwareSystemId' :
-                        sortBy === 'dlNumber' ? 'dlNumber' :
-                            'timestamp'; // Default to timestamp
+
+            // Sanitize sortBy to allow only alphanumeric, underscore, and dot characters to avoid injection
+            const safeSortBy = /^[a-zA-Z0-9_.]+$/.test(sortBy) ? sortBy : 'timestamp';
+            const sortField = safeSortBy;
 
             let query = historyCollection.find({}, { projection: { _id: 0 } })
                 .sort({ [sortField]: sortDirection })
