@@ -98,6 +98,11 @@ export function useJobPolling(jobIds: string[], config: PollingConfig = {}) {
       // Stop polling if all jobs are complete or failed
       if (allCompleted || hasErrors) {
         setIsPolling(false);
+        // Clean up abort controller when stopping
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
         return true; // Signal to stop polling
       }
 
