@@ -11,7 +11,7 @@
  */
 
 import { getClientServiceMetrics, resetClientServiceMetrics } from '@/services/clientService';
-import syncManager from '@/services/syncManager';
+import { getSyncManager } from '@/services/syncManager';
 import { useCallback, useEffect, useState } from 'react';
 
 export interface CacheStats {
@@ -51,6 +51,7 @@ function buildCacheStats(metrics: ReturnType<typeof getClientServiceMetrics>): C
  */
 export function useSyncStatus(): SyncStatus & { forceSyncNow: () => Promise<void>; resetMetrics: () => void } {
     const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => {
+        const syncManager = getSyncManager();
         const status = syncManager.getSyncStatus();
         const metrics = getClientServiceMetrics();
 
@@ -66,6 +67,7 @@ export function useSyncStatus(): SyncStatus & { forceSyncNow: () => Promise<void
     // Poll sync status and cache metrics every 2 seconds
     useEffect(() => {
         const interval = setInterval(() => {
+            const syncManager = getSyncManager();
             const status = syncManager.getSyncStatus();
             const metrics = getClientServiceMetrics();
 
@@ -84,6 +86,7 @@ export function useSyncStatus(): SyncStatus & { forceSyncNow: () => Promise<void
     // Force immediate sync and reset timer
     const forceSyncNow = useCallback(async () => {
         try {
+            const syncManager = getSyncManager();
             await syncManager.forceSyncNow();
             // Update status after sync completes
             const status = syncManager.getSyncStatus();

@@ -1,4 +1,12 @@
 import { useCallback, useEffect, useMemo } from 'react';
+
+// DEBUG: Add visibility to track bundle loading issues
+console.warn('[BUNDLE-DEBUG] App.tsx module executed', {
+  timestamp: new Date().toISOString(),
+  pathname: typeof window !== 'undefined' ? window.location.pathname : 'N/A',
+  stack: new Error().stack
+});
+
 import AnalysisResult from './components/AnalysisResult';
 import Footer from './components/Footer';
 import Header from './components/Header';
@@ -6,7 +14,7 @@ import RegisterBms from './components/RegisterBms';
 import UploadSection from './components/UploadSection';
 // ***MODIFIED***: Import the new *synchronous* service
 import type { SyncEvent } from '@/services/syncManager';
-import syncManager from '@/services/syncManager';
+import { getSyncManager } from '@/services/syncManager';
 
 import {
   associateHardwareIdToSystem,
@@ -90,6 +98,7 @@ function App() {
     fetchAppData(true); // Initial load is manual (unthrottled)
 
     // Subscribe to SyncManager events
+    const syncManager = getSyncManager();
     const unsubscribe = syncManager.subscribe((event: SyncEvent) => {
       switch (event.type) {
         case 'sync-start':

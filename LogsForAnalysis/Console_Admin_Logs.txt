@@ -1,71 +1,81 @@
-admin-C6-7J2ZB.js:2 {"level":"INFO","timestamp":"2026-01-13T01:59:36.321Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
-admin-C6-7J2ZB.js:2 {"level":"INFO","timestamp":"2026-01-13T01:59:36.326Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T01:59:37.042Z","component":"AdminDashboard","message":"Performing initial data load (page 1)."}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T01:59:37.042Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history"}}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Starting chart data preparation {requestId: 1, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 0}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Date range {chartStartDate: '2025-01-05T15:59', chartEndDate: '2026-01-12T15:59', apiStartDate: '2025-01-06T01:59:00.000Z', apiEndDate: '2026-01-13T01:59:00.000Z'}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T01:59:37.665Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T01:59:37.666Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T01:59:38.117Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":3,"historyCount":100}}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Starting chart data preparation {requestId: 2, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 0}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Date range {chartStartDate: '2025-01-05T15:59', chartEndDate: '2026-01-12T15:59', apiStartDate: '2025-01-06T01:59:00.000Z', apiEndDate: '2026-01-13T01:59:00.000Z'}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Chart data preparation complete {requestId: 1}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T01:59:40.105Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":7,"matched":3,"orphaned":4,"total_records":1367,"orphaned_records":23}}}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2025-01-06T01:59:00.000Z', apiEndDate: '2026-01-13T01:59:00.000Z'}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T01:59:40.916Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.1502482999999997,"days":4}}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Starting chart data preparation {requestId: 1, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 1000}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Date range {chartStartDate: '2025-01-05T15:59', chartEndDate: '2026-01-12T15:59', apiStartDate: '2025-01-06T01:59:00.000Z', apiEndDate: '2026-01-13T01:59:00.000Z'}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2025-01-06T01:59:00.000Z', apiEndDate: '2026-01-13T01:59:00.000Z'}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Fetching unified history {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd'}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Fetching unified history {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd'}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Unified history received {count: 1154}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Filtered data by date range {originalCount: 1154, filteredCount: 1154, startLimit: '2025-01-06T01:59:00.000Z', endLimit: '2026-01-13T01:59:00.000Z'}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Processed chart points {count: 1154}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Chart data preparation complete {requestId: 2}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Unified history received {count: 1154}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Filtered data by date range {originalCount: 1154, filteredCount: 1154, startLimit: '2025-01-06T01:59:00.000Z', endLimit: '2026-01-13T01:59:00.000Z'}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Processed chart points {count: 1154}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Chart data preparation complete {requestId: 1}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T02:00:20.854Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T02:00:20.856Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":1,"oversizedCount":0,"zipCount":0}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T02:00:20.856Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":1,"fileNames":["Screenshot_20260112-133201.png"],"event":"CHECK_START"}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T02:00:20.856Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
+admin-sa7NZGIf.js:2 {"level":"WARN","timestamp":"2026-01-13T21:31:20.736Z","component":"AdminApp","message":"Netlify Identity widget not available, retrying...","context":{}}
+admin-sa7NZGIf.js:2 {"level":"INFO","timestamp":"2026-01-13T21:31:21.737Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
+admin-sa7NZGIf.js:2 {"level":"INFO","timestamp":"2026-01-13T21:31:21.745Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:22.396Z","component":"AdminDashboard","message":"Performing initial data load (page 1)."}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:22.396Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Starting chart data preparation {requestId: 1, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 0}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Date range {chartStartDate: '2025-06-06T11:31', chartEndDate: '2026-01-13T11:31', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:31:00.000Z'}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:25.344Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:25.345Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:25.756Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":3,"historyCount":100}}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Starting chart data preparation {requestId: 2, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 0}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Date range {chartStartDate: '2025-06-06T11:31', chartEndDate: '2026-01-13T11:31', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:31:00.000Z'}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Chart data preparation complete {requestId: 1}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:31:00.000Z'}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:27.778Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":7,"matched":3,"orphaned":4,"total_records":1369,"orphaned_records":23}}}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Starting chart data preparation {requestId: 1, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 1000}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Date range {chartStartDate: '2025-06-06T11:31', chartEndDate: '2026-01-13T11:31', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:31:00.000Z'}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:31:00.000Z'}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:28.496Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.1504983999999997,"days":4}}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Fetching unified history {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd'}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Fetching unified history {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd'}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Unified history received {count: 1156}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Filtered data by date range {originalCount: 1156, filteredCount: 1156, startLimit: '2025-06-06T21:31:00.000Z', endLimit: '2026-01-13T21:31:00.000Z'}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Processed chart points {count: 1156}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Chart data preparation complete {requestId: 2}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Unified history received {count: 1156}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Filtered data by date range {originalCount: 1156, filteredCount: 1156, startLimit: '2025-06-06T21:31:00.000Z', endLimit: '2026-01-13T21:31:00.000Z'}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Processed chart points {count: 1156}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Chart data preparation complete {requestId: 1}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:34.930Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:36.456Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:37.411Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:40.345Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:41.919Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:51.977Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:32:01.697Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:32:09.523Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:32:15.566Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.731Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.732Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":1,"oversizedCount":0,"zipCount":0}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.732Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":1,"fileNames":["Screenshot_20260112-133205.png"],"event":"CHECK_START"}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.732Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
 uploadOptimizer-DFwZst0q.js:8 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
-uploadOptimizer-DFwZst0q.js:8 Client hash generated {hashPreview: '28117bef56d765ee...', imageLength: 319980}
-uploadOptimizer-DFwZst0q.js:8 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 20, avgPerFileMs: '20.00', …}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T02:00:20.877Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":20,"event":"HASHING_COMPLETE"}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T02:00:20.877Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T02:00:23.222Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":2366,"avgPerFileMs":"2366.00","event":"PHASE1_COMPLETE"}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T02:00:23.222Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":1,"duplicates":0,"upgrades":0,"newFiles":1,"event":"CHECK_COMPLETE"}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T02:00:27.044Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":1,"isStoryMode":false,"forceReanalysis":false,"useAsync":false}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T02:00:27.044Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"includeData":false,"event":"PHASE1_START"}}
+uploadOptimizer-DFwZst0q.js:8 Client hash generated {hashPreview: '31dd29e9c41a1222...', imageLength: 351212}
+uploadOptimizer-DFwZst0q.js:8 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 27, avgPerFileMs: '27.00', …}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.759Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":27,"event":"HASHING_COMPLETE"}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.759Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:17.183Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":2451,"avgPerFileMs":"2451.00","event":"PHASE1_COMPLETE"}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:17.183Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":1,"duplicates":0,"upgrades":0,"newFiles":1,"event":"CHECK_COMPLETE"}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:18.699Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":1,"isStoryMode":false,"forceReanalysis":false,"useAsync":false}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:18.699Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"includeData":false,"event":"PHASE1_START"}}
 uploadOptimizer-DFwZst0q.js:8 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
-uploadOptimizer-DFwZst0q.js:8 Client hash generated {hashPreview: '28117bef56d765ee...', imageLength: 319980}
-uploadOptimizer-DFwZst0q.js:8 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 32, avgPerFileMs: '32.00', …}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T02:00:27.076Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":32,"event":"HASHING_COMPLETE"}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T02:00:27.076Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T02:00:27.522Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":478,"avgPerFileMs":"478.00","event":"PHASE1_COMPLETE"}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T02:00:27.522Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":1,"upgrades":0,"new":1,"cachedDuplicates":0,"cachedUpgrades":0,"forceReanalysis":false}}
+uploadOptimizer-DFwZst0q.js:8 Client hash generated {hashPreview: '31dd29e9c41a1222...', imageLength: 351212}
+uploadOptimizer-DFwZst0q.js:8 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 40, avgPerFileMs: '40.00', …}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:18.739Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":40,"event":"HASHING_COMPLETE"}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:18.739Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:19.177Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":478,"avgPerFileMs":"478.00","event":"PHASE1_COMPLETE"}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:19.177Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":1,"upgrades":0,"new":1,"cachedDuplicates":0,"cachedUpgrades":0,"forceReanalysis":false}}
 uploadOptimizer-DFwZst0q.js:8 Processing 1 files. Initial concurrency: 1
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T02:00:27.523Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260112-133201.png","fileSize":239985,"forceReanalysis":false,"useAsync":false}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T02:00:27.549Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260112-133201.png","fileSize":239985,"forceReanalysis":false,"useAsync":false}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T02:00:39.687Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260112-133201.png","isDuplicate":false}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T02:00:39.687Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260112-133201.png","useAsync":false}}
-main-C-S4EtX-.js:37 {"level":"INFO","timestamp":"2026-01-13T02:00:39.708Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:19.178Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260112-133205.png","fileSize":263408,"forceReanalysis":false,"useAsync":false}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:19.209Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260112-133205.png","fileSize":263408,"forceReanalysis":false,"useAsync":false}}
+uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:29.853Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260112-133205.png","isDuplicate":false}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:29.853Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260112-133205.png","useAsync":false}}
+main-C-S4EtX-.js:37 {"level":"INFO","timestamp":"2026-01-13T21:33:29.877Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
 main-C-S4EtX-.js:37 [SW] Service worker already registered in this session.
-main-C-S4EtX-.js:37 {"level":"INFO","timestamp":"2026-01-13T02:00:39.718Z","service":"app-ui","message":"Detected admin page - skipping main app initialization"}
-localCache-DlN4dk1v.js:3 {"level":"info","timestamp":"2026-01-13T02:00:39.752Z","service":"localCache","message":"Cached analysis record: 8a6f9722-18c3-49e3-b199-e16eb9b3f60b","context":{"syncStatus":"synced"}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T02:00:39.752Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"8a6f9722-18c3-49e3-b199-e16eb9b3f60b"}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T02:00:39.752Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260112-133201.png","recordId":"8a6f9722-18c3-49e3-b199-e16eb9b3f60b","hasAnalysis":true,"analysisKeys":35}}
-AdminDashboard-wGTJkGgd.js:7 {"level":"INFO","timestamp":"2026-01-13T02:00:39.752Z","component":"AdminDashboard","message":"Bulk analysis run complete."}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Starting chart data preparation {requestId: 2, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 1001}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Date range {chartStartDate: '2025-01-05T15:59', chartEndDate: '2026-01-12T16:00', apiStartDate: '2025-01-06T01:59:00.000Z', apiEndDate: '2026-01-13T02:00:00.000Z'}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2025-01-06T01:59:00.000Z', apiEndDate: '2026-01-13T02:00:00.000Z'}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Fetching unified history {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd'}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Unified history received {count: 1156}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Filtered data by date range {originalCount: 1156, filteredCount: 1156, startLimit: '2025-01-06T01:59:00.000Z', endLimit: '2026-01-13T02:00:00.000Z'}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Processed chart points {count: 1156}
-AdminDashboard-wGTJkGgd.js:2 [HistoricalChart] Chart data preparation complete {requestId: 2}
+main-C-S4EtX-.js:37 {"level":"INFO","timestamp":"2026-01-13T21:33:29.903Z","service":"app-ui","message":"Detected admin page - skipping main app initialization"}
+localCache-DlN4dk1v.js:3 {"level":"info","timestamp":"2026-01-13T21:33:29.937Z","service":"localCache","message":"Cached analysis record: 8a6f9722-18c3-49e3-b199-e16eb9b3f60b","context":{"syncStatus":"synced"}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:29.937Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"8a6f9722-18c3-49e3-b199-e16eb9b3f60b"}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:29.937Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260112-133205.png","recordId":"8a6f9722-18c3-49e3-b199-e16eb9b3f60b","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:29.938Z","component":"AdminDashboard","message":"Bulk analysis run complete."}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Starting chart data preparation {requestId: 2, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 1001}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Date range {chartStartDate: '2025-06-06T11:31', chartEndDate: '2026-01-13T11:33', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:33:00.000Z'}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:33:00.000Z'}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Fetching unified history {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd'}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Unified history received {count: 1158}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Filtered data by date range {originalCount: 1158, filteredCount: 1158, startLimit: '2025-06-06T21:31:00.000Z', endLimit: '2026-01-13T21:33:00.000Z'}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Processed chart points {count: 1158}
+AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Chart data preparation complete {requestId: 2}

@@ -1,4 +1,18 @@
 /**
+ * SyncManager - Background synchronization service
+ * 
+ * Handles periodic data synchronization between local IndexedDB cache and remote MongoDB.
+ * Implements event-driven architecture with status tracking and error handling.
+ */
+
+// DEBUG: Add visibility to track bundle loading issues
+console.warn('[BUNDLE-DEBUG] syncManager.ts module executed', {
+    timestamp: new Date().toISOString(),
+    pathname: typeof window !== 'undefined' ? window.location.pathname : 'N/A',
+    stack: new Error().stack
+});
+
+/**
  * SyncManager - Intelligent Sync Decision Engine
  * 
  * Compares local cache state with server metadata to determine optimal sync strategy:
@@ -682,7 +696,15 @@ export class SyncManager {
     }
 }
 
-// Export singleton instance
-export const syncManager = new SyncManager();
+// Lazy singleton instance - only created when accessed
+let _syncManager: SyncManager | null = null;
 
-export default syncManager;
+export function getSyncManager(): SyncManager {
+    if (!_syncManager) {
+        _syncManager = new SyncManager();
+    }
+    return _syncManager;
+}
+
+// Export default as the lazy getter for backward compatibility
+export default getSyncManager();

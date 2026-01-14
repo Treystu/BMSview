@@ -490,8 +490,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 // that rely on the cache-first strategy can see the new record immediately.
                 try {
                     // We mark as 'synced' because this data just came from the server analysis
-                    const localCacheModule = await import('../services/localCache');
-                    await localCacheModule.historyCache.put(tempRecord, 'synced');
+                    await historyCache.put(tempRecord, 'synced');
                     log('info', 'Updated local cache with new analysis record', { id: tempRecord.id });
                 } catch (err) {
                     log('warn', 'Failed to update local cache with new record', { error: err instanceof Error ? err.message : String(err) });

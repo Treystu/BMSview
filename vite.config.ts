@@ -16,12 +16,28 @@ export default defineConfig({
     },
   },
   build: {
-      rollupOptions: {
-        input: {
-          main: resolve(__dirname, 'index.html'),
-          admin: resolve(__dirname, 'admin.html'),
-        },
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        admin: resolve(__dirname, 'admin.html'),
       },
+      output: {
+        manualChunks: (id) => {
+          // Keep syncManager exclusively in main bundle
+          if (id.includes('syncManager') || id.includes('serviceWorker')) {
+            return 'main-only';
+          }
+          // Keep localCache as a separate chunk
+          if (id.includes('localCache')) {
+            return 'local-cache';
+          }
+          // Isolate other main-app specific modules
+          if (id.includes('App') || id.includes('appState')) {
+            return 'main-app';
+          }
+        }
+      }
+    },
   },
   server: {
     proxy: {
