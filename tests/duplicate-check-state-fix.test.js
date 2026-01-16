@@ -66,7 +66,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
 
   describe('App.tsx Phase 1 error handling', () => {
     test('should have try-catch around duplicate check with fallback', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Verify error handling is in place
@@ -82,7 +82,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
     });
 
     test('should properly scope filesToAnalyze variable', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Verify filesToAnalyze is declared with proper scope
@@ -94,7 +94,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
     });
 
     test('should log Phase 1 completion with proper context', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Should log completion with file counts
@@ -104,7 +104,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
     });
 
     test('should transition properly from Phase 1 to Phase 2', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Phase 2 should start after Phase 1 handling
@@ -128,7 +128,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
     });
 
     test('App.tsx should log error details before fallback', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Should extract error message - updated for generic error handling if changed
@@ -143,7 +143,7 @@ describe('Duplicate Check State Fix - Code Validation', () => {
 
   describe('State management integration', () => {
     test('should dispatch UPDATE_ANALYSIS_STATUS for state transitions', () => {
-      const appPath = path.join(__dirname, '../App.tsx');
+      const appPath = path.join(__dirname, '../src/App.tsx');
       const source = fs.readFileSync(appPath, 'utf8');
 
       // Should update status for files needing upgrade
