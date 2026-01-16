@@ -3,11 +3,11 @@ export default {
   content: [
     "./index.html",
     "./admin.html",
-    "./App.tsx",
-    "./index.tsx",
-    "./admin.tsx",
-    "./components/**/*.{js,ts,jsx,tsx}",
-    "./components/admin/**/*.{js,ts,jsx,tsx}",
+    "./src/App.tsx",
+    "./src/index.tsx",
+    "./src/admin.tsx",
+    "./src/components/**/*.{js,ts,jsx,tsx}",
+    "./src/components/admin/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
