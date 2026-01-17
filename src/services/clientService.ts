@@ -1874,7 +1874,7 @@ export const runUnifiedDiagnostics = async (options: {
     testId: string;
     status: "SUCCESS" | "FAILED" | "SKIPPED";
     duration: number;
-    details?: any;
+    details?: unknown;
     error?: { message: string; stack: string };
     aiPrompt?: string;
   }>;

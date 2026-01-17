@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import {
   UNIFIED_DIAGNOSTIC_CATEGORIES,
   ALL_UNIFIED_TESTS,
@@ -16,14 +16,14 @@ interface UnifiedResult {
   testId: string;
   status: "SUCCESS" | "FAILED" | "SKIPPED" | "RUNNING";
   duration: number;
-  details?: any;
+  details?: unknown;
   error?: { message: string; stack: string };
   aiPrompt?: string;
 }
 
 const UnifiedDiagnosticsDashboard: React.FC<
   UnifiedDiagnosticsDashboardProps
-> = ({ state, dispatch }) => {
+> = ({ state: _state, dispatch: _dispatch }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [selectedTests, setSelectedTests] = useState<Set<string>>(
     new Set(ALL_UNIFIED_TESTS.map((t) => t.id)),
@@ -101,7 +101,7 @@ const UnifiedDiagnosticsDashboard: React.FC<
         response.results.forEach((res) => {
           updatedResults[res.testId] = {
             testId: res.testId,
-            status: res.status as any,
+            status: res.status as UnifiedResult["status"],
             duration: res.duration,
             details: res.details,
             error: res.error,
@@ -329,7 +329,7 @@ const UnifiedDiagnosticsDashboard: React.FC<
                       </pre>
                     </div>
                   )}
-                  {result.details && (
+                  {!!result.details && (
                     <div className="bg-gray-900/50 p-3 rounded-lg border border-gray-700">
                       <div className="text-[10px] font-bold text-gray-400 uppercase mb-2">
                         Test Details / Data

@@ -1,16 +1,8 @@
-import type { Handler, HandlerEvent, HandlerContext } from "@netlify/functions";
-import { createLoggerFromEvent, createTimer } from "./utils/logger.cjs";
-
-interface SolarEstimateParams {
-  location: string;
-  panelWatts: string;
-  startDate: string;
-  endDate: string;
-}
+const { createLoggerFromEvent, createTimer } = require("./utils/logger.cjs");
 
 const SOLAR_API_BASE_URL = "https://sunestimate.netlify.app/api/calculate";
 
-const sanitizeHeaders = (headers: Record<string, string | undefined> = {}) => {
+const sanitizeHeaders = (headers = {}) => {
   const redacted = { ...headers };
   if (redacted.authorization) redacted.authorization = "[REDACTED]";
   if (redacted.cookie) redacted.cookie = "[REDACTED]";
@@ -18,10 +10,7 @@ const sanitizeHeaders = (headers: Record<string, string | undefined> = {}) => {
   return redacted;
 };
 
-export const handler: Handler = async (
-  event: HandlerEvent,
-  context: HandlerContext
-) => {
+exports.handler = async (event, context) => {
   const log = createLoggerFromEvent("solar-estimate", event, context);
   const timer = createTimer(log, "solar-estimate");
 
@@ -29,7 +18,7 @@ export const handler: Handler = async (
     method: event.httpMethod,
     path: event.path,
     query: event.queryStringParameters,
-    headers: sanitizeHeaders(event.headers as Record<string, string>),
+    headers: sanitizeHeaders(event.headers),
     bodyLength: event.body ? event.body.length : 0,
   });
 
@@ -63,8 +52,9 @@ export const handler: Handler = async (
   }
 
   try {
-    // Extract and validate query parameters
-    const { location, panelWatts, startDate, endDate } = event.queryStringParameters as Partial<SolarEstimateParams>;
+    // Extract parameters
+    const { location, panelWatts, startDate, endDate } =
+      event.queryStringParameters || {};
 
     // Validation
     if (!location) {
@@ -74,7 +64,9 @@ export const handler: Handler = async (
       return {
         statusCode: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        body: JSON.stringify({ error: "Location is required (zip code or lat,lon)" }),
+        body: JSON.stringify({
+          error: "Location is required (zip code or lat,lon)",
+        }),
       };
     }
 
@@ -96,7 +88,9 @@ export const handler: Handler = async (
       return {
         statusCode: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        body: JSON.stringify({ error: "Start date and end date are required (YYYY-MM-DD format)" }),
+        body: JSON.stringify({
+          error: "Start date and end date are required (YYYY-MM-DD format)",
+        }),
       };
     }
 
@@ -127,7 +121,7 @@ export const handler: Handler = async (
     const response = await fetch(apiUrl.toString(), {
       method: "GET",
       headers: {
-        "Accept": "application/json",
+        Accept: "application/json",
       },
     });
 
@@ -136,12 +130,12 @@ export const handler: Handler = async (
     // Handle non-200 responses
     if (!response.ok) {
       const errorText = await response.text();
-      log.error("External API error", { 
-        status: response.status, 
+      log.error("External API error", {
+        status: response.status,
         errorText: errorText.substring(0, 500),
-        apiDurationMs 
+        apiDurationMs,
       });
-      
+
       let errorMessage = "Failed to fetch solar estimate";
       try {
         const errorJson = JSON.parse(errorText);
@@ -162,13 +156,17 @@ export const handler: Handler = async (
 
     // Parse and return the successful response
     const data = await response.json();
-    
+
     const dailyEstimatesCount = data.dailyEstimates?.length || 0;
-    const durationMs = timer.end({ outcome: "success", apiDurationMs, dailyEstimatesCount });
-    log.info("Solar estimate completed successfully", { 
+    const durationMs = timer.end({
+      outcome: "success",
+      apiDurationMs,
+      dailyEstimatesCount,
+    });
+    log.info("Solar estimate completed successfully", {
       dailyEstimatesCount,
       durationMs,
-      apiDurationMs
+      apiDurationMs,
     });
 
     log.exit(200, { outcome: "success" });
@@ -181,13 +179,12 @@ export const handler: Handler = async (
       },
       body: JSON.stringify(data),
     };
-
   } catch (error) {
-    const err = error as Error;
+    const err = error;
     log.error("Unexpected error in solar estimate", {
       error: err?.message || "Unknown error",
       stack: err?.stack,
-      durationMs: timer.end({ outcome: "exception" })
+      durationMs: timer.end({ outcome: "exception" }),
     });
     log.exit(500, { outcome: "exception" });
 
@@ -196,7 +193,7 @@ export const handler: Handler = async (
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({
         error: "Internal server error while fetching solar estimate",
-        details: err?.message || "Unknown error"
+        details: err?.message || "Unknown error",
       }),
     };
   }
