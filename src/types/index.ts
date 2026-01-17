@@ -20,7 +20,7 @@ export interface BatteryAnalysisRequest {
 }
 
 export interface BatteryPerformanceMetrics {
-  trend: 'Improving' | 'Stable' | 'Declining' | 'Unknown';
+  trend: "Improving" | "Stable" | "Declining" | "Unknown";
   capacityRetention: number;
   degradationRate: number;
 }
@@ -81,7 +81,7 @@ export interface BatteryState {
 // Component prop types
 export interface ChartProps {
   data: BatteryMeasurement[];
-  type: 'voltage' | 'current' | 'temperature' | 'stateOfCharge';
+  type: "voltage" | "current" | "temperature" | "stateOfCharge";
   height?: number;
   width?: number;
 }
@@ -92,11 +92,11 @@ export interface AnalysisResultProps {
 }
 
 // Utility types
-export type TimeRange = '1h' | '24h' | '7d' | '30d' | 'all';
+export type TimeRange = "1h" | "24h" | "7d" | "30d" | "all";
 
 export interface DataFilter {
   timeRange: TimeRange;
-  metrics: Array<'voltage' | 'current' | 'temperature' | 'stateOfCharge'>;
+  metrics: Array<"voltage" | "current" | "temperature" | "stateOfCharge">;
   threshold?: number;
 }
 
@@ -104,7 +104,7 @@ export interface DataFilter {
 export interface APIResponse {
   statusCode: number;
   body: string; // JSON string of ServiceResponse<T>
-}// Fix: Add global type definitions for Vite environment variables
+} // Fix: Add global type definitions for Vite environment variables
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface ImportMetaEnv {
@@ -117,6 +117,7 @@ declare global {
 }
 
 export interface AnalysisData {
+  systemId?: string | null; // Added for real-time linking support
   hardwareSystemId?: string | null; // Unified System ID (Physical/Hardware ID). Source of Truth.
   /** @deprecated Use hardwareSystemId instead */
   dlNumber?: string | null; // Legacy support - do not use for new logic
@@ -210,7 +211,7 @@ export interface BmsSystem {
 export interface AnalysisRecord {
   id: string;
   timestamp: string;
-  systemId?: string;
+  systemId?: string | null;
   systemName?: string;
   analysis: AnalysisData | null;
   weather?: WeatherData;
@@ -312,7 +313,7 @@ export interface DisplayableAnalysisResult {
 }
 
 // Context window configuration for insights generation
-export type ContextWindowUnit = 'hours' | 'days' | 'months' | 'years';
+export type ContextWindowUnit = "hours" | "days" | "months" | "years";
 
 export interface ContextWindowConfig {
   value: number;
@@ -328,69 +329,73 @@ export interface InsightsRequestConfig {
 
 // Insight generation modes - Added for UI mode selector feature
 export enum InsightMode {
-  WITH_TOOLS = 'with-tools',      // AI "Battery Guru" with function calling (default, most comprehensive)
-  FULL_CONTEXT = 'full-context',  // Full Context Mode with AI Feedback capability
-  STANDARD = 'standard',
-  VISUAL_GURU = 'visual-guru',
-  ASYNC_WORKLOAD = 'async-workload'
+  WITH_TOOLS = "with-tools", // AI "Battery Guru" with function calling (default, most comprehensive)
+  FULL_CONTEXT = "full-context", // Full Context Mode with AI Feedback capability
+  STANDARD = "standard",
+  VISUAL_GURU = "visual-guru",
+  ASYNC_WORKLOAD = "async-workload",
 }
 
 // Human-readable descriptions for each mode
-export const InsightModeDescriptions: Record<InsightMode, { label: string; description: string; features: string[] }> = {
+export const InsightModeDescriptions: Record<
+  InsightMode,
+  { label: string; description: string; features: string[] }
+> = {
   [InsightMode.WITH_TOOLS]: {
-    label: 'Battery Guru (Recommended)',
-    description: 'Advanced AI with intelligent data querying and feedback capability',
+    label: "Battery Guru (Recommended)",
+    description:
+      "Advanced AI with intelligent data querying and feedback capability",
     features: [
-      'Can request specific historical data on-demand',
-      'Multi-turn conversation with AI reasoning',
-      'Comprehensive analysis with 90-day rollups',
-      'Can submit app improvement suggestions',
-      'Best for all types of questions and insights'
-    ]
+      "Can request specific historical data on-demand",
+      "Multi-turn conversation with AI reasoning",
+      "Comprehensive analysis with 90-day rollups",
+      "Can submit app improvement suggestions",
+      "Best for all types of questions and insights",
+    ],
   },
   [InsightMode.FULL_CONTEXT]: {
-    label: 'Full Context Mode',
-    description: 'Complete data context with AI app feedback focus',
+    label: "Full Context Mode",
+    description: "Complete data context with AI app feedback focus",
     features: [
-      'Loads ALL historical data upfront (90+ days)',
-      'Enhanced AI feedback and suggestions',
-      'Best for app improvement recommendations',
-      'Slower initial load, deeper analysis',
-      'Suggestions appear in Admin AI Feedback panel'
-    ]
+      "Loads ALL historical data upfront (90+ days)",
+      "Enhanced AI feedback and suggestions",
+      "Best for app improvement recommendations",
+      "Slower initial load, deeper analysis",
+      "Suggestions appear in Admin AI Feedback panel",
+    ],
   },
   [InsightMode.STANDARD]: {
-    label: 'Sync Analysis',
-    description: 'Synchronous analysis mode',
+    label: "Sync Analysis",
+    description: "Synchronous analysis mode",
     features: [
-      'Fast, direct response',
-      'Best for simple, immediate queries',
-      'Standard data context window'
-    ]
+      "Fast, direct response",
+      "Best for simple, immediate queries",
+      "Standard data context window",
+    ],
   },
   [InsightMode.VISUAL_GURU]: {
-    label: 'Visual Guru Expert',
-    description: 'Infographic-style output with charts for time-based metrics',
+    label: "Visual Guru Expert",
+    description: "Infographic-style output with charts for time-based metrics",
     features: [
-      'Emphasizes visual representations over prose',
-      'Generates chart configurations for time-series data',
-      'Structured sections with status blocks and gauges',
-      'Short, affirmative phrases about visual clarity',
-      'Best for dashboards and visual reports'
-    ]
+      "Emphasizes visual representations over prose",
+      "Generates chart configurations for time-series data",
+      "Structured sections with status blocks and gauges",
+      "Short, affirmative phrases about visual clarity",
+      "Best for dashboards and visual reports",
+    ],
   },
   [InsightMode.ASYNC_WORKLOAD]: {
-    label: 'Async Analysis',
-    description: 'Durable asynchronous execution',
+    label: "Async Analysis",
+    description: "Durable asynchronous execution",
     features: [
-      'Unlimited execution time (no timeout limits)',
-      'Automatic retries with intelligent backoff',
-      'Multi-step workflow with independent retry per step',
-      'State persistence across failures',
-      'Best for complex analysis requiring extended processing',
-      'Event-driven with priority and scheduling support'
-    ]
-  }
+      "Unlimited execution time (no timeout limits)",
+      "Automatic retries with intelligent backoff",
+      "Multi-step workflow with independent retry per step",
+      "State persistence across failures",
+      "Best for complex analysis requiring extended processing",
+      "Event-driven with priority and scheduling support",
+    ],
+  },
 };
 
 // AI Feedback System Types
@@ -400,7 +405,7 @@ export interface AIFeedbackSuggestion {
   rationale: string;
   implementation: string;
   expectedBenefit: string;
-  estimatedEffort: 'hours' | 'days' | 'weeks';
+  estimatedEffort: "hours" | "days" | "weeks";
   codeSnippets?: string[];
   affectedComponents?: string[];
 }
@@ -409,11 +414,28 @@ export interface AIFeedback {
   id: string;
   timestamp: Date;
   systemId: string;
-  feedbackType: 'feature_request' | 'api_suggestion' | 'data_format' | 'bug_report' | 'optimization';
-  category: 'weather_api' | 'data_structure' | 'ui_ux' | 'performance' | 'integration' | 'analytics';
-  priority: 'low' | 'medium' | 'high' | 'critical';
-  guruSource: 'diagnostics-guru' | 'battery-guru' | 'visual-guru' | 'full-context-guru' | 'quick-guru' | 'manual';
-  status: 'pending' | 'reviewed' | 'accepted' | 'implemented' | 'rejected';
+  feedbackType:
+    | "feature_request"
+    | "api_suggestion"
+    | "data_format"
+    | "bug_report"
+    | "optimization";
+  category:
+    | "weather_api"
+    | "data_structure"
+    | "ui_ux"
+    | "performance"
+    | "integration"
+    | "analytics";
+  priority: "low" | "medium" | "high" | "critical";
+  guruSource:
+    | "diagnostics-guru"
+    | "battery-guru"
+    | "visual-guru"
+    | "full-context-guru"
+    | "quick-guru"
+    | "manual";
+  status: "pending" | "reviewed" | "accepted" | "implemented" | "rejected";
   geminiModel: string;
   contextHash: string;
   suggestion: AIFeedbackSuggestion;
@@ -497,11 +519,11 @@ export interface StatisticalAnalysisResult {
 }
 
 export interface TrendAnalysisResult {
-  trend: 'increasing' | 'decreasing' | 'stable';
+  trend: "increasing" | "decreasing" | "stable";
   slope: number;
   intercept: number;
   rSquared: number;
-  confidence: 'high' | 'medium' | 'low';
+  confidence: "high" | "medium" | "low";
   changePoints: Array<{
     index: number;
     timestamp: number;
@@ -626,7 +648,12 @@ export interface AIFeedbackMetric {
   id: string;
   timestamp: string;
   systemId?: string;
-  metricType: 'accuracy' | 'implementation_rate' | 'performance' | 'cost' | 'anomaly';
+  metricType:
+    | "accuracy"
+    | "implementation_rate"
+    | "performance"
+    | "cost"
+    | "anomaly";
   metricName: string;
   value: number;
   unit?: string;
@@ -636,7 +663,7 @@ export interface AIFeedbackMetric {
 export interface AIOperationLog {
   id: string;
   timestamp: string;
-  operation: 'analysis' | 'insights' | 'feedback_generation';
+  operation: "analysis" | "insights" | "feedback_generation";
   systemId?: string;
   duration: number;
   tokensUsed?: number;
@@ -648,7 +675,7 @@ export interface AIOperationLog {
 }
 
 export interface CostMetrics {
-  period: 'daily' | 'weekly' | 'monthly';
+  period: "daily" | "weekly" | "monthly";
   startDate: string;
   endDate: string;
   totalCost: number;
@@ -664,8 +691,13 @@ export interface CostMetrics {
 export interface AnomalyAlert {
   id: string;
   timestamp: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  type: 'cost_spike' | 'error_rate' | 'latency' | 'accuracy_drop' | 'circuit_breaker';
+  severity: "low" | "medium" | "high" | "critical";
+  type:
+    | "cost_spike"
+    | "error_rate"
+    | "latency"
+    | "accuracy_drop"
+    | "circuit_breaker";
   message: string;
   metadata?: Record<string, unknown>;
   resolved?: boolean;
@@ -677,7 +709,7 @@ export interface FeedbackImplementationTracking {
   feedbackId: string;
   suggestedAt: string;
   implementedAt?: string;
-  status: 'pending' | 'implemented' | 'rejected' | 'expired';
+  status: "pending" | "implemented" | "rejected" | "expired";
   implementationType?: string;
   implementationNotes?: string;
   effectiveness?: number; // 0-100 score
@@ -688,7 +720,7 @@ export interface FeedbackROIMetrics {
   feedbackId: string;
   feedbackTitle: string;
   category: string;
-  estimatedEffort: 'hours' | 'days' | 'weeks';
+  estimatedEffort: "hours" | "days" | "weeks";
   actualEffortHours?: number;
   estimatedBenefit?: string;
   actualBenefitScore?: number; // 0-100 scale
@@ -732,9 +764,18 @@ export interface FeedbackLoopAnalytics {
     averageEffectivenessScore: number | null;
   };
   implementationMetrics: {
-    byPriority: Record<string, { total: number; implemented: number; rate: number }>;
-    byCategory: Record<string, { total: number; implemented: number; rate: number }>;
-    byEffort: Record<string, { total: number; implemented: number; avgDays: number | null }>;
+    byPriority: Record<
+      string,
+      { total: number; implemented: number; rate: number }
+    >;
+    byCategory: Record<
+      string,
+      { total: number; implemented: number; rate: number }
+    >;
+    byEffort: Record<
+      string,
+      { total: number; implemented: number; avgDays: number | null }
+    >;
   };
   roiSummary: {
     totalEstimatedSavings: number;
@@ -757,7 +798,11 @@ export interface FeedbackLoopAnalytics {
   userSatisfaction: {
     averageScore: number | null;
     surveyCount: number;
-    satisfactionTrend: Array<{ month: string; avgScore: number | null; count: number }>;
+    satisfactionTrend: Array<{
+      month: string;
+      avgScore: number | null;
+      count: number;
+    }>;
     impactRating: number | null;
     recommendations: number; // Count of "would recommend"
   };
@@ -804,23 +849,23 @@ export interface SecurityAuditEvent {
   endpoint?: string;
   action?: string;
   details?: Record<string, unknown>;
-  severity: 'low' | 'medium' | 'high' | 'critical';
+  severity: "low" | "medium" | "high" | "critical";
 }
 
 export type SecurityEventType =
-  | 'rate_limit_exceeded'
-  | 'rate_limit_warning'
-  | 'input_sanitized'
-  | 'injection_blocked'
-  | 'prompt_injection_detected'
-  | 'auth_success'
-  | 'auth_failure'
-  | 'consent_granted'
-  | 'consent_denied'
-  | 'data_access'
-  | 'data_export'
-  | 'admin_action'
-  | 'encryption_event';
+  | "rate_limit_exceeded"
+  | "rate_limit_warning"
+  | "input_sanitized"
+  | "injection_blocked"
+  | "prompt_injection_detected"
+  | "auth_success"
+  | "auth_failure"
+  | "consent_granted"
+  | "consent_denied"
+  | "data_access"
+  | "data_export"
+  | "admin_action"
+  | "encryption_event";
 
 export interface RateLimitConfig {
   maxRequests: number;
