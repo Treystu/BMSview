@@ -117,10 +117,10 @@ const testImplementations = {
     return { success: h1 === h2 };
   },
   "analysis-hardware-id": async () => {
-    return { success: !!require("./utils/extract-hardware-id.cjs") };
+    return { success: !!require("./extract-hardware-id.cjs") };
   },
   "analysis-async": async () => {
-    return { success: !!require("./utils/analysis-background.mjs") };
+    return { success: !!(await import("./analysis-background.mjs")) };
   },
 
   // Category 3: Data & History

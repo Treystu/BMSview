@@ -399,14 +399,14 @@ async function performAnalysisRequest(
       let errorText = "Failed to read error response";
       try {
         errorText = await response.text();
-      } catch (_e) {
+      } catch {
         // ignore
       }
       // Try to parse JSON error if possible
       let errorBody;
       try {
         errorBody = JSON.parse(errorText);
-      } catch (_e) {
+      } catch {
         /* ignore parse errors */
       }
 
