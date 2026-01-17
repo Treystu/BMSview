@@ -1,4 +1,5 @@
 import { DEFAULT_VISIBLE_COLUMNS, HistoryColumnKey } from 'components/admin/columnDefinitions';
+import { ALL_DIAGNOSTIC_TESTS } from '@/constants/diagnostics';
 import React, { createContext, Dispatch, useContext, useReducer } from 'react';
 import type { AnalysisRecord, AnalysisStory, BmsSystem, DisplayableAnalysisResult } from '../types';
 
@@ -11,6 +12,10 @@ export interface DiagnosticTestResult {
   duration: number;
   details?: Record<string, unknown>;
   error?: string;
+  steps?: Array<{ step: string; status: string; time?: number;[key: string]: unknown }>;
+  tests?: Array<{ test: string; status: string;[key: string]: unknown }>;
+  stages?: Array<{ stage: string; status: string; duration?: number;[key: string]: unknown }>;
+  jobLifecycle?: Array<{ event: string; time?: number;[key: string]: unknown }>;
 }
 
 export interface DiagnosticsResponse {
@@ -77,7 +82,6 @@ export interface AdminState {
   visibleHistoryColumns: HistoryColumnKey[];
   historySortKey: HistorySortKey;
   historySortDirection: 'asc' | 'desc';
-  isDiagnosticsModalOpen: boolean;
   diagnosticResults: DiagnosticsResponse | null;
   selectedDiagnosticTests: string[];
   stories: AnalysisStory[];
@@ -118,21 +122,8 @@ export const initialState: AdminState = {
   visibleHistoryColumns: DEFAULT_VISIBLE_COLUMNS,
   historySortKey: 'timestamp',
   historySortDirection: 'desc',
-  isDiagnosticsModalOpen: false,
   diagnosticResults: null,
-  // Default to all available diagnostic tests - matches DIAGNOSTIC_TEST_SECTIONS in AdminDashboard
-  selectedDiagnosticTests: [
-    // Infrastructure
-    'database', 'gemini',
-    // Core Analysis
-    'analyze', 'insightsWithTools', 'asyncAnalysis',
-    // Data Management
-    'history', 'systems', 'dataExport', 'idempotency',
-    // External Services
-    'weather', 'backfillWeather', 'backfillHourlyCloud', 'solarEstimate', 'systemAnalytics', 'predictiveMaintenance',
-    // System Utilities
-    'contentHashing', 'errorHandling', 'logging', 'retryMechanism', 'timeout'
-  ],
+  selectedDiagnosticTests: [...ALL_DIAGNOSTIC_TESTS],
   stories: [],
 };
 
@@ -170,8 +161,6 @@ export type AdminAction =
   | { type: 'BATCH_BULK_JOB_COMPLETED'; payload: Array<{ record: AnalysisRecord, fileName: string }> }
   | { type: 'UPDATE_BULK_JOB_SKIPPED'; payload: { fileName: string, reason: string } }
   | { type: 'BATCH_BULK_JOB_SKIPPED'; payload: Array<{ fileName: string, reason: string }> }
-  | { type: 'OPEN_DIAGNOSTICS_MODAL' }
-  | { type: 'CLOSE_DIAGNOSTICS_MODAL' }
   | { type: 'SET_DIAGNOSTIC_RESULTS'; payload: DiagnosticsResponse | null }
   | { type: 'UPDATE_SINGLE_DIAGNOSTIC_RESULT'; payload: { testId: string; result: DiagnosticTestResult } }
   | { type: 'SET_SELECTED_DIAGNOSTIC_TESTS'; payload: string[] }
@@ -345,10 +334,6 @@ export const adminReducer = (state: AdminState, action: AdminAction): AdminState
       // When sorting, we must go back to page 1 as the order has changed
       return { ...state, historySortKey: key, historySortDirection: direction, historyPage: 1 };
     }
-    case 'OPEN_DIAGNOSTICS_MODAL':
-      return { ...state, isDiagnosticsModalOpen: true, diagnosticResults: null };
-    case 'CLOSE_DIAGNOSTICS_MODAL':
-      return { ...state, isDiagnosticsModalOpen: false, diagnosticResults: null };
     case 'SET_DIAGNOSTIC_RESULTS':
       return { ...state, diagnosticResults: action.payload };
     case 'UPDATE_SINGLE_DIAGNOSTIC_RESULT': {

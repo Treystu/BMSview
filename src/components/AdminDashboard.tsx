@@ -21,7 +21,6 @@ import {
     mergeBmsSystems,
     normalizeIds,
     registerBmsSystem,
-    runSingleDiagnosticTest,
     streamAllHistory,
     updateBmsSystem
 } from '../services/clientService';
@@ -31,7 +30,6 @@ import type { AnalysisRecord, BmsSystem, DisplayableAnalysisResult } from '../ty
 import { checkFilesForDuplicates, partitionCachedFiles, type CachedDuplicateResult, type DuplicateCheckResult } from '../utils/duplicateChecker';
 
 import BulkUpload from './BulkUpload';
-import DiagnosticsModal from './DiagnosticsModal';
 import HistoricalChart from './HistoricalChart';
 import IpManagement from './IpManagement';
 import SpinnerIcon from './icons/SpinnerIcon';
@@ -39,8 +37,8 @@ import SpinnerIcon from './icons/SpinnerIcon';
 import UploadOptimizer from '../utils/uploadOptimizer';
 import { AIFeedbackDashboard } from './AIFeedbackDashboard';
 import CostDashboard from './CostDashboard';
-import { DiagnosticsGuru } from './DiagnosticsGuru';
 import { SolarIntegrationDashboard } from './SolarIntegrationDashboard';
+import UnifiedDiagnosticsDashboard from './UnifiedDiagnosticsDashboard';
 import AdminHeader from './admin/AdminHeader';
 import AdminStoryManager from './admin/AdminStoryManager';
 import AdminSystemsManager from './admin/AdminSystemsManager';
@@ -490,7 +488,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                 // that rely on the cache-first strategy can see the new record immediately.
                 try {
                     // We mark as 'synced' because this data just came from the server analysis
-                    await historyCache.put(tempRecord, 'synced');
+                    const localCacheModule = await import('../services/localCache');
+                    await localCacheModule.historyCache.put(tempRecord, 'synced');
                     log('info', 'Updated local cache with new analysis record', { id: tempRecord.id });
                 } catch (err) {
                     log('warn', 'Failed to update local cache with new record', { error: err instanceof Error ? err.message : String(err) });
@@ -903,202 +902,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
         );
     };
 
-    // All available diagnostic tests (matching backend implementation)
-    // Dynamically define all available diagnostic tests by extracting from the UI sections
-    // This ensures that any new tests added to the UI are automatically included in "Select All"
-    const DIAGNOSTIC_TEST_SECTIONS = [
-        // Infrastructure
-        { id: 'database', label: 'Database Connection' },
-        { id: 'gemini', label: 'Gemini API' },
-        // Core Analysis
-        { id: 'analyze', label: 'Analyze Endpoint' },
-        { id: 'insightsWithTools', label: 'Insights with Tools' },
-        { id: 'asyncAnalysis', label: 'Async Analysis' },
-        // Data Management
-        { id: 'history', label: 'History' },
-        { id: 'systems', label: 'Systems' },
-        { id: 'dataExport', label: 'Data Export' },
-        { id: 'idempotency', label: 'Idempotency' },
-        // External Services
-        { id: 'weather', label: 'Weather Service' },
-        { id: 'backfillWeather', label: 'Backfill Weather' },
-        { id: 'backfillHourlyCloud', label: 'Backfill Hourly Cloud' },
-        { id: 'solarEstimate', label: 'Solar Estimate' },
-        { id: 'systemAnalytics', label: 'System Analytics' },
-        { id: 'predictiveMaintenance', label: 'Predictive Maintenance' },
-        // System Utilities
-        { id: 'contentHashing', label: 'Content Hashing' },
-        { id: 'errorHandling', label: 'Error Handling' },
-        { id: 'logging', label: 'Logging System' },
-        { id: 'retryMechanism', label: 'Retry Mechanism' },
-        { id: 'timeout', label: 'Timeout Handling' },
-    ];
-
-    // Extract all test IDs from the sections
-    const ALL_DIAGNOSTIC_TESTS = DIAGNOSTIC_TEST_SECTIONS.map(test => test.id);
-
-    const handleTestToggle = (testId: string, checked: boolean) => {
-        const currentTests = state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS;
-        const newTests = checked
-            ? [...currentTests, testId]
-            : currentTests.filter(t => t !== testId);
-        dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: newTests });
-    };
-
-    const handleRunDiagnostics = async () => {
-        const selectedTests = state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS;
-
-        log('info', 'Starting real-time parallel diagnostics', {
-            testCount: selectedTests.length,
-            tests: selectedTests
-        });
-
-        // Create initial stub results to show tests as "running" immediately
-        const initialResults = {
-            status: 'partial' as const,
-            timestamp: new Date().toISOString(),
-            duration: 0,
-            results: selectedTests.map(testId => {
-                const testConfig = DIAGNOSTIC_TEST_SECTIONS.find(t => t.id === testId);
-                return {
-                    name: testConfig?.label || testId,
-                    status: 'running' as const,
-                    duration: 0
-                };
-            }),
-            summary: {
-                total: selectedTests.length,
-                success: 0,
-                warnings: 0,
-                errors: 0,
-                partial: 0
-            }
-        };
-
-        // Open modal with initial stub results (all tests showing as "running")
-        dispatch({ type: 'OPEN_DIAGNOSTICS_MODAL' });
-        dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: initialResults });
-        dispatch({ type: 'ACTION_START', payload: 'isRunningDiagnostics' });
-
-        const startTime = Date.now();
-
-        try {
-            // Run ALL tests in parallel, each with its own API call
-            // This is the key change: instead of one monolithic call, fire multiple parallel requests
-            const testPromises = selectedTests.map(async (testId) => {
-                const testConfig = DIAGNOSTIC_TEST_SECTIONS.find(t => t.id === testId);
-                const displayName = testConfig?.label || testId;
-
-                log('info', `Starting test: ${testId}`, { displayName });
-
-                try {
-                    // Each test runs independently using the scope parameter
-                    const result = await runSingleDiagnosticTest(testId);
-
-                    log('info', `Completed test: ${testId}`, {
-                        displayName,
-                        status: result.status,
-                        duration: result.duration
-                    });
-
-                    // Immediately update UI with this specific test result
-                    dispatch({
-                        type: 'UPDATE_SINGLE_DIAGNOSTIC_RESULT',
-                        payload: { testId, result }
-                    });
-
-                    return result;
-                } catch (error) {
-                    const errorMessage = error instanceof Error ? error.message : 'Test failed';
-                    log('error', `Test failed: ${testId}`, { displayName, error: errorMessage });
-
-                    // Create error result for this test
-                    const errorResult = {
-                        name: displayName,
-                        status: 'error' as const,
-                        error: errorMessage,
-                        duration: 0
-                    };
-
-                    // Update UI with error immediately
-                    dispatch({
-                        type: 'UPDATE_SINGLE_DIAGNOSTIC_RESULT',
-                        payload: { testId, result: errorResult }
-                    });
-
-                    return errorResult;
-                }
-            });
-
-            // Wait for all tests to complete (they run in parallel)
-            const allResults = await Promise.all(testPromises);
-
-            // Calculate final summary
-            const summary = {
-                total: allResults.length,
-                success: allResults.filter(r => r.status === 'success').length,
-                partial: allResults.filter(r => r.status === 'partial').length,
-                warnings: allResults.filter(r => r.status === 'warning').length,
-                errors: allResults.filter(r => r.status === 'error').length
-            };
-
-            // Determine overall status
-            const overallStatus = summary.errors > 0 || summary.warnings > 0 || summary.partial > 0
-                ? 'partial' as const
-                : 'success' as const;
-
-            // Create final results object
-            const finalResults = {
-                status: overallStatus,
-                timestamp: new Date().toISOString(),
-                duration: Date.now() - startTime,
-                results: allResults,
-                summary
-            };
-
-            // Update with final complete results
-            dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: finalResults });
-
-            log('info', 'All diagnostics completed', {
-                duration: finalResults.duration,
-                total: summary.total,
-                success: summary.success,
-                errors: summary.errors,
-                warnings: summary.warnings
-            });
-
-        } catch (err) {
-            const error = err instanceof Error ? err.message : 'Failed to run diagnostics.';
-            log('error', 'Diagnostics orchestration failed.', { error });
-
-            // Create an error response object
-            const errorResponse = {
-                status: 'error' as const,
-                timestamp: new Date().toISOString(),
-                duration: Date.now() - startTime,
-                results: selectedTests.map(testId => {
-                    const testConfig = DIAGNOSTIC_TEST_SECTIONS.find(t => t.id === testId);
-                    return {
-                        name: testConfig?.label || testId,
-                        status: 'error' as const,
-                        error: 'Diagnostic orchestration failed',
-                        duration: 0
-                    };
-                }),
-                summary: {
-                    total: selectedTests.length,
-                    success: 0,
-                    warnings: 0,
-                    errors: selectedTests.length
-                },
-                error
-            };
-            dispatch({ type: 'SET_DIAGNOSTIC_RESULTS', payload: errorResponse });
-        } finally {
-            dispatch({ type: 'ACTION_END', payload: 'isRunningDiagnostics' });
-        }
-    };
-
     // --- Rendering ---
 
     const sortedHistoryForTable = useMemo(() => {
@@ -1268,12 +1071,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                 <AIFeedbackDashboard />
                             </div>
                         </section>
-                        <section id="diagnostics-guru-section">
-                            <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">🔧 Diagnostics Guru</h2>
-                            <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
-                                <DiagnosticsGuru />
-                            </div>
-                        </section>
                         <section id="ip-management-section">
                             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">API Security & IP Management</h2>
                             <IpManagement />
@@ -1308,140 +1105,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                                 <FeedbackMonitoringDashboard />
                             </div>
                         </section>
-                        <section id="system-diagnostics-section">
-                            <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">System Diagnostics</h2>
-                            <div className="bg-gray-800 p-4 rounded-lg shadow-inner">
-                                <p className="mb-4">Run a series of tests to check the health of the system, including database connectivity, API functions, and AI model responses.</p>
-
-                                <div className="mb-4">
-                                    {/* Infrastructure Tests */}
-                                    <div className="mb-3">
-                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Infrastructure</h4>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {DIAGNOSTIC_TEST_SECTIONS.filter(t => ['database', 'gemini'].includes(t.id)).map(test => (
-                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
-                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
-                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <span>{test.label}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Core Analysis Tests */}
-                                    <div className="mb-3">
-                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Core Analysis</h4>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {DIAGNOSTIC_TEST_SECTIONS.filter(t => ['analyze', 'insightsWithTools', 'asyncAnalysis'].includes(t.id)).map(test => (
-                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
-                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
-                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <span>{test.label}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Data Management Tests */}
-                                    <div className="mb-3">
-                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">Data Management</h4>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {DIAGNOSTIC_TEST_SECTIONS.filter(t => ['history', 'systems', 'dataExport', 'idempotency'].includes(t.id)).map(test => (
-                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
-                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
-                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <span>{test.label}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* External Services Tests */}
-                                    <div className="mb-3">
-                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">External Services</h4>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {DIAGNOSTIC_TEST_SECTIONS.filter(t => ['weather', 'backfillWeather', 'backfillHourlyCloud', 'solarEstimate', 'systemAnalytics', 'predictiveMaintenance'].includes(t.id)).map(test => (
-                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
-                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
-                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <span>{test.label}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* System Utilities Tests */}
-                                    <div className="mb-3">
-                                        <h4 className="text-xs font-semibold text-gray-400 uppercase mb-2">System Utilities</h4>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                            {DIAGNOSTIC_TEST_SECTIONS.filter(t => ['contentHashing', 'errorHandling', 'logging', 'retryMechanism', 'timeout'].includes(t.id)).map(test => (
-                                                <label key={test.id} className="flex items-center space-x-2 text-sm cursor-pointer hover:bg-gray-700 p-2 rounded">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={state.selectedDiagnosticTests?.includes(test.id) ?? true}
-                                                        onChange={(e) => handleTestToggle(test.id, e.target.checked)}
-                                                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <span>{test.label}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: ALL_DIAGNOSTIC_TESTS });
-                                        }}
-                                        className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 text-sm"
-                                    >
-                                        Select All
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            dispatch({ type: 'SET_SELECTED_DIAGNOSTIC_TESTS', payload: [] });
-                                        }}
-                                        className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 text-sm"
-                                    >
-                                        Deselect All
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={handleRunDiagnostics}
-                                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300 disabled:opacity-50 ml-auto"
-                                        disabled={state.actionStatus.isRunningDiagnostics || (state.selectedDiagnosticTests?.length === 0)}
-                                    >
-                                        {state.actionStatus.isRunningDiagnostics ? (
-                                            <div className="flex items-center">
-                                                <SpinnerIcon className="w-5 h-5 mr-2" />
-                                                <span>Running...</span>
-                                            </div>
-                                        ) : (
-                                            `Run ${state.selectedDiagnosticTests?.length || ALL_DIAGNOSTIC_TESTS.length} Test${(state.selectedDiagnosticTests?.length || ALL_DIAGNOSTIC_TESTS.length) !== 1 ? 's' : ''}`
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
-                        </section>
+                        <UnifiedDiagnosticsDashboard state={state} dispatch={dispatch} />
                     </>
                 )}
             </main>
@@ -1458,14 +1122,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
                     onDelete={handleDeleteSystem}
                 />
             )}
-
-            <DiagnosticsModal
-                isOpen={state.isDiagnosticsModalOpen}
-                onClose={() => dispatch({ type: 'CLOSE_DIAGNOSTICS_MODAL' })}
-                results={state.diagnosticResults}
-                isLoading={state.actionStatus.isRunningDiagnostics}
-                selectedTests={state.selectedDiagnosticTests || ALL_DIAGNOSTIC_TESTS}
-            />
 
             {confirmation.isOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
