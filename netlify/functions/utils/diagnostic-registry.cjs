@@ -74,11 +74,11 @@ const TEST_METADATA = {
   },
   "analysis-hardware-id": {
     category: "Core Analysis",
-    files: ["netlify/functions/utils/extract-hardware-id.cjs"],
+    files: ["netlify/functions/extract-hardware-id.cjs"],
   },
   "analysis-async": {
     category: "Core Analysis",
-    files: ["netlify/functions/utils/analysis-background.mjs"],
+    files: ["netlify/functions/analysis-background.mjs"],
   },
 
   // --- Category 3: Data & History ---

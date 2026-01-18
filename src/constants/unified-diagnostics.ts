@@ -161,14 +161,14 @@ export const ALL_UNIFIED_TESTS: DiagnosticTest[] = [
     label: "Hardware ID Extraction",
     description: "Test DL number / hardware system ID pattern matching.",
     category: "Core Analysis",
-    relatedFiles: ["netlify/functions/utils/extract-hardware-id.cjs"],
+    relatedFiles: ["netlify/functions/extract-hardware-id.cjs"],
   },
   {
     id: "analysis-async",
     label: "Async Processing",
     description: "Verify background job queuing and status polling.",
     category: "Core Analysis",
-    relatedFiles: ["netlify/functions/utils/analysis-background.mjs"],
+    relatedFiles: ["netlify/functions/analysis-background.mjs"],
   },
 
   // --- Category 3: Data & History ---

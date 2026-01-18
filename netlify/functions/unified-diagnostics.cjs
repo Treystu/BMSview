@@ -11,7 +11,7 @@ const helpers = require("./utils/analysis-helpers.cjs");
 const utilities = require("./utils/analysis-utilities.cjs");
 const { validateResponse } = require("./utils/response-validator.cjs");
 const { generateContentHash } = require("./utils/duplicate-detection.cjs");
-const { executeToolCall } = require("./utils/tool-executor.cjs");
+const { executeToolCall } = require("./utils/gemini-tools.cjs");
 const { TEST_METADATA } = require("./utils/diagnostic-registry.cjs");
 
 const logger = createLogger("unified-diagnostics");
