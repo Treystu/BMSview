@@ -120,9 +120,26 @@ async function collectAutoInsightsContext(systemId, analysisData, log, options =
     const start = Date.now();
     const maxMs = options.maxMs || (options.mode === "background" ? ASYNC_CONTEXT_BUDGET_MS : SYNC_CONTEXT_BUDGET_MS);
 
+    // Classify query to determine if auto-trending analytics should be loaded
+    const { classifyQuery } = require('./query-classifier.cjs');
+    const queryClassification = options.customPrompt
+        ? classifyQuery(options.customPrompt, log)
+        : { needsDegradationAnalysis: false, needsPerformanceBaseline: false, confidence: 0 };
+
     // In full-context/background modes, force expensive ops; otherwise follow existing heuristic
+    // ENHANCEMENT: Also load analytics in sync mode if query classification suggests it
     const skipExpensiveOps = (() => {
         if (options.fullContextMode || options.mode === 'background') return false;
+
+        // Auto-load analytics if query suggests trending/degradation analysis
+        if (queryClassification.confidence > 60 || queryClassification.needsDegradationAnalysis) {
+            log.info('Auto-loading analytics based on query classification', {
+                confidence: queryClassification.confidence,
+                needsDegradation: queryClassification.needsDegradationAnalysis
+            });
+            return false; // Don't skip - load analytics
+        }
+
         return options.skipExpensiveOps !== undefined ? options.skipExpensiveOps : (options.mode === "sync");
     })();
 

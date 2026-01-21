@@ -189,7 +189,7 @@ exports.handler = async (event, context) => {
     const analysisData = sanitizedBody.analysisData || sanitizedBody.batteryData || null;
     const systemId = sanitizedBody.systemId;
     const customPrompt = sanitizedBody.customPrompt;
-    const mode = sanitizedBody.mode || DEFAULT_MODE;
+    let mode = sanitizedBody.mode || DEFAULT_MODE; // Changed from const to let for auto-routing
     const insightMode = sanitizedBody.insightMode || 'with_tools';
     const contextWindowDays = sanitizedBody.contextWindowDays;
     const maxIterations = sanitizedBody.maxIterations;
@@ -197,6 +197,37 @@ exports.handler = async (event, context) => {
     const initializationComplete = sanitizedBody.initializationComplete;
     const resumeJobId = sanitizedBody.resumeJobId;
     const consentGranted = sanitizedBody.consentGranted;
+
+    // =====================
+    // AUTO-ROUTING: Query Complexity Analysis
+    // =====================
+    // If mode not explicitly set by user, analyze query complexity and auto-route
+    let complexityAnalysis = null;
+    if (!sanitizedBody.mode) {
+      const { calculateComplexity, shouldUseAsync } = require('./utils/query-complexity.cjs');
+
+      complexityAnalysis = await calculateComplexity({
+        customPrompt,
+        systemId,
+        startDate: sanitizedBody.startDate,
+        endDate: sanitizedBody.endDate,
+        fullContextMode: sanitizedBody.fullContextMode || false
+      }, log);
+
+      if (shouldUseAsync(complexityAnalysis)) {
+        mode = 'background';
+        log.info('Auto-routing to background mode based on complexity', {
+          totalScore: complexityAnalysis.totalScore,
+          recommendation: complexityAnalysis.recommendation,
+          reasoning: complexityAnalysis.reasoning
+        });
+      } else {
+        log.info('Using sync mode based on complexity', {
+          totalScore: complexityAnalysis.totalScore,
+          recommendation: complexityAnalysis.recommendation
+        });
+      }
+    }
     const fullContextMode = sanitizedBody.fullContextMode || false; // NEW: Enable full context pre-loading
 
     log.debug('Request parameters (sanitized)', {

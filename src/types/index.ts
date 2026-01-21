@@ -193,6 +193,52 @@ export interface WeatherData {
   estimated_irradiance_w_m2?: number;
 }
 
+export interface SolarCorrelationData {
+  expectedSolarWh: number;
+  actualChargeWh: number;
+  efficiency: number;
+  daytimeLoadWh: number;
+  solarIssue: {
+    detected: boolean;
+    reason: string;
+    message: string;
+    severity?: 'low' | 'medium' | 'high';
+  };
+  isDaytime: boolean;
+  date: string;
+  weatherImpact?: {
+    cloudCover: number;
+    temperature?: number;
+    expectedReduction: number;
+    description: string;
+  } | null;
+}
+
+export interface WeatherImpactData {
+  temperature: {
+    temperature: number;
+    tempDelta: number;
+    capacityAdjustment: number;
+    severity: 'low' | 'medium' | 'high';
+    description: string;
+  };
+  cloudCover: {
+    cloudCover: number | null;
+    solarReduction: number;
+    severity: 'low' | 'medium' | 'high' | 'unknown';
+    description: string;
+  };
+  warnings: Array<{
+    type: string;
+    severity: 'low' | 'medium' | 'high';
+    message: string;
+    value: string;
+    impact: string;
+  }>;
+  conditions: string;
+  timestamp: string;
+}
+
 export interface BmsSystem {
   id: string;
   name: string;
@@ -215,6 +261,8 @@ export interface AnalysisRecord {
   systemName?: string;
   analysis: AnalysisData | null;
   weather?: WeatherData;
+  solar?: SolarCorrelationData; // Solar efficiency correlation data
+  weatherImpact?: WeatherImpactData; // Weather impact on battery performance
   hardwareSystemId?: string | null; // Unified System ID. Source of Truth.
   /** @deprecated Use hardwareSystemId instead */
   dlNumber?: string | null; // Legacy support
@@ -301,6 +349,8 @@ export interface DisplayableAnalysisResult {
   error?: string | null;
   saveError?: string | null;
   weather?: WeatherData;
+  solar?: SolarCorrelationData; // Solar efficiency correlation data
+  weatherImpact?: WeatherImpactData; // Weather impact on battery performance
   isDuplicate?: boolean;
   isBatchDuplicate?: boolean;
   file?: File;

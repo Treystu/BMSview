@@ -641,7 +641,137 @@ const WeatherSection: React.FC<{ weather: WeatherData }> = ({ weather }) => (
   </div>
 );
 
+const SolarCorrelationSection: React.FC<{ solar: import('../types').SolarCorrelationData }> = ({ solar }) => {
+  const efficiencyColor = solar.efficiency >= 85 ? 'text-green-600' : solar.efficiency >= 70 ? 'text-yellow-600' : 'text-red-600';
+  const efficiencyBg = solar.efficiency >= 85 ? 'bg-green-50 border-green-200' : solar.efficiency >= 70 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200';
 
+  return (
+    <div className="mb-8">
+      <h4 className="text-xl font-semibold text-neutral-dark mb-4 flex items-center gap-2">
+        <SunIcon className="h-6 w-6 text-yellow-500" />
+        Solar Efficiency Correlation
+      </h4>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+        <MetricCard
+          title="Expected Solar"
+          value={solar.expectedSolarWh.toFixed(0)}
+          unit="Wh"
+          cardClassName="bg-blue-50 border-blue-200"
+        />
+        <MetricCard
+          title="Actual Charge"
+          value={solar.actualChargeWh.toFixed(0)}
+          unit="Wh"
+          cardClassName="bg-green-50 border-green-200"
+        />
+        <MetricCard
+          title="Solar Efficiency"
+          value={solar.efficiency.toString()}
+          unit="%"
+          cardClassName={efficiencyBg}
+          valueClassName={efficiencyColor + ' font-bold'}
+        />
+        <MetricCard
+          title="Daytime Load"
+          value={solar.daytimeLoadWh.toFixed(0)}
+          unit="Wh"
+          cardClassName="bg-purple-50 border-purple-200"
+        />
+      </div>
+
+      {solar.solarIssue.detected && (
+        <div className={`p-4 rounded-lg border-2 ${
+          solar.solarIssue.severity === 'high' ? 'bg-red-50 border-red-300' : 'bg-yellow-50 border-yellow-300'
+        }`}>
+          <div className="flex items-start gap-2">
+            <span className="text-2xl">{solar.solarIssue.severity === 'high' ? '⚠️' : '⚡'}</span>
+            <div>
+              <p className="font-semibold text-neutral-dark">Solar Performance Alert</p>
+              <p className="text-sm text-neutral mt-1">{solar.solarIssue.message}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!solar.solarIssue.detected && solar.daytimeLoadWh > 0 && (
+        <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+          <div className="flex items-start gap-2">
+            <span className="text-2xl">ℹ️</span>
+            <div>
+              <p className="font-semibold text-neutral-dark">Daytime Power Consumption</p>
+              <p className="text-sm text-neutral mt-1">
+                {solar.solarIssue.message}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const WeatherImpactSection: React.FC<{ weatherImpact: import('../types').WeatherImpactData }> = ({ weatherImpact }) => {
+  const tempAdjustment = weatherImpact.temperature.capacityAdjustment;
+  const tempColor = tempAdjustment < -10 ? 'text-red-600' : tempAdjustment < 0 ? 'text-yellow-600' : 'text-green-600';
+
+  return (
+    <div className="mb-8">
+      <h4 className="text-xl font-semibold text-neutral-dark mb-4 flex items-center gap-2">
+        <ThermometerIcon className="h-6 w-6 text-blue-500" />
+        Weather Impact on Performance
+      </h4>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <MetricCard
+          title="Temperature"
+          value={weatherImpact.temperature.temperature.toFixed(1)}
+          unit="°C"
+          cardClassName="bg-blue-50 border-blue-200"
+        />
+        <MetricCard
+          title="Capacity Adjustment"
+          value={(tempAdjustment > 0 ? '+' : '') + tempAdjustment.toString()}
+          unit="%"
+          valueClassName={tempColor + ' font-bold'}
+        />
+        <MetricCard
+          title="Solar Reduction"
+          value={weatherImpact.cloudCover.solarReduction.toString()}
+          unit="%"
+          cardClassName="bg-gray-50 border-gray-200"
+        />
+      </div>
+
+      {weatherImpact.warnings.length > 0 && (
+        <div className="space-y-3">
+          {weatherImpact.warnings.map((warning, index) => {
+            const bgColor = warning.severity === 'high' ? 'bg-red-50 border-red-300' :
+                           warning.severity === 'medium' ? 'bg-yellow-50 border-yellow-300' :
+                           'bg-blue-50 border-blue-300';
+            const icon = warning.severity === 'high' ? '🚨' :
+                        warning.severity === 'medium' ? '⚠️' : 'ℹ️';
+
+            return (
+              <div key={index} className={`p-4 rounded-lg border-2 ${bgColor}`}>
+                <div className="flex items-start gap-2">
+                  <span className="text-2xl">{icon}</span>
+                  <div className="flex-1">
+                    <p className="font-semibold text-neutral-dark">{warning.message}</p>
+                    <div className="flex gap-4 mt-2 text-sm text-neutral">
+                      <span><strong>Value:</strong> {warning.value}</span>
+                      <span><strong>Impact:</strong> {warning.impact}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const AdoptionSection: React.FC<{
   hardwareSystemId: string;
@@ -791,7 +921,7 @@ const getHealthStyles = (type: 'diff' | 'temp' | 'mos', value: number | null | u
 
 
 const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSystems, onLinkRecord, onReprocess, onRegisterNewSystem }) => {
-  const { fileName, data, error, weather, isDuplicate, isBatchDuplicate, file, saveError, recordId } = result;
+  const { fileName, data, error, weather, solar, weatherImpact, isDuplicate, isBatchDuplicate, file, saveError, recordId } = result;
 
   useEffect(() => {
     const statusContext = { fileName, error, hasData: !!data, isDuplicate, recordId };
@@ -1053,6 +1183,10 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ result, registeredSyste
           />
 
           {weather && <WeatherSection weather={weather} />}
+
+          {solar && <SolarCorrelationSection solar={solar} />}
+
+          {weatherImpact && <WeatherImpactSection weatherImpact={weatherImpact} />}
 
           <div className="mb-8">
             <h4 className="text-xl font-semibold text-neutral-dark mb-4">Core Vitals</h4>

@@ -331,6 +331,53 @@ async function getRawData(systemId, options) {
 }
 
 /**
+ * Load system analytics for auto-trending
+ *
+ * Calls the getSystemAnalytics endpoint to fetch hourly usage patterns,
+ * performance baselines, and statistical summaries.
+ *
+ * @param {string} systemId - BMS system ID
+ * @param {any} log - Logger instance
+ * @returns {Promise<Object|null>} System analytics or null on error
+ */
+async function loadSystemAnalytics(systemId, log) {
+  try {
+    // Use internal Netlify function URL
+    const baseUrl = process.env.URL || 'http://localhost:8888';
+    const url = new URL('/.netlify/functions/get-system-analytics', baseUrl);
+    url.searchParams.append('systemId', systemId);
+
+    log.debug('Fetching system analytics for full context', { systemId });
+
+    const response = await fetch(url.toString());
+
+    if (!response.ok) {
+      log.warn('System analytics fetch failed', {
+        status: response.status,
+        systemId
+      });
+      return null;
+    }
+
+    const data = await response.json();
+
+    log.info('System analytics pre-loaded successfully', {
+      systemId,
+      hasHourlyPatterns: !!data.hourlyUsagePatterns,
+      hasBaseline: !!data.performanceBaseline
+    });
+
+    return data;
+  } catch (error) {
+    log.error('Failed to load system analytics', {
+      error: error.message,
+      systemId
+    });
+    return null;
+  }
+}
+
+/**
  * Run all analytical tools
  * CRITICAL FIX: Add defensive checks for rawData properties
  */
@@ -364,7 +411,8 @@ async function runAnalyticalTools(systemId, rawData, options) {
       statisticalAnalysis,
       trendAnalysis,
       anomalyDetection,
-      correlationAnalysis
+      correlationAnalysis,
+      systemAnalytics
     ] = await Promise.allSettled([
       stats.runStatisticalAnalysis(voltageTimeSeries.map(t => t.value)),
       stats.runTrendAnalysis(socTimeSeries),
@@ -373,7 +421,9 @@ async function runAnalyticalTools(systemId, rawData, options) {
         voltage: voltageTimeSeries.map(t => t.value),
         current: currentTimeSeries.map(t => t.value),
         soc: socTimeSeries.map(t => t.value)
-      })
+      }),
+      // Pre-load system analytics for auto-trending
+      loadSystemAnalytics(systemId, log)
     ]);
 
     return {
@@ -381,11 +431,13 @@ async function runAnalyticalTools(systemId, rawData, options) {
       trendAnalysis: trendAnalysis.status === 'fulfilled' ? trendAnalysis.value : null,
       anomalyDetection: anomalyDetection.status === 'fulfilled' ? anomalyDetection.value : null,
       correlationAnalysis: correlationAnalysis.status === 'fulfilled' ? correlationAnalysis.value : null,
+      systemAnalytics: systemAnalytics.status === 'fulfilled' ? systemAnalytics.value : null,
       errors: [
         statisticalAnalysis.status === 'rejected' ? statisticalAnalysis.reason : null,
         trendAnalysis.status === 'rejected' ? trendAnalysis.reason : null,
         anomalyDetection.status === 'rejected' ? anomalyDetection.reason : null,
-        correlationAnalysis.status === 'rejected' ? correlationAnalysis.reason : null
+        correlationAnalysis.status === 'rejected' ? correlationAnalysis.reason : null,
+        systemAnalytics.status === 'rejected' ? systemAnalytics.reason : null
       ].filter(Boolean)
     };
   } catch (error) {

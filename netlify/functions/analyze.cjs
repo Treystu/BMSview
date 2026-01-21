@@ -41,6 +41,8 @@ const { getCorsHeaders } = require('./utils/cors.cjs');
 const { handleStoryModeAnalysis } = require('./utils/story-mode.cjs');
 const { COLLECTIONS } = require('./utils/collections.cjs');
 const { createForwardingLogger } = require('./utils/log-forwarder.cjs');
+const { fetchSolarEstimate, calculateSolarCorrelation } = require('./utils/solar-correlation.cjs');
+const { analyzeWeatherImpact } = require('./utils/weather-analysis.cjs');
 // @ts-nocheck
 "use strict";
 const {
@@ -654,6 +656,124 @@ async function handleSyncAnalysis(requestBody, idemKey, forceReanalysis, checkOn
       throw new Error('Analysis pipeline returned invalid result');
     }
 
+    // --- SOLAR INTEGRATION: Fetch and correlate solar data ---
+    // This is best-effort enrichment - failures are logged but don't block analysis
+    try {
+      // Get system configuration for solar calculation
+      if (record.systemId) {
+        const systemsCol = await getCollection(COLLECTIONS.SYSTEMS);
+        const systemRecord = await systemsCol.findOne({ id: record.systemId });
+
+        if (systemRecord && (systemRecord.latitude || systemRecord.lat) && (systemRecord.longitude || systemRecord.lon)) {
+          const latitude = systemRecord.latitude || systemRecord.lat;
+          const longitude = systemRecord.longitude || systemRecord.lon;
+          const location = `${latitude},${longitude}`;
+
+          // Calculate panelWatts from system config
+          const panelWatts = systemRecord.maxSolarAmps && systemRecord.nominalVoltage
+            ? systemRecord.maxSolarAmps * systemRecord.nominalVoltage
+            : null;
+
+          if (panelWatts) {
+            const analysisDate = record.timestamp.split('T')[0]; // YYYY-MM-DD
+
+            log.debug('Fetching solar estimate for analysis', {
+              location,
+              panelWatts,
+              date: analysisDate
+            });
+
+            // Fetch solar estimate
+            const solarEstimate = await fetchSolarEstimate({
+              location,
+              panelWatts,
+              date: analysisDate
+            }, log);
+
+            if (solarEstimate) {
+              // Calculate solar correlation
+              const solarCorrelation = await calculateSolarCorrelation({
+                analysisData: record.analysis,
+                solarEstimate,
+                weatherData: record.weather || null,
+                systemConfig: systemRecord
+              }, log);
+
+              if (solarCorrelation) {
+                // Add solar data to record
+                record.solar = solarCorrelation;
+
+                log.info('Solar data integrated into analysis', {
+                  recordId: record.id,
+                  efficiency: solarCorrelation.efficiency,
+                  expectedWh: solarCorrelation.expectedSolarWh,
+                  actualWh: solarCorrelation.actualChargeWh
+                });
+              }
+            }
+          } else {
+            log.debug('System missing solar configuration (maxSolarAmps or nominalVoltage)', {
+              systemId: record.systemId
+            });
+          }
+        } else {
+          log.debug('System missing location data for solar estimate', {
+            systemId: record.systemId
+          });
+        }
+      }
+    } catch (/** @type {any} */ solarError) {
+      // Log but don't fail - solar is enrichment, not critical
+      log.warn('Failed to integrate solar data', {
+        error: solarError.message,
+        recordId: record.id
+      });
+    }
+
+    // --- WEATHER INTEGRATION: Analyze weather impact on performance ---
+    // Weather data is already fetched by analysis pipeline (record.weather)
+    try {
+      if (record.weather && record.analysis) {
+        log.debug('Analyzing weather impact on battery performance', {
+          recordId: record.id,
+          temperature: record.weather.temp || record.weather.temperature,
+          cloudCover: record.weather.clouds
+        });
+
+        // Get system configuration for capacity adjustments
+        let systemConfig = null;
+        if (record.systemId) {
+          const systemsCol = await getCollection(COLLECTIONS.SYSTEMS);
+          systemConfig = await systemsCol.findOne({ id: record.systemId });
+        }
+
+        // Analyze weather impact
+        const weatherAnalysis = analyzeWeatherImpact({
+          weatherData: record.weather,
+          analysisData: record.analysis,
+          systemConfig: systemConfig || {}
+        }, log);
+
+        if (weatherAnalysis) {
+          // Add weather impact analysis to record
+          record.weatherImpact = weatherAnalysis;
+
+          log.info('Weather impact integrated into analysis', {
+            recordId: record.id,
+            tempAdjustment: weatherAnalysis.temperature.capacityAdjustment,
+            solarReduction: weatherAnalysis.cloudCover.solarReduction,
+            warningCount: weatherAnalysis.warnings.length
+          });
+        }
+      }
+    } catch (/** @type {any} */ weatherError) {
+      // Log but don't fail - weather analysis is enrichment
+      log.warn('Failed to analyze weather impact', {
+        error: weatherError.message,
+        recordId: record.id
+      });
+    }
+
     // Store results for future deduplication (best effort)
     try {
       await storeAnalysisResults(record, contentHash || '', log, forceReanalysis, isUpgrade, existingRecordToUpgrade);
@@ -887,6 +1007,8 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
             systemId: record.systemId || null, // Top-level for query efficiency (FIXED: was incorrectly reading from analysis)
             systemName: record.systemName || null, // Preserve system name
             analysis: record.analysis,
+            solar: record.solar || null, // Solar correlation data (if available)
+            weatherImpact: record.weatherImpact || null, // Weather impact analysis (if available)
             updatedAt: new Date(),
             _wasUpgraded: true,
             _previousQuality: previousQuality,
@@ -923,6 +1045,8 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
               systemId: record.systemId || null, // FIXED: was incorrectly reading from analysis
               systemName: record.systemName || null,
               analysis: record.analysis,
+              solar: record.solar || null, // Solar correlation data (if available)
+              weatherImpact: record.weatherImpact || null, // Weather impact analysis (if available)
               timestamp: record.timestamp,
               fileName: record.fileName,
               validationScore: newQuality
@@ -945,6 +1069,8 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
         systemId: record.systemId || null, // FIXED: was incorrectly reading from analysis
         systemName: record.systemName || null, // Preserve system name for linked records
         analysis: record.analysis,
+        solar: record.solar || null, // Solar correlation data (if available)
+        weatherImpact: record.weatherImpact || null, // Weather impact analysis (if available)
         contentHash,
         createdAt: new Date(),
         _forceReanalysis: forceReanalysis,
@@ -983,6 +1109,8 @@ async function storeAnalysisResults(record, contentHash, log, forceReanalysis = 
           systemName: record.systemName || null, // FIXED: was always null, now propagates linked name
           analysis: record.analysis,
           weather: record.weather || null,
+          solar: record.solar || null, // Solar correlation data (if available)
+          weatherImpact: record.weatherImpact || null, // Weather impact analysis (if available)
           dlNumber: record.analysis?.dlNumber || record.analysis?.hardwareSystemId || null,
           hardwareSystemId: record.analysis?.hardwareSystemId || null, // Ensure hardware ID is persisted
           fileName: record.fileName,
