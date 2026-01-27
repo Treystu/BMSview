@@ -1,0 +1,40 @@
+{
+  "name": "bms-analyzer-local",
+  "version": "1.0.0",
+  "description": "Simplified local BMS screenshot analyzer - extracts battery data to CSV",
+  "main": "server.js",
+  "bin": {
+    "bms-analyzer": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "build": "pkg . --targets node20-macos-x64 --output dist/bms-analyzer",
+    "build:arm": "pkg . --targets node20-macos-arm64 --output dist/bms-analyzer-arm",
+    "dev": "node server.js"
+  },
+  "pkg": {
+    "scripts": [
+      "server.js",
+      "lib/**/*.js"
+    ],
+    "assets": [
+      "public/**/*"
+    ],
+    "outputPath": "dist"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^9.0.1",
+    "open": "^10.1.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "author": "Luke",
+  "license": "MIT"
+}

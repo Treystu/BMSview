@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Output data
+output/
+*.csv
+
+# Settings (contains API keys)
+settings.json
+
+# Environment
+.env
+
+# Build output
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

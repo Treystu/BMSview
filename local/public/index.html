@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BMS Analyzer Local</title>
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-card: #334155;
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --border: #475569;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h1 span {
+      font-size: 2rem;
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 10px;
+    }
+
+    .nav-tab {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .nav-tab:hover {
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    .nav-tab.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Model Selection */
+    .model-section {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .model-section h3 {
+      margin-bottom: 15px;
+      font-size: 1rem;
+      color: var(--text-secondary);
+    }
+
+    .model-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+
+    .model-option {
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      padding: 15px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .model-option:hover {
+      border-color: var(--accent);
+    }
+
+    .model-option.selected {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.1);
+    }
+
+    .model-option.recommended {
+      position: relative;
+    }
+
+    .model-option.recommended::after {
+      content: '★ Recommended';
+      position: absolute;
+      top: -10px;
+      right: 10px;
+      background: var(--success);
+      color: white;
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    .model-name {
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+
+    .model-desc {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .cost-estimate {
+      margin-top: 15px;
+      padding: 15px;
+      background: var(--bg-card);
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .cost-label {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .cost-value {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--success);
+    }
+
+    /* Upload Section */
+    .upload-zone {
+      background: var(--bg-secondary);
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 60px 40px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      margin-bottom: 30px;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.1);
+    }
+
+    .upload-zone h2 {
+      margin-bottom: 10px;
+      font-size: 1.4rem;
+    }
+
+    .upload-zone p {
+      color: var(--text-secondary);
+      margin-bottom: 20px;
+    }
+
+    .upload-zone input[type="file"] {
+      display: none;
+    }
+
+    .btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-secondary);
+    }
+
+    .btn-danger {
+      background: var(--error);
+    }
+
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+
+    /* Status Messages */
+    .status {
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .status.show {
+      display: block;
+    }
+
+    .status.loading {
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid var(--accent);
+    }
+
+    .status.success {
+      background: rgba(34, 197, 94, 0.2);
+      border: 1px solid var(--success);
+    }
+
+    .status.error {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid var(--error);
+    }
+
+    .status.duplicate {
+      background: rgba(245, 158, 11, 0.2);
+      border: 1px solid var(--warning);
+    }
+
+    /* Result Card */
+    .result-card {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 25px;
+      margin-bottom: 20px;
+    }
+
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .result-header h3 {
+      font-size: 1.2rem;
+    }
+
+    .badge {
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+
+    .badge.normal {
+      background: rgba(34, 197, 94, 0.2);
+      color: var(--success);
+    }
+
+    .badge.warning {
+      background: rgba(245, 158, 11, 0.2);
+      color: var(--warning);
+    }
+
+    .badge.critical {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--error);
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 15px;
+    }
+
+    .metric {
+      background: var(--bg-card);
+      padding: 15px;
+      border-radius: 8px;
+    }
+
+    .metric-label {
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      margin-bottom: 5px;
+    }
+
+    .metric-value {
+      font-size: 1.3rem;
+      font-weight: 600;
+    }
+
+    .metric-value.negative {
+      color: var(--error);
+    }
+
+    .metric-value.positive {
+      color: var(--success);
+    }
+
+    /* History Table */
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .history-table th,
+    .history-table td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .history-table th {
+      background: var(--bg-card);
+      font-weight: 600;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+    }
+
+    .history-table tr:hover {
+      background: rgba(59, 130, 246, 0.05);
+    }
+
+    .history-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* Settings */
+    .settings-section {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 25px;
+      margin-bottom: 20px;
+    }
+
+    .settings-section h3 {
+      margin-bottom: 20px;
+      font-size: 1.1rem;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .form-group input, .form-group select {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 15px;
+      color: var(--text-primary);
+      font-size: 1rem;
+    }
+
+    .form-group input:focus, .form-group select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .form-group .help-text {
+      margin-top: 5px;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .key-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 15px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      margin-bottom: 15px;
+    }
+
+    .key-status.configured {
+      background: rgba(34, 197, 94, 0.2);
+      color: var(--success);
+    }
+
+    .key-status.missing {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--error);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state h3 {
+      margin-bottom: 10px;
+    }
+
+    /* Alerts */
+    .alerts-list {
+      margin-top: 15px;
+    }
+
+    .alert-item {
+      padding: 10px 15px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-size: 0.9rem;
+    }
+
+    .alert-item.warning {
+      background: rgba(245, 158, 11, 0.2);
+      border-left: 3px solid var(--warning);
+    }
+
+    .alert-item.critical {
+      background: rgba(239, 68, 68, 0.2);
+      border-left: 3px solid var(--error);
+    }
+
+    /* Loading Spinner */
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s linear infinite;
+      margin-right: 10px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Cost display in results */
+    .cost-info {
+      margin-top: 15px;
+      padding: 10px 15px;
+      background: var(--bg-card);
+      border-radius: 6px;
+      display: flex;
+      gap: 20px;
+      font-size: 0.85rem;
+    }
+
+    .cost-info span {
+      color: var(--text-secondary);
+    }
+
+    .cost-info strong {
+      color: var(--success);
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .nav-tabs {
+        flex-wrap: wrap;
+      }
+
+      .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .model-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .history-table {
+        font-size: 0.85rem;
+      }
+
+      .history-table th,
+      .history-table td {
+        padding: 8px 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1><span>🔋</span> BMS Analyzer Local</h1>
+      <div class="nav-tabs">
+        <button class="nav-tab active" data-tab="upload">Upload</button>
+        <button class="nav-tab" data-tab="history">History</button>
+        <button class="nav-tab" data-tab="settings">Settings</button>
+      </div>
+    </header>
+
+    <!-- Upload Tab -->
+    <div id="upload-tab" class="tab-content active">
+      <!-- Model Selection -->
+      <div class="model-section">
+        <h3>🤖 Select AI Model</h3>
+        <div class="model-grid" id="model-grid">
+          <!-- Models loaded dynamically -->
+        </div>
+        <div class="cost-estimate">
+          <div>
+            <div class="cost-label">Estimated cost per image:</div>
+            <div id="cost-per-image" class="cost-value">$0.000225</div>
+          </div>
+          <div>
+            <div class="cost-label">Cost per 1,000 images:</div>
+            <div id="cost-per-thousand" class="cost-value">$0.23</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="status" class="status"></div>
+
+      <div class="upload-zone" id="upload-zone">
+        <h2>📸 Drop BMS Screenshots or ZIP Here</h2>
+        <p>Supports images (PNG, JPG, WebP) and ZIP files with multiple images</p>
+        <button class="btn">Select Files</button>
+        <input type="file" id="file-input" accept="image/*,.zip" multiple>
+      </div>
+
+      <div id="result-container"></div>
+    </div>
+
+    <!-- History Tab -->
+    <div id="history-tab" class="tab-content">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2>Analysis History</h2>
+        <div>
+          <button class="btn btn-secondary" onclick="refreshHistory()">🔄 Refresh</button>
+          <button class="btn" onclick="exportCSV()">📥 Export CSV</button>
+        </div>
+      </div>
+
+      <div id="history-container">
+        <div class="empty-state">
+          <h3>No data yet</h3>
+          <p>Upload some BMS screenshots to get started</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div id="settings-tab" class="tab-content">
+      <h2 style="margin-bottom: 20px;">Settings</h2>
+
+      <div class="settings-section">
+        <h3>🔑 API Keys</h3>
+
+        <div class="form-group">
+          <label>Gemini API Key (Required)</label>
+          <div id="gemini-status" class="key-status missing">
+            ❌ Not configured
+          </div>
+          <input type="password" id="gemini-key" placeholder="Enter your Gemini API key">
+          <p class="help-text">Get your key from <a href="https://makersuite.google.com/app/apikey" target="_blank" style="color: var(--accent);">Google AI Studio</a></p>
+          <div class="btn-row">
+            <button class="btn" onclick="saveGeminiKey()">Save Key</button>
+            <button class="btn btn-danger" onclick="deleteGeminiKey()">Delete Key</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>OpenWeatherMap API Key (Optional - for weather data)</label>
+          <div id="weather-status" class="key-status missing">
+            ❌ Not configured
+          </div>
+          <input type="password" id="weather-key" placeholder="Enter your OpenWeatherMap API key">
+          <p class="help-text">Get your key from <a href="https://openweathermap.org/api" target="_blank" style="color: var(--accent);">OpenWeatherMap</a></p>
+          <div class="btn-row">
+            <button class="btn" onclick="saveWeatherKey()">Save Key</button>
+            <button class="btn btn-danger" onclick="deleteWeatherKey()">Delete Key</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>🤖 Default Model</h3>
+        <div class="form-group">
+          <label>Model for Analysis</label>
+          <select id="default-model">
+            <!-- Options loaded dynamically -->
+          </select>
+          <p class="help-text">This model will be used by default. You can override it per-upload on the Upload tab.</p>
+        </div>
+        <button class="btn" onclick="saveDefaultModel()">Save Default Model</button>
+      </div>
+
+      <div class="settings-section">
+        <h3>📍 Location (for weather data)</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          <div class="form-group">
+            <label>Latitude</label>
+            <input type="number" id="latitude" step="any" placeholder="19.442831">
+          </div>
+          <div class="form-group">
+            <label>Longitude</label>
+            <input type="number" id="longitude" step="any" placeholder="-154.943977">
+          </div>
+        </div>
+        <button class="btn" onclick="saveLocation()">Save Location</button>
+      </div>
+
+      <div class="settings-section">
+        <h3>📁 Output</h3>
+        <div class="form-group">
+          <label>CSV File Path</label>
+          <input type="text" id="csv-path" readonly style="background: var(--bg-primary); cursor: default;">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let selectedModel = 'gemini-2.0-flash-lite';
+    let models = [];
+
+    // Tab switching
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab + '-tab').classList.add('active');
+
+        if (tab.dataset.tab === 'history') {
+          refreshHistory();
+        } else if (tab.dataset.tab === 'settings') {
+          loadSettings();
+        }
+      });
+    });
+
+    // Load models on startup
+    async function loadModels() {
+      try {
+        const response = await fetch('/api/models');
+        const data = await response.json();
+        models = data.models;
+        selectedModel = data.defaultModel;
+
+        // Load saved settings to get user's selected model
+        const settingsResponse = await fetch('/api/settings');
+        const settings = await settingsResponse.json();
+        if (settings.selectedModel) {
+          selectedModel = settings.selectedModel;
+        }
+
+        renderModelGrid();
+        updateCostEstimate();
+        populateModelDropdown();
+      } catch (error) {
+        console.error('Failed to load models:', error);
+      }
+    }
+
+    function renderModelGrid() {
+      const grid = document.getElementById('model-grid');
+      grid.innerHTML = models.map(model => `
+        <div class="model-option ${model.id === selectedModel ? 'selected' : ''} ${model.recommended ? 'recommended' : ''}"
+             onclick="selectModel('${model.id}')">
+          <div class="model-name">${model.name}</div>
+          <div class="model-desc">${model.description}</div>
+        </div>
+      `).join('');
+    }
+
+    function selectModel(modelId) {
+      selectedModel = modelId;
+      renderModelGrid();
+      updateCostEstimate();
+    }
+
+    async function updateCostEstimate() {
+      try {
+        const response = await fetch(`/api/estimate/${selectedModel}`);
+        const data = await response.json();
+
+        document.getElementById('cost-per-image').textContent = data.estimatedCost.formatted;
+        document.getElementById('cost-per-thousand').textContent = data.estimatedCost.perThousandImages;
+      } catch (error) {
+        console.error('Failed to get cost estimate:', error);
+      }
+    }
+
+    function populateModelDropdown() {
+      const select = document.getElementById('default-model');
+      select.innerHTML = models.map(model =>
+        `<option value="${model.id}" ${model.id === selectedModel ? 'selected' : ''}>
+          ${model.name} - ${model.description}
+        </option>`
+      ).join('');
+    }
+
+    // File upload handling
+    const uploadZone = document.getElementById('upload-zone');
+    const fileInput = document.getElementById('file-input');
+
+    uploadZone.addEventListener('click', () => fileInput.click());
+
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+
+    uploadZone.addEventListener('dragleave', () => {
+      uploadZone.classList.remove('dragover');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      handleFiles(e.dataTransfer.files);
+    });
+
+    fileInput.addEventListener('change', () => {
+      handleFiles(fileInput.files);
+    });
+
+    async function handleFiles(files) {
+      for (const file of files) {
+        await analyzeFile(file);
+      }
+    }
+
+    function showStatus(message, type) {
+      const status = document.getElementById('status');
+      status.className = 'status show ' + type;
+      status.innerHTML = type === 'loading'
+        ? '<span class="spinner"></span>' + message
+        : message;
+    }
+
+    function hideStatus() {
+      document.getElementById('status').classList.remove('show');
+    }
+
+    async function analyzeFile(file) {
+      const isZip = file.name.toLowerCase().endsWith('.zip');
+      showStatus(`Analyzing ${file.name}${isZip ? ' (ZIP file)' : ''}...`, 'loading');
+
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('model', selectedModel);
+
+      try {
+        const response = await fetch('/api/analyze', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          showStatus('❌ ' + data.error, 'error');
+          return;
+        }
+
+        if (data.isZip) {
+          // ZIP file results
+          const msg = `✅ Processed ${data.totalImages} images: ${data.processed} new, ${data.duplicates} duplicates, ${data.errors} errors. Total cost: ${data.totalCost.formatted}`;
+          showStatus(msg, 'success');
+          showZipResults(data);
+        } else if (data.duplicate) {
+          showStatus('⚠️ This screenshot was already analyzed', 'duplicate');
+          showResult(data.record, null);
+        } else {
+          const costMsg = data.cost ? ` (Cost: ${data.cost.formatted})` : '';
+          showStatus('✅ Analysis complete!' + costMsg, 'success');
+          showResult(data.record, data.cost);
+        }
+
+      } catch (error) {
+        showStatus('❌ ' + error.message, 'error');
+      }
+    }
+
+    function showZipResults(data) {
+      const container = document.getElementById('result-container');
+
+      let html = `
+        <div class="result-card">
+          <div class="result-header">
+            <h3>📦 ZIP Processing Results</h3>
+            <span class="badge normal">${data.processed} processed</span>
+          </div>
+          <div class="metrics-grid">
+            <div class="metric">
+              <div class="metric-label">Total Images</div>
+              <div class="metric-value">${data.totalImages}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">New Records</div>
+              <div class="metric-value positive">${data.processed}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Duplicates Skipped</div>
+              <div class="metric-value">${data.duplicates}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Errors</div>
+              <div class="metric-value ${data.errors > 0 ? 'negative' : ''}">${data.errors}</div>
+            </div>
+          </div>
+          <div class="cost-info">
+            <span>Total API Cost: <strong>${data.totalCost.formatted}</strong></span>
+          </div>
+        </div>
+      `;
+
+      // Show individual results
+      data.results.forEach(r => {
+        if (r.success) {
+          html += `<div class="result-card" style="padding: 15px;">
+            <strong>${r.fileName}</strong> - ${r.record.hardwareSystemId || 'Unknown'} - SOC: ${r.record.stateOfCharge?.toFixed(1)}%
+          </div>`;
+        } else if (r.duplicate) {
+          html += `<div class="result-card" style="padding: 15px; opacity: 0.6;">
+            <strong>${r.fileName}</strong> - Duplicate (skipped)
+          </div>`;
+        } else if (r.error) {
+          html += `<div class="result-card" style="padding: 15px; border-left: 3px solid var(--error);">
+            <strong>${r.fileName}</strong> - Error: ${r.error}
+          </div>`;
+        }
+      });
+
+      container.innerHTML = html;
+    }
+
+    function showResult(record, cost) {
+      const container = document.getElementById('result-container');
+
+      const currentClass = record.current < 0 ? 'negative' : 'positive';
+      const powerClass = record.power < 0 ? 'negative' : 'positive';
+
+      let alertsHtml = '';
+      if (record.alerts && record.alerts.length > 0) {
+        alertsHtml = '<div class="alerts-list">' +
+          record.alerts.map(a => {
+            const type = a.includes('CRITICAL') ? 'critical' : 'warning';
+            return `<div class="alert-item ${type}">${a}</div>`;
+          }).join('') +
+          '</div>';
+      }
+
+      let costHtml = '';
+      if (cost) {
+        costHtml = `
+          <div class="cost-info">
+            <span>Model: <strong>${record.model_used || selectedModel}</strong></span>
+            <span>Tokens: <strong>${cost.input + cost.output}</strong></span>
+            <span>Cost: <strong>${cost.formatted}</strong></span>
+          </div>
+        `;
+      }
+
+      container.innerHTML = `
+        <div class="result-card">
+          <div class="result-header">
+            <h3>📊 ${record.hardwareSystemId || 'Unknown System'}</h3>
+            <span class="badge ${(record.status || 'normal').toLowerCase()}">${record.status || 'Normal'}</span>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric">
+              <div class="metric-label">State of Charge</div>
+              <div class="metric-value">${record.stateOfCharge?.toFixed(1) || '0'}%</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Voltage</div>
+              <div class="metric-value">${record.overallVoltage?.toFixed(2) || '0'}V</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Current</div>
+              <div class="metric-value ${currentClass}">${record.current?.toFixed(2) || '0'}A</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Power</div>
+              <div class="metric-value ${powerClass}">${record.power?.toFixed(1) || '0'}W</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Remaining Capacity</div>
+              <div class="metric-value">${record.remainingCapacity?.toFixed(1) || '0'}Ah</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Cycle Count</div>
+              <div class="metric-value">${record.cycleCount || '0'}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Cell Difference</div>
+              <div class="metric-value">${((record.cellVoltageDifference || 0) * 1000).toFixed(1)}mV</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Temperature</div>
+              <div class="metric-value">${record.temperatures?.[0] || record.temperature_1 || '-'}°C</div>
+            </div>
+          </div>
+
+          ${alertsHtml}
+          ${costHtml}
+
+          <div style="margin-top: 20px; color: var(--text-secondary); font-size: 0.85rem;">
+            <strong>File:</strong> ${record.fileName} |
+            <strong>Time:</strong> ${new Date(record.timestamp).toLocaleString()}
+            ${record.weather_temp ? ` | <strong>Weather:</strong> ${record.weather_temp}°C, ${record.weather_condition}` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    async function refreshHistory() {
+      const container = document.getElementById('history-container');
+
+      try {
+        const response = await fetch('/api/history');
+        const records = await response.json();
+
+        if (records.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <h3>No data yet</h3>
+              <p>Upload some BMS screenshots to get started</p>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = `
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>System ID</th>
+                <th>SOC</th>
+                <th>Voltage</th>
+                <th>Current</th>
+                <th>Power</th>
+                <th>Model</th>
+                <th>Cost</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${records.map(r => `
+                <tr>
+                  <td>${new Date(r.timestamp).toLocaleString()}</td>
+                  <td>${r.hardwareSystemId || '-'}</td>
+                  <td>${r.stateOfCharge?.toFixed(1) || '0'}%</td>
+                  <td>${r.overallVoltage?.toFixed(2) || '0'}V</td>
+                  <td style="color: ${r.current < 0 ? 'var(--error)' : 'var(--success)'}">${r.current?.toFixed(2) || '0'}A</td>
+                  <td style="color: ${r.power < 0 ? 'var(--error)' : 'var(--success)'}">${r.power?.toFixed(1) || '0'}W</td>
+                  <td style="font-size: 0.8rem;">${(r.model_used || '-').replace('gemini-', '')}</td>
+                  <td style="color: var(--success); font-size: 0.8rem;">${r.cost_usd ? '$' + r.cost_usd.toFixed(6) : '-'}</td>
+                  <td><span class="badge ${(r.status || 'normal').toLowerCase()}">${r.status || 'Normal'}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+
+      } catch (error) {
+        container.innerHTML = `<div class="empty-state"><h3>Error loading history</h3><p>${error.message}</p></div>`;
+      }
+    }
+
+    async function exportCSV() {
+      window.location.href = '/api/export';
+    }
+
+    async function loadSettings() {
+      try {
+        const response = await fetch('/api/settings');
+        const settings = await response.json();
+
+        // Update status badges
+        document.getElementById('gemini-status').className =
+          'key-status ' + (settings.hasGeminiKey ? 'configured' : 'missing');
+        document.getElementById('gemini-status').innerHTML =
+          settings.hasGeminiKey ? '✅ Configured' : '❌ Not configured';
+
+        document.getElementById('weather-status').className =
+          'key-status ' + (settings.hasWeatherKey ? 'configured' : 'missing');
+        document.getElementById('weather-status').innerHTML =
+          settings.hasWeatherKey ? '✅ Configured' : '❌ Not configured';
+
+        // Set location
+        document.getElementById('latitude').value = settings.latitude || '';
+        document.getElementById('longitude').value = settings.longitude || '';
+
+        // Set default model
+        if (settings.selectedModel) {
+          document.getElementById('default-model').value = settings.selectedModel;
+        }
+
+        // Get CSV path
+        const pathResponse = await fetch('/api/csv-path');
+        const pathData = await pathResponse.json();
+        document.getElementById('csv-path').value = pathData.path;
+
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+      }
+    }
+
+    async function saveGeminiKey() {
+      const key = document.getElementById('gemini-key').value.trim();
+      if (!key) {
+        alert('Please enter a Gemini API key');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ geminiApiKey: key })
+        });
+
+        if (response.ok) {
+          document.getElementById('gemini-key').value = '';
+          loadSettings();
+          alert('Gemini API key saved!');
+        } else {
+          const data = await response.json();
+          alert('Error: ' + data.error);
+        }
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    }
+
+    async function deleteGeminiKey() {
+      if (!confirm('Are you sure you want to delete the Gemini API key?')) return;
+
+      try {
+        await fetch('/api/settings/gemini', { method: 'DELETE' });
+        loadSettings();
+        alert('Gemini API key deleted');
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    }
+
+    async function saveWeatherKey() {
+      const key = document.getElementById('weather-key').value.trim();
+      if (!key) {
+        alert('Please enter a Weather API key');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ weatherApiKey: key })
+        });
+
+        if (response.ok) {
+          document.getElementById('weather-key').value = '';
+          loadSettings();
+          alert('Weather API key saved!');
+        } else {
+          const data = await response.json();
+          alert('Error: ' + data.error);
+        }
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    }
+
+    async function deleteWeatherKey() {
+      if (!confirm('Are you sure you want to delete the Weather API key?')) return;
+
+      try {
+        await fetch('/api/settings/weather', { method: 'DELETE' });
+        loadSettings();
+        alert('Weather API key deleted');
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    }
+
+    async function saveDefaultModel() {
+      const model = document.getElementById('default-model').value;
+
+      try {
+        const response = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ selectedModel: model })
+        });
+
+        if (response.ok) {
+          selectedModel = model;
+          renderModelGrid();
+          updateCostEstimate();
+          alert('Default model saved!');
+        } else {
+          const data = await response.json();
+          alert('Error: ' + data.error);
+        }
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    }
+
+    async function saveLocation() {
+      const lat = parseFloat(document.getElementById('latitude').value);
+      const lon = parseFloat(document.getElementById('longitude').value);
+
+      if (isNaN(lat) || isNaN(lon)) {
+        alert('Please enter valid coordinates');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ latitude: lat, longitude: lon })
+        });
+
+        if (response.ok) {
+          alert('Location saved!');
+        } else {
+          const data = await response.json();
+          alert('Error: ' + data.error);
+        }
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    }
+
+    // Initial load
+    loadModels();
+    loadSettings();
+  </script>
+</body>
+</html>
