@@ -6,12 +6,14 @@
 const fs = require('fs');
 const path = require('path');
 const { getSettings } = require('./settings');
+const { validateAndRepairAll, detectCorruption } = require('./data-validator');
 
 // CSV column definitions - order matters for consistent output
 const CSV_COLUMNS = [
   'id',
   'contentHash',
   'timestamp',
+  'timestampFromFilename',  // Second-level accuracy from filename
   'fileName',
   'hardwareSystemId',
   'stateOfCharge',
@@ -41,10 +43,16 @@ const CSV_COLUMNS = [
   'softwareVersion',
   'hardwareVersion',
   'snCode',
+  // Weather data
   'weather_temp',
   'weather_clouds',
   'weather_uvi',
   'weather_condition',
+  // Solar irradiance data (W/m²)
+  'solar_ghi',     // Global Horizontal Irradiance - total solar power on horizontal surface
+  'solar_dni',     // Direct Normal Irradiance - direct beam on surface perpendicular to sun
+  'solar_dhi',     // Diffuse Horizontal Irradiance - scattered sky radiation
+  'solar_direct',  // Direct radiation on horizontal surface
   'model_used',
   'cost_usd'
 ];
@@ -173,6 +181,7 @@ function csvRowToRecord(values, headers) {
       'fullCapacity', 'cycleCount', 'highestCellVoltage', 'lowestCellVoltage',
       'averageCellVoltage', 'cellVoltageDifference', 'mosTemperature',
       'weather_temp', 'weather_clouds', 'weather_uvi',
+      'solar_ghi', 'solar_dni', 'solar_dhi', 'solar_direct',
       'temperature_1', 'temperature_2', 'temperature_3', 'temperature_4'].includes(header)) {
       value = value === '' ? null : parseFloat(value);
     }
@@ -197,6 +206,345 @@ function csvRowToRecord(values, headers) {
 }
 
 /**
+ * Detect if a record has shifted/corrupted columns
+ * @param {object} record - The record to check
+ * @returns {boolean} True if record appears corrupted
+ */
+function isRecordCorrupted(record) {
+  // If hardwareSystemId looks like a filename, it's corrupted
+  if (record.hardwareSystemId && (
+    record.hardwareSystemId.includes('.png') ||
+    record.hardwareSystemId.includes('.jpg') ||
+    record.hardwareSystemId.includes('Screenshot')
+  )) {
+    return true;
+  }
+
+  // If model_used contains weather data, it's corrupted
+  if (record.model_used && (
+    record.model_used.includes('Clouds') ||
+    record.model_used.includes('Clear') ||
+    record.model_used.includes('Rain')
+  )) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Attempt to repair a corrupted record by detecting column shift
+ * The corruption pattern: old data missing timestampFromFilename column,
+ * causing all fields from fileName onward to shift left by one position
+ * @param {object} record - The corrupted record
+ * @returns {object} Repaired record
+ */
+function repairCorruptedRecord(record) {
+  // Check if this record has the shift pattern:
+  // - hardwareSystemId contains filename (should be in fileName)
+  // - fileName looks like a timestamp (should be timestampFromFilename)
+
+  if (!isRecordCorrupted(record)) {
+    return record; // Not corrupted, return as-is
+  }
+
+  const repaired = { ...record };
+
+  // The shift pattern: data was inserted without timestampFromFilename column
+  // So fileName moved to timestampFromFilename, hardwareSystemId moved to fileName, etc.
+
+  // Current corrupted state:
+  // timestampFromFilename: has what should be fileName
+  // fileName: has what should be hardwareSystemId (which is the filename!)
+  // hardwareSystemId: filename (this IS the filename, confirms corruption)
+
+  // But wait - looking at the actual data:
+  // Column 4 (timestampFromFilename): empty or has extracted timestamp
+  // Column 5 (fileName): has the timestamp that should be timestampFromFilename
+  // Column 6 (hardwareSystemId): has the filename
+
+  // So the fix is:
+  // 1. The hardwareSystemId field contains the actual filename
+  // 2. We need to extract proper system ID from the data
+
+  // Actually, looking more carefully at the corrupted record:
+  // - timestampFromFilename has the extracted timestamp (correct)
+  // - fileName has the FILENAME (but shifted from hardwareSystemId position)
+  // - hardwareSystemId has the FILENAME
+
+  // The issue is simpler: when these records were created, the analysis
+  // didn't extract hardwareSystemId properly, so it defaulted to filename
+
+  // Check if we have the filename in hardwareSystemId
+  if (record.hardwareSystemId && record.hardwareSystemId.includes('.png')) {
+    // This is a filename, not a system ID
+    // The actual filename should be in the fileName field
+    // Try to find the real system ID - it might be lost, set to null
+    repaired.hardwareSystemId = null;
+
+    // If fileName is empty and hardwareSystemId has the filename, move it
+    if (!record.fileName || record.fileName === '') {
+      repaired.fileName = record.hardwareSystemId;
+    }
+  }
+
+  // Fix model_used if it contains weather condition
+  if (record.model_used && (
+    record.model_used.includes('Clouds') ||
+    record.model_used.includes('Clear') ||
+    record.model_used.includes('Rain')
+  )) {
+    // This is weather_condition, not model
+    // Try to recover - the model should be gemini-something
+    repaired.weather_condition = record.model_used;
+    repaired.model_used = null;
+  }
+
+  // Mark as repaired
+  repaired._repaired = true;
+
+  return repaired;
+}
+
+/**
+ * Check if CSV needs migration (without performing it)
+ * @returns {object} Migration status info
+ */
+function checkMigrationNeeded() {
+  const csvPath = getCsvPath();
+
+  if (!fs.existsSync(csvPath)) {
+    return { needed: false, reason: 'no_file' };
+  }
+
+  const content = fs.readFileSync(csvPath, 'utf-8');
+  const lines = content.split('\n').filter(line => line.trim());
+
+  if (lines.length === 0) {
+    return { needed: false, reason: 'empty_file' };
+  }
+
+  const existingHeaders = parseCSVLine(lines[0]);
+  const expectedHeaders = CSV_COLUMNS;
+
+  const headersMatch = existingHeaders.length === expectedHeaders.length &&
+    existingHeaders.every((h, i) => h === expectedHeaders[i]);
+
+  // Also check for data corruption even if headers match
+  let corruptedCount = 0;
+  if (headersMatch && lines.length > 1) {
+    // Sample first 100 records to check for corruption
+    const sampleSize = Math.min(100, lines.length - 1);
+    for (let i = 1; i <= sampleSize; i++) {
+      const values = parseCSVLine(lines[i]);
+      const record = csvRowToRecord(values, existingHeaders);
+      if (isRecordCorrupted(record)) {
+        corruptedCount++;
+      }
+    }
+  }
+
+  if (headersMatch && corruptedCount === 0) {
+    return { needed: false, reason: 'headers_match' };
+  }
+
+  if (headersMatch && corruptedCount > 0) {
+    // Estimate total corrupted
+    const estimatedCorrupted = Math.round((corruptedCount / 100) * (lines.length - 1));
+    return {
+      needed: true,
+      reason: 'data_corruption',
+      existingColumns: existingHeaders.length,
+      expectedColumns: expectedHeaders.length,
+      recordCount: lines.length - 1,
+      corruptedCount: estimatedCorrupted
+    };
+  }
+
+  return {
+    needed: true,
+    reason: 'schema_mismatch',
+    existingColumns: existingHeaders.length,
+    expectedColumns: expectedHeaders.length,
+    recordCount: lines.length - 1
+  };
+}
+
+/**
+ * Perform CSV migration with progress callback
+ * @param {function} onProgress - Callback for progress updates (phase, current, total, message)
+ * @returns {object} Migration result
+ */
+function performMigration(onProgress = null) {
+  const csvPath = getCsvPath();
+
+  if (!fs.existsSync(csvPath)) {
+    return { success: true, migrated: false, reason: 'no_file' };
+  }
+
+  const content = fs.readFileSync(csvPath, 'utf-8');
+  const lines = content.split('\n').filter(line => line.trim());
+
+  if (lines.length === 0) {
+    return { success: true, migrated: false, reason: 'empty_file' };
+  }
+
+  const existingHeaders = parseCSVLine(lines[0]);
+  const expectedHeaders = CSV_COLUMNS;
+
+  const headersMatch = existingHeaders.length === expectedHeaders.length &&
+    existingHeaders.every((h, i) => h === expectedHeaders[i]);
+
+  if (onProgress) onProgress('migration', 0, lines.length - 1, 'Starting migration...');
+
+  // Parse existing records using existing headers
+  const records = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    if (values.length > 0) {
+      const record = csvRowToRecord(values, existingHeaders);
+      records.push(record);
+    }
+    if (onProgress && i % 50 === 0) {
+      onProgress('migration', i, lines.length - 1, `Parsing record ${i}/${lines.length - 1}`);
+    }
+  }
+
+  // Validate and repair all records
+  if (onProgress) onProgress('migration', records.length, records.length, 'Validating and repairing data...');
+  const validationResult = validateAndRepairAll(records, onProgress);
+  const repairedRecords = validationResult.records;
+
+  // Only proceed if there were actual changes needed
+  const needsMigration = !headersMatch || validationResult.stats.repaired > 0;
+
+  if (!needsMigration) {
+    return { success: true, migrated: false, reason: 'no_changes_needed' };
+  }
+
+  // Backup old file
+  const backupPath = csvPath + '.backup.' + Date.now();
+  fs.copyFileSync(csvPath, backupPath);
+
+  if (onProgress) onProgress('migration', records.length, records.length, 'Writing repaired data...');
+
+  // Rewrite with new schema and repaired data
+  let newContent = expectedHeaders.join(',') + '\n';
+  for (const record of repairedRecords) {
+    newContent += recordToCSVRow(record) + '\n';
+  }
+
+  fs.writeFileSync(csvPath, newContent, 'utf-8');
+
+  // Clear cache to force reload
+  recordsCache = null;
+  hashIndex = null;
+
+  return {
+    success: true,
+    migrated: true,
+    recordCount: repairedRecords.length,
+    backupPath,
+    fromColumns: existingHeaders.length,
+    toColumns: expectedHeaders.length,
+    repaired: validationResult.stats.repaired,
+    valid: validationResult.stats.valid,
+    changes: validationResult.stats.changes
+  };
+}
+
+/**
+ * Repair all data in the CSV with validation
+ * @param {function} onProgress - Progress callback
+ * @returns {object} Repair result
+ */
+function repairAllData(onProgress = null) {
+  const csvPath = getCsvPath();
+
+  if (!fs.existsSync(csvPath)) {
+    return { success: false, error: 'No CSV file exists', total: 0, repaired: 0, valid: 0, invalid: 0, changes: [] };
+  }
+
+  // Read directly from file to avoid cache issues
+  const content = fs.readFileSync(csvPath, 'utf-8');
+  const lines = content.split('\n').filter(line => line.trim());
+
+  if (lines.length <= 1) {
+    return { success: true, total: 0, repaired: 0, valid: 0, invalid: 0, changes: [], message: 'No records to repair' };
+  }
+
+  const headers = parseCSVLine(lines[0]);
+  const records = [];
+
+  // Parse all records
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    if (values.length > 0) {
+      records.push(csvRowToRecord(values, headers));
+    }
+  }
+
+  if (records.length === 0) {
+    return { success: true, total: 0, repaired: 0, valid: 0, invalid: 0, changes: [], message: 'No records to repair' };
+  }
+
+  // Validate and repair
+  if (onProgress) onProgress('repair', 0, records.length, 'Starting data repair...');
+
+  const result = validateAndRepairAll(records, onProgress);
+
+  if (result.stats.repaired > 0) {
+    // Backup before writing
+    const backupPath = csvPath + '.backup.' + Date.now();
+    fs.copyFileSync(csvPath, backupPath);
+
+    // Write repaired data
+    let newContent = CSV_COLUMNS.join(',') + '\n';
+    for (const record of result.records) {
+      newContent += recordToCSVRow(record) + '\n';
+    }
+    fs.writeFileSync(csvPath, newContent, 'utf-8');
+
+    // Clear cache so next load picks up repaired data
+    recordsCache = null;
+    hashIndex = null;
+
+    if (onProgress) onProgress('repair', records.length, records.length, `Repaired ${result.stats.repaired} records`);
+  }
+
+  return {
+    success: true,
+    total: result.stats.total,
+    repaired: result.stats.repaired,
+    valid: result.stats.valid,
+    invalid: result.stats.invalid,
+    changes: result.stats.changes
+  };
+}
+
+/**
+ * Check if CSV headers match expected columns and migrate if needed (legacy auto-migrate)
+ */
+function migrateCSVIfNeeded(csvPath) {
+  const status = checkMigrationNeeded();
+  if (!status.needed) {
+    return false;
+  }
+
+  console.log('CSV schema mismatch detected - migrating data...');
+  console.log(`  Existing columns: ${status.existingColumns}`);
+  console.log(`  Expected columns: ${status.expectedColumns}`);
+
+  const result = performMigration();
+  if (result.migrated) {
+    console.log(`  Backed up to: ${result.backupPath}`);
+    console.log(`  Migrated ${result.recordCount} records to new schema`);
+  }
+
+  return result.migrated;
+}
+
+/**
  * Load all data from CSV into memory
  */
 function loadData() {
@@ -211,6 +559,9 @@ function loadData() {
   if (!fs.existsSync(csvPath)) {
     return recordsCache;
   }
+
+  // Check and migrate if schema changed
+  migrateCSVIfNeeded(csvPath);
 
   const content = fs.readFileSync(csvPath, 'utf-8');
   const lines = content.split('\n').filter(line => line.trim());
@@ -319,14 +670,113 @@ function getStats() {
   };
 }
 
+/**
+ * Update an existing record by ID
+ * @param {string} id - Record ID
+ * @param {object} updates - Fields to update
+ * @returns {object|null} Updated record or null if not found
+ */
+function updateRecord(id, updates) {
+  loadData();
+
+  const index = recordsCache.findIndex(r => r.id === id);
+  if (index === -1) {
+    return null;
+  }
+
+  // Update the record in cache
+  const record = recordsCache[index];
+  Object.assign(record, updates);
+
+  // Update hash index if needed
+  if (record.contentHash) {
+    hashIndex.set(record.contentHash, record);
+  }
+
+  // Rewrite entire CSV file
+  rewriteCSV();
+
+  return record;
+}
+
+/**
+ * Update multiple records at once (more efficient than individual updates)
+ * @param {Array<{id: string, updates: object}>} updates - Array of updates
+ * @returns {number} Number of records updated
+ */
+function updateRecords(updates) {
+  loadData();
+
+  let updatedCount = 0;
+
+  for (const { id, updates: fieldUpdates } of updates) {
+    const index = recordsCache.findIndex(r => r.id === id);
+    if (index !== -1) {
+      Object.assign(recordsCache[index], fieldUpdates);
+      if (recordsCache[index].contentHash) {
+        hashIndex.set(recordsCache[index].contentHash, recordsCache[index]);
+      }
+      updatedCount++;
+    }
+  }
+
+  if (updatedCount > 0) {
+    rewriteCSV();
+  }
+
+  return updatedCount;
+}
+
+/**
+ * Rewrite the entire CSV file from cache
+ */
+function rewriteCSV() {
+  const csvPath = getCsvPath();
+
+  // Build CSV content
+  let content = CSV_COLUMNS.join(',') + '\n';
+  for (const record of recordsCache) {
+    content += recordToCSVRow(record) + '\n';
+  }
+
+  // Write atomically (write to temp, then rename)
+  const tempPath = csvPath + '.tmp';
+  fs.writeFileSync(tempPath, content, 'utf-8');
+  fs.renameSync(tempPath, csvPath);
+}
+
+/**
+ * Get records that are missing weather/solar data
+ * @returns {Array} Records with missing data
+ */
+/**
+ * Get records that are missing weather or solar data
+ * Returns records where solar_ghi is missing (since solar is always available for free)
+ * @returns {Array} Records with missing data
+ */
+function getRecordsMissingWeather() {
+  loadData();
+  return recordsCache.filter(r => {
+    // Check if solar data is missing (this is free, should always be fetched)
+    const missingSolar = r.solar_ghi === null || r.solar_ghi === undefined || r.solar_ghi === '' || r.solar_ghi === 0;
+    return missingSolar;
+  });
+}
+
 module.exports = {
   loadData,
   saveRecord,
+  updateRecord,
+  updateRecords,
   getAllRecords,
   isDuplicate,
   getRecordByHash,
   reloadData,
   getStats,
   getCsvPath,
+  getRecordsMissingWeather,
+  checkMigrationNeeded,
+  performMigration,
+  repairAllData,
   CSV_COLUMNS
 };

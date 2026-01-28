@@ -5,12 +5,8 @@
  * Implements event-driven architecture with status tracking and error handling.
  */
 
-// DEBUG: Add visibility to track bundle loading issues
-console.warn('[BUNDLE-DEBUG] syncManager.ts module executed', {
-    timestamp: new Date().toISOString(),
-    pathname: typeof window !== 'undefined' ? window.location.pathname : 'N/A',
-    stack: new Error().stack
-});
+import { getRealTimeManager, MessageType, ConnectionState } from '../utils/realTimeManager';
+import { ServiceErrorHandler } from '../utils/asyncErrorHandler';
 
 /**
  * SyncManager - Intelligent Sync Decision Engine
@@ -304,7 +300,10 @@ export type SyncEvent =
     | { type: 'sync-complete'; stats: { pulled: number; pushed: number; duration: number }; collection?: string }
     | { type: 'sync-error'; error: string }
     | { type: 'drift-warning'; diff: number }
-    | { type: 'data-changed'; collection: 'systems' | 'history'; count: number };
+    | { type: 'data-changed'; collection: 'systems' | 'history'; count: number }
+    | { type: 'real-time-connected' }
+    | { type: 'real-time-disconnected' }
+    | { type: 'real-time-message'; data: any };
 
 /**
  * SyncManager class
@@ -319,6 +318,8 @@ export class SyncManager {
     private readonly syncIntervalMs = 90 * 1000; // 90 seconds
     private readonly maxConcurrentSyncs = 1;
     private listeners: ((event: SyncEvent) => void)[] = [];
+    private realTimeManager: any = null; // Will be initialized asynchronously
+    private realTimeSubscriptions: (() => void)[] = [];
 
     public subscribe(listener: (event: SyncEvent) => void): () => void {
         this.listeners.push(listener);
@@ -347,6 +348,10 @@ export class SyncManager {
         } catch (e) {
             console.warn('Failed to load last sync time', e);
         }
+
+        // Initialize real-time connection
+        this.initializeRealTime();
+
         log('info', 'SyncManager initialized', { syncIntervalMs: this.syncIntervalMs });
     }
 
@@ -598,6 +603,7 @@ export class SyncManager {
      */
     destroy(): void {
         this.stopPeriodicSync();
+        this.destroyRealTime();
         this.isSyncing = false;
         log('info', 'SyncManager destroyed');
     }
@@ -692,6 +698,151 @@ export class SyncManager {
                 collection: collection as 'systems' | 'history',
                 count: updates.length + deletedIds.length
             });
+        }
+    }
+
+    // ===========================
+    // Real-time management
+    // ===========================
+
+    private async initializeRealTime(): Promise<void> {
+        try {
+            this.realTimeManager = await ServiceErrorHandler.handleApiCall(
+                'realtime',
+                async () => {
+                    const manager = await getRealTimeManager('auto', {
+                        url: process.env.REACT_APP_SOCKET_URL || window.location.origin,
+                        reconnectAttempts: 5,
+                        reconnectDelay: 2000,
+                        enableLogging: process.env.NODE_ENV === 'development',
+                    });
+
+                    // Subscribe to connection events
+                    const connectionSub = manager.subscribe('connection-state-changed', (event: any) => {
+                        if (event.state === ConnectionState.CONNECTED) {
+                            this.emit({ type: 'real-time-connected' });
+                            log('info', 'Real-time connection established');
+                        } else if (event.state === ConnectionState.DISCONNECTED) {
+                            this.emit({ type: 'real-time-disconnected' });
+                            log('info', 'Real-time connection lost');
+                        }
+                    });
+
+                    const errorSub = manager.subscribe('connection-error', (event: any) => {
+                        log('error', 'Real-time connection error', { error: event.error.message });
+                        this.emit({ type: 'sync-error', error: `Real-time error: ${event.error.message}` });
+                    });
+
+                    this.realTimeSubscriptions.push(connectionSub, errorSub);
+
+                    // Set up message handlers
+                    const analysisUpdateUnsub = manager.onMessage(MessageType.ANALYSIS_UPDATE, (data: any) => {
+                        log('info', 'Received analysis update', { data });
+                        this.emit({ type: 'real-time-message', data: { type: 'analysis_update', ...data } });
+                        // Trigger incremental sync to get the update
+                        this.forceSyncNow().catch(err => log('error', 'Failed to sync after analysis update', { error: err.message }));
+                    });
+
+                    const systemUpdateUnsub = manager.onMessage(MessageType.SYSTEM_UPDATE, (data: any) => {
+                        log('info', 'Received system update', { data });
+                        this.emit({ type: 'real-time-message', data: { type: 'system_update', ...data } });
+                        // Trigger incremental sync to get the update
+                        this.forceSyncNow().catch(err => log('error', 'Failed to sync after system update', { error: err.message }));
+                    });
+
+                    const syncStatusUnsub = manager.onMessage(MessageType.SYNC_STATUS, (data: any) => {
+                        log('info', 'Received sync status update', { data });
+                        this.emit({ type: 'real-time-message', data: { type: 'sync_status', ...data } });
+                    });
+
+                    this.realTimeSubscriptions.push(analysisUpdateUnsub, systemUpdateUnsub, syncStatusUnsub);
+
+                    return manager;
+                },
+                {
+                    useCircuitBreaker: true,
+                    retryConfig: { maxAttempts: 3, initialDelay: 1000 }
+                }
+            );
+
+            // Start the connection
+            await this.realTimeManager.connect();
+            log('info', 'Real-time manager initialized and connected');
+
+        } catch (error) {
+            log('warn', 'Failed to initialize real-time connection', {
+                error: (error as Error).message
+            });
+            // Don't fail sync manager initialization if real-time fails
+            // The system should work without real-time updates
+        }
+    }
+
+    private destroyRealTime(): void {
+        // Clean up subscriptions
+        this.realTimeSubscriptions.forEach(unsub => unsub());
+        this.realTimeSubscriptions = [];
+
+        // Destroy the manager
+        if (this.realTimeManager) {
+            this.realTimeManager.destroy();
+            this.realTimeManager = null;
+        }
+
+        log('info', 'Real-time connection destroyed');
+    }
+
+    /**
+     * Send a real-time message if connected
+     */
+    async sendRealTimeMessage(type: MessageType, data: any, userId?: string): Promise<void> {
+        if (!this.realTimeManager || !this.realTimeManager.isConnected()) {
+            log('warn', 'Cannot send real-time message: not connected');
+            return;
+        }
+
+        try {
+            await this.realTimeManager.sendMessage(type, data, userId);
+            log('debug', 'Real-time message sent', { type, data });
+        } catch (error) {
+            log('error', 'Failed to send real-time message', {
+                type,
+                error: (error as Error).message
+            });
+        }
+    }
+
+    /**
+     * Get real-time connection status
+     */
+    getRealTimeStatus(): {
+        connected: boolean;
+        state?: ConnectionState;
+        stats?: any;
+    } {
+        if (!this.realTimeManager) {
+            return { connected: false };
+        }
+
+        return {
+            connected: this.realTimeManager.isConnected(),
+            state: this.realTimeManager.getState(),
+            stats: this.realTimeManager.getStats(),
+        };
+    }
+
+    /**
+     * Reconnect real-time if disconnected
+     */
+    async reconnectRealTime(): Promise<void> {
+        if (this.realTimeManager && !this.realTimeManager.isConnected()) {
+            try {
+                await this.realTimeManager.connect();
+                log('info', 'Real-time reconnection successful');
+            } catch (error) {
+                log('error', 'Real-time reconnection failed', { error: (error as Error).message });
+                throw error;
+            }
         }
     }
 }

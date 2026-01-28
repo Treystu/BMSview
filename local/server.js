@@ -19,22 +19,52 @@ const { analyzeImage, getAvailableModels, estimateCost, DEFAULT_MODEL } = requir
 const {
   loadData,
   saveRecord,
+  updateRecord,
+  updateRecords,
   getAllRecords,
   isDuplicate,
-  getRecordByHash
+  getRecordByHash,
+  getRecordsMissingWeather,
+  reloadData,
+  checkMigrationNeeded,
+  performMigration,
+  repairAllData
 } = require('./lib/csv-store');
-const { getWeather } = require('./lib/weather');
+const { getWeather, getSolarOnly, extractTimestampFromFilename } = require('./lib/weather');
 const { getSettings, saveSettings, getSettingsPath } = require('./lib/settings');
 const { extractImagesFromZip, isZipFile, isImageFile, getMimeType } = require('./lib/zip-extractor');
 
 const app = express();
 const PORT = process.env.PORT || 3847;
+const DEBUG = process.env.DEBUG === 'true' || true; // Enable debug logging
 
-// Configure multer for file uploads
+// Debug logging helper
+function log(level, message, data = null) {
+  const timestamp = new Date().toISOString();
+  const prefix = `[${timestamp}] [${level.toUpperCase()}]`;
+  if (data) {
+    console.log(`${prefix} ${message}`, typeof data === 'object' ? JSON.stringify(data, null, 2) : data);
+  } else {
+    console.log(`${prefix} ${message}`);
+  }
+}
+
+// Request logging middleware
+app.use((req, res, next) => {
+  if (DEBUG && req.path.startsWith('/api')) {
+    log('info', `${req.method} ${req.path}`);
+  }
+  next();
+});
+
+// Configure multer for file uploads - 10GB limit for local use
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit for ZIPs
+  limits: {
+    fileSize: 10 * 1024 * 1024 * 1024,  // 10GB limit
+    fieldSize: 10 * 1024 * 1024 * 1024
+  },
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
       'image/png', 'image/jpeg', 'image/jpg', 'image/webp',
@@ -49,6 +79,18 @@ const upload = multer({
     }
   }
 });
+
+// Multer error handler middleware
+function handleMulterError(err, req, res, next) {
+  if (err instanceof multer.MulterError) {
+    log('error', 'Multer error', { code: err.code, field: err.field, message: err.message });
+    return res.status(400).json({ error: `Upload error: ${err.message}` });
+  } else if (err) {
+    log('error', 'Upload error', { message: err.message });
+    return res.status(400).json({ error: err.message });
+  }
+  next();
+}
 
 // Middleware
 app.use(express.json());
@@ -165,23 +207,40 @@ app.delete('/api/settings/:key', (req, res) => {
 });
 
 // API: Analyze a screenshot or ZIP file
-app.post('/api/analyze', upload.single('image'), async (req, res) => {
+app.post('/api/analyze', upload.single('image'), handleMulterError, async (req, res) => {
+  log('info', 'Analyze request received');
+
   try {
     const settings = getSettings();
+    log('debug', 'Settings loaded', {
+      hasGeminiKey: !!settings.geminiApiKey,
+      hasWeatherKey: !!settings.weatherApiKey,
+      lat: settings.latitude,
+      lon: settings.longitude,
+      model: settings.selectedModel
+    });
 
     if (!settings.geminiApiKey) {
+      log('warn', 'Gemini API key not configured');
       return res.status(400).json({
         error: 'Gemini API key not configured. Please add it in Settings.'
       });
     }
 
     if (!req.file) {
+      log('warn', 'No file provided in request');
       return res.status(400).json({ error: 'No file provided' });
     }
 
     const modelId = req.body.model || settings.selectedModel || DEFAULT_MODEL;
     const fileBuffer = req.file.buffer;
     const fileName = req.file.originalname;
+
+    log('info', `Processing file: ${fileName}`, {
+      size: fileBuffer.length,
+      mimeType: req.file.mimetype,
+      model: modelId
+    });
 
     // Check if it's a ZIP file
     if (isZipFile(fileBuffer) || fileName.toLowerCase().endsWith('.zip')) {
@@ -224,17 +283,31 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
             totalCost += analysis._meta.cost.total;
           }
 
-          // Get weather data if configured
+          // Extract timestamp from filename for accurate time-based data
+          const fileTimestamp = extractTimestampFromFilename(image.fileName);
+          const effectiveTimestamp = fileTimestamp || new Date();
+
+          // Get weather + solar data (or solar only if no weather key)
           let weather = null;
-          if (settings.weatherApiKey && settings.latitude && settings.longitude) {
+          if (settings.latitude && settings.longitude) {
             try {
-              weather = await getWeather(
-                settings.latitude,
-                settings.longitude,
-                settings.weatherApiKey
-              );
+              if (settings.weatherApiKey) {
+                weather = await getWeather(
+                  settings.latitude,
+                  settings.longitude,
+                  settings.weatherApiKey,
+                  effectiveTimestamp
+                );
+              } else {
+                // Get solar data even without weather API key
+                weather = await getSolarOnly(
+                  settings.latitude,
+                  settings.longitude,
+                  effectiveTimestamp
+                );
+              }
             } catch (weatherError) {
-              console.warn('Weather fetch failed:', weatherError.message);
+              console.warn('Weather/Solar fetch failed:', weatherError.message);
             }
           }
 
@@ -244,13 +317,18 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
             contentHash,
             fileName: image.fileName,
             timestamp: new Date().toISOString(),
+            timestampFromFilename: fileTimestamp ? fileTimestamp.toISOString() : null,
             ...analysis,
-            weather_temp: weather?.temp || null,
-            weather_clouds: weather?.clouds || null,
-            weather_uvi: weather?.uvi || null,
-            weather_condition: weather?.weather_main || null,
+            weather_temp: weather?.temp ?? null,
+            weather_clouds: weather?.clouds ?? null,
+            weather_uvi: weather?.uvi ?? null,
+            weather_condition: weather?.weather_main ?? null,
+            solar_ghi: weather?.solar_ghi ?? null,
+            solar_dni: weather?.solar_dni ?? null,
+            solar_dhi: weather?.solar_dhi ?? null,
+            solar_direct: weather?.solar_direct ?? null,
             model_used: modelId,
-            cost_usd: analysis._meta?.cost?.total || null
+            cost_usd: analysis._meta?.cost?.total ?? null
           };
 
           // Remove _meta from record (keep it separate)
@@ -292,14 +370,17 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
 
     } else {
       // Process single image
+      log('info', 'Processing single image');
       const mimeType = req.file.mimetype;
 
       // Calculate hash for deduplication
       const contentHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      log('debug', `Content hash: ${contentHash.substring(0, 16)}...`);
 
       // Check for duplicate
       const existingRecord = getRecordByHash(contentHash);
       if (existingRecord) {
+        log('info', 'Duplicate detected, returning existing record');
         return res.json({
           duplicate: true,
           record: existingRecord,
@@ -309,23 +390,55 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
 
       // Convert to base64
       const base64Image = fileBuffer.toString('base64');
+      log('debug', `Base64 image size: ${base64Image.length} chars`);
 
       // Analyze the image
-      console.log(`[${new Date().toISOString()}] Analyzing: ${fileName} with ${modelId}`);
+      log('info', `Calling Gemini API with model: ${modelId}`);
       const analysis = await analyzeImage(base64Image, mimeType, settings.geminiApiKey, modelId);
+      log('info', 'Gemini analysis complete', {
+        systemId: analysis.hardwareSystemId,
+        soc: analysis.stateOfCharge,
+        voltage: analysis.overallVoltage,
+        status: analysis.status
+      });
 
-      // Get weather data if configured
+      // Extract timestamp from filename for accurate time-based data
+      const fileTimestamp = extractTimestampFromFilename(fileName);
+      const effectiveTimestamp = fileTimestamp || new Date();
+      log('debug', 'Timestamp extraction', {
+        fileName,
+        extractedTimestamp: fileTimestamp ? fileTimestamp.toISOString() : null,
+        effectiveTimestamp: effectiveTimestamp.toISOString()
+      });
+
+      // Get weather + solar data (or solar only if no weather key)
       let weather = null;
-      if (settings.weatherApiKey && settings.latitude && settings.longitude) {
+      if (settings.latitude && settings.longitude) {
+        log('debug', `Fetching weather/solar data for ${settings.latitude}, ${settings.longitude}`);
         try {
-          weather = await getWeather(
-            settings.latitude,
-            settings.longitude,
-            settings.weatherApiKey
-          );
+          if (settings.weatherApiKey) {
+            log('debug', 'Using full weather + solar fetch');
+            weather = await getWeather(
+              settings.latitude,
+              settings.longitude,
+              settings.weatherApiKey,
+              effectiveTimestamp
+            );
+          } else {
+            // Get solar data even without weather API key
+            log('debug', 'Using solar-only fetch (no weather API key)');
+            weather = await getSolarOnly(
+              settings.latitude,
+              settings.longitude,
+              effectiveTimestamp
+            );
+          }
+          log('info', 'Weather/Solar data received', weather);
         } catch (weatherError) {
-          console.warn('Weather fetch failed:', weatherError.message);
+          log('warn', 'Weather/Solar fetch failed', weatherError.message);
         }
+      } else {
+        log('debug', 'No location configured, skipping weather/solar');
       }
 
       // Create the record
@@ -334,42 +447,51 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
         contentHash,
         fileName,
         timestamp: new Date().toISOString(),
+        timestampFromFilename: fileTimestamp ? fileTimestamp.toISOString() : null,
         ...analysis,
-        weather_temp: weather?.temp || null,
-        weather_clouds: weather?.clouds || null,
-        weather_uvi: weather?.uvi || null,
-        weather_condition: weather?.weather_main || null,
+        weather_temp: weather?.temp ?? null,
+        weather_clouds: weather?.clouds ?? null,
+        weather_uvi: weather?.uvi ?? null,
+        weather_condition: weather?.weather_main ?? null,
+        solar_ghi: weather?.solar_ghi ?? null,
+        solar_dni: weather?.solar_dni ?? null,
+        solar_dhi: weather?.solar_dhi ?? null,
+        solar_direct: weather?.solar_direct ?? null,
         model_used: modelId,
-        cost_usd: analysis._meta?.cost?.total || null
+        cost_usd: analysis._meta?.cost?.total ?? null
       };
 
       // Extract cost info before removing _meta
       const costInfo = analysis._meta?.cost;
+      log('debug', 'Cost info', costInfo);
 
       // Remove _meta from record
       delete record._meta;
 
       // Save to CSV
+      log('info', `Saving record: ${record.id}`);
       saveRecord(record);
+      log('info', 'Record saved successfully');
 
-      console.log(`[${new Date().toISOString()}] Saved: ${record.id}`);
-
-      res.json({
+      const response = {
         success: true,
         record,
         cost: costInfo,
         message: 'Analysis complete'
-      });
+      };
+
+      log('debug', 'Sending response', { recordId: record.id, cost: costInfo?.formatted });
+      res.json(response);
     }
 
   } catch (error) {
-    console.error('Analysis error:', error);
-    res.status(500).json({ error: error.message });
+    log('error', 'Analysis error', { message: error.message, stack: error.stack });
+    res.status(500).json({ error: error.message || 'Unknown error during analysis' });
   }
 });
 
 // API: Check if image is a duplicate (pre-upload check)
-app.post('/api/check-duplicate', upload.single('image'), (req, res) => {
+app.post('/api/check-duplicate', upload.single('image'), handleMulterError, (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No image file provided' });
@@ -393,6 +515,104 @@ app.get('/api/history', (req, res) => {
     const records = getAllRecords();
     res.json(records);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Backfill missing weather/solar data
+app.post('/api/backfill-weather', async (req, res) => {
+  log('info', 'Backfill weather request received');
+
+  try {
+    const settings = getSettings();
+
+    if (!settings.latitude || !settings.longitude) {
+      return res.status(400).json({
+        error: 'Location not configured. Please set latitude/longitude in Settings.'
+      });
+    }
+
+    // Get records missing solar data
+    const recordsToUpdate = getRecordsMissingWeather();
+    log('info', `Found ${recordsToUpdate.length} records missing weather/solar data`);
+
+    if (recordsToUpdate.length === 0) {
+      return res.json({
+        success: true,
+        message: 'All records already have weather/solar data',
+        updated: 0
+      });
+    }
+
+    const updates = [];
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const record of recordsToUpdate) {
+      try {
+        // Determine timestamp to use for weather lookup
+        const timestamp = record.timestampFromFilename || record.timestamp;
+        const effectiveTime = timestamp ? new Date(timestamp) : new Date();
+
+        // Fetch weather/solar data
+        let weather = null;
+        if (settings.weatherApiKey) {
+          weather = await getWeather(
+            settings.latitude,
+            settings.longitude,
+            settings.weatherApiKey,
+            effectiveTime
+          );
+        } else {
+          weather = await getSolarOnly(
+            settings.latitude,
+            settings.longitude,
+            effectiveTime
+          );
+        }
+
+        if (weather) {
+          updates.push({
+            id: record.id,
+            updates: {
+              weather_temp: weather.temp ?? null,
+              weather_clouds: weather.clouds ?? null,
+              weather_uvi: weather.uvi ?? null,
+              weather_condition: weather.weather_main ?? null,
+              solar_ghi: weather.solar_ghi ?? null,
+              solar_dni: weather.solar_dni ?? null,
+              solar_dhi: weather.solar_dhi ?? null,
+              solar_direct: weather.solar_direct ?? null
+            }
+          });
+          successCount++;
+        }
+
+        // Rate limit to avoid API throttling
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+      } catch (err) {
+        log('warn', `Failed to fetch weather for record ${record.id}:`, err.message);
+        errorCount++;
+      }
+    }
+
+    // Apply all updates
+    if (updates.length > 0) {
+      const updatedCount = updateRecords(updates);
+      log('info', `Updated ${updatedCount} records with weather/solar data`);
+    }
+
+    res.json({
+      success: true,
+      message: `Backfill complete`,
+      total: recordsToUpdate.length,
+      updated: successCount,
+      errors: errorCount
+    });
+
+  } catch (error) {
+    log('error', 'Backfill error', { message: error.message, stack: error.stack });
     res.status(500).json({ error: error.message });
   }
 });
@@ -422,6 +642,254 @@ app.get('/api/csv-path', (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// ============================================================
+// BACKGROUND REFRESH SYSTEM WITH SSE (Server-Sent Events)
+// ============================================================
+
+// Store for active SSE connections
+const sseClients = new Set();
+
+// Broadcast to all SSE clients
+function broadcastSSE(event, data) {
+  const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const client of sseClients) {
+    client.write(message);
+  }
+}
+
+// SSE endpoint for real-time updates
+app.get('/api/refresh-stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.flushHeaders();
+
+  sseClients.add(res);
+  log('info', `SSE client connected. Total clients: ${sseClients.size}`);
+
+  // Send initial connection confirmation
+  res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected' })}\n\n`);
+
+  req.on('close', () => {
+    sseClients.delete(res);
+    log('info', `SSE client disconnected. Total clients: ${sseClients.size}`);
+  });
+});
+
+// Background refresh state
+let refreshInProgress = false;
+let refreshAborted = false;
+
+// API: Start background refresh (non-blocking)
+app.post('/api/refresh-start', async (req, res) => {
+  if (refreshInProgress) {
+    return res.json({ success: false, message: 'Refresh already in progress' });
+  }
+
+  refreshInProgress = true;
+  refreshAborted = false;
+
+  // Respond immediately
+  res.json({ success: true, message: 'Refresh started' });
+
+  // Run refresh in background
+  runBackgroundRefresh().finally(() => {
+    refreshInProgress = false;
+  });
+});
+
+// API: Abort refresh
+app.post('/api/refresh-abort', (req, res) => {
+  if (!refreshInProgress) {
+    return res.json({ success: false, message: 'No refresh in progress' });
+  }
+  refreshAborted = true;
+  res.json({ success: true, message: 'Refresh abort requested' });
+});
+
+// API: Get refresh status
+app.get('/api/refresh-status', (req, res) => {
+  res.json({ inProgress: refreshInProgress });
+});
+
+// Background refresh function
+async function runBackgroundRefresh() {
+  const settings = getSettings();
+  const phases = [];
+  let allRecords = [];
+
+  try {
+    // Phase 1: Validate and Repair Data
+    broadcastSSE('phase', { phase: 'migration', status: 'running', message: 'Validating and repairing data...' });
+
+    const repairResult = repairAllData((phase, current, total, message) => {
+      broadcastSSE('progress', { phase: 'migration', current, total, message });
+    });
+
+    if (repairResult.repaired > 0) {
+      broadcastSSE('phase', {
+        phase: 'migration',
+        status: 'complete',
+        message: `Repaired ${repairResult.repaired} of ${repairResult.total} records`
+      });
+      phases.push({
+        phase: 'migration',
+        success: true,
+        total: repairResult.total,
+        repaired: repairResult.repaired,
+        valid: repairResult.valid
+      });
+    } else {
+      broadcastSSE('phase', {
+        phase: 'migration',
+        status: 'complete',
+        message: `All ${repairResult.total} records valid`
+      });
+      phases.push({ phase: 'migration', success: true, skipped: true, total: repairResult.total });
+    }
+
+    if (refreshAborted) {
+      broadcastSSE('complete', { success: false, aborted: true, phases });
+      return;
+    }
+
+    // Phase 2: Reload data and send to UI
+    broadcastSSE('phase', { phase: 'reload', status: 'running', message: 'Reloading data...' });
+    reloadData();
+    allRecords = getAllRecords();
+    broadcastSSE('phase', { phase: 'reload', status: 'complete', message: `Loaded ${allRecords.length} records` });
+    phases.push({ phase: 'reload', success: true, count: allRecords.length });
+
+    // Send current records to UI immediately
+    broadcastSSE('records', { records: allRecords });
+
+    if (refreshAborted) {
+      broadcastSSE('complete', { success: false, aborted: true, phases });
+      return;
+    }
+
+    // Phase 3: Weather/Solar backfill
+    if (settings.latitude && settings.longitude) {
+      const recordsNeedingWeather = getRecordsMissingWeather();
+
+      if (recordsNeedingWeather.length > 0) {
+        broadcastSSE('phase', {
+          phase: 'weather',
+          status: 'running',
+          message: `Fetching weather for ${recordsNeedingWeather.length} records...`,
+          total: recordsNeedingWeather.length
+        });
+
+        let updated = 0;
+        let errors = 0;
+
+        for (let i = 0; i < recordsNeedingWeather.length; i++) {
+          if (refreshAborted) break;
+
+          const record = recordsNeedingWeather[i];
+
+          try {
+            const timestamp = record.timestampFromFilename || record.timestamp;
+            const effectiveTime = timestamp ? new Date(timestamp) : new Date();
+
+            let weather = null;
+            if (settings.weatherApiKey) {
+              weather = await getWeather(settings.latitude, settings.longitude, settings.weatherApiKey, effectiveTime);
+            } else {
+              weather = await getSolarOnly(settings.latitude, settings.longitude, effectiveTime);
+            }
+
+            if (weather) {
+              const updates = {
+                weather_temp: weather.temp ?? null,
+                weather_clouds: weather.clouds ?? null,
+                weather_uvi: weather.uvi ?? null,
+                weather_condition: weather.weather_main ?? null,
+                solar_ghi: weather.solar_ghi ?? null,
+                solar_dni: weather.solar_dni ?? null,
+                solar_dhi: weather.solar_dhi ?? null,
+                solar_direct: weather.solar_direct ?? null
+              };
+
+              updateRecord(record.id, updates);
+              updated++;
+
+              // Send updated record to UI immediately for real-time update
+              const updatedRecord = { ...record, ...updates };
+              broadcastSSE('record-update', { record: updatedRecord });
+            }
+          } catch (err) {
+            errors++;
+            log('warn', `Weather fetch failed for ${record.id}: ${err.message}`);
+          }
+
+          // Progress update every record
+          broadcastSSE('progress', {
+            phase: 'weather',
+            current: i + 1,
+            total: recordsNeedingWeather.length,
+            message: `Processing ${i + 1}/${recordsNeedingWeather.length}`,
+            updated,
+            errors
+          });
+
+          // Rate limit - but keep it fast enough for real-time feel
+          await new Promise(resolve => setTimeout(resolve, 30));
+        }
+
+        broadcastSSE('phase', {
+          phase: 'weather',
+          status: refreshAborted ? 'aborted' : 'complete',
+          message: `Updated ${updated} records, ${errors} errors`,
+          updated,
+          errors
+        });
+        phases.push({ phase: 'weather', success: true, updated, errors });
+      } else {
+        broadcastSSE('phase', { phase: 'weather', status: 'skipped', message: 'All records have weather data' });
+        phases.push({ phase: 'weather', success: true, skipped: true });
+      }
+    } else {
+      broadcastSSE('phase', { phase: 'weather', status: 'skipped', message: 'Location not configured' });
+      phases.push({ phase: 'weather', success: true, skipped: true, reason: 'no_location' });
+    }
+
+    // Complete - include summary for UI
+    const summary = {
+      totalRecords: allRecords.length,
+      repaired: phases.find(p => p.phase === 'migration')?.repaired || 0,
+      weatherUpdated: phases.find(p => p.phase === 'weather')?.updated || 0
+    };
+
+    broadcastSSE('complete', {
+      success: !refreshAborted,
+      aborted: refreshAborted,
+      phases,
+      summary,
+      message: refreshAborted ? 'Refresh aborted' : 'Refresh complete'
+    });
+
+  } catch (error) {
+    log('error', 'Background refresh error', { message: error.message, stack: error.stack });
+    broadcastSSE('error', { error: error.message, phases });
+  }
+}
+
+// Global error handler - ensures JSON responses for all errors
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    error: err.message || 'Internal server error',
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
+});
+
+// 404 handler for API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
 });
 
 // Start server

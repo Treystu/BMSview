@@ -10,13 +10,13 @@
 
 Your BMSview app has a **solid foundation** but is only **50-75% complete**. The main issues are:
 
-1. ❌ **Grey Screen Bug** (fixable in 30 min)
-2. ❌ **Solar Irradiance Broken** (1-2 hours to fix)
-3. ❌ **Insights Generation Broken** (4-6 hours to fix)
-4. ❌ **Missing Data Fields** (4-6 hours to fix)
+1. ❌ **Grey Screen Bug** (~10-15 LOC to fix)
+2. ❌ **Solar Irradiance Broken** (~100-200 LOC to fix)
+3. ❌ **Insights Generation Broken** (~300-500 LOC to fix)
+4. ❌ **Missing Data Fields** (~200-350 LOC to fix)
 5. ⚠️ **Untested AI Integration** (needs verification)
 
-**Total effort to fix:** 22-31 hours (3-4 days of focused work)
+**Total effort to fix:** ~600-1100 LOC (implementation time varies by AI model)
 
 ---
 
@@ -38,13 +38,13 @@ Your BMSview app has a **solid foundation** but is only **50-75% complete**. The
 
 ## 🚨 Critical Issues (Fix These First)
 
-| Issue | Impact | Time | Status |
-|-------|--------|------|--------|
-| Grey Screen on Analysis | Admin UI crashes | 30 min | 🟢 Ready to fix |
-| Solar Irradiance Broken | No solar insights | 1-2 hrs | 🟡 Needs investigation |
-| Insights Generation Broken | No AI insights | 4-6 hrs | 🔴 Multiple failures |
-| Missing Data Fields | Can't do advanced analysis | 4-6 hrs | 🔴 Multiple gaps |
-| Async Job Flow | Background jobs broken | 2-4 hrs | 🟡 Needs fixing |
+| Issue | Impact | LOC Estimate | Status |
+|-------|--------|--------------|--------|
+| Grey Screen on Analysis | Admin UI crashes | ~10-15 LOC | 🟢 Ready to fix |
+| Solar Irradiance Broken | No solar insights | ~100-200 LOC | 🟡 Needs investigation |
+| Insights Generation Broken | No AI insights | ~300-500 LOC | 🔴 Multiple failures |
+| Missing Data Fields | Can't do advanced analysis | ~200-350 LOC | 🔴 Multiple gaps |
+| Async Job Flow | Background jobs broken | ~150-250 LOC | 🟡 Needs fixing |
 
 ---
 
@@ -77,9 +77,9 @@ OVERALL:                   6.5/10 ⚠️  Partial
 
 ## 🎯 Next Steps (In Order)
 
-1. **READ:** AUDIT_EXECUTIVE_SUMMARY.txt (10 min)
-2. **PLAN:** Review the 5 critical blockers and their fix times
-3. **PRIORITIZE:** Grey screen fix first (30 min quick win)
+1. **READ:** AUDIT_EXECUTIVE_SUMMARY.txt
+2. **PLAN:** Review the 5 critical blockers and their LOC estimates
+3. **PRIORITIZE:** Grey screen fix first (~10-15 LOC quick win)
 4. **TEST:** Use the testing checklist in AUDIT_QUICK_REFERENCE.md
 5. **FIX:** Address blockers in priority order
 6. **VERIFY:** Check functions off as they're fixed
@@ -111,43 +111,44 @@ OVERALL:                   6.5/10 ⚠️  Partial
 
 ## 🚀 Quick Reference: Critical Blockers
 
-### Blocker #1: Grey Screen Bug (30 min)
+### Blocker #1: Grey Screen Bug (~10-15 LOC)
 **File:** `src/components/AdminDashboard.tsx` lines 491-498
 **Issue:** Main app bundle loads on admin page
 **Fix:** Remove dynamic import of localCache
 **Status:** Solution documented, ready to implement
 
-### Blocker #2: Solar Irradiance (1-2 hrs)
+### Blocker #2: Solar Irradiance (~100-200 LOC)
 **File:** `netlify/functions/solar-estimate.cjs`
 **Issue:** User reported broken
 **Status:** Needs investigation
 
-### Blocker #3: Insights Generation (4-6 hrs)
+### Blocker #3: Insights Generation (~300-500 LOC)
 **Files:** Multiple insights functions
 **Issue:** Tools return no data, async unclear
 **Status:** Multiple failures documented
 
-### Blocker #4: Missing Data (4-6 hrs)
+### Blocker #4: Missing Data (~200-350 LOC)
 **Files:** Data ingestion pipeline
 **Issue:** cellVoltages empty, temp as string, missing fields
 **Status:** Data structure fixes needed
 
-### Blocker #5: Async Job Flow (2-4 hrs)
+### Blocker #5: Async Job Flow (~150-250 LOC)
 **Files:** generate-insights-with-tools.cjs + related
 **Issue:** Job creation/tracking unclear
 **Status:** Flow needs redesign
 
 ---
 
-## 📈 Estimated Timeline
+## 📈 Estimated LOC Effort
 
 ```
-Immediate:        30 min  (Grey screen fix)
-This Week:        12 hrs  (Fix critical issues)
-Before Handoff:   10 hrs  (Testing + verification)
-                  ------
-TOTAL:            22-30 hours
+Critical Issues:    ~750-1150 LOC (fix all blockers)
+Testing/Verification: ~200-300 LOC (comprehensive testing)
+                     ----------
+TOTAL:              ~950-1450 LOC
 ```
+
+**Note:** Implementation time varies by AI model capabilities and developer familiarity with codebase.
 
 ---
 
@@ -181,8 +182,8 @@ TOTAL:            22-30 hours
 **Q: Can I deploy this now?**
 A: No. Critical blockers must be fixed first.
 
-**Q: How long until production?**
-A: 22-31 hours of focused work (3-4 days).
+**Q: How much code needs to be written?**
+A: ~950-1450 LOC to fix all issues (implementation time varies by AI model).
 
 **Q: What's working best?**
 A: Admin functions, diagnostics, database operations.
@@ -191,7 +192,7 @@ A: Admin functions, diagnostics, database operations.
 A: Solar irradiance, insights generation, some tools.
 
 **Q: Where do I start fixing?**
-A: Grey screen bug (quick win), then solar, then insights.
+A: Grey screen bug (~10-15 LOC), then solar (~100-200 LOC), then insights (~300-500 LOC).
 
 ---
 

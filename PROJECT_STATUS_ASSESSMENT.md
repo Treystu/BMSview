@@ -256,51 +256,7 @@ Error: Cannot find module @rollup/rollup-linux-arm64-gnu
 
 **Root Cause:** npm optional dependencies bug on ARM architecture
 
-**Resolution Required:**
-```bash
-rm -rf node_modules package-lock.json
-npm install
-```
-
-**Severity:** LOW - Standard npm cache issue, easily fixable
-**Blocks Deployment:** Yes, but trivial fix
-**Blocks Development:** No (tests still work)
-
----
-
-### ⚠️ Pre-existing Test Failures
-
-**Issue:** 50 tests failing (15 test suites)
-- Cannot find module '../utils' errors
-- Cannot find module '../services/clientService' errors
-
-**Impact:**
-- ⚠️ Pre-existing issues (not caused by Phase 2-4 work)
-- ✅ New features all pass tests
-- ✅ 1189 tests passing
-
-**Severity:** MEDIUM - Should be addressed but not urgent
-**Blocks Deployment:** No (pre-existing)
-**Action Required:** Separate cleanup task
-
----
-
-## Remaining Tasks
-
-### Task 1: Fix Build Dependencies ⚠️ URGENT
-
-**Priority:** HIGH
-**Effort:** 5 minutes
-**Description:** Fix npm dependency issue
-
-**Steps:**
-```bash
-cd /path/to/BMSview
-rm -rf node_modules package-lock.json
-npm install
-npm run build
-```
-
+**Resolution Required:** ~25-50 LoC (npm script or dependency resolution)
 **Expected Outcome:** Clean build completing in ~2 seconds
 
 ---
@@ -308,7 +264,7 @@ npm run build
 ### Task 2: Deploy to Production 🚀 READY
 
 **Priority:** HIGH (after Task 1)
-**Effort:** 10 minutes
+**Effort:** ~15-25 LoC (deployment configuration + verification)
 **Prerequisites:**
 - ✅ Code complete
 - ✅ Tests passing
@@ -346,7 +302,7 @@ npm run build
 ### Task 4: Address Pre-existing Test Failures 🧹 CLEANUP
 
 **Priority:** MEDIUM
-**Effort:** 2-4 hours
+**Effort:** ~200-300 LoC (fix test infrastructure)
 **Description:** Fix 50 failing tests from pre-existing issues
 
 **Issues to Fix:**
@@ -676,7 +632,7 @@ The Path C Integration project has been executed exceptionally well through Phas
 **Remaining Work:**
 - ⚠️ Fix build dependencies (5 minutes)
 - 🚀 Deploy to production (10 minutes)
-- 🧹 Optional: Address pre-existing test failures (2-4 hours)
+- 🧹 Optional: Address pre-existing test failures (~100-200 LOC)
 
 **Deployment Status:** READY (after build fix)
 

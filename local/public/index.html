@@ -374,6 +374,20 @@
       color: var(--text-secondary);
       font-size: 0.85rem;
       text-transform: uppercase;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.2s, color 0.2s;
+      white-space: nowrap;
+    }
+
+    .history-table th:hover {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+
+    .history-table th.sorted {
+      background: var(--accent);
+      color: white;
     }
 
     .history-table tr:hover {
@@ -523,6 +537,130 @@
       color: var(--success);
     }
 
+    /* Refresh Status Bar */
+    .refresh-status-bar {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 15px 20px;
+      min-width: 350px;
+      max-width: 450px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      z-index: 1000;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+
+    .refresh-status-bar.hidden {
+      transform: translateY(100px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .refresh-status-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .refresh-status-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .refresh-status-close {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .refresh-status-close:hover {
+      color: var(--text-primary);
+    }
+
+    .refresh-status-phases {
+      margin-bottom: 10px;
+    }
+
+    .refresh-phase {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .refresh-phase.active {
+      color: var(--text-primary);
+    }
+
+    .refresh-phase.complete {
+      color: var(--success);
+    }
+
+    .refresh-phase.error {
+      color: var(--error);
+    }
+
+    .refresh-phase-icon {
+      width: 18px;
+      text-align: center;
+    }
+
+    .refresh-progress-bar {
+      height: 4px;
+      background: var(--bg-card);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+
+    .refresh-progress-fill {
+      height: 100%;
+      background: var(--accent);
+      transition: width 0.3s ease;
+      border-radius: 2px;
+    }
+
+    .refresh-status-message {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-top: 8px;
+    }
+
+    .refresh-status-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .refresh-status-actions .btn {
+      padding: 8px 16px;
+      font-size: 0.85rem;
+    }
+
+    /* Small spinner for inline use */
+    .spinner-small {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      border-top-color: var(--accent);
+      animation: spin 1s linear infinite;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .nav-tabs {
@@ -544,6 +682,13 @@
       .history-table th,
       .history-table td {
         padding: 8px 10px;
+      }
+
+      .refresh-status-bar {
+        left: 20px;
+        right: 20px;
+        min-width: auto;
+        max-width: none;
       }
     }
   </style>
@@ -596,7 +741,7 @@
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h2>Analysis History</h2>
         <div>
-          <button class="btn btn-secondary" onclick="refreshHistory()">🔄 Refresh</button>
+          <button class="btn btn-secondary" id="refresh-btn" onclick="startBackgroundRefresh()">🔄 Refresh</button>
           <button class="btn" onclick="exportCSV()">📥 Export CSV</button>
         </div>
       </div>
@@ -677,12 +822,174 @@
           <input type="text" id="csv-path" readonly style="background: var(--bg-primary); cursor: default;">
         </div>
       </div>
+
+      <div class="settings-section">
+        <h3>📊 Column Visibility</h3>
+        <p class="help-text" style="margin-bottom: 15px;">Choose which columns to display in the History table</p>
+        <div id="column-toggles" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;">
+          <!-- Column toggles loaded dynamically -->
+        </div>
+        <div class="btn-row" style="margin-top: 15px;">
+          <button class="btn" onclick="saveColumnSettings()">Save Column Settings</button>
+          <button class="btn btn-secondary" onclick="resetColumnSettings()">Reset to Default</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
     let selectedModel = 'gemini-2.0-flash-lite';
     let models = [];
+
+    // Column visibility configuration - ALL visible by default
+    const ALL_COLUMNS = [
+      { id: 'time', label: 'Time', default: true, sortKey: 'timestampFromFilename', sortType: 'date' },
+      { id: 'systemId', label: 'System ID', default: true, sortKey: 'hardwareSystemId', sortType: 'string' },
+      { id: 'fileName', label: 'File Name', default: true, sortKey: 'fileName', sortType: 'string' },
+      { id: 'soc', label: 'SOC %', default: true, sortKey: 'stateOfCharge', sortType: 'number' },
+      { id: 'voltage', label: 'Voltage', default: true, sortKey: 'overallVoltage', sortType: 'number' },
+      { id: 'current', label: 'Current', default: true, sortKey: 'current', sortType: 'number' },
+      { id: 'power', label: 'Power', default: true, sortKey: 'power', sortType: 'number' },
+      { id: 'capacity', label: 'Capacity', default: true, sortKey: 'remainingCapacity', sortType: 'number' },
+      { id: 'cycles', label: 'Cycles', default: true, sortKey: 'cycleCount', sortType: 'number' },
+      { id: 'cellDiff', label: 'Cell Diff', default: true, sortKey: 'cellVoltageDifference', sortType: 'number' },
+      { id: 'temps', label: 'Temperatures', default: true, sortKey: 'temperature_1', sortType: 'number' },
+      { id: 'solar', label: 'Solar (W/m²)', default: true, sortKey: 'solar_ghi', sortType: 'number' },
+      { id: 'weather', label: 'Weather', default: true, sortKey: 'weather_temp', sortType: 'number' },
+      { id: 'model', label: 'Model', default: true, sortKey: 'model_used', sortType: 'string' },
+      { id: 'cost', label: 'Cost', default: true, sortKey: 'cost_usd', sortType: 'number' },
+      { id: 'status', label: 'Status', default: true, sortKey: 'status', sortType: 'string' }
+    ];
+
+    let visibleColumns = {};
+
+    // Sorting state
+    let currentSortColumn = 'time';
+    let currentSortDirection = 'desc'; // 'asc' or 'desc'
+    let currentRecords = []; // Store records for sorting
+
+    // Load column settings from localStorage
+    function loadColumnSettings() {
+      const saved = localStorage.getItem('bms-column-visibility');
+      if (saved) {
+        try {
+          visibleColumns = JSON.parse(saved);
+        } catch (e) {
+          resetColumnSettings(false);
+        }
+      } else {
+        resetColumnSettings(false);
+      }
+    }
+
+    // Save column settings to localStorage
+    function saveColumnSettings() {
+      // Read values from checkboxes
+      ALL_COLUMNS.forEach(col => {
+        const checkbox = document.getElementById(`col-${col.id}`);
+        if (checkbox) {
+          visibleColumns[col.id] = checkbox.checked;
+        }
+      });
+      localStorage.setItem('bms-column-visibility', JSON.stringify(visibleColumns));
+      alert('Column settings saved!');
+      // Refresh history to apply changes
+      if (document.getElementById('history-tab').classList.contains('active')) {
+        refreshHistory();
+      }
+    }
+
+    // Reset to default column settings
+    function resetColumnSettings(showAlert = true) {
+      visibleColumns = {};
+      ALL_COLUMNS.forEach(col => {
+        visibleColumns[col.id] = col.default;
+      });
+      localStorage.setItem('bms-column-visibility', JSON.stringify(visibleColumns));
+      renderColumnToggles();
+      if (showAlert) {
+        alert('Column settings reset to defaults!');
+        if (document.getElementById('history-tab').classList.contains('active')) {
+          refreshHistory();
+        }
+      }
+    }
+
+    // Render column toggle checkboxes in settings
+    function renderColumnToggles() {
+      const container = document.getElementById('column-toggles');
+      if (!container) return;
+
+      container.innerHTML = ALL_COLUMNS.map(col => `
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 8px; background: var(--bg-card); border-radius: 6px;">
+          <input type="checkbox" id="col-${col.id}" ${visibleColumns[col.id] ? 'checked' : ''} style="width: 18px; height: 18px;">
+          <span>${col.label}</span>
+        </label>
+      `).join('');
+    }
+
+    // Check if a column is visible
+    function isColumnVisible(colId) {
+      return visibleColumns[colId] !== false;
+    }
+
+    // Sorting functions
+    function sortRecords(records, columnId, direction) {
+      const colConfig = ALL_COLUMNS.find(c => c.id === columnId);
+      if (!colConfig) return records;
+
+      const sortKey = colConfig.sortKey;
+      const sortType = colConfig.sortType;
+
+      return [...records].sort((a, b) => {
+        let aVal = a[sortKey];
+        let bVal = b[sortKey];
+
+        // Handle null/undefined - always sort to end
+        if (aVal === null || aVal === undefined || aVal === '') {
+          return direction === 'asc' ? 1 : -1;
+        }
+        if (bVal === null || bVal === undefined || bVal === '') {
+          return direction === 'asc' ? -1 : 1;
+        }
+
+        // Handle special case for time - use timestampFromFilename or timestamp
+        if (columnId === 'time') {
+          aVal = a.timestampFromFilename || a.timestamp;
+          bVal = b.timestampFromFilename || b.timestamp;
+        }
+
+        let comparison = 0;
+        if (sortType === 'number') {
+          comparison = parseFloat(aVal) - parseFloat(bVal);
+        } else if (sortType === 'date') {
+          comparison = new Date(aVal) - new Date(bVal);
+        } else {
+          comparison = String(aVal).localeCompare(String(bVal));
+        }
+
+        return direction === 'asc' ? comparison : -comparison;
+      });
+    }
+
+    function handleSort(columnId) {
+      if (currentSortColumn === columnId) {
+        // Toggle direction
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        currentSortColumn = columnId;
+        currentSortDirection = 'asc';
+      }
+
+      // Re-render with sorted data
+      if (currentRecords.length > 0) {
+        const sorted = sortRecords(currentRecords, currentSortColumn, currentSortDirection);
+        renderHistoryTable(sorted, true); // true = preserve sort state
+      }
+    }
+
+    // Initialize column settings
+    loadColumnSettings();
 
     // Tab switching
     document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -819,10 +1126,24 @@
           body: formData
         });
 
-        const data = await response.json();
+        // Check content type before parsing
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await response.text();
+          console.error('Non-JSON response:', text.substring(0, 500));
+          throw new Error('Server returned non-JSON response. Check console for details.');
+        }
+
+        let data;
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error('JSON parse error:', parseError);
+          throw new Error('Failed to parse server response as JSON');
+        }
 
         if (!response.ok) {
-          showStatus('❌ ' + data.error, 'error');
+          showStatus('❌ ' + (data.error || 'Unknown server error'), 'error');
           return;
         }
 
@@ -841,7 +1162,8 @@
         }
 
       } catch (error) {
-        showStatus('❌ ' + error.message, 'error');
+        console.error('Analysis error:', error);
+        showStatus('❌ ' + (error.message || 'Unknown error occurred'), 'error');
       }
     }
 
@@ -972,17 +1294,40 @@
 
           <div style="margin-top: 20px; color: var(--text-secondary); font-size: 0.85rem;">
             <strong>File:</strong> ${record.fileName} |
-            <strong>Time:</strong> ${new Date(record.timestamp).toLocaleString()}
-            ${record.weather_temp ? ` | <strong>Weather:</strong> ${record.weather_temp}°C, ${record.weather_condition}` : ''}
+            <strong>Time:</strong> ${new Date(record.timestampFromFilename || record.timestamp).toLocaleString()}
+            ${record.timestampFromFilename ? ' <span style="color: var(--success);">(from filename)</span>' : ''}
+            ${record.weather_temp ? ` | <strong>Weather:</strong> ${record.weather_temp}°C, ${record.weather_condition}, ☁${record.weather_clouds}%` : ''}
+            ${record.solar_ghi ? ` | <strong>Solar:</strong> ☀️${Math.round(record.solar_ghi)} W/m² (GHI)` : ''}
           </div>
         </div>
       `;
     }
 
-    async function refreshHistory() {
+    async function refreshHistory(backfillWeather = false) {
       const container = document.getElementById('history-container');
 
       try {
+        // Optionally backfill missing weather data first
+        if (backfillWeather) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <span class="spinner"></span>
+              <h3>Checking for missing weather/solar data...</h3>
+            </div>
+          `;
+
+          try {
+            const backfillResponse = await fetch('/api/backfill-weather', { method: 'POST' });
+            const backfillResult = await backfillResponse.json();
+
+            if (backfillResult.updated > 0) {
+              console.log(`Backfilled ${backfillResult.updated} records with weather/solar data`);
+            }
+          } catch (backfillError) {
+            console.warn('Weather backfill failed:', backfillError.message);
+          }
+        }
+
         const response = await fetch('/api/history');
         const records = await response.json();
 
@@ -996,35 +1341,46 @@
           return;
         }
 
-        container.innerHTML = `
-          <table class="history-table">
+        // Data integrity check - look for obvious issues
+        const integrityIssues = [];
+        for (const r of records) {
+          // Check if System ID looks like a filename (data shift indicator)
+          if (r.hardwareSystemId && (r.hardwareSystemId.includes('.png') || r.hardwareSystemId.includes('.jpg') || r.hardwareSystemId.includes('Screenshot'))) {
+            integrityIssues.push(`Record ${r.id?.substring(0, 8) || 'unknown'}: System ID contains filename - possible column shift`);
+          }
+          // Check if model contains weather data
+          if (r.model_used && (r.model_used.includes('Clouds') || r.model_used.includes('Clear') || r.model_used.includes('Rain'))) {
+            integrityIssues.push(`Record ${r.id?.substring(0, 8) || 'unknown'}: Model field contains weather data - possible column shift`);
+          }
+        }
+
+        let warningHtml = '';
+        if (integrityIssues.length > 0) {
+          console.warn('Data integrity issues detected:', integrityIssues);
+          warningHtml = `
+            <div class="alert-item warning" style="margin-bottom: 15px;">
+              ⚠️ Data integrity issues detected (${integrityIssues.length} records). CSV may need migration.
+              <br><small>Check console for details. Try restarting the server to trigger auto-migration.</small>
+            </div>
+          `;
+        }
+
+        // Store records for sorting and render with sorting
+        currentRecords = records;
+        const sortedRecords = sortRecords(records, currentSortColumn, currentSortDirection);
+
+        container.innerHTML = warningHtml + `
+          <div style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-secondary);">
+            ${sortedRecords.length} records | Sorted by: <strong>${ALL_COLUMNS.find(c => c.id === currentSortColumn)?.label || currentSortColumn}</strong> (${currentSortDirection === 'asc' ? 'ascending' : 'descending'}) | Click column headers to sort
+          </div>
+          <table class="history-table" id="history-table">
             <thead>
               <tr>
-                <th>Time</th>
-                <th>System ID</th>
-                <th>SOC</th>
-                <th>Voltage</th>
-                <th>Current</th>
-                <th>Power</th>
-                <th>Model</th>
-                <th>Cost</th>
-                <th>Status</th>
+                ${getVisibleHeaders()}
               </tr>
             </thead>
-            <tbody>
-              ${records.map(r => `
-                <tr>
-                  <td>${new Date(r.timestamp).toLocaleString()}</td>
-                  <td>${r.hardwareSystemId || '-'}</td>
-                  <td>${r.stateOfCharge?.toFixed(1) || '0'}%</td>
-                  <td>${r.overallVoltage?.toFixed(2) || '0'}V</td>
-                  <td style="color: ${r.current < 0 ? 'var(--error)' : 'var(--success)'}">${r.current?.toFixed(2) || '0'}A</td>
-                  <td style="color: ${r.power < 0 ? 'var(--error)' : 'var(--success)'}">${r.power?.toFixed(1) || '0'}W</td>
-                  <td style="font-size: 0.8rem;">${(r.model_used || '-').replace('gemini-', '')}</td>
-                  <td style="color: var(--success); font-size: 0.8rem;">${r.cost_usd ? '$' + r.cost_usd.toFixed(6) : '-'}</td>
-                  <td><span class="badge ${(r.status || 'normal').toLowerCase()}">${r.status || 'Normal'}</span></td>
-                </tr>
-              `).join('')}
+            <tbody id="history-tbody">
+              ${sortedRecords.map(r => generateTableRow(r)).join('')}
             </tbody>
           </table>
         `;
@@ -1067,6 +1423,9 @@
         const pathResponse = await fetch('/api/csv-path');
         const pathData = await pathResponse.json();
         document.getElementById('csv-path').value = pathData.path;
+
+        // Render column visibility toggles
+        renderColumnToggles();
 
       } catch (error) {
         console.error('Failed to load settings:', error);
@@ -1202,9 +1561,381 @@
       }
     }
 
+    // ========================================
+    // Background Refresh System (SSE-based)
+    // ========================================
+
+    let refreshEventSource = null;
+    let refreshInProgress = false;
+
+    function startBackgroundRefresh() {
+      if (refreshInProgress) {
+        console.log('Refresh already in progress');
+        return;
+      }
+
+      // Show the status bar
+      const statusBar = document.getElementById('refresh-status-bar');
+      statusBar.classList.remove('hidden');
+
+      // Reset all phases to pending
+      document.querySelectorAll('.refresh-phase').forEach(phase => {
+        phase.classList.remove('active', 'complete', 'error');
+        const icon = phase.querySelector('.refresh-phase-icon');
+        icon.textContent = '○';
+      });
+
+      // Reset progress
+      document.getElementById('refresh-progress-fill').style.width = '0%';
+      document.getElementById('refresh-status-message').textContent = 'Starting background refresh...';
+
+      // Hide actions, show abort button
+      document.getElementById('refresh-complete-actions').style.display = 'none';
+
+      // Connect to SSE stream
+      refreshEventSource = new EventSource('/api/refresh-stream');
+
+      refreshEventSource.onopen = function() {
+        console.log('SSE connection opened');
+      };
+
+      refreshEventSource.addEventListener('connected', function(e) {
+        console.log('SSE connected:', JSON.parse(e.data));
+        // Start the refresh
+        fetch('/api/refresh-start', { method: 'POST' })
+          .then(r => r.json())
+          .then(data => {
+            if (!data.success) {
+              showRefreshError(data.message || 'Failed to start refresh');
+            } else {
+              refreshInProgress = true;
+            }
+          })
+          .catch(err => {
+            showRefreshError('Failed to start refresh: ' + err.message);
+          });
+      });
+
+      refreshEventSource.addEventListener('phase', function(e) {
+        const data = JSON.parse(e.data);
+        updateRefreshPhase(data.phase, data.status, data.message);
+      });
+
+      refreshEventSource.addEventListener('progress', function(e) {
+        const data = JSON.parse(e.data);
+        updateRefreshProgress(data.current, data.total, data.message);
+      });
+
+      refreshEventSource.addEventListener('records', function(e) {
+        const data = JSON.parse(e.data);
+        // Full records update - render the table
+        renderHistoryTable(data.records);
+        document.getElementById('refresh-status-message').textContent =
+          `Loaded ${data.records.length} records`;
+      });
+
+      refreshEventSource.addEventListener('record-update', function(e) {
+        const data = JSON.parse(e.data);
+        // Update a single row in-place
+        updateTableRow(data.record);
+      });
+
+      refreshEventSource.addEventListener('complete', function(e) {
+        const data = JSON.parse(e.data);
+        completeRefresh(data);
+      });
+
+      refreshEventSource.addEventListener('error', function(e) {
+        if (e.data) {
+          const data = JSON.parse(e.data);
+          showRefreshError(data.error || 'Unknown error');
+        }
+      });
+
+      refreshEventSource.onerror = function(e) {
+        console.error('SSE error:', e);
+        if (refreshEventSource.readyState === EventSource.CLOSED) {
+          showRefreshError('Connection lost');
+        }
+      };
+    }
+
+    function updateRefreshPhase(phaseName, status, message) {
+      const phaseEl = document.querySelector(`.refresh-phase[data-phase="${phaseName}"]`);
+      if (!phaseEl) return;
+
+      // Remove all status classes
+      phaseEl.classList.remove('active', 'complete', 'error');
+
+      const icon = phaseEl.querySelector('.refresh-phase-icon');
+
+      if (status === 'active' || status === 'running') {
+        phaseEl.classList.add('active');
+        icon.innerHTML = '<span class="spinner-small"></span>';
+      } else if (status === 'complete' || status === 'done') {
+        phaseEl.classList.add('complete');
+        icon.textContent = '✓';
+      } else if (status === 'error') {
+        phaseEl.classList.add('error');
+        icon.textContent = '✗';
+      } else if (status === 'skipped') {
+        phaseEl.classList.add('complete');
+        icon.textContent = '—';
+      }
+
+      if (message) {
+        document.getElementById('refresh-status-message').textContent = message;
+      }
+    }
+
+    function updateRefreshProgress(current, total, message) {
+      const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+      document.getElementById('refresh-progress-fill').style.width = pct + '%';
+
+      if (message) {
+        document.getElementById('refresh-status-message').textContent = message;
+      }
+    }
+
+    function completeRefresh(data) {
+      refreshInProgress = false;
+
+      // Close SSE connection
+      if (refreshEventSource) {
+        refreshEventSource.close();
+        refreshEventSource = null;
+      }
+
+      // Mark all phases complete
+      document.querySelectorAll('.refresh-phase').forEach(phase => {
+        if (!phase.classList.contains('error')) {
+          phase.classList.remove('active');
+          phase.classList.add('complete');
+          const icon = phase.querySelector('.refresh-phase-icon');
+          if (icon.innerHTML.includes('spinner')) {
+            icon.textContent = '✓';
+          }
+        }
+      });
+
+      // Update progress to 100%
+      document.getElementById('refresh-progress-fill').style.width = '100%';
+
+      // Show completion message with summary
+      let summary = 'Refresh complete!';
+      if (data.summary) {
+        const s = data.summary;
+        summary = `Done! ${s.totalRecords || 0} records`;
+        if (s.migrated) summary += ' (migrated)';
+        if (s.weatherUpdated > 0) summary += `, ${s.weatherUpdated} weather updates`;
+      }
+      document.getElementById('refresh-status-message').textContent = summary;
+
+      // Update status bar title to show completion
+      document.querySelector('.refresh-status-title').innerHTML = '✅ Refresh Complete';
+
+      // Show dismiss action
+      document.getElementById('refresh-complete-actions').style.display = 'flex';
+    }
+
+    function showRefreshError(message) {
+      refreshInProgress = false;
+
+      if (refreshEventSource) {
+        refreshEventSource.close();
+        refreshEventSource = null;
+      }
+
+      document.getElementById('refresh-status-message').textContent = '❌ ' + message;
+      document.querySelector('.refresh-status-title').innerHTML = '❌ Refresh Error';
+      document.getElementById('refresh-complete-actions').style.display = 'flex';
+    }
+
+    function hideRefreshStatus() {
+      const statusBar = document.getElementById('refresh-status-bar');
+      statusBar.classList.add('hidden');
+
+      // Reset title
+      document.querySelector('.refresh-status-title').innerHTML = '<span class="spinner-small"></span> Refreshing Data';
+
+      // Abort if still in progress
+      if (refreshInProgress) {
+        abortRefresh();
+      }
+    }
+
+    function abortRefresh() {
+      fetch('/api/refresh-abort', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          console.log('Refresh aborted:', data);
+          refreshInProgress = false;
+          if (refreshEventSource) {
+            refreshEventSource.close();
+            refreshEventSource = null;
+          }
+        })
+        .catch(err => console.error('Abort failed:', err));
+    }
+
+    function getSortIndicator(colId) {
+      if (currentSortColumn !== colId) return '';
+      return currentSortDirection === 'asc' ? ' ▲' : ' ▼';
+    }
+
+    function getVisibleHeaders() {
+      const headers = [];
+      ALL_COLUMNS.forEach(col => {
+        if (isColumnVisible(col.id)) {
+          const indicator = getSortIndicator(col.id);
+          const isActive = currentSortColumn === col.id;
+          headers.push(`<th onclick="handleSort('${col.id}')" style="cursor: pointer; user-select: none;${isActive ? ' background: var(--accent); color: white;' : ''}" title="Click to sort">${col.label}${indicator}</th>`);
+        }
+      });
+      return headers.join('');
+    }
+
+    function renderHistoryTable(records, preserveSort = false) {
+      const container = document.getElementById('history-container');
+
+      if (!records || records.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <h3>No data yet</h3>
+            <p>Upload some BMS screenshots to get started</p>
+          </div>
+        `;
+        return;
+      }
+
+      // Store records for sorting (use original unsorted if not preserving)
+      if (!preserveSort) {
+        currentRecords = records;
+      }
+
+      // Apply current sort
+      const sortedRecords = sortRecords(records, currentSortColumn, currentSortDirection);
+
+      container.innerHTML = `
+        <div style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-secondary);">
+          ${sortedRecords.length} records | Sorted by: <strong>${ALL_COLUMNS.find(c => c.id === currentSortColumn)?.label || currentSortColumn}</strong> (${currentSortDirection === 'asc' ? 'ascending' : 'descending'}) | Click column headers to sort
+        </div>
+        <table class="history-table" id="history-table">
+          <thead>
+            <tr>
+              ${getVisibleHeaders()}
+            </tr>
+          </thead>
+          <tbody id="history-tbody">
+            ${sortedRecords.map(r => generateTableRow(r)).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function generateTableRow(r) {
+      const displayTime = r.timestampFromFilename || r.timestamp;
+      const soc = parseFloat(r.stateOfCharge) || 0;
+      const voltage = parseFloat(r.overallVoltage) || 0;
+      const current = parseFloat(r.current) || 0;
+      const power = parseFloat(r.power) || 0;
+      const remaining = parseFloat(r.remainingCapacity) || 0;
+      const full = parseFloat(r.fullCapacity) || 0;
+      const cycles = parseInt(r.cycleCount) || 0;
+      const cellDiff = parseFloat(r.cellVoltageDifference) || 0;
+      const solarGhi = parseFloat(r.solar_ghi) || 0;
+      const solarDni = parseFloat(r.solar_dni) || 0;
+      const solarDhi = parseFloat(r.solar_dhi) || 0;
+      const weatherTemp = parseFloat(r.weather_temp);
+      const weatherClouds = parseFloat(r.weather_clouds) || 0;
+      const costUsd = parseFloat(r.cost_usd);
+
+      // Build temperature display
+      const temps = [r.temperature_1, r.temperature_2, r.temperature_3, r.temperature_4]
+        .filter(t => t !== null && t !== undefined && t !== '')
+        .map(t => parseFloat(t))
+        .filter(t => !isNaN(t));
+      const tempDisplay = temps.length > 0 ? temps.map(t => t + '°').join(' / ') : '-';
+
+      const cells = [];
+      if (isColumnVisible('time')) cells.push(`<td title="${r.timestampFromFilename ? 'From filename' : 'Upload time'}">${new Date(displayTime).toLocaleString()}</td>`);
+      if (isColumnVisible('systemId')) cells.push(`<td>${r.hardwareSystemId || '-'}</td>`);
+      if (isColumnVisible('fileName')) cells.push(`<td style="font-size: 0.75rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis;" title="${r.fileName || ''}">${r.fileName || '-'}</td>`);
+      if (isColumnVisible('soc')) cells.push(`<td>${soc.toFixed(1)}%</td>`);
+      if (isColumnVisible('voltage')) cells.push(`<td>${voltage.toFixed(2)}V</td>`);
+      if (isColumnVisible('current')) cells.push(`<td style="color: ${current < 0 ? 'var(--error)' : 'var(--success)'}">${current.toFixed(2)}A</td>`);
+      if (isColumnVisible('power')) cells.push(`<td style="color: ${power < 0 ? 'var(--error)' : 'var(--success)'}">${power.toFixed(1)}W</td>`);
+      if (isColumnVisible('capacity')) cells.push(`<td style="font-size: 0.8rem;">${remaining.toFixed(1)}/${full.toFixed(1)}Ah</td>`);
+      if (isColumnVisible('cycles')) cells.push(`<td>${cycles}</td>`);
+      if (isColumnVisible('cellDiff')) cells.push(`<td style="font-size: 0.8rem;">${(cellDiff * 1000).toFixed(1)}mV</td>`);
+      if (isColumnVisible('temps')) cells.push(`<td style="font-size: 0.75rem;">${tempDisplay}</td>`);
+      if (isColumnVisible('solar')) cells.push(`<td style="font-size: 0.8rem; color: var(--warning);" title="GHI: ${solarGhi} | DNI: ${solarDni} | DHI: ${solarDhi}">${solarGhi ? `☀️${Math.round(solarGhi)}` : '-'}</td>`);
+      if (isColumnVisible('weather')) cells.push(`<td style="font-size: 0.8rem;">${!isNaN(weatherTemp) ? `${weatherTemp}°C ${r.weather_condition || ''} ☁${weatherClouds}%` : '-'}</td>`);
+      if (isColumnVisible('model')) cells.push(`<td style="font-size: 0.8rem;">${(r.model_used || '-').replace('gemini-', '')}</td>`);
+      if (isColumnVisible('cost')) cells.push(`<td style="color: var(--success); font-size: 0.8rem;">${!isNaN(costUsd) ? '$' + costUsd.toFixed(6) : '-'}</td>`);
+      if (isColumnVisible('status')) cells.push(`<td><span class="badge ${(r.status || 'normal').toLowerCase()}">${r.status || 'Normal'}</span></td>`);
+
+      return `<tr data-record-id="${r.id}">${cells.join('')}</tr>`;
+    }
+
+    function updateTableRow(record) {
+      const row = document.querySelector(`tr[data-record-id="${record.id}"]`);
+      if (row) {
+        // Replace the row content
+        row.outerHTML = generateTableRow(record);
+
+        // Flash the row to indicate update
+        const newRow = document.querySelector(`tr[data-record-id="${record.id}"]`);
+        if (newRow) {
+          newRow.style.transition = 'background-color 0.5s';
+          newRow.style.backgroundColor = 'rgba(34, 197, 94, 0.2)';
+          setTimeout(() => {
+            newRow.style.backgroundColor = '';
+          }, 1000);
+        }
+      }
+    }
+
     // Initial load
     loadModels();
     loadSettings();
   </script>
+
+  <!-- Refresh Status Bar (fixed position, bottom-right) -->
+  <div id="refresh-status-bar" class="refresh-status-bar hidden">
+    <div class="refresh-status-header">
+      <div class="refresh-status-title">
+        <span class="spinner-small"></span> Refreshing Data
+      </div>
+      <button class="refresh-status-close" onclick="hideRefreshStatus()" title="Dismiss">&times;</button>
+    </div>
+
+    <div class="refresh-status-phases">
+      <div class="refresh-phase" data-phase="migration">
+        <span class="refresh-phase-icon">○</span>
+        <span>Validate & repair data</span>
+      </div>
+      <div class="refresh-phase" data-phase="reload">
+        <span class="refresh-phase-icon">○</span>
+        <span>Reload & display records</span>
+      </div>
+      <div class="refresh-phase" data-phase="weather">
+        <span class="refresh-phase-icon">○</span>
+        <span>Backfill weather & solar data</span>
+      </div>
+    </div>
+
+    <div class="refresh-progress-bar">
+      <div class="refresh-progress-fill" id="refresh-progress-fill" style="width: 0%"></div>
+    </div>
+
+    <div class="refresh-status-message" id="refresh-status-message">
+      Initializing...
+    </div>
+
+    <div class="refresh-status-actions" id="refresh-complete-actions" style="display: none;">
+      <button class="btn btn-secondary" onclick="hideRefreshStatus()">Dismiss</button>
+    </div>
+  </div>
 </body>
 </html>

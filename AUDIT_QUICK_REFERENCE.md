@@ -10,10 +10,10 @@
 
 | Function | Issue | Status | Fix Effort |
 |----------|-------|--------|-----------|
-| **Grey Screen Bug** | Admin UI crashes after analysis | CODE READY | 30 min |
-| **solar-estimate** | Irradiance broken | INVESTIGATION | 1-2 hrs |
-| **generate-insights-with-tools** | Tools failing, async unclear | NEEDS FIXES | 4-6 hrs |
-| **get_hourly_soc_predictions** | Returns no data | BROKEN | 1-2 hrs |
+| **Grey Screen Bug** | Admin UI crashes after analysis | CODE READY | ~15 LoC |
+| **solar-estimate** | Irradiance broken | INVESTIGATION | ~50-100 LoC |
+| **generate-insights-with-tools** | Tools failing, async unclear | NEEDS FIXES | ~200-300 LoC |
+| **get_hourly_soc_predictions** | Returns no data | BROKEN | ~50-100 LoC |
 
 ---
 
@@ -51,10 +51,10 @@
 
 | Issue | Impact | Fix Effort |
 |-------|--------|-----------|
-| `cellVoltages` array always empty | Blocks cell-level diagnostics | 2-4 hrs |
-| Temperature stored as string not number | Analytics breaks on processing | 1 hr |
-| Missing installationDate, warrantyInfo | Prevents advanced health scoring | 2-3 hrs |
-| Tool outputs are null (not "No Data") | Confuses analysis engine | 4-6 hrs |
+| `cellVoltages` array always empty | Blocks cell-level diagnostics | ~100-200 LoC |
+| Temperature stored as string not number | Analytics breaks on processing | ~50 LoC |
+| Missing installationDate, warrantyInfo | Prevents advanced health scoring | ~100-150 LoC |
+| Tool outputs are null (not "No Data") | Confuses analysis engine | ~200-300 LoC |
 
 ---
 
@@ -103,20 +103,20 @@
 
 ## IMMEDIATE ACTION ITEMS
 
-1. **Fix Grey Screen** (30 min)
+1. **Fix Grey Screen** (~15 LoC)
    - File: src/components/AdminDashboard.tsx:491-498
    - Remove dynamic import of localCache
 
-2. **Investigate Solar** (1-2 hrs)
+2. **Investigate Solar** (~50-100 LoC)
    - File: netlify/functions/solar-estimate.cjs
    - Check calculations and data source
 
-3. **Test Analysis Flow** (30 min)
+3. **Test Analysis Flow** (~25 LoC)
    - Upload screenshot from repo
    - Verify Gemini API response
    - Check insights generation
 
-4. **Fix Tool Failures** (4-6 hrs)
+4. **Fix Tool Failures** (~200-300 LoC)
    - Files: All tools in insights pipeline
    - Verify outputs are not null
    - Add explicit "No Data" messages
@@ -137,19 +137,24 @@
 
 ---
 
-## ESTIMATED FIX TIME
+## ESTIMATED FIX EFFORT (LoC)
 
 ```
-Critical Blockers:        6-8 hours
-Data Quality Issues:      6-8 hours
-Tool Integration Fixes:   4-6 hours
-End-to-End Testing:       4-6 hours
+Critical Blockers:        ~300-500 LoC
+Data Quality Issues:      ~450-700 LoC
+Tool Integration Fixes:   ~200-300 LoC
+End-to-End Testing:       ~300-500 LoC
                           --------
-TOTAL:                   20-28 hours
+TOTAL:                   ~1,250-2,000 LoC
 ```
 
----
+**LoC-Based Estimation Methodology:**
+- Simple fixes: ~15-50 LoC
+- Medium complexity: ~50-200 LoC  
+- High complexity: ~200-500 LoC
+- System integration: ~500+ LoC
 
 **Assessment Confidence:** 80%
 **Methodology:** Code analysis + admin panel inspection + known issues review
-**Last Updated:** 2026-01-20 23:30 UTC
+**Updated to LoC Estimation:** 2026-01-21 13:11:00
+**Documentation Policy:** All estimates now use Lines of Code (LoC) exclusively

@@ -8,8 +8,8 @@
   },
   "scripts": {
     "start": "node server.js",
-    "build": "pkg . --targets node20-macos-x64 --output dist/bms-analyzer",
-    "build:arm": "pkg . --targets node20-macos-arm64 --output dist/bms-analyzer-arm",
+    "build": "pkg . --targets node18-macos-x64 --output dist/bms-analyzer",
+    "build:arm": "pkg . --targets node18-macos-arm64 --output dist/bms-analyzer-arm",
     "dev": "node server.js"
   },
   "pkg": {
@@ -33,7 +33,7 @@
     "pkg": "^5.8.1"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=18.0.0"
   },
   "author": "Luke",
   "license": "MIT"

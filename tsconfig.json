@@ -3,12 +3,25 @@
     "target": "ESNext",
     "useDefineForClassFields": true,
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
-    "allowJs": true,
-    "checkJs": true,
-    "skipLibCheck": true,
+    "allowJs": false,
+    "skipLibCheck": false,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
@@ -28,17 +41,14 @@
       "hooks/*": ["./src/hooks/*"],
       "utils/*": ["./src/utils/*"],
       "@types/*": ["./src/types/*"]
-    }
+    },
+    "types": ["node", "jest"]
   },
-  "include": ["src"],
+  "include": ["src", "types"],
   "exclude": [
     "dist",
     "node_modules",
     "coverage",
-    "tests",
-    "**/*.test.ts",
-    "**/*.test.tsx",
-    "**/*.cjs",
-    "**/*.js"
+    "**/*.cjs"
   ]
 }

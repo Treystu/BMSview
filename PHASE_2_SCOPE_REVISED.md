@@ -305,22 +305,22 @@ Phase 2 scope has been refined based on Oracle verification findings:
 ## Implementation Order
 
 ### Priority 1: Fix Code Quality Issues
-1. **Phase 2F** - Fix sync-push duplication (30 minutes)
+1. **Phase 2F** - Fix sync-push duplication (~50 LOC)
 
 ### Priority 2: Core Integrations
-2. **Phase 2B** - Solar integration (2-3 hours)
-3. **Phase 2C** - Weather integration (1-2 hours)
+2. **Phase 2B** - Solar integration (~250-300 LOC)
+3. **Phase 2C** - Weather integration (~150-200 LOC)
 
 ### Priority 3: Intelligence Enhancements
-4. **Phase 2D** - Auto-trending (2-3 hours)
-5. **Phase 2E** - Async routing (1-2 hours)
+4. **Phase 2D** - Auto-trending (~200-250 LOC)
+5. **Phase 2E** - Async routing (~150-200 LOC)
 
 ### Priority 4: Verification
-6. **Phase 2A** - Verify SOC tool (30 minutes)
-7. **Phase 2G** - Sync enhancements (1 hour)
-8. **Phase 3** - Comprehensive testing (3-4 hours)
+6. **Phase 2A** - Verify SOC tool (~50 LOC)
+7. **Phase 2G** - Sync enhancements (~50-100 LOC)
+8. **Phase 3** - Comprehensive testing (~300-500 LOC)
 
-**Total Estimated Time:** 10-15 hours
+**Total Estimated LOC:** 1200-1650 LOC (implementation time varies by AI model)
 
 ---
 

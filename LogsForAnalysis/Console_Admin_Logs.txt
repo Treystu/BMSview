@@ -1,81 +1,1073 @@
-admin-sa7NZGIf.js:2 {"level":"WARN","timestamp":"2026-01-13T21:31:20.736Z","component":"AdminApp","message":"Netlify Identity widget not available, retrying...","context":{}}
-admin-sa7NZGIf.js:2 {"level":"INFO","timestamp":"2026-01-13T21:31:21.737Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
-admin-sa7NZGIf.js:2 {"level":"INFO","timestamp":"2026-01-13T21:31:21.745Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:22.396Z","component":"AdminDashboard","message":"Performing initial data load (page 1)."}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:22.396Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Starting chart data preparation {requestId: 1, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 0}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Date range {chartStartDate: '2025-06-06T11:31', chartEndDate: '2026-01-13T11:31', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:31:00.000Z'}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:25.344Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:25.345Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:25.756Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":3,"historyCount":100}}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Starting chart data preparation {requestId: 2, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 0}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Date range {chartStartDate: '2025-06-06T11:31', chartEndDate: '2026-01-13T11:31', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:31:00.000Z'}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Chart data preparation complete {requestId: 1}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:31:00.000Z'}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:27.778Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":7,"matched":3,"orphaned":4,"total_records":1369,"orphaned_records":23}}}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Starting chart data preparation {requestId: 1, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 1000}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Date range {chartStartDate: '2025-06-06T11:31', chartEndDate: '2026-01-13T11:31', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:31:00.000Z'}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:31:00.000Z'}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:28.496Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.1504983999999997,"days":4}}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Fetching unified history {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd'}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Fetching unified history {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd'}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Unified history received {count: 1156}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Filtered data by date range {originalCount: 1156, filteredCount: 1156, startLimit: '2025-06-06T21:31:00.000Z', endLimit: '2026-01-13T21:31:00.000Z'}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Processed chart points {count: 1156}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Chart data preparation complete {requestId: 2}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Unified history received {count: 1156}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Filtered data by date range {originalCount: 1156, filteredCount: 1156, startLimit: '2025-06-06T21:31:00.000Z', endLimit: '2026-01-13T21:31:00.000Z'}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Processed chart points {count: 1156}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Chart data preparation complete {requestId: 1}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:34.930Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:36.456Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:37.411Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:40.345Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:41.919Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:31:51.977Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:32:01.697Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:32:09.523Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:32:15.566Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.731Z","hook":"useFileUpload","message":"Processing new file list.","context":{"count":1}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.732Z","hook":"useFileUpload","message":"File list processed.","context":{"validImageCount":1,"oversizedCount":0,"zipCount":0}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.732Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Starting for files","context":{"fileCount":1,"fileNames":["Screenshot_20260112-133205.png"],"event":"CHECK_START"}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.732Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"includeData":true,"event":"PHASE1_START"}}
-uploadOptimizer-DFwZst0q.js:8 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
-uploadOptimizer-DFwZst0q.js:8 Client hash generated {hashPreview: '31dd29e9c41a1222...', imageLength: 351212}
-uploadOptimizer-DFwZst0q.js:8 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 27, avgPerFileMs: '27.00', …}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.759Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":27,"event":"HASHING_COMPLETE"}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:14.759Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:17.183Z","hook":"useFileUpload","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":2451,"avgPerFileMs":"2451.00","event":"PHASE1_COMPLETE"}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:17.183Z","hook":"useFileUpload","message":"UNIFIED_DUPLICATE_CHECK: Complete","context":{"totalFiles":1,"duplicates":0,"upgrades":0,"newFiles":1,"event":"CHECK_COMPLETE"}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:18.699Z","component":"AdminDashboard","message":"Starting bulk analysis.","context":{"fileCount":1,"isStoryMode":false,"forceReanalysis":false,"useAsync":false}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:18.699Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 starting - checking all files for duplicates","context":{"fileCount":1,"BATCH_API_LIMIT":1000,"includeData":false,"event":"PHASE1_START"}}
-uploadOptimizer-DFwZst0q.js:8 Calculating file hashes for batch {count: 1, fileNames: Array(1), event: 'FILE_HASH_START'}
-uploadOptimizer-DFwZst0q.js:8 Client hash generated {hashPreview: '31dd29e9c41a1222...', imageLength: 351212}
-uploadOptimizer-DFwZst0q.js:8 File hash batch complete {totalFiles: 1, successfulHashes: 1, failedHashes: 0, durationMs: 40, avgPerFileMs: '40.00', …}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:18.739Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Upfront hashing complete","context":{"fileCount":1,"durationMs":40,"event":"HASHING_COMPLETE"}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:18.739Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Processing chunks in parallel","context":{"numChunks":1,"chunkSize":1000,"event":"PARALLEL_BATCH_START"}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:19.177Z","component":"AdminDashboard","message":"DUPLICATE_CHECK: Phase 1 complete","context":{"totalFiles":1,"trueDuplicates":0,"needsUpgrade":0,"newFiles":1,"durationMs":478,"avgPerFileMs":"478.00","event":"PHASE1_COMPLETE"}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:19.177Z","component":"AdminDashboard","message":"Phase 2: Starting parallel analysis of non-duplicate files.","context":{"count":1,"upgrades":0,"new":1,"cachedDuplicates":0,"cachedUpgrades":0,"forceReanalysis":false}}
-uploadOptimizer-DFwZst0q.js:8 Processing 1 files. Initial concurrency: 1
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:19.178Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260112-133205.png","fileSize":263408,"forceReanalysis":false,"useAsync":false}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:19.209Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260112-133205.png","fileSize":263408,"forceReanalysis":false,"useAsync":false}}
-uploadOptimizer-DFwZst0q.js:8 {"level":"INFO","timestamp":"2026-01-13T21:33:29.853Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260112-133205.png","isDuplicate":false}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:29.853Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260112-133205.png","useAsync":false}}
-main-C-S4EtX-.js:37 {"level":"INFO","timestamp":"2026-01-13T21:33:29.877Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
-main-C-S4EtX-.js:37 [SW] Service worker already registered in this session.
-main-C-S4EtX-.js:37 {"level":"INFO","timestamp":"2026-01-13T21:33:29.903Z","service":"app-ui","message":"Detected admin page - skipping main app initialization"}
-localCache-DlN4dk1v.js:3 {"level":"info","timestamp":"2026-01-13T21:33:29.937Z","service":"localCache","message":"Cached analysis record: 8a6f9722-18c3-49e3-b199-e16eb9b3f60b","context":{"syncStatus":"synced"}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:29.937Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"8a6f9722-18c3-49e3-b199-e16eb9b3f60b"}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:29.937Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260112-133205.png","recordId":"8a6f9722-18c3-49e3-b199-e16eb9b3f60b","hasAnalysis":true,"analysisKeys":35}}
-AdminDashboard-D1drqTVc.js:7 {"level":"INFO","timestamp":"2026-01-13T21:33:29.938Z","component":"AdminDashboard","message":"Bulk analysis run complete."}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Starting chart data preparation {requestId: 2, selectedSystemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', historyCount: 1001}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Date range {chartStartDate: '2025-06-06T11:31', chartEndDate: '2026-01-13T11:33', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:33:00.000Z'}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Syncing weather data {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd', apiStartDate: '2025-06-06T21:31:00.000Z', apiEndDate: '2026-01-13T21:33:00.000Z'}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Weather sync complete
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Fetching unified history {systemId: '6ac431c7-fb5d-4714-8b2f-c16e2e9bc8dd'}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Unified history received {count: 1158}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Filtered data by date range {originalCount: 1158, filteredCount: 1158, startLimit: '2025-06-06T21:31:00.000Z', endLimit: '2026-01-13T21:33:00.000Z'}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Processed chart points {count: 1158}
-AdminDashboard-D1drqTVc.js:2 [HistoricalChart] Chart data preparation complete {requestId: 2}
+.netlify/functions/unified-diagnostics:1  Failed to load resource: the server responded with a status of 502 ()
+ {"level":"INFO","timestamp":"2026-01-22T00:25:30.511Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-141501.png","isDuplicate":true}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:30.511Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-141501.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:30.696Z","service":"localCache","message":"Cached analysis record: f8a1d74f-a4c6-4248-bff6-ca03564f5ce7","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:30.696Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"f8a1d74f-a4c6-4248-bff6-ca03564f5ce7"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:30.696Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151158.png","recordId":"f8a1d74f-a4c6-4248-bff6-ca03564f5ce7","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:30.848Z","service":"localCache","message":"Cached analysis record: 8c1fd209-cb27-4692-b7cc-ab3542abe05e","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:30.848Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"8c1fd209-cb27-4692-b7cc-ab3542abe05e"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:30.848Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-141501.png","recordId":"8c1fd209-cb27-4692-b7cc-ab3542abe05e","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Request cancelled (stale after unified history) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:32.843Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150940.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:32.843Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150940.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:32.848Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-141626.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:32.848Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-141626.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:33.035Z","service":"localCache","message":"Cached analysis record: cde06232-3798-4036-ad1d-636718c501ed","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:33.036Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"cde06232-3798-4036-ad1d-636718c501ed"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:33.036Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150940.png","recordId":"cde06232-3798-4036-ad1d-636718c501ed","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Filtered data by date range Object
+ [HistoricalChart] Processed chart points Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:33.216Z","service":"localCache","message":"Cached analysis record: e0b678a9-2e3e-45fe-bdab-800a539eac5a","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:33.216Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"e0b678a9-2e3e-45fe-bdab-800a539eac5a"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:33.216Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-141626.png","recordId":"e0b678a9-2e3e-45fe-bdab-800a539eac5a","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:33.928Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151419.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:33.928Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151419.png","useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ {"level":"info","timestamp":"2026-01-22T00:25:34.118Z","service":"localCache","message":"Cached analysis record: 0261ac17-9fe5-46c0-ba4b-52e7db57763d","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.118Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0261ac17-9fe5-46c0-ba4b-52e7db57763d"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.118Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151419.png","recordId":"0261ac17-9fe5-46c0-ba4b-52e7db57763d","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.739Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260118-124837.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.739Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260118-124837.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.785Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150315.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.785Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150315.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.873Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150509.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.873Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150509.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.919Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150828.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.919Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150828.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:34.924Z","service":"localCache","message":"Cached analysis record: 605a9c7a-8004-4875-a69f-e39c008a0831","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.924Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"605a9c7a-8004-4875-a69f-e39c008a0831"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.924Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260118-124837.png","recordId":"605a9c7a-8004-4875-a69f-e39c008a0831","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.980Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-081044.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:34.980Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-081044.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:35.396Z","service":"localCache","message":"Cached analysis record: ce1170a9-fc49-4914-b4d6-51efa2776b6b","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.396Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"ce1170a9-fc49-4914-b4d6-51efa2776b6b"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.396Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150315.png","recordId":"ce1170a9-fc49-4914-b4d6-51efa2776b6b","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:35.522Z","service":"localCache","message":"Cached analysis record: 8ec4c33d-2446-4e31-8536-dc4e552f437c","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.522Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"8ec4c33d-2446-4e31-8536-dc4e552f437c"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.522Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150509.png","recordId":"8ec4c33d-2446-4e31-8536-dc4e552f437c","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Request cancelled (stale after unified history) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:35.633Z","service":"localCache","message":"Cached analysis record: 6ddd6e96-7de0-4bdc-b8cc-27900efeeec0","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.633Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"6ddd6e96-7de0-4bdc-b8cc-27900efeeec0"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.633Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150828.png","recordId":"6ddd6e96-7de0-4bdc-b8cc-27900efeeec0","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:35.771Z","service":"localCache","message":"Cached analysis record: 0b9dcc1b-1a64-4115-a0d7-0a22573fce55","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.771Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0b9dcc1b-1a64-4115-a0d7-0a22573fce55"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.771Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-081044.png","recordId":"0b9dcc1b-1a64-4115-a0d7-0a22573fce55","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.771Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260119-140907.png","fileSize":269509,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.772Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151054.png","fileSize":273627,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.772Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151235.png","fileSize":270224,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.772Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151424.png","fileSize":271576,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.772Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150515.png","fileSize":272624,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.772Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151543.png","fileSize":270236,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.772Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151611.png","fileSize":272442,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.772Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150439.png","fileSize":271372,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.772Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150435.png","fileSize":270647,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:35.772Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151731.png","fileSize":270434,"forceReanalysis":false,"useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.429Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151054.png","fileSize":273627,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.431Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260119-140907.png","fileSize":269509,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.432Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151235.png","fileSize":270224,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.433Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151424.png","fileSize":271576,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.434Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150515.png","fileSize":272624,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.435Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151543.png","fileSize":270236,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.436Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151611.png","fileSize":272442,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.437Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150439.png","fileSize":271372,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.438Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150435.png","fileSize":270647,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.439Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151731.png","fileSize":270434,"forceReanalysis":false,"useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.440Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151742.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.440Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151742.png","useAsync":false}}
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Request cancelled (stale after unified history) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.615Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150105.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.615Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150105.png","useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ {"level":"info","timestamp":"2026-01-22T00:25:36.626Z","service":"localCache","message":"Cached analysis record: 5c8a0af5-87d6-4acd-864c-ebdcc2285f13","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.626Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.626Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151742.png","recordId":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:36.929Z","service":"localCache","message":"Cached analysis record: 69b8284d-b571-41b0-acd1-4c5e63cb8e84","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.929Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"69b8284d-b571-41b0-acd1-4c5e63cb8e84"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.929Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150105.png","recordId":"69b8284d-b571-41b0-acd1-4c5e63cb8e84","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.941Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150945.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:36.941Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150945.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:37.173Z","service":"localCache","message":"Cached analysis record: cde06232-3798-4036-ad1d-636718c501ed","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:37.173Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"cde06232-3798-4036-ad1d-636718c501ed"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:37.173Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150945.png","recordId":"cde06232-3798-4036-ad1d-636718c501ed","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:37.360Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150419.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:37.360Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150419.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:37.551Z","service":"localCache","message":"Cached analysis record: d165635d-1603-436b-a1ca-59160271b8e5","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:37.551Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d165635d-1603-436b-a1ca-59160271b8e5"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:37.551Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150419.png","recordId":"d165635d-1603-436b-a1ca-59160271b8e5","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:38.204Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-081049.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:38.204Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-081049.png","useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:25:38.376Z","service":"localCache","message":"Cached analysis record: 0b9dcc1b-1a64-4115-a0d7-0a22573fce55","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:38.376Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0b9dcc1b-1a64-4115-a0d7-0a22573fce55"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:38.376Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-081049.png","recordId":"0b9dcc1b-1a64-4115-a0d7-0a22573fce55","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:38.427Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-141631.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:38.427Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-141631.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.010Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151154.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.010Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151154.png","useAsync":false}}
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Request cancelled (stale after unified history) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.072Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260119-153433.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.072Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260119-153433.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.077Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151607.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.077Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151607.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.081Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150833.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.081Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150833.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.084Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-174844.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.084Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-174844.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:39.133Z","service":"localCache","message":"Cached analysis record: e0b678a9-2e3e-45fe-bdab-800a539eac5a","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.133Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"e0b678a9-2e3e-45fe-bdab-800a539eac5a"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.133Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-141631.png","recordId":"e0b678a9-2e3e-45fe-bdab-800a539eac5a","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.173Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-150936.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.173Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-150936.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:39.655Z","service":"localCache","message":"Cached analysis record: 5c6a0387-805a-472d-8fae-6480409b50ec","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.655Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"5c6a0387-805a-472d-8fae-6480409b50ec"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.655Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151154.png","recordId":"5c6a0387-805a-472d-8fae-6480409b50ec","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.811Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-174840.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.811Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-174840.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.816Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151722.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.816Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151722.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:39.820Z","service":"localCache","message":"Cached analysis record: 3eeda567-4ea6-452f-8b65-83f7fdfe3fd9","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.820Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"3eeda567-4ea6-452f-8b65-83f7fdfe3fd9"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:39.820Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260119-153433.png","recordId":"3eeda567-4ea6-452f-8b65-83f7fdfe3fd9","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:40.376Z","service":"localCache","message":"Cached analysis record: 0aeffe16-eff4-4bb2-8d07-b73bf69429fa","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.376Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0aeffe16-eff4-4bb2-8d07-b73bf69429fa"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.376Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151607.png","recordId":"0aeffe16-eff4-4bb2-8d07-b73bf69429fa","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Request cancelled (stale after unified history) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.562Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260118-124841.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.562Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260118-124841.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.568Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151229.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.568Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151229.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.571Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-141456.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.571Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-141456.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:40.574Z","service":"localCache","message":"Cached analysis record: 6ddd6e96-7de0-4bdc-b8cc-27900efeeec0","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.574Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"6ddd6e96-7de0-4bdc-b8cc-27900efeeec0"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.574Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150833.png","recordId":"6ddd6e96-7de0-4bdc-b8cc-27900efeeec0","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:40.689Z","service":"localCache","message":"Cached analysis record: 1702dfc5-ecab-40a1-8182-96d8daa27e97","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.689Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"1702dfc5-ecab-40a1-8182-96d8daa27e97"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:40.689Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-174844.png","recordId":"1702dfc5-ecab-40a1-8182-96d8daa27e97","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:41.159Z","service":"localCache","message":"Cached analysis record: 20741851-38df-4522-b07d-9818a80eff28","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:41.159Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"20741851-38df-4522-b07d-9818a80eff28"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:41.159Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-150936.png","recordId":"20741851-38df-4522-b07d-9818a80eff28","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:41.159Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151727.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:41.159Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151727.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:25:41.775Z","service":"localCache","message":"Cached analysis record: 1702dfc5-ecab-40a1-8182-96d8daa27e97","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:41.775Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"1702dfc5-ecab-40a1-8182-96d8daa27e97"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:41.775Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-174840.png","recordId":"1702dfc5-ecab-40a1-8182-96d8daa27e97","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:25:42.302Z","service":"localCache","message":"Cached analysis record: 5c8a0af5-87d6-4acd-864c-ebdcc2285f13","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.302Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.302Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151722.png","recordId":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:25:42.469Z","service":"localCache","message":"Cached analysis record: 605a9c7a-8004-4875-a69f-e39c008a0831","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.469Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"605a9c7a-8004-4875-a69f-e39c008a0831"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.469Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260118-124841.png","recordId":"605a9c7a-8004-4875-a69f-e39c008a0831","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.469Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260119-153437.png","fileSize":265844,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.470Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150955.png","fileSize":246988,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.470Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151747.png","fileSize":271850,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.470Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260120-141510.png","fileSize":236800,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.470Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260118-124847.png","fileSize":272849,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.470Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151239.png","fileSize":272600,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.470Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150112.png","fileSize":273415,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.470Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260120-141637.png","fileSize":264755,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.470Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151059.png","fileSize":271882,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.470Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260120-081054.png","fileSize":263192,"forceReanalysis":false,"useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:42.987Z","service":"localCache","message":"Cached analysis record: d784691b-6b8c-4302-944b-c8fc4253127b","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.987Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d784691b-6b8c-4302-944b-c8fc4253127b"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:42.987Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151229.png","recordId":"d784691b-6b8c-4302-944b-c8fc4253127b","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.145Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260119-153437.png","fileSize":265844,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.146Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150955.png","fileSize":246988,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.147Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151747.png","fileSize":271850,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.149Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260120-141510.png","fileSize":236800,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.150Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260118-124847.png","fileSize":272849,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.151Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151239.png","fileSize":272600,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.152Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150112.png","fileSize":273415,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.153Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260120-141637.png","fileSize":264755,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.154Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151059.png","fileSize":271882,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.155Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260120-081054.png","fileSize":263192,"forceReanalysis":false,"useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:25:43.156Z","service":"localCache","message":"Cached analysis record: 92acd527-43c0-4896-b3b9-fc416d58c9de","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.156Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"92acd527-43c0-4896-b3b9-fc416d58c9de"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.156Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-141456.png","recordId":"92acd527-43c0-4896-b3b9-fc416d58c9de","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:43.714Z","service":"localCache","message":"Cached analysis record: 5c8a0af5-87d6-4acd-864c-ebdcc2285f13","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151727.png","recordId":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260120-141642.png","fileSize":261877,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260119-140910.png","fileSize":269662,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150526.png","fileSize":245078,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150838.png","fileSize":270938,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151547.png","fileSize":270606,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151429.png","fileSize":270010,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151203.png","fileSize":272670,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150424.png","fileSize":267565,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-174849.png","fileSize":269627,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:43.714Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151618.png","fileSize":271510,"forceReanalysis":false,"useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:44.058Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260120-141642.png","fileSize":261877,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:44.059Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260119-140910.png","fileSize":269662,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:44.060Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150526.png","fileSize":245078,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:44.061Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150838.png","fileSize":270938,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:44.062Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151547.png","fileSize":270606,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:44.063Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151429.png","fileSize":270010,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:44.064Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151203.png","fileSize":272670,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:44.065Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150424.png","fileSize":267565,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:44.066Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-174849.png","fileSize":269627,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:44.067Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151618.png","fileSize":271510,"forceReanalysis":false,"useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:46.144Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151054.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:46.145Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151054.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:46.326Z","service":"localCache","message":"Cached analysis record: 97732ad4-acd2-47f6-8fb4-9769a34b033a","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:46.326Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"97732ad4-acd2-47f6-8fb4-9769a34b033a"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:46.326Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151054.png","recordId":"97732ad4-acd2-47f6-8fb4-9769a34b033a","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Request cancelled (stale after unified history) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Filtered data by date range Object
+ [HistoricalChart] Processed chart points Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:49.973Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150439.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:49.973Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150439.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:50.000Z","service":"localCache","message":"Cached analysis record: d165635d-1603-436b-a1ca-59160271b8e5","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:50.000Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d165635d-1603-436b-a1ca-59160271b8e5"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:50.000Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150439.png","recordId":"d165635d-1603-436b-a1ca-59160271b8e5","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.099Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151235.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.099Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151235.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.193Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150515.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.193Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150515.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.288Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151731.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.288Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151731.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:51.293Z","service":"localCache","message":"Cached analysis record: d784691b-6b8c-4302-944b-c8fc4253127b","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.293Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d784691b-6b8c-4302-944b-c8fc4253127b"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.293Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151235.png","recordId":"d784691b-6b8c-4302-944b-c8fc4253127b","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:51.398Z","service":"localCache","message":"Cached analysis record: 8ec4c33d-2446-4e31-8536-dc4e552f437c","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.398Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"8ec4c33d-2446-4e31-8536-dc4e552f437c"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.398Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150515.png","recordId":"8ec4c33d-2446-4e31-8536-dc4e552f437c","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.493Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150435.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.493Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150435.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:51.550Z","service":"localCache","message":"Cached analysis record: 5c8a0af5-87d6-4acd-864c-ebdcc2285f13","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.550Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.550Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151731.png","recordId":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:51.746Z","service":"localCache","message":"Cached analysis record: d165635d-1603-436b-a1ca-59160271b8e5","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.746Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d165635d-1603-436b-a1ca-59160271b8e5"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.746Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150435.png","recordId":"d165635d-1603-436b-a1ca-59160271b8e5","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.990Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151611.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:51.990Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151611.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:52.195Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151543.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:52.195Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151543.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:52.201Z","service":"localCache","message":"Cached analysis record: 0aeffe16-eff4-4bb2-8d07-b73bf69429fa","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:52.201Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0aeffe16-eff4-4bb2-8d07-b73bf69429fa"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:52.201Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151611.png","recordId":"0aeffe16-eff4-4bb2-8d07-b73bf69429fa","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:25:52.411Z","service":"localCache","message":"Cached analysis record: e126974a-0572-47ea-b4bc-ab33f9053881","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:52.411Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"e126974a-0572-47ea-b4bc-ab33f9053881"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:52.411Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151543.png","recordId":"e126974a-0572-47ea-b4bc-ab33f9053881","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:52.677Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151424.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:52.677Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151424.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:52.882Z","service":"localCache","message":"Cached analysis record: 0261ac17-9fe5-46c0-ba4b-52e7db57763d","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:52.882Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0261ac17-9fe5-46c0-ba4b-52e7db57763d"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:52.882Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151424.png","recordId":"0261ac17-9fe5-46c0-ba4b-52e7db57763d","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:53.122Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260119-153437.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:53.123Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260119-153437.png","useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:25:53.369Z","service":"localCache","message":"Cached analysis record: 3eeda567-4ea6-452f-8b65-83f7fdfe3fd9","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:53.369Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"3eeda567-4ea6-452f-8b65-83f7fdfe3fd9"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:53.369Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260119-153437.png","recordId":"3eeda567-4ea6-452f-8b65-83f7fdfe3fd9","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.030Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260119-140907.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.030Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260119-140907.png","useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:25:54.210Z","service":"localCache","message":"Cached analysis record: 3041df7a-3797-430e-9375-32bfce74eb40","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.210Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"3041df7a-3797-430e-9375-32bfce74eb40"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.210Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260119-140907.png","recordId":"3041df7a-3797-430e-9375-32bfce74eb40","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.211Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151622.png","fileSize":271059,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.211Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150556.png","fileSize":246050,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.211Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151737.png","fileSize":270868,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.211Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151551.png","fileSize":272940,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.211Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151209.png","fileSize":268931,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.211Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151244.png","fileSize":272599,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.211Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151751.png","fileSize":270938,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.211Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150114.png","fileSize":250177,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.211Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150959.png","fileSize":269289,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.211Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150445.png","fileSize":268700,"forceReanalysis":false,"useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.884Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150556.png","fileSize":246050,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.885Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151737.png","fileSize":270868,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.886Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151622.png","fileSize":271059,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.888Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151551.png","fileSize":272940,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.889Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151209.png","fileSize":268931,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.890Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151244.png","fileSize":272599,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.891Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151751.png","fileSize":270938,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.893Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150114.png","fileSize":250177,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.895Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150959.png","fileSize":269289,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:54.896Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150445.png","fileSize":268700,"forceReanalysis":false,"useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:25:55.506Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151059.png","isDuplicate":true}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:55.506Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151059.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:25:55.686Z","service":"localCache","message":"Cached analysis record: 8322bc7e-f486-4014-b3d3-4457b97443bf","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:55.686Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"8322bc7e-f486-4014-b3d3-4457b97443bf"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:25:55.686Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151059.png","recordId":"8322bc7e-f486-4014-b3d3-4457b97443bf","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Filtered data by date range Object
+ [HistoricalChart] Processed chart points Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:00.947Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150955.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:00.947Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150955.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:26:00.971Z","service":"localCache","message":"Cached analysis record: cde06232-3798-4036-ad1d-636718c501ed","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:00.971Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"cde06232-3798-4036-ad1d-636718c501ed"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:00.971Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150955.png","recordId":"cde06232-3798-4036-ad1d-636718c501ed","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:01.520Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260118-124847.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:01.521Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260118-124847.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:26:01.701Z","service":"localCache","message":"Cached analysis record: 605a9c7a-8004-4875-a69f-e39c008a0831","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:01.701Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"605a9c7a-8004-4875-a69f-e39c008a0831"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:01.701Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260118-124847.png","recordId":"605a9c7a-8004-4875-a69f-e39c008a0831","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:02.382Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-141510.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:02.383Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-141510.png","useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:26:02.563Z","service":"localCache","message":"Cached analysis record: f0af51ca-1329-4b36-829a-c28b7fd4392c","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:02.563Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"f0af51ca-1329-4b36-829a-c28b7fd4392c"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:02.563Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-141510.png","recordId":"f0af51ca-1329-4b36-829a-c28b7fd4392c","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.233Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150526.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.233Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150526.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.239Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-141637.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.239Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-141637.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.242Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151747.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.242Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151747.png","useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:26:03.425Z","service":"localCache","message":"Cached analysis record: 8ec4c33d-2446-4e31-8536-dc4e552f437c","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.425Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"8ec4c33d-2446-4e31-8536-dc4e552f437c"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.425Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150526.png","recordId":"8ec4c33d-2446-4e31-8536-dc4e552f437c","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.476Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151239.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.476Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151239.png","useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:26:03.534Z","service":"localCache","message":"Cached analysis record: e0b678a9-2e3e-45fe-bdab-800a539eac5a","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.534Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"e0b678a9-2e3e-45fe-bdab-800a539eac5a"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:03.534Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-141637.png","recordId":"e0b678a9-2e3e-45fe-bdab-800a539eac5a","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.069Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-081054.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.069Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-081054.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:26:04.074Z","service":"localCache","message":"Cached analysis record: 5c8a0af5-87d6-4acd-864c-ebdcc2285f13","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.074Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.074Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151747.png","recordId":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:26:04.270Z","service":"localCache","message":"Cached analysis record: d784691b-6b8c-4302-944b-c8fc4253127b","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.270Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d784691b-6b8c-4302-944b-c8fc4253127b"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.270Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151239.png","recordId":"d784691b-6b8c-4302-944b-c8fc4253127b","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.270Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150959.png","isDuplicate":true}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.270Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150959.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.275Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151618.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.275Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151618.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:26:04.390Z","service":"localCache","message":"Cached analysis record: 0b9dcc1b-1a64-4115-a0d7-0a22573fce55","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.390Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0b9dcc1b-1a64-4115-a0d7-0a22573fce55"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.390Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-081054.png","recordId":"0b9dcc1b-1a64-4115-a0d7-0a22573fce55","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.960Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151429.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.960Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151429.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:26:04.971Z","service":"localCache","message":"Cached analysis record: 6ae00743-8a8d-45b8-aee0-037b56292b56","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.971Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"6ae00743-8a8d-45b8-aee0-037b56292b56"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:04.971Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150959.png","recordId":"6ae00743-8a8d-45b8-aee0-037b56292b56","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:05.140Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260119-140910.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:05.140Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260119-140910.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:26:05.150Z","service":"localCache","message":"Cached analysis record: 0aeffe16-eff4-4bb2-8d07-b73bf69429fa","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:05.150Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0aeffe16-eff4-4bb2-8d07-b73bf69429fa"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:05.150Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151618.png","recordId":"0aeffe16-eff4-4bb2-8d07-b73bf69429fa","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Unified history received Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after unified history) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:05.227Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151203.png","isDuplicate":false}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:05.227Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151203.png","useAsync":false}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+local-cache-BMiJ5gFY.js:3 {"level":"info","timestamp":"2026-01-22T00:26:05.288Z","service":"localCache","message":"Cached analysis record: 0261ac17-9fe5-46c0-ba4b-52e7db57763d","context":{"syncStatus":"synced"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:05.288Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0261ac17-9fe5-46c0-ba4b-52e7db57763d"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:05.288Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151429.png","recordId":"0261ac17-9fe5-46c0-ba4b-52e7db57763d","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+local-cache-BMiJ5gFY.js:3 {"level":"info","timestamp":"2026-01-22T00:26:05.444Z","service":"localCache","message":"Cached analysis record: 3041df7a-3797-430e-9375-32bfce74eb40","context":{"syncStatus":"synced"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:05.444Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"3041df7a-3797-430e-9375-32bfce74eb40"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:05.444Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260119-140910.png","recordId":"3041df7a-3797-430e-9375-32bfce74eb40","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.047Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151547.png","isDuplicate":false}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:06.047Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151547.png","useAsync":false}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+local-cache-BMiJ5gFY.js:3 {"level":"info","timestamp":"2026-01-22T00:26:06.053Z","service":"localCache","message":"Cached analysis record: d784691b-6b8c-4302-944b-c8fc4253127b","context":{"syncStatus":"synced"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:06.053Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d784691b-6b8c-4302-944b-c8fc4253127b"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:06.053Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151203.png","recordId":"d784691b-6b8c-4302-944b-c8fc4253127b","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.224Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150112.png","isDuplicate":false}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:06.224Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150112.png","useAsync":false}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.340Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-174849.png","isDuplicate":false}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:06.340Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-174849.png","useAsync":false}}
+local-cache-BMiJ5gFY.js:3 {"level":"info","timestamp":"2026-01-22T00:26:06.351Z","service":"localCache","message":"Cached analysis record: e126974a-0572-47ea-b4bc-ab33f9053881","context":{"syncStatus":"synced"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:06.351Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"e126974a-0572-47ea-b4bc-ab33f9053881"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:06.352Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151547.png","recordId":"e126974a-0572-47ea-b4bc-ab33f9053881","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+local-cache-BMiJ5gFY.js:3 {"level":"info","timestamp":"2026-01-22T00:26:06.576Z","service":"localCache","message":"Cached analysis record: 69b8284d-b571-41b0-acd1-4c5e63cb8e84","context":{"syncStatus":"synced"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:06.576Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"69b8284d-b571-41b0-acd1-4c5e63cb8e84"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:06.576Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150112.png","recordId":"69b8284d-b571-41b0-acd1-4c5e63cb8e84","hasAnalysis":true,"analysisKeys":35}}
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.576Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150429.png","fileSize":271796,"forceReanalysis":false,"useAsync":false}}
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.576Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151135.png","fileSize":245343,"forceReanalysis":false,"useAsync":false}}
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.576Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260118-124851.png","fileSize":273756,"forceReanalysis":false,"useAsync":false}}
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.576Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260120-081034.png","fileSize":237774,"forceReanalysis":false,"useAsync":false}}
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.577Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260120-081059.png","fileSize":263245,"forceReanalysis":false,"useAsync":false}}
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.577Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260120-141516.png","fileSize":261387,"forceReanalysis":false,"useAsync":false}}
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.577Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-174854.png","fileSize":268952,"forceReanalysis":false,"useAsync":false}}
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.577Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-151435.png","fileSize":271581,"forceReanalysis":false,"useAsync":false}}
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:06.577Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260119-140915.png","fileSize":272290,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.577Z","service":"geminiService","message":"Starting synchronous analysis.","context":{"fileName":"Screenshot_20260117-150857.png","fileSize":247151,"forceReanalysis":false,"useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:26:06.766Z","service":"localCache","message":"Cached analysis record: 1702dfc5-ecab-40a1-8182-96d8daa27e97","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.766Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"1702dfc5-ecab-40a1-8182-96d8daa27e97"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.766Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-174849.png","recordId":"1702dfc5-ecab-40a1-8182-96d8daa27e97","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.907Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150429.png","fileSize":271796,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.909Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151135.png","fileSize":245343,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.912Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260118-124851.png","fileSize":273756,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.918Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260120-081034.png","fileSize":237774,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.921Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260120-081059.png","fileSize":263245,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.926Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260120-141516.png","fileSize":261387,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.930Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-174854.png","fileSize":268952,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.937Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-151435.png","fileSize":271581,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.954Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260119-140915.png","fileSize":272290,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.964Z","service":"geminiService","message":"Submitting request to /.netlify/functions/analyze?sync=true (Basic Fetch)","context":{"fileName":"Screenshot_20260117-150857.png","fileSize":247151,"forceReanalysis":false,"useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.982Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150424.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:06.982Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150424.png","useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:07.336Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-141642.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:07.336Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-141642.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:26:07.342Z","service":"localCache","message":"Cached analysis record: d165635d-1603-436b-a1ca-59160271b8e5","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:07.342Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d165635d-1603-436b-a1ca-59160271b8e5"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:07.342Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150424.png","recordId":"d165635d-1603-436b-a1ca-59160271b8e5","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:26:07.678Z","service":"localCache","message":"Cached analysis record: e0b678a9-2e3e-45fe-bdab-800a539eac5a","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:07.679Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"e0b678a9-2e3e-45fe-bdab-800a539eac5a"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:07.679Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-141642.png","recordId":"e0b678a9-2e3e-45fe-bdab-800a539eac5a","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:08.470Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150838.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:08.470Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150838.png","useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:26:08.673Z","service":"localCache","message":"Cached analysis record: 6ddd6e96-7de0-4bdc-b8cc-27900efeeec0","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:08.673Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"6ddd6e96-7de0-4bdc-b8cc-27900efeeec0"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:08.673Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150838.png","recordId":"6ddd6e96-7de0-4bdc-b8cc-27900efeeec0","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Request cancelled (stale after unified history) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.358Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150556.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.358Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150556.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.493Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151244.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.493Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151244.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:26:10.552Z","service":"localCache","message":"Cached analysis record: 8ec4c33d-2446-4e31-8536-dc4e552f437c","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.552Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"8ec4c33d-2446-4e31-8536-dc4e552f437c"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.552Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150556.png","recordId":"8ec4c33d-2446-4e31-8536-dc4e552f437c","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.652Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151737.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.652Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151737.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:26:10.714Z","service":"localCache","message":"Cached analysis record: d784691b-6b8c-4302-944b-c8fc4253127b","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.714Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d784691b-6b8c-4302-944b-c8fc4253127b"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.714Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151244.png","recordId":"d784691b-6b8c-4302-944b-c8fc4253127b","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.772Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151751.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.772Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151751.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.824Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151209.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.824Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151209.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:26:10.886Z","service":"localCache","message":"Cached analysis record: 5c8a0af5-87d6-4acd-864c-ebdcc2285f13","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.886Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:10.886Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151737.png","recordId":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:26:11.038Z","service":"localCache","message":"Cached analysis record: 5c8a0af5-87d6-4acd-864c-ebdcc2285f13","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.038Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.038Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151751.png","recordId":"5c8a0af5-87d6-4acd-864c-ebdcc2285f13","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.137Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150445.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.137Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150445.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:26:11.195Z","service":"localCache","message":"Cached analysis record: d784691b-6b8c-4302-944b-c8fc4253127b","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.195Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d784691b-6b8c-4302-944b-c8fc4253127b"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.195Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151209.png","recordId":"d784691b-6b8c-4302-944b-c8fc4253127b","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:26:11.397Z","service":"localCache","message":"Cached analysis record: d165635d-1603-436b-a1ca-59160271b8e5","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.397Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d165635d-1603-436b-a1ca-59160271b8e5"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.397Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150445.png","recordId":"d165635d-1603-436b-a1ca-59160271b8e5","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.496Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150114.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.496Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150114.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:26:11.761Z","service":"localCache","message":"Cached analysis record: 69b8284d-b571-41b0-acd1-4c5e63cb8e84","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.761Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"69b8284d-b571-41b0-acd1-4c5e63cb8e84"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.761Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150114.png","recordId":"69b8284d-b571-41b0-acd1-4c5e63cb8e84","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Request cancelled (stale after unified history) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.825Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151551.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:11.825Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151551.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:26:12.036Z","service":"localCache","message":"Cached analysis record: e126974a-0572-47ea-b4bc-ab33f9053881","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:12.036Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"e126974a-0572-47ea-b4bc-ab33f9053881"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:12.036Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151551.png","recordId":"e126974a-0572-47ea-b4bc-ab33f9053881","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:12.636Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151622.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:12.636Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151622.png","useAsync":false}}
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"info","timestamp":"2026-01-22T00:26:12.824Z","service":"localCache","message":"Cached analysis record: 0aeffe16-eff4-4bb2-8d07-b73bf69429fa","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:12.824Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0aeffe16-eff4-4bb2-8d07-b73bf69429fa"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:12.824Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151622.png","recordId":"0aeffe16-eff4-4bb2-8d07-b73bf69429fa","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Request cancelled (stale after weather sync) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:14.669Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-081059.png","isDuplicate":true}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:14.669Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-081059.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:26:14.857Z","service":"localCache","message":"Cached analysis record: 0f1f07a2-b118-4c09-b7f6-1c43f7268dca","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:14.857Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0f1f07a2-b118-4c09-b7f6-1c43f7268dca"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:14.857Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-081059.png","recordId":"0f1f07a2-b118-4c09-b7f6-1c43f7268dca","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Request cancelled (stale after unified history) Object
+ [HistoricalChart] Chart data preparation complete Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Filtered data by date range Object
+ [HistoricalChart] Processed chart points Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:18.302Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150429.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:18.302Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150429.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:26:18.327Z","service":"localCache","message":"Cached analysis record: d165635d-1603-436b-a1ca-59160271b8e5","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:18.327Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"d165635d-1603-436b-a1ca-59160271b8e5"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:18.327Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150429.png","recordId":"d165635d-1603-436b-a1ca-59160271b8e5","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ [HistoricalChart] Unified history received Object
+ [HistoricalChart] Filtered data by date range Object
+ [HistoricalChart] Processed chart points Object
+ [HistoricalChart] Chart data preparation complete Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:21.019Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-174854.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:21.020Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-174854.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:26:21.047Z","service":"localCache","message":"Cached analysis record: 1702dfc5-ecab-40a1-8182-96d8daa27e97","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:21.047Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"1702dfc5-ecab-40a1-8182-96d8daa27e97"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:21.047Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-174854.png","recordId":"1702dfc5-ecab-40a1-8182-96d8daa27e97","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ [HistoricalChart] Weather sync complete
+ [HistoricalChart] Fetching unified history Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:21.701Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-141516.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:21.701Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-141516.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:26:21.889Z","service":"localCache","message":"Cached analysis record: f0af51ca-1329-4b36-829a-c28b7fd4392c","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:21.890Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"f0af51ca-1329-4b36-829a-c28b7fd4392c"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:21.890Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-141516.png","recordId":"f0af51ca-1329-4b36-829a-c28b7fd4392c","hasAnalysis":true,"analysisKeys":35}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:21.945Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260120-081034.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:21.945Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260120-081034.png","useAsync":false}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"INFO","timestamp":"2026-01-22T00:26:22.443Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260119-140915.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:22.443Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260119-140915.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:22.635Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151135.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:22.635Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151135.png","useAsync":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:22.640Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-150857.png","isDuplicate":false}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:22.640Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-150857.png","useAsync":false}}
+ {"level":"info","timestamp":"2026-01-22T00:26:22.690Z","service":"localCache","message":"Cached analysis record: 0b9dcc1b-1a64-4115-a0d7-0a22573fce55","context":{"syncStatus":"synced"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:22.690Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0b9dcc1b-1a64-4115-a0d7-0a22573fce55"}}
+ {"level":"INFO","timestamp":"2026-01-22T00:26:22.690Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260120-081034.png","recordId":"0b9dcc1b-1a64-4115-a0d7-0a22573fce55","hasAnalysis":true,"analysisKeys":35}}
+ [HistoricalChart] Starting chart data preparation Object
+ [HistoricalChart] Date range Object
+ [HistoricalChart] Syncing weather data Object
+ {"level":"info","timestamp":"2026-01-22T00:26:23.237Z","service":"localCache","message":"Cached analysis record: 3041df7a-3797-430e-9375-32bfce74eb40","context":{"syncStatus":"synced"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:23.237Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"3041df7a-3797-430e-9375-32bfce74eb40"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:23.237Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260119-140915.png","recordId":"3041df7a-3797-430e-9375-32bfce74eb40","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+local-cache-BMiJ5gFY.js:3 {"level":"info","timestamp":"2026-01-22T00:26:23.929Z","service":"localCache","message":"Cached analysis record: 5c6a0387-805a-472d-8fae-6480409b50ec","context":{"syncStatus":"synced"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:23.929Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"5c6a0387-805a-472d-8fae-6480409b50ec"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:23.929Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151135.png","recordId":"5c6a0387-805a-472d-8fae-6480409b50ec","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Unified history received Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after unified history) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+local-cache-BMiJ5gFY.js:3 {"level":"info","timestamp":"2026-01-22T00:26:24.106Z","service":"localCache","message":"Cached analysis record: 6ddd6e96-7de0-4bdc-b8cc-27900efeeec0","context":{"syncStatus":"synced"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:24.106Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"6ddd6e96-7de0-4bdc-b8cc-27900efeeec0"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:24.106Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-150857.png","recordId":"6ddd6e96-7de0-4bdc-b8cc-27900efeeec0","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:24.106Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260118-124851.png","isDuplicate":false}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:24.106Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260118-124851.png","useAsync":false}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+main-app-q7Smynus.js:43 {"level":"INFO","timestamp":"2026-01-22T00:26:24.590Z","service":"geminiService","message":"Synchronous analysis successful.","context":{"fileName":"Screenshot_20260117-151435.png","isDuplicate":false}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:24.590Z","component":"AdminDashboard","message":"Processing analysis result.","context":{"fileName":"Screenshot_20260117-151435.png","useAsync":false}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Fetching unified history Object
+local-cache-BMiJ5gFY.js:3 {"level":"info","timestamp":"2026-01-22T00:26:24.750Z","service":"localCache","message":"Cached analysis record: 605a9c7a-8004-4875-a69f-e39c008a0831","context":{"syncStatus":"synced"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:24.750Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"605a9c7a-8004-4875-a69f-e39c008a0831"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:24.750Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260118-124851.png","recordId":"605a9c7a-8004-4875-a69f-e39c008a0831","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+local-cache-BMiJ5gFY.js:3 {"level":"info","timestamp":"2026-01-22T00:26:25.351Z","service":"localCache","message":"Cached analysis record: 0261ac17-9fe5-46c0-ba4b-52e7db57763d","context":{"syncStatus":"synced"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:25.351Z","component":"AdminDashboard","message":"Updated local cache with new analysis record","context":{"id":"0261ac17-9fe5-46c0-ba4b-52e7db57763d"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:25.351Z","component":"AdminDashboard","message":"Dispatching UPDATE_BULK_JOB_COMPLETED","context":{"fileName":"Screenshot_20260117-151435.png","recordId":"0261ac17-9fe5-46c0-ba4b-52e7db57763d","hasAnalysis":true,"analysisKeys":35}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:26:25.351Z","component":"AdminDashboard","message":"Bulk analysis run complete."}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Fetching unified history Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Unified history received Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after unified history) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Unified history received Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Filtered data by date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Processed chart points Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+
+&&
+
+ [BUNDLE-DEBUG] syncManager.ts module executed Object
+(anonymous) @ main-only-Cj0p_Xrg.js:2
+ {"level":"INFO","timestamp":"2026-01-22T00:33:26.837Z","service":"SyncManager","message":"SyncManager initialized","context":{"syncIntervalMs":90000}}
+ [BUNDLE-DEBUG] App.tsx module executed Object
+(anonymous) @ main-app-q7Smynus.js:43
+ {"level":"INFO","timestamp":"2026-01-22T00:33:26.949Z","component":"AdminApp","message":"Netlify Identity init event.","context":{"hasUser":true}}
+admin-fwiSjGW8.js:2 {"level":"INFO","timestamp":"2026-01-22T00:33:26.957Z","component":"AdminApp","message":"Netlify Identity widget initialized successfully","context":{}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:33:26.981Z","component":"AdminDashboard","message":"Performing initial data load (page 1)."}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:33:26.982Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history","forceRefresh":true}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:33:28.566Z","component":"ReconciliationDashboard","message":"Fetching data integrity report...","context":{}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:33:28.567Z","component":"CostDashboard","message":"Fetching usage stats","context":{"period":"weekly"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:33:29.265Z","component":"AdminDashboard","message":"Successfully fetched initial page data.","context":{"systemCount":3,"historyCount":100}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:33:30.841Z","component":"ReconciliationDashboard","message":"Data integrity report loaded.","context":{"summary":{"total_dl_sources":7,"matched":3,"orphaned":4,"total_records":2271,"orphaned_records":23}}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:33:31.789Z","component":"CostDashboard","message":"Usage stats loaded","context":{"totalCost":0.10863530000000002,"days":2}}
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Fetching unified history Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Fetching unified history Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Unified history received Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Filtered data by date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Processed chart points Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Unified history received Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Filtered data by date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Processed chart points Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Starting chart data preparation Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Syncing weather data Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Request cancelled (stale after weather sync) Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Weather sync complete
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Fetching unified history Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Unified history received Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Filtered data by date range Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Processed chart points Object
+AdminDashboard-DgvlStyC.js:2 [HistoricalChart] Chart data preparation complete Object
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:35:48.854Z","component":"AdminDashboard","message":"Starting action: isConfirmingDeletion."}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:35:49.700Z","component":"AdminDashboard","message":"isConfirmingDeletion completed successfully.","context":{}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:35:49.700Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:35:55.826Z","component":"AdminDashboard","message":"Starting action: isNormalizingIds."}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:35:58.097Z","component":"AdminDashboard","message":"Normalize-ids completed.","context":{"totalUpdated":0,"totalScanned":0}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:35:58.097Z","component":"AdminDashboard","message":"isNormalizingIds completed successfully.","context":{"result":{"normalized":0,"errors":[],"message":"Completed. Normalized 0 records."}}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:35:58.098Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:35:58.853Z","component":"AdminDashboard","message":"Starting action: isAutoAssociating."}
+.netlify/functions/admin/auto-associate:1  Failed to load resource: the server responded with a status of 404 ()
+AdminDashboard-DgvlStyC.js:7 {"level":"ERROR","timestamp":"2026-01-22T00:35:58.934Z","component":"AdminDashboard","message":"isAutoAssociating failed.","context":{"error":"HTTP 404"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:35:59.972Z","component":"AdminDashboard","message":"Starting action: isAutoAssociating."}
+.netlify/functions/admin/auto-associate:1  Failed to load resource: the server responded with a status of 404 ()
+AdminDashboard-DgvlStyC.js:7 {"level":"ERROR","timestamp":"2026-01-22T00:36:00.057Z","component":"AdminDashboard","message":"isAutoAssociating failed.","context":{"error":"HTTP 404"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:36:11.673Z","component":"AdminDashboard","message":"Starting action: isConfirmingDeletion."}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:36:12.128Z","component":"AdminDashboard","message":"isConfirmingDeletion completed successfully.","context":{}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:36:12.128Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history"}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:36:18.848Z","component":"AdminDashboard","message":"Starting action: isConfirmingDeletion."}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:36:19.156Z","component":"AdminDashboard","message":"isConfirmingDeletion completed successfully.","context":{}}
+AdminDashboard-DgvlStyC.js:7 {"level":"INFO","timestamp":"2026-01-22T00:36:19.156Z","component":"AdminDashboard","message":"Fetching admin page data.","context":{"page":1,"type":"history"}}
