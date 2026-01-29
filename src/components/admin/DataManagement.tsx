@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { AdminAction, AdminState } from '../../state/adminState';
 import StorageAnalytics from './StorageAnalytics';
 
@@ -45,6 +45,43 @@ const DataManagement: React.FC<DataManagementProps> = ({
         return duplicateSets.reduce((acc, set) => acc + set.length - 1, 0);
     }, [duplicateSets]);
 
+    const [exportingType, setExportingType] = useState<string | null>(null);
+    const [exportError, setExportError] = useState<string | null>(null);
+
+    const handleExport = useCallback(async (type: string, format: string) => {
+        setExportingType(type);
+        setExportError(null);
+        try {
+            const response = await fetch(`/.netlify/functions/export-data?type=${type}&format=${format}`);
+            if (!response.ok) {
+                let errorMsg = `Export failed (${response.status})`;
+                try {
+                    const errorData = await response.json();
+                    errorMsg = errorData.message || errorData.error || errorMsg;
+                } catch { /* use default message */ }
+                setExportError(errorMsg);
+                return;
+            }
+            const blob = await response.blob();
+            const disposition = response.headers.get('content-disposition');
+            const filenameMatch = disposition?.match(/filename="?([^"]+)"?/);
+            const filename = filenameMatch?.[1] || `bms-${type}-${new Date().toISOString().split('T')[0]}.${format}`;
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Network error';
+            setExportError(`Export failed: ${message}`);
+        } finally {
+            setExportingType(null);
+        }
+    }, []);
+
     return (
         <section>
             <h2 className="text-2xl font-semibold text-secondary mb-4 border-b border-gray-600 pb-2">Data Management</h2>
@@ -54,36 +91,33 @@ const DataManagement: React.FC<DataManagementProps> = ({
             <div className="mb-6 bg-green-900/20 p-4 rounded-lg border border-green-500/50">
                 <h3 className="font-semibold text-lg text-green-300 mb-2">📥 Export & Backup Data</h3>
                 <p className="text-sm text-gray-400 mb-4">Download your data for backup, analysis, or migration purposes.</p>
+                {exportError && (
+                    <p className="text-red-400 mb-3 p-2 bg-red-900/30 border border-red-500/50 rounded-md text-sm">{exportError}</p>
+                )}
                 <div className="flex flex-wrap gap-4">
                     <button
-                        onClick={() => {
-                            const url = '/.netlify/functions/export-data?type=history&format=csv';
-                            window.open(url, '_blank');
-                        }}
-                        className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2"
+                        onClick={() => handleExport('history', 'csv')}
+                        disabled={exportingType !== null}
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2 disabled:bg-green-900 disabled:cursor-not-allowed"
                     >
                         <span>📊</span>
-                        <span>Download History CSV</span>
+                        <span>{exportingType === 'history' ? 'Downloading...' : 'Download History CSV'}</span>
                     </button>
                     <button
-                        onClick={() => {
-                            const url = '/.netlify/functions/export-data?type=systems&format=csv';
-                            window.open(url, '_blank');
-                        }}
-                        className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2"
+                        onClick={() => handleExport('systems', 'csv')}
+                        disabled={exportingType !== null}
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2 disabled:bg-green-900 disabled:cursor-not-allowed"
                     >
                         <span>🔧</span>
-                        <span>Download Systems CSV</span>
+                        <span>{exportingType === 'systems' ? 'Downloading...' : 'Download Systems CSV'}</span>
                     </button>
                     <button
-                        onClick={() => {
-                            const url = '/.netlify/functions/export-data?type=full&format=json';
-                            window.open(url, '_blank');
-                        }}
-                        className="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2"
+                        onClick={() => handleExport('full', 'json')}
+                        disabled={exportingType !== null}
+                        className="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded-md transition-colors flex items-center gap-2 disabled:bg-green-900 disabled:cursor-not-allowed"
                     >
                         <span>💾</span>
-                        <span>Download Full Backup (JSON)</span>
+                        <span>{exportingType === 'full' ? 'Downloading...' : 'Download Full Backup (JSON)'}</span>
                     </button>
                 </div>
                 <p className="text-xs text-gray-500 mt-2">

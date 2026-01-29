@@ -275,25 +275,41 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Compress data to bypass 6MB Lambda payload limit
-        const compressed = zlib.gzipSync(data);
+        log.metric('export_size_bytes', data.length);
 
-        log.metric('export_original_size_bytes', data.length);
-        log.metric('export_compressed_size_bytes', compressed.length);
-        log.info('Export completed', { type, format, originalSize: data.length, compressedSize: compressed.length });
+        // Only gzip-compress if data exceeds 5MB to bypass 6MB Lambda payload limit
+        const COMPRESS_THRESHOLD = 5 * 1024 * 1024;
+        if (data.length > COMPRESS_THRESHOLD) {
+            const compressed = zlib.gzipSync(data);
+            log.info('Export completed (compressed)', { type, format, originalSize: data.length, compressedSize: compressed.length });
+            timer.end({ success: true });
+            log.exit(200, { type, format, size: data.length, compressedSize: compressed.length });
+
+            return {
+                statusCode: 200,
+                headers: {
+                    ...headers,
+                    'Content-Type': contentType,
+                    'Content-Disposition': `attachment; filename="${filename}"`,
+                    'Content-Encoding': 'gzip'
+                },
+                body: compressed.toString('base64'),
+                isBase64Encoded: true
+            };
+        }
+
+        log.info('Export completed', { type, format, size: data.length });
         timer.end({ success: true });
-        log.exit(200, { type, format, size: data.length, compressedSize: compressed.length });
+        log.exit(200, { type, format, size: data.length });
 
         return {
             statusCode: 200,
             headers: {
                 ...headers,
                 'Content-Type': contentType,
-                'Content-Disposition': `attachment; filename="${filename}"`,
-                'Content-Encoding': 'gzip'
+                'Content-Disposition': `attachment; filename="${filename}"`
             },
-            body: compressed.toString('base64'),
-            isBase64Encoded: true
+            body: data
         };
 
     } catch (error) {
