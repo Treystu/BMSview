@@ -27,7 +27,9 @@ const DEFAULT_SETTINGS = {
   weatherApiKey: '',
   latitude: 19.442831,  // Big Island, Hawaii
   longitude: -154.943977,
-  outputDir: './output'
+  outputDir: './output',
+  batchConcurrency: 5,  // Parallel API calls for batch processing (5 is safe for Gemini rate limits)
+  screenshotsDir: './Screenshots'
 };
 
 /**

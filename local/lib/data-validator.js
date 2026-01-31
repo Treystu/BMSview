@@ -1,7 +1,33 @@
 /**
  * Data Validation and Repair Module
  * Validates and repairs BMS records with intelligent column detection
+ *
+ * INCLUDES: Zero-Tolerance Timestamp Policy enforcement
+ * - Extracts timestamps from filenames using TimeAuthority
+ * - Sets default fullCapacity (660Ah) when missing
  */
+
+const path = require('path');
+
+// Import TimeAuthority for strict timestamp extraction
+let TimeAuthority;
+try {
+  TimeAuthority = require('../src/services/TimeAuthority');
+} catch (e) {
+  // Fallback if TimeAuthority not available
+  TimeAuthority = {
+    tryExtractTimestamp: (filename) => {
+      const match = filename?.match(/Screenshot_(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})/);
+      if (!match) return null;
+      const [, year, month, day, hour, minute, second] = match;
+      return `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+    },
+    stripTimezoneInfo: (ts) => ts?.replace(/\.\d{3}/, '').replace(/Z$/, '').replace(/[+-]\d{2}:\d{2}$/, '')
+  };
+}
+
+// Default full capacity for the battery system (660Ah)
+const DEFAULT_FULL_CAPACITY = 660;
 
 // Validation rules for BMS data
 const VALIDATION_RULES = {
@@ -196,15 +222,56 @@ function detectCorruption(record) {
 /**
  * Attempt to repair a corrupted record
  * Handles column shift corruption where data was inserted without proper alignment
+ * ALSO: Extracts timestamps from filenames and sets default fullCapacity
  * @param {object} record - The corrupted record
  * @returns {object} { repaired: boolean, record: object, changes: string[] }
  */
 function repairRecord(record) {
   const changes = [];
   const repaired = { ...record };
+  let needsRepair = false;
 
+  // === TIMESTAMP FIX (Zero-Tolerance Timestamp Policy) ===
+  // ALWAYS verify/extract timestamp from filename - trust the filename, not existing data
+  if (repaired.fileName) {
+    const extracted = TimeAuthority.tryExtractTimestamp(repaired.fileName);
+    if (extracted) {
+      // Strip timezone info from existing value for comparison
+      const existingClean = repaired.timestampFromFilename
+        ? TimeAuthority.stripTimezoneInfo(repaired.timestampFromFilename)
+        : null;
+
+      // If no existing timestamp, or it doesn't match what we extract, fix it
+      if (!existingClean || existingClean !== extracted) {
+        const oldValue = repaired.timestampFromFilename || 'empty';
+        repaired.timestampFromFilename = extracted;
+        changes.push(`timestampFromFilename: "${oldValue}" -> "${extracted}" (from filename)`);
+        needsRepair = true;
+      }
+    }
+  }
+  // Handle case where we can't extract but existing has timezone info
+  else if (repaired.timestampFromFilename && (repaired.timestampFromFilename.endsWith('Z') || repaired.timestampFromFilename.includes('+'))) {
+    const stripped = TimeAuthority.stripTimezoneInfo(repaired.timestampFromFilename);
+    if (stripped !== repaired.timestampFromFilename) {
+      repaired.timestampFromFilename = stripped;
+      changes.push(`timestampFromFilename: stripped timezone -> "${stripped}"`);
+      needsRepair = true;
+    }
+  }
+
+  // === FULL CAPACITY FIX ===
+  // If fullCapacity is 0, null, or missing, set to default (660Ah)
+  const fullCap = parseFloat(repaired.fullCapacity);
+  if (isNaN(fullCap) || fullCap === 0 || fullCap === null) {
+    repaired.fullCapacity = DEFAULT_FULL_CAPACITY;
+    changes.push(`fullCapacity: ${record.fullCapacity || 'null'} -> ${DEFAULT_FULL_CAPACITY}Ah (default)`);
+    needsRepair = true;
+  }
+
+  // === CORRUPTION DETECTION ===
   const corruption = detectCorruption(record);
-  if (!corruption.corrupted) {
+  if (!corruption.corrupted && !needsRepair) {
     return { repaired: false, record, changes: [] };
   }
 
@@ -277,10 +344,11 @@ function repairRecord(record) {
     if (value === 'NaN' || (typeof value === 'number' && isNaN(value))) {
       repaired[key] = null;
       changes.push(`${key}: NaN -> null`);
+      needsRepair = true;
     }
   }
 
-  return { repaired: true, record: repaired, changes };
+  return { repaired: needsRepair || changes.length > 0, record: repaired, changes };
 }
 
 /**

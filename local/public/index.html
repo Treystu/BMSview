@@ -518,6 +518,72 @@
       to { transform: rotate(360deg); }
     }
 
+    /* Progress Bar */
+    .progress-container {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    #progress-title {
+      font-weight: 600;
+      font-size: 1.1rem;
+    }
+
+    #progress-percent {
+      font-size: 1.4rem;
+      font-weight: bold;
+      color: var(--accent);
+    }
+
+    .progress-bar-outer {
+      background: var(--bg-primary);
+      border-radius: 8px;
+      height: 24px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .progress-bar-inner {
+      background: linear-gradient(90deg, var(--accent), #22c55e);
+      height: 100%;
+      border-radius: 8px;
+      transition: width 0.3s ease;
+    }
+
+    .progress-stats {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .progress-stats span {
+      padding: 4px 10px;
+      background: var(--bg-card);
+      border-radius: 4px;
+    }
+
+    #progress-cost {
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    .progress-phase {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      font-style: italic;
+    }
+
     /* Cost display in results */
     .cost-info {
       margin-top: 15px;
@@ -706,25 +772,38 @@
 
     <!-- Upload Tab -->
     <div id="upload-tab" class="tab-content active">
-      <!-- Model Selection -->
-      <div class="model-section">
-        <h3>🤖 Select AI Model</h3>
-        <div class="model-grid" id="model-grid">
-          <!-- Models loaded dynamically -->
+      <div id="status" class="status"></div>
+
+      <!-- Progress Bar (hidden until upload starts) -->
+      <div id="progress-container" class="progress-container" style="display: none;">
+        <div class="progress-header">
+          <span id="progress-title">Processing...</span>
+          <span id="progress-percent">0%</span>
         </div>
-        <div class="cost-estimate">
+        <div class="progress-bar-outer">
+          <div id="progress-bar" class="progress-bar-inner" style="width: 0%"></div>
+        </div>
+        <div class="progress-stats">
+          <span id="progress-count">0 / 0</span>
+          <span id="progress-rate">0/sec</span>
+          <span id="progress-eta">ETA: --</span>
+          <span id="progress-cost">$0.00</span>
+        </div>
+        <div id="progress-phase" class="progress-phase"></div>
+      </div>
+
+      <!-- Auto-Verify Info -->
+      <div style="background: var(--bg-secondary); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.5rem;">🔬</span>
           <div>
-            <div class="cost-label">Estimated cost per image:</div>
-            <div id="cost-per-image" class="cost-value">$0.000225</div>
-          </div>
-          <div>
-            <div class="cost-label">Cost per 1,000 images:</div>
-            <div id="cost-per-thousand" class="cost-value">$0.23</div>
+            <strong>Smart Verification</strong>
+            <div style="color: var(--text-secondary); font-size: 0.85em;">
+              Parallel processing • Auto-skips complete records • Physics validation • Data sanitization
+            </div>
           </div>
         </div>
       </div>
-
-      <div id="status" class="status"></div>
 
       <div class="upload-zone" id="upload-zone">
         <h2>📸 Drop BMS Screenshots or ZIP Here</h2>
@@ -760,32 +839,35 @@
 
       <div class="settings-section">
         <h3>🔑 API Keys</h3>
+        <form autocomplete="off" onsubmit="return false;">
+          <!-- Hidden username field for accessibility (prevents browser warning) -->
+          <input type="text" name="username" autocomplete="username" style="display:none;" aria-hidden="true">
+          <div class="form-group">
+            <label>Gemini API Key (Required)</label>
+            <div id="gemini-status" class="key-status missing">
+              ❌ Not configured
+            </div>
+            <input type="password" id="gemini-key" placeholder="Enter your Gemini API key" autocomplete="new-password">
+            <p class="help-text">Get your key from <a href="https://makersuite.google.com/app/apikey" target="_blank" style="color: var(--accent);">Google AI Studio</a></p>
+            <div class="btn-row">
+              <button type="button" class="btn" onclick="saveGeminiKey()">Save Key</button>
+              <button type="button" class="btn btn-danger" onclick="deleteGeminiKey()">Delete Key</button>
+            </div>
+          </div>
 
-        <div class="form-group">
-          <label>Gemini API Key (Required)</label>
-          <div id="gemini-status" class="key-status missing">
-            ❌ Not configured
+          <div class="form-group">
+            <label>OpenWeatherMap API Key (Optional - for weather data)</label>
+            <div id="weather-status" class="key-status missing">
+              ❌ Not configured
+            </div>
+            <input type="password" id="weather-key" placeholder="Enter your OpenWeatherMap API key" autocomplete="new-password">
+            <p class="help-text">Get your key from <a href="https://openweathermap.org/api" target="_blank" style="color: var(--accent);">OpenWeatherMap</a></p>
+            <div class="btn-row">
+              <button type="button" class="btn" onclick="saveWeatherKey()">Save Key</button>
+              <button type="button" class="btn btn-danger" onclick="deleteWeatherKey()">Delete Key</button>
+            </div>
           </div>
-          <input type="password" id="gemini-key" placeholder="Enter your Gemini API key">
-          <p class="help-text">Get your key from <a href="https://makersuite.google.com/app/apikey" target="_blank" style="color: var(--accent);">Google AI Studio</a></p>
-          <div class="btn-row">
-            <button class="btn" onclick="saveGeminiKey()">Save Key</button>
-            <button class="btn btn-danger" onclick="deleteGeminiKey()">Delete Key</button>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label>OpenWeatherMap API Key (Optional - for weather data)</label>
-          <div id="weather-status" class="key-status missing">
-            ❌ Not configured
-          </div>
-          <input type="password" id="weather-key" placeholder="Enter your OpenWeatherMap API key">
-          <p class="help-text">Get your key from <a href="https://openweathermap.org/api" target="_blank" style="color: var(--accent);">OpenWeatherMap</a></p>
-          <div class="btn-row">
-            <button class="btn" onclick="saveWeatherKey()">Save Key</button>
-            <button class="btn btn-danger" onclick="deleteWeatherKey()">Delete Key</button>
-          </div>
-        </div>
+        </form>
       </div>
 
       <div class="settings-section">
@@ -834,6 +916,20 @@
           <button class="btn btn-secondary" onclick="resetColumnSettings()">Reset to Default</button>
         </div>
       </div>
+
+      <div class="settings-section">
+        <h3>🔬 Data Re-Analysis</h3>
+        <p class="help-text" style="margin-bottom: 15px;">Re-analyze records that are missing temperature or other extraction data</p>
+        <div id="reanalysis-status" style="margin-bottom: 15px; padding: 15px; background: var(--bg-card); border-radius: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Loading status...</span>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn" onclick="runReanalysis()" id="reanalysis-run-btn">🔄 Run Re-Analysis</button>
+          <button class="btn btn-secondary" onclick="checkReanalysisStatus()">📊 Check Status</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -845,19 +941,26 @@
     const ALL_COLUMNS = [
       { id: 'time', label: 'Time', default: true, sortKey: 'timestampFromFilename', sortType: 'date' },
       { id: 'systemId', label: 'System ID', default: true, sortKey: 'hardwareSystemId', sortType: 'string' },
-      { id: 'fileName', label: 'File Name', default: true, sortKey: 'fileName', sortType: 'string' },
+      { id: 'fileName', label: 'File Name', default: false, sortKey: 'fileName', sortType: 'string' },
       { id: 'soc', label: 'SOC %', default: true, sortKey: 'stateOfCharge', sortType: 'number' },
       { id: 'voltage', label: 'Voltage', default: true, sortKey: 'overallVoltage', sortType: 'number' },
       { id: 'current', label: 'Current', default: true, sortKey: 'current', sortType: 'number' },
       { id: 'power', label: 'Power', default: true, sortKey: 'power', sortType: 'number' },
       { id: 'capacity', label: 'Capacity', default: true, sortKey: 'remainingCapacity', sortType: 'number' },
       { id: 'cycles', label: 'Cycles', default: true, sortKey: 'cycleCount', sortType: 'number' },
+      { id: 'highCell', label: 'High Cell', default: false, sortKey: 'highestCellVoltage', sortType: 'number' },
+      { id: 'lowCell', label: 'Low Cell', default: false, sortKey: 'lowestCellVoltage', sortType: 'number' },
+      { id: 'avgCell', label: 'Avg Cell', default: false, sortKey: 'averageCellVoltage', sortType: 'number' },
       { id: 'cellDiff', label: 'Cell Diff', default: true, sortKey: 'cellVoltageDifference', sortType: 'number' },
       { id: 'temps', label: 'Temperatures', default: true, sortKey: 'temperature_1', sortType: 'number' },
+      { id: 'mosTemp', label: 'MOS Temp', default: false, sortKey: 'mosTemperature', sortType: 'number' },
+      { id: 'chargeMos', label: 'Charge MOS', default: false, sortKey: 'chargeMosOn', sortType: 'boolean' },
+      { id: 'dischargeMos', label: 'Discharge MOS', default: false, sortKey: 'dischargeMosOn', sortType: 'boolean' },
+      { id: 'balance', label: 'Balance', default: false, sortKey: 'balanceOn', sortType: 'boolean' },
       { id: 'solar', label: 'Solar (W/m²)', default: true, sortKey: 'solar_ghi', sortType: 'number' },
-      { id: 'weather', label: 'Weather', default: true, sortKey: 'weather_temp', sortType: 'number' },
-      { id: 'model', label: 'Model', default: true, sortKey: 'model_used', sortType: 'string' },
-      { id: 'cost', label: 'Cost', default: true, sortKey: 'cost_usd', sortType: 'number' },
+      { id: 'weather', label: 'Weather', default: false, sortKey: 'weather_temp', sortType: 'number' },
+      { id: 'model', label: 'Model', default: false, sortKey: 'model_used', sortType: 'string' },
+      { id: 'cost', label: 'Cost', default: false, sortKey: 'cost_usd', sortType: 'number' },
       { id: 'status', label: 'Status', default: true, sortKey: 'status', sortType: 'string' }
     ];
 
@@ -912,6 +1015,88 @@
         if (document.getElementById('history-tab').classList.contains('active')) {
           refreshHistory();
         }
+      }
+    }
+
+    // Reanalysis functions
+    async function checkReanalysisStatus() {
+      try {
+        const response = await fetch('/api/reanalysis/status');
+        const data = await response.json();
+
+        const statusDiv = document.getElementById('reanalysis-status');
+        if (statusDiv) {
+          if (data.needsReanalysis > 0) {
+            statusDiv.innerHTML = `
+              <div style="margin-bottom: 10px;">
+                <strong style="color: var(--warning);">⚠️ ${data.needsReanalysis} of ${data.total} records need re-analysis (${data.percentage}%)</strong>
+              </div>
+              <div style="font-size: 0.9em; color: var(--text-secondary);">
+                <div>• Missing temperatures: ${data.breakdown.missingTemperatures}</div>
+                <div>• Missing MOS temp: ${data.breakdown.missingMosTemperature}</div>
+                <div>• Missing cell voltages: ${data.breakdown.missingCellVoltages}</div>
+              </div>
+            `;
+          } else {
+            statusDiv.innerHTML = `
+              <div style="color: var(--success);">
+                <strong>✅ All ${data.total} records have complete extraction data</strong>
+              </div>
+            `;
+          }
+        }
+      } catch (error) {
+        console.error('Reanalysis status error:', error);
+        const statusDiv = document.getElementById('reanalysis-status');
+        if (statusDiv) {
+          statusDiv.innerHTML = `<span style="color: var(--error);">Error checking status: ${error.message}</span>`;
+        }
+      }
+    }
+
+    async function runReanalysis() {
+      const btn = document.getElementById('reanalysis-run-btn');
+      if (!btn) return;
+
+      // Check status first
+      const statusResponse = await fetch('/api/reanalysis/status');
+      const status = await statusResponse.json();
+
+      if (status.needsReanalysis === 0) {
+        alert('All records already have complete extraction data!');
+        return;
+      }
+
+      const count = Math.min(10, status.needsReanalysis);
+      if (!confirm(`Re-analyze ${count} records with missing data? (${status.needsReanalysis} total remaining)`)) {
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Processing...';
+
+      try {
+        const response = await fetch('/api/reanalysis/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 10 })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          alert(`Re-analysis complete!\n\nProcessed: ${result.processed}\nErrors: ${result.errors}\nRemaining: ${result.remaining}`);
+          // Refresh status and history
+          checkReanalysisStatus();
+          refreshHistory();
+        } else {
+          alert('Re-analysis failed: ' + (result.error || 'Unknown error'));
+        }
+      } catch (error) {
+        alert('Re-analysis error: ' + error.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Run Re-Analysis';
       }
     }
 
@@ -1114,57 +1299,229 @@
 
     async function analyzeFile(file) {
       const isZip = file.name.toLowerCase().endsWith('.zip');
-      showStatus(`Analyzing ${file.name}${isZip ? ' (ZIP file)' : ''}...`, 'loading');
+
+      // Show progress container for ZIP files
+      const progressContainer = document.getElementById('progress-container');
+      const progressBar = document.getElementById('progress-bar');
+      const progressPercent = document.getElementById('progress-percent');
+      const progressCount = document.getElementById('progress-count');
+      const progressRate = document.getElementById('progress-rate');
+      const progressEta = document.getElementById('progress-eta');
+      const progressCost = document.getElementById('progress-cost');
+      const progressPhase = document.getElementById('progress-phase');
+      const progressTitle = document.getElementById('progress-title');
+
+      if (isZip) {
+        progressContainer.style.display = 'block';
+        progressTitle.textContent = `Processing ${file.name}`;
+        progressBar.style.width = '0%';
+        progressPercent.textContent = '0%';
+        progressCount.textContent = '0 / ?';
+        progressRate.textContent = '--/sec';
+        progressEta.textContent = 'ETA: --';
+        progressCost.textContent = '$0.00';
+        progressPhase.textContent = 'Starting...';
+      }
+
+      hideStatus();
 
       const formData = new FormData();
       formData.append('image', file);
-      formData.append('model', selectedModel);
 
       try {
-        const response = await fetch('/api/analyze', {
+        // Use SSE streaming endpoint
+        const response = await fetch('/api/analyze-stream', {
           method: 'POST',
           body: formData
         });
 
-        // Check content type before parsing
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          const text = await response.text();
-          console.error('Non-JSON response:', text.substring(0, 500));
-          throw new Error('Server returned non-JSON response. Check console for details.');
-        }
-
-        let data;
-        try {
-          data = await response.json();
-        } catch (parseError) {
-          console.error('JSON parse error:', parseError);
-          throw new Error('Failed to parse server response as JSON');
-        }
-
         if (!response.ok) {
-          showStatus('❌ ' + (data.error || 'Unknown server error'), 'error');
-          return;
+          throw new Error(`HTTP ${response.status}`);
         }
 
-        if (data.isZip) {
-          // ZIP file results
-          const msg = `✅ Processed ${data.totalImages} images: ${data.processed} new, ${data.duplicates} duplicates, ${data.errors} errors. Total cost: ${data.totalCost.formatted}`;
-          showStatus(msg, 'success');
-          showZipResults(data);
-        } else if (data.duplicate) {
-          showStatus('⚠️ This screenshot was already analyzed', 'duplicate');
-          showResult(data.record, null);
-        } else {
-          const costMsg = data.cost ? ` (Cost: ${data.cost.formatted})` : '';
-          showStatus('✅ Analysis complete!' + costMsg, 'success');
-          showResult(data.record, data.cost);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let finalData = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Parse SSE events
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const event = JSON.parse(line.slice(6));
+                handleSSEEvent(event, {
+                  progressContainer, progressBar, progressPercent,
+                  progressCount, progressRate, progressEta,
+                  progressCost, progressPhase, progressTitle
+                });
+
+                if (event.type === 'complete') {
+                  finalData = event;
+                } else if (event.type === 'error') {
+                  throw new Error(event.message);
+                }
+              } catch (parseErr) {
+                console.warn('SSE parse error:', parseErr);
+              }
+            }
+          }
+        }
+
+        // Handle final results
+        if (finalData) {
+          if (isZip) {
+            const msg = `✅ Complete: ${finalData.processed} new, ${finalData.updated || 0} updated, ${finalData.skipped} skipped. Cost: $${finalData.totalCost}`;
+            showStatus(msg, 'success');
+            showZipResultsFromSSE(finalData);
+          } else if (finalData.duplicate) {
+            progressContainer.style.display = 'none';
+            showStatus('⚠️ This screenshot was already analyzed', 'duplicate');
+          } else {
+            progressContainer.style.display = 'none';
+            const costMsg = finalData.totalCost ? ` (Cost: $${finalData.totalCost})` : '';
+            showStatus('✅ Analysis complete!' + costMsg, 'success');
+          }
         }
 
       } catch (error) {
         console.error('Analysis error:', error);
+        progressContainer.style.display = 'none';
         showStatus('❌ ' + (error.message || 'Unknown error occurred'), 'error');
       }
+    }
+
+    function handleSSEEvent(event, ui) {
+      // Console log all SSE events for debugging
+      console.log(`[SSE] ${event.type}:`, event);
+
+      switch (event.type) {
+        case 'init':
+          console.log(`[Frontend] Initialized: ${event.total} images`);
+          ui.progressCount.textContent = `0 / ${event.total}`;
+          ui.progressPhase.textContent = event.message || 'Initializing...';
+          break;
+
+        case 'phase':
+          console.log(`[Frontend] Phase: ${event.phase} - ${event.message}`);
+          ui.progressPhase.textContent = event.message || event.phase;
+          break;
+
+        case 'precheck-complete':
+          // ★ PROMINENT PRE-CHECK DISPLAY
+          console.log(`[Frontend] ★ PRE-CHECK COMPLETE ★`);
+          console.log(`[Frontend]   Known-good (skipping): ${event.knownGood}`);
+          console.log(`[Frontend]   New images: ${event.newImages}`);
+          console.log(`[Frontend]   Needs re-analysis: ${event.needsReanalysis}`);
+
+          // Show pre-check results prominently
+          ui.progressTitle.textContent = `Pre-check: ${event.knownGood} already complete ✓`;
+          ui.progressPhase.innerHTML = `<strong style="color: #22c55e;">✓ ${event.knownGood} known-good records (skipping)</strong><br>` +
+            `${event.newImages} new • ${event.needsReanalysis} re-analyze`;
+          ui.progressPercent.textContent = `${event.knownGood}/${event.total}`;
+
+          // If everything is already complete, show special message
+          if (event.newImages === 0 && event.needsReanalysis === 0) {
+            ui.progressBar.style.width = '100%';
+            ui.progressBar.style.background = 'linear-gradient(90deg, #22c55e, #16a34a)';
+            ui.progressPhase.innerHTML = `<strong style="color: #22c55e;">✓ All ${event.knownGood} records already complete!</strong><br>Nothing to process.`;
+          }
+          break;
+
+        case 'filter-complete':
+          console.log(`[Frontend] Filter: ${event.toProcess} to process, ${event.skipped} skipped, ${event.invalid} invalid`);
+          ui.progressPhase.textContent = `${event.toProcess} to process, ${event.skipped} complete records skipped`;
+          ui.progressCount.textContent = `0 / ${event.toProcess}`;
+          break;
+
+        case 'progress':
+          ui.progressBar.style.width = event.percent + '%';
+          ui.progressPercent.textContent = event.percent + '%';
+          ui.progressCount.textContent = `${event.completed} / ${event.total}`;
+          ui.progressRate.textContent = `${event.rate}/sec`;
+          ui.progressEta.textContent = `ETA: ${formatEta(event.eta)}`;
+          ui.progressCost.textContent = `$${parseFloat(event.cost).toFixed(4)}`;
+
+          // Log every 10th progress update to reduce console spam
+          if (event.completed % 10 === 0 || event.completed === event.total) {
+            console.log(`[Frontend] Progress: ${event.completed}/${event.total} (${event.percent}%) - ${event.rate}/sec`);
+          }
+          break;
+
+        case 'complete':
+          console.log(`[Frontend] ★ COMPLETE ★ ${event.processed} processed, ${event.skipped} skipped in ${event.totalTime}s`);
+          ui.progressBar.style.width = '100%';
+          ui.progressPercent.textContent = '100%';
+          ui.progressPhase.textContent = `Done in ${event.totalTime}s (${event.rate} img/sec)`;
+          break;
+
+        case 'error':
+          console.error(`[Frontend] ERROR: ${event.message}`);
+          break;
+
+        default:
+          console.log(`[Frontend] Unknown event type: ${event.type}`, event);
+      }
+    }
+
+    function formatEta(seconds) {
+      if (!seconds || seconds < 0) return '--';
+      if (seconds < 60) return `${seconds}s`;
+      if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+      return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+    }
+
+    function showZipResultsFromSSE(data) {
+      const container = document.getElementById('result-container');
+
+      let html = `
+        <div class="result-card">
+          <div class="result-header">
+            <h3>📦 Processing Complete</h3>
+            <span class="badge normal">${data.processed + (data.updated || 0)} analyzed</span>
+          </div>
+          <div class="metrics-grid">
+            <div class="metric">
+              <div class="metric-label">Total Images</div>
+              <div class="metric-value">${data.totalImages}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">New Records</div>
+              <div class="metric-value positive">${data.processed}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Updated</div>
+              <div class="metric-value">${data.updated || 0}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Skipped (Complete)</div>
+              <div class="metric-value">${data.skipped}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Errors</div>
+              <div class="metric-value ${data.errors > 0 ? 'negative' : ''}">${data.errors}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Time</div>
+              <div class="metric-value">${data.totalTime}s</div>
+            </div>
+          </div>
+          <div class="cost-info">
+            <span>Total API Cost: <strong>$${data.totalCost}</strong></span>
+            <span>Rate: <strong>${data.rate} img/sec</strong></span>
+          </div>
+        </div>
+      `;
+
+      container.innerHTML = html;
     }
 
     function showZipResults(data) {
@@ -1833,6 +2190,28 @@
       `;
     }
 
+    /**
+     * Format timestamp for display WITHOUT timezone conversion
+     * Preserves local time sovereignty - if filename says 13:09:50, display 13:09:50
+     */
+    function formatTimestamp(timestamp) {
+      if (!timestamp) return '-';
+      // Parse our local format: "2026-01-26T13:09:50" -> "1/26/2026, 1:09:50 PM"
+      const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+      if (match) {
+        const [, year, month, day, hour, min, sec] = match;
+        const h = parseInt(hour, 10);
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const hour12 = h % 12 || 12;
+        return `${parseInt(month, 10)}/${parseInt(day, 10)}/${year}, ${hour12}:${min}:${sec} ${ampm}`;
+      }
+      // Fallback for UTC timestamps (legacy data with Z suffix)
+      if (timestamp.endsWith('Z')) {
+        return new Date(timestamp).toLocaleString();
+      }
+      return timestamp;
+    }
+
     function generateTableRow(r) {
       const displayTime = r.timestampFromFilename || r.timestamp;
       const soc = parseFloat(r.stateOfCharge) || 0;
@@ -1842,7 +2221,11 @@
       const remaining = parseFloat(r.remainingCapacity) || 0;
       const full = parseFloat(r.fullCapacity) || 0;
       const cycles = parseInt(r.cycleCount) || 0;
+      const highCell = parseFloat(r.highestCellVoltage) || 0;
+      const lowCell = parseFloat(r.lowestCellVoltage) || 0;
+      const avgCell = parseFloat(r.averageCellVoltage) || 0;
       const cellDiff = parseFloat(r.cellVoltageDifference) || 0;
+      const mosTemp = parseFloat(r.mosTemperature);
       const solarGhi = parseFloat(r.solar_ghi) || 0;
       const solarDni = parseFloat(r.solar_dni) || 0;
       const solarDhi = parseFloat(r.solar_dhi) || 0;
@@ -1858,17 +2241,24 @@
       const tempDisplay = temps.length > 0 ? temps.map(t => t + '°').join(' / ') : '-';
 
       const cells = [];
-      if (isColumnVisible('time')) cells.push(`<td title="${r.timestampFromFilename ? 'From filename' : 'Upload time'}">${new Date(displayTime).toLocaleString()}</td>`);
+      if (isColumnVisible('time')) cells.push(`<td title="${r.timestampFromFilename ? 'From filename' : 'Upload time'}">${formatTimestamp(displayTime)}</td>`);
       if (isColumnVisible('systemId')) cells.push(`<td>${r.hardwareSystemId || '-'}</td>`);
       if (isColumnVisible('fileName')) cells.push(`<td style="font-size: 0.75rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis;" title="${r.fileName || ''}">${r.fileName || '-'}</td>`);
       if (isColumnVisible('soc')) cells.push(`<td>${soc.toFixed(1)}%</td>`);
       if (isColumnVisible('voltage')) cells.push(`<td>${voltage.toFixed(2)}V</td>`);
       if (isColumnVisible('current')) cells.push(`<td style="color: ${current < 0 ? 'var(--error)' : 'var(--success)'}">${current.toFixed(2)}A</td>`);
       if (isColumnVisible('power')) cells.push(`<td style="color: ${power < 0 ? 'var(--error)' : 'var(--success)'}">${power.toFixed(1)}W</td>`);
-      if (isColumnVisible('capacity')) cells.push(`<td style="font-size: 0.8rem;">${remaining.toFixed(1)}/${full.toFixed(1)}Ah</td>`);
+      if (isColumnVisible('capacity')) cells.push(`<td style="font-size: 0.8rem;">${remaining.toFixed(1)}${full > 0 ? '/' + full.toFixed(0) : ''}Ah</td>`);
       if (isColumnVisible('cycles')) cells.push(`<td>${cycles}</td>`);
+      if (isColumnVisible('highCell')) cells.push(`<td style="font-size: 0.8rem;">${highCell > 0 ? highCell.toFixed(3) + 'V' : '-'}</td>`);
+      if (isColumnVisible('lowCell')) cells.push(`<td style="font-size: 0.8rem;">${lowCell > 0 ? lowCell.toFixed(3) + 'V' : '-'}</td>`);
+      if (isColumnVisible('avgCell')) cells.push(`<td style="font-size: 0.8rem;">${avgCell > 0 ? avgCell.toFixed(3) + 'V' : '-'}</td>`);
       if (isColumnVisible('cellDiff')) cells.push(`<td style="font-size: 0.8rem;">${(cellDiff * 1000).toFixed(1)}mV</td>`);
       if (isColumnVisible('temps')) cells.push(`<td style="font-size: 0.75rem;">${tempDisplay}</td>`);
+      if (isColumnVisible('mosTemp')) cells.push(`<td style="font-size: 0.8rem;">${!isNaN(mosTemp) ? mosTemp + '°' : '-'}</td>`);
+      if (isColumnVisible('chargeMos')) cells.push(`<td style="font-size: 0.8rem;">${r.chargeMosOn ? '🟢' : '⚪'}</td>`);
+      if (isColumnVisible('dischargeMos')) cells.push(`<td style="font-size: 0.8rem;">${r.dischargeMosOn ? '🟢' : '⚪'}</td>`);
+      if (isColumnVisible('balance')) cells.push(`<td style="font-size: 0.8rem;">${r.balanceOn ? '🟢' : '⚪'}</td>`);
       if (isColumnVisible('solar')) cells.push(`<td style="font-size: 0.8rem; color: var(--warning);" title="GHI: ${solarGhi} | DNI: ${solarDni} | DHI: ${solarDhi}">${solarGhi ? `☀️${Math.round(solarGhi)}` : '-'}</td>`);
       if (isColumnVisible('weather')) cells.push(`<td style="font-size: 0.8rem;">${!isNaN(weatherTemp) ? `${weatherTemp}°C ${r.weather_condition || ''} ☁${weatherClouds}%` : '-'}</td>`);
       if (isColumnVisible('model')) cells.push(`<td style="font-size: 0.8rem;">${(r.model_used || '-').replace('gemini-', '')}</td>`);
@@ -1899,6 +2289,7 @@
     // Initial load
     loadModels();
     loadSettings();
+    checkReanalysisStatus();
   </script>
 
   <!-- Refresh Status Bar (fixed position, bottom-right) -->

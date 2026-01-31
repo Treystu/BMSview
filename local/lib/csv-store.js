@@ -54,7 +54,11 @@ const CSV_COLUMNS = [
   'solar_dhi',     // Diffuse Horizontal Irradiance - scattered sky radiation
   'solar_direct',  // Direct radiation on horizontal surface
   'model_used',
-  'cost_usd'
+  'cost_usd',
+  'needs_reanalysis',  // Flag for records needing re-extraction
+  // Verification state system
+  'verification_state',  // A=complete, B=partial_needs_verify, C=verified_incomplete, D=inconclusive
+  'analysis_count'       // Number of times this record has been analyzed
 ];
 
 // In-memory cache of records (keyed by contentHash for fast dedup)
@@ -182,11 +186,12 @@ function csvRowToRecord(values, headers) {
       'averageCellVoltage', 'cellVoltageDifference', 'mosTemperature',
       'weather_temp', 'weather_clouds', 'weather_uvi',
       'solar_ghi', 'solar_dni', 'solar_dhi', 'solar_direct',
-      'temperature_1', 'temperature_2', 'temperature_3', 'temperature_4'].includes(header)) {
+      'temperature_1', 'temperature_2', 'temperature_3', 'temperature_4',
+      'analysis_count'].includes(header)) {
       value = value === '' ? null : parseFloat(value);
     }
     // Parse booleans
-    else if (['chargeMosOn', 'dischargeMosOn', 'balanceOn'].includes(header)) {
+    else if (['chargeMosOn', 'dischargeMosOn', 'balanceOn', 'needs_reanalysis'].includes(header)) {
       value = value === 'true';
     }
 
@@ -647,6 +652,35 @@ function getRecordByHash(contentHash) {
 }
 
 /**
+ * Batch lookup records by content hashes (optimized for large uploads)
+ * @param {string[]} hashes - Array of content hashes
+ * @returns {Map<string, object|null>} Map of hash -> record (or null if not found)
+ */
+function getRecordsByHashes(hashes) {
+  loadData();
+  const results = new Map();
+  for (const hash of hashes) {
+    results.set(hash, hashIndex.get(hash) || null);
+  }
+  return results;
+}
+
+/**
+ * Get all complete records (verification state A) by hash for quick skip check
+ * @returns {Set<string>} Set of content hashes for complete records
+ */
+function getCompleteRecordHashes() {
+  loadData();
+  const completeHashes = new Set();
+  for (const record of recordsCache) {
+    if (record.verification_state === 'A' && record.contentHash) {
+      completeHashes.add(record.contentHash);
+    }
+  }
+  return completeHashes;
+}
+
+/**
  * Force reload from disk (useful if file was modified externally)
  */
 function reloadData() {
@@ -751,16 +785,92 @@ function rewriteCSV() {
  */
 /**
  * Get records that are missing weather or solar data
- * Returns records where solar_ghi is missing (since solar is always available for free)
+ * Returns records where solar_ghi is null/undefined/empty (never fetched)
+ * NOTE: solar_ghi = 0 is VALID for nighttime readings - don't treat as missing!
  * @returns {Array} Records with missing data
  */
 function getRecordsMissingWeather() {
   loadData();
   return recordsCache.filter(r => {
-    // Check if solar data is missing (this is free, should always be fetched)
-    const missingSolar = r.solar_ghi === null || r.solar_ghi === undefined || r.solar_ghi === '' || r.solar_ghi === 0;
+    // Check if solar data was never fetched (null/undefined/empty string)
+    // Note: 0 is a valid value (nighttime, no sun) - don't treat as missing
+    const missingSolar = r.solar_ghi === null || r.solar_ghi === undefined || r.solar_ghi === '';
     return missingSolar;
   });
+}
+
+/**
+ * Get records that need re-analysis (missing temperature or other extraction data)
+ * @returns {Array} Records flagged for re-analysis
+ */
+function getRecordsNeedingReanalysis() {
+  loadData();
+  return recordsCache.filter(r => {
+    // If explicitly flagged
+    if (r.needs_reanalysis === true || r.needs_reanalysis === 'true') {
+      return true;
+    }
+    // Or if missing critical extraction data (temperatures)
+    const missingTemps = r.temperature_1 === null || r.temperature_1 === undefined || r.temperature_1 === '';
+    return missingTemps;
+  });
+}
+
+/**
+ * Flag records that are missing extraction data for re-analysis
+ * @param {function} onProgress - Progress callback
+ * @returns {object} Result with count of flagged records
+ */
+function flagRecordsForReanalysis(onProgress = null) {
+  loadData();
+
+  let flagged = 0;
+  const flaggedIds = [];
+
+  for (let i = 0; i < recordsCache.length; i++) {
+    const record = recordsCache[i];
+
+    // Check if missing critical extraction data
+    const missingTemps = record.temperature_1 === null || record.temperature_1 === undefined || record.temperature_1 === '';
+    const missingMosTemp = record.mosTemperature === null || record.mosTemperature === undefined || record.mosTemperature === '';
+
+    if (missingTemps || missingMosTemp) {
+      if (record.needs_reanalysis !== true && record.needs_reanalysis !== 'true') {
+        record.needs_reanalysis = true;
+        flaggedIds.push(record.id);
+        flagged++;
+      }
+    }
+
+    if (onProgress && i % 100 === 0) {
+      onProgress('flagging', i + 1, recordsCache.length, `Checking record ${i + 1}/${recordsCache.length}`);
+    }
+  }
+
+  if (flagged > 0) {
+    rewriteCSV();
+  }
+
+  return {
+    total: recordsCache.length,
+    flagged,
+    flaggedIds
+  };
+}
+
+/**
+ * Clear re-analysis flag for a record
+ * @param {string} id - Record ID
+ */
+function clearReanalysisFlag(id) {
+  loadData();
+  const record = recordsCache.find(r => r.id === id);
+  if (record) {
+    record.needs_reanalysis = false;
+    rewriteCSV();
+    return true;
+  }
+  return false;
 }
 
 module.exports = {
@@ -771,10 +881,15 @@ module.exports = {
   getAllRecords,
   isDuplicate,
   getRecordByHash,
+  getRecordsByHashes,
+  getCompleteRecordHashes,
   reloadData,
   getStats,
   getCsvPath,
   getRecordsMissingWeather,
+  getRecordsNeedingReanalysis,
+  flagRecordsForReanalysis,
+  clearReanalysisFlag,
   checkMigrationNeeded,
   performMigration,
   repairAllData,

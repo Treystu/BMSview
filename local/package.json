@@ -1,24 +1,27 @@
 {
   "name": "bms-analyzer-local",
-  "version": "1.0.0",
-  "description": "Simplified local BMS screenshot analyzer - extracts battery data to CSV",
-  "main": "server.js",
+  "version": "2.0.0",
+  "description": "BMS screenshot analyzer with Zero-Tolerance Timestamp Policy - extracts battery data to CSV",
+  "main": "src/server.js",
   "bin": {
-    "bms-analyzer": "./server.js"
+    "bms-analyzer": "./src/server.js"
   },
   "scripts": {
-    "start": "node server.js",
+    "start": "node src/server.js",
+    "start:legacy": "node server.js",
+    "dev": "node src/server.js",
     "build": "pkg . --targets node18-macos-x64 --output dist/bms-analyzer",
     "build:arm": "pkg . --targets node18-macos-arm64 --output dist/bms-analyzer-arm",
-    "dev": "node server.js"
+    "build:all": "pkg . --targets node18-macos-x64,node18-macos-arm64,node18-linux-x64,node18-win-x64 --out-path dist"
   },
   "pkg": {
     "scripts": [
-      "server.js",
+      "src/**/*.js",
       "lib/**/*.js"
     ],
     "assets": [
-      "public/**/*"
+      "public/**/*",
+      "src/prompts/**/*"
     ],
     "outputPath": "dist"
   },
