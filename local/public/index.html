@@ -1218,6 +1218,7 @@
 
     function renderModelGrid() {
       const grid = document.getElementById('model-grid');
+      if (!grid) return; // Model grid was removed from UI
       grid.innerHTML = models.map(model => `
         <div class="model-option ${model.id === selectedModel ? 'selected' : ''} ${model.recommended ? 'recommended' : ''}"
              onclick="selectModel('${model.id}')">
@@ -1238,8 +1239,10 @@
         const response = await fetch(`/api/estimate/${selectedModel}`);
         const data = await response.json();
 
-        document.getElementById('cost-per-image').textContent = data.estimatedCost.formatted;
-        document.getElementById('cost-per-thousand').textContent = data.estimatedCost.perThousandImages;
+        const costPerImage = document.getElementById('cost-per-image');
+        const costPerThousand = document.getElementById('cost-per-thousand');
+        if (costPerImage) costPerImage.textContent = data.estimatedCost.formatted;
+        if (costPerThousand) costPerThousand.textContent = data.estimatedCost.perThousandImages;
       } catch (error) {
         console.error('Failed to get cost estimate:', error);
       }
@@ -1634,7 +1637,7 @@
             </div>
             <div class="metric">
               <div class="metric-label">Cycle Count</div>
-              <div class="metric-value">${record.cycleCount || '0'}</div>
+              <div class="metric-value">${record.cycleCount != null ? record.cycleCount : '-'}</div>
             </div>
             <div class="metric">
               <div class="metric-label">Cell Difference</div>
@@ -2220,7 +2223,7 @@
       const power = parseFloat(r.power) || 0;
       const remaining = parseFloat(r.remainingCapacity) || 0;
       const full = parseFloat(r.fullCapacity) || 0;
-      const cycles = parseInt(r.cycleCount) || 0;
+      const cycles = r.cycleCount != null ? parseInt(r.cycleCount) : null;
       const highCell = parseFloat(r.highestCellVoltage) || 0;
       const lowCell = parseFloat(r.lowestCellVoltage) || 0;
       const avgCell = parseFloat(r.averageCellVoltage) || 0;
@@ -2248,8 +2251,8 @@
       if (isColumnVisible('voltage')) cells.push(`<td>${voltage.toFixed(2)}V</td>`);
       if (isColumnVisible('current')) cells.push(`<td style="color: ${current < 0 ? 'var(--error)' : 'var(--success)'}">${current.toFixed(2)}A</td>`);
       if (isColumnVisible('power')) cells.push(`<td style="color: ${power < 0 ? 'var(--error)' : 'var(--success)'}">${power.toFixed(1)}W</td>`);
-      if (isColumnVisible('capacity')) cells.push(`<td style="font-size: 0.8rem;">${remaining.toFixed(1)}${full > 0 ? '/' + full.toFixed(0) : ''}Ah</td>`);
-      if (isColumnVisible('cycles')) cells.push(`<td>${cycles}</td>`);
+      if (isColumnVisible('capacity')) cells.push(`<td style="font-size: 0.8rem;">${remaining.toFixed(1)}Ah</td>`);
+      if (isColumnVisible('cycles')) cells.push(`<td>${cycles !== null ? cycles : '-'}</td>`);
       if (isColumnVisible('highCell')) cells.push(`<td style="font-size: 0.8rem;">${highCell > 0 ? highCell.toFixed(3) + 'V' : '-'}</td>`);
       if (isColumnVisible('lowCell')) cells.push(`<td style="font-size: 0.8rem;">${lowCell > 0 ? lowCell.toFixed(3) + 'V' : '-'}</td>`);
       if (isColumnVisible('avgCell')) cells.push(`<td style="font-size: 0.8rem;">${avgCell > 0 ? avgCell.toFixed(3) + 'V' : '-'}</td>`);

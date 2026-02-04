@@ -14,7 +14,8 @@ module.exports = {
   getSolarIrradiance: weather.getSolarIrradiance,
   getSolarOnly: weather.getSolarOnly,
   clearCaches: weather.clearCaches,
-  getCacheStats: weather.getCacheStats
+  getCacheStats: weather.getCacheStats,
+  batchPreFetchWeather: weather.batchPreFetchWeather
   // NOTE: extractTimestampFromFilename is intentionally NOT exported
   // Use TimeAuthority.extractStrictTimestamp instead
 };

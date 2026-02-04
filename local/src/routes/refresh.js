@@ -9,7 +9,9 @@ const {
   getRecordsMissingWeather,
   updateRecord,
   reloadData,
-  repairAllData
+  repairAllData,
+  repairCycleCountData,
+  repairPhysicsViolations
 } = require('../services/csv-store');
 const { validateAndRepairAllWithTimestamps } = require('../services/data-validator');
 const { getWeather, getSolarOnly } = require('../services/weather');
@@ -181,17 +183,29 @@ async function runBackgroundRefresh() {
       broadcastSSE('progress', { phase: 'migration', current, total, message });
     });
 
-    if (repairResult.repaired > 0) {
+    // Also repair cycle counts (0 → null) and physics violations
+    const cycleRepair = repairCycleCountData();
+    console.log(`[Refresh] Cycle repair: fixed=${cycleRepair.fixed}, total=${cycleRepair.total}`);
+
+    const physicsRepair = repairPhysicsViolations();
+    console.log(`[Refresh] Physics repair: fixed=${physicsRepair.fixed}, total=${physicsRepair.total}`);
+
+    const totalRepaired = repairResult.repaired + cycleRepair.fixed + physicsRepair.fixed;
+
+    if (totalRepaired > 0) {
       broadcastSSE('phase', {
         phase: 'migration',
         status: 'complete',
-        message: `Repaired ${repairResult.repaired} of ${repairResult.total} records`
+        message: `Repaired ${totalRepaired} records (data: ${repairResult.repaired}, cycles: ${cycleRepair.fixed}, physics: ${physicsRepair.fixed})`
       });
       phases.push({
         phase: 'migration',
         success: true,
         total: repairResult.total,
-        repaired: repairResult.repaired,
+        repaired: totalRepaired,
+        dataRepairs: repairResult.repaired,
+        cycleRepairs: cycleRepair.fixed,
+        physicsRepairs: physicsRepair.fixed,
         valid: repairResult.valid
       });
     } else {

@@ -28,7 +28,9 @@ const {
   reloadData,
   checkMigrationNeeded,
   performMigration,
-  repairAllData
+  repairAllData,
+  repairCycleCountData,
+  repairPhysicsViolations
 } = require('./lib/csv-store');
 const { getWeather, getSolarOnly, extractTimestampFromFilename } = require('./lib/weather');
 const { getSettings, saveSettings, getSettingsPath } = require('./lib/settings');
@@ -717,29 +719,60 @@ app.get('/api/refresh-status', (req, res) => {
 
 // Background refresh function
 async function runBackgroundRefresh() {
+  console.log('[Refresh] ========== STARTING BACKGROUND REFRESH ==========');
   const settings = getSettings();
   const phases = [];
   let allRecords = [];
 
   try {
     // Phase 1: Validate and Repair Data
+    console.log('[Refresh] Phase 1: Starting validation and repair...');
     broadcastSSE('phase', { phase: 'migration', status: 'running', message: 'Validating and repairing data...' });
 
     const repairResult = repairAllData((phase, current, total, message) => {
       broadcastSSE('progress', { phase: 'migration', current, total, message });
     });
+    console.log('[Refresh] repairAllData complete:', repairResult);
 
-    if (repairResult.repaired > 0) {
+    // Also repair cycle count data (0 → null)
+    console.log('[Refresh] Starting cycle count repair...');
+    const cycleRepair = repairCycleCountData();
+    console.log('[Refresh] Cycle repair result:', cycleRepair);
+    if (cycleRepair.fixed > 0) {
+      console.log(`[Refresh] Fixed ${cycleRepair.fixed} cycle count values (0 → null)`);
+      broadcastSSE('phase', {
+        phase: 'cycle-repair',
+        status: 'complete',
+        message: `Fixed ${cycleRepair.fixed} cycle counts (0 → null)`
+      });
+    }
+
+    // Repair physics violations (V=0 or I=0 with P>0, SOC=0 with high cell voltage)
+    console.log('[Refresh] Starting physics violations repair...');
+    const physicsRepair = repairPhysicsViolations();
+    console.log('[Refresh] Physics repair result:', physicsRepair);
+    if (physicsRepair.totalFixed > 0) {
+      console.log(`[Refresh] Fixed ${physicsRepair.totalFixed} physics violations (V=${physicsRepair.voltageFixed}, I=${physicsRepair.currentFixed}, SOC=${physicsRepair.socFixed})`);
+      broadcastSSE('phase', {
+        phase: 'physics-repair',
+        status: 'complete',
+        message: `Fixed ${physicsRepair.totalFixed} physics violations`
+      });
+    }
+
+    const totalRepaired = repairResult.repaired + cycleRepair.fixed + physicsRepair.totalFixed;
+    if (totalRepaired > 0) {
       broadcastSSE('phase', {
         phase: 'migration',
         status: 'complete',
-        message: `Repaired ${repairResult.repaired} of ${repairResult.total} records`
+        message: `Repaired ${totalRepaired} records (${repairResult.repaired} data, ${cycleRepair.fixed} cycles)`
       });
       phases.push({
         phase: 'migration',
         success: true,
         total: repairResult.total,
         repaired: repairResult.repaired,
+        cyclesFixed: cycleRepair.fixed,
         valid: repairResult.valid
       });
     } else {
@@ -873,6 +906,9 @@ async function runBackgroundRefresh() {
     });
 
   } catch (error) {
+    console.error('[Refresh] ========== ERROR ==========');
+    console.error('[Refresh] Error:', error.message);
+    console.error('[Refresh] Stack:', error.stack);
     log('error', 'Background refresh error', { message: error.message, stack: error.stack });
     broadcastSSE('error', { error: error.message, phases });
   }

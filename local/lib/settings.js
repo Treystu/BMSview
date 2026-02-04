@@ -28,7 +28,10 @@ const DEFAULT_SETTINGS = {
   latitude: 19.442831,  // Big Island, Hawaii
   longitude: -154.943977,
   outputDir: './output',
-  batchConcurrency: 5,  // Parallel API calls for batch processing (5 is safe for Gemini rate limits)
+  batchConcurrency: 10,  // Parallel API calls (10 is safe for Gemini rate limits)
+  imageCompression: true,  // Compress images before sending to API
+  maxImageWidth: 1280,  // Max width for compressed images
+  imageQuality: 85,  // JPEG quality (0-100)
   screenshotsDir: './Screenshots'
 };
 

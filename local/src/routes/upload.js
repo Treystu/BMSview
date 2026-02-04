@@ -14,7 +14,7 @@ const { v4: uuidv4 } = require('uuid');
 const { extractStrictTimestamp, isValidFilename } = require('../services/TimeAuthority');
 const { analyzeImage, getAvailableModels, estimateCost, DEFAULT_MODEL } = require('../services/analyzer');
 const { saveRecord, getRecordByHash, getRecordsByHashes, getCompleteRecordHashes, updateRecord } = require('../services/csv-store');
-const { getWeather, getSolarOnly } = require('../services/weather');
+const { getWeather, getSolarOnly, batchPreFetchWeather } = require('../services/weather');
 const { getSettings } = require('../services/settings');
 const { extractImagesFromZip, isZipFile, isImageFile } = require('../services/zip-extractor');
 const {
@@ -29,9 +29,11 @@ const {
 const {
   processInParallel,
   preComputeHashes,
+  groupByWeatherHour,
   filterByExistingRecords,
   createProgressLogger
 } = require('../services/parallel-processor');
+const { batchCompressImages } = require('../services/image-optimizer');
 
 const router = express.Router();
 
@@ -361,10 +363,6 @@ async function processSingleImageOptimized(imageBuffer, fileName, mimeType, mode
   }
 
   const totalTime = Date.now() - funcStart;
-  // Only log slow operations (>3s) to reduce noise
-  if (totalTime > 3000) {
-    console.log(`[Upload] Slow: ${fileName} took ${totalTime}ms (API: ${apiTime}ms)`);
-  }
 
   return {
     success: true,
@@ -373,7 +371,11 @@ async function processSingleImageOptimized(imageBuffer, fileName, mimeType, mode
     fileName,
     wasUpdated,
     verificationState: verificationResult.state,
-    missingFields: verificationResult.missing
+    missingFields: verificationResult.missing,
+    timing: {
+      total: totalTime,
+      api: apiTime
+    }
   };
 }
 
@@ -803,6 +805,62 @@ router.post('/analyze-stream', upload.single('image'), handleMulterError, async 
         invalid: invalidFilenames.length
       });
 
+      // Phase 3.5: COMPRESS IMAGES before API calls
+      let imagesToProcess = validToProcess;
+      if (settings.imageCompression !== false && validToProcess.length > 0) {
+        console.log(`[Upload-SSE] Phase 3.5: Compressing ${validToProcess.length} images...`);
+        sendEvent('phase', { phase: 'compression', message: `Compressing ${validToProcess.length} images for faster upload...` });
+
+        const compressionOptions = {
+          maxWidth: settings.maxImageWidth || 1280,
+          quality: settings.imageQuality || 85,
+          concurrency: settings.batchConcurrency || 10
+        };
+
+        const compressionResult = await batchCompressImages(validToProcess, compressionOptions);
+        imagesToProcess = compressionResult.images;
+
+        console.log(`[Upload-SSE] Compression complete: saved ${compressionResult.stats.savings}`);
+        sendEvent('compression-complete', {
+          originalSize: (compressionResult.stats.totalOriginal / 1024 / 1024).toFixed(1) + 'MB',
+          compressedSize: (compressionResult.stats.totalCompressed / 1024 / 1024).toFixed(1) + 'MB',
+          savings: compressionResult.stats.savings,
+          elapsed: compressionResult.stats.elapsed + 'ms'
+        });
+      }
+
+      // Phase 3.6: PRE-FETCH WEATHER for all unique hours (batch optimization)
+      if ((settings.latitude && settings.longitude) && imagesToProcess.length > 0) {
+        const timestamps = imagesToProcess
+          .filter(img => img.timestamp)
+          .map(img => img.timestamp);
+
+        if (timestamps.length > 0) {
+          console.log(`[Upload-SSE] Phase 3.6: Pre-fetching weather for ${timestamps.length} timestamps...`);
+          sendEvent('phase', { phase: 'weather-prefetch', message: 'Pre-fetching weather data...' });
+
+          try {
+            const weatherResult = await batchPreFetchWeather(
+              settings.latitude,
+              settings.longitude,
+              settings.weatherApiKey || null,
+              timestamps,
+              { concurrency: 5 }
+            );
+
+            sendEvent('weather-prefetch-complete', {
+              fetched: weatherResult.fetched,
+              cached: weatherResult.cached,
+              failed: weatherResult.failed,
+              message: `Weather: ${weatherResult.fetched} fetched, ${weatherResult.cached} cached`
+            });
+          } catch (err) {
+            console.warn(`[Upload-SSE] Weather pre-fetch failed: ${err.message}`);
+            // Continue anyway - weather is optional
+          }
+        }
+      }
+
       // Phase 4: Process with real-time progress
       let totalCost = 0;
       let processed = 0;
@@ -810,13 +868,16 @@ router.post('/analyze-stream', upload.single('image'), handleMulterError, async 
       let errors = 0;
       const processStart = Date.now();
 
-      if (validToProcess.length > 0) {
-        sendEvent('phase', { phase: 'processing', message: `Processing ${validToProcess.length} images...` });
+      // Timing stats for batch summary (instead of per-file "Slow" logs)
+      const timingStats = { times: [], apiTimes: [], slowCount: 0 };
 
-        const concurrency = settings.batchConcurrency || 5;
+      if (imagesToProcess.length > 0) {
+        sendEvent('phase', { phase: 'processing', message: `Processing ${imagesToProcess.length} images...` });
+
+        const concurrency = settings.batchConcurrency || 10;
 
         await processInParallel(
-          validToProcess,
+          imagesToProcess,
           async (img) => {
             return await processSingleImageOptimized(
               img.buffer,
@@ -842,6 +903,13 @@ router.post('/analyze-stream', upload.single('image'), handleMulterError, async 
                 if (result.wasUpdated) updated++;
                 else processed++;
                 if (result.cost?.total) totalCost += result.cost.total;
+
+                // Track timing for batch summary
+                if (result.timing) {
+                  timingStats.times.push(result.timing.total);
+                  timingStats.apiTimes.push(result.timing.api);
+                  if (result.timing.total > 5000) timingStats.slowCount++;
+                }
               } else if (result?.error) {
                 errors++;
               }
@@ -869,6 +937,15 @@ router.post('/analyze-stream', upload.single('image'), handleMulterError, async 
       }
 
       const totalTime = ((Date.now() - batchStart) / 1000).toFixed(1);
+
+      // Log batch timing summary (replaces per-file "Slow" logs)
+      if (timingStats.times.length > 0) {
+        const avgTime = (timingStats.times.reduce((a, b) => a + b, 0) / timingStats.times.length / 1000).toFixed(2);
+        const maxTime = (Math.max(...timingStats.times) / 1000).toFixed(2);
+        const minTime = (Math.min(...timingStats.times) / 1000).toFixed(2);
+        const avgApi = (timingStats.apiTimes.reduce((a, b) => a + b, 0) / timingStats.apiTimes.length / 1000).toFixed(2);
+        console.log(`[Upload-SSE] Timing summary: avg=${avgTime}s, min=${minTime}s, max=${maxTime}s, avgAPI=${avgApi}s, slow(>5s)=${timingStats.slowCount}`);
+      }
 
       // Send completion event
       sendEvent('complete', {

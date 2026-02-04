@@ -92,6 +92,14 @@ function sanitizeRecord(record) {
   const sanitized = { ...record };
   const fixes = [];
 
+  // CRITICAL: cycleCount of 0 is almost always an extraction error (AI defaulting to 0)
+  // A real 0 cycle count is extremely rare (brand new battery that's never been charged)
+  // Convert 0 to null - let the user verify if it's actually 0
+  if (sanitized.cycleCount === 0 || sanitized.cycleCount === '0') {
+    fixes.push(`cycleCount: 0 → null (likely extraction error - 0 is rarely valid)`);
+    sanitized.cycleCount = null;
+  }
+
   // Fix MOS temperature if it's obviously wrong (e.g., 330 instead of 33)
   if (sanitized.mosTemperature !== null && sanitized.mosTemperature !== undefined) {
     if (sanitized.mosTemperature > 100 && sanitized.mosTemperature < 1000) {
@@ -311,11 +319,40 @@ function areResultsConsistent(oldRecord, newRecord) {
  */
 function validateOhmsLaw(record, tolerance = 0.10) {
   const voltage = record.overallVoltage;
-  const current = Math.abs(record.current);
-  const power = Math.abs(record.power);
+  const current = record.current !== null ? Math.abs(record.current) : null;
+  const power = record.power !== null ? Math.abs(record.power) : null;
 
-  if (!voltage || !current || !power) {
+  // Check for impossible combinations FIRST
+  if (power !== null && power > 5) { // Non-trivial power
+    // Voltage = 0 with power > 0 is impossible
+    if (voltage === 0) {
+      return {
+        valid: false,
+        reason: `PHYSICS IMPOSSIBLE: Voltage=0V but Power=${power}W (requires V>0)`,
+        fieldsToNull: ['overallVoltage']
+      };
+    }
+
+    // Current = 0 with power > 0 is impossible
+    if (current === 0) {
+      return {
+        valid: false,
+        reason: `PHYSICS IMPOSSIBLE: Current=0A but Power=${power}W (requires I>0)`,
+        fieldsToNull: ['current']
+      };
+    }
+  }
+
+  // Skip ratio check if any value is missing/null
+  if (voltage === null || voltage === undefined ||
+      current === null || current === undefined ||
+      power === null || power === undefined) {
     return { valid: true, reason: 'Incomplete data for Ohm check' };
+  }
+
+  // Skip if power is near zero (nothing to validate)
+  if (power < 5) {
+    return { valid: true, reason: 'Power too low to validate' };
   }
 
   const calculatedPower = voltage * current;
@@ -513,6 +550,66 @@ function validateRecordSanity(record) {
   const issues = [];
   const fieldsToNull = [];
 
+  // ========================================
+  // CRITICAL PHYSICS CHECKS (P = V × I)
+  // ========================================
+
+  // If power > 0 but voltage = 0, voltage is WRONG (P=V×I requires V>0 if P>0)
+  const power = record.power !== null ? Math.abs(record.power) : 0;
+  const voltage = record.overallVoltage;
+  const current = record.current !== null ? Math.abs(record.current) : null;
+
+  if (power > 5) { // Non-trivial power (>5W)
+    // Voltage = 0 with power > 0 is impossible
+    if (voltage === 0) {
+      issues.push(`PHYSICS VIOLATION: Voltage=0V but Power=${power}W (P=V×I requires V>0)`);
+      fieldsToNull.push('overallVoltage');
+    }
+
+    // Current = 0 with power > 0 is impossible
+    if (current === 0) {
+      issues.push(`PHYSICS VIOLATION: Current=0A but Power=${power}W (P=V×I requires I>0)`);
+      fieldsToNull.push('current');
+    }
+  }
+
+  // Additional Ohm's law check: if V and I are both present, P should roughly match V×I
+  if (voltage > 0 && current > 0 && power > 5) {
+    const calculatedPower = voltage * current;
+    const ratio = power / calculatedPower;
+    // Allow 50% tolerance for display rounding, but catch gross mismatches
+    if (ratio < 0.3 || ratio > 3.0) {
+      issues.push(`PHYSICS VIOLATION: V×I=${calculatedPower.toFixed(1)}W but displayed Power=${power}W (${(ratio * 100).toFixed(0)}% ratio)`);
+      // Flag for re-analysis but don't null - could be any of the three values
+    }
+  }
+
+  // ========================================
+  // SOC vs CELL VOLTAGE PHYSICS CHECK
+  // ========================================
+
+  // SOC = 0% with healthy cell voltage is impossible for LiFePO4
+  // At 0% SOC, LiFePO4 cells should be ~2.5-2.8V, NOT 3.2V+
+  if (record.stateOfCharge === 0 && record.averageCellVoltage !== null) {
+    if (record.averageCellVoltage > 3.0) {
+      issues.push(`PHYSICS VIOLATION: SOC=0% but avgCellVoltage=${record.averageCellVoltage}V (0% SOC should be <2.8V for LiFePO4)`);
+      fieldsToNull.push('stateOfCharge');
+    }
+  }
+
+  // SOC = 100% with low cell voltage is impossible
+  // At 100% SOC, LiFePO4 cells should be ~3.4-3.65V
+  if (record.stateOfCharge === 100 && record.averageCellVoltage !== null) {
+    if (record.averageCellVoltage < 3.2) {
+      issues.push(`PHYSICS VIOLATION: SOC=100% but avgCellVoltage=${record.averageCellVoltage}V (100% SOC should be >3.4V for LiFePO4)`);
+      fieldsToNull.push('stateOfCharge');
+    }
+  }
+
+  // ========================================
+  // STANDARD SANITY CHECKS
+  // ========================================
+
   // 1. SOC must be 0-100%
   if (record.stateOfCharge !== null && record.stateOfCharge !== undefined) {
     if (record.stateOfCharge < 0 || record.stateOfCharge > 100) {
@@ -641,7 +738,7 @@ function validateHistoricalConsistency(record, history) {
 
 /**
  * Apply sanity fixes to a record
- * Nullifies clearly wrong values
+ * Nullifies clearly wrong values and flags for re-analysis
  */
 function applySanityFixes(record) {
   const fixed = { ...record };
@@ -649,19 +746,35 @@ function applySanityFixes(record) {
 
   const { issues, fieldsToNull } = validateRecordSanity(record);
 
-  for (const field of fieldsToNull) {
+  // Deduplicate fieldsToNull
+  const uniqueFieldsToNull = [...new Set(fieldsToNull)];
+
+  for (const field of uniqueFieldsToNull) {
     if (fixed[field] !== null && fixed[field] !== undefined) {
-      fixes.push(`${field}: ${fixed[field]} → null (failed sanity check)`);
+      fixes.push(`${field}: ${fixed[field]} → null (SANITY VIOLATION)`);
       fixed[field] = null;
     }
   }
 
-  // Log issues for debugging
-  if (issues.length > 0) {
+  // Log issues for debugging (always log physics violations)
+  const physicsViolations = issues.filter(i => i.includes('PHYSICS'));
+  if (physicsViolations.length > 0) {
+    console.warn(`[Sanity] ⚠️ PHYSICS VIOLATIONS for ${record.fileName}:`);
+    physicsViolations.forEach(v => console.warn(`  - ${v}`));
+  } else if (issues.length > 0) {
     console.log(`[Sanity] ${record.fileName}: ${issues.join('; ')}`);
   }
 
-  return { fixed, fixes, issues };
+  // If we nullified any fields, mark the record for re-analysis
+  const needsReanalysis = uniqueFieldsToNull.length > 0;
+  if (needsReanalysis) {
+    fixed.needs_reanalysis = true;
+    // Force state to B (partial needs verify) if we nullified fields
+    fixed.verification_state = VERIFICATION_STATES.PARTIAL_NEEDS_VERIFY;
+    console.log(`[Sanity] ${record.fileName}: Marked for RE-ANALYSIS (${uniqueFieldsToNull.length} fields nullified)`);
+  }
+
+  return { fixed, fixes, issues, needsReanalysis };
 }
 
 module.exports = {

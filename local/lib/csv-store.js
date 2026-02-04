@@ -873,6 +873,130 @@ function clearReanalysisFlag(id) {
   return false;
 }
 
+/**
+ * Fix cycle count issues - convert 0 to null
+ * This repairs data where the AI incorrectly defaulted to 0 when cycles weren't visible
+ * @returns {object} Stats about fixes made
+ */
+function repairCycleCountData() {
+  loadData();
+
+  let fixed = 0;
+  let alreadyNull = 0;
+  let hasValidCycles = 0;
+
+  // Debug: Check types of cycleCount values
+  const typeStats = {};
+  for (const record of recordsCache) {
+    const val = record.cycleCount;
+    const typeKey = `${typeof val}:${val}`;
+    typeStats[typeKey] = (typeStats[typeKey] || 0) + 1;
+  }
+  console.log(`[CSV-Store] CycleCount type distribution:`, JSON.stringify(typeStats));
+
+  for (const record of recordsCache) {
+    // Check for 0 as number OR string, also check for falsy 0
+    const cycleVal = record.cycleCount;
+    const isZero = cycleVal === 0 || cycleVal === '0' || (typeof cycleVal === 'number' && cycleVal === 0);
+
+    if (isZero) {
+      console.log(`[CSV-Store] Fixing cycleCount=0 for ${record.fileName} (type: ${typeof cycleVal}, value: ${cycleVal})`);
+      record.cycleCount = null;
+      // Also mark for re-analysis to get correct value
+      record.verification_state = 'B';
+      record.needs_reanalysis = true;
+      fixed++;
+    } else if (cycleVal === null || cycleVal === '' || cycleVal === undefined) {
+      alreadyNull++;
+    } else {
+      hasValidCycles++;
+    }
+  }
+
+  if (fixed > 0) {
+    rewriteCSV();
+    console.log(`[CSV-Store] Repaired cycle count: ${fixed} records (0 → null)`);
+  } else {
+    console.log(`[CSV-Store] No cycle count repairs needed (${alreadyNull} null, ${hasValidCycles} valid)`);
+  }
+
+  return {
+    fixed,
+    alreadyNull,
+    hasValidCycles,
+    total: recordsCache.length
+  };
+}
+
+/**
+ * Fix physics violations - null out impossible V/I/P combinations
+ * This repairs data where voltage=0 or current=0 but power > 0 (physically impossible)
+ * Also fixes SOC=0% with high cell voltage
+ * @returns {object} Stats about fixes made
+ */
+function repairPhysicsViolations() {
+  loadData();
+
+  let voltageFixed = 0;
+  let currentFixed = 0;
+  let socFixed = 0;
+  let alreadyValid = 0;
+
+  for (const record of recordsCache) {
+    const power = record.power !== null ? Math.abs(record.power) : 0;
+    let needsRewrite = false;
+
+    // Fix voltage=0 with power>0
+    if (power > 5 && record.overallVoltage === 0) {
+      console.log(`[CSV-Store] Physics fix: ${record.fileName} - V=0 but P=${power}W → V=null`);
+      record.overallVoltage = null;
+      record.verification_state = 'B';
+      record.needs_reanalysis = true;
+      voltageFixed++;
+      needsRewrite = true;
+    }
+
+    // Fix current=0 with power>0
+    if (power > 5 && record.current === 0) {
+      console.log(`[CSV-Store] Physics fix: ${record.fileName} - I=0 but P=${power}W → I=null`);
+      record.current = null;
+      record.verification_state = 'B';
+      record.needs_reanalysis = true;
+      currentFixed++;
+      needsRewrite = true;
+    }
+
+    // Fix SOC=0% with high cell voltage (should be <2.8V for LiFePO4 at 0%)
+    if (record.stateOfCharge === 0 && record.averageCellVoltage !== null && record.averageCellVoltage > 3.0) {
+      console.log(`[CSV-Store] Physics fix: ${record.fileName} - SOC=0% but cell=${record.averageCellVoltage}V → SOC=null`);
+      record.stateOfCharge = null;
+      record.verification_state = 'B';
+      record.needs_reanalysis = true;
+      socFixed++;
+      needsRewrite = true;
+    }
+
+    if (!needsRewrite) {
+      alreadyValid++;
+    }
+  }
+
+  const totalFixed = voltageFixed + currentFixed + socFixed;
+  if (totalFixed > 0) {
+    rewriteCSV();
+    console.log(`[CSV-Store] Repaired physics violations: ${voltageFixed} voltage, ${currentFixed} current, ${socFixed} SOC`);
+  }
+
+  return {
+    voltageFixed,
+    currentFixed,
+    socFixed,
+    totalFixed,
+    alreadyValid,
+    total: recordsCache.length
+  };
+}
+
 module.exports = {
   loadData,
   saveRecord,
@@ -893,5 +1017,7 @@ module.exports = {
   checkMigrationNeeded,
   performMigration,
   repairAllData,
+  repairCycleCountData,
+  repairPhysicsViolations,
   CSV_COLUMNS
 };

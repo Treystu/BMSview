@@ -2,57 +2,167 @@
  * Parallel Processing Utility for Batch Image Analysis
  *
  * Provides controlled concurrency to maximize throughput while respecting API limits.
- * Default concurrency of 5 balances speed with rate limit safety.
+ * Optimized for:
+ * - Parallel hashing with timestamp extraction
+ * - Batch weather lookups by hour
+ * - Image compression
  */
 
 const crypto = require('crypto');
+const { extractStrictTimestamp } = require('./TimeAuthority');
 
 /**
- * Process items in parallel with controlled concurrency
+ * Process items in parallel with intelligent throttling and backoff
  * @param {Array} items - Items to process
  * @param {Function} processFn - Async function to process each item (item, index) => result
  * @param {Object} options - Processing options
- * @param {number} options.concurrency - Max concurrent operations (default: 5)
+ * @param {number} options.concurrency - Max concurrent operations (default: 10)
  * @param {Function} options.onProgress - Progress callback (completed, total, item, result)
  * @param {Function} options.onError - Error callback (error, item, index)
+ * @param {Function} options.onThrottle - Throttle callback (currentConcurrency, reason)
  * @returns {Promise<Array>} Array of results in same order as items
  */
 async function processInParallel(items, processFn, options = {}) {
   const {
-    concurrency = 5,
+    concurrency = 10,
     onProgress = null,
-    onError = null
+    onError = null,
+    onThrottle = null
   } = options;
 
   const results = new Array(items.length);
   let completed = 0;
   let currentIndex = 0;
+  let activeWorkers = 0;
 
-  console.log(`[Parallel] Starting batch of ${items.length} items with concurrency=${concurrency}`);
+  // Adaptive throttling state
+  let currentConcurrency = concurrency;
+  let consecutiveErrors = 0;
+  let consecutiveSlowResponses = 0;
+  let backoffUntil = 0;
+  const SLOW_THRESHOLD_MS = 8000;  // Consider >8s responses "slow"
+  const ERROR_BACKOFF_MS = 2000;   // Wait 2s after rate limit error
+  const MIN_CONCURRENCY = 2;
+  const recentResponseTimes = [];  // Track last N response times
+
+  console.log(`[Parallel] Starting batch of ${items.length} items (concurrency=${concurrency}, adaptive throttling enabled)`);
   const startTime = Date.now();
 
-  // Worker function that processes items from the queue
-  async function worker() {
+  // Helper to check if we should reduce concurrency
+  function shouldThrottle(error, responseTime) {
+    // Rate limit errors (429, 503, quota exceeded)
+    if (error) {
+      const msg = error.message?.toLowerCase() || '';
+      if (msg.includes('429') || msg.includes('rate') || msg.includes('quota') || msg.includes('503')) {
+        return { throttle: true, reason: 'rate_limit', backoff: ERROR_BACKOFF_MS * (consecutiveErrors + 1) };
+      }
+      consecutiveErrors++;
+      if (consecutiveErrors >= 3) {
+        return { throttle: true, reason: 'consecutive_errors', backoff: ERROR_BACKOFF_MS };
+      }
+    } else {
+      consecutiveErrors = 0;
+    }
+
+    // Slow response detection
+    if (responseTime > SLOW_THRESHOLD_MS) {
+      consecutiveSlowResponses++;
+      if (consecutiveSlowResponses >= 3) {
+        consecutiveSlowResponses = 0;
+        return { throttle: true, reason: 'slow_responses', backoff: 0 };
+      }
+    } else {
+      consecutiveSlowResponses = Math.max(0, consecutiveSlowResponses - 1);
+    }
+
+    return { throttle: false };
+  }
+
+  // Helper to possibly increase concurrency if things are going well
+  function shouldIncreaseConcurrency() {
+    if (currentConcurrency >= concurrency) return false;
+    if (recentResponseTimes.length < 5) return false;
+
+    const avgTime = recentResponseTimes.reduce((a, b) => a + b, 0) / recentResponseTimes.length;
+    return avgTime < 3000 && consecutiveErrors === 0;
+  }
+
+  // Worker function with throttling
+  async function worker(workerId) {
     while (currentIndex < items.length) {
+      // Check for backoff
+      const now = Date.now();
+      if (now < backoffUntil) {
+        await new Promise(r => setTimeout(r, backoffUntil - now));
+      }
+
+      // Check if we should pause this worker due to reduced concurrency
+      if (workerId >= currentConcurrency) {
+        await new Promise(r => setTimeout(r, 100));
+        continue;
+      }
+
       const index = currentIndex++;
+      if (index >= items.length) break;
+
       const item = items[index];
+      const itemStart = Date.now();
 
       try {
+        activeWorkers++;
         const result = await processFn(item, index);
+        activeWorkers--;
+
+        const responseTime = Date.now() - itemStart;
+        recentResponseTimes.push(responseTime);
+        if (recentResponseTimes.length > 10) recentResponseTimes.shift();
+
         results[index] = result;
         completed++;
+
+        // Check throttling
+        const throttleCheck = shouldThrottle(null, responseTime);
+        if (throttleCheck.throttle) {
+          const newConcurrency = Math.max(MIN_CONCURRENCY, Math.floor(currentConcurrency * 0.7));
+          if (newConcurrency < currentConcurrency) {
+            console.log(`[Parallel] Throttling: ${currentConcurrency} → ${newConcurrency} (${throttleCheck.reason})`);
+            currentConcurrency = newConcurrency;
+            if (onThrottle) onThrottle(currentConcurrency, throttleCheck.reason);
+          }
+        } else if (shouldIncreaseConcurrency()) {
+          const newConcurrency = Math.min(concurrency, currentConcurrency + 1);
+          if (newConcurrency > currentConcurrency) {
+            console.log(`[Parallel] Increasing concurrency: ${currentConcurrency} → ${newConcurrency}`);
+            currentConcurrency = newConcurrency;
+          }
+        }
 
         if (onProgress) {
           onProgress(completed, items.length, item, result);
         }
       } catch (error) {
+        activeWorkers--;
+        const responseTime = Date.now() - itemStart;
+
+        // Check for rate limiting
+        const throttleCheck = shouldThrottle(error, responseTime);
+        if (throttleCheck.throttle) {
+          const newConcurrency = Math.max(MIN_CONCURRENCY, Math.floor(currentConcurrency * 0.5));
+          console.log(`[Parallel] Error throttle: ${currentConcurrency} → ${newConcurrency} (${throttleCheck.reason})`);
+          currentConcurrency = newConcurrency;
+          backoffUntil = Date.now() + throttleCheck.backoff;
+          if (onThrottle) onThrottle(currentConcurrency, throttleCheck.reason);
+
+          // Retry this item
+          currentIndex = index;
+          continue;
+        }
+
         results[index] = { error: error.message, item };
         completed++;
 
         if (onError) {
           onError(error, item, index);
-        } else {
-          console.error(`[Parallel] Error processing item ${index}:`, error.message);
         }
       }
     }
@@ -61,7 +171,7 @@ async function processInParallel(items, processFn, options = {}) {
   // Launch workers up to concurrency limit
   const workers = [];
   for (let i = 0; i < Math.min(concurrency, items.length); i++) {
-    workers.push(worker());
+    workers.push(worker(i));
   }
 
   // Wait for all workers to complete
@@ -69,29 +179,79 @@ async function processInParallel(items, processFn, options = {}) {
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const rate = (items.length / (Date.now() - startTime) * 1000).toFixed(2);
-  console.log(`[Parallel] Completed ${items.length} items in ${elapsed}s (${rate} items/sec)`);
+  console.log(`[Parallel] ✓ Completed ${items.length} items in ${elapsed}s (${rate}/sec, final concurrency: ${currentConcurrency})`);
 
   return results;
 }
 
 /**
- * Pre-compute hashes for a batch of image buffers
+ * Pre-compute hashes AND extract timestamps for a batch of images
+ * This does both operations in a single pass for efficiency
  * @param {Array<{buffer: Buffer, fileName: string}>} images - Array of image objects
- * @returns {Array<{hash: string, buffer: Buffer, fileName: string}>} Images with hashes
+ * @returns {Array} Images with hashes, timestamps, and weather grouping keys
  */
 function preComputeHashes(images) {
-  console.log(`[Parallel] Pre-computing hashes for ${images.length} images...`);
+  console.log(`[Parallel] Pre-processing ${images.length} images (hash + timestamp)...`);
   const startTime = Date.now();
 
-  const results = images.map(img => ({
-    ...img,
-    hash: crypto.createHash('sha256').update(img.buffer).digest('hex')
-  }));
+  const results = [];
+  const weatherGroups = new Map(); // Group by hour for batch weather lookups
+
+  for (const img of images) {
+    // Hash the image
+    const hash = crypto.createHash('sha256').update(img.buffer).digest('hex');
+
+    // Extract timestamp from filename
+    const tsResult = extractStrictTimestamp(img.fileName);
+
+    // Create weather grouping key (YYYY-MM-DD-HH)
+    let weatherKey = null;
+    if (tsResult.valid && tsResult.timestamp) {
+      const ts = tsResult.timestamp;
+      // Extract date and hour: "2026-01-15T14:30:00" -> "2026-01-15-14"
+      weatherKey = ts.substring(0, 13).replace('T', '-');
+
+      // Track weather groups
+      if (!weatherGroups.has(weatherKey)) {
+        weatherGroups.set(weatherKey, []);
+      }
+      weatherGroups.get(weatherKey).push(img.fileName);
+    }
+
+    results.push({
+      ...img,
+      hash,
+      timestamp: tsResult.valid ? tsResult.timestamp : null,
+      timestampError: tsResult.valid ? null : tsResult.error,
+      weatherKey
+    });
+  }
 
   const elapsed = Date.now() - startTime;
-  console.log(`[Parallel] Hashed ${images.length} images in ${elapsed}ms (${(images.length / elapsed * 1000).toFixed(1)}/sec)`);
+  const validTimestamps = results.filter(r => r.timestamp).length;
+  console.log(`[Parallel] Pre-processed ${images.length} in ${elapsed}ms: ${validTimestamps} valid timestamps, ${weatherGroups.size} weather groups`);
 
   return results;
+}
+
+/**
+ * Group images by weather hour for batch lookups
+ * @param {Array} images - Pre-processed images with weatherKey
+ * @returns {Map<string, Array>} Map of weatherKey -> images
+ */
+function groupByWeatherHour(images) {
+  const groups = new Map();
+
+  for (const img of images) {
+    if (img.weatherKey) {
+      if (!groups.has(img.weatherKey)) {
+        groups.set(img.weatherKey, []);
+      }
+      groups.get(img.weatherKey).push(img);
+    }
+  }
+
+  return groups;
 }
 
 /**
@@ -180,6 +340,7 @@ function createProgressLogger(total, prefix = '[Parallel]') {
 module.exports = {
   processInParallel,
   preComputeHashes,
+  groupByWeatherHour,
   filterByExistingRecords,
   createProgressLogger
 };

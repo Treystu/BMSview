@@ -407,11 +407,91 @@ function getCacheStats() {
   };
 }
 
+/**
+ * Batch pre-fetch weather data for multiple timestamps
+ * Fetches all unique hours in parallel, then caches results
+ * @param {number} lat - Latitude
+ * @param {number} lon - Longitude
+ * @param {string|null} apiKey - OpenWeatherMap API key (null for solar-only)
+ * @param {Array<Date|string>} timestamps - Array of timestamps to fetch
+ * @param {Object} options - Fetch options
+ * @param {number} options.concurrency - Max concurrent fetches (default: 5)
+ * @returns {Promise<{fetched: number, cached: number, failed: number}>} Stats
+ */
+async function batchPreFetchWeather(lat, lon, apiKey, timestamps, options = {}) {
+  const { concurrency = 5 } = options;
+
+  // Dedupe by hour (weather doesn't change significantly within an hour)
+  const uniqueHours = new Map();
+  for (const ts of timestamps) {
+    const date = new Date(ts);
+    const hourKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}`;
+    if (!uniqueHours.has(hourKey)) {
+      uniqueHours.set(hourKey, date);
+    }
+  }
+
+  console.log(`[Weather] Batch pre-fetch: ${timestamps.length} timestamps → ${uniqueHours.size} unique hours`);
+
+  // Check which hours are already cached
+  const toFetch = [];
+  let alreadyCached = 0;
+
+  for (const [hourKey, date] of uniqueHours) {
+    const cacheKey = getCacheKey(lat, lon, date);
+    if (isCacheValid(dataCache.get(cacheKey))) {
+      alreadyCached++;
+    } else {
+      toFetch.push({ hourKey, date, cacheKey });
+    }
+  }
+
+  console.log(`[Weather] Cache status: ${alreadyCached} cached, ${toFetch.length} to fetch`);
+
+  if (toFetch.length === 0) {
+    return { fetched: 0, cached: alreadyCached, failed: 0 };
+  }
+
+  // Fetch in parallel batches
+  let fetched = 0;
+  let failed = 0;
+
+  for (let i = 0; i < toFetch.length; i += concurrency) {
+    const batch = toFetch.slice(i, i + concurrency);
+    const results = await Promise.all(
+      batch.map(async ({ hourKey, date, cacheKey }) => {
+        try {
+          let result;
+          if (apiKey) {
+            result = await getWeather(lat, lon, apiKey, date);
+          } else {
+            result = await getSolarOnly(lat, lon, date);
+          }
+          return { success: true, hourKey };
+        } catch (err) {
+          console.warn(`[Weather] Batch fetch failed for ${hourKey}: ${err.message}`);
+          return { success: false, hourKey };
+        }
+      })
+    );
+
+    for (const r of results) {
+      if (r.success) fetched++;
+      else failed++;
+    }
+  }
+
+  console.log(`[Weather] Batch pre-fetch complete: ${fetched} fetched, ${alreadyCached} cached, ${failed} failed`);
+
+  return { fetched, cached: alreadyCached, failed };
+}
+
 module.exports = {
   getWeather,
   getSolarIrradiance,
   getSolarOnly,
   extractTimestampFromFilename,
   clearCaches,
-  getCacheStats
+  getCacheStats,
+  batchPreFetchWeather
 };
